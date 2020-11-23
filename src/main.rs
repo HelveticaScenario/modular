@@ -1,45 +1,70 @@
 extern crate anyhow;
 extern crate cpal;
+extern crate serde;
+extern crate serde_json;
 
-use std::{rc::Rc, cell::RefCell};
+mod types;
+mod dsp;
+
+use std::collections::HashMap;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use dsp::utils::clamp;
+use types::Config;
 
-trait Sampleable {
-    fn next_sample(&mut self, frame: u64, patch: Vec<Rc<RefCell<Box<dyn Sampleable>>>>) -> f32;
-}
+fn main() -> anyhow::Result<()> {
+    let data = r#"
+    {
+        "abc": {
+            "module_type": "SineOscillator",
+            "params": {
+                "freq": {
+                    "param_type": "Value",
+                    "value": 4
+                }
+            }
+        },
+        "bcd": {
+            "module_type": "LowpassFilter",
+            "params": {
+                "cutoff": {
+                    "param_type": "Value",
+                    "value": 4
+                },
+                "input": {
+                    "param_type": "Cable",
+                    "module": "abc",
+                    "port": "output"
+                }
+            }
+        }
+    }"#;
 
-type SampleableConstructor = Fn(()) -> Box<dyn Sampleable>;
+    let configs: HashMap<String, Config> = serde_json::from_str(data)?;
+    println!("{:?}", configs);
 
-fn main() {
+    let constructors = dsp::get_constructors();
+    println!("{:?}", constructors.keys());
+
     let freq = match std::env::args().nth(1) {
         Some(f) => f.parse::<f32>(),
         None => Ok(440f32),
     }
     .unwrap();
 
-    let host = cpal::host_from_id(cpal::HostId::Asio).expect("failed to initialise ASIO host");
+    // let host = cpal::host_from_id(cpal::HostId::Asio).expect("failed to initialise ASIO host");
+    let host = cpal::default_host();
 
     let device = host.default_output_device().unwrap();
 
     let config = device.default_output_config().unwrap();
 
     match config.sample_format() {
-        cpal::SampleFormat::I16 => run::<i16>(&device, &config.into(), freq).unwrap(),
-        cpal::SampleFormat::U16 => run::<u16>(&device, &config.into(), freq).unwrap(),
-        cpal::SampleFormat::F32 => run::<f32>(&device, &config.into(), freq).unwrap(),
+        cpal::SampleFormat::I16 => run::<i16>(&device, &config.into(), freq),
+        cpal::SampleFormat::U16 => run::<u16>(&device, &config.into(), freq),
+        cpal::SampleFormat::F32 => run::<f32>(&device, &config.into(), freq),
     }
 }
-
-fn clamp<T: std::cmp::PartialOrd>(min: T, max:T, val: T) -> T  {
-    if val < min {
-        min
-    } else if val > max {
-        max
-    } else {
-        val
-    }
-} 
 
 fn run<T>(
     device: &cpal::Device,
@@ -55,7 +80,11 @@ where
     let mut sample_clock = 0f32;
     let mut next_value = move || {
         sample_clock = (sample_clock + 1.0) % sample_rate;
-        clamp(-1.0, 1.0, (sample_clock * freq * 2.0 * std::f32::consts::PI / sample_rate).sin() * 10.0)
+        clamp(
+            -1.0,
+            1.0,
+            (sample_clock * freq * 2.0 * std::f32::consts::PI / sample_rate).sin() * 10.0,
+        )
     };
 
     let err_fn = |err| eprintln!("error: {}", err);
@@ -65,9 +94,9 @@ where
         move |data: &mut [T], _| write_data(data, channels, &mut next_value),
         err_fn,
     )?;
-    stream.play()?;
-    
-    std::thread::sleep(std::time::Duration::from_millis(1000));
+    // stream.play()?;
+
+    // std::thread::sleep(std::time::Duration::from_millis(1000));
 
     Ok(())
 }

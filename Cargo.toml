@@ -9,3 +9,5 @@ edition = "2018"
 [dependencies]
 cpal = { version = "*", features = ["asio"] }
 anyhow = "1.0.34"
+serde_json = "1.0.59"
+serde = { version = "1.0.117", features = ["derive"] }
