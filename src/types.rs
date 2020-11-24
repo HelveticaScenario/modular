@@ -3,19 +3,19 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub trait Sampleable {
-    fn tick(&mut self) -> ();
-    fn update(&mut self, patch: &HashMap<String, Box<dyn Sampleable>>) -> ();
+pub trait Sampleable: Send {
+    fn tick(&self) -> ();
+    fn update(&self, patch: &HashMap<String, Box<dyn Sampleable>>) -> ();
     fn get_sample(&self, port: &String) -> Result<f32>;
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
-    module_type: String,
-    params: Value
+    pub module_type: String,
+    pub params: Value
 }
 
-type Patch = HashMap<String, Box<dyn Sampleable>>;
+pub type Patch = HashMap<String, Box<dyn Sampleable>>;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "param_type")]
@@ -40,3 +40,4 @@ impl Param {
 }
 
 pub type SampleableConstructor = Box<dyn Fn(&String, Value) -> Result<Box<dyn Sampleable>>>;
+

@@ -1,0 +1,21 @@
+{
+    "25c79f90-d7cb-43ff-a34b-2812b9a44cf2": {
+        "module_type": "SineOscillator",
+        "params": {
+            "freq": {
+                "param_type": "Value",
+                "value": 4
+            }
+        }
+    },
+    "ROOT": {
+        "module_type": "SignalDestination",
+        "params": {
+            "source": {
+                "param_type": "Cable",
+                "module": "25c79f90-d7cb-43ff-a34b-2812b9a44cf2",
+                "port": "output"
+            }
+        }
+    }
+}

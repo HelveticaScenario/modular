@@ -10,6 +10,7 @@ pub mod consts;
 
 pub fn get_constructors() -> HashMap<String, SampleableConstructor> {
     let mut map = HashMap::new();
+    core::install_constructors(&mut map);
     oscillators::install_constructors(&mut map);
     return map;
 }

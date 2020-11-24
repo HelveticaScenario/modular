@@ -1,6 +1,7 @@
 use std::collections::HashMap;
+use std::sync::Mutex;
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -19,34 +20,41 @@ struct SineOscillatorParams {
     freq: Param,
 }
 
+#[derive(Debug)]
 struct SineOscillator {
     id: String,
-    current_sample: f32,
-    next_sample: f32,
-    phase: f32,
+    current_sample: Mutex<f32>,
+    next_sample: Mutex<f32>,
+    phase: Mutex<f32>,
     params: SineOscillatorParams,
 }
 
 impl Sampleable for SineOscillator {
-    fn tick(&mut self) -> () {
-        self.current_sample = self.next_sample;
+    fn tick(&self) -> () {
+        *self.current_sample.try_lock().unwrap() = *self.next_sample.try_lock().unwrap();
     }
 
-    fn update(&mut self, patch: &HashMap<String, Box<dyn Sampleable>>) -> () {
+    fn update(&self, patch: &HashMap<String, Box<dyn Sampleable>>) -> () {
         let voltage = clamp(self.params.freq.get_value(patch), -5.0, 5.0);
-        let frequency = semitones_to_ratio(voltage * 12.0) * 220.0 / SAMPLE_RATE;
-        self.phase += frequency;
-        if self.phase >= 1.0 {
-            self.phase -= 1.0;
+        let frequency = semitones_to_ratio(voltage * 12.0) * 220.0 / SAMPLE_RATE * 100.0;
+        *self.phase.try_lock().unwrap() += frequency;
+        if *self.phase.try_lock().unwrap() >= 1.0 {
+            *self.phase.try_lock().unwrap() -= 1.0;
         }
-        self.next_sample = 5.0 * interpolate(LUT_SINE, self.phase, LUT_SINE_SIZE);
+        *self.next_sample.try_lock().unwrap() =
+            5.0 * interpolate(LUT_SINE, *self.phase.try_lock().unwrap(), LUT_SINE_SIZE);
     }
 
     fn get_sample(&self, port: &String) -> Result<f32> {
         if port == "output" {
-            return Ok(self.current_sample);
+            return Ok(*self.current_sample.try_lock().unwrap());
         }
-        Err(anyhow!("{} with id {} does not have port {}", NAME, self.id, port))
+        Err(anyhow!(
+            "{} with id {} does not have port {}",
+            NAME,
+            self.id,
+            port
+        ))
     }
 }
 
@@ -55,9 +63,9 @@ fn sine_oscillator_constructor(id: &String, params: Value) -> Result<Box<dyn Sam
     Ok(Box::new(SineOscillator {
         id: id.clone(),
         params: sine_params,
-        current_sample: 0.0,
-        next_sample: 0.0,
-        phase: 0.0,
+        current_sample: Mutex::new(0.0),
+        next_sample: Mutex::new(0.0),
+        phase: Mutex::new(0.0),
     }))
 }
 
