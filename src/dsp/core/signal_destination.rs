@@ -22,7 +22,7 @@ impl Sampleable for SignalDestination {
         *self.current_sample.try_lock().unwrap() = *self.next_sample.try_lock().unwrap();
     }
 
-    fn update(&self, patch: &std::collections::HashMap<String, Box<dyn Sampleable>>) -> () {
+    fn update(&self, patch: &std::collections::HashMap<String, Box<dyn Sampleable>>, _sample_rate: f32) -> () {
         *self.next_sample.try_lock().unwrap() = self.params.source.get_value(patch)
     }
 

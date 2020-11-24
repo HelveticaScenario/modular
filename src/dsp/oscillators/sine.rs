@@ -34,9 +34,10 @@ impl Sampleable for SineOscillator {
         *self.current_sample.try_lock().unwrap() = *self.next_sample.try_lock().unwrap();
     }
 
-    fn update(&self, patch: &HashMap<String, Box<dyn Sampleable>>) -> () {
-        let voltage = clamp(self.params.freq.get_value(patch), -5.0, 5.0);
-        let frequency = semitones_to_ratio(voltage * 12.0) * 220.0 / SAMPLE_RATE * 100.0;
+    fn update(&self, patch: &HashMap<String, Box<dyn Sampleable>>, sample_rate: f32) -> () {
+        let voltage = clamp(self.params.freq.get_value(patch), 12.0, 0.0);
+        let frequency = 27.5f32 * 2.0f32.powf(voltage) / sample_rate;
+        // let frequency = semitones_to_ratio(voltage * 12.0) * 220.0 / SAMPLE_RATE * 100.0;
         *self.phase.try_lock().unwrap() += frequency;
         if *self.phase.try_lock().unwrap() >= 1.0 {
             *self.phase.try_lock().unwrap() -= 1.0;

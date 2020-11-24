@@ -13,7 +13,6 @@ use std::collections::HashMap;
 
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use dsp::utils::clamp;
 use types::{Config, Patch, Sampleable};
 
 lazy_static! {
@@ -24,19 +23,8 @@ lazy_static! {
 // const ROOT_OUTPUT_PORT: &str = "output";
 const DATA: &str = include_str!("data.json");
 
+
 fn main() -> anyhow::Result<()> {
-    // let configs: HashMap<String, Config> = ;
-    // println!("{:?}", configs);
-
-    // let constructors = dsp::get_constructors();
-    // println!("{:?}", constructors.keys());
-
-    // let freq = match std::env::args().nth(1) {
-    //     Some(f) => f.parse::<f32>(),
-    //     None => Ok(440f32),
-    // }
-    // .unwrap();
-
     // let host = cpal::host_from_id(cpal::HostId::Asio).expect("failed to initialise ASIO host");
     let host = cpal::default_host();
 
@@ -81,6 +69,7 @@ where
 {
     let sample_rate = config.sample_rate.0 as f32;
     let channels = config.channels as usize;
+    // let a = signal::rate(sample_rate).const_hz(440.0);
 
     let err_fn = |err| eprintln!("error: {}", err);
     // for i in 0..10000 {
@@ -89,7 +78,7 @@ where
 
     let stream = device.build_output_stream(
         config,
-        move |data: &mut [T], _| write_data(data, channels, &patch),
+        move |data: &mut [T], _| write_data(data, channels, &patch, sample_rate),
         err_fn,
     )?;
     stream.play()?;
@@ -99,9 +88,9 @@ where
     Ok(())
 }
 
-fn update_patch(patch: &Patch) {
+fn update_patch(patch: &Patch, sample_rate: f32) {
     for (_, module) in patch {
-        module.update(patch);
+        module.update(patch, sample_rate);
     }
 }
 
@@ -119,18 +108,18 @@ fn get_patch_output(patch: &Patch) -> f32 {
     }
 }
 
-fn process_frame(patch: &Patch) -> f32 {
-    update_patch(patch);
+fn process_frame(patch: &Patch, sample_rate: f32) -> f32 {
+    update_patch(patch, sample_rate);
     tick_patch(patch);
     get_patch_output(patch) / 5.0
 }
 
-fn write_data<T>(output: &mut [T], channels: usize, patch: &Patch)
+fn write_data<T>(output: &mut [T], channels: usize, patch: &Patch, sample_rate: f32)
 where
     T: cpal::Sample,
 {
     for frame in output.chunks_mut(channels) {
-        let value = cpal::Sample::from::<f32>(&process_frame(patch)) ;
+        let value = cpal::Sample::from::<f32>(&process_frame(patch, sample_rate));
         for sample in frame.iter_mut() {
             *sample = value
         }

@@ -5,7 +5,7 @@ use serde_json::Value;
 
 pub trait Sampleable: Send {
     fn tick(&self) -> ();
-    fn update(&self, patch: &HashMap<String, Box<dyn Sampleable>>) -> ();
+    fn update(&self, patch: &HashMap<String, Box<dyn Sampleable>>, sample_rate: f32) -> ();
     fn get_sample(&self, port: &String) -> Result<f32>;
 }
 

@@ -23,7 +23,7 @@ impl Sampleable for SignalSource {
         *self.current_sample.try_lock().unwrap() = *self.next_sample.try_lock().unwrap();
     }
 
-    fn update(&self, _patch: &std::collections::HashMap<String, Box<dyn Sampleable>>) -> () {
+    fn update(&self, _patch: &std::collections::HashMap<String, Box<dyn Sampleable>>, _sample_rate: f32) -> () {
         // no-op
     }
 
