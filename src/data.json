@@ -3,17 +3,41 @@
         "module_type": "SineOscillator",
         "params": {
             "freq": {
-                "param_type": "Value",
-                "value": 4
+                "param_type": "Note",
+                "value": 69
+            }
+        }
+    },
+    "e0669d8a-4b36-4ca5-90d1-e1cd4c0952fe": {
+        "module_type": "SineOscillator",
+        "params": {
+            "freq": {
+                "param_type": "Note",
+                "value": 0
+            }
+        }
+    },
+    "47546cc8-69ca-49ca-97a6-394fb6471488": {
+        "module_type": "ScaleAndShift",
+        "params": {
+            "input": {
+                "param_type": "Cable",
+                "module": "25c79f90-d7cb-43ff-a34b-2812b9a44cf2",
+                "port": "output"
+            },
+            "scale": {
+                "param_type": "Cable",
+                "module": "e0669d8a-4b36-4ca5-90d1-e1cd4c0952fe",
+                "port": "output"
             }
         }
     },
     "ROOT": {
-        "module_type": "SignalDestination",
+        "module_type": "Signal",
         "params": {
             "source": {
                 "param_type": "Cable",
-                "module": "25c79f90-d7cb-43ff-a34b-2812b9a44cf2",
+                "module": "47546cc8-69ca-49ca-97a6-394fb6471488",
                 "port": "output"
             }
         }

@@ -3,6 +3,7 @@ extern crate lazy_static;
 
 extern crate anyhow;
 extern crate cpal;
+extern crate hound;
 extern crate serde;
 extern crate serde_json;
 
@@ -13,19 +14,20 @@ use std::collections::HashMap;
 
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use types::{Config, Patch, Sampleable};
+use types::{Config, Patch};
+
+use std::fs::File;
+use std::io::BufWriter;
+use std::sync::{Arc, Mutex};
 
 lazy_static! {
     static ref ROOT_ID: String = "ROOT".into();
     static ref ROOT_OUTPUT_PORT: String = "output".into();
 }
-// const ROOT_ID: &str = "ROOT";
-// const ROOT_OUTPUT_PORT: &str = "output";
 const DATA: &str = include_str!("data.json");
 
-
 fn main() -> anyhow::Result<()> {
-    // let host = cpal::host_from_id(cpal::HostId::Asio).expect("failed to initialise ASIO host");
+    // let host = cpal::host_from_id(cpal::HostId::Asio).expect("failed to initialize ASIO host");
     let host = cpal::default_host();
 
     let device = host.default_output_device().unwrap();
@@ -35,9 +37,9 @@ fn main() -> anyhow::Result<()> {
     let patch: Patch = create_patch(serde_json::from_str(DATA)?)?;
 
     match config.sample_format() {
-        cpal::SampleFormat::I16 => run::<i16>(&device, &config.into(), patch),
-        cpal::SampleFormat::U16 => run::<u16>(&device, &config.into(), patch),
-        cpal::SampleFormat::F32 => run::<f32>(&device, &config.into(), patch),
+        cpal::SampleFormat::I16 => run::<i16>(&device, config, patch),
+        cpal::SampleFormat::U16 => run::<u16>(&device, config, patch),
+        cpal::SampleFormat::F32 => run::<f32>(&device, config, patch),
     }
 }
 
@@ -61,31 +63,79 @@ fn create_patch(configs: HashMap<String, Config>) -> Result<Patch> {
 
 fn run<T>(
     device: &cpal::Device,
-    config: &cpal::StreamConfig,
+    config: cpal::SupportedStreamConfig,
     patch: Patch,
 ) -> Result<(), anyhow::Error>
 where
     T: cpal::Sample,
 {
-    let sample_rate = config.sample_rate.0 as f32;
-    let channels = config.channels as usize;
-    // let a = signal::rate(sample_rate).const_hz(440.0);
+    let sample_rate = config.sample_rate().0 as f32;
+    let channels = config.channels() as usize;
+    println!("{} {}", sample_rate, channels);
+    let args: Vec<String> = std::env::args().collect();
+    const MANIFEST_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/");
+    let mut path: String =  MANIFEST_DIR.to_owned();
+    path.push_str(args.get(1).unwrap_or(&"recorded".to_owned()));
+    path.push_str(".wav");
+    let spec = wav_spec_from_config(&config);
+    let writer = hound::WavWriter::create(path.clone(), spec)?;
+    let writer = Arc::new(Mutex::new(Some(writer)));
+
+    // A flag to indicate that recording is in progress.
+    println!("Begin recording...");
+
+    // Run the input stream on a separate thread.
+    let writer_2 = writer.clone();
 
     let err_fn = |err| eprintln!("error: {}", err);
-    // for i in 0..10000 {
-    //     println!("{}: {}", i, process_frame(&patch));
-    // }
+    let stream = match config.sample_format() {
+        cpal::SampleFormat::F32 => device.build_output_stream(
+            &config.into(),
+            move |data, _: &_| {
+                write_data::<f32, f32>(data, channels, &patch, sample_rate, &writer_2)
+            },
+            err_fn,
+        )?,
+        cpal::SampleFormat::I16 => device.build_output_stream(
+            &config.into(),
+            move |data, _: &_| {
+                write_data::<i16, i16>(data, channels, &patch, sample_rate, &writer_2)
+            },
+            err_fn,
+        )?,
+        cpal::SampleFormat::U16 => device.build_output_stream(
+            &config.into(),
+            move |data, _: &_| {
+                write_data::<u16, i16>(data, channels, &patch, sample_rate, &writer_2)
+            },
+            err_fn,
+        )?,
+    };
 
-    let stream = device.build_output_stream(
-        config,
-        move |data: &mut [T], _| write_data(data, channels, &patch, sample_rate),
-        err_fn,
-    )?;
     stream.play()?;
 
     std::thread::sleep(std::time::Duration::from_millis(1000));
-
+    drop(stream);
+    writer.lock().unwrap().take().unwrap().finalize()?;
+    println!("Recording {} complete!", path);
     Ok(())
+}
+
+fn wav_spec_from_config(config: &cpal::SupportedStreamConfig) -> hound::WavSpec {
+    hound::WavSpec {
+        channels: config.channels() as _,
+        sample_rate: config.sample_rate().0 as _,
+        bits_per_sample: (config.sample_format().sample_size() * 8) as _,
+        sample_format: sample_format(config.sample_format()),
+    }
+}
+
+fn sample_format(format: cpal::SampleFormat) -> hound::SampleFormat {
+    match format {
+        cpal::SampleFormat::U16 => hound::SampleFormat::Int,
+        cpal::SampleFormat::I16 => hound::SampleFormat::Int,
+        cpal::SampleFormat::F32 => hound::SampleFormat::Float,
+    }
 }
 
 fn update_patch(patch: &Patch, sample_rate: f32) {
@@ -114,14 +164,33 @@ fn process_frame(patch: &Patch, sample_rate: f32) -> f32 {
     get_patch_output(patch) / 5.0
 }
 
-fn write_data<T>(output: &mut [T], channels: usize, patch: &Patch, sample_rate: f32)
-where
+type WavWriterHandle = Arc<Mutex<Option<hound::WavWriter<BufWriter<File>>>>>;
+
+fn write_data<T, U>(
+    output: &mut [T],
+    channels: usize,
+    patch: &Patch,
+    sample_rate: f32,
+    writer: &WavWriterHandle,
+) where
     T: cpal::Sample,
+    U: cpal::Sample + hound::Sample,
 {
-    for frame in output.chunks_mut(channels) {
-        let value = cpal::Sample::from::<f32>(&process_frame(patch, sample_rate));
-        for sample in frame.iter_mut() {
-            *sample = value
+    if let Ok(mut guard) = writer.try_lock() {
+        if let Some(writer) = guard.as_mut() {
+            for frame in output.chunks_mut(channels) {
+                let s = &process_frame(patch, sample_rate);
+                {
+                    let value = cpal::Sample::from::<f32>(s);
+                    for sample in frame.iter_mut() {
+                        *sample = value;
+                        {
+                            let value: U = cpal::Sample::from::<f32>(s);
+                            writer.write_sample(value).ok();
+                        }
+                    }
+                }
+            }
         }
     }
 }
