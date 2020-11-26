@@ -5,27 +5,28 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{dsp::{
-        consts::{LUT_SINE, LUT_SINE_SIZE},
-        utils::{clamp, interpolate},
-    }, types::{Param, Sampleable, SampleableConstructor}, dsp::utils::wrap};
+use crate::{
+    dsp::utils::wrap,
+    dsp::utils::{clamp, interpolate},
+    types::{Param, Sampleable, SampleableConstructor},
+};
 
-const NAME: &str = "SineOscillator";
+const NAME: &str = "RampOscillator";
 
 #[derive(Serialize, Deserialize, Debug)]
-struct SineOscillatorParams {
+struct RampOscillatorParams {
     freq: Option<Param>,
     phase: Option<Param>,
 }
 
 #[derive(Debug)]
-struct SineOscillatorModule {
+struct RampOscillatorModule {
     sample: f32,
     phase: f32,
-    params: SineOscillatorParams,
+    params: RampOscillatorParams,
 }
 
-impl SineOscillatorModule {
+impl RampOscillatorModule {
     fn update(&mut self, patch: &HashMap<String, Box<dyn Sampleable>>, sample_rate: f32) -> () {
         if let Some(ref phase) = self.params.phase {
             self.sample = wrap(0.0..1.0, phase.get_value(patch));
@@ -45,19 +46,19 @@ impl SineOscillatorModule {
             if self.phase >= 1.0 {
                 self.phase -= 1.0;
             }
-            self.sample = 5.0 * interpolate(LUT_SINE, self.phase, LUT_SINE_SIZE);
+            self.sample = 5.0 * self.phase;
         }
     }
 }
 
 #[derive(Debug)]
-struct SineOscillator {
+struct RampOscillator {
     id: String,
     sample: Mutex<f32>,
-    module: Mutex<SineOscillatorModule>,
+    module: Mutex<RampOscillatorModule>,
 }
 
-impl Sampleable for SineOscillator {
+impl Sampleable for RampOscillator {
     fn tick(&self) -> () {
         *self.sample.try_lock().unwrap() = self.module.try_lock().unwrap().sample;
     }
@@ -81,10 +82,10 @@ impl Sampleable for SineOscillator {
 
 fn constructor(id: &String, params: Value) -> Result<Box<dyn Sampleable>> {
     let params = serde_json::from_value(params)?;
-    Ok(Box::new(SineOscillator {
+    Ok(Box::new(RampOscillator {
         id: id.clone(),
         sample: Mutex::new(0.0),
-        module: Mutex::new(SineOscillatorModule {
+        module: Mutex::new(RampOscillatorModule {
             params,
             sample: 0.0,
             phase: 0.0,

@@ -31,3 +31,17 @@ pub fn clamp<T: std::cmp::PartialOrd>(min: T, max: T, val: T) -> T {
         val
     }
 }
+
+pub fn wrap<T>(range: std::ops::Range<T>, mut val: T) -> T
+where
+    T: std::ops::Sub<Output = T> + std::ops::AddAssign + std::cmp::PartialOrd + std::ops::SubAssign + Copy,
+{
+    let span = range.end - range.start;
+    while val > range.end {
+        val -= span;
+    }
+    while val < range.start {
+        val += span;
+    }
+    val
+}
