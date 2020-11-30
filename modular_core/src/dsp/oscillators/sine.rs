@@ -5,10 +5,10 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{dsp::{
+use crate::{types::PatchMap, dsp::{
         consts::{LUT_SINE, LUT_SINE_SIZE},
         utils::{clamp, interpolate},
-    }, types::{Param, Sampleable, SampleableConstructor}, dsp::utils::wrap};
+    }, dsp::utils::wrap, types::{Param, Sampleable, SampleableConstructor}};
 
 const NAME: &str = "SineOscillator";
 
@@ -26,13 +26,13 @@ struct SineOscillatorModule {
 }
 
 impl SineOscillatorModule {
-    fn update(&mut self, patch: &HashMap<String, Box<dyn Sampleable>>, sample_rate: f32) -> () {
+    fn update(&mut self, patch_map: &PatchMap, sample_rate: f32) -> () {
         if let Some(ref phase) = self.params.phase {
-            self.sample = wrap(0.0..1.0, phase.get_value(patch));
+            self.sample = wrap(0.0..1.0, phase.get_value(patch_map));
         } else {
             let voltage = clamp(
                 if let Some(ref freq) = self.params.freq {
-                    freq.get_value_or(patch, 4.0)
+                    freq.get_value_or(patch_map, 4.0)
                 } else {
                     4.0
                 },
@@ -62,8 +62,8 @@ impl Sampleable for SineOscillator {
         *self.sample.try_lock().unwrap() = self.module.try_lock().unwrap().sample;
     }
 
-    fn update(&self, patch: &HashMap<String, Box<dyn Sampleable>>, sample_rate: f32) -> () {
-        self.module.try_lock().unwrap().update(patch, sample_rate);
+    fn update(&self, patch_map: &PatchMap, sample_rate: f32) -> () {
+        self.module.try_lock().unwrap().update(patch_map, sample_rate);
     }
 
     fn get_sample(&self, port: &String) -> Result<f32> {

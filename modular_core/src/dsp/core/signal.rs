@@ -1,4 +1,4 @@
-use crate::types::{Param, Sampleable, SampleableConstructor};
+use crate::types::{Param, PatchMap, Sampleable, SampleableConstructor};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -22,8 +22,8 @@ impl Sampleable for Signal {
         *self.current_sample.try_lock().unwrap() = *self.next_sample.try_lock().unwrap();
     }
 
-    fn update(&self, patch: &std::collections::HashMap<String, Box<dyn Sampleable>>, _sample_rate: f32) -> () {
-        *self.next_sample.try_lock().unwrap() = self.params.source.get_value(patch)
+    fn update(&self, patch_map: &PatchMap, _sample_rate: f32) -> () {
+        *self.next_sample.try_lock().unwrap() = self.params.source.get_value(patch_map)
     }
 
     fn get_sample(&self, port: &String) -> Result<f32> {

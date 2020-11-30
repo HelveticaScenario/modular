@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::types::{Param, Sampleable, SampleableConstructor};
+use crate::types::{Param, PatchMap, Sampleable, SampleableConstructor};
 
 const NAME: &str = "ScaleAndShift";
 
@@ -23,15 +23,15 @@ struct ScaleAndShiftModule {
 }
 
 impl ScaleAndShiftModule {
-    fn update(&mut self, patch: &HashMap<String, Box<dyn Sampleable>>) -> () {
-        let input = self.params.input.get_value(patch);
+    fn update(&mut self, patch_map: &PatchMap) -> () {
+        let input = self.params.input.get_value(patch_map);
         let scale = if let Some(ref scale) = self.params.scale {
-            scale.get_value(patch)
+            scale.get_value(patch_map)
         } else {
             5.0
         };
         let shift =  if let Some(ref shift) = self.params.shift {
-            shift.get_value(patch)
+            shift.get_value(patch_map)
         } else {
             0.0
         };
@@ -51,8 +51,8 @@ impl Sampleable for ScaleAndShift {
         *self.sample.try_lock().unwrap() = self.module.try_lock().unwrap().sample;
     }
 
-    fn update(&self, patch: &HashMap<String, Box<dyn Sampleable>>, _sample_rate: f32) -> () {
-        self.module.try_lock().unwrap().update(patch);
+    fn update(&self, patch_map: &PatchMap, _sample_rate: f32) -> () {
+        self.module.try_lock().unwrap().update(patch_map);
     }
 
     fn get_sample(&self, port: &String) -> Result<f32> {

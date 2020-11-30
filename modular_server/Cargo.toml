@@ -1,15 +1,17 @@
 [package]
-name = "modular_core"
+name = "modular_server"
 version = "0.1.0"
-authors = ["helveticascenario"]
+authors = ["Daniel Lewis <daniel.lewis.software.engineer@gmail.com>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cpal = { version = "*", features = ["asio"] }
 anyhow = "1.0.34"
 serde_json = "1.0.59"
 serde = { version = "1.0.117", features = ["derive"] }
-lazy_static = "1.4.0"
-hound = "3.4.0"
+ctrlc = "3.1.7"
+rosc = "~0.4"
+clap = "~2"
+stringreader = "*"
+modular_core = { version = "*", path = "../modular_core"}

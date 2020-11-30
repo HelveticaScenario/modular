@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::types::{Param, Sampleable, SampleableConstructor};
+use crate::types::{Param, PatchMap, Sampleable, SampleableConstructor};
 
 const NAME: &str = "Sum";
 
@@ -21,9 +21,9 @@ struct SumModule {
 }
 
 impl SumModule {
-    fn update(&mut self, patch: &HashMap<String, Box<dyn Sampleable>>) -> () {
+    fn update(&mut self, patch_map: &PatchMap) -> () {
         self.sample = if let Some(ref inputs) = self.params.inputs {
-            inputs.iter().fold(0.0, |acc, x| acc + x.get_value(patch))
+            inputs.iter().fold(0.0, |acc, x| acc + x.get_value(patch_map))
         } else {
             0.0
         }
@@ -42,8 +42,8 @@ impl Sampleable for Sum {
         *self.sample.try_lock().unwrap() = self.module.try_lock().unwrap().sample;
     }
 
-    fn update(&self, patch: &HashMap<String, Box<dyn Sampleable>>, _sample_rate: f32) -> () {
-        self.module.try_lock().unwrap().update(patch);
+    fn update(&self, patch_map: &PatchMap, _sample_rate: f32) -> () {
+        self.module.try_lock().unwrap().update(patch_map);
     }
 
     fn get_sample(&self, port: &String) -> Result<f32> {

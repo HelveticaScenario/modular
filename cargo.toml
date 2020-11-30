@@ -1,4 +1,5 @@
 [workspace]
 members = [
     "modular_core",
+    "modular_server"
 ]
