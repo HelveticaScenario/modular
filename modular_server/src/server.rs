@@ -11,13 +11,8 @@ use rosc::{encoder, OscMessage, OscPacket, OscType};
 
 use crate::osc::{message_to_osc, osc_to_message};
 
-fn get_addr_from_arg(arg: &str) -> SocketAddrV4 {
-    SocketAddrV4::from_str(arg).unwrap()
-}
-
-pub fn start_sending_server(host_address: String, client_address: String, rx: Receiver<Message>) {
-    let host_addr = SocketAddrV4::from_str(&host_address).unwrap();
-    println!("{} {} ", host_address, client_address);
+pub fn start_sending_server(client_address: String, rx: Receiver<Message>) {
+    let host_addr = SocketAddrV4::from_str("0.0.0.0:0").unwrap();
     let to_addr = SocketAddrV4::from_str(&client_address).unwrap();
     let sock = UdpSocket::bind(host_addr).unwrap();
 
@@ -100,8 +95,7 @@ pub fn spawn_server(
         let host_address = host_address.clone();
         thread::spawn(move || start_recieving_server(host_address, tx))
     };
-    let sending_server_handle =
-        thread::spawn(move || start_sending_server(host_address, client_address, rx));
+    let sending_server_handle = thread::spawn(move || start_sending_server(client_address, rx));
 
     (recieving_server_handle, sending_server_handle)
 }
