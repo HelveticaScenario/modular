@@ -5,12 +5,15 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{types::PatchMap, dsp::{
+use crate::{dsp::utils::wrap, dsp::{
         consts::{LUT_SINE, LUT_SINE_SIZE},
         utils::{clamp, interpolate},
-    }, dsp::utils::wrap, types::{Param, Sampleable, SampleableConstructor}};
+    }, types::PatchMap, types::{ModuleSchema, OutputSchema, Param, ParamSchema, Sampleable, SampleableConstructor}};
 
-const NAME: &str = "SineOscillator";
+const NAME: &str = "sine-oscillator";
+const OUTPUT: &str = "output";
+const FREQ: &str = "freq";
+const PHASE: &str = "phase";
 
 #[derive(Serialize, Deserialize, Debug)]
 struct SineOscillatorParams {
@@ -63,7 +66,10 @@ impl Sampleable for SineOscillator {
     }
 
     fn update(&self, patch_map: &PatchMap, sample_rate: f32) -> () {
-        self.module.try_lock().unwrap().update(patch_map, sample_rate);
+        self.module
+            .try_lock()
+            .unwrap()
+            .update(patch_map, sample_rate);
     }
 
     fn get_sample(&self, port: &String) -> Result<f32> {
@@ -78,6 +84,29 @@ impl Sampleable for SineOscillator {
         ))
     }
 }
+
+pub const SCHEMA: ModuleSchema = ModuleSchema {
+    name: NAME,
+    description: "A sine wave oscillator",
+    params: &[
+        ParamSchema {
+            name: FREQ,
+            description: "frequency in v/oct",
+            required: false,
+        },
+        ParamSchema {
+            name: PHASE,
+            description: "the phase of the oscillator, overrides freq if present",
+            required: false
+        }
+    ],
+    outputs: &[
+        OutputSchema {
+            name: OUTPUT,
+            description: "signal output"
+        }
+    ]
+};
 
 fn constructor(id: &String, params: Value) -> Result<Box<dyn Sampleable>> {
     let params = serde_json::from_value(params)?;

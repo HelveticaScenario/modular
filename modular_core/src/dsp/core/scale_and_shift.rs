@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::types::{Param, PatchMap, Sampleable, SampleableConstructor};
 
-const NAME: &str = "ScaleAndShift";
+const NAME: &str = "scale-and-shift";
 
 #[derive(Serialize, Deserialize, Debug)]
 struct ScaleAndShiftParams {

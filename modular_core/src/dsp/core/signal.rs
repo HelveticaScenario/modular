@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::HashMap, sync::Mutex};
 
-const NAME: &str = "Signal";
+const NAME: &str = "signal";
 
 #[derive(Serialize, Deserialize, Debug)]
 struct SignalParams {

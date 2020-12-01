@@ -20,7 +20,7 @@ use std::{
 
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait};
-use message::Message;
+use message::{InputMessage, OutputMessage};
 use mpsc::Receiver;
 use patch::Patch;
 use thread::JoinHandle;
@@ -40,8 +40,8 @@ impl Modular {
 
     pub fn spawn(
         mut self,
-        incoming_rx: Receiver<Message>,
-        outgoing_tx: Sender<Message>,
+        incoming_rx: Receiver<InputMessage>,
+        outgoing_tx: Sender<OutputMessage>,
     ) -> JoinHandle<anyhow::Result<()>> {
         // let host = cpal::host_from_id(cpal::HostId::Asio).expect("failed to initialize ASIO host");
         let host = cpal::default_host();
@@ -66,7 +66,6 @@ impl Modular {
         })
     }
 }
-
 
 fn create_patch(configs: HashMap<String, Config>) -> Result<Patch> {
     let mut map = HashMap::new();

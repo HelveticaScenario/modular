@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::types::SampleableConstructor;
+use crate::types::{ModuleSchema, SampleableConstructor};
 
 pub mod core;
 pub mod oscillators;
@@ -13,4 +13,8 @@ pub fn get_constructors() -> HashMap<String, SampleableConstructor> {
     core::install_constructors(&mut map);
     oscillators::install_constructors(&mut map);
     return map;
+}
+
+pub fn schema() -> Vec<&'static ModuleSchema> {
+    oscillators::schemas()
 }

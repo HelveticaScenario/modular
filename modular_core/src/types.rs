@@ -49,4 +49,22 @@ impl Param {
     }
 }
 
+pub struct ParamSchema {
+    pub name: &'static str,
+    pub description: &'static str,
+    pub required: bool
+}
+
+pub struct OutputSchema {
+    pub name: &'static str,
+    pub description: &'static str,
+}
+
+pub struct ModuleSchema {
+    pub name: &'static str,
+    pub description: &'static str,
+    pub params: &'static [ParamSchema],
+    pub outputs: &'static [OutputSchema],
+}
+
 pub type SampleableConstructor = Box<dyn Fn(&String, Value) -> Result<Box<dyn Sampleable>>>;

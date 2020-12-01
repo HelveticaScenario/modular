@@ -6,12 +6,12 @@ use std::{
     thread::{self, JoinHandle},
 };
 
-use modular_core::message::Message;
+use modular_core::message::{InputMessage, OutputMessage};
 use rosc::{encoder, OscMessage, OscPacket, OscType};
 
 use crate::osc::{message_to_osc, osc_to_message};
 
-pub fn start_sending_server(client_address: String, rx: Receiver<Message>) {
+pub fn start_sending_server(client_address: String, rx: Receiver<OutputMessage>) {
     let host_addr = SocketAddrV4::from_str("0.0.0.0:0").unwrap();
     let to_addr = SocketAddrV4::from_str(&client_address).unwrap();
     let sock = UdpSocket::bind(host_addr).unwrap();
@@ -48,7 +48,7 @@ pub fn start_sending_server(client_address: String, rx: Receiver<Message>) {
     // }
 }
 
-pub fn start_recieving_server(host_address: String, tx: Sender<Message>) {
+pub fn start_recieving_server(host_address: String, tx: Sender<InputMessage>) {
     let addr = SocketAddrV4::from_str(&host_address).unwrap();
     let sock = UdpSocket::bind(addr).unwrap();
     println!("Listening to {}", addr);
@@ -58,10 +58,20 @@ pub fn start_recieving_server(host_address: String, tx: Sender<Message>) {
     loop {
         match sock.recv_from(&mut buf) {
             Ok((size, addr)) => {
-                println!("Received packet with size {} from: {}", size, addr);
-                let packet = rosc::decoder::decode(&buf[..size]).unwrap();
-                if let Some(message) = osc_to_message(packet) {
-                    tx.send(message);
+                println!(
+                    "Received packet with size {} from: {} data: {:?}",
+                    size,
+                    addr,
+                    &buf[..size]
+                );
+                match rosc::decoder::decode(&buf[..size]) {
+                    Ok(packet) => {
+                        println!("{:?}", packet);
+                        osc_to_message(packet, &tx)
+                    }
+                    Err(err) => {
+                        println!("{:?}", err);
+                    }
                 }
             }
             Err(e) => {
@@ -87,8 +97,8 @@ pub fn start_recieving_server(host_address: String, tx: Sender<Message>) {
 pub fn spawn_server(
     client_address: String,
     server_port: String,
-    tx: Sender<Message>,
-    rx: Receiver<Message>,
+    tx: Sender<InputMessage>,
+    rx: Receiver<OutputMessage>,
 ) -> (JoinHandle<()>, JoinHandle<()>) {
     let host_address = format!("127.0.0.1:{}", server_port);
     let recieving_server_handle = {

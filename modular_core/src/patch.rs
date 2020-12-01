@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use crate::{
-    message::{handle_message, Message},
+    message::{handle_message, InputMessage, OutputMessage},
     types::{PatchMap, ROOT_ID, ROOT_OUTPUT_PORT},
 };
 use cpal::traits::{DeviceTrait, StreamTrait};
@@ -23,8 +23,8 @@ impl Patch {
         &mut self,
         device: &cpal::Device,
         config: cpal::SupportedStreamConfig,
-        reciever: Receiver<Message>,
-        sender: Sender<Message>,
+        reciever: Receiver<InputMessage>,
+        sender: Sender<OutputMessage>,
     ) -> Result<(), anyhow::Error>
     where
         T: cpal::Sample,

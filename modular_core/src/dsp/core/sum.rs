@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::types::{Param, PatchMap, Sampleable, SampleableConstructor};
 
-const NAME: &str = "Sum";
+const NAME: &str = "sum";
 
 #[derive(Serialize, Deserialize, Debug)]
 struct SumParams {

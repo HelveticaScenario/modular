@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::types::{Param, PatchMap, Sampleable, SampleableConstructor};
 
-const NAME: &str = "Mix";
+const NAME: &str = "mix";
 
 #[derive(Serialize, Deserialize, Debug)]
 struct MixParams {

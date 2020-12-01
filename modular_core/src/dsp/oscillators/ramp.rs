@@ -5,9 +5,12 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{types::PatchMap, dsp::utils::wrap, dsp::utils::{clamp, interpolate}, types::{Param, Sampleable, SampleableConstructor}};
+use crate::{dsp::utils::wrap, dsp::utils::{clamp, interpolate}, types::PatchMap, types::{ModuleSchema, OutputSchema, Param, ParamSchema, Sampleable, SampleableConstructor}};
 
-const NAME: &str = "RampOscillator";
+const NAME: &str = "ramp-oscillator";
+const OUTPUT: &str = "output";
+const FREQ: &str = "freq";
+const PHASE: &str = "phase";
 
 #[derive(Serialize, Deserialize, Debug)]
 struct RampOscillatorParams {
@@ -75,6 +78,29 @@ impl Sampleable for RampOscillator {
         ))
     }
 }
+
+pub const SCHEMA: ModuleSchema = ModuleSchema {
+    name: NAME,
+    description: "A ramp oscillator",
+    params: &[
+        ParamSchema {
+            name: FREQ,
+            description: "frequency in v/oct",
+            required: false,
+        },
+        ParamSchema {
+            name: PHASE,
+            description: "the phase of the oscillator, overrides freq if present",
+            required: false
+        }
+    ],
+    outputs: &[
+        OutputSchema {
+            name: OUTPUT,
+            description: "signal output"
+        }
+    ]
+};
 
 fn constructor(id: &String, params: Value) -> Result<Box<dyn Sampleable>> {
     let params = serde_json::from_value(params)?;
