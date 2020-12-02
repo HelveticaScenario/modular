@@ -12,6 +12,7 @@ pub trait Sampleable: Send {
     fn tick(&self) -> ();
     fn update(&self, patch_map: &PatchMap, sample_rate: f32) -> ();
     fn get_sample(&self, port: &String) -> Result<f32>;
+    fn get_state(&self) -> ModuleState;
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -22,7 +23,7 @@ pub struct Config {
 
 pub type PatchMap = HashMap<String, Box<dyn Sampleable>>;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "param_type")]
 pub enum Param {
     Value { value: f32 },
@@ -52,7 +53,7 @@ impl Param {
 pub struct ParamSchema {
     pub name: &'static str,
     pub description: &'static str,
-    pub required: bool
+    pub required: bool,
 }
 
 pub struct OutputSchema {
@@ -65,6 +66,12 @@ pub struct ModuleSchema {
     pub description: &'static str,
     pub params: &'static [ParamSchema],
     pub outputs: &'static [OutputSchema],
+}
+
+pub struct ModuleState {
+    pub id: String,
+    pub module_type: String,
+    pub params: HashMap<String, Option<Vec<Param>>>,
 }
 
 pub type SampleableConstructor = Box<dyn Fn(&String, Value) -> Result<Box<dyn Sampleable>>>;

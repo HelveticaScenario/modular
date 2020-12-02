@@ -57,6 +57,10 @@ impl Sampleable for Sum {
             port
         ))
     }
+
+    fn get_state(&self) -> crate::types::ModuleState {
+        todo!()
+    }
 }
 
 fn constructor(id: &String, params: Value) -> Result<Box<dyn Sampleable>> {

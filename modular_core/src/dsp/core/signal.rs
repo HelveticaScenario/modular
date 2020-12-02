@@ -1,4 +1,4 @@
-use crate::types::{Param, PatchMap, Sampleable, SampleableConstructor};
+use crate::types::{ModuleState, Param, PatchMap, Sampleable, SampleableConstructor};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -8,7 +8,7 @@ const NAME: &str = "signal";
 
 #[derive(Serialize, Deserialize, Debug)]
 struct SignalParams {
-    source: Param
+    source: Param,
 }
 struct Signal {
     id: String,
@@ -35,6 +35,18 @@ impl Sampleable for Signal {
             ));
         }
         Ok(*self.current_sample.try_lock().unwrap())
+    }
+
+    fn get_state(&self) -> crate::types::ModuleState {
+        let mut params_map = HashMap::new();
+        let ref params = self.params;
+        params_map.insert("source".to_owned(), Some(vec![params.source.clone()]));
+
+        ModuleState {
+            module_type: NAME.to_owned(),
+            id: self.id.clone(),
+            params: params_map,
+        }
     }
 }
 

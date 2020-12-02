@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::types::{Param, PatchMap, Sampleable, SampleableConstructor};
+use crate::types::{ModuleState, Param, PatchMap, Sampleable, SampleableConstructor};
 
 const NAME: &str = "mix";
 
@@ -23,7 +23,10 @@ struct MixModule {
 impl MixModule {
     fn update(&mut self, patch_map: &PatchMap) -> () {
         self.sample = if let Some(ref inputs) = self.params.inputs {
-            inputs.iter().fold(0.0, |acc, x| acc + x.get_value(patch_map)) / inputs.len() as f32
+            inputs
+                .iter()
+                .fold(0.0, |acc, x| acc + x.get_value(patch_map))
+                / inputs.len() as f32
         } else {
             0.0
         }
@@ -56,6 +59,24 @@ impl Sampleable for Mix {
             self.id,
             port
         ))
+    }
+
+    fn get_state(&self) -> crate::types::ModuleState {
+        let mut params = HashMap::new();
+
+        params.insert(
+            "inputs".to_owned(),
+            if let Some(ref inputs) = self.module.lock().unwrap().params.inputs {
+                Some(inputs.iter().map(|input| input.clone()).collect())
+            } else {
+                None
+            },
+        );
+        ModuleState {
+            module_type: NAME.to_owned(),
+            id: self.id.clone(),
+            params,
+        }
     }
 }
 

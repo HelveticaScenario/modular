@@ -1,15 +1,17 @@
 use std::sync::mpsc::Sender;
 
-use crate::{patch::Patch, types::ModuleSchema, dsp::schema};
+use crate::{dsp::schema, patch::Patch, types::ModuleSchema};
 
 pub enum InputMessage {
     Echo(String),
     Schema,
+    GetPatch,
 }
 
 pub enum OutputMessage {
     Echo(String),
-    Schema(Vec<&'static ModuleSchema>)
+    Schema(Vec<&'static ModuleSchema>),
+    ModuleState(),
 }
 
 pub fn handle_message(
@@ -18,12 +20,11 @@ pub fn handle_message(
     sender: &Sender<OutputMessage>,
 ) -> anyhow::Result<()> {
     let patch_map = patch.map.clone();
-    println!(
-        "{:?}",
-        match message {
-            InputMessage::Echo(s) => sender.send(OutputMessage::Echo(format!("{}!", s))),
-            InputMessage::Schema => sender.send(OutputMessage::Schema(schema()))
-        }
-    );
+    let res = match message {
+        InputMessage::Echo(s) => sender.send(OutputMessage::Echo(format!("{}!", s))),
+        InputMessage::Schema => sender.send(OutputMessage::Schema(schema())),
+        InputMessage::GetPatch => Ok(()),
+    };
+    println!("{:?}", res);
     Ok(())
 }

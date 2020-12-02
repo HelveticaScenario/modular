@@ -77,6 +77,10 @@ impl Sampleable for RampOscillator {
             port
         ))
     }
+
+    fn get_state(&self) -> crate::types::ModuleState {
+        todo!()
+    }
 }
 
 pub const SCHEMA: ModuleSchema = ModuleSchema {

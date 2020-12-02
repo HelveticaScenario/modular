@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::types::{Param, PatchMap, Sampleable, SampleableConstructor};
+use crate::types::{ModuleState, Param, PatchMap, Sampleable, SampleableConstructor};
 
 const NAME: &str = "scale-and-shift";
 
@@ -30,7 +30,7 @@ impl ScaleAndShiftModule {
         } else {
             5.0
         };
-        let shift =  if let Some(ref shift) = self.params.shift {
+        let shift = if let Some(ref shift) = self.params.shift {
             shift.get_value(patch_map)
         } else {
             0.0
@@ -65,6 +65,33 @@ impl Sampleable for ScaleAndShift {
             self.id,
             port
         ))
+    }
+
+    fn get_state(&self) -> crate::types::ModuleState {
+        let mut params_map = HashMap::new();
+        let ref params = self.module.lock().unwrap().params;
+        params_map.insert("input".to_owned(), Some(vec![params.input.clone()]));
+        params_map.insert(
+            "scale".to_owned(),
+            if let Some(ref scale) = params.scale {
+                Some(vec![scale.clone()])
+            } else {
+                None
+            },
+        );
+        params_map.insert(
+            "shift".to_owned(),
+            if let Some(ref shift) = params.shift {
+                Some(vec![shift.clone()])
+            } else {
+                None
+            },
+        );
+        ModuleState {
+            module_type: NAME.to_owned(),
+            id: self.id.clone(),
+            params: params_map,
+        }
     }
 }
 

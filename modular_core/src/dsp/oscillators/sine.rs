@@ -83,6 +83,10 @@ impl Sampleable for SineOscillator {
             port
         ))
     }
+
+    fn get_state(&self) -> crate::types::ModuleState {
+        todo!()
+    }
 }
 
 pub const SCHEMA: ModuleSchema = ModuleSchema {

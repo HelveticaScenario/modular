@@ -7,45 +7,22 @@ use std::{
 };
 
 use modular_core::message::{InputMessage, OutputMessage};
-use rosc::{encoder, OscMessage, OscPacket, OscType};
+use rosc::encoder;
 
 use crate::osc::{message_to_osc, osc_to_message};
 
 pub fn start_sending_server(client_address: String, rx: Receiver<OutputMessage>) {
     let host_addr = SocketAddrV4::from_str("0.0.0.0:0").unwrap();
     let to_addr = SocketAddrV4::from_str(&client_address).unwrap();
+    println!("Sending to {}", to_addr);
     let sock = UdpSocket::bind(host_addr).unwrap();
 
     for message in rx {
-        let msg_buf = encoder::encode(&message_to_osc(message)).unwrap();
-        sock.send_to(&msg_buf, to_addr).unwrap();
+        for packet in message_to_osc(message) {
+            let msg_buf = encoder::encode(&packet).unwrap();
+            sock.send_to(&msg_buf, to_addr).unwrap();
+        }
     }
-
-    // // send random values to xy fields
-    // &OscPacket::Message(OscMessage {
-    //     addr: "/3".to_string(),
-    //     args: vec![],
-    // })
-    // let steps = 128;
-    // let step_size: f32 = 2.0 * f32::consts::PI / steps as f32;
-    // for i in 0.. {
-    //     let x = 0.5 + (step_size * (i % steps) as f32).sin() / 2.0;
-    //     let y = 0.5 + (step_size * (i % steps) as f32).cos() / 2.0;
-    //     let mut msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-    //         addr: "/3/xy1".to_string(),
-    //         args: vec![OscType::Float(x), OscType::Float(y)],
-    //     }))
-    //     .unwrap();
-
-    //     sock.send_to(&msg_buf, to_addr).unwrap();
-    //     msg_buf = encoder::encode(&OscPacket::Message(OscMessage {
-    //         addr: "/3/xy2".to_string(),
-    //         args: vec![OscType::Float(y), OscType::Float(x)],
-    //     }))
-    //     .unwrap();
-    //     sock.send_to(&msg_buf, to_addr).unwrap();
-    //     thread::sleep(Duration::from_millis(20));
-    // }
 }
 
 pub fn start_recieving_server(host_address: String, tx: Sender<InputMessage>) {
@@ -81,18 +58,6 @@ pub fn start_recieving_server(host_address: String, tx: Sender<InputMessage>) {
         }
     }
 }
-
-// fn handle_packet(packet: OscPacket, tx: &Sender<Message>) {
-//     match packet {
-//         OscPacket::Message(msg) => {
-//             println!("OSC address: {}", msg.addr);
-//             println!("OSC arguments: {:?}", msg.args);
-//         }
-//         OscPacket::Bundle(bundle) => {
-//             println!("OSC Bundle: {:?}", bundle);
-//         }
-//     }
-// }
 
 pub fn spawn_server(
     client_address: String,
