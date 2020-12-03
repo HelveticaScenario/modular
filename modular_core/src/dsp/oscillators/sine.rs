@@ -5,10 +5,18 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{dsp::utils::wrap, dsp::{
+use crate::{
+    dsp::utils::wrap,
+    dsp::{
         consts::{LUT_SINE, LUT_SINE_SIZE},
         utils::{clamp, interpolate},
-    }, types::PatchMap, types::{ModuleSchema, OutputSchema, Param, ParamSchema, Sampleable, SampleableConstructor}};
+    },
+    types::PatchMap,
+    types::{
+        ModuleSchema, ModuleState, OutputSchema, Param, ParamSchema, Sampleable,
+        SampleableConstructor,
+    },
+};
 
 const NAME: &str = "sine-oscillator";
 const OUTPUT: &str = "output";
@@ -73,7 +81,7 @@ impl Sampleable for SineOscillator {
     }
 
     fn get_sample(&self, port: &String) -> Result<f32> {
-        if port == "output" {
+        if port == OUTPUT {
             return Ok(*self.sample.try_lock().unwrap());
         }
         Err(anyhow!(
@@ -85,7 +93,15 @@ impl Sampleable for SineOscillator {
     }
 
     fn get_state(&self) -> crate::types::ModuleState {
-        todo!()
+        let mut param_map = HashMap::new();
+        let ref params = self.module.lock().unwrap().params;
+        param_map.insert(FREQ.to_owned(), params.freq.clone());
+        param_map.insert(PHASE.to_owned(), params.phase.clone());
+        ModuleState {
+            module_type: NAME.to_owned(),
+            id: self.id.clone(),
+            params: param_map,
+        }
     }
 }
 
@@ -101,15 +117,13 @@ pub const SCHEMA: ModuleSchema = ModuleSchema {
         ParamSchema {
             name: PHASE,
             description: "the phase of the oscillator, overrides freq if present",
-            required: false
-        }
+            required: false,
+        },
     ],
-    outputs: &[
-        OutputSchema {
-            name: OUTPUT,
-            description: "signal output"
-        }
-    ]
+    outputs: &[OutputSchema {
+        name: OUTPUT,
+        description: "signal output",
+    }],
 };
 
 fn constructor(id: &String, params: Value) -> Result<Box<dyn Sampleable>> {

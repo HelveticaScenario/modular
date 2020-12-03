@@ -5,9 +5,16 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::types::{ModuleState, Param, PatchMap, Sampleable, SampleableConstructor};
+use crate::types::{
+    ModuleSchema, ModuleState, OutputSchema, Param, ParamSchema, PatchMap, Sampleable,
+    SampleableConstructor,
+};
 
 const NAME: &str = "scale-and-shift";
+const INPUT: &str = "input";
+const SCALE: &str = "scale";
+const SHIFT: &str = "shift";
+const OUTPUT: &str = "output";
 
 #[derive(Serialize, Deserialize, Debug)]
 struct ScaleAndShiftParams {
@@ -56,7 +63,7 @@ impl Sampleable for ScaleAndShift {
     }
 
     fn get_sample(&self, port: &String) -> Result<f32> {
-        if port == "output" {
+        if port == OUTPUT {
             return Ok(*self.sample.try_lock().unwrap());
         }
         Err(anyhow!(
@@ -70,23 +77,9 @@ impl Sampleable for ScaleAndShift {
     fn get_state(&self) -> crate::types::ModuleState {
         let mut params_map = HashMap::new();
         let ref params = self.module.lock().unwrap().params;
-        params_map.insert("input".to_owned(), Some(vec![params.input.clone()]));
-        params_map.insert(
-            "scale".to_owned(),
-            if let Some(ref scale) = params.scale {
-                Some(vec![scale.clone()])
-            } else {
-                None
-            },
-        );
-        params_map.insert(
-            "shift".to_owned(),
-            if let Some(ref shift) = params.shift {
-                Some(vec![shift.clone()])
-            } else {
-                None
-            },
-        );
+        params_map.insert(INPUT.to_owned(), Some(params.input.clone()));
+        params_map.insert(SCALE.to_owned(), params.scale.clone());
+        params_map.insert(SHIFT.to_owned(), params.shift.clone());
         ModuleState {
             module_type: NAME.to_owned(),
             id: self.id.clone(),
@@ -95,13 +88,39 @@ impl Sampleable for ScaleAndShift {
     }
 }
 
+pub const SCHEMA: ModuleSchema = ModuleSchema {
+    name: NAME,
+    description: "attenuate, invert, offset",
+    params: &[
+        ParamSchema {
+            name: INPUT,
+            description: "signal input",
+            required: true,
+        },
+        ParamSchema {
+            name: SCALE,
+            description: "scale factor",
+            required: false,
+        },
+        ParamSchema {
+            name: SHIFT,
+            description: "shift amount",
+            required: false,
+        },
+    ],
+    outputs: &[OutputSchema {
+        name: OUTPUT,
+        description: "signal output",
+    }],
+};
+
 fn constructor(id: &String, params: Value) -> Result<Box<dyn Sampleable>> {
-    let sine_params = serde_json::from_value(params)?;
+    let params = serde_json::from_value(params)?;
     Ok(Box::new(ScaleAndShift {
         id: id.clone(),
         sample: Mutex::new(0.0),
         module: Mutex::new(ScaleAndShiftModule {
-            params: sine_params,
+            params,
             sample: 0.0,
         }),
     }))

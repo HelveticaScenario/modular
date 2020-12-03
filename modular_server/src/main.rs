@@ -7,7 +7,7 @@ use std::{fs::File, io::Read, sync::mpsc};
 
 use clap::{App, Arg, ArgMatches};
 use modular_core::Modular;
-use server::{spawn_server};
+use server::spawn_server;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use stringreader::StringReader;
@@ -27,12 +27,12 @@ fn main() -> anyhow::Result<()> {
         Box::new(StringReader::new("{}"))
     };
     let modular = Modular::new(serde_json::from_reader(config_file)?)?;
-    let modular_handle = modular.spawn(incoming_rx, outgoing_tx);
+    let _modular_handle = modular.spawn(incoming_rx, outgoing_tx);
     let running = Arc::new(AtomicBool::new(true));
     let client_address = matches.value_of(CLIENT_ARG).unwrap();
     let port = matches.value_of(PORT_ARG).unwrap();
 
-    let (recieving_server_handle, sending_server_handle) = spawn_server(
+    let (_recieving_server_handle, _sending_server_handlee) = spawn_server(
         client_address.to_owned(),
         port.to_owned(),
         incoming_tx,

@@ -1,46 +1,58 @@
-use crate::types::{ModuleState, Param, PatchMap, Sampleable, SampleableConstructor};
+use crate::types::{ModuleSchema, ModuleState, OutputSchema, Param, ParamSchema, PatchMap, Sampleable, SampleableConstructor};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::HashMap, sync::Mutex};
 
 const NAME: &str = "signal";
+const SOURCE: &str = "source";
+const OUTPUT: &str = "output";
 
 #[derive(Serialize, Deserialize, Debug)]
 struct SignalParams {
     source: Param,
 }
+struct SignalModule {
+    sample: f32,
+    params: SignalParams,
+}
+
+impl SignalModule {
+    fn update(&mut self, patch_map: &PatchMap) -> () {
+        self.sample = self.params.source.get_value(patch_map);
+    }
+}
+
 struct Signal {
     id: String,
-    current_sample: Mutex<f32>,
-    next_sample: Mutex<f32>,
-    params: SignalParams,
+    sample: Mutex<f32>,
+    module: Mutex<SignalModule>,
 }
 
 impl Sampleable for Signal {
     fn tick(&self) -> () {
-        *self.current_sample.try_lock().unwrap() = *self.next_sample.try_lock().unwrap();
+        *self.sample.try_lock().unwrap() = self.module.try_lock().unwrap().sample;
     }
 
     fn update(&self, patch_map: &PatchMap, _sample_rate: f32) -> () {
-        *self.next_sample.try_lock().unwrap() = self.params.source.get_value(patch_map)
+        self.module.try_lock().unwrap().update(patch_map);
     }
 
     fn get_sample(&self, port: &String) -> Result<f32> {
-        if port != "output" {
+        if port != OUTPUT {
             return Err(anyhow!(
                 "Signal Destination with id {} has no port {}",
                 self.id,
                 port
             ));
         }
-        Ok(*self.current_sample.try_lock().unwrap())
+        Ok(*self.sample.try_lock().unwrap())
     }
 
     fn get_state(&self) -> crate::types::ModuleState {
         let mut params_map = HashMap::new();
-        let ref params = self.params;
-        params_map.insert("source".to_owned(), Some(vec![params.source.clone()]));
+        let ref params = self.module.lock().unwrap().params;
+        params_map.insert(SOURCE.to_owned(), Some(params.source.clone()));
 
         ModuleState {
             module_type: NAME.to_owned(),
@@ -50,13 +62,29 @@ impl Sampleable for Signal {
     }
 }
 
+pub const SCHEMA: ModuleSchema = ModuleSchema {
+    name: NAME,
+    description: "a signal",
+    params: &[ParamSchema {
+        name: SOURCE,
+        description: "source",
+        required: true,
+    }],
+    outputs: &[OutputSchema {
+        name: OUTPUT,
+        description: "signal output",
+    }],
+};
+
 fn constructor(id: &String, params: Value) -> Result<Box<dyn Sampleable>> {
     let params = serde_json::from_value(params)?;
     Ok(Box::new(Signal {
         id: id.clone(),
-        current_sample: Mutex::new(0.0),
-        next_sample: Mutex::new(0.0),
-        params,
+        sample: Mutex::new(0.0),
+        module: Mutex::new(SignalModule {
+            sample: 0.0,
+            params,
+        }),
     }))
 }
 

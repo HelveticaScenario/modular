@@ -24,7 +24,7 @@ pub struct Config {
 pub type PatchMap = HashMap<String, Box<dyn Sampleable>>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(tag = "param_type")]
+#[serde(tag = "param_type", rename_all = "kebab-case")]
 pub enum Param {
     Value { value: f32 },
     Note { value: u8 },
@@ -71,7 +71,7 @@ pub struct ModuleSchema {
 pub struct ModuleState {
     pub id: String,
     pub module_type: String,
-    pub params: HashMap<String, Option<Vec<Param>>>,
+    pub params: HashMap<String, Option<Param>>,
 }
 
 pub type SampleableConstructor = Box<dyn Fn(&String, Value) -> Result<Box<dyn Sampleable>>>;

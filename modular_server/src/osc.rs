@@ -1,6 +1,9 @@
 use std::{sync::mpsc::Sender, vec};
 
-use modular_core::message::{InputMessage, OutputMessage};
+use modular_core::{
+    message::{InputMessage, OutputMessage},
+    types::ModuleState,
+};
 use rosc::{OscBundle, OscMessage, OscPacket, OscType};
 
 fn bndl(content: Vec<OscPacket>) -> OscPacket {
@@ -15,6 +18,44 @@ fn msg(addr: &str, args: Vec<OscType>) -> OscPacket {
         addr: addr.to_owned(),
         args,
     })
+}
+
+fn make_module_state_bndl(state: &ModuleState) -> OscPacket {
+    let base = format!("/module/{}", state.id);
+    let module_type = state.module_type.clone();
+    bndl(
+        [
+            vec![msg(&base, vec![OscType::String(module_type)])],
+            state
+                .params
+                .iter()
+                .map(|(key, maybe_param)| {
+                    msg(
+                        &format!("{}/param/{}", &base, key),
+                        match maybe_param {
+                            Some(ref param) => match param {
+                                modular_core::types::Param::Value { value } => {
+                                    [OscType::String("value".into()), OscType::Float(*value)].into()
+                                }
+                                modular_core::types::Param::Note { value } => {
+                                    [OscType::String("note".into()), OscType::Int(*value as i32)]
+                                        .into()
+                                }
+                                modular_core::types::Param::Cable { module, port } => [
+                                    OscType::String("cable".into()),
+                                    OscType::String(module.clone()),
+                                    OscType::String(port.clone()),
+                                ]
+                                .into(),
+                            },
+                            None => [OscType::Nil].into(),
+                        },
+                    )
+                })
+                .collect(),
+        ]
+        .concat(),
+    )
 }
 
 pub fn message_to_osc(message: OutputMessage) -> Vec<OscPacket> {
@@ -54,9 +95,17 @@ pub fn message_to_osc(message: OutputMessage) -> Vec<OscPacket> {
                 bndl(vec![description, params, outputs].concat())
             })
             .collect(),
-        OutputMessage::ModuleState() => {
-            vec![]
+        OutputMessage::ModuleState(id, state) => {
+            if let Some(ref state) = state {
+                vec![make_module_state_bndl(state)]
+            } else {
+                vec![msg(&format!("/module/{}", id), vec![OscType::Nil])]
+            }
         }
+        OutputMessage::PatchState(state) => state
+            .iter()
+            .map(|module| make_module_state_bndl(module))
+            .collect(),
     }
 }
 
@@ -75,7 +124,14 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<InputMessage>) {
                 }
             }
             "/schema" => send(InputMessage::Schema, tx),
-            _ => {}
+            "/modules" => send(InputMessage::GetModules, tx),
+            addr => {
+                let s: Vec<&str> = addr.split("/").filter(|s| *s != "").collect();
+                println!("{:?}", s);
+                if let (Some(&"module"), Some(id), None) = (s.get(0), s.get(1), s.get(2)) {
+                    send(InputMessage::GetModule(String::from(*id)), tx);
+                }
+            }
         },
         OscPacket::Bundle(bundle) => {
             for p in bundle.content {

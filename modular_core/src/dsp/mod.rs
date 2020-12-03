@@ -2,11 +2,10 @@ use std::collections::HashMap;
 
 use crate::types::{ModuleSchema, SampleableConstructor};
 
+pub mod consts;
 pub mod core;
 pub mod oscillators;
 pub mod utils;
-pub mod consts;
-
 
 pub fn get_constructors() -> HashMap<String, SampleableConstructor> {
     let mut map = HashMap::new();
@@ -16,5 +15,5 @@ pub fn get_constructors() -> HashMap<String, SampleableConstructor> {
 }
 
 pub fn schema() -> Vec<&'static ModuleSchema> {
-    oscillators::schemas()
+    [core::schemas(), oscillators::schemas()].concat()
 }
