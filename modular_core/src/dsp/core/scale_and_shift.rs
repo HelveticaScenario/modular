@@ -5,10 +5,7 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::types::{
-    ModuleSchema, ModuleState, OutputSchema, Param, ParamSchema, PatchMap, Sampleable,
-    SampleableConstructor,
-};
+use crate::types::{ModuleSchema, ModuleState, Param, PatchMap, PortSchema, Sampleable, SampleableConstructor};
 
 const NAME: &str = "scale-and-shift";
 const INPUT: &str = "input";
@@ -19,8 +16,8 @@ const OUTPUT: &str = "output";
 #[derive(Serialize, Deserialize, Debug)]
 struct ScaleAndShiftParams {
     input: Param,
-    scale: Option<Param>,
-    shift: Option<Param>,
+    scale: Param,
+    shift: Param,
 }
 
 #[derive(Debug)]
@@ -32,16 +29,8 @@ struct ScaleAndShiftModule {
 impl ScaleAndShiftModule {
     fn update(&mut self, patch_map: &PatchMap) -> () {
         let input = self.params.input.get_value(patch_map);
-        let scale = if let Some(ref scale) = self.params.scale {
-            scale.get_value(patch_map)
-        } else {
-            5.0
-        };
-        let shift = if let Some(ref shift) = self.params.shift {
-            shift.get_value(patch_map)
-        } else {
-            0.0
-        };
+        let scale = self.params.scale.get_value_or(patch_map, 5.0);
+        let shift = self.params.shift.get_value(patch_map);
         self.sample = input * (scale / 5.0) + shift
     }
 }
@@ -77,7 +66,7 @@ impl Sampleable for ScaleAndShift {
     fn get_state(&self) -> crate::types::ModuleState {
         let mut params_map = HashMap::new();
         let ref params = self.module.lock().unwrap().params;
-        params_map.insert(INPUT.to_owned(), Some(params.input.clone()));
+        params_map.insert(INPUT.to_owned(), params.input.clone());
         params_map.insert(SCALE.to_owned(), params.scale.clone());
         params_map.insert(SHIFT.to_owned(), params.shift.clone());
         ModuleState {
@@ -92,23 +81,20 @@ pub const SCHEMA: ModuleSchema = ModuleSchema {
     name: NAME,
     description: "attenuate, invert, offset",
     params: &[
-        ParamSchema {
+        PortSchema {
             name: INPUT,
             description: "signal input",
-            required: true,
         },
-        ParamSchema {
+        PortSchema {
             name: SCALE,
             description: "scale factor",
-            required: false,
         },
-        ParamSchema {
+        PortSchema {
             name: SHIFT,
             description: "shift amount",
-            required: false,
         },
     ],
-    outputs: &[OutputSchema {
+    outputs: &[PortSchema {
         name: OUTPUT,
         description: "signal output",
     }],

@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::types::{
-    ModuleSchema, ModuleState, OutputSchema, Param, ParamSchema, PatchMap, Sampleable,
-    SampleableConstructor,
+    ModuleSchema, ModuleState, Param, PatchMap, PortSchema, Sampleable, SampleableConstructor,
 };
 
 const NAME: &str = "mix";
@@ -19,10 +18,10 @@ const OUTPUT: &str = "output";
 
 #[derive(Serialize, Deserialize, Debug)]
 struct MixParams {
-    input1: Option<Param>,
-    input2: Option<Param>,
-    input3: Option<Param>,
-    input4: Option<Param>,
+    input1: Param,
+    input2: Param,
+    input3: Param,
+    input4: Param,
 }
 
 #[derive(Debug)]
@@ -39,15 +38,13 @@ impl MixModule {
             &self.params.input3,
             &self.params.input4,
         ];
-        let count = inputs.iter().filter(|input| input.is_some()).count();
+        let count = inputs.iter().filter(|input| ***input != Param::Disconnected).count();
 
         self.sample = if count > 0 {
-            inputs.iter().fold(0.0, |acc, x| {
-                acc + match x {
-                    Some(ref p) => p.get_value(patch_map),
-                    None => 0.0,
-                }
-            }) / count as f32
+            inputs
+                .iter()
+                .fold(0.0, |acc, x| acc + x.get_value(patch_map))
+                / count as f32
         } else {
             0.0
         }
@@ -101,28 +98,24 @@ pub const SCHEMA: ModuleSchema = ModuleSchema {
     name: NAME,
     description: "A 4 channel mixer",
     params: &[
-        ParamSchema {
+        PortSchema {
             name: INPUT_1,
             description: "a signal input",
-            required: false,
         },
-        ParamSchema {
+        PortSchema {
             name: INPUT_2,
             description: "a signal input",
-            required: false,
         },
-        ParamSchema {
+        PortSchema {
             name: INPUT_3,
             description: "a signal input",
-            required: false,
         },
-        ParamSchema {
+        PortSchema {
             name: INPUT_4,
             description: "a signal input",
-            required: false,
         },
     ],
-    outputs: &[OutputSchema {
+    outputs: &[PortSchema {
         name: OUTPUT,
         description: "signal output",
     }],

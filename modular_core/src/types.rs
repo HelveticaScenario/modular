@@ -23,12 +23,13 @@ pub struct Config {
 
 pub type PatchMap = HashMap<String, Box<dyn Sampleable>>;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "param_type", rename_all = "kebab-case")]
 pub enum Param {
     Value { value: f32 },
     Note { value: u8 },
     Cable { module: String, port: String },
+    Disconnected,
 }
 
 impl Param {
@@ -46,17 +47,18 @@ impl Param {
                     default
                 }
             }
+            Param::Disconnected => default,
         }
     }
 }
 
-pub struct ParamSchema {
-    pub name: &'static str,
-    pub description: &'static str,
-    pub required: bool,
+impl Default for Param {
+    fn default() -> Self {
+        Param::Disconnected
+    }
 }
 
-pub struct OutputSchema {
+pub struct PortSchema {
     pub name: &'static str,
     pub description: &'static str,
 }
@@ -64,14 +66,14 @@ pub struct OutputSchema {
 pub struct ModuleSchema {
     pub name: &'static str,
     pub description: &'static str,
-    pub params: &'static [ParamSchema],
-    pub outputs: &'static [OutputSchema],
+    pub params: &'static [PortSchema],
+    pub outputs: &'static [PortSchema],
 }
 
 pub struct ModuleState {
     pub id: String,
     pub module_type: String,
-    pub params: HashMap<String, Option<Param>>,
+    pub params: HashMap<String, Param>,
 }
 
 pub type SampleableConstructor = Box<dyn Fn(&String, Value) -> Result<Box<dyn Sampleable>>>;

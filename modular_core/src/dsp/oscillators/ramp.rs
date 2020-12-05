@@ -10,7 +10,7 @@ use crate::{
     dsp::utils::wrap,
     types::PatchMap,
     types::{
-        ModuleSchema, ModuleState, OutputSchema, Param, ParamSchema, Sampleable,
+        ModuleSchema, ModuleState, PortSchema, Param, Sampleable,
         SampleableConstructor,
     },
 };
@@ -22,8 +22,8 @@ const PHASE: &str = "phase";
 
 #[derive(Serialize, Deserialize, Debug)]
 struct RampOscillatorParams {
-    freq: Option<Param>,
-    phase: Option<Param>,
+    freq: Param,
+    phase: Param,
 }
 
 #[derive(Debug)]
@@ -35,15 +35,11 @@ struct RampOscillatorModule {
 
 impl RampOscillatorModule {
     fn update(&mut self, patch_map: &PatchMap, sample_rate: f32) -> () {
-        if let Some(ref phase) = self.params.phase {
-            self.sample = wrap(0.0..1.0, phase.get_value(patch_map));
+        if self.params.phase != Param::Disconnected {
+            self.sample = wrap(0.0..1.0, self.params.phase.get_value(patch_map));
         } else {
             let voltage = clamp(
-                if let Some(ref freq) = self.params.freq {
-                    freq.get_value_or(patch_map, 4.0)
-                } else {
-                    4.0
-                },
+                self.params.freq.get_value_or(patch_map, 4.0),
                 12.0,
                 0.0,
             );
@@ -106,18 +102,16 @@ pub const SCHEMA: ModuleSchema = ModuleSchema {
     name: NAME,
     description: "A ramp oscillator",
     params: &[
-        ParamSchema {
+        PortSchema {
             name: FREQ,
             description: "frequency in v/oct",
-            required: false,
         },
-        ParamSchema {
+        PortSchema {
             name: PHASE,
             description: "the phase of the oscillator, overrides freq if present",
-            required: false,
         },
     ],
-    outputs: &[OutputSchema {
+    outputs: &[PortSchema {
         name: OUTPUT,
         description: "signal output",
     }],

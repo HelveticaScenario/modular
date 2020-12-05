@@ -1,12 +1,14 @@
 use std::sync::mpsc::Sender;
 
-use crate::{dsp::schema, patch::Patch, types::ModuleSchema, types::ModuleState};
+use crate::{dsp::schema, patch::Patch, types::ModuleSchema, types::{ModuleState, Param}};
 
 pub enum InputMessage {
     Echo(String),
     Schema,
     GetModules,
     GetModule(String),
+    CreateModule(String),
+    UpdateParam(String, String, Param),
 }
 
 pub enum OutputMessage {
@@ -14,6 +16,7 @@ pub enum OutputMessage {
     Schema(Vec<&'static ModuleSchema>),
     PatchState(Vec<ModuleState>),
     ModuleState(String, Option<ModuleState>),
+    CreateModule(String, String),
 }
 
 pub fn handle_message(
@@ -43,6 +46,8 @@ pub fn handle_message(
                 .map(|module| module.get_state());
             sender.send(OutputMessage::ModuleState(id, state))?;
         }
+        InputMessage::CreateModule(_) => {}
+        InputMessage::UpdateParam(_, _, _) => {}
     };
     Ok(())
 }

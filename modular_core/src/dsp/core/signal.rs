@@ -1,4 +1,6 @@
-use crate::types::{ModuleSchema, ModuleState, OutputSchema, Param, ParamSchema, PatchMap, Sampleable, SampleableConstructor};
+use crate::types::{
+    ModuleSchema, ModuleState, Param, PatchMap, PortSchema, Sampleable, SampleableConstructor,
+};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -52,7 +54,7 @@ impl Sampleable for Signal {
     fn get_state(&self) -> crate::types::ModuleState {
         let mut params_map = HashMap::new();
         let ref params = self.module.lock().unwrap().params;
-        params_map.insert(SOURCE.to_owned(), Some(params.source.clone()));
+        params_map.insert(SOURCE.to_owned(), params.source.clone());
 
         ModuleState {
             module_type: NAME.to_owned(),
@@ -65,12 +67,11 @@ impl Sampleable for Signal {
 pub const SCHEMA: ModuleSchema = ModuleSchema {
     name: NAME,
     description: "a signal",
-    params: &[ParamSchema {
+    params: &[PortSchema {
         name: SOURCE,
         description: "source",
-        required: true,
     }],
-    outputs: &[OutputSchema {
+    outputs: &[PortSchema {
         name: OUTPUT,
         description: "signal output",
     }],

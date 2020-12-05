@@ -2,8 +2,9 @@ use std::{sync::mpsc::Sender, vec};
 
 use modular_core::{
     message::{InputMessage, OutputMessage},
-    types::ModuleState,
+    types::{ModuleState, Param},
 };
+use rosc::OscType::{Float as OscFloat, Int as OscInt, Nil as OscNil, String as OscStr};
 use rosc::{OscBundle, OscMessage, OscPacket, OscType};
 
 fn bndl(content: Vec<OscPacket>) -> OscPacket {
@@ -25,30 +26,27 @@ fn make_module_state_bndl(state: &ModuleState) -> OscPacket {
     let module_type = state.module_type.clone();
     bndl(
         [
-            vec![msg(&base, vec![OscType::String(module_type)])],
+            vec![msg(&base, vec![OscStr(module_type)])],
             state
                 .params
                 .iter()
-                .map(|(key, maybe_param)| {
+                .map(|(key, param)| {
                     msg(
                         &format!("{}/param/{}", &base, key),
-                        match maybe_param {
-                            Some(ref param) => match param {
-                                modular_core::types::Param::Value { value } => {
-                                    [OscType::String("value".into()), OscType::Float(*value)].into()
-                                }
-                                modular_core::types::Param::Note { value } => {
-                                    [OscType::String("note".into()), OscType::Int(*value as i32)]
-                                        .into()
-                                }
-                                modular_core::types::Param::Cable { module, port } => [
-                                    OscType::String("cable".into()),
-                                    OscType::String(module.clone()),
-                                    OscType::String(port.clone()),
-                                ]
-                                .into(),
-                            },
-                            None => [OscType::Nil].into(),
+                        match param {
+                            modular_core::types::Param::Value { value } => {
+                                [OscStr("value".into()), OscFloat(*value)].into()
+                            }
+                            modular_core::types::Param::Note { value } => {
+                                [OscStr("note".into()), OscInt(*value as i32)].into()
+                            }
+                            modular_core::types::Param::Cable { module, port } => [
+                                OscStr("cable".into()),
+                                OscStr(module.clone()),
+                                OscStr(port.clone()),
+                            ]
+                            .into(),
+                            modular_core::types::Param::Disconnected => [OscNil].into(),
                         },
                     )
                 })
@@ -60,25 +58,19 @@ fn make_module_state_bndl(state: &ModuleState) -> OscPacket {
 
 pub fn message_to_osc(message: OutputMessage) -> Vec<OscPacket> {
     match message {
-        OutputMessage::Echo(s) => vec![msg("/echo", vec![OscType::String(s)])],
+        OutputMessage::Echo(s) => vec![msg("/echo", vec![OscStr(s)])],
         OutputMessage::Schema(schemas) => schemas
             .iter()
             .map(|schema| {
                 let route = format!("/schema/{}", schema.name);
-                let description = vec![msg(
-                    &route,
-                    vec![OscType::String(schema.description.to_owned())],
-                )];
+                let description = vec![msg(&route, vec![OscStr(schema.description.to_owned())])];
                 let params = schema
                     .params
                     .iter()
                     .map(|param| {
                         msg(
                             &format!("{}/param/{}", route, param.name),
-                            vec![
-                                OscType::String(param.description.to_owned()),
-                                OscType::Bool(param.required),
-                            ],
+                            vec![OscStr(param.description.to_owned())],
                         )
                     })
                     .collect();
@@ -88,7 +80,7 @@ pub fn message_to_osc(message: OutputMessage) -> Vec<OscPacket> {
                     .map(|output| {
                         msg(
                             &format!("{}/output/{}", route, output.name),
-                            vec![OscType::String(output.description.to_owned())],
+                            vec![OscStr(output.description.to_owned())],
                         )
                     })
                     .collect();
@@ -99,13 +91,16 @@ pub fn message_to_osc(message: OutputMessage) -> Vec<OscPacket> {
             if let Some(ref state) = state {
                 vec![make_module_state_bndl(state)]
             } else {
-                vec![msg(&format!("/module/{}", id), vec![OscType::Nil])]
+                vec![msg(&format!("/module/{}", id), vec![OscNil])]
             }
         }
         OutputMessage::PatchState(state) => state
             .iter()
             .map(|module| make_module_state_bndl(module))
             .collect(),
+        OutputMessage::CreateModule(_, _) => {
+            vec![]
+        }
     }
 }
 
@@ -119,7 +114,7 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<InputMessage>) {
     match packet {
         OscPacket::Message(message) => match message.addr.as_str() {
             "/echo" => {
-                if let Some(OscType::String(s)) = message.args.get(0) {
+                if let Some(OscStr(s)) = message.args.get(0) {
                     send(InputMessage::Echo(s.clone()), tx);
                 }
             }
@@ -128,8 +123,46 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<InputMessage>) {
             addr => {
                 let s: Vec<&str> = addr.split("/").filter(|s| *s != "").collect();
                 println!("{:?}", s);
-                if let (Some(&"module"), Some(id), None) = (s.get(0), s.get(1), s.get(2)) {
+                let addr = (s.get(0), s.get(1), s.get(2), s.get(3), s.get(4));
+                let args = (
+                    message.args.get(0),
+                    message.args.get(1),
+                    message.args.get(2),
+                    message.args.get(3),
+                );
+                if let (Some(&"module"), Some(id), None) = (addr.0, addr.1, addr.2) {
                     send(InputMessage::GetModule(String::from(*id)), tx);
+                } else if let (Some(&"create-module"), None, Some(OscStr(ref module_type)), None) =
+                    (addr.0, addr.1, args.0, args.1)
+                {
+                    send(InputMessage::CreateModule(module_type.clone()), tx);
+                } else if let (
+                    Some(&"update-module"),
+                    Some(id),
+                    Some(&"param"),
+                    Some(param),
+                    None,
+                    Some(OscStr(param_type)),
+                ) = (addr.0, addr.1, addr.2, addr.3, addr.4, args.0)
+                {
+                    match (param_type.as_str(), args.1, args.2, args.3) {
+                        ("value", Some(OscFloat(value)), None, None) => {
+                            send(
+                                InputMessage::UpdateParam(
+                                    String::from(*id),
+                                    String::from(*param),
+                                    Param::Value { value: *value },
+                                ),
+                                tx,
+                            );
+                        }
+                        ("cable", Some(OscStr(module)), Some(OscStr(port)), None) => {}
+                        ("note", Some(OscInt(note)), None, None) => {}
+                        ("disconnected", None, None, None) => {}
+                        (param_type, _, _, _) => {
+                            println!("param type not value: {}", param_type);
+                        }
+                    }
                 }
             }
         },

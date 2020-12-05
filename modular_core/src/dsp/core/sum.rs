@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::types::{
-    ModuleSchema, ModuleState, OutputSchema, Param, ParamSchema, PatchMap, Sampleable,
+    ModuleSchema, ModuleState, PortSchema, Param, PatchMap, Sampleable,
     SampleableConstructor,
 };
 
@@ -19,10 +19,10 @@ const OUTPUT: &str = "output";
 
 #[derive(Serialize, Deserialize, Debug)]
 struct SumParams {
-    input1: Option<Param>,
-    input2: Option<Param>,
-    input3: Option<Param>,
-    input4: Option<Param>,
+    input1: Param,
+    input2: Param,
+    input3: Param,
+    input4: Param,
 }
 
 #[derive(Debug)]
@@ -41,10 +41,7 @@ impl SumModule {
         ];
 
         self.sample = inputs.iter().fold(0.0, |acc, x| {
-            acc + match x {
-                Some(ref p) => p.get_value(patch_map),
-                None => 0.0,
-            }
+            acc + x.get_value(patch_map)
         })
     }
 }
@@ -96,28 +93,24 @@ pub const SCHEMA: ModuleSchema = ModuleSchema {
     name: NAME,
     description: "A 4 channel signal adder",
     params: &[
-        ParamSchema {
+        PortSchema {
             name: INPUT_1,
             description: "a signal input",
-            required: false,
         },
-        ParamSchema {
+        PortSchema {
             name: INPUT_2,
             description: "a signal input",
-            required: false,
         },
-        ParamSchema {
+        PortSchema {
             name: INPUT_3,
             description: "a signal input",
-            required: false,
         },
-        ParamSchema {
+        PortSchema {
             name: INPUT_4,
             description: "a signal input",
-            required: false,
         },
     ],
-    outputs: &[OutputSchema {
+    outputs: &[PortSchema {
         name: OUTPUT,
         description: "signal output",
     }],
