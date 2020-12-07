@@ -13,6 +13,7 @@ pub trait Sampleable: Send {
     fn update(&self, patch_map: &PatchMap, sample_rate: f32) -> ();
     fn get_sample(&self, port: &String) -> Result<f32>;
     fn get_state(&self) -> ModuleState;
+    fn update_param(&self, param_name: &String, new_param: Param) -> Result<()>;
 }
 
 #[derive(Serialize, Deserialize, Debug)]

@@ -1,6 +1,15 @@
 use std::sync::mpsc::Sender;
 
-use crate::{dsp::schema, patch::Patch, types::ModuleSchema, types::{ModuleState, Param}};
+use serde_json::{Map, Value};
+use uuid::Uuid;
+
+use crate::{
+    dsp::get_constructors,
+    dsp::schema,
+    patch::Patch,
+    types::ModuleSchema,
+    types::{ModuleState, Param},
+};
 
 pub enum InputMessage {
     Echo(String),
@@ -17,6 +26,7 @@ pub enum OutputMessage {
     PatchState(Vec<ModuleState>),
     ModuleState(String, Option<ModuleState>),
     CreateModule(String, String),
+    Error(String),
 }
 
 pub fn handle_message(
@@ -46,8 +56,34 @@ pub fn handle_message(
                 .map(|module| module.get_state());
             sender.send(OutputMessage::ModuleState(id, state))?;
         }
-        InputMessage::CreateModule(_) => {}
-        InputMessage::UpdateParam(_, _, _) => {}
+        InputMessage::CreateModule(module_type) => {
+            let constructors = get_constructors();
+            if let Some(constructor) = constructors.get(&module_type) {
+                let uuid = Uuid::new_v4().to_string();
+                match constructor(&uuid, Value::Object(Map::new())) {
+                    Ok(module) => {
+                        patch_map.lock().unwrap().insert(uuid.clone(), module);
+                        sender.send(OutputMessage::CreateModule(module_type, uuid))?
+                    }
+                    Err(err) => {
+                        sender.send(OutputMessage::Error(format!("an error occured: {}", err)))?;
+                    }
+                }
+            } else {
+                sender.send(OutputMessage::Error(format!(
+                    "{} is not a valid module type",
+                    module_type
+                )))?;
+            }
+        }
+        InputMessage::UpdateParam(id, param_name, new_param) => {
+            match patch_map.lock().unwrap().get(&id) {
+                Some(module) => {
+                    module
+                }
+                None => sender.send(OutputMessage::Error(format!("{id} not found", id))),
+            }
+        }
     };
     Ok(())
 }

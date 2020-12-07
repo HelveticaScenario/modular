@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::types::{
-    ModuleSchema, ModuleState, PortSchema, Param, PatchMap, Sampleable,
-    SampleableConstructor,
+    ModuleSchema, ModuleState, Param, PatchMap, PortSchema, Sampleable, SampleableConstructor,
 };
 
 const NAME: &str = "sum";
@@ -40,9 +39,9 @@ impl SumModule {
             &self.params.input4,
         ];
 
-        self.sample = inputs.iter().fold(0.0, |acc, x| {
-            acc + x.get_value(patch_map)
-        })
+        self.sample = inputs
+            .iter()
+            .fold(0.0, |acc, x| acc + x.get_value(patch_map))
     }
 }
 
@@ -85,6 +84,28 @@ impl Sampleable for Sum {
             module_type: NAME.to_owned(),
             id: self.id.clone(),
             params: param_map,
+        }
+    }
+
+    fn update_param(&self, param_name: &String, new_param: Param) -> Result<()> {
+        match param_name.as_str() {
+            INPUT_1 => {
+                self.module.lock().unwrap().params.input1 = new_param;
+                Ok(())
+            }
+            INPUT_2 => {
+                self.module.lock().unwrap().params.input2 = new_param;
+                Ok(())
+            }
+            INPUT_3 => {
+                self.module.lock().unwrap().params.input3 = new_param;
+                Ok(())
+            }
+            INPUT_4 => {
+                self.module.lock().unwrap().params.input4 = new_param;
+                Ok(())
+            }
+            _ => Err(anyhow!("{} is not a valid param name for mix", param_name)),
         }
     }
 }

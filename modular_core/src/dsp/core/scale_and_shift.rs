@@ -75,6 +75,10 @@ impl Sampleable for ScaleAndShift {
             params: params_map,
         }
     }
+
+    fn update_param(&self, param_name: &String, new_param: Param) -> Result<()> {
+        todo!()
+    }
 }
 
 pub const SCHEMA: ModuleSchema = ModuleSchema {

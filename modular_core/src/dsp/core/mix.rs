@@ -38,7 +38,10 @@ impl MixModule {
             &self.params.input3,
             &self.params.input4,
         ];
-        let count = inputs.iter().filter(|input| ***input != Param::Disconnected).count();
+        let count = inputs
+            .iter()
+            .filter(|input| ***input != Param::Disconnected)
+            .count();
 
         self.sample = if count > 0 {
             inputs
@@ -90,6 +93,28 @@ impl Sampleable for Mix {
             module_type: NAME.to_owned(),
             id: self.id.clone(),
             params: param_map,
+        }
+    }
+
+    fn update_param(&self, param_name: &String, new_param: Param) -> Result<()> {
+        match param_name.as_str() {
+            INPUT_1 => {
+                self.module.lock().unwrap().params.input1 = new_param;
+                Ok(())
+            }
+            INPUT_2 => {
+                self.module.lock().unwrap().params.input2 = new_param;
+                Ok(())
+            }
+            INPUT_3 => {
+                self.module.lock().unwrap().params.input3 = new_param;
+                Ok(())
+            }
+            INPUT_4 => {
+                self.module.lock().unwrap().params.input4 = new_param;
+                Ok(())
+            }
+            _ => Err(anyhow!("{} is not a valid param name for mix", param_name)),
         }
     }
 }

@@ -98,8 +98,8 @@ pub fn message_to_osc(message: OutputMessage) -> Vec<OscPacket> {
             .iter()
             .map(|module| make_module_state_bndl(module))
             .collect(),
-        OutputMessage::CreateModule(_, _) => {
-            vec![]
+        OutputMessage::CreateModule(module_type, id) => {
+            vec![msg("/create-module", vec![OscStr(module_type), OscStr(id)])]
         }
     }
 }
@@ -145,24 +145,32 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<InputMessage>) {
                     Some(OscStr(param_type)),
                 ) = (addr.0, addr.1, addr.2, addr.3, addr.4, args.0)
                 {
-                    match (param_type.as_str(), args.1, args.2, args.3) {
-                        ("value", Some(OscFloat(value)), None, None) => {
-                            send(
-                                InputMessage::UpdateParam(
-                                    String::from(*id),
-                                    String::from(*param),
-                                    Param::Value { value: *value },
-                                ),
-                                tx,
-                            );
-                        }
-                        ("cable", Some(OscStr(module)), Some(OscStr(port)), None) => {}
-                        ("note", Some(OscInt(note)), None, None) => {}
-                        ("disconnected", None, None, None) => {}
-                        (param_type, _, _, _) => {
-                            println!("param type not value: {}", param_type);
-                        }
-                    }
+                    send(
+                        InputMessage::UpdateParam(
+                            String::from(*id),
+                            String::from(*param),
+                            match (param_type.as_str(), args.1, args.2, args.3) {
+                                ("value", Some(OscFloat(value)), None, None) => {
+                                    Param::Value { value: *value }
+                                }
+                                ("cable", Some(OscStr(module)), Some(OscStr(port)), None) => {
+                                    Param::Cable {
+                                        module: module.clone(),
+                                        port: port.clone(),
+                                    }
+                                }
+                                ("note", Some(OscInt(note)), None, None) => Param::Note {
+                                    value: note.clone() as u8,
+                                },
+                                ("disconnected", None, None, None) => Param::Disconnected,
+                                (param_type, _, _, _) => {
+                                    println!("param type not value: {}", param_type);
+                                    return;
+                                }
+                            },
+                        ),
+                        tx,
+                    );
                 }
             }
         },
