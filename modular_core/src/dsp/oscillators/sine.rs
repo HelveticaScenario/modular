@@ -20,7 +20,8 @@ const OUTPUT: &str = "output";
 const FREQ: &str = "freq";
 const PHASE: &str = "phase";
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(default)]
 struct SineOscillatorParams {
     freq: Param,
     phase: Param,
@@ -98,7 +99,21 @@ impl Sampleable for SineOscillator {
     }
 
     fn update_param(&self, param_name: &String, new_param: Param) -> Result<()> {
-        todo!()
+        match param_name.as_str() {
+            FREQ => {
+                self.module.lock().unwrap().params.freq = new_param;
+                Ok(())
+            }
+            PHASE => {
+                self.module.lock().unwrap().params.phase = new_param;
+                Ok(())
+            }
+            _ => Err(anyhow!(
+                "{} is not a valid param name for {}",
+                param_name,
+                NAME
+            )),
+        }
     }
 }
 

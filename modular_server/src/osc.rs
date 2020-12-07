@@ -101,6 +101,9 @@ pub fn message_to_osc(message: OutputMessage) -> Vec<OscPacket> {
         OutputMessage::CreateModule(module_type, id) => {
             vec![msg("/create-module", vec![OscStr(module_type), OscStr(id)])]
         }
+        OutputMessage::Error(err) => {
+            vec![msg("/error", vec![OscStr(err)])]
+        }
     }
 }
 

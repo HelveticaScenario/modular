@@ -10,7 +10,8 @@ const NAME: &str = "signal";
 const SOURCE: &str = "source";
 const OUTPUT: &str = "output";
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(default)]
 struct SignalParams {
     source: Param,
 }
@@ -64,7 +65,13 @@ impl Sampleable for Signal {
     }
 
     fn update_param(&self, param_name: &String, new_param: Param) -> Result<()> {
-        todo!()
+        match param_name.as_str() {
+            SOURCE => {
+                self.module.lock().unwrap().params.source = new_param;
+                Ok(())
+            }
+            _ => Err(anyhow!("{} is not a valid param name for {}", param_name, NAME)),
+        }
     }
 }
 

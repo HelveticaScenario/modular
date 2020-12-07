@@ -78,10 +78,8 @@ pub fn handle_message(
         }
         InputMessage::UpdateParam(id, param_name, new_param) => {
             match patch_map.lock().unwrap().get(&id) {
-                Some(module) => {
-                    module
-                }
-                None => sender.send(OutputMessage::Error(format!("{id} not found", id))),
+                Some(module) => module.update_param(&param_name, new_param)?,
+                None => sender.send(OutputMessage::Error(format!("{} not found", id)))?,
             }
         }
     };

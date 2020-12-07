@@ -9,10 +9,7 @@ use crate::{
     dsp::utils::clamp,
     dsp::utils::wrap,
     types::PatchMap,
-    types::{
-        ModuleSchema, ModuleState, PortSchema, Param, Sampleable,
-        SampleableConstructor,
-    },
+    types::{ModuleSchema, ModuleState, Param, PortSchema, Sampleable, SampleableConstructor},
 };
 
 const NAME: &str = "ramp-oscillator";
@@ -20,7 +17,8 @@ const OUTPUT: &str = "output";
 const FREQ: &str = "freq";
 const PHASE: &str = "phase";
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(default)]
 struct RampOscillatorParams {
     freq: Param,
     phase: Param,
@@ -38,11 +36,7 @@ impl RampOscillatorModule {
         if self.params.phase != Param::Disconnected {
             self.sample = wrap(0.0..1.0, self.params.phase.get_value(patch_map));
         } else {
-            let voltage = clamp(
-                self.params.freq.get_value_or(patch_map, 4.0),
-                12.0,
-                0.0,
-            );
+            let voltage = clamp(self.params.freq.get_value_or(patch_map, 4.0), 12.0, 0.0);
             let frequency = 27.5f32 * 2.0f32.powf(voltage) / sample_rate;
             // let frequency = semitones_to_ratio(voltage * 12.0) * 220.0 / SAMPLE_RATE * 100.0;
             self.phase += frequency;
@@ -98,7 +92,21 @@ impl Sampleable for RampOscillator {
     }
 
     fn update_param(&self, param_name: &String, new_param: Param) -> Result<()> {
-        todo!()
+        match param_name.as_str() {
+            FREQ => {
+                self.module.lock().unwrap().params.freq = new_param;
+                Ok(())
+            }
+            PHASE => {
+                self.module.lock().unwrap().params.phase = new_param;
+                Ok(())
+            }
+            _ => Err(anyhow!(
+                "{} is not a valid param name for {}",
+                param_name,
+                NAME
+            )),
+        }
     }
 }
 

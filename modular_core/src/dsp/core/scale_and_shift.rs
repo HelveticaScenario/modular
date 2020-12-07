@@ -13,7 +13,8 @@ const SCALE: &str = "scale";
 const SHIFT: &str = "shift";
 const OUTPUT: &str = "output";
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(default)]
 struct ScaleAndShiftParams {
     input: Param,
     scale: Param,
@@ -77,7 +78,21 @@ impl Sampleable for ScaleAndShift {
     }
 
     fn update_param(&self, param_name: &String, new_param: Param) -> Result<()> {
-        todo!()
+        match param_name.as_str() {
+            INPUT => {
+                self.module.lock().unwrap().params.input = new_param;
+                Ok(())
+            }
+            SCALE => {
+                self.module.lock().unwrap().params.scale = new_param;
+                Ok(())
+            }
+            SHIFT => {
+                self.module.lock().unwrap().params.shift = new_param;
+                Ok(())
+            }
+            _ => Err(anyhow!("{} is not a valid param name for {}", param_name, NAME)),
+        }
     }
 }
 

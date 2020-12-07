@@ -16,7 +16,8 @@ const INPUT_3: &str = "input-3";
 const INPUT_4: &str = "input-4";
 const OUTPUT: &str = "output";
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(default)]
 struct SumParams {
     input1: Param,
     input2: Param,
@@ -105,7 +106,7 @@ impl Sampleable for Sum {
                 self.module.lock().unwrap().params.input4 = new_param;
                 Ok(())
             }
-            _ => Err(anyhow!("{} is not a valid param name for mix", param_name)),
+            _ => Err(anyhow!("{} is not a valid param name for {}", param_name, NAME)),
         }
     }
 }
