@@ -717,6 +717,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "modular_client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "modular_core",
+ "rosc",
+]
+
+[[package]]
 name = "modular_core"
 version = "0.1.0"
 dependencies = [
