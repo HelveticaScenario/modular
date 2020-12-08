@@ -2,10 +2,12 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use uuid::{Builder, Uuid, Variant, Version};
 
 lazy_static! {
     pub static ref ROOT_ID: String = "ROOT".into();
     pub static ref ROOT_OUTPUT_PORT: String = "output".into();
+    pub static ref ROOT_UUID: Uuid = Uuid::nil();
 }
 
 pub trait Sampleable: Send {
