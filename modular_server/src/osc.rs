@@ -123,6 +123,11 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<InputMessage>) {
             }
             "/schema" => send(InputMessage::Schema, tx),
             "/modules" => send(InputMessage::GetModules, tx),
+            "/delete-module" => {
+                if let Some(OscStr(id)) = message.args.get(0) {
+                    send(InputMessage::DeleteModule(id.clone()), tx);
+                }
+            }
             addr => {
                 let s: Vec<&str> = addr.split("/").filter(|s| *s != "").collect();
                 println!("{:?}", s);

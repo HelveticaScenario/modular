@@ -9,4 +9,6 @@ edition = "2018"
 [dependencies]
 anyhow = "1.0.34"
 rosc = "~0.4"
+ctrlc = "3.1.7"
 modular_core = { version = "*", path = "../modular_core"}
+modular_server = { version = "*", path = "../modular_server"}

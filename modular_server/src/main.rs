@@ -3,41 +3,29 @@ extern crate clap;
 extern crate ctrlc;
 extern crate modular_core;
 extern crate rosc;
-use std::{fs::File, io::Read, sync::mpsc};
+use std::{fs::File, io::Read};
 
 use clap::{App, Arg, ArgMatches};
-use modular_core::Modular;
-use server::spawn_server;
+use modular_server::spawn;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use stringreader::StringReader;
 
-mod osc;
-mod server;
-
 fn main() -> anyhow::Result<()> {
     let matches = get_matches();
-
-    let (incoming_tx, incoming_rx) = mpsc::channel();
-    let (outgoing_tx, outgoing_rx) = mpsc::channel();
 
     let config_file: Box<dyn Read> = if let Some(config) = matches.value_of(CONFIG_ARG) {
         Box::new(File::open(config)?)
     } else {
         Box::new(StringReader::new("{}"))
     };
-    let modular = Modular::new(serde_json::from_reader(config_file)?)?;
-    let _modular_handle = modular.spawn(incoming_rx, outgoing_tx);
+    let configs = serde_json::from_reader(config_file)?;
     let running = Arc::new(AtomicBool::new(true));
     let client_address = matches.value_of(CLIENT_ARG).unwrap();
     let port = matches.value_of(PORT_ARG).unwrap();
 
-    let (_recieving_server_handle, _sending_server_handlee) = spawn_server(
-        client_address.to_owned(),
-        port.to_owned(),
-        incoming_tx,
-        outgoing_rx,
-    );
+    let (_modular_handle, _receiving_server_handle, _sending_server_handle) =
+        spawn(client_address.to_owned(), port.to_owned(), configs)?;
     let r = running.clone();
     ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);

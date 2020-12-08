@@ -16,7 +16,7 @@ pub trait Sampleable: Send {
     fn update_param(&self, param_name: &String, new_param: Param) -> Result<()>;
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
     pub module_type: String,
     pub params: Value,
@@ -59,11 +59,13 @@ impl Default for Param {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct PortSchema {
     pub name: &'static str,
     pub description: &'static str,
 }
 
+#[derive(Debug, Clone)]
 pub struct ModuleSchema {
     pub name: &'static str,
     pub description: &'static str,
@@ -71,6 +73,7 @@ pub struct ModuleSchema {
     pub outputs: &'static [PortSchema],
 }
 
+#[derive(Debug, Clone)]
 pub struct ModuleState {
     pub id: String,
     pub module_type: String,

@@ -721,7 +721,9 @@ name = "modular_client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ctrlc",
  "modular_core",
+ "modular_server",
  "rosc",
 ]
 

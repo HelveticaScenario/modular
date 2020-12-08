@@ -4,7 +4,7 @@ use modular_core::{
     message::{InputMessage, OutputMessage},
     types::{ModuleState, Param},
 };
-use rosc::OscType::{Float as OscFloat, Int as OscInt, Nil as OscNil, String as OscStr};
+use rosc::OscType::{Float as OscFloat, Int as OscInt, String as OscStr};
 use rosc::{OscBundle, OscMessage, OscPacket, OscType};
 
 fn bndl(content: Vec<OscPacket>) -> OscPacket {
@@ -21,89 +21,8 @@ fn msg(addr: &str, args: Vec<OscType>) -> OscPacket {
     })
 }
 
-// fn make_module_state_bndl(state: &ModuleState) -> OscPacket {
-//   let base = format!("/module/{}", state.id);
-//   let module_type = state.module_type.clone();
-//   bndl(
-//       [
-//           vec![msg(&base, vec![OscStr(module_type)])],
-//           state
-//               .params
-//               .iter()
-//               .map(|(key, param)| {
-//                   msg(
-//                       &format!("{}/param/{}", &base, key),
-//                       match param {
-//                           modular_core::types::Param::Value { value } => {
-//                               [OscStr("value".into()), OscFloat(*value)].into()
-//                           }
-//                           modular_core::types::Param::Note { value } => {
-//                               [OscStr("note".into()), OscInt(*value as i32)].into()
-//                           }
-//                           modular_core::types::Param::Cable { module, port } => [
-//                               OscStr("cable".into()),
-//                               OscStr(module.clone()),
-//                               OscStr(port.clone()),
-//                           ]
-//                           .into(),
-//                           modular_core::types::Param::Disconnected => [OscNil].into(),
-//                       },
-//                   )
-//               })
-//               .collect(),
-//       ]
-//       .concat(),
-//   )
-// }
-
 pub fn message_to_osc(message: InputMessage) -> Vec<OscPacket> {
     match message {
-        // OutputMessage::Echo(s) => vec![msg("/echo", vec![OscStr(s)])],
-        // OutputMessage::Schema(schemas) => schemas
-        //     .iter()
-        //     .map(|schema| {
-        //         let route = format!("/schema/{}", schema.name);
-        //         let description = vec![msg(&route, vec![OscStr(schema.description.to_owned())])];
-        //         let params = schema
-        //             .params
-        //             .iter()
-        //             .map(|param| {
-        //                 msg(
-        //                     &format!("{}/param/{}", route, param.name),
-        //                     vec![OscStr(param.description.to_owned())],
-        //                 )
-        //             })
-        //             .collect();
-        //         let outputs = schema
-        //             .outputs
-        //             .iter()
-        //             .map(|output| {
-        //                 msg(
-        //                     &format!("{}/output/{}", route, output.name),
-        //                     vec![OscStr(output.description.to_owned())],
-        //                 )
-        //             })
-        //             .collect();
-        //         bndl(vec![description, params, outputs].concat())
-        //     })
-        //     .collect(),
-        // OutputMessage::ModuleState(id, state) => {
-        //     if let Some(ref state) = state {
-        //         vec![make_module_state_bndl(state)]
-        //     } else {
-        //         vec![msg(&format!("/module/{}", id), vec![OscNil])]
-        //     }
-        // }
-        // OutputMessage::PatchState(state) => state
-        //     .iter()
-        //     .map(|module| make_module_state_bndl(module))
-        //     .collect(),
-        // OutputMessage::CreateModule(module_type, id) => {
-        //     vec![msg("/create-module", vec![OscStr(module_type), OscStr(id)])]
-        // }
-        // OutputMessage::Error(err) => {
-        //     vec![msg("/error", vec![OscStr(err)])]
-        // }
         InputMessage::Echo(s) => {
             vec![msg("/echo", vec![OscStr(s)])]
         }
@@ -139,6 +58,9 @@ pub fn message_to_osc(message: InputMessage) -> Vec<OscPacket> {
                 args,
             )]
         }
+        InputMessage::DeleteModule(id) => {
+            vec![msg("/delete-module", vec![OscStr(id)])]
+        }
     }
 }
 
@@ -148,22 +70,26 @@ fn send(message: Message, tx: &Sender<Message>) {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum SchemaMessage {
     Description(String, String),
     Param(String, String, String),
     Output(String, String, String),
 }
 
+#[derive(Debug, Clone)]
 pub enum ModuleMessage {
     Type(String, String),
     Param(String, String, Param),
 }
 
+#[derive(Debug, Clone)]
 pub enum PartialMessage {
     Schema(SchemaMessage),
     Module(ModuleMessage),
 }
 
+#[derive(Debug, Clone)]
 pub enum Message {
     Server(OutputMessage),
     Client(PartialMessage),
@@ -187,7 +113,10 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<Message>) {
                     (message.args.get(0), message.args.get(1))
                 {
                     send(
-                        Message::Server(OutputMessage::CreateModule(module_type.clone(), id.clone())),
+                        Message::Server(OutputMessage::CreateModule(
+                            module_type.clone(),
+                            id.clone(),
+                        )),
                         tx,
                     );
                 }
@@ -294,42 +223,32 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<Message>) {
                             tx,
                         ),
                         (Some(&"param"), Some(param_name), Some(OscStr(param_type))) => {
-                            match (param_type.as_str(), args.1, args.2) {
-                                ("value", Some(OscFloat(value)), None) => send(
+                            let param = match (param_type.as_str(), args.1, args.2) {
+                                ("value", Some(OscFloat(value)), None) => {
+                                    Some(Param::Value { value: *value })
+                                }
+                                ("note", Some(OscInt(value)), None) => Some(Param::Note {
+                                    value: *value as u8,
+                                }),
+                                ("cable", Some(OscStr(module)), Some(OscStr(port))) => {
+                                    Some(Param::Cable {
+                                        module: module.clone(),
+                                        port: port.clone(),
+                                    })
+                                }
+                                ("disconnected", None, None) => Some(Param::Disconnected),
+                                _ => None,
+                            };
+                            match param {
+                                Some(param) => send(
                                     Message::Client(PartialMessage::Module(ModuleMessage::Param(
                                         (*id).to_owned(),
                                         (*param_name).to_owned(),
-                                        Param::Value { value: *value },
+                                        param,
                                     ))),
                                     tx,
                                 ),
-                                ("note", Some(OscInt(value)), None) => send(
-                                    Message::Client(PartialMessage::Module(ModuleMessage::Param(
-                                        (*id).to_owned(),
-                                        (*param_name).to_owned(),
-                                        Param::Note {
-                                            value: *value as u8,
-                                        },
-                                    ))),
-                                    tx,
-                                ),
-                                ("cable", Some(OscStr(module)), Some(OscStr(port))) => send(
-                                    Message::Client(PartialMessage::Module(ModuleMessage::Param(
-                                        (*id).to_owned(),
-                                        (*param_name).to_owned(),
-                                        Param::Cable { module: module.clone(), port: port.clone() },
-                                    ))),
-                                    tx,
-                                ),
-                                ("disconnected", None, None) => send(
-                                    Message::Client(PartialMessage::Module(ModuleMessage::Param(
-                                        (*id).to_owned(),
-                                        (*param_name).to_owned(),
-                                        Param::Disconnected,
-                                    ))),
-                                    tx,
-                                ),
-                                _ => {}
+                                None => {}
                             }
                         }
 

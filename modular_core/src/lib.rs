@@ -23,6 +23,7 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use message::{InputMessage, OutputMessage};
 use mpsc::Receiver;
 use patch::Patch;
+use serde_json::{Map, Value};
 use thread::JoinHandle;
 use types::Config;
 
@@ -67,7 +68,16 @@ impl Modular {
     }
 }
 
-fn create_patch(configs: HashMap<String, Config>) -> Result<Patch> {
+fn create_patch(mut configs: HashMap<String, Config>) -> Result<Patch> {
+    if !configs.contains_key("ROOT".into()) {
+        configs.insert(
+            "ROOT".into(),
+            Config {
+                module_type: "signal".into(),
+                params: Value::Object(Map::new()),
+            },
+        );
+    }
     let mut map = HashMap::new();
     let constructors = dsp::get_constructors();
     for (id, config) in configs {

@@ -11,6 +11,7 @@ use crate::{
     types::{ModuleState, Param},
 };
 
+#[derive(Debug, Clone)]
 pub enum InputMessage {
     Echo(String),
     Schema,
@@ -18,8 +19,10 @@ pub enum InputMessage {
     GetModule(String),
     CreateModule(String),
     UpdateParam(String, String, Param),
+    DeleteModule(String)
 }
 
+#[derive(Debug, Clone)]
 pub enum OutputMessage {
     Echo(String),
     Schema(Vec<&'static ModuleSchema>),
@@ -81,6 +84,9 @@ pub fn handle_message(
                 Some(module) => module.update_param(&param_name, new_param)?,
                 None => sender.send(OutputMessage::Error(format!("{} not found", id)))?,
             }
+        }
+        InputMessage::DeleteModule(id) => {
+            patch_map.lock().unwrap().remove(&id);
         }
     };
     Ok(())
