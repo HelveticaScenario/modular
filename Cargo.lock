@@ -628,6 +628,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "keyframe"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5050f9acba1ba099838aed49fa1d49ca2b6ff6de61c1479acf10d32a731cdf36"
+dependencies = [
+ "mint",
+ "num-traits",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -717,6 +727,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "mint"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "519df8d6856dcd4b40519947737b408f81be051fc032590659cae5d77d664185"
+
+[[package]]
 name = "modular_client"
 version = "0.1.0"
 dependencies = [
@@ -734,6 +750,7 @@ dependencies = [
  "anyhow",
  "cpal",
  "hound",
+ "keyframe",
  "lazy_static",
  "serde",
  "serde_json",
@@ -1442,6 +1459,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9fde2f6a4bea1d6e007c4ad38c6839fa71cbb63b6dbf5b595aa38dc9b1093c11"
 dependencies = [
  "rand",
+ "serde",
 ]
 
 [[package]]

@@ -34,13 +34,7 @@ pub fn start_recieving_server(host_address: String, tx: Sender<InputMessage>) {
 
     loop {
         match sock.recv_from(&mut buf) {
-            Ok((size, addr)) => {
-                println!(
-                    "Received packet with size {} from: {} data: {:?}",
-                    size,
-                    addr,
-                    &buf[..size]
-                );
+            Ok((size, _addr)) => {
                 match rosc::decoder::decode(&buf[..size]) {
                     Ok(packet) => {
                         println!("{:?}", packet);

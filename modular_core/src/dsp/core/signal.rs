@@ -4,6 +4,7 @@ use crate::types::{
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use uuid::Uuid;
 use std::{collections::HashMap, sync::Mutex};
 
 const NAME: &str = "signal";
@@ -27,7 +28,7 @@ impl SignalModule {
 }
 
 struct Signal {
-    id: String,
+    id: Uuid,
     sample: Mutex<f32>,
     module: Mutex<SignalModule>,
 }
@@ -88,7 +89,7 @@ pub const SCHEMA: ModuleSchema = ModuleSchema {
     }],
 };
 
-fn constructor(id: &String, params: Value) -> Result<Box<dyn Sampleable>> {
+fn constructor(id: &Uuid, params: Value) -> Result<Box<dyn Sampleable>> {
     let params = serde_json::from_value(params)?;
     Ok(Box::new(Signal {
         id: id.clone(),

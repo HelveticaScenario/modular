@@ -3,6 +3,7 @@ use std::{sync::mpsc::Sender, vec};
 use modular_core::{
     message::{InputMessage, OutputMessage},
     types::{ModuleState, Param},
+    uuid::Uuid,
 };
 use rosc::OscType::{Float as OscFloat, Int as OscInt, String as OscStr};
 use rosc::{OscBundle, OscMessage, OscPacket, OscType};
@@ -35,8 +36,15 @@ pub fn message_to_osc(message: InputMessage) -> Vec<OscPacket> {
         InputMessage::GetModule(id) => {
             vec![msg(&format!("/module/{}", id), vec![])]
         }
-        InputMessage::CreateModule(module_type) => {
-            vec![msg("/create-module", vec![OscStr(module_type)])]
+        InputMessage::CreateModule(module_type, id) => {
+            if let Some(id) = id {
+                vec![msg(
+                    "/create-module",
+                    vec![OscStr(module_type), OscStr(id.to_string())],
+                )]
+            } else {
+                vec![msg("/create-module", vec![OscStr(module_type)])]
+            }
         }
         InputMessage::UpdateParam(id, param_name, new_param) => {
             let args = match new_param {
@@ -47,7 +55,11 @@ pub fn message_to_osc(message: InputMessage) -> Vec<OscPacket> {
                     vec![OscStr("note".to_owned()), OscInt(value as i32)]
                 }
                 Param::Cable { module, port } => {
-                    vec![OscStr("cable".to_owned()), OscStr(module), OscStr(port)]
+                    vec![
+                        OscStr("cable".to_owned()),
+                        OscStr(module.to_string()),
+                        OscStr(port),
+                    ]
                 }
                 Param::Disconnected => {
                     vec![OscStr("disconnected".to_owned())]
@@ -59,7 +71,7 @@ pub fn message_to_osc(message: InputMessage) -> Vec<OscPacket> {
             )]
         }
         InputMessage::DeleteModule(id) => {
-            vec![msg("/delete-module", vec![OscStr(id)])]
+            vec![msg("/delete-module", vec![OscStr(id.to_string())])]
         }
     }
 }
@@ -115,7 +127,13 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<Message>) {
                     send(
                         Message::Server(OutputMessage::CreateModule(
                             module_type.clone(),
-                            id.clone(),
+                            match Uuid::parse_str(id) {
+                                Ok(id) => id,
+                                Err(err) => {
+                                    println!("{}", err);
+                                    return;
+                                }
+                            },
                         )),
                         tx,
                     );
@@ -178,7 +196,6 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<Message>) {
             // }
             addr => {
                 let s: Vec<&str> = addr.split("/").filter(|s| *s != "").collect();
-                println!("{:?}", s);
                 let addr = (s.get(0), s.get(1), s.get(2), s.get(3), s.get(4));
                 let args = (
                     message.args.get(0),
@@ -232,7 +249,13 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<Message>) {
                                 }),
                                 ("cable", Some(OscStr(module)), Some(OscStr(port))) => {
                                     Some(Param::Cable {
-                                        module: module.clone(),
+                                        module: match Uuid::parse_str(module) {
+                                            Ok(id) => id,
+                                            Err(err) => {
+                                                println!("{}", err);
+                                                return;
+                                            }
+                                        },
                                         port: port.clone(),
                                     })
                                 }

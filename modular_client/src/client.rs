@@ -1,6 +1,6 @@
 use std::{net::SocketAddrV4, str::FromStr, net::UdpSocket, sync::mpsc::{Receiver, Sender}, thread::{self, JoinHandle}};
 
-use modular_core::message::{InputMessage, OutputMessage};
+use modular_core::message::{InputMessage};
 use rosc::encoder;
 
 use crate::osc::{Message, message_to_osc, osc_to_message};
@@ -29,12 +29,6 @@ pub fn start_recieving_client(host_address: String, tx: Sender<Message>) {
     loop {
         match sock.recv_from(&mut buf) {
             Ok((size, addr)) => {
-                println!(
-                    "Received packet with size {} from: {} data: {:?}",
-                    size,
-                    addr,
-                    &buf[..size]
-                );
                 match rosc::decoder::decode(&buf[..size]) {
                     Ok(packet) => {
                         println!("{:?}", packet);

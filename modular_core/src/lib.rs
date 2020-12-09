@@ -25,16 +25,16 @@ use mpsc::Receiver;
 use patch::Patch;
 use serde_json::{Map, Value};
 use thread::JoinHandle;
-use types::Config;
-
-// const DATA: &str = include_str!("data.json");
+use types::{Config, ROOT_ID};
+pub use uuid;
+use uuid::Uuid;
 
 pub struct Modular {
     patch: Patch,
 }
 
 impl Modular {
-    pub fn new(configs: HashMap<String, Config>) -> Result<Self> {
+    pub fn new(configs: HashMap<Uuid, Config>) -> Result<Self> {
         let patch = create_patch(configs)?;
         Ok(Modular { patch })
     }
@@ -68,10 +68,10 @@ impl Modular {
     }
 }
 
-fn create_patch(mut configs: HashMap<String, Config>) -> Result<Patch> {
-    if !configs.contains_key("ROOT".into()) {
+fn create_patch(mut configs: HashMap<Uuid, Config>) -> Result<Patch> {
+    if !configs.contains_key(&ROOT_ID) {
         configs.insert(
-            "ROOT".into(),
+            ROOT_ID.clone(),
             Config {
                 module_type: "signal".into(),
                 params: Value::Object(Map::new()),

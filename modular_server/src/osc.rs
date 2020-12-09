@@ -3,6 +3,7 @@ use std::{sync::mpsc::Sender, vec};
 use modular_core::{
     message::{InputMessage, OutputMessage},
     types::{ModuleState, Param},
+    uuid::Uuid,
 };
 use rosc::OscType::{Float as OscFloat, Int as OscInt, Nil as OscNil, String as OscStr};
 use rosc::{OscBundle, OscMessage, OscPacket, OscType};
@@ -42,7 +43,7 @@ fn make_module_state_bndl(state: &ModuleState) -> OscPacket {
                             }
                             modular_core::types::Param::Cable { module, port } => [
                                 OscStr("cable".into()),
-                                OscStr(module.clone()),
+                                OscStr(module.to_string()),
                                 OscStr(port.clone()),
                             ]
                             .into(),
@@ -99,7 +100,10 @@ pub fn message_to_osc(message: OutputMessage) -> Vec<OscPacket> {
             .map(|module| make_module_state_bndl(module))
             .collect(),
         OutputMessage::CreateModule(module_type, id) => {
-            vec![msg("/create-module", vec![OscStr(module_type), OscStr(id)])]
+            vec![msg(
+                "/create-module",
+                vec![OscStr(module_type), OscStr(id.to_string())],
+            )]
         }
         OutputMessage::Error(err) => {
             vec![msg("/error", vec![OscStr(err)])]
@@ -125,12 +129,20 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<InputMessage>) {
             "/modules" => send(InputMessage::GetModules, tx),
             "/delete-module" => {
                 if let Some(OscStr(id)) = message.args.get(0) {
-                    send(InputMessage::DeleteModule(id.clone()), tx);
+                    send(
+                        InputMessage::DeleteModule(match Uuid::parse_str(id) {
+                            Ok(id) => id,
+                            Err(err) => {
+                                println!("{}", err);
+                                return;
+                            }
+                        }),
+                        tx,
+                    );
                 }
             }
             addr => {
                 let s: Vec<&str> = addr.split("/").filter(|s| *s != "").collect();
-                println!("{:?}", s);
                 let addr = (s.get(0), s.get(1), s.get(2), s.get(3), s.get(4));
                 let args = (
                     message.args.get(0),
@@ -139,11 +151,40 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<InputMessage>) {
                     message.args.get(3),
                 );
                 if let (Some(&"module"), Some(id), None) = (addr.0, addr.1, addr.2) {
-                    send(InputMessage::GetModule(String::from(*id)), tx);
-                } else if let (Some(&"create-module"), None, Some(OscStr(ref module_type)), None) =
-                    (addr.0, addr.1, args.0, args.1)
+                    send(
+                        InputMessage::GetModule(match Uuid::parse_str(*id) {
+                            Ok(id) => id,
+                            Err(err) => {
+                                println!("{}", err);
+                                return;
+                            }
+                        }),
+                        tx,
+                    );
+                } else if let (
+                    Some(&"create-module"),
+                    id,
+                    None,
+                    Some(OscStr(ref module_type)),
+                    None,
+                ) = (addr.0, addr.1, addr.2, args.0, args.1)
                 {
-                    send(InputMessage::CreateModule(module_type.clone()), tx);
+                    send(
+                        InputMessage::CreateModule(
+                            module_type.clone(),
+                            match id.map(|id| Uuid::parse_str(*id)) {
+                                Some(id) => match id {
+                                    Ok(id) => Some(id),
+                                    Err(err) => {
+                                        println!("{}", err);
+                                        return;
+                                    }
+                                },
+                                None => None,
+                            },
+                        ),
+                        tx,
+                    );
                 } else if let (
                     Some(&"update-module"),
                     Some(id),
@@ -155,7 +196,13 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<InputMessage>) {
                 {
                     send(
                         InputMessage::UpdateParam(
-                            String::from(*id),
+                            match Uuid::parse_str(*id) {
+                                Ok(id) => id,
+                                Err(err) => {
+                                    println!("{}", err);
+                                    return;
+                                }
+                            },
                             String::from(*param),
                             match (param_type.as_str(), args.1, args.2, args.3) {
                                 ("value", Some(OscFloat(value)), None, None) => {
@@ -163,7 +210,13 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<InputMessage>) {
                                 }
                                 ("cable", Some(OscStr(module)), Some(OscStr(port)), None) => {
                                     Param::Cable {
-                                        module: module.clone(),
+                                        module: match Uuid::parse_str(module) {
+                                            Ok(module) => module,
+                                            Err(err) => {
+                                                println!("{}", err);
+                                                return;
+                                            }
+                                        },
                                         port: port.clone(),
                                     }
                                 }

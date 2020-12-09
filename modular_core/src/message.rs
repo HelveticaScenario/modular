@@ -16,10 +16,10 @@ pub enum InputMessage {
     Echo(String),
     Schema,
     GetModules,
-    GetModule(String),
-    CreateModule(String),
-    UpdateParam(String, String, Param),
-    DeleteModule(String)
+    GetModule(Uuid),
+    CreateModule(String, Option<Uuid>),
+    UpdateParam(Uuid, String, Param),
+    DeleteModule(Uuid)
 }
 
 #[derive(Debug, Clone)]
@@ -27,8 +27,8 @@ pub enum OutputMessage {
     Echo(String),
     Schema(Vec<&'static ModuleSchema>),
     PatchState(Vec<ModuleState>),
-    ModuleState(String, Option<ModuleState>),
-    CreateModule(String, String),
+    ModuleState(Uuid, Option<ModuleState>),
+    CreateModule(String, Uuid),
     Error(String),
 }
 
@@ -59,10 +59,10 @@ pub fn handle_message(
                 .map(|module| module.get_state());
             sender.send(OutputMessage::ModuleState(id, state))?;
         }
-        InputMessage::CreateModule(module_type) => {
+        InputMessage::CreateModule(module_type, id) => {
             let constructors = get_constructors();
             if let Some(constructor) = constructors.get(&module_type) {
-                let uuid = Uuid::new_v4().to_string();
+                let uuid = id.unwrap_or(Uuid::new_v4());
                 match constructor(&uuid, Value::Object(Map::new())) {
                     Ok(module) => {
                         patch_map.lock().unwrap().insert(uuid.clone(), module);
@@ -71,7 +71,7 @@ pub fn handle_message(
                     Err(err) => {
                         sender.send(OutputMessage::Error(format!("an error occured: {}", err)))?;
                     }
-                }
+                };
             } else {
                 sender.send(OutputMessage::Error(format!(
                     "{} is not a valid module type",

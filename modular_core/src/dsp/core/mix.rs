@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use uuid::Uuid;
 
 use crate::types::{
     ModuleSchema, ModuleState, Param, PatchMap, PortSchema, Sampleable, SampleableConstructor,
@@ -57,7 +58,7 @@ impl MixModule {
 
 #[derive(Debug)]
 struct Mix {
-    id: String,
+    id: Uuid,
     sample: Mutex<f32>,
     module: Mutex<MixModule>,
 }
@@ -147,7 +148,7 @@ pub const SCHEMA: ModuleSchema = ModuleSchema {
     }],
 };
 
-fn constructor(id: &String, params: Value) -> Result<Box<dyn Sampleable>> {
+fn constructor(id: &Uuid, params: Value) -> Result<Box<dyn Sampleable>> {
     let params = serde_json::from_value(params)?;
     Ok(Box::new(Mix {
         id: id.clone(),

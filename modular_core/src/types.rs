@@ -2,12 +2,11 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use uuid::{Builder, Uuid, Variant, Version};
+use uuid::Uuid;
 
 lazy_static! {
-    pub static ref ROOT_ID: String = "ROOT".into();
+    pub static ref ROOT_ID: Uuid = Uuid::nil();
     pub static ref ROOT_OUTPUT_PORT: String = "output".into();
-    pub static ref ROOT_UUID: Uuid = Uuid::nil();
 }
 
 pub trait Sampleable: Send {
@@ -24,14 +23,14 @@ pub struct Config {
     pub params: Value,
 }
 
-pub type PatchMap = HashMap<String, Box<dyn Sampleable>>;
+pub type PatchMap = HashMap<Uuid, Box<dyn Sampleable>>;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "param_type", rename_all = "kebab-case")]
 pub enum Param {
     Value { value: f32 },
     Note { value: u8 },
-    Cable { module: String, port: String },
+    Cable { module: Uuid, port: String },
     Disconnected,
 }
 
@@ -77,9 +76,9 @@ pub struct ModuleSchema {
 
 #[derive(Debug, Clone)]
 pub struct ModuleState {
-    pub id: String,
+    pub id: Uuid,
     pub module_type: String,
     pub params: HashMap<String, Param>,
 }
 
-pub type SampleableConstructor = Box<dyn Fn(&String, Value) -> Result<Box<dyn Sampleable>>>;
+pub type SampleableConstructor = Box<dyn Fn(&Uuid, Value) -> Result<Box<dyn Sampleable>>>;
