@@ -11,6 +11,7 @@ pub mod dsp;
 pub mod message;
 pub mod patch;
 pub mod types;
+mod sequence;
 
 use std::{
     collections::HashMap,
