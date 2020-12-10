@@ -89,7 +89,7 @@ where
 
 fn update_patch(patch_map: &PatchMap, sample_rate: f32) {
     for (_, module) in patch_map {
-        module.update(patch_map, sample_rate);
+        module.update(sample_rate);
     }
 }
 

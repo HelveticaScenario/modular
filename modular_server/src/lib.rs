@@ -1,6 +1,6 @@
-use std::{collections::HashMap, thread::JoinHandle, sync::mpsc};
+use std::{thread::JoinHandle, sync::mpsc};
 
-use modular_core::{Modular, types::Config, uuid::Uuid};
+use modular_core::{Modular};
 use server::spawn_server;
 
 mod osc;
@@ -9,12 +9,11 @@ mod server;
 pub fn spawn(
     client_address: String,
     port: String,
-    configs: HashMap<Uuid, Config>,
-) -> anyhow::Result<(JoinHandle<anyhow::Result<()>>, JoinHandle<()>, JoinHandle<()>)> {
+) -> (JoinHandle<anyhow::Result<()>>, JoinHandle<()>, JoinHandle<()>) {
     let (incoming_tx, incoming_rx) = mpsc::channel();
     let (outgoing_tx, outgoing_rx) = mpsc::channel();
 
-    let modular = Modular::new(configs)?;
+    let modular = Modular::new();
     let _modular_handle = modular.spawn(incoming_rx, outgoing_tx);
 
     let (_receiving_server_handle, _sending_server_handle) = spawn_server(
@@ -23,5 +22,5 @@ pub fn spawn(
         incoming_tx,
         outgoing_rx,
     );
-    Ok((_modular_handle, _receiving_server_handle, _sending_server_handle))
+    (_modular_handle, _receiving_server_handle, _sending_server_handle)
 }

@@ -19,25 +19,21 @@ use std::{
     thread,
 };
 
-use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait};
 use message::{InputMessage, OutputMessage};
 use mpsc::Receiver;
 use patch::Patch;
-use serde_json::{Map, Value};
 use thread::JoinHandle;
-use types::{Config, ROOT_ID};
 pub use uuid;
-use uuid::Uuid;
 
 pub struct Modular {
     patch: Patch,
 }
 
 impl Modular {
-    pub fn new(configs: HashMap<Uuid, Config>) -> Result<Self> {
-        let patch = create_patch(configs)?;
-        Ok(Modular { patch })
+    pub fn new() -> Self {
+        let patch = Patch::new(HashMap::new());
+        Modular { patch }
     }
 
     pub fn spawn(
@@ -69,32 +65,32 @@ impl Modular {
     }
 }
 
-fn create_patch(mut configs: HashMap<Uuid, Config>) -> Result<Patch> {
-    if !configs.contains_key(&ROOT_ID) {
-        configs.insert(
-            ROOT_ID.clone(),
-            Config {
-                module_type: "signal".into(),
-                params: Value::Object(Map::new()),
-            },
-        );
-    }
-    let mut map = HashMap::new();
-    let constructors = dsp::get_constructors();
-    for (id, config) in configs {
-        if let Some(constructor) = constructors.get(&config.module_type) {
-            let module = constructor(&id, config.params)?;
-            map.insert(id, module);
-        } else {
-            return Err(anyhow!(
-                "module with id {}: module type {} does not exist.",
-                id,
-                config.module_type
-            ));
-        }
-    }
-    return Ok(Patch::new(map));
-}
+// fn create_patch(mut configs: HashMap<Uuid, Config>) -> Result<Patch> {
+//     if !configs.contains_key(&ROOT_ID) {
+//         configs.insert(
+//             ROOT_ID.clone(),
+//             Config {
+//                 module_type: "signal".into(),
+//                 params: Value::Object(Map::new()),
+//             },
+//         );
+//     }
+//     let mut map = HashMap::new();
+//     let constructors = dsp::get_constructors();
+//     for (id, config) in configs {
+//         if let Some(constructor) = constructors.get(&config.module_type) {
+//             let module = constructor(&id)?;
+//             map.insert(id, module);
+//         } else {
+//             return Err(anyhow!(
+//                 "module with id {}: module type {} does not exist.",
+//                 id,
+//                 config.module_type
+//             ));
+//         }
+//     }
+//     return Ok(Patch::new(map));
+// }
 
 // fn wav_spec_from_config(config: &cpal::SupportedStreamConfig) -> hound::WavSpec {
 //     hound::WavSpec {

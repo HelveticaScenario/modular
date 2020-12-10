@@ -1,9 +1,7 @@
-use std::collections::HashMap;
+use std::{sync::Arc, collections::HashMap};
 use std::sync::Mutex;
 
 use anyhow::{anyhow, Result};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
@@ -12,8 +10,7 @@ use crate::{
         consts::{LUT_SINE, LUT_SINE_SIZE},
         utils::{clamp, interpolate},
     },
-    types::PatchMap,
-    types::{ModuleSchema, ModuleState, Param, PortSchema, Sampleable, SampleableConstructor},
+    types::{ModuleSchema, ModuleState, InternalParam, PortSchema, Sampleable, SampleableConstructor},
 };
 
 const NAME: &str = "sine-oscillator";
@@ -21,14 +18,12 @@ const OUTPUT: &str = "output";
 const FREQ: &str = "freq";
 const PHASE: &str = "phase";
 
-#[derive(Serialize, Deserialize, Debug, Default)]
-#[serde(default)]
+#[derive( Default)]
 struct SineOscillatorParams {
-    freq: Param,
-    phase: Param,
+    freq: InternalParam,
+    phase: InternalParam,
 }
 
-#[derive(Debug)]
 struct SineOscillatorModule {
     sample: f32,
     phase: f32,
@@ -36,12 +31,12 @@ struct SineOscillatorModule {
 }
 
 impl SineOscillatorModule {
-    fn update(&mut self, patch_map: &PatchMap, sample_rate: f32) -> () {
-        if self.params.phase != Param::Disconnected {
-            self.sample = wrap(0.0..1.0, self.params.phase.get_value(patch_map));
+    fn update(&mut self,  sample_rate: f32) -> () {
+        if self.params.phase != InternalParam::Disconnected {
+            self.sample = wrap(0.0..1.0, self.params.phase.get_value());
         } else {
             let voltage = clamp(
-                self.params.freq.get_value_or(patch_map, 4.0),
+                self.params.freq.get_value_or(4.0),
                 12.0,
                 0.0,
             );
@@ -56,7 +51,6 @@ impl SineOscillatorModule {
     }
 }
 
-#[derive(Debug)]
 struct SineOscillator {
     id: Uuid,
     sample: Mutex<f32>,
@@ -68,11 +62,11 @@ impl Sampleable for SineOscillator {
         *self.sample.try_lock().unwrap() = self.module.try_lock().unwrap().sample;
     }
 
-    fn update(&self, patch_map: &PatchMap, sample_rate: f32) -> () {
+    fn update(&self,  sample_rate: f32) -> () {
         self.module
             .try_lock()
             .unwrap()
-            .update(patch_map, sample_rate);
+            .update( sample_rate);
     }
 
     fn get_sample(&self, port: &String) -> Result<f32> {
@@ -90,8 +84,8 @@ impl Sampleable for SineOscillator {
     fn get_state(&self) -> crate::types::ModuleState {
         let mut param_map = HashMap::new();
         let ref params = self.module.lock().unwrap().params;
-        param_map.insert(FREQ.to_owned(), params.freq.clone());
-        param_map.insert(PHASE.to_owned(), params.phase.clone());
+        param_map.insert(FREQ.to_owned(), params.freq.to_param());
+        param_map.insert(PHASE.to_owned(), params.phase.to_param());
         ModuleState {
             module_type: NAME.to_owned(),
             id: self.id.clone(),
@@ -99,7 +93,7 @@ impl Sampleable for SineOscillator {
         }
     }
 
-    fn update_param(&self, param_name: &String, new_param: Param) -> Result<()> {
+    fn update_param(&self, param_name: &String, new_param: InternalParam) -> Result<()> {
         match param_name.as_str() {
             FREQ => {
                 self.module.lock().unwrap().params.freq = new_param;
@@ -115,6 +109,10 @@ impl Sampleable for SineOscillator {
                 NAME
             )),
         }
+    }
+
+    fn get_id(&self) -> Uuid {
+        self.id.clone()
     }
 }
 
@@ -137,17 +135,16 @@ pub const SCHEMA: ModuleSchema = ModuleSchema {
     }],
 };
 
-fn constructor(id: &Uuid, params: Value) -> Result<Box<dyn Sampleable>> {
-    let params = serde_json::from_value(params)?;
-    Ok(Box::new(SineOscillator {
+fn constructor(id: &Uuid) -> Result<Arc<Box<dyn Sampleable>>> {
+    Ok(Arc::new(Box::new(SineOscillator {
         id: id.clone(),
         sample: Mutex::new(0.0),
         module: Mutex::new(SineOscillatorModule {
-            params,
+            params: SineOscillatorParams::default(),
             sample: 0.0,
             phase: 0.0,
         }),
-    }))
+    })))
 }
 
 pub fn install_constructor(map: &mut HashMap<String, SampleableConstructor>) {

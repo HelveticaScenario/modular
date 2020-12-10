@@ -2,18 +2,11 @@ use std::{sync::mpsc::Sender, vec};
 
 use modular_core::{
     message::{InputMessage, OutputMessage},
-    types::{ModuleState, Param},
+    types::Param,
     uuid::Uuid,
 };
 use rosc::OscType::{Float as OscFloat, Int as OscInt, String as OscStr};
-use rosc::{OscBundle, OscMessage, OscPacket, OscType};
-
-fn bndl(content: Vec<OscPacket>) -> OscPacket {
-    OscPacket::Bundle(OscBundle {
-        content,
-        timetag: (0, 1),
-    })
-}
+use rosc::{OscMessage, OscPacket, OscType};
 
 fn msg(addr: &str, args: Vec<OscType>) -> OscPacket {
     OscPacket::Message(OscMessage {

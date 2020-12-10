@@ -1,7 +1,10 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{self, Arc},
+};
 use uuid::Uuid;
 
 lazy_static! {
@@ -9,12 +12,13 @@ lazy_static! {
     pub static ref ROOT_OUTPUT_PORT: String = "output".into();
 }
 
-pub trait Sampleable: Send {
+pub trait Sampleable: Send + Sync {
+    fn get_id(&self) -> Uuid;
     fn tick(&self) -> ();
-    fn update(&self, patch_map: &PatchMap, sample_rate: f32) -> ();
+    fn update(&self, sample_rate: f32) -> ();
     fn get_sample(&self, port: &String) -> Result<f32>;
     fn get_state(&self) -> ModuleState;
-    fn update_param(&self, param_name: &String, new_param: Param) -> Result<()>;
+    fn update_param(&self, param_name: &String, new_param: InternalParam) -> Result<()>;
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -23,7 +27,68 @@ pub struct Config {
     pub params: Value,
 }
 
-pub type PatchMap = HashMap<Uuid, Box<dyn Sampleable>>;
+pub type PatchMap = HashMap<Uuid, Arc<Box<dyn Sampleable>>>;
+
+#[derive(Clone)]
+pub enum InternalParam {
+    Value {
+        value: f32,
+    },
+    Note {
+        value: u8,
+    },
+    Cable {
+        module: sync::Weak<Box<dyn Sampleable>>,
+        port: String,
+    },
+    Disconnected,
+}
+
+impl PartialEq for InternalParam {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (InternalParam::Value { value: value1 }, InternalParam::Value { value: value2 }) => {
+                *value1 == *value2
+            }
+            (InternalParam::Note { value: value1 }, InternalParam::Note { value: value2 }) => {
+                *value1 == *value2
+            }
+            (
+                InternalParam::Cable {
+                    module: module1,
+                    port: port1,
+                },
+                InternalParam::Cable {
+                    module: module2,
+                    port: port2,
+                },
+            ) => {
+                *port1 == *port2
+                    && module1.upgrade().map(|module| module.get_id())
+                        == module2.upgrade().map(|module| module.get_id())
+            }
+            (InternalParam::Disconnected, InternalParam::Disconnected) => true,
+            _ => false,
+        }
+    }
+}
+
+impl InternalParam {
+    pub fn to_param(&self) -> Param {
+        match self {
+            InternalParam::Value { value } => Param::Value { value: *value },
+            InternalParam::Note { value } => Param::Note { value: *value },
+            InternalParam::Cable { module, port } => match module.upgrade() {
+                Some(module) => Param::Cable {
+                    module: module.get_id(),
+                    port: port.clone(),
+                },
+                None => Param::Disconnected,
+            },
+            InternalParam::Disconnected => Param::Disconnected,
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "param_type", rename_all = "kebab-case")]
@@ -35,28 +100,50 @@ pub enum Param {
 }
 
 impl Param {
-    pub fn get_value(&self, patch_map: &PatchMap) -> f32 {
-        self.get_value_or(patch_map, 0.0)
-    }
-    pub fn get_value_or(&self, patch_map: &PatchMap, default: f32) -> f32 {
+    pub fn to_internal_param(&self, patch_map: &PatchMap) -> InternalParam {
         match self {
-            Param::Value { value } => *value,
-            Param::Note { value } => (*value as f32 - 21.0) / 12.0,
+            Param::Value { value } => InternalParam::Value { value: *value },
+            Param::Note { value } => InternalParam::Note { value: *value },
             Param::Cable { module, port } => {
-                if let Some(m) = patch_map.get(module) {
+                match patch_map.get(module) {
+                    Some(module) => InternalParam::Cable {
+                        module: Arc::downgrade(module),
+                        port: port.clone(),
+                    },
+                    None => InternalParam::Disconnected,
+                }
+                // InternalParam::Cable {
+                //     module:
+                // }
+            }
+            Param::Disconnected => InternalParam::Disconnected,
+        }
+    }
+}
+
+impl InternalParam {
+    pub fn get_value(&self) -> f32 {
+        self.get_value_or(0.0)
+    }
+    pub fn get_value_or(&self, default: f32) -> f32 {
+        match self {
+            InternalParam::Value { value } => *value,
+            InternalParam::Note { value } => (*value as f32 - 21.0) / 12.0,
+            InternalParam::Cable { module, port } => {
+                if let Some(m) = module.upgrade() {
                     m.get_sample(port).unwrap_or(default)
                 } else {
                     default
                 }
             }
-            Param::Disconnected => default,
+            InternalParam::Disconnected => default,
         }
     }
 }
 
-impl Default for Param {
+impl Default for InternalParam {
     fn default() -> Self {
-        Param::Disconnected
+        InternalParam::Disconnected
     }
 }
 
@@ -81,4 +168,4 @@ pub struct ModuleState {
     pub params: HashMap<String, Param>,
 }
 
-pub type SampleableConstructor = Box<dyn Fn(&Uuid, Value) -> Result<Box<dyn Sampleable>>>;
+pub type SampleableConstructor = Box<dyn Fn(&Uuid) -> Result<Arc<Box<dyn Sampleable>>>>;

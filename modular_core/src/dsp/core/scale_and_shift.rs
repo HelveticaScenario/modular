@@ -1,12 +1,15 @@
-use std::collections::HashMap;
+use std::{sync::Arc, collections::HashMap};
 use std::sync::Mutex;
 
 use anyhow::{anyhow, Result};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+
+
 use uuid::Uuid;
 
-use crate::types::{ModuleSchema, ModuleState, Param, PatchMap, PortSchema, Sampleable, SampleableConstructor};
+use crate::types::{
+    InternalParam, ModuleSchema, ModuleState, PortSchema, Sampleable,
+    SampleableConstructor,
+};
 
 const NAME: &str = "scale-and-shift";
 const INPUT: &str = "input";
@@ -14,30 +17,28 @@ const SCALE: &str = "scale";
 const SHIFT: &str = "shift";
 const OUTPUT: &str = "output";
 
-#[derive(Serialize, Deserialize, Debug, Default)]
-#[serde(default)]
+#[derive(Default)]
 struct ScaleAndShiftParams {
-    input: Param,
-    scale: Param,
-    shift: Param,
+    input: InternalParam,
+    scale: InternalParam,
+    shift: InternalParam,
 }
 
-#[derive(Debug)]
 struct ScaleAndShiftModule {
     sample: f32,
     params: ScaleAndShiftParams,
 }
 
 impl ScaleAndShiftModule {
-    fn update(&mut self, patch_map: &PatchMap) -> () {
-        let input = self.params.input.get_value(patch_map);
-        let scale = self.params.scale.get_value_or(patch_map, 5.0);
-        let shift = self.params.shift.get_value(patch_map);
+    fn update(&mut self) -> () {
+        let input = self.params.input.get_value();
+        let scale = self.params.scale.get_value_or(5.0);
+        let shift = self.params.shift.get_value();
         self.sample = input * (scale / 5.0) + shift
     }
 }
 
-#[derive(Debug)]
+
 struct ScaleAndShift {
     id: Uuid,
     sample: Mutex<f32>,
@@ -49,8 +50,8 @@ impl Sampleable for ScaleAndShift {
         *self.sample.try_lock().unwrap() = self.module.try_lock().unwrap().sample;
     }
 
-    fn update(&self, patch_map: &PatchMap, _sample_rate: f32) -> () {
-        self.module.try_lock().unwrap().update(patch_map);
+    fn update(&self, _sample_rate: f32) -> () {
+        self.module.try_lock().unwrap().update();
     }
 
     fn get_sample(&self, port: &String) -> Result<f32> {
@@ -68,9 +69,9 @@ impl Sampleable for ScaleAndShift {
     fn get_state(&self) -> crate::types::ModuleState {
         let mut params_map = HashMap::new();
         let ref params = self.module.lock().unwrap().params;
-        params_map.insert(INPUT.to_owned(), params.input.clone());
-        params_map.insert(SCALE.to_owned(), params.scale.clone());
-        params_map.insert(SHIFT.to_owned(), params.shift.clone());
+        params_map.insert(INPUT.to_owned(), params.input.to_param());
+        params_map.insert(SCALE.to_owned(), params.scale.to_param());
+        params_map.insert(SHIFT.to_owned(), params.shift.to_param());
         ModuleState {
             module_type: NAME.to_owned(),
             id: self.id.clone(),
@@ -78,7 +79,7 @@ impl Sampleable for ScaleAndShift {
         }
     }
 
-    fn update_param(&self, param_name: &String, new_param: Param) -> Result<()> {
+    fn update_param(&self, param_name: &String, new_param: InternalParam) -> Result<()> {
         match param_name.as_str() {
             INPUT => {
                 self.module.lock().unwrap().params.input = new_param;
@@ -92,8 +93,16 @@ impl Sampleable for ScaleAndShift {
                 self.module.lock().unwrap().params.shift = new_param;
                 Ok(())
             }
-            _ => Err(anyhow!("{} is not a valid param name for {}", param_name, NAME)),
+            _ => Err(anyhow!(
+                "{} is not a valid param name for {}",
+                param_name,
+                NAME
+            )),
         }
+    }
+
+    fn get_id(&self) -> Uuid {
+        self.id.clone()
     }
 }
 
@@ -120,16 +129,15 @@ pub const SCHEMA: ModuleSchema = ModuleSchema {
     }],
 };
 
-fn constructor(id: &Uuid, params: Value) -> Result<Box<dyn Sampleable>> {
-    let params = serde_json::from_value(params)?;
-    Ok(Box::new(ScaleAndShift {
+fn constructor(id: &Uuid) -> Result<Arc<Box<dyn Sampleable>>> {
+    Ok(Arc::new(Box::new(ScaleAndShift {
         id: id.clone(),
         sample: Mutex::new(0.0),
         module: Mutex::new(ScaleAndShiftModule {
-            params,
+            params: ScaleAndShiftParams::default(),
             sample: 0.0,
         }),
-    }))
+    })))
 }
 
 pub fn install_constructor(map: &mut HashMap<String, SampleableConstructor>) {

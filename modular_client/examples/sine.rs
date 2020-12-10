@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::mpsc, thread, time::Duration};
+use std::{sync::mpsc, thread, time::Duration};
 
 use anyhow::anyhow;
 use modular_client::{client::spawn_client, osc::Message::Server};
@@ -12,11 +12,8 @@ use modular_server::spawn;
 fn main() -> anyhow::Result<()> {
     // let matches = get_matches();
 
-    let (_modular_handle, _receiving_server_handle, _sending_server_handle) = spawn(
-        "127.0.0.1:7813".to_owned(),
-        "7812".to_owned(),
-        HashMap::new(),
-    )?;
+    let (_modular_handle, _receiving_server_handle, _sending_server_handle) =
+        spawn("127.0.0.1:7813".to_owned(), "7812".to_owned());
 
     let (incoming_tx, incoming_rx) = mpsc::channel();
     let (outgoing_tx, outgoing_rx) = mpsc::channel();
@@ -96,13 +93,12 @@ fn main() -> anyhow::Result<()> {
     }
     let part2 = [C, C, C, C, B, B, B, B];
     for i in part2.iter() {
-        
         outgoing_tx.send(InputMessage::UpdateParam(
             osc_id.clone(),
             "freq".into(),
             Param::Note { value: *i },
         ))?;
-        
+
         thread::sleep(Duration::from_millis(100));
         outgoing_tx.send(InputMessage::UpdateParam(
             atten_id.clone(),

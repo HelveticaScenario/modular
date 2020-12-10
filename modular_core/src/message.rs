@@ -1,6 +1,5 @@
 use std::sync::mpsc::Sender;
 
-use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use crate::{
@@ -63,7 +62,7 @@ pub fn handle_message(
             let constructors = get_constructors();
             if let Some(constructor) = constructors.get(&module_type) {
                 let uuid = id.unwrap_or(Uuid::new_v4());
-                match constructor(&uuid, Value::Object(Map::new())) {
+                match constructor(&uuid) {
                     Ok(module) => {
                         patch_map.lock().unwrap().insert(uuid.clone(), module);
                         sender.send(OutputMessage::CreateModule(module_type, uuid))?
@@ -81,7 +80,7 @@ pub fn handle_message(
         }
         InputMessage::UpdateParam(id, param_name, new_param) => {
             match patch_map.lock().unwrap().get(&id) {
-                Some(module) => module.update_param(&param_name, new_param)?,
+                Some(module) => module.update_param(&param_name, new_param.to_internal_param(&patch_map.lock().unwrap()))?,
                 None => sender.send(OutputMessage::Error(format!("{} not found", id)))?,
             }
         }

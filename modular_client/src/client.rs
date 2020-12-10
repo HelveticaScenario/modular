@@ -1,9 +1,15 @@
-use std::{net::SocketAddrV4, str::FromStr, net::UdpSocket, sync::mpsc::{Receiver, Sender}, thread::{self, JoinHandle}};
+use std::{
+    net::SocketAddrV4,
+    net::UdpSocket,
+    str::FromStr,
+    sync::mpsc::{Receiver, Sender},
+    thread::{self, JoinHandle},
+};
 
-use modular_core::message::{InputMessage};
+use modular_core::message::InputMessage;
 use rosc::encoder;
 
-use crate::osc::{Message, message_to_osc, osc_to_message};
+use crate::osc::{message_to_osc, osc_to_message, Message};
 
 pub fn start_sending_client(client_address: String, rx: Receiver<InputMessage>) {
     let host_addr = SocketAddrV4::from_str("0.0.0.0:0").unwrap();
@@ -28,17 +34,15 @@ pub fn start_recieving_client(host_address: String, tx: Sender<Message>) {
 
     loop {
         match sock.recv_from(&mut buf) {
-            Ok((size, addr)) => {
-                match rosc::decoder::decode(&buf[..size]) {
-                    Ok(packet) => {
-                        println!("{:?}", packet);
-                        osc_to_message(packet, &tx)
-                    }
-                    Err(err) => {
-                        println!("{:?}", err);
-                    }
+            Ok((size, _addr)) => match rosc::decoder::decode(&buf[..size]) {
+                Ok(packet) => {
+                    println!("{:?}", packet);
+                    osc_to_message(packet, &tx)
                 }
-            }
+                Err(err) => {
+                    println!("{:?}", err);
+                }
+            },
             Err(e) => {
                 println!("Error receiving from socket: {}", e);
                 return;

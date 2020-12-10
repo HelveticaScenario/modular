@@ -1,13 +1,3 @@
-use std::{
-    io::Read,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        mpsc, Arc,
-    },
-};
-
-use modular_client::client::spawn_client;
-
 fn main() -> anyhow::Result<()> {
     // let matches = get_matches();
 
