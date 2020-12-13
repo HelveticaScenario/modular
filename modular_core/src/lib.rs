@@ -1,6 +1,9 @@
 #[macro_use]
 extern crate lazy_static;
 
+#[macro_use]
+extern crate modular_derive;
+
 extern crate anyhow;
 extern crate cpal;
 extern crate hound;
@@ -10,8 +13,9 @@ extern crate serde_json;
 pub mod dsp;
 pub mod message;
 pub mod patch;
-pub mod types;
 mod sequence;
+pub mod types;
+use modular_derive::*;
 
 use std::{
     collections::HashMap,

@@ -14,6 +14,6 @@ pub fn get_constructors() -> HashMap<String, SampleableConstructor> {
     return map;
 }
 
-pub fn schema() -> Vec<&'static ModuleSchema> {
+pub fn schema() -> Vec<ModuleSchema> {
     [core::schemas(), oscillators::schemas()].concat()
 }

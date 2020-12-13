@@ -24,7 +24,7 @@ pub enum InputMessage {
 #[derive(Debug, Clone)]
 pub enum OutputMessage {
     Echo(String),
-    Schema(Vec<&'static ModuleSchema>),
+    Schema(Vec<ModuleSchema>),
     PatchState(Vec<ModuleState>),
     ModuleState(Uuid, Option<ModuleState>),
     CreateModule(String, Uuid),

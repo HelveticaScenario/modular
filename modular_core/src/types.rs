@@ -12,6 +12,17 @@ lazy_static! {
     pub static ref ROOT_OUTPUT_PORT: String = "output".into();
 }
 
+pub trait Params {
+    fn get_params_state(&self) -> HashMap<String, Param>;
+    fn update_param(
+        &mut self,
+        param_name: &String,
+        new_param: InternalParam,
+        module_name: &str,
+    ) -> Result<()>;
+    fn get_schema() -> &'static [PortSchema];
+}
+
 pub trait Sampleable: Send + Sync {
     fn get_id(&self) -> Uuid;
     fn tick(&self) -> ();
@@ -19,6 +30,11 @@ pub trait Sampleable: Send + Sync {
     fn get_sample(&self, port: &String) -> Result<f32>;
     fn get_state(&self) -> ModuleState;
     fn update_param(&self, param_name: &String, new_param: InternalParam) -> Result<()>;
+}
+
+pub trait Module {
+    fn install_constructor(map: &mut HashMap<String, SampleableConstructor>);
+    fn get_schema() -> ModuleSchema;
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
