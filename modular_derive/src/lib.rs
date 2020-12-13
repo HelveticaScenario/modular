@@ -3,6 +3,7 @@ extern crate syn;
 
 extern crate proc_macro;
 
+use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::{format_ident, quote, quote_spanned};
@@ -237,7 +238,8 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     let output_retrievals = outputs.iter().map(|(_, _, retrieval, _)| retrieval);
     let output_schemas = outputs.iter().map(|(_, _, _, schema)| schema);
     let struct_name = format_ident!("{}Sampleable", name);
-    let constuctor_name = format_ident!("{}_constructor", name);
+    let constructor_name = format_ident!("{}Constructor", name).to_string().to_case(Case::Snake);
+    let constructor_name = Ident::new(&constructor_name, Span::call_site());
     let params_struct_name = format_ident!("{}Params", name);
     let gen = quote! {
         #[derive(Default)]
@@ -283,7 +285,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             }
         }
 
-        fn #constuctor_name(id: &uuid::Uuid) -> Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
+        fn #constructor_name(id: &uuid::Uuid) -> Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
             Ok(std::sync::Arc::new(Box::new(#struct_name {
                 id: id.clone(),
                 ..#struct_name::default()
@@ -292,7 +294,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
 
         impl crate::types::Module for #name {
             fn install_constructor(map: &mut std::collections::HashMap<String, crate::types::SampleableConstructor>) {
-                map.insert(#module_name.into(), Box::new(#constuctor_name));
+                map.insert(#module_name.into(), Box::new(#constructor_name));
             }
             fn get_schema() -> crate::types::ModuleSchema {
                 crate::types::ModuleSchema {
