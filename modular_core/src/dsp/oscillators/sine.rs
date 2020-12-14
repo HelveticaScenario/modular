@@ -6,27 +6,21 @@ use crate::{
         consts::{LUT_SINE, LUT_SINE_SIZE},
         utils::{clamp, interpolate},
     },
-    types::{
-        InternalParam, Module, Params,
-    },
+    types::InternalParam,
 };
 
 #[derive(Default, Params)]
 struct SineOscillatorParams {
-    #[name("freq")]
-    #[description("frequency in v/oct")]
+    #[param("freq", "frequency in v/oct")]
     freq: InternalParam,
-    #[name("phase")]
-    #[description("the phase of the oscillator, overrides freq if present")]
+    #[param("phase", "the phase of the oscillator, overrides freq if present")]
     phase: InternalParam,
 }
 
 #[derive(Default, Module)]
-#[name("sine-oscillator")]
-#[description("A sine wave oscillator")]
+#[module("sine-oscillator", "A sine wave oscillator")]
 pub struct SineOscillator {
-    #[output("output")]
-    #[description("signal output")]
+    #[output("output", "signal output")]
     sample: f32,
     phase: f32,
     params: SineOscillatorParams,

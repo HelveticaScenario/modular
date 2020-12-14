@@ -5,14 +5,15 @@ extern crate proc_macro;
 
 use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
-use proc_macro2::{Ident, Span};
+use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote, quote_spanned};
-use syn::{AttributeArgs, Lit, LitStr, parenthesized, spanned::Spanned};
 use syn::{
-    parse_macro_input, parse_quote, Data, DeriveInput, Fields, GenericParam, Generics, Index,
+    parse::Parser, punctuated::Punctuated, spanned::Spanned, Attribute, Field, FieldsNamed, LitStr,
+    Token,
 };
+use syn::{Data, DeriveInput, Fields};
 
-#[proc_macro_derive(Params, attributes(name, description))]
+#[proc_macro_derive(Params, attributes(name, description, param))]
 pub fn params_macro_derive(input: TokenStream) -> TokenStream {
     // Construct a representation of Rust code as a syntax tree
     // that we can manipulate
@@ -22,78 +23,116 @@ pub fn params_macro_derive(input: TokenStream) -> TokenStream {
     impl_params_macro(&ast)
 }
 
+fn unwrap_attr(attrs: &Vec<Attribute>, ident: &str) -> Option<TokenStream2> {
+    attrs
+        .iter()
+        .filter(|attr| attr.path.is_ident(ident))
+        .next()
+        .map(|attr| {
+            attr.tokens
+                .clone()
+                .into_iter()
+                .map(|token| match token {
+                    proc_macro2::TokenTree::Group(group) => group.stream(),
+                    proc_macro2::TokenTree::Ident(_) => {
+                        unimplemented!()
+                    }
+                    proc_macro2::TokenTree::Punct(_) => {
+                        unimplemented!()
+                    }
+                    proc_macro2::TokenTree::Literal(_) => {
+                        unimplemented!()
+                    }
+                })
+                .next()
+                .unwrap()
+        })
+}
+
+fn unwrap_name_description(
+    attrs: &Vec<Attribute>,
+    ident: &str,
+) -> (Option<LitStr>, Option<LitStr>) {
+    let attr = unwrap_attr(attrs, ident)
+        .map(|tokens| {
+            Punctuated::<LitStr, Token![,]>::parse_terminated
+                .parse2(tokens)
+                .unwrap()
+        })
+        .unwrap_or_default();
+    let mut iter = attr.iter();
+    let name = iter.next().map(|lit| lit.clone());
+    let description = iter.next().map(|lit| lit.clone());
+    (name, description)
+}
+
+fn map_name_description<F, B>(fields: &FieldsNamed, ident: &str, mut closure: F) -> Vec<B>
+where
+    F: FnMut(&Field, Option<Ident>, Option<LitStr>, Option<LitStr>) -> B,
+{
+    fields
+        .named
+        .iter()
+        .filter(|f| {
+            f.attrs
+                .iter()
+                .filter(|attr| attr.path.is_ident(ident))
+                .count()
+                > 0
+        })
+        .map(|f| {
+            let f_name = &f.ident;
+            let (name, description) = unwrap_name_description(&f.attrs, ident);
+            closure(f, f_name.clone(), name, description)
+        })
+        .collect()
+    // .map(|f| {
+    //     let f_name = &f.ident;
+    //     let (name, description) = unwrap_name_description(&f.attrs, "param");
+    //     (
+    //         quote_spanned! {f.span()=>
+    //             state.insert(#name.to_owned(), self.#f_name.to_param());
+    //         },
+    //         quote_spanned! {f.span()=>
+    //             #name => {
+    //                 self.#f_name = new_param;
+    //                 Ok(())
+    //             }
+    //         },
+    //         quote_spanned! {f.span()=>
+    //             crate::types::PortSchema {
+    //                 name: #name,
+    //                 description: #description,
+    //             },
+    //         },
+    //     )
+    // })
+}
+
 fn impl_params_macro(ast: &DeriveInput) -> TokenStream {
     let name = &ast.ident;
     let (inserts, updates, schemas) = match ast.data {
         Data::Struct(ref data) => match data.fields {
             Fields::Named(ref fields) => {
-                let v = fields
-                    .named
-                    .iter()
-                    .filter(|f| {
-                        f.attrs
-                            .iter()
-                            .filter(|attr| attr.path.is_ident("description"))
-                            .count()
-                            > 0
-                    })
-                    .map(|f| {
-                        let f_name = &f.ident;
-                        let description = f
-                            .attrs
-                            .iter()
-                            .filter(|attr| attr.path.is_ident("description"))
-                            .map(|attr| attr.tokens.clone())
-                            .next()
-                            .unwrap_or(quote! {"TODO"})
-                            .clone();
-                        // let abc = f
-                        //     .attrs
-                        //     .iter()
-                        //     .filter(|attr| attr.path.is_ident("name"))
-                        //     .map(|attr| {
-                        //         let args = attr.tokens.into();
-                        //         parse_macro_input!(args as AttributeArgs)
-                        //             .iter()
-                        //             .map(|arg| match arg {
-                        //                 syn::NestedMeta::Meta(_) => {
-                        //                     unimplemented!()
-                        //                 }
-                        //                 syn::NestedMeta::Lit(l) => TokenStream::from(l.clone()),
-                        //             })
-                        //             .next()
-                        //             .unwrap()
-                        //     })
-                        //     .next()
-                        //     .unwrap()
-                        //     .clone();
-                        let name = f
-                            .attrs
-                            .iter()
-                            .filter(|attr| attr.path.is_ident("name"))
-                            .map(|attr| attr.tokens.clone())
-                            .next()
-                            .unwrap()
-                            .clone();
-                        (
-                            quote_spanned! {f.span()=>
-                                state.insert(#name.to_owned(), self.#f_name.to_param());
+                let v = map_name_description(fields, "param", |f, f_name, name, description| {
+                    (
+                        quote_spanned! {f.span()=>
+                            state.insert(#name.to_owned(), self.#f_name.to_param());
+                        },
+                        quote_spanned! {f.span()=>
+                            #name => {
+                                self.#f_name = new_param;
+                                Ok(())
+                            }
+                        },
+                        quote_spanned! {f.span()=>
+                            crate::types::PortSchema {
+                                name: #name,
+                                description: #description,
                             },
-                            quote_spanned! {f.span()=>
-                                #name => {
-                                    self.#f_name = new_param;
-                                    Ok(())
-                                }
-                            },
-                            quote_spanned! {f.span()=>
-                                crate::types::PortSchema {
-                                    name: #name,
-                                    description: #description,
-                                },
-                            },
-                        )
-                    })
-                    .collect::<Vec<_>>();
+                        },
+                    )
+                });
                 let insert_iter = v.iter().map(|(insert, _, _)| insert);
                 let update_iter = v.iter().map(|(_, update, _)| update);
                 let schema_iter = v.iter().map(|(_, _, schema)| schema);
@@ -143,7 +182,7 @@ fn impl_params_macro(ast: &DeriveInput) -> TokenStream {
     gen.into()
 }
 
-#[proc_macro_derive(Module, attributes(output, name, description))]
+#[proc_macro_derive(Module, attributes(output, module))]
 pub fn module_macro_derive(input: TokenStream) -> TokenStream {
     // Construct a representation of Rust code as a syntax tree
     // that we can manipulate
@@ -155,59 +194,26 @@ pub fn module_macro_derive(input: TokenStream) -> TokenStream {
 
 fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     let name = &ast.ident;
-
-    let module_name = &ast
-        .attrs
-        .iter()
-        .filter(|attr| attr.path.is_ident("name"))
-        .map(|attr| attr.tokens.clone())
-        .next()
-        .unwrap_or(quote! {#name})
-        .clone();
-
-    let module_description = &ast
-        .attrs
-        .iter()
-        .filter(|attr| attr.path.is_ident("description"))
-        .map(|attr| {
-            let tokens = &attr.tokens.clone();
-            quote! {#tokens}
-        })
-        .collect::<Vec<_>>()
-        .get(0)
-        .unwrap_or(&quote! {"TODO"})
-        .clone();
+    let (module_name, module_description) = unwrap_name_description(&ast.attrs, "module");
 
     let outputs: Vec<_> = match ast.data {
         Data::Struct(ref data) => match data.fields {
             Fields::Named(ref fields) => fields
                 .named
                 .iter()
-                .filter(|f| {
-                    f.attrs
-                        .iter()
-                        .filter(|attr| attr.path.is_ident("output"))
-                        .count()
-                        > 0
-                })
+                .filter(|f| unwrap_attr(&f.attrs, "output").is_some())
                 .map(|f| {
                     let name = f.ident.clone();
-                    let output_name = f
-                        .attrs
-                        .iter()
-                        .filter(|attr| attr.path.is_ident("output"))
-                        .next()
-                        .map(|attr| attr.tokens.clone())
-                        .unwrap()
-                        .clone();
-                    let description = f
-                        .attrs
-                        .iter()
-                        .filter(|attr| attr.path.is_ident("description"))
-                        .next()
-                        .map(|attr| attr.tokens.clone())
-                        .unwrap_or(quote! {"TODO"})
-                        .clone();
+                    let output = unwrap_attr(&f.attrs, "output")
+                        .map(|tokens| {
+                            Punctuated::<LitStr, Token![,]>::parse_terminated
+                                .parse2(tokens)
+                                .unwrap()
+                        })
+                        .unwrap_or_default();
+                    let mut output_iter = output.iter();
+                    let output_name = output_iter.next();
+                    let description = output_iter.next();
                     (
                         name.clone().unwrap(),
                         quote! {
@@ -232,13 +238,13 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         Data::Enum(_) | Data::Union(_) => unimplemented!(),
     };
     let output_names1 = outputs.iter().map(|(idents, _, _, _)| idents);
-    let output_names2 = output_names1.clone();
-    let output_names3 = output_names2.clone();
     let output_assignments = outputs.iter().map(|(_, assignment, _, _)| assignment);
     let output_retrievals = outputs.iter().map(|(_, _, retrieval, _)| retrieval);
     let output_schemas = outputs.iter().map(|(_, _, _, schema)| schema);
     let struct_name = format_ident!("{}Sampleable", name);
-    let constructor_name = format_ident!("{}Constructor", name).to_string().to_case(Case::Snake);
+    let constructor_name = format_ident!("{}Constructor", name)
+        .to_string()
+        .to_case(Case::Snake);
     let constructor_name = Ident::new(&constructor_name, Span::call_site());
     let params_struct_name = format_ident!("{}Params", name);
     let gen = quote! {
@@ -269,6 +275,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             }
 
             fn get_state(&self) -> crate::types::ModuleState {
+                use crate::types::Params;
                 crate::types::ModuleState {
                     module_type: #module_name.to_owned(),
                     id: self.id.clone(),
@@ -277,6 +284,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             }
 
             fn update_param(&self, param_name: &String, new_param: crate::types::InternalParam) -> Result<()> {
+                use crate::types::Params;
                 self.module.lock().unwrap().params.update_param(param_name, new_param, #module_name)
             }
 
@@ -297,6 +305,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 map.insert(#module_name.into(), Box::new(#constructor_name));
             }
             fn get_schema() -> crate::types::ModuleSchema {
+                use crate::types::Params;
                 crate::types::ModuleSchema {
                     name: #module_name,
                     description: #module_description,

@@ -1,37 +1,18 @@
-use std::sync::Mutex;
-use std::{collections::HashMap, sync::Arc};
-
 use anyhow::{anyhow, Result};
-use uuid::Uuid;
 
-use crate::{
-    dsp::utils::clamp,
-    dsp::utils::wrap,
-    types::{
-        InternalParam, Module, ModuleSchema, ModuleState, Param, Params, PortSchema, Sampleable,
-        SampleableConstructor,
-    },
-};
-
-const NAME: &str = "ramp-oscillator";
-const OUTPUT: &str = "output";
-const FREQ: &str = "freq";
-const PHASE: &str = "phase";
-
+use crate::{dsp::utils::clamp, dsp::utils::wrap, types::InternalParam};
 #[derive(Default, Params)]
 struct RampOscillatorParams {
-    #[name("freq")]
-    #[description("frequency in v/oct")]
+    #[param("freq", "frequency in v/oct")]
     freq: InternalParam,
-    #[name("phase")]
-    #[description("the phase of the oscillator, overrides freq if present")]
+    #[param("phase", "the phase of the oscillator, overrides freq if present")]
     phase: InternalParam,
 }
 
 #[derive(Default, Module)]
-#[name("ramp-oscillator")]
+#[module("ramp-oscillator", "A ramp oscillator")]
 pub struct RampOscillator {
-    #[output("output")]
+    #[output("output", "signal output")]
     sample: f32,
     phase: f32,
     params: RampOscillatorParams,
@@ -53,100 +34,3 @@ impl RampOscillator {
         }
     }
 }
-
-// struct RampOscillator {
-//     id: Uuid,
-//     sample: Mutex<f32>,
-//     module: Mutex<RampOscillatorModule>,
-// }
-
-// impl Sampleable for RampOscillator {
-//     fn tick(&self) -> () {
-//         *self.sample.try_lock().unwrap() = self.module.try_lock().unwrap().sample;
-//     }
-
-//     fn update(&self, sample_rate: f32) -> () {
-//         self.module.try_lock().unwrap().update(sample_rate);
-//     }
-
-//     fn get_sample(&self, port: &String) -> Result<f32> {
-//         if port == OUTPUT {
-//             return Ok(*self.sample.try_lock().unwrap());
-//         }
-//         Err(anyhow!(
-//             "{} with id {} does not have port {}",
-//             NAME,
-//             self.id,
-//             port
-//         ))
-//     }
-
-//     fn get_state(&self) -> ModuleState {
-//         let mut param_map = HashMap::new();
-//         let ref params = self.module.lock().unwrap().params;
-//         param_map.insert(FREQ.to_owned(), params.freq.to_param());
-//         param_map.insert(PHASE.to_owned(), params.phase.to_param());
-//         ModuleState {
-//             module_type: NAME.to_owned(),
-//             id: self.id.clone(),
-//             params: param_map,
-//         }
-//     }
-
-//     fn update_param(&self, param_name: &String, new_param: InternalParam) -> Result<()> {
-//         match param_name.as_str() {
-//             FREQ => {
-//                 self.module.lock().unwrap().params.freq = new_param;
-//                 Ok(())
-//             }
-//             PHASE => {
-//                 self.module.lock().unwrap().params.phase = new_param;
-//                 Ok(())
-//             }
-//             _ => Err(anyhow!(
-//                 "{} is not a valid param name for {}",
-//                 param_name,
-//                 NAME
-//             )),
-//         }
-//     }
-
-//     fn get_id(&self) -> Uuid {
-//         self.id.clone()
-//     }
-// }
-
-// pub const SCHEMA: ModuleSchema = ModuleSchema {
-//     name: NAME,
-//     description: "A ramp oscillator",
-//     params: &[
-//         PortSchema {
-//             name: FREQ,
-//             description: "frequency in v/oct",
-//         },
-//         PortSchema {
-//             name: PHASE,
-//             description: "the phase of the oscillator, overrides freq if present",
-//         },
-//     ],
-//     outputs: &[PortSchema {
-//         name: OUTPUT,
-//         description: "signal output",
-//     }],
-// };
-
-// fn constructor(id: &Uuid) -> Result<Arc<Box<dyn Sampleable>>> {
-//     Ok(Arc::new(Box::new(RampOscillator {
-//         id: id.clone(),
-//         sample: Mutex::new(0.0),
-//         module: Mutex::new(RampOscillatorModule {
-//             params: RampOscillatorParams::default(),
-//             sample: 0.0,
-//             phase: 0.0,
-//         }),
-//     })))
-// }
-
-// pub fn install_constructor(map: &mut HashMap<String, SampleableConstructor>) {
-//     map.insert(NAME.into(), Box::new(constructor));
-// }

@@ -15,7 +15,6 @@ pub mod message;
 pub mod patch;
 mod sequence;
 pub mod types;
-use modular_derive::*;
 
 use std::{
     collections::HashMap,
