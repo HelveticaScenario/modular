@@ -34,17 +34,15 @@ pub fn start_recieving_server(host_address: String, tx: Sender<InputMessage>) {
 
     loop {
         match sock.recv_from(&mut buf) {
-            Ok((size, _addr)) => {
-                match rosc::decoder::decode(&buf[..size]) {
-                    Ok(packet) => {
-                        println!("{:?}", packet);
-                        osc_to_message(packet, &tx)
-                    }
-                    Err(err) => {
-                        println!("{:?}", err);
-                    }
+            Ok((size, _addr)) => match rosc::decoder::decode(&buf[..size]) {
+                Ok(packet) => {
+                    println!("{:?}", packet);
+                    osc_to_message(packet, &tx)
                 }
-            }
+                Err(err) => {
+                    println!("{:?}", err);
+                }
+            },
             Err(e) => {
                 println!("Error receiving from socket: {}", e);
                 return;

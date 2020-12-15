@@ -18,7 +18,7 @@ pub enum InputMessage {
     GetModule(Uuid),
     CreateModule(String, Option<Uuid>),
     UpdateParam(Uuid, String, Param),
-    DeleteModule(Uuid)
+    DeleteModule(Uuid),
 }
 
 #[derive(Debug, Clone)]
@@ -80,7 +80,10 @@ pub fn handle_message(
         }
         InputMessage::UpdateParam(id, param_name, new_param) => {
             match patch_map.lock().unwrap().get(&id) {
-                Some(module) => module.update_param(&param_name, new_param.to_internal_param(&patch_map.lock().unwrap()))?,
+                Some(module) => module.update_param(
+                    &param_name,
+                    new_param.to_internal_param(&patch_map.lock().unwrap()),
+                )?,
                 None => sender.send(OutputMessage::Error(format!("{} not found", id)))?,
             }
         }

@@ -4,12 +4,10 @@ extern crate ctrlc;
 extern crate modular_core;
 extern crate rosc;
 
-
 use clap::{App, Arg, ArgMatches};
 use modular_server::spawn;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-
 
 fn main() {
     let matches = get_matches();
@@ -27,7 +25,6 @@ fn main() {
     .expect("Error setting Ctrl-C handler");
 
     while running.load(Ordering::SeqCst) {}
-
 }
 
 const CLIENT_ARG: &str = "client";

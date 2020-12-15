@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::types::{ModuleSchema, SampleableConstructor, Module};
+use crate::types::{Module, ModuleSchema, SampleableConstructor};
 
 pub mod mix;
 pub mod scale_and_shift;

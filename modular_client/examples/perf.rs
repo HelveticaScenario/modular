@@ -67,7 +67,7 @@ pub fn main() {
     {
         let mut h = vec![];
         for i in 0..1000 {
-            h.push( i);
+            h.push(i);
         }
         for _ in 0..4 {
             let now = Instant::now();

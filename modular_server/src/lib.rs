@@ -1,6 +1,6 @@
-use std::{thread::JoinHandle, sync::mpsc};
+use std::{sync::mpsc, thread::JoinHandle};
 
-use modular_core::{Modular};
+use modular_core::Modular;
 use server::spawn_server;
 
 mod osc;
@@ -9,7 +9,11 @@ mod server;
 pub fn spawn(
     client_address: String,
     port: String,
-) -> (JoinHandle<anyhow::Result<()>>, JoinHandle<()>, JoinHandle<()>) {
+) -> (
+    JoinHandle<anyhow::Result<()>>,
+    JoinHandle<()>,
+    JoinHandle<()>,
+) {
     let (incoming_tx, incoming_rx) = mpsc::channel();
     let (outgoing_tx, outgoing_rx) = mpsc::channel();
 
@@ -22,5 +26,9 @@ pub fn spawn(
         incoming_tx,
         outgoing_rx,
     );
-    (_modular_handle, _receiving_server_handle, _sending_server_handle)
+    (
+        _modular_handle,
+        _receiving_server_handle,
+        _sending_server_handle,
+    )
 }
