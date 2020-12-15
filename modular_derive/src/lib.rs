@@ -121,7 +121,9 @@ fn impl_params_macro(ast: &DeriveInput) -> TokenStream {
                         },
                         quote_spanned! {f.span()=>
                             #name => {
-                                self.#f_name = new_param;
+                                if self.#f_name != *new_param {
+                                    self.#f_name = new_param.clone();
+                                }
                                 Ok(())
                             }
                         },
@@ -162,7 +164,7 @@ fn impl_params_macro(ast: &DeriveInput) -> TokenStream {
                 #inserts
                 state
             }
-            fn update_param(&mut self, param_name: &String, new_param: crate::types::InternalParam, module_name: &str) -> Result<()> {
+            fn update_param(&mut self, param_name: &String, new_param: &crate::types::InternalParam, module_name: &str) -> Result<()> {
                 match param_name.as_str() {
                     #updates
                     _ => Err(anyhow!(
@@ -283,7 +285,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 }
             }
 
-            fn update_param(&self, param_name: &String, new_param: crate::types::InternalParam) -> Result<()> {
+            fn update_param(&self, param_name: &String, new_param: &crate::types::InternalParam) -> Result<()> {
                 use crate::types::Params;
                 self.module.lock().unwrap().params.update_param(param_name, new_param, #module_name)
             }

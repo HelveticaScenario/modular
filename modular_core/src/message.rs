@@ -36,13 +36,13 @@ pub fn handle_message(
     patch: &mut Patch,
     sender: &Sender<OutputMessage>,
 ) -> anyhow::Result<()> {
-    let patch_map = patch.map.clone();
+    let sampleables = patch.sampleables.clone();
     match message {
         InputMessage::Echo(s) => sender.send(OutputMessage::Echo(format!("{}!", s)))?,
         InputMessage::Schema => sender.send(OutputMessage::Schema(schema()))?,
         InputMessage::GetModules => {
             sender.send(OutputMessage::PatchState(
-                patch_map
+                sampleables
                     .lock()
                     .unwrap()
                     .iter()
@@ -51,7 +51,7 @@ pub fn handle_message(
             ))?;
         }
         InputMessage::GetModule(id) => {
-            let state = patch_map
+            let state = sampleables
                 .lock()
                 .unwrap()
                 .get(&id)
@@ -64,7 +64,7 @@ pub fn handle_message(
                 let uuid = id.unwrap_or(Uuid::new_v4());
                 match constructor(&uuid) {
                     Ok(module) => {
-                        patch_map.lock().unwrap().insert(uuid.clone(), module);
+                        sampleables.lock().unwrap().insert(uuid.clone(), module);
                         sender.send(OutputMessage::CreateModule(module_type, uuid))?
                     }
                     Err(err) => {
@@ -79,16 +79,16 @@ pub fn handle_message(
             }
         }
         InputMessage::UpdateParam(id, param_name, new_param) => {
-            match patch_map.lock().unwrap().get(&id) {
+            match sampleables.lock().unwrap().get(&id) {
                 Some(module) => module.update_param(
                     &param_name,
-                    new_param.to_internal_param(&patch_map.lock().unwrap()),
+                    &new_param.to_internal_param(&sampleables.lock().unwrap()),
                 )?,
                 None => sender.send(OutputMessage::Error(format!("{} not found", id)))?,
             }
         }
         InputMessage::DeleteModule(id) => {
-            patch_map.lock().unwrap().remove(&id);
+            sampleables.lock().unwrap().remove(&id);
         }
     };
     Ok(())

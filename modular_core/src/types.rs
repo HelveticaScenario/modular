@@ -1,6 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::time::Duration;
 use std::{
     collections::HashMap,
     sync::{self, Arc},
@@ -17,7 +18,7 @@ pub trait Params {
     fn update_param(
         &mut self,
         param_name: &String,
-        new_param: InternalParam,
+        new_param: &InternalParam,
         module_name: &str,
     ) -> Result<()>;
     fn get_schema() -> &'static [PortSchema];
@@ -29,7 +30,7 @@ pub trait Sampleable: Send + Sync {
     fn update(&self, sample_rate: f32) -> ();
     fn get_sample(&self, port: &String) -> Result<f32>;
     fn get_state(&self) -> ModuleState;
-    fn update_param(&self, param_name: &String, new_param: InternalParam) -> Result<()>;
+    fn update_param(&self, param_name: &String, new_param: &InternalParam) -> Result<()>;
 }
 
 pub trait Module {
@@ -43,7 +44,7 @@ pub struct Config {
     pub params: Value,
 }
 
-pub type PatchMap = HashMap<Uuid, Arc<Box<dyn Sampleable>>>;
+pub type SampleableMap = HashMap<Uuid, Arc<Box<dyn Sampleable>>>;
 
 #[derive(Clone)]
 pub enum InternalParam {
@@ -116,7 +117,7 @@ pub enum Param {
 }
 
 impl Param {
-    pub fn to_internal_param(&self, patch_map: &PatchMap) -> InternalParam {
+    pub fn to_internal_param(&self, patch_map: &SampleableMap) -> InternalParam {
         match self {
             Param::Value { value } => InternalParam::Value { value: *value },
             Param::Note { value } => InternalParam::Note { value: *value },
@@ -162,6 +163,153 @@ impl Default for InternalParam {
         InternalParam::Disconnected
     }
 }
+
+#[derive(PartialEq)]
+pub struct Keyframe {
+    id: Uuid,
+    pub time: Duration,
+    pub param: InternalParam,
+}
+
+impl Keyframe {
+    pub fn new(id: Uuid, time: Duration, param: InternalParam) -> Self {
+        Keyframe { id, time, param }
+    }
+    pub fn get_id(&self) -> Uuid {
+        self.id
+    }
+}
+
+impl PartialOrd for Keyframe {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.time.partial_cmp(&other.time)
+    }
+}
+
+pub enum Playmode {
+    Once,
+    Loop,
+}
+
+pub struct Track {
+    id: Uuid,
+    module: sync::Weak<Box<dyn Sampleable>>,
+    port: String,
+    playhead: Duration,
+    length: Duration,
+    play_mode: Playmode,
+    playhead_idx: usize,
+    keyframes: Vec<Keyframe>,
+}
+
+impl Track {
+    pub fn new(id: Uuid, module: sync::Weak<Box<dyn Sampleable>>, port: String) -> Self {
+        Track {
+            id,
+            module,
+            port,
+            playhead: Duration::from_nanos(0),
+            playhead_idx: 0,
+            length: Duration::from_nanos(0),
+            play_mode: Playmode::Once,
+            keyframes: Vec::new(),
+        }
+    }
+
+    pub fn seek(&mut self, mut playhead: Duration) {
+        if self.length < playhead {
+            match self.play_mode {
+                Playmode::Once => {
+                    self.playhead = self.length;
+                    self.playhead_idx = (self.keyframes.len() - 1).max(0);
+                    return;
+                }
+                Playmode::Loop => {
+                    while self.length < playhead {
+                        playhead -= self.length;
+                    }
+                    self.playhead = playhead;
+                }
+            }
+        } else {
+            self.playhead = playhead;
+        }
+        let len = self.keyframes.len();
+        while self.playhead_idx < len {
+            let curr = self.keyframes.get(self.playhead_idx).unwrap();
+            let next = self.keyframes.get(self.playhead_idx + 1);
+            match next {
+                Some(next) => {
+                    let curr_is_behind_or_equal = self.playhead >= curr.time;
+                    let next_is_ahead = self.playhead < next.time;
+                    match (curr_is_behind_or_equal, next_is_ahead) {
+                        (true, true) => return,
+                        (true, false) => {
+                            self.playhead_idx += 1;
+                        }
+                        (false, true) => {
+                            if self.playhead_idx == 0 {
+                                return;
+                            } else {
+                                self.playhead_idx -= 1;
+                            }
+                        }
+                        (false, false) => {
+                            unreachable!()
+                        }
+                    };
+                }
+                None => {
+                    if self.playhead < curr.time {
+                        if self.playhead_idx == 0 {
+                            return;
+                        } else {
+                            self.playhead_idx -= 1;
+                        }
+                    } else {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn add_keyframe(&mut self, keyframe: Keyframe) {
+        self.keyframes.push(keyframe);
+        self.keyframes.sort_by_key(|a| a.time);
+
+        {
+            let time = self.keyframes.last().unwrap().time;
+            if self.length < time {
+                self.length = time
+            }
+        }
+        let playhead = self.playhead;
+        self.playhead = Duration::from_nanos(0);
+        self.playhead_idx = 0;
+        self.seek(playhead);
+    }
+
+    pub fn remove_keyframe(&mut self, id: Uuid) -> Keyframe {
+        let keyframe = self
+            .keyframes
+            .remove(self.keyframes.iter().position(|k| k.id == id).unwrap());
+
+        let playhead = self.playhead;
+        self.playhead = Duration::from_nanos(0);
+        self.playhead_idx = 0;
+        self.seek(playhead);
+
+        keyframe
+    }
+
+    pub fn update(&mut self, delta: Duration) {
+        self.seek(self.playhead + delta);
+        
+    }
+}
+
+pub type TrackMap = HashMap<Uuid, Track>;
 
 #[derive(Debug, Clone)]
 pub struct PortSchema {

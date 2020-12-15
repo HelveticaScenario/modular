@@ -29,18 +29,10 @@ use patch::Patch;
 use thread::JoinHandle;
 pub use uuid;
 
-pub struct Modular {
-    patch: Patch,
-}
+pub struct Modular;
 
 impl Modular {
-    pub fn new() -> Self {
-        let patch = Patch::new(HashMap::new());
-        Modular { patch }
-    }
-
     pub fn spawn(
-        mut self,
         incoming_rx: Receiver<InputMessage>,
         outgoing_tx: Sender<OutputMessage>,
     ) -> JoinHandle<anyhow::Result<()>> {
@@ -52,18 +44,9 @@ impl Modular {
         let config = device.default_output_config().unwrap();
 
         thread::spawn(move || match config.sample_format() {
-            cpal::SampleFormat::I16 => {
-                self.patch
-                    .run::<i16>(&device, config, incoming_rx, outgoing_tx)
-            }
-            cpal::SampleFormat::U16 => {
-                self.patch
-                    .run::<u16>(&device, config, incoming_rx, outgoing_tx)
-            }
-            cpal::SampleFormat::F32 => {
-                self.patch
-                    .run::<f32>(&device, config, incoming_rx, outgoing_tx)
-            }
+            cpal::SampleFormat::I16 => Patch::run::<i16>(&device, config, incoming_rx, outgoing_tx),
+            cpal::SampleFormat::U16 => Patch::run::<u16>(&device, config, incoming_rx, outgoing_tx),
+            cpal::SampleFormat::F32 => Patch::run::<f32>(&device, config, incoming_rx, outgoing_tx),
         })
     }
 }

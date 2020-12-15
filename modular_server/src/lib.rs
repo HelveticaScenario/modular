@@ -17,8 +17,7 @@ pub fn spawn(
     let (incoming_tx, incoming_rx) = mpsc::channel();
     let (outgoing_tx, outgoing_rx) = mpsc::channel();
 
-    let modular = Modular::new();
-    let _modular_handle = modular.spawn(incoming_rx, outgoing_tx);
+    let _modular_handle = Modular::spawn(incoming_rx, outgoing_tx);
 
     let (_receiving_server_handle, _sending_server_handle) = spawn_server(
         client_address.to_owned(),
