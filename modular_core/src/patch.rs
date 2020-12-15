@@ -143,7 +143,11 @@ fn write_data<T>(
     }
 }
 
-fn update_tracks(tracks: &TrackMap, sampleables: &SampleableMap, delta: &Duration) {}
+fn update_tracks(tracks: &TrackMap, delta: &Duration) {
+    for (_, track) in tracks {
+        track.borrow_mut().update(delta);
+    }
+}
 
 fn update_sampleables(sampleables: &SampleableMap, sample_rate: f32) {
     for (_, module) in sampleables {
@@ -171,7 +175,7 @@ fn process_frame(
     sample_rate: f32,
     delta: &Duration,
 ) -> f32 {
-    update_tracks(tracks, sampleables, delta);
+    update_tracks(tracks, delta);
     update_sampleables(sampleables, sample_rate);
     tick_sampleables(sampleables);
     get_patch_output(sampleables) / 5.0

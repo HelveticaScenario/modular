@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::time::Duration;
+use std::{cell::RefCell, time::Duration};
 use std::{
     collections::HashMap,
     sync::{self, Arc},
@@ -303,13 +303,23 @@ impl Track {
         keyframe
     }
 
-    pub fn update(&mut self, delta: Duration) {
-        self.seek(self.playhead + delta);
-        
+    pub fn update(&mut self, delta: &Duration) {
+        self.seek(self.playhead + *delta);
+        match self.module.upgrade() {
+            Some(module) => {
+                match self.keyframes.get(self.playhead_idx) {
+                    Some(keyframe) => {
+                        module.update_param(&self.port, &keyframe.param).unwrap();
+                    }
+                    None => {}
+                }
+            }
+            None => {}
+        }
     }
 }
 
-pub type TrackMap = HashMap<Uuid, Track>;
+pub type TrackMap = HashMap<Uuid, RefCell<Track>>;
 
 #[derive(Debug, Clone)]
 pub struct PortSchema {
