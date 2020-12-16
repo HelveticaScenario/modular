@@ -2,7 +2,7 @@ use std::{sync::mpsc::Sender, vec};
 
 use modular_core::{
     message::{InputMessage, OutputMessage},
-    types::{ModuleState, Param},
+    types::{Keyframe, ModuleState, Param, Playmode},
     uuid::Uuid,
 };
 use rosc::OscType::{Float as OscFloat, Int as OscInt, Nil as OscNil, String as OscStr};
@@ -22,6 +22,21 @@ fn msg(addr: &str, args: Vec<OscType>) -> OscPacket {
     })
 }
 
+fn param_to_osc_type_vec(param: &Param) -> Vec<OscType> {
+    match param {
+        Param::Value { value } => [OscStr("value".into()), OscFloat(*value)].into(),
+        Param::Note { value } => [OscStr("note".into()), OscInt(*value as i32)].into(),
+        Param::Cable { module, port } => [
+            OscStr("cable".into()),
+            OscStr(module.to_string()),
+            OscStr(port.clone()),
+        ]
+        .into(),
+        Param::Track { track } => [OscStr("track".into()), OscStr(track.to_string())].into(),
+        Param::Disconnected => [OscNil].into(),
+    }
+}
+
 fn make_module_state_bndl(state: &ModuleState) -> OscPacket {
     let base = format!("/module/{}", state.id);
     let module_type = state.module_type.clone();
@@ -34,21 +49,7 @@ fn make_module_state_bndl(state: &ModuleState) -> OscPacket {
                 .map(|(key, param)| {
                     msg(
                         &format!("{}/param/{}", &base, key),
-                        match param {
-                            modular_core::types::Param::Value { value } => {
-                                [OscStr("value".into()), OscFloat(*value)].into()
-                            }
-                            modular_core::types::Param::Note { value } => {
-                                [OscStr("note".into()), OscInt(*value as i32)].into()
-                            }
-                            modular_core::types::Param::Cable { module, port } => [
-                                OscStr("cable".into()),
-                                OscStr(module.to_string()),
-                                OscStr(port.clone()),
-                            ]
-                            .into(),
-                            modular_core::types::Param::Disconnected => [OscNil].into(),
-                        },
+                        param_to_osc_type_vec(param),
                     )
                 })
                 .collect(),
@@ -108,6 +109,43 @@ pub fn message_to_osc(message: OutputMessage) -> Vec<OscPacket> {
         OutputMessage::Error(err) => {
             vec![msg("/error", vec![OscStr(err)])]
         }
+        OutputMessage::Track(track) => {
+            let base = format!("/track/{}", track.id.to_string());
+            let mut ret = vec![bndl(vec![
+                msg(
+                    &format!("{}/playhead", base),
+                    vec![OscFloat(track.playhead.as_secs_f32())],
+                ),
+                msg(
+                    &format!("{}/length", base),
+                    vec![OscFloat(track.length.as_secs_f32())],
+                ),
+                msg(
+                    &format!("{}/play-mode", base),
+                    vec![OscStr(match track.play_mode {
+                        Playmode::Once => String::from("once"),
+                        Playmode::Loop => String::from("loop"),
+                    })],
+                ),
+            ])];
+            for keyframe in track.keyframes.into_iter() {
+                let keyframe_base = format!("{}/keyframe/{}", base, keyframe.id);
+                ret.push(bndl(vec![
+                    msg(
+                        &format!("{}/time", keyframe_base),
+                        vec![OscFloat(keyframe.time.as_secs_f32())],
+                    ),
+                    msg(
+                        &format!("{}/param", keyframe_base),
+                        param_to_osc_type_vec(&keyframe.param),
+                    ),
+                ]));
+            }
+            ret
+        }
+        OutputMessage::CreateTrack(id) => {
+            vec![msg("/create-track", vec![OscStr(id.to_string())])]
+        }
     }
 }
 
@@ -163,7 +201,7 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<InputMessage>) {
                     );
                 } else if let (
                     Some(&"create-module"),
-                    id,
+                    Some(id),
                     None,
                     Some(OscStr(ref module_type)),
                     None,
@@ -172,15 +210,12 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<InputMessage>) {
                     send(
                         InputMessage::CreateModule(
                             module_type.clone(),
-                            match id.map(|id| Uuid::parse_str(*id)) {
-                                Some(id) => match id {
-                                    Ok(id) => Some(id),
-                                    Err(err) => {
-                                        println!("{}", err);
-                                        return;
-                                    }
-                                },
-                                None => None,
+                            match Uuid::parse_str(*id) {
+                                Ok(id) => id,
+                                Err(err) => {
+                                    println!("{}", err);
+                                    return;
+                                }
                             },
                         ),
                         tx,

@@ -145,7 +145,7 @@ fn write_data<T>(
 
 fn update_tracks(tracks: &TrackMap, delta: &Duration) {
     for (_, track) in tracks {
-        track.borrow_mut().update(delta);
+        track.tick(delta);
     }
 }
 

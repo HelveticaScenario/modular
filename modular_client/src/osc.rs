@@ -30,14 +30,10 @@ pub fn message_to_osc(message: InputMessage) -> Vec<OscPacket> {
             vec![msg(&format!("/module/{}", id), vec![])]
         }
         InputMessage::CreateModule(module_type, id) => {
-            if let Some(id) = id {
-                vec![msg(
-                    "/create-module",
-                    vec![OscStr(module_type), OscStr(id.to_string())],
-                )]
-            } else {
-                vec![msg("/create-module", vec![OscStr(module_type)])]
-            }
+            vec![msg(
+                "/create-module",
+                vec![OscStr(module_type), OscStr(id.to_string())],
+            )]
         }
         InputMessage::UpdateParam(id, param_name, new_param) => {
             let args = match new_param {
@@ -54,6 +50,9 @@ pub fn message_to_osc(message: InputMessage) -> Vec<OscPacket> {
                         OscStr(port),
                     ]
                 }
+                Param::Track { track } => {
+                    vec![OscStr("track".to_owned()), OscStr(track.to_string())]
+                }
                 Param::Disconnected => {
                     vec![OscStr("disconnected".to_owned())]
                 }
@@ -65,6 +64,27 @@ pub fn message_to_osc(message: InputMessage) -> Vec<OscPacket> {
         }
         InputMessage::DeleteModule(id) => {
             vec![msg("/delete-module", vec![OscStr(id.to_string())])]
+        }
+        InputMessage::GetTracks => {
+            todo! {}
+        }
+        InputMessage::GetTrack(_) => {
+            todo! {}
+        }
+        InputMessage::CreateTrack(_) => {
+            todo! {}
+        }
+        InputMessage::UpdateTrack(_, _) => {
+            todo! {}
+        }
+        InputMessage::DeleteTrack(_) => {
+            todo! {}
+        }
+        InputMessage::UpsertKeyframe(_) => {
+            todo! {}
+        }
+        InputMessage::DeleteKeyframe(_, _) => {
+            todo! {}
         }
     }
 }

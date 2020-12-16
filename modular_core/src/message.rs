@@ -1,4 +1,4 @@
-use std::sync::mpsc::Sender;
+use std::sync::{mpsc::Sender, Arc};
 
 use uuid::Uuid;
 
@@ -7,7 +7,7 @@ use crate::{
     dsp::schema,
     patch::Patch,
     types::ModuleSchema,
-    types::{ModuleState, Param},
+    types::{InternalTrack, Keyframe, ModuleState, Param, Track, TrackUpdate},
 };
 
 #[derive(Debug, Clone)]
@@ -16,9 +16,17 @@ pub enum InputMessage {
     Schema,
     GetModules,
     GetModule(Uuid),
-    CreateModule(String, Option<Uuid>),
+    CreateModule(String, Uuid),
     UpdateParam(Uuid, String, Param),
     DeleteModule(Uuid),
+
+    GetTracks,
+    GetTrack(Uuid),
+    CreateTrack(Uuid),
+    UpdateTrack(Uuid, TrackUpdate),
+    DeleteTrack(Uuid),
+    UpsertKeyframe(Keyframe),
+    DeleteKeyframe(Uuid, Uuid),
 }
 
 #[derive(Debug, Clone)]
@@ -27,7 +35,9 @@ pub enum OutputMessage {
     Schema(Vec<ModuleSchema>),
     PatchState(Vec<ModuleState>),
     ModuleState(Uuid, Option<ModuleState>),
+    Track(Track),
     CreateModule(String, Uuid),
+    CreateTrack(Uuid),
     Error(String),
 }
 
@@ -37,6 +47,7 @@ pub fn handle_message(
     sender: &Sender<OutputMessage>,
 ) -> anyhow::Result<()> {
     let sampleables = patch.sampleables.clone();
+    let tracks = patch.tracks.clone();
     match message {
         InputMessage::Echo(s) => sender.send(OutputMessage::Echo(format!("{}!", s)))?,
         InputMessage::Schema => sender.send(OutputMessage::Schema(schema()))?,
@@ -61,11 +72,10 @@ pub fn handle_message(
         InputMessage::CreateModule(module_type, id) => {
             let constructors = get_constructors();
             if let Some(constructor) = constructors.get(&module_type) {
-                let uuid = id.unwrap_or(Uuid::new_v4());
-                match constructor(&uuid) {
+                match constructor(&id) {
                     Ok(module) => {
-                        sampleables.lock().unwrap().insert(uuid.clone(), module);
-                        sender.send(OutputMessage::CreateModule(module_type, uuid))?
+                        sampleables.lock().unwrap().insert(id.clone(), module);
+                        sender.send(OutputMessage::CreateModule(module_type, id))?
                     }
                     Err(err) => {
                         sender.send(OutputMessage::Error(format!("an error occured: {}", err)))?;
@@ -82,13 +92,53 @@ pub fn handle_message(
             match sampleables.lock().unwrap().get(&id) {
                 Some(module) => module.update_param(
                     &param_name,
-                    &new_param.to_internal_param(&sampleables.lock().unwrap()),
+                    &new_param
+                        .to_internal_param(&sampleables.lock().unwrap(), &tracks.lock().unwrap()),
                 )?,
                 None => sender.send(OutputMessage::Error(format!("{} not found", id)))?,
             }
         }
         InputMessage::DeleteModule(id) => {
             sampleables.lock().unwrap().remove(&id);
+        }
+        InputMessage::GetTracks => {
+            for (_, internal_track) in tracks.lock().unwrap().iter() {
+                sender.send(OutputMessage::Track(internal_track.to_track()))?;
+            }
+        }
+        InputMessage::GetTrack(id) => {
+            if let Some(ref internal_track) = tracks.lock().unwrap().get(&id) {
+                sender.send(OutputMessage::Track(internal_track.to_track()))?;
+            }
+        }
+        InputMessage::CreateTrack(id) => {
+            tracks
+                .lock()
+                .unwrap()
+                .insert(id.clone(), Arc::new(InternalTrack::new(id.clone())));
+            sender.send(OutputMessage::CreateTrack(id))?
+        }
+        InputMessage::UpdateTrack(id, track_update) => {
+            if let Some(ref internal_track) = tracks.lock().unwrap().get(&id) {
+                internal_track.update(&track_update)
+            }
+        }
+        InputMessage::DeleteTrack(id) => {
+            tracks.lock().unwrap().remove(&id);
+        }
+        InputMessage::UpsertKeyframe(keyframe) => {
+            let ref tracks = tracks.lock().unwrap();
+            let internal_keyframe =
+                keyframe.to_internal_keyframe(&sampleables.lock().unwrap(), tracks);
+
+            if let Some(ref track) = tracks.get(&keyframe.track_id) {
+                track.add_keyframe(internal_keyframe);
+            }
+        }
+        InputMessage::DeleteKeyframe(id, track_id) => {
+            if let Some(ref track) = tracks.lock().unwrap().get(&track_id) {
+                track.remove_keyframe(id);
+            }
         }
     };
     Ok(())
