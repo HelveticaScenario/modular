@@ -17,7 +17,6 @@ mod sequence;
 pub mod types;
 
 use std::{
-    collections::HashMap,
     sync::mpsc::{self, Sender},
     thread,
 };

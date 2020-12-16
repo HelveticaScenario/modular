@@ -12,8 +12,7 @@ use crate::{
     types::{SampleableMap, TrackMap, ROOT_ID, ROOT_OUTPUT_PORT},
 };
 use cpal::{
-    traits::{DeviceTrait, StreamTrait},
-    OutputCallbackInfo, Stream, StreamInstant,
+    traits::{DeviceTrait, StreamTrait}, StreamInstant,
 };
 pub struct Patch {
     pub sampleables: Arc<Mutex<SampleableMap>>,

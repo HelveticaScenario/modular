@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{cell::RefCell, sync::Mutex, time::Duration};
+use std::{sync::Mutex, time::Duration};
 use std::{
     collections::HashMap,
     sync::{self, Arc},

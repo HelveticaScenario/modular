@@ -2,7 +2,7 @@ use std::{sync::mpsc::Sender, vec};
 
 use modular_core::{
     message::{InputMessage, OutputMessage},
-    types::{Keyframe, ModuleState, Param, Playmode},
+    types::{ModuleState, Param, Playmode},
     uuid::Uuid,
 };
 use rosc::OscType::{Float as OscFloat, Int as OscInt, Nil as OscNil, String as OscStr};
