@@ -54,17 +54,21 @@ impl Patch {
                         (sampleables.lock(), tracks.lock())
                     {
                         let new_instant = info.timestamp().callback;
-                        
+
                         let delta = match last_instant {
-                            Some(last_instant) => {
-                                new_instant.duration_since(&last_instant)
-                            }
-                            None => {
-                                None
-                            }
-                        }.unwrap_or(Duration::from_nanos(0));
+                            Some(last_instant) => new_instant.duration_since(&last_instant),
+                            None => None,
+                        }
+                        .unwrap_or(Duration::from_nanos(0));
                         last_instant = Some(new_instant);
-                        write_data::<f32>(data, channels, &sampleables, &tracks, sample_rate, &delta)
+                        write_data::<f32>(
+                            data,
+                            channels,
+                            &sampleables,
+                            &tracks,
+                            sample_rate,
+                            &delta,
+                        )
                     }
                 },
                 err_fn,
@@ -76,17 +80,21 @@ impl Patch {
                         (sampleables.lock(), tracks.lock())
                     {
                         let new_instant = info.timestamp().callback;
-                        
+
                         let delta = match last_instant {
-                            Some(last_instant) => {
-                                new_instant.duration_since(&last_instant)
-                            }
-                            None => {
-                                None
-                            }
-                        }.unwrap_or(Duration::from_nanos(0));
+                            Some(last_instant) => new_instant.duration_since(&last_instant),
+                            None => None,
+                        }
+                        .unwrap_or(Duration::from_nanos(0));
                         last_instant = Some(new_instant);
-                        write_data::<i16>(data, channels, &sampleables, &tracks, sample_rate, &delta)
+                        write_data::<i16>(
+                            data,
+                            channels,
+                            &sampleables,
+                            &tracks,
+                            sample_rate,
+                            &delta,
+                        )
                     }
                 },
                 err_fn,
@@ -98,17 +106,21 @@ impl Patch {
                         (sampleables.lock(), tracks.lock())
                     {
                         let new_instant = info.timestamp().callback;
-                        
+
                         let delta = match last_instant {
-                            Some(last_instant) => {
-                                new_instant.duration_since(&last_instant)
-                            }
-                            None => {
-                                None
-                            }
-                        }.unwrap_or(Duration::from_nanos(0));
+                            Some(last_instant) => new_instant.duration_since(&last_instant),
+                            None => None,
+                        }
+                        .unwrap_or(Duration::from_nanos(0));
                         last_instant = Some(new_instant);
-                        write_data::<u16>(data, channels, &sampleables, &tracks, sample_rate, &delta)
+                        write_data::<u16>(
+                            data,
+                            channels,
+                            &sampleables,
+                            &tracks,
+                            sample_rate,
+                            &delta,
+                        )
                     }
                 },
                 err_fn,
@@ -136,7 +148,8 @@ fn write_data<T>(
     T: cpal::Sample,
 {
     for frame in output.chunks_mut(channels) {
-        let value = cpal::Sample::from::<f32>(&process_frame(sampleables, tracks, sample_rate, delta));
+        let value =
+            cpal::Sample::from::<f32>(&process_frame(sampleables, tracks, sample_rate, delta));
         for sample in frame.iter_mut() {
             *sample = value;
         }
