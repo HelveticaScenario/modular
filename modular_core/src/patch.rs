@@ -8,12 +8,15 @@ use std::{
 };
 
 use crate::{
+    dsp::get_constructors,
     message::{handle_message, InputMessage, OutputMessage},
     types::{SampleableMap, TrackMap, ROOT_ID, ROOT_OUTPUT_PORT},
 };
 use cpal::{
-    traits::{DeviceTrait, StreamTrait}, StreamInstant,
+    traits::{DeviceTrait, StreamTrait},
+    StreamInstant,
 };
+use uuid::Uuid;
 pub struct Patch {
     pub sampleables: Arc<Mutex<SampleableMap>>,
     pub tracks: Arc<Mutex<TrackMap>>,
@@ -44,6 +47,13 @@ impl Patch {
         let err_fn = |err| eprintln!("error: {}", err);
         let sampleables = patch.sampleables.clone();
         let tracks = patch.tracks.clone();
+        {
+            sampleables.lock().unwrap().insert(
+                Uuid::nil(),
+                get_constructors().get(&"signal".to_owned()).unwrap()(&Uuid::nil()).unwrap(),
+            );
+        }
+
         let mut last_instant: Option<StreamInstant> = None;
         let stream = match config.sample_format() {
             cpal::SampleFormat::F32 => device.build_output_stream(

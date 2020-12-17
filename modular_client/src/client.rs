@@ -36,7 +36,7 @@ pub fn start_recieving_client(host_address: String, tx: Sender<Message>) {
         match sock.recv_from(&mut buf) {
             Ok((size, _addr)) => match rosc::decoder::decode(&buf[..size]) {
                 Ok(packet) => {
-                    println!("{:?}", packet);
+                    // println!("{:?}", packet);
                     osc_to_message(packet, &tx)
                 }
                 Err(err) => {

@@ -25,6 +25,7 @@ fn main() -> anyhow::Result<()> {
         outgoing_rx,
     );
     let osc_id = Uuid::new_v4();
+    // println!("asdasd {}", osc_id);
     outgoing_tx.send(InputMessage::CreateModule("sine-oscillator".into(), osc_id))?;
     let osc_id = match incoming_rx.recv()? {
         Server(OutputMessage::CreateModule(module_type, id)) => {
@@ -36,11 +37,14 @@ fn main() -> anyhow::Result<()> {
         }
         _ => Err(anyhow!("something happened")),
     }?;
+    
     let atten_id = Uuid::new_v4();
     outgoing_tx.send(InputMessage::CreateModule(
         "scale-and-shift".into(),
         atten_id,
     ))?;
+    // outgoing_tx.send(InputMessage::GetModules)?;
+    // println!("atten_id {}", atten_id);
     let atten_id = match incoming_rx.recv()? {
         Server(OutputMessage::CreateModule(module_type, id)) => {
             if module_type == "scale-and-shift" && id == atten_id {
@@ -80,6 +84,9 @@ fn main() -> anyhow::Result<()> {
             port: "output".into(),
         },
     ))?;
+    // for i in incoming_rx {
+    //     println!("asdasd {:?}", i);
+    // }
     // let dur = Duration::from_millis(1000);
     const A: u8 = 69;
     const B: u8 = 67;
@@ -108,7 +115,7 @@ fn main() -> anyhow::Result<()> {
         outgoing_tx.send(InputMessage::UpdateParam(
             atten_id.clone(),
             "scale".into(),
-            Param::Value { value: 0.0 },
+            Param::Value { value: 4.0 },
         ))?;
         thread::sleep(Duration::from_millis(100));
         outgoing_tx.send(InputMessage::UpdateParam(

@@ -107,6 +107,7 @@ pub fn message_to_osc(message: OutputMessage) -> Vec<OscPacket> {
             )]
         }
         OutputMessage::Error(err) => {
+            eprintln!("error: {}", err);
             vec![msg("/error", vec![OscStr(err)])]
         }
         OutputMessage::Track(track) => {
@@ -188,6 +189,7 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<InputMessage>) {
                     message.args.get(2),
                     message.args.get(3),
                 );
+                println!("{:?} {:?}", addr, args);
                 if let (Some(&"module"), Some(id), None) = (addr.0, addr.1, addr.2) {
                     send(
                         InputMessage::GetModule(match Uuid::parse_str(*id) {
@@ -201,19 +203,20 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<InputMessage>) {
                     );
                 } else if let (
                     Some(&"create-module"),
-                    Some(id),
                     None,
                     Some(OscStr(ref module_type)),
+                    Some(OscStr(ref id)),
                     None,
-                ) = (addr.0, addr.1, addr.2, args.0, args.1)
+                ) = (addr.0, addr.1, args.0, args.1, args.2)
                 {
+                    // println!("zxczxc {}, {}", module_type, id);
                     send(
                         InputMessage::CreateModule(
                             module_type.clone(),
-                            match Uuid::parse_str(*id) {
+                            match Uuid::parse_str(&*id) {
                                 Ok(id) => id,
                                 Err(err) => {
-                                    println!("{}", err);
+                                    eprintln!("error: {}", err);
                                     return;
                                 }
                             },

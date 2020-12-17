@@ -46,6 +46,7 @@ pub fn handle_message(
     patch: &mut Patch,
     sender: &Sender<OutputMessage>,
 ) -> anyhow::Result<()> {
+    println!("{:?}", message);
     let sampleables = patch.sampleables.clone();
     let tracks = patch.tracks.clone();
     match message {
@@ -89,11 +90,13 @@ pub fn handle_message(
             }
         }
         InputMessage::UpdateParam(id, param_name, new_param) => {
-            match sampleables.lock().unwrap().get(&id) {
+            let sampleables = sampleables.lock().unwrap();
+            let tracks = tracks.lock().unwrap();
+            match sampleables.get(&id) {
                 Some(module) => module.update_param(
                     &param_name,
                     &new_param
-                        .to_internal_param(&sampleables.lock().unwrap(), &tracks.lock().unwrap()),
+                        .to_internal_param(&sampleables, &tracks),
                 )?,
                 None => sender.send(OutputMessage::Error(format!("{} not found", id)))?,
             }
