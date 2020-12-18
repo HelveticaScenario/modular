@@ -1,0 +1,14 @@
+{
+  "name": "modular_js",
+  "version": "0.1.0",
+  "description": "",
+  "main": "lib/index.js",
+  "author": "Daniel Lewis <daniel.lewis.software.engineer@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "neon-cli": "^0.6.0"
+  },
+  "scripts": {
+    "install": "neon build"
+  }
+}

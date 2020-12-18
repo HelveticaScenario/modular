@@ -1,0 +1,19 @@
+[package]
+name = "modular_js"
+version = "0.1.0"
+authors = ["Daniel Lewis <daniel.lewis.software.engineer@gmail.com>"]
+license = "MIT"
+build = "build.rs"
+edition = "2018"
+exclude = ["artifacts.json", "index.node"]
+
+[lib]
+name = "modular_js"
+crate-type = ["cdylib"]
+
+[build-dependencies]
+neon-build = "0.6.0"
+
+[dependencies]
+neon = "0.6.0"
+modular_server = {version = "*", path = "../../modular_server"}
