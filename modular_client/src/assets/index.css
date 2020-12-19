@@ -1,0 +1,11 @@
+body {
+  background-color: black;
+  font-family: 'Major Mono Display', monospace;
+  color: lightgray;
+  margin: auto;
+  max-width: 38rem;
+  padding: 2rem;
+}
+
+
+@import url('https://fonts.googleapis.com/css2?family=Major+Mono+Display&display=swap');
