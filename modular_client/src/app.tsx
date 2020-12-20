@@ -1,8 +1,15 @@
-import * as React from 'react';
-import * as ReactDOM from 'react-dom';
+import React from "react";
+import { FC } from "react";
+import { Canvas } from "./components/canvas";
+import { Command } from "./components/command";
+import { Tracks } from "./components/tracks";
 
-function render() {
-  ReactDOM.render(<h2>sadasdasas</h2>, document.body);
-}
-
-render();
+export const App: FC<{}> = () => {
+  return (
+    <div className="text-white flex-col flex h-screen w-screen">
+      <Tracks />
+      <Canvas />
+      <Command />
+    </div>
+  );
+};
