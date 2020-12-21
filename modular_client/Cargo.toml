@@ -12,3 +12,6 @@ rosc = "~0.4"
 ctrlc = "3.1.7"
 modular_core = { version = "*", path = "../modular_core"}
 modular_server = { version = "*", path = "../modular_server"}
+glutin = "*"
+femtovg = "0.1.0"
+stretch = "0.3.2"
