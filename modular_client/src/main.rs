@@ -94,6 +94,12 @@ pub fn main() -> Result<()> {
                     Color::rgbf(0.0, 0.0, 0.0),
                 );
 
+                let mut paint = Paint::color(Color::white());
+                paint.set_font_size(100.0 * dpi_factor as f32);
+                paint.set_font(&[font]);
+                canvas
+                    .stroke_text(0.0, 120.0 * dpi_factor as f32, "text2 ==", paint)
+                    .unwrap();
                 // let elapsed = start.elapsed().as_secs_f32();
                 // let now = Instant::now();
                 // let dt = (now - prevt).as_secs_f32();
