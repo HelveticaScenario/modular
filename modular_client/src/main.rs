@@ -93,7 +93,6 @@ pub fn main() -> Result<()> {
                     size.height as u32,
                     Color::rgbf(0.0, 0.0, 0.0),
                 );
-
                 let mut paint = Paint::color(Color::white());
                 paint.set_font_size(100.0 * dpi_factor as f32);
                 paint.set_font(&[font]);
