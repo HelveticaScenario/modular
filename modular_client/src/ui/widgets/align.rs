@@ -50,12 +50,12 @@ pub struct Align {
 }
 
 impl Align {
-    pub fn new(child: Box<dyn Widget>, alignment: Alignment) -> Self {
-        Align {
+    pub fn new(child: Box<dyn Widget>, alignment: Alignment) -> Box<Self> {
+        Box::new(Align {
             child,
             alignment,
             size: None,
-        }
+        })
     }
 }
 

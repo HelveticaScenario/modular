@@ -10,13 +10,13 @@ pub struct Text {
 }
 
 impl Text {
-    pub fn new(text: String, fill_paint: Option<Paint>, stroke_paint: Option<Paint>) -> Self {
-        Text {
+    pub fn new(text: String, fill_paint: Option<Paint>, stroke_paint: Option<Paint>) -> Box<Self> {
+        Box::new(Text {
             text,
             fill_paint,
             stroke_paint,
             size: None,
-        }
+        })
     }
 
     fn get_size(&self, paint: Paint, canvas: &mut Canvas<OpenGl>) -> Size {

@@ -9,8 +9,8 @@ pub struct Container {
 }
 
 impl Container {
-    pub fn new(size: Size, child: Option<Box<dyn Widget>>, color: Option<Color>) -> Self {
-        Container { size, child, color }
+    pub fn new(size: Size, child: Option<Box<dyn Widget>>, color: Option<Color>) -> Box<Self> {
+        Box::new(Container { size, child, color })
     }
 }
 

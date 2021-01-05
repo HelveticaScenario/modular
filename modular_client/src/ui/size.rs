@@ -29,6 +29,22 @@ impl Size {
     pub fn square(dimension: f32) -> Self {
         Size::new(dimension, dimension)
     }
+    
+    #[inline]
+    pub fn infinite() -> Self {
+        Size {
+            width: f32::INFINITY,
+            height: f32::INFINITY,
+        }
+    }
+
+    #[inline]
+    pub fn zero() -> Self {
+        Size {
+            width: 0.0,
+            height: 0.0,
+        }
+    }
 
     pub fn aspect_ratio(&self) -> f32 {
         if self.height != 0.0 {

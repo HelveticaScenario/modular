@@ -9,6 +9,15 @@ use glutin::{
     window::WindowBuilder,
     ContextBuilder,
 };
+use modular_client::ui::{
+    box_constraints::BoxConstraints,
+    size::Size,
+    widget::Widget,
+    widgets::{
+        align::{Align, Alignment},
+        container::Container,
+    },
+};
 pub fn main() -> Result<()> {
     let window_size = PhysicalSize::new(1000, 700);
     let el = EventLoop::new();
@@ -93,12 +102,35 @@ pub fn main() -> Result<()> {
                     size.height as u32,
                     Color::rgbf(0.0, 0.0, 0.0),
                 );
-                let mut paint = Paint::color(Color::white());
-                paint.set_font_size(100.0 * dpi_factor as f32);
-                paint.set_font(&[font]);
-                canvas
-                    .stroke_text(0.0, 120.0 * dpi_factor as f32, "text2 ==", paint)
-                    .unwrap();
+
+                let mut container = Container::new(
+                    Size::infinite(),
+                    Some(
+                        Align::new(
+                            Container::new(
+                                Size::new((size.width / 2) as f32, (size.height / 2) as f32),
+                                None,
+                                Some(Color::rgb(255, 0, 0)),
+                            ),
+                            Alignment::top_left(),
+                        ),
+                    ),
+                    Some(Color::rgb(0, 0, 255)),
+                );
+                container.layout(
+                    &BoxConstraints::expand(
+                        Some((size.width / 2) as f32),
+                        Some(size.height as f32),
+                    ),
+                    &mut canvas,
+                );
+                container.paint(&mut canvas);
+                // let mut paint = Paint::color(Color::white());
+                // paint.set_font_size(100.0 * dpi_factor as f32);
+                // paint.set_font(&[font]);
+                // canvas
+                //     .stroke_text(0.0, 120.0 * dpi_factor as f32, "text2 ==", paint)
+                //     .unwrap();
                 // let elapsed = start.elapsed().as_secs_f32();
                 // let now = Instant::now();
                 // let dt = (now - prevt).as_secs_f32();
