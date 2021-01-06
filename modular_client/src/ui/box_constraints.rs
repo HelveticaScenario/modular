@@ -1,3 +1,5 @@
+use modular_core::dsp::utils::clamp;
+
 use super::{edge_insets::EdgeInsets, size::Size};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -73,6 +75,31 @@ impl BoxConstraints {
             deflated_min_width.max(self.max_width - horizontal),
             deflated_min_height,
             deflated_min_height.max(self.max_height - vertical),
+        )
+    }
+
+    pub fn tighten(&self, width: Option<f32>, height: Option<f32>) -> Self {
+        BoxConstraints::new(
+            if let Some(width) = width {
+                clamp(self.min_width, self.max_width, width)
+            } else {
+                self.min_width
+            },
+            if let Some(width) = width {
+                clamp(self.min_width, self.max_width,width)
+            } else {
+                self.max_width
+            },
+            if let Some(height) = height {
+                clamp(self.min_height, self.max_height,height)
+            } else {
+                self.min_height
+            },
+            if let Some(height) = height {
+                clamp(self.min_height, self.max_height,height)
+            } else {
+                self.max_height
+            },
         )
     }
 }

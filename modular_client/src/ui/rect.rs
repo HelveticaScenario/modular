@@ -218,3 +218,9 @@ impl Rect {
         Self::from_ltrb(-1e9, -1e9, 1e9, 1e9)
     }
 }
+
+impl Default for Rect {
+    fn default() -> Self {
+        Rect::new()
+    }
+}

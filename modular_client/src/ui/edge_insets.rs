@@ -164,3 +164,9 @@ impl Mul for EdgeInsets {
         )
     }
 }
+
+impl Default for EdgeInsets {
+    fn default() -> Self {
+        EdgeInsets::new()
+    }
+}

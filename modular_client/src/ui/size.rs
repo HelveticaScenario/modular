@@ -78,3 +78,9 @@ impl Size {
         self.width.is_infinite() && self.height.is_infinite()
     }
 }
+
+impl Default for Size {
+    fn default() -> Self {
+        Size::zero()
+    }
+}
