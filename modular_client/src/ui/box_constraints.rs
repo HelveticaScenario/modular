@@ -1,5 +1,6 @@
-use super::size::Size;
+use super::{edge_insets::EdgeInsets, size::Size};
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoxConstraints {
     pub min_width: f32,
     pub max_width: f32,
@@ -44,6 +45,7 @@ impl BoxConstraints {
             max_height: size.height,
         }
     }
+
     pub fn loose(size: Size) -> Self {
         BoxConstraints {
             min_width: 0.0,
@@ -51,5 +53,26 @@ impl BoxConstraints {
             min_height: 0.0,
             max_height: size.height,
         }
+    }
+
+    pub fn biggest(&self) -> Size {
+        Size::new(self.max_width, self.max_height)
+    }
+
+    pub fn smallest(&self) -> Size {
+        Size::new(self.min_width, self.min_height)
+    }
+
+    pub fn deflate(&self, edges: EdgeInsets) -> Self {
+        let horizontal = edges.horizontal();
+        let vertical = edges.vertical();
+        let deflated_min_width = 0.0f32.max(self.min_width - horizontal);
+        let deflated_min_height = 0.0f32.max(self.min_height - vertical);
+        Self::new(
+            deflated_min_width,
+            deflated_min_width.max(self.max_width - horizontal),
+            deflated_min_height,
+            deflated_min_height.max(self.max_height - vertical),
+        )
     }
 }

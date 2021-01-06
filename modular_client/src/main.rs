@@ -11,11 +11,14 @@ use glutin::{
 };
 use modular_client::ui::{
     box_constraints::BoxConstraints,
+    edge_insets::EdgeInsets,
     size::Size,
     widget::Widget,
     widgets::{
         align::{Align, Alignment},
         container::Container,
+        padding::Padding,
+        painted_box::PaintedBox,
     },
 };
 pub fn main() -> Result<()> {
@@ -102,26 +105,21 @@ pub fn main() -> Result<()> {
                     size.height as u32,
                     Color::rgbf(0.0, 0.0, 0.0),
                 );
-
-                let mut container = Container::new(
-                    Size::infinite(),
-                    Some(
-                        Align::new(
-                            Container::new(
-                                Size::new((size.width / 2) as f32, (size.height / 2) as f32),
-                                None,
-                                Some(Color::rgb(255, 0, 0)),
-                            ),
-                            Alignment::top_left(),
-                        ),
-                    ),
-                    Some(Color::rgb(0, 0, 255)),
-                );
+                let padding = EdgeInsets::all(20.0);
+                let colors = [
+                    Color::rgb(0, 0, 255),
+                    Color::rgb(0, 255, 0),
+                    Color::rgb(255, 0, 0),
+                ];
+                let mut container = PaintedBox::new().package();
+                for color in colors.repeat(4) {
+                    container = PaintedBox::new()
+                        .with_fill(Paint::color(color))
+                        .with_child(Padding::new(container, padding))
+                        .package();
+                }
                 container.layout(
-                    &BoxConstraints::expand(
-                        Some((size.width / 2) as f32),
-                        Some(size.height as f32),
-                    ),
+                    &BoxConstraints::expand(Some((size.width) as f32), Some(size.height as f32)),
                     &mut canvas,
                 );
                 container.paint(&mut canvas);
