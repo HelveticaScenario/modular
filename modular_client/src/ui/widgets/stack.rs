@@ -4,14 +4,14 @@ use crate::ui::{box_constraints::BoxConstraints, size::Size, widget::Widget};
 
 pub struct Stack {
     pub children: Vec<Box<dyn Widget>>,
-    size: Option<Size>,
+    size: Size,
 }
 
 impl Stack {
     pub fn new(children: Vec<Box<dyn Widget>>) -> Box<Self> {
         Box::new(Stack {
             children,
-            size: None,
+            size: Size::zero(),
         })
     }
 }
@@ -22,13 +22,13 @@ impl Widget for Stack {
             child.layout(constraints, canvas);
         }
         let size = Size::new(constraints.max_width, constraints.max_height);
-        self.size = Some(size);
+        self.size = size;
         size
     }
 
     fn paint(&mut self, canvas: &mut Canvas<OpenGl>) {
         canvas.save_with(|canvas| {
-            let self_size = self.size.as_ref().unwrap();
+            let self_size = self.size;
             canvas.scissor(0.0, 0.0, self_size.width, self_size.height);
             for child in self.children.iter_mut() {
                 child.paint(canvas);
@@ -36,7 +36,7 @@ impl Widget for Stack {
         })
     }
 
-    fn size(&self) -> &Size {
-        self.size.as_ref().unwrap()
+    fn size(&self) -> Size {
+        self.size
     }
 }

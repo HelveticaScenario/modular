@@ -19,6 +19,7 @@ use modular_client::ui::{
         container::Container,
         padding::Padding,
         painted_box::PaintedBox,
+        text::Text,
     },
 };
 pub fn main() -> Result<()> {
@@ -111,8 +112,14 @@ pub fn main() -> Result<()> {
                     Color::rgb(0, 255, 0),
                     Color::rgb(255, 0, 0),
                 ];
-                let mut container = PaintedBox::new().package();
-                for color in colors.repeat(4) {
+                let mut paint = Paint::color(Color::white());
+                paint.set_font_size(100.0 * dpi_factor as f32);
+                paint.set_font(&[font]);
+                let mut container: Box<dyn Widget> = Align::new(
+                    Alignment::center(),
+                    Text::new("ABC".to_owned()).with_fill(paint).package(),
+                );
+                for color in colors.repeat(1) {
                     container = PaintedBox::new()
                         .with_fill(Paint::color(color))
                         .with_child(Padding::new(container, padding))

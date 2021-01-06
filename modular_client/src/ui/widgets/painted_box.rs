@@ -68,7 +68,7 @@ impl Widget for PaintedBox {
         })
     }
 
-    fn size(&self) -> &Size {
-        &self.size
+    fn size(&self) -> Size {
+        self.size
     }
 }

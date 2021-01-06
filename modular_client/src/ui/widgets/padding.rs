@@ -34,15 +34,13 @@ impl Widget for Padding {
             let inner_rect = self
                 .padding
                 .deflate_rect(Rect::from_lt_size(0.0, 0.0, self.size));
-            // println!("{:?}", inner_rect);
             canvas.translate(inner_rect.left, inner_rect.top);
-            // canvas.translate(20.0,20.0);
             canvas.scissor(0.0, 0.0, inner_rect.width(), inner_rect.height());
             self.child.paint(canvas);
         })
     }
 
-    fn size(&self) -> &Size {
-        &self.size
+    fn size(&self) -> Size {
+        self.size
     }
 }

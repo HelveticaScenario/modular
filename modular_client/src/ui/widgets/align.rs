@@ -1,6 +1,11 @@
 use femtovg::{renderer::OpenGl, Canvas};
 
-use crate::ui::{box_constraints::BoxConstraints, size::Size, widget::Widget};
+use crate::ui::{
+    box_constraints::BoxConstraints,
+    offset::{self, Offset},
+    size::Size,
+    widget::Widget,
+};
 
 #[derive(Debug, PartialEq, PartialOrd, Clone, Copy)]
 pub struct Alignment(f32, f32);
@@ -41,20 +46,27 @@ impl Alignment {
     pub fn top_right() -> Self {
         Alignment(1.0, -1.0)
     }
+
+    pub fn to_offset(&self, size: Size) -> Offset {
+        Offset::new(
+            size.width * ((self.0 + 1.0) / 2.0),
+            size.height * ((self.1 + 1.0) / 2.0),
+        )
+    }
 }
 
 pub struct Align {
     pub child: Box<dyn Widget>,
     pub alignment: Alignment,
-    pub size: Option<Size>,
+    pub size: Size,
 }
 
 impl Align {
-    pub fn new(child: Box<dyn Widget>, alignment: Alignment) -> Box<Self> {
+    pub fn new(alignment: Alignment, child: Box<dyn Widget>) -> Box<Self> {
         Box::new(Align {
             child,
             alignment,
-            size: None,
+            size: Size::zero(),
         })
     }
 }
@@ -62,27 +74,22 @@ impl Align {
 impl Widget for Align {
     fn layout(&mut self, constraints: &BoxConstraints, canvas: &mut Canvas<OpenGl>) -> Size {
         self.child.layout(constraints, canvas);
-        let size = Size::new(constraints.max_width, constraints.max_height);
-        self.size = Some(size);
+        let size = constraints.biggest();
+        self.size = size;
         size
     }
 
     fn paint(&mut self, canvas: &mut Canvas<OpenGl>) {
         let child_size = self.child.size();
-        let half_child_width = child_size.width / 2.0;
-        let half_child_height = child_size.height / 2.0;
-        let Alignment(dx, dy) = self.alignment;
-        let off_x = dx * half_child_width + half_child_width;
-        let off_y = dy * half_child_height + half_child_height;
+        let offset = self.alignment.to_offset(self.size) - self.alignment.to_offset(child_size);
         canvas.save_with(|canvas| {
-            let self_size = self.size.as_ref().unwrap();
-            canvas.scissor(0.0, 0.0, self_size.width, self_size.height);
-            canvas.translate(off_x, off_y);
+            canvas.translate(offset.dx, offset.dy);
+            canvas.scissor(0.0, 0.0, child_size.width, child_size.height);
             self.child.paint(canvas);
         });
     }
 
-    fn size(&self) -> &Size {
-        self.size.as_ref().unwrap()
+    fn size(&self) -> Size {
+        self.size
     }
 }

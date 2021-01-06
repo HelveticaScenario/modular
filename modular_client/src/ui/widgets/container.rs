@@ -47,7 +47,7 @@ impl Widget for Container {
         })
     }
 
-    fn size(&self) -> &Size {
-        &self.size
+    fn size(&self) -> Size {
+        self.size
     }
 }
