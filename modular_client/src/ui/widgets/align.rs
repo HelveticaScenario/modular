@@ -2,12 +2,13 @@ use femtovg::{renderer::OpenGl, Canvas};
 
 use crate::ui::{
     box_constraints::BoxConstraints,
+    context::Context,
     offset::{self, Offset},
     size::Size,
     widget::Widget,
 };
 
-#[derive(Debug, PartialEq, PartialOrd, Clone, Copy)]
+#[derive(Debug, PartialEq, PartialOrd, Clone, Copy, Default)]
 pub struct Alignment(f32, f32);
 
 impl Alignment {
@@ -55,6 +56,7 @@ impl Alignment {
     }
 }
 
+#[derive(Debug)]
 pub struct Align {
     pub child: Box<dyn Widget>,
     pub alignment: Alignment,
@@ -62,34 +64,42 @@ pub struct Align {
 }
 
 impl Align {
-    pub fn new(alignment: Alignment, child: Box<dyn Widget>) -> Box<Self> {
-        Box::new(Align {
-            child,
+    pub fn new(alignment: Alignment, child: impl Widget + 'static) -> Self {
+        Align {
+            child: Box::new(child),
             alignment,
             size: Size::zero(),
-        })
+        }
     }
 }
 
 impl Widget for Align {
-    fn layout(&mut self, constraints: &BoxConstraints, canvas: &mut Canvas<OpenGl>) -> Size {
-        self.child.layout(constraints, canvas);
+    fn layout(
+        &mut self,
+        constraints: BoxConstraints,
+        canvas: &mut Canvas<OpenGl>,
+        context: Context,
+    ) -> Size {
+        self.child.layout(constraints, canvas, context);
         let size = constraints.biggest();
         self.size = size;
         size
     }
 
-    fn paint(&mut self, canvas: &mut Canvas<OpenGl>) {
+    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: Context) {
         let child_size = self.child.size();
         let offset = self.alignment.to_offset(self.size) - self.alignment.to_offset(child_size);
         canvas.save_with(|canvas| {
             canvas.translate(offset.dx, offset.dy);
-            canvas.scissor(0.0, 0.0, child_size.width, child_size.height);
-            self.child.paint(canvas);
+            self.child.paint(canvas, context);
         });
     }
 
     fn size(&self) -> Size {
         self.size
+    }
+
+    fn pack(self) -> Box<dyn Widget> {
+        Box::new(self)
     }
 }

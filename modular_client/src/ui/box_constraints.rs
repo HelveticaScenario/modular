@@ -86,20 +86,37 @@ impl BoxConstraints {
                 self.min_width
             },
             if let Some(width) = width {
-                clamp(self.min_width, self.max_width,width)
+                clamp(self.min_width, self.max_width, width)
             } else {
                 self.max_width
             },
             if let Some(height) = height {
-                clamp(self.min_height, self.max_height,height)
+                clamp(self.min_height, self.max_height, height)
             } else {
                 self.min_height
             },
             if let Some(height) = height {
-                clamp(self.min_height, self.max_height,height)
+                clamp(self.min_height, self.max_height, height)
             } else {
                 self.max_height
             },
+        )
+    }
+
+    pub fn enforce(&self, constraints: Self) -> Self {
+        Self::new(
+            clamp(constraints.min_width, constraints.max_width, self.min_width),
+            clamp(constraints.min_width, constraints.max_width, self.max_width),
+            clamp(
+                constraints.min_height,
+                constraints.max_height,
+                self.min_height,
+            ),
+            clamp(
+                constraints.min_height,
+                constraints.max_height,
+                self.max_height,
+            ),
         )
     }
 }

@@ -11,12 +11,14 @@ use glutin::{
 };
 use modular_client::ui::{
     box_constraints::BoxConstraints,
+    context::Context,
     edge_insets::EdgeInsets,
     size::Size,
     widget::Widget,
     widgets::{
         align::{Align, Alignment},
         container::Container,
+        flex::{Axis, Flex, FlexRule},
         padding::Padding,
         painted_box::PaintedBox,
         text::Text,
@@ -46,9 +48,9 @@ pub fn main() -> Result<()> {
     let font = canvas.add_font_mem(include_bytes!(
         "assets/Fira_Code_v5.2/ttf/FiraCode-Regular.ttf"
     ))?;
-    println!("{:?}", font);
+
     el.run(move |event, window, control_flow| {
-        *control_flow = ControlFlow::Poll;
+        *control_flow = ControlFlow::Wait;
 
         match event {
             Event::LoopDestroyed => return,
@@ -96,9 +98,9 @@ pub fn main() -> Result<()> {
                 _ => (),
             },
             Event::RedrawRequested(_) => {
-                let dpi_factor = windowed_context.window().scale_factor();
+                let dpi_factor = windowed_context.window().scale_factor() as f32;
                 let size = windowed_context.window().inner_size();
-                canvas.set_size(size.width as u32, size.height as u32, dpi_factor as f32);
+                canvas.set_size(size.width as u32, size.height as u32, dpi_factor);
                 canvas.clear_rect(
                     0,
                     0,
@@ -106,30 +108,63 @@ pub fn main() -> Result<()> {
                     size.height as u32,
                     Color::rgbf(0.0, 0.0, 0.0),
                 );
-                let padding = EdgeInsets::all(20.0);
-                let colors = [
-                    Color::rgb(0, 0, 255),
-                    Color::rgb(0, 255, 0),
-                    Color::rgb(255, 0, 0),
-                ];
-                let mut paint = Paint::color(Color::white());
-                paint.set_font_size(100.0 * dpi_factor as f32);
-                paint.set_font(&[font]);
-                let mut container: Box<dyn Widget> = Align::new(
-                    Alignment::center(),
-                    Text::new("ABC".to_owned()).with_fill(paint).package(),
-                );
-                for color in colors.repeat(1) {
-                    container = PaintedBox::new()
-                        .with_fill(Paint::color(color))
-                        .with_child(Padding::new(container, padding))
-                        .package();
-                }
+                canvas.reset_transform();
+                canvas.scale(dpi_factor, dpi_factor);
+                let context = Context { dpi_factor };
+                // let padding = EdgeInsets::all(20.0);
+                // let colors = [
+                //     Color::rgb(0, 0, 255),
+                //     Color::rgb(0, 255, 0),
+                //     Color::rgb(255, 0, 0),
+                // ];
+
+                // let mut container: Box<dyn Widget> = Align::new(
+                //     Alignment::center(),
+                //     Text::new("ABCVVV".to_owned()).with_fill(paint).package(),
+                // );
+                // for color in colors.repeat(1) {
+                //     container = PaintedBox::new()
+                //         .with_fill(Paint::color(color))
+                //         .with_child(Padding::new(container, padding))
+                //         .package();
+                // }
+
+                let mut container = Flex::new(Axis::Vertical)
+                    .with_child(
+                        FlexRule::Flex(1.0),
+                        PaintedBox::new()
+                            .with_fill(Paint::color(Color::black()))
+                            .with_child(Align::new(
+                                Alignment::center(),
+                                Text::new("It Worksq!".to_owned())
+                                    .with_stroke({
+                                        let mut paint = Paint::color(Color::white());
+                                        paint.set_font_size(100.0);
+                                        paint.set_font(&[font]);
+                                        paint.set_line_width(1.0);
+                                        paint
+                                    }),
+                            )),
+                    )
+                    .with_child(
+                        FlexRule::Fixed(5.0),
+                        PaintedBox::new()
+                            .with_fill(Paint::color(Color::white())),
+                    )
+                    .with_child(
+                        FlexRule::Fixed(50.0),
+                        PaintedBox::new()
+                            .with_fill(Paint::color(Color::black())),
+                    );
                 container.layout(
-                    &BoxConstraints::expand(Some((size.width) as f32), Some(size.height as f32)),
+                    BoxConstraints::loose(Size::new(
+                        size.width as f32 / dpi_factor,
+                        size.height as f32 / dpi_factor,
+                    )),
                     &mut canvas,
+                    context,
                 );
-                container.paint(&mut canvas);
+                container.paint(&mut canvas, context);
                 // let mut paint = Paint::color(Color::white());
                 // paint.set_font_size(100.0 * dpi_factor as f32);
                 // paint.set_font(&[font]);
@@ -183,7 +218,7 @@ pub fn main() -> Result<()> {
                 canvas.flush();
                 windowed_context.swap_buffers().unwrap();
             }
-            Event::MainEventsCleared => windowed_context.window().request_redraw(),
+            // Event::MainEventsCleared => windowed_context.window().request_redraw(),
             _ => (),
         }
     });

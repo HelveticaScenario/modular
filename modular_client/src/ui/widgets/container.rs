@@ -1,27 +1,30 @@
-use femtovg::Color;
+use femtovg::{Canvas, Color, renderer::OpenGl};
 
-use crate::ui::{box_constraints::BoxConstraints, size::Size, widget::Widget};
+use crate::ui::{box_constraints::BoxConstraints, context::Context, size::Size, widget::Widget};
 
+#[derive(Debug, Default)]
 pub struct Container {
     pub size: Size,
     pub child: Option<Box<dyn Widget>>,
     pub color: Option<Color>,
 }
 
+
 impl Container {
-    pub fn new(size: Size, child: Option<Box<dyn Widget>>, color: Option<Color>) -> Box<Self> {
-        Box::new(Container { size, child, color })
+    pub fn new(size: Size, child: Option<Box<dyn Widget>>, color: Option<Color>) -> Self {
+        Container { size, child, color }
     }
 }
 
 impl Widget for Container {
     fn layout(
         &mut self,
-        constraints: &crate::ui::box_constraints::BoxConstraints,
-        canvas: &mut femtovg::Canvas<femtovg::renderer::OpenGl>,
+        constraints: BoxConstraints,
+        canvas: &mut Canvas<OpenGl>,
+        context: Context,
     ) -> Size {
         if let Some(ref mut child) = self.child {
-            child.layout(&BoxConstraints::loose(self.size), canvas);
+            child.layout(BoxConstraints::loose(self.size), canvas, context);
         }
         Size::new(
             constraints.max_width.min(self.size.width),
@@ -29,9 +32,8 @@ impl Widget for Container {
         )
     }
 
-    fn paint(&mut self, canvas: &mut femtovg::Canvas<femtovg::renderer::OpenGl>) {
+    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: Context) {
         canvas.save_with(|canvas| {
-            canvas.scissor(0.0, 0.0, self.size.width, self.size.height);
             if let Some(color) = self.color {
                 canvas.clear_rect(
                     0,
@@ -42,12 +44,16 @@ impl Widget for Container {
                 );
             }
             if let Some(ref mut child) = self.child {
-                child.paint(canvas);
+                child.paint(canvas, context);
             }
         })
     }
 
     fn size(&self) -> Size {
         self.size
+    }
+
+    fn pack(self) -> Box<dyn Widget> {
+        Box::new(self)
     }
 }

@@ -1,46 +1,55 @@
+use std::slice::IterMut;
+
 use femtovg::{renderer::OpenGl, Canvas};
 
-use crate::ui::{box_constraints::BoxConstraints, size::Size, widget::Widget};
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+use crate::ui::{box_constraints::BoxConstraints, context::Context, size::Size, widget::Widget};
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MainAxisSize {
     Min,
     Max,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Axis {
     Horizontal,
     Vertical,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum VerticalDirection {
-    /// Boxes should start at the bottom and be stacked vertically towards the top.
-    ///
-    /// The "start" is at the bottom, the "end" is at the top.
-    Up,
 
-    /// Boxes should start at the top and be stacked vertically towards the bottom.
-    ///
-    /// The "start" is at the top, the "end" is at the bottom.
-    Down,
+impl Axis {
+    pub fn max_constraint(&self, constraints: BoxConstraints) -> f32 {
+        match self {
+            Axis::Horizontal => constraints.max_width,
+            Axis::Vertical => constraints.max_height,
+        }
+    }
+    pub fn span(&self, size: Size) -> f32 {
+        match self {
+            Axis::Horizontal => size.width,
+            Axis::Vertical => size.height,
+        }
+    }
+
+    pub fn size(&self, span: f32) -> Size {
+        match self {
+            Axis::Horizontal => Size::new(span, f32::INFINITY),
+            Axis::Vertical => Size::new(f32::INFINITY, span),
+        }
+    }
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-/// A direction along either the horizontal or vertical [Axis].
-pub enum AxisDirection {
-    /// Zero is at the bottom and positive values are above it: `⇈`
-    Up,
+// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// pub enum VerticalDirection {
+//     /// Boxes should start at the bottom and be stacked vertically towards the top.
+//     ///
+//     /// The "start" is at the bottom, the "end" is at the top.
+//     Up,
 
-    /// Zero is on the left and positive values are to the right of it: `⇉`
-    Right,
+//     /// Boxes should start at the top and be stacked vertically towards the bottom.
+//     ///
+//     /// The "start" is at the top, the "end" is at the bottom.
+//     Down,
+// }
 
-    /// Zero is at the top and positive values are below it: `⇊`
-    Down,
-
-    /// Zero is to the right and positive values are to the left of it: `⇇`
-    Left,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MainAxisAlignment {
     Start,
     End,
@@ -49,22 +58,29 @@ pub enum MainAxisAlignment {
     SpaceAround,
     SpaceEvenly,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum CrossAxisAlignment {
-    Start,
-    End,
-    Center,
-    Stretch,
-    Baseline,
+// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// pub enum CrossAxisAlignment {
+//     Start,
+//     End,
+//     Center,
+//     Stretch,
+//     // Baseline, // I dont understand baselines right now, so i'll skip it
+// }
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FlexRule {
+    Flex(f32),
+    Fixed(f32),
 }
 
+#[derive(Debug)]
 pub struct Flex {
-    pub children: Vec<Flexible>,
+    pub children: Vec<FlexChild>,
     pub direction: Axis,
     pub main_axis_alignment: MainAxisAlignment,
     pub main_axis_size: MainAxisSize,
-    pub cross_axis_alignment: CrossAxisAlignment,
-    pub vertical_direction: VerticalDirection,
+    // pub cross_axis_alignment: CrossAxisAlignment,
+    // pub vertical_direction: VerticalDirection,
     size: Size,
 }
 
@@ -75,8 +91,8 @@ impl Flex {
             direction,
             main_axis_alignment: MainAxisAlignment::Start,
             main_axis_size: MainAxisSize::Max,
-            cross_axis_alignment: CrossAxisAlignment::Center,
-            vertical_direction: VerticalDirection::Down,
+            // cross_axis_alignment: CrossAxisAlignment::Center,
+            // vertical_direction: VerticalDirection::Down,
             size: Size::zero(),
         }
     }
@@ -91,98 +107,203 @@ impl Flex {
         self
     }
 
-    pub fn with_cross_axis_alignment(mut self, cross_axis_alignment: CrossAxisAlignment) -> Self {
-        self.cross_axis_alignment = cross_axis_alignment;
+    // pub fn with_cross_axis_alignment(mut self, cross_axis_alignment: CrossAxisAlignment) -> Self {
+    //     self.cross_axis_alignment = cross_axis_alignment;
+    //     self
+    // }
+
+    // pub fn with_vertical_direction(mut self, vertical_direction: VerticalDirection) -> Self {
+    //     self.vertical_direction = vertical_direction;
+    //     self
+    // }
+
+    pub fn with_child(mut self, rule: FlexRule, child: impl Widget + 'static) -> Self {
+        self.children
+            .push(FlexChild::new(rule, Some(Box::new(child))));
         self
     }
 
-    pub fn with_vertical_direction(mut self, vertical_direction: VerticalDirection) -> Self {
-        self.vertical_direction = vertical_direction;
+    pub fn with_spacer(mut self, rule: FlexRule) -> Self {
+        self.children.push(FlexChild::new(rule, None));
         self
     }
 
-    pub fn with_child(mut self, child: Box<dyn Widget>) -> Self {
-        self.children.push(Flexible::new(0.0, Some(child)));
-        self
+    pub fn paint_with_space(
+        &mut self,
+        canvas: &mut Canvas<OpenGl>,
+        context: Context,
+        space_between: f32,
+    ) {
+        for FlexChild {
+            flex_rule,
+            widget,
+            span,
+        } in self.children.iter_mut()
+        {
+            if let Some(widget) = widget {
+                canvas.save_with(|canvas| {
+                    widget.paint(canvas, context);
+                });
+            };
+            Self::translate(self.direction, canvas, *span + space_between);
+        }
     }
 
-    pub fn with_flex_child(mut self, flex: f32, child: Box<dyn Widget>) -> Self {
-        self.children.push(Flexible::new(flex, Some(child)));
-        self
-    }
-
-    pub fn with_spacer(mut self, flex: f32) -> Self {
-        self.children.push(Flexible::new(flex, None));
-        self
-    }
-
-    pub fn package(self) -> Box<Self> {
-        Box::new(self)
+    pub fn translate(direction: Axis, canvas: &mut Canvas<OpenGl>, span: f32) {
+        match direction {
+            Axis::Horizontal => {
+                canvas.translate(span, 0.0f32);
+            }
+            Axis::Vertical => {
+                canvas.translate(0.0f32, span);
+            }
+        }
     }
 }
 
 impl Widget for Flex {
-    fn layout(&mut self, constraints: &BoxConstraints, canvas: &mut Canvas<OpenGl>) -> Size {
-        let remainder = match self.direction {
-            Axis::Horizontal => constraints.max_width,
-            Axis::Vertical => constraints.max_height,
+    fn layout(
+        &mut self,
+        constraints: BoxConstraints,
+        canvas: &mut Canvas<OpenGl>,
+        context: Context,
+    ) -> Size {
+        let fixed_space: f32 = self
+            .children
+            .iter()
+            .map(|FlexChild { flex_rule, .. }| match flex_rule {
+                FlexRule::Flex(_) => 0.0f32,
+                FlexRule::Fixed(span) => *span,
+            })
+            .sum();
+        let flex_sum: f32 = self
+            .children
+            .iter()
+            .map(|FlexChild { flex_rule, .. }| match flex_rule {
+                FlexRule::Flex(flex) => *flex,
+                FlexRule::Fixed(_) => 0.0,
+            })
+            .sum();
+
+        let flex_space = match self.main_axis_size {
+            MainAxisSize::Min => 0.0f32,
+            MainAxisSize::Max => self.direction.max_constraint(constraints) - fixed_space,
         };
-        let direction = self.direction;
-        let remainder = self
-            .children
-            .iter_mut()
-            .filter(|Flexible { flex, child }| flex <= &0.0 && child.is_some())
-            .fold(remainder, |accum, Flexible { child, .. }| {
-                let size = child.as_mut().unwrap().layout(constraints, canvas);
-                match direction {
-                    Axis::Horizontal => accum - size.width,
-                    Axis::Vertical => accum - size.height,
-                }
-            });
-        let flex_sum: f32 = self.children.iter().map(|Flexible { flex, .. }| flex).sum();
-        for Flexible { flex, child } in self
-            .children
-            .iter_mut()
-            .filter(|Flexible { flex, child }| flex > &0.0 && child.is_some())
-        {
-            let dimension = remainder * (*flex / flex_sum);
-            let constriants = match self.direction {
-                Axis::Horizontal => {
-                    
-                }
-                Axis::Vertical => {}
+
+        for flex_child in self.children.iter_mut() {
+            let span = match flex_child.flex_rule {
+                FlexRule::Flex(flex) => flex_space * (flex / flex_sum),
+                FlexRule::Fixed(span) => span,
             };
+            flex_child.span = span;
+            if let Some(ref mut widget) = flex_child.widget {
+                let constraints =
+                    BoxConstraints::loose(self.direction.size(span)).enforce(constraints);
+                widget.layout(constraints, canvas, context);
+            }
         }
-        // if has_flexible {
-        //     for Flexible{flex, child} in self.children.iter_mut() {
-
-        //     }
-        // } else if  {
-
-        //     for Flexible{flex, child} in self.children.iter_mut() {
-
-        //     }
-        // }
-        self.size = constraints.biggest();
+        self.size = match self.main_axis_size {
+            MainAxisSize::Min => {
+                BoxConstraints::loose(self.direction.size(fixed_space + flex_space))
+                    .enforce(constraints)
+                    .biggest()
+            }
+            MainAxisSize::Max => constraints.biggest(),
+        };
         self.size
     }
 
-    fn paint(&mut self, canvas: &mut Canvas<OpenGl>) {
-        todo!()
+    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: Context) {
+        let child_space: f32 = self
+            .children
+            .iter()
+            .map(|FlexChild { span, .. }| *span)
+            .sum();
+        let full_space = self.direction.span(self.size);
+        canvas.save_with(|canvas| {
+            match self.main_axis_alignment {
+                MainAxisAlignment::Start => {
+                    self.paint_with_space(canvas, context, 0.0f32);
+                }
+                MainAxisAlignment::End => {
+                    Self::translate(self.direction, canvas, full_space - child_space);
+                    self.paint_with_space(canvas, context, 0.0);
+                }
+                MainAxisAlignment::Center => {
+                    Self::translate(self.direction, canvas, (full_space - child_space) / 2.0);
+                    self.paint_with_space(canvas, context, 0.0);
+                }
+                MainAxisAlignment::SpaceBetween => {
+                    let space_count = self.children.len() - 1;
+                    self.paint_with_space(
+                        canvas,
+                        context,
+                        if space_count > 0 {
+                            (full_space - child_space) / space_count as f32
+                        } else {
+                            0.0
+                        },
+                    );
+                }
+                MainAxisAlignment::SpaceAround => {
+                    let space_count = self.children.len();
+                    if space_count > 0 {
+                        Self::translate(
+                            self.direction,
+                            canvas,
+                            (full_space - child_space) / space_count as f32 / 2.0,
+                        );
+                    }
+                    self.paint_with_space(
+                        canvas,
+                        context,
+                        if space_count > 0 {
+                            (full_space - child_space) / space_count as f32
+                        } else {
+                            0.0
+                        },
+                    );
+                }
+                MainAxisAlignment::SpaceEvenly => {
+                    let space_count = self.children.len() + 1;
+
+                    Self::translate(
+                        self.direction,
+                        canvas,
+                        (full_space - child_space) / space_count as f32,
+                    );
+                    self.paint_with_space(
+                        canvas,
+                        context,
+                        (full_space - child_space) / space_count as f32,
+                    );
+                }
+            };
+        });
     }
 
     fn size(&self) -> Size {
-        todo!()
+        self.size
+    }
+
+    fn pack(self) -> Box<dyn Widget> {
+        Box::new(self)
     }
 }
 
-pub struct Flexible {
-    pub flex: f32,
-    pub child: Option<Box<dyn Widget>>,
+#[derive(Debug)]
+pub struct FlexChild {
+    pub flex_rule: FlexRule,
+    pub widget: Option<Box<dyn Widget>>,
+    span: f32,
 }
 
-impl Flexible {
-    pub fn new(flex: f32, child: Option<Box<dyn Widget>>) -> Self {
-        Flexible { flex, child }
+impl FlexChild {
+    pub fn new(flex_rule: FlexRule, widget: Option<Box<dyn Widget>>) -> Self {
+        FlexChild {
+            flex_rule,
+            widget,
+            span: 0.0,
+        }
     }
 }
