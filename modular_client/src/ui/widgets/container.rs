@@ -21,7 +21,7 @@ impl Widget for Container {
         &mut self,
         constraints: BoxConstraints,
         canvas: &mut Canvas<OpenGl>,
-        context: Context,
+        context: &Context,
     ) -> Size {
         if let Some(ref mut child) = self.child {
             child.layout(BoxConstraints::loose(self.size), canvas, context);
@@ -32,7 +32,7 @@ impl Widget for Container {
         )
     }
 
-    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: Context) {
+    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: &Context) {
         canvas.save_with(|canvas| {
             if let Some(color) = self.color {
                 canvas.clear_rect(

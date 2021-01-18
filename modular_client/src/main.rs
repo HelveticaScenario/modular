@@ -1,7 +1,10 @@
-use std::{thread, time::Duration};
+use std::{
+    thread,
+    time::{Duration, Instant},
+};
 
 use anyhow::{anyhow, Result};
-use femtovg::{renderer::OpenGl, Canvas, Color, Paint};
+use femtovg::{renderer::OpenGl, Canvas, Color, Paint, Path};
 use glutin::{
     dpi::PhysicalSize,
     event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
@@ -11,19 +14,23 @@ use glutin::{
 };
 use modular_client::ui::{
     box_constraints::BoxConstraints,
-    context::Context,
+    components::grid::Grid,
+    context::{Context, Theme},
     edge_insets::EdgeInsets,
     size::Size,
     widget::Widget,
     widgets::{
         align::{Align, Alignment},
         container::Container,
+        custom_paint::CustomPaint,
         flex::{Axis, Flex, FlexRule},
         padding::Padding,
         painted_box::PaintedBox,
+        stack::Stack,
         text::Text,
     },
 };
+
 pub fn main() -> Result<()> {
     let window_size = PhysicalSize::new(1000, 700);
     let el = EventLoop::new();
@@ -48,7 +55,9 @@ pub fn main() -> Result<()> {
     let font = canvas.add_font_mem(include_bytes!(
         "assets/Fira_Code_v5.2/ttf/FiraCode-Regular.ttf"
     ))?;
-
+    let mut now = Instant::now();
+    let t = 0.0;
+    let max_t = 3.0;
     el.run(move |event, window, control_flow| {
         *control_flow = ControlFlow::Wait;
 
@@ -100,17 +109,32 @@ pub fn main() -> Result<()> {
             Event::RedrawRequested(_) => {
                 let dpi_factor = windowed_context.window().scale_factor() as f32;
                 let size = windowed_context.window().inner_size();
+                let ref context = Context {
+                    dpi_factor,
+                    theme: Theme {
+                        background: Color::rgb(0, 0, 0),
+                        f_high: Color::rgb(255, 255, 255),
+                        f_med: Color::rgb(119, 119, 119),
+                        f_low: Color::rgb(68, 68, 68),
+                        f_inv: Color::rgb(0, 0, 0),
+                        b_high: Color::rgb(238, 238, 238),
+                        b_med: Color::rgb(114, 222, 194),
+                        b_low: Color::rgb(68, 68, 68),
+                        b_inv: Color::rgb(255, 181, 69),
+                    },
+                };
+
                 canvas.set_size(size.width as u32, size.height as u32, dpi_factor);
                 canvas.clear_rect(
                     0,
                     0,
                     size.width as u32,
                     size.height as u32,
-                    Color::rgbf(0.0, 0.0, 0.0),
+                    context.theme.background,
                 );
                 canvas.reset_transform();
                 canvas.scale(dpi_factor, dpi_factor);
-                let context = Context { dpi_factor };
+
                 // let padding = EdgeInsets::all(20.0);
                 // let colors = [
                 //     Color::rgb(0, 0, 255),
@@ -129,33 +153,68 @@ pub fn main() -> Result<()> {
                 //         .package();
                 // }
 
-                let mut container = Flex::new(Axis::Vertical)
-                    .with_child(
-                        FlexRule::Flex(1.0),
-                        PaintedBox::new()
-                            .with_fill(Paint::color(Color::black()))
-                            .with_child(Align::new(
-                                Alignment::center(),
-                                Text::new("It Worksq!".to_owned())
-                                    .with_stroke({
-                                        let mut paint = Paint::color(Color::white());
-                                        paint.set_font_size(100.0);
-                                        paint.set_font(&[font]);
-                                        paint.set_line_width(1.0);
-                                        paint
-                                    }),
-                            )),
-                    )
-                    .with_child(
-                        FlexRule::Fixed(5.0),
-                        PaintedBox::new()
-                            .with_fill(Paint::color(Color::white())),
-                    )
-                    .with_child(
-                        FlexRule::Fixed(50.0),
-                        PaintedBox::new()
-                            .with_fill(Paint::color(Color::black())),
-                    );
+                // let mut container = Flex::new(Axis::Vertical)
+                //     .with_child(
+                //         FlexRule::Flex(1.0),
+                //         PaintedBox::new()
+                //             .with_fill(Paint::color(Color::black()))
+                //             .with_child(Align::new(
+                //                 Alignment::center(),
+                //                 Text::new("It Worksq!".to_owned())
+                //                     .with_stroke({
+                //                         let mut paint = Paint::color(Color::white());
+                //                         paint.set_font_size(100.0);
+                //                         paint.set_font(&[font]);
+                //                         paint.set_line_width(1.0);
+                //                         paint
+                //                     }),
+                //             )),
+                //     )
+                //     .with_child(
+                //         FlexRule::Fixed(5.0),
+                //         PaintedBox::new()
+                //             .with_fill(Paint::color(Color::white())),
+                //     )
+                //     .with_child(
+                //         FlexRule::Fixed(50.0),
+                //         PaintedBox::new()
+                //             .with_fill(Paint::color(Color::black())),
+                //     );
+                let mut container = Stack::new(vec![
+                    {
+                        let x_dim = 100.0;
+                        let y_dim = 100.0;
+                        let dash_on_ratio = 1.0;
+                        let dash_off_ratio = 1.0;
+                        let x_count = 4;
+                        let y_count = 4;
+                        Grid::new(
+                            x_dim,
+                            y_dim,
+                            dash_on_ratio,
+                            dash_off_ratio,
+                            x_count,
+                            y_count,
+                        )
+                    },
+                    // {
+                    //     let x_dim = 400.0;
+                    //     let y_dim = 400.0;
+                    //     let dash_on_ratio = 1.0;
+                    //     let dash_off_ratio = 6.0;
+                    //     let x_count = 1;
+                    //     let y_count = 1;
+                    //     Grid::new(
+                    //         x_dim,
+                    //         y_dim,
+                    //         dash_on_ratio,
+                    //         dash_off_ratio,
+                    //         x_count,
+                    //         y_count,
+                    //     )
+                    // },
+                ]);
+
                 container.layout(
                     BoxConstraints::loose(Size::new(
                         size.width as f32 / dpi_factor,

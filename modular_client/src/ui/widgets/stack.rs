@@ -18,7 +18,7 @@ impl Stack {
 }
 
 impl Widget for Stack {
-    fn layout(&mut self, constraints: BoxConstraints, canvas: &mut Canvas<OpenGl>, context: Context) -> Size {
+    fn layout(&mut self, constraints: BoxConstraints, canvas: &mut Canvas<OpenGl>, context: &Context) -> Size {
         for child in self.children.iter_mut() {
             child.layout(constraints, canvas, context);
         }
@@ -27,7 +27,7 @@ impl Widget for Stack {
         size
     }
 
-    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: Context) {
+    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: &Context) {
         canvas.save_with(|canvas| {
             for child in self.children.iter_mut() {
                 child.paint(canvas, context);

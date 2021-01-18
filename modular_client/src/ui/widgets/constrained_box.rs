@@ -29,12 +29,12 @@ impl Widget for ConstrainedBox {
         &mut self,
         constraints: BoxConstraints,
         canvas: &mut Canvas<OpenGl>,
-        context: Context,
+        context: &Context,
     ) -> Size {
         todo!()
     }
 
-    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: Context) {
+    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: &Context) {
         todo!()
     }
 

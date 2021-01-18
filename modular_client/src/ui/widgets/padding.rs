@@ -20,14 +20,14 @@ impl Padding {
 }
 
 impl Widget for Padding {
-    fn layout(&mut self, constraints: BoxConstraints, canvas: &mut Canvas<OpenGl>, context: Context) -> Size {
+    fn layout(&mut self, constraints: BoxConstraints, canvas: &mut Canvas<OpenGl>, context: &Context) -> Size {
         self.size = constraints.biggest();
         let deflated_constraints = constraints.deflate(self.padding);
         self.child.layout(deflated_constraints, canvas, context);
         self.size
     }
 
-    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: Context) {
+    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: &Context) {
         canvas.save_with(|canvas| {
             let inner_rect = self
                 .padding

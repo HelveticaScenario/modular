@@ -8,9 +8,9 @@ pub trait Widget: Debug {
         &mut self,
         constraints: BoxConstraints,
         canvas: &mut Canvas<OpenGl>,
-        context: Context,
+        context: &Context,
     ) -> Size;
-    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: Context);
+    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: &Context);
     fn size(&self) -> Size;
     fn pack(self) -> Box<dyn Widget>;
 }

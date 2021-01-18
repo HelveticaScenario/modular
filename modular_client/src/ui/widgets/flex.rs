@@ -131,7 +131,7 @@ impl Flex {
     pub fn paint_with_space(
         &mut self,
         canvas: &mut Canvas<OpenGl>,
-        context: Context,
+        context: &Context,
         space_between: f32,
     ) {
         for FlexChild {
@@ -166,7 +166,7 @@ impl Widget for Flex {
         &mut self,
         constraints: BoxConstraints,
         canvas: &mut Canvas<OpenGl>,
-        context: Context,
+        context: &Context,
     ) -> Size {
         let fixed_space: f32 = self
             .children
@@ -213,7 +213,7 @@ impl Widget for Flex {
         self.size
     }
 
-    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: Context) {
+    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: &Context) {
         let child_space: f32 = self
             .children
             .iter()

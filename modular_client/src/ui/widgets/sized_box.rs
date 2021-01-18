@@ -1,19 +1,16 @@
-use femtovg::{Canvas, renderer::OpenGl};
+use femtovg::{renderer::OpenGl, Canvas};
 
 use crate::ui::{box_constraints::BoxConstraints, context::Context, size::Size, widget::Widget};
 
 #[derive(Debug)]
 pub struct SizedBox {
     pub child: Option<Box<dyn Widget>>,
-    size: Size,
+    pub size: Size,
 }
 
 impl SizedBox {
-    pub fn new() -> Self {
-        Self {
-            child: None,
-            size: Size::zero(),
-        }
+    pub fn new(size: Size) -> Self {
+        Self { child: None, size }
     }
 
     pub fn with_child(mut self, child: impl Widget + 'static) -> Self {
@@ -27,13 +24,22 @@ impl Widget for SizedBox {
         &mut self,
         constraints: BoxConstraints,
         canvas: &mut Canvas<OpenGl>,
-        context: Context,
+        context: &Context,
     ) -> Size {
-        todo!()
+        if let Some(ref mut child) = self.child {
+            child.layout(
+                BoxConstraints::loose(self.size).enforce(constraints),
+                canvas,
+                context,
+            );
+        }
+        self.size
     }
 
-    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: Context) {
-        todo!()
+    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: &Context) {
+        if let Some(ref mut child) = self.child {
+            child.paint(canvas, context);
+        }
     }
 
     fn size(&self) -> Size {

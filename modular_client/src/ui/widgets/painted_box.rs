@@ -42,7 +42,7 @@ impl Widget for PaintedBox {
         &mut self,
         constraints: BoxConstraints,
         canvas: &mut Canvas<OpenGl>,
-        context: Context,
+        context: &Context,
     ) -> Size {
         self.size = constraints.biggest();
         if let Some(ref mut child) = self.child {
@@ -51,7 +51,7 @@ impl Widget for PaintedBox {
         self.size
     }
 
-    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: Context) {
+    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: &Context) {
         canvas.save_with(|canvas| {
             if let Some(paint) = self.fill {
                 let mut path = Path::new();

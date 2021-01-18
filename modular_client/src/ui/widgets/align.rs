@@ -78,7 +78,7 @@ impl Widget for Align {
         &mut self,
         constraints: BoxConstraints,
         canvas: &mut Canvas<OpenGl>,
-        context: Context,
+        context: &Context,
     ) -> Size {
         self.child.layout(constraints, canvas, context);
         let size = constraints.biggest();
@@ -86,7 +86,7 @@ impl Widget for Align {
         size
     }
 
-    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: Context) {
+    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: &Context) {
         let child_size = self.child.size();
         let offset = self.alignment.to_offset(self.size) - self.alignment.to_offset(child_size);
         canvas.save_with(|canvas| {

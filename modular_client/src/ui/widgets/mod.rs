@@ -7,3 +7,4 @@ pub mod painted_box;
 pub mod flex;
 pub mod constrained_box;
 pub mod sized_box;
+pub mod custom_paint;

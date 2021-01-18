@@ -50,7 +50,7 @@ impl Widget for Text {
         &mut self,
         _constraints: BoxConstraints,
         canvas: &mut Canvas<OpenGl>,
-        context: Context,
+        context: &Context,
     ) -> Size {
         let (stroke_size, stroke_offset) = if let Some(paint) = self.stroke_paint {
             let metrics = self.get_metrics(paint, canvas);
@@ -81,7 +81,7 @@ impl Widget for Text {
         size
     }
 
-    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: Context) {
+    fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: &Context) {
         let mut path = Path::new();
         path.rect(0.0, 0.0, self.size.width, self.size.height);
         canvas.stroke_path(&mut path, Paint::color(Color::white()));
