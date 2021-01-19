@@ -7,3 +7,4 @@ pub mod edge_insets;
 pub mod rect;
 pub mod context;
 pub mod components;
+pub mod paint;

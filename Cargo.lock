@@ -1419,6 +1419,7 @@ dependencies = [
  "glutin",
  "modular_core",
  "modular_server",
+ "rand",
  "rosc",
  "stretch",
 ]

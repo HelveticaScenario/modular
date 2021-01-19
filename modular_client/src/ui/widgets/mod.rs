@@ -8,3 +8,5 @@ pub mod flex;
 pub mod constrained_box;
 pub mod sized_box;
 pub mod custom_paint;
+pub mod transformed_box;
+pub mod clip;

@@ -15,10 +15,21 @@ impl Stack {
             size: Size::zero(),
         }
     }
+    pub fn new_from_boxed(children: Vec<Box<dyn Widget>>) -> Self {
+        Stack {
+            children,
+            size: Size::zero(),
+        }
+    }
 }
 
 impl Widget for Stack {
-    fn layout(&mut self, constraints: BoxConstraints, canvas: &mut Canvas<OpenGl>, context: &Context) -> Size {
+    fn layout(
+        &mut self,
+        constraints: BoxConstraints,
+        canvas: &mut Canvas<OpenGl>,
+        context: &Context,
+    ) -> Size {
         for child in self.children.iter_mut() {
             child.layout(constraints, canvas, context);
         }

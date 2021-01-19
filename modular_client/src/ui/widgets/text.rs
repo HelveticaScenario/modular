@@ -82,9 +82,6 @@ impl Widget for Text {
     }
 
     fn paint(&mut self, canvas: &mut Canvas<OpenGl>, context: &Context) {
-        let mut path = Path::new();
-        path.rect(0.0, 0.0, self.size.width, self.size.height);
-        canvas.stroke_path(&mut path, Paint::color(Color::white()));
         if let Some(paint) = self.fill_paint {
             canvas
                 .fill_text(self.fill_offset.dx, -self.fill_offset.dy, &self.text, paint)
