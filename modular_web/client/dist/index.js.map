@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../src/index.tsx"],
+  "sourcesContent": ["import React from 'react'\r\nimport ReactDOM from 'react-dom'\r\n\r\nconst App = () => {\r\n    return <div>Hello</div> \r\n}\r\n\r\nReactDOM.render(<App/>, document.getElementById('root'))"],
+  "mappings": "AAAA,qBACA,yBAEA,KAAM,GAAM,IACD,gBAAC,MAAD,KAAK,SAGhB,EAAS,OAAO,gBAAC,EAAD,MAAQ,SAAS,eAAe",
+  "names": []
+}
