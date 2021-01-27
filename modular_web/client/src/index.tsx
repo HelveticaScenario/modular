@@ -1,7 +1,9 @@
-import Preact, { h , re} from 'https://cdn.skypack.dev/preact@^10.5.11'
+import { h, render } from 'deps/preact';
+import { App } from './app';
 
-const App = () => {
-	return <div>Hello</div>
+const root = document.getElementById('root');
+if (!root) {
+    throw new Error('root not found');
 }
 
-ReactDOM.render(<App />, document.getElementById('root'))
+render(<App start={0} />, root);
