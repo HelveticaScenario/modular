@@ -5,9 +5,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build-css": "cross-env NODE_ENV=production tailwindcss-cli build -o dist/tailwind.css",
-    "build-js": "cross-env NODE_ENV=production esbuild src/index.tsx --bundle --minify --platform=neutral --sourcemap --target=es2020 --outdir=dist",
-    "build": "esbuild src/index.tsx --bundle --minify --platform=neutral --sourcemap --target=es2020 --outdir=dist"
+    "build-css": "cross-env NODE_ENV=production tailwindcss-cli build -o dist/css/tailwind.css",
+    "build-js": "cross-env NODE_ENV=production esbuild src/index.tsx --bundle --minify --platform=neutral --sourcemap --target=es2020 --outdir=dist/js",
+    "build": "npm run build-js && npm run build-css"
   },
   "author": "",
   "license": "ISC",
