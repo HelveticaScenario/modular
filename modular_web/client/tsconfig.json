@@ -69,10 +69,10 @@
     "skipLibCheck": true /* Skip type checking of declaration files. */,
     "forceConsistentCasingInFileNames": true /* Disallow inconsistently-cased references to the same file. */,
     "paths": {
-      "https://unpkg.com/preact@10.5.12/dist/preact.mjs": [
+      "https://cdn.skypack.dev/preact": [
         "node_modules/preact/src/index.d.ts"
       ],
-      "https://unpkg.com/preact@10.5.12/hooks/dist/hooks.mjs": [
+      "https://cdn.skypack.dev/preact/hooks": [
         "node_modules/preact/hooks/src/index.d.ts"
       ]
     }

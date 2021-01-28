@@ -11,7 +11,7 @@ export {
     options,
     render,
     toChildArray,
-} from 'https://unpkg.com/preact@10.5.12/dist/preact.mjs';
+} from 'https://cdn.skypack.dev/preact';
 
 export type {
     AnyComponent,
@@ -41,4 +41,4 @@ export type {
     RefObject,
     RenderableProps,
     VNode,
-} from 'https://unpkg.com/preact@10.5.12/dist/preact.mjs';
+} from 'https://cdn.skypack.dev/preact';

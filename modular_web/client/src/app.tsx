@@ -10,9 +10,9 @@ export const App: FunctionComponent<Props> = ({ start }) => {
     useEffect(() => {
         const id = setInterval(() => {
             setTick((prev) => (prev + 1) % 2);
-        });
+        }, 1000);
         return () => clearInterval(id);
     }, []);
 
-    return <div>{(start + tick) % 2 === 0 ? 'Hello' : 'Goodbye'}</div>;
+    return <div class="ring-0">{(start + tick) % 2 === 0 ? 'Hello' : 'Goodbye'}</div>;
 };

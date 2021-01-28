@@ -10,7 +10,7 @@ export {
     useReducer,
     useRef,
     useState,
-} from 'https://unpkg.com/preact@10.5.12/hooks/dist/hooks.mjs';
+} from 'https://cdn.skypack.dev/preact/hooks';
 
 export type {
     CreateHandle,
@@ -20,4 +20,4 @@ export type {
     Reducer,
     Ref,
     StateUpdater,
-} from 'https://unpkg.com/preact@10.5.12/hooks/dist/hooks.mjs';
+} from 'https://cdn.skypack.dev/preact/hooks';

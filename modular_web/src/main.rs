@@ -11,4 +11,4 @@ async fn main() {
         .await;
 }
 
-static INDEX_HTML: &str = include_str!("../client/index.html");
+static INDEX_HTML: &str = include_str!("../client/src/index.html");
