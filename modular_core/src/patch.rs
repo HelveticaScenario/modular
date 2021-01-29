@@ -1,9 +1,7 @@
+use crossbeam_channel::{Receiver, Sender};
 use std::{
     collections::HashMap,
-    sync::{
-        mpsc::{Receiver, Sender},
-        Arc, Mutex,
-    },
+    sync::{Arc, Mutex},
     time::Duration,
 };
 

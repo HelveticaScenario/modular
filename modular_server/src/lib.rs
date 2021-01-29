@@ -1,6 +1,9 @@
-use std::{sync::mpsc, thread::JoinHandle};
+pub use modular_core::crossbeam_channel;
+use modular_core::crossbeam_channel::unbounded;
+use std::thread::JoinHandle;
 
 use modular_core::Modular;
+pub use rosc;
 use server::spawn_server;
 
 mod osc;
@@ -14,8 +17,8 @@ pub fn spawn(
     JoinHandle<()>,
     JoinHandle<()>,
 ) {
-    let (incoming_tx, incoming_rx) = mpsc::channel();
-    let (outgoing_tx, outgoing_rx) = mpsc::channel();
+    let (incoming_tx, incoming_rx) = unbounded();
+    let (outgoing_tx, outgoing_rx) = unbounded();
 
     let _modular_handle = Modular::spawn(incoming_rx, outgoing_tx);
 

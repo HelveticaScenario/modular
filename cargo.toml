@@ -2,7 +2,7 @@
 members = [
     "modular_core",
     "modular_server",
-    "modular_client",
+    # "modular_client",
     "modular_derive",
     "modular_web"
 ]

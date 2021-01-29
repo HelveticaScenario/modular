@@ -1,5 +1,5 @@
-use std::sync::{mpsc::Sender, Arc};
-
+use crossbeam_channel::Sender;
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::{
@@ -95,8 +95,7 @@ pub fn handle_message(
             match sampleables.get(&id) {
                 Some(module) => module.update_param(
                     &param_name,
-                    &new_param
-                        .to_internal_param(&sampleables, &tracks),
+                    &new_param.to_internal_param(&sampleables, &tracks),
                 )?,
                 None => sender.send(OutputMessage::Error(format!("{} not found", id)))?,
             }

@@ -16,17 +16,15 @@ pub mod patch;
 mod sequence;
 pub mod types;
 
-use std::{
-    sync::mpsc::{self, Sender},
-    thread,
-};
+use std::thread;
 
 use cpal::traits::{DeviceTrait, HostTrait};
+use crossbeam_channel::{Receiver, Sender};
 use message::{InputMessage, OutputMessage};
-use mpsc::Receiver;
 use patch::Patch;
 use thread::JoinHandle;
 pub use uuid;
+pub use crossbeam_channel;
 
 pub struct Modular;
 

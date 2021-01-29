@@ -8,4 +8,8 @@ edition = "2018"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
 warp = "0.3"
+futures = { version = "0.3", default-features = false, features = ["alloc"] }
+modular_core = { version = "*", path = "../modular_core"}
+modular_server = { version = "*", path = "../modular_server"}

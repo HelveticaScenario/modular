@@ -1,5 +1,4 @@
-use std::{sync::mpsc::Sender, vec};
-
+use modular_core::crossbeam_channel::Sender;
 use modular_core::{
     message::{InputMessage, OutputMessage},
     types::{ModuleState, Param, Playmode},
@@ -7,6 +6,7 @@ use modular_core::{
 };
 use rosc::OscType::{Float as OscFloat, Int as OscInt, Nil as OscNil, String as OscStr};
 use rosc::{OscBundle, OscMessage, OscPacket, OscType};
+use std::vec;
 
 fn bndl(content: Vec<OscPacket>) -> OscPacket {
     OscPacket::Bundle(OscBundle {

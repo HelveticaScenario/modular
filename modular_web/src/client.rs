@@ -4,14 +4,14 @@ use std::{
     str::FromStr,
     thread::{self, JoinHandle},
 };
-use modular_core::crossbeam_channel::{Sender, Receiver};
+use modular_core::crossbeam_channel::{Receiver, Sender};
+use modular_core::message::InputMessage;
+use modular_server::rosc::encoder;
+use modular_server::rosc;
 
-use modular_core::message::{InputMessage, OutputMessage};
-use rosc::encoder;
+use crate::osc::{message_to_osc, osc_to_message, Message};
 
-use crate::osc::{message_to_osc, osc_to_message};
-
-pub fn start_sending_server(client_address: String, rx: Receiver<OutputMessage>) {
+pub fn start_sending_client(client_address: String, rx: Receiver<InputMessage>) {
     let host_addr = SocketAddrV4::from_str("0.0.0.0:0").unwrap();
     let to_addr = SocketAddrV4::from_str(&client_address).unwrap();
     println!("Sending to {}", to_addr);
@@ -25,7 +25,7 @@ pub fn start_sending_server(client_address: String, rx: Receiver<OutputMessage>)
     }
 }
 
-pub fn start_recieving_server(host_address: String, tx: Sender<InputMessage>) {
+pub fn start_recieving_client(host_address: String, tx: Sender<Message>) {
     let addr = SocketAddrV4::from_str(&host_address).unwrap();
     let sock = UdpSocket::bind(addr).unwrap();
     println!("Listening to {}", addr);
@@ -51,18 +51,18 @@ pub fn start_recieving_server(host_address: String, tx: Sender<InputMessage>) {
     }
 }
 
-pub fn spawn_server(
-    client_address: String,
-    server_port: String,
-    tx: Sender<InputMessage>,
-    rx: Receiver<OutputMessage>,
+pub fn spawn_client(
+    server_address: String,
+    client_port: String,
+    tx: Sender<Message>,
+    rx: Receiver<InputMessage>,
 ) -> (JoinHandle<()>, JoinHandle<()>) {
-    let host_address = format!("127.0.0.1:{}", server_port);
-    let recieving_server_handle = {
+    let host_address = format!("127.0.0.1:{}", client_port);
+    let recieving_client_handle = {
         let host_address = host_address.clone();
-        thread::spawn(move || start_recieving_server(host_address, tx))
+        thread::spawn(move || start_recieving_client(host_address, tx))
     };
-    let sending_server_handle = thread::spawn(move || start_sending_server(client_address, rx));
+    let sending_client_handle = thread::spawn(move || start_sending_client(server_address, rx));
 
-    (recieving_server_handle, sending_server_handle)
+    (recieving_client_handle, sending_client_handle)
 }
