@@ -219,12 +219,10 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                     (
                         name.clone().unwrap(),
                         quote! {
-                            *self.#name.try_lock().unwrap() = self.module.try_lock().unwrap().#name;
+                            outputs.#name = module.#name;
                         },
                         quote! {
-                            if port == #output_name {
-                                return Ok(*self.#name.try_lock().unwrap());
-                            }
+                            #output_name => Ok(self.outputs.read().#name),
                         },
                         quote! {
                             crate::types::PortSchema {
@@ -239,67 +237,90 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         },
         Data::Enum(_) | Data::Union(_) => unimplemented!(),
     };
-    let output_names1 = outputs.iter().map(|(idents, _, _, _)| idents);
+    let output_names = outputs.iter().map(|(idents, _, _, _)| idents);
     let output_assignments = outputs.iter().map(|(_, assignment, _, _)| assignment);
     let output_retrievals = outputs.iter().map(|(_, _, retrieval, _)| retrieval);
     let output_schemas = outputs.iter().map(|(_, _, _, schema)| schema);
     let struct_name = format_ident!("{}Sampleable", name);
+    let output_struct_name = format_ident!("{}Outputs", name);
     let constructor_name = format_ident!("{}Constructor", name)
         .to_string()
         .to_case(Case::Snake);
     let constructor_name = Ident::new(&constructor_name, Span::call_site());
     let params_struct_name = format_ident!("{}Params", name);
     let gen = quote! {
+
+        #[derive(Default)]
+        struct #output_struct_name {
+            #(#output_names: f32,)*
+        }
+
         #[derive(Default)]
         struct #struct_name {
             id: uuid::Uuid,
-            #(#output_names1: std::sync::Mutex<f32>,)*
-            module: std::sync::Mutex<#name>,
+            outputs: parking_lot::RwLock<#output_struct_name>,
+            module: parking_lot::Mutex<#name>,
+            processed: core::sync::atomic::AtomicBool,
+            sample_rate: f32
         }
 
         impl crate::types::Sampleable for #struct_name {
             fn tick(&self) -> () {
-                #(#output_assignments)*
+                self.processed.store(false, core::sync::atomic::Ordering::Release);
             }
 
-            fn update(&self, sample_rate: f32) -> () {
-                self.module.try_lock().unwrap().update(sample_rate);
+            fn update(&self) -> () {
+                if let Ok(_) = self.processed.compare_exchange(
+                    false,
+                    true,
+                    core::sync::atomic::Ordering::Acquire,
+                    core::sync::atomic::Ordering::Relaxed,
+                ) {
+                    let mut module = self.module.lock();
+                    module.update(self.sample_rate);
+                    let mut outputs = self.outputs.write();
+                    #(#output_assignments)*
+                }
             }
 
             fn get_sample(&self, port: &String) -> Result<f32> {
-                #(#output_retrievals)*
-                Err(anyhow!(
-                    "{} with id {} does not have port {}",
-                    #module_name,
-                    self.id,
-                    port
-                ))
+                self.update();
+                match port.as_str() {
+                    #(#output_retrievals)*
+                    _ => Err(anyhow!(
+                        "{} with id {} does not have port {}",
+                        #module_name,
+                        self.id,
+                        port
+                    ))
+                }
             }
 
             fn get_state(&self) -> crate::types::ModuleState {
                 use crate::types::Params;
                 crate::types::ModuleState {
                     module_type: #module_name.to_owned(),
-                    id: self.id.clone(),
-                    params: self.module.lock().unwrap().params.get_params_state(),
+                    id: self.id,
+                    params: self.module.lock().params.get_params_state(),
                 }
             }
 
             fn update_param(&self, param_name: &String, new_param: &crate::types::InternalParam) -> Result<()> {
                 use crate::types::Params;
-                self.module.lock().unwrap().params.update_param(param_name, new_param, #module_name)
+                self.module.lock().params.update_param(param_name, new_param, #module_name)
             }
 
             fn get_id(&self) -> uuid::Uuid {
-                self.id.clone()
+                self.id
             }
         }
 
-        fn #constructor_name(id: &uuid::Uuid) -> Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
-            Ok(std::sync::Arc::new(Box::new(#struct_name {
-                id: id.clone(),
+        fn #constructor_name(id: &uuid::Uuid, sample_rate: f32) -> Result<std::sync::Arc<parking_lot::RwLock<Box<dyn crate::types::Sampleable>>>> {
+            Ok(std::sync::Arc::new(parking_lot::lock_api::RwLock::new(Box::new(#struct_name {
+                id: *id,
+                sample_rate,
                 ..#struct_name::default()
-            })))
+            }))))
         }
 
         impl crate::types::Module for #name {

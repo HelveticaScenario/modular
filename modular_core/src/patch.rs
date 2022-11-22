@@ -1,9 +1,7 @@
+use atomic_float::AtomicF32;
 use crossbeam_channel::{Receiver, Sender};
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use parking_lot::RwLock;
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use crate::{
     dsp::get_constructors,
@@ -16,119 +14,89 @@ use cpal::{
 };
 use uuid::Uuid;
 pub struct Patch {
-    pub sampleables: Arc<Mutex<SampleableMap>>,
-    pub tracks: Arc<Mutex<TrackMap>>,
+    pub sampleables: SampleableMap,
+    pub tracks: TrackMap,
 }
+
+pub const SAMPLE_RATE: AtomicF32 = AtomicF32::new(0.0);
 
 impl Patch {
     pub fn new(sampleables: SampleableMap, tracks: TrackMap) -> Self {
         Patch {
-            sampleables: Arc::new(Mutex::new(sampleables)),
-            tracks: Arc::new(Mutex::new(tracks)),
+            sampleables,
+            tracks,
         }
     }
 
     pub fn run<T>(
         device: &cpal::Device,
         config: cpal::SupportedStreamConfig,
-        reciever: Receiver<InputMessage>,
+        receiver: Receiver<InputMessage>,
         sender: Sender<OutputMessage>,
     ) -> Result<(), anyhow::Error>
     where
         T: cpal::Sample,
     {
-        let mut patch = Patch::new(HashMap::new(), HashMap::new());
         let sample_rate = config.sample_rate().0 as f32;
+        let patch = Arc::new(RwLock::new(Patch::new(HashMap::new(), HashMap::new())));
         let channels = config.channels() as usize;
         println!("{} {}", sample_rate, channels);
 
         let err_fn = |err| eprintln!("error: {}", err);
-        let sampleables = patch.sampleables.clone();
-        let tracks = patch.tracks.clone();
-        {
-            sampleables.lock().unwrap().insert(
-                Uuid::nil(),
-                get_constructors().get(&"signal".to_owned()).unwrap()(&Uuid::nil()).unwrap(),
-            );
-        }
+        patch.clone().write().sampleables.insert(
+            Uuid::nil(),
+            get_constructors().get(&"signal".to_owned()).unwrap()(&Uuid::nil(), sample_rate)
+                .unwrap(),
+        );
+        let patch_clone = patch.clone();
 
         let mut last_instant: Option<StreamInstant> = None;
         let stream = match config.sample_format() {
             cpal::SampleFormat::F32 => device.build_output_stream(
                 &config.into(),
                 move |data, info: &_| {
-                    if let (Ok(ref sampleables), Ok(ref tracks)) =
-                        (sampleables.lock(), tracks.lock())
-                    {
-                        let new_instant = info.timestamp().callback;
+                    let new_instant = info.timestamp().callback;
 
-                        let delta = match last_instant {
-                            Some(last_instant) => new_instant.duration_since(&last_instant),
-                            None => None,
-                        }
-                        .unwrap_or(Duration::from_nanos(0));
-                        last_instant = Some(new_instant);
-                        write_data::<f32>(
-                            data,
-                            channels,
-                            &sampleables,
-                            &tracks,
-                            sample_rate,
-                            &delta,
-                        )
+                    let delta = match last_instant {
+                        Some(last_instant) => new_instant.duration_since(&last_instant),
+                        None => None,
                     }
+                    .unwrap_or(Duration::from_nanos(0));
+                    last_instant = Some(new_instant);
+                    let mut patch = patch_clone.write();
+                    write_data::<f32>(data, channels, &mut patch, &delta)
                 },
                 err_fn,
             )?,
             cpal::SampleFormat::I16 => device.build_output_stream(
                 &config.into(),
                 move |data, info: &_| {
-                    if let (Ok(ref sampleables), Ok(ref tracks)) =
-                        (sampleables.lock(), tracks.lock())
-                    {
-                        let new_instant = info.timestamp().callback;
+                    let new_instant = info.timestamp().callback;
 
-                        let delta = match last_instant {
-                            Some(last_instant) => new_instant.duration_since(&last_instant),
-                            None => None,
-                        }
-                        .unwrap_or(Duration::from_nanos(0));
-                        last_instant = Some(new_instant);
-                        write_data::<i16>(
-                            data,
-                            channels,
-                            &sampleables,
-                            &tracks,
-                            sample_rate,
-                            &delta,
-                        )
+                    let delta = match last_instant {
+                        Some(last_instant) => new_instant.duration_since(&last_instant),
+                        None => None,
                     }
+                    .unwrap_or(Duration::from_nanos(0));
+                    last_instant = Some(new_instant);
+                    let mut patch = patch_clone.write();
+                    write_data::<i16>(data, channels, &mut patch, &delta)
                 },
                 err_fn,
             )?,
             cpal::SampleFormat::U16 => device.build_output_stream(
                 &config.into(),
                 move |data, info: &_| {
-                    if let (Ok(ref sampleables), Ok(ref tracks)) =
-                        (sampleables.lock(), tracks.lock())
-                    {
-                        let new_instant = info.timestamp().callback;
+                    let new_instant = info.timestamp().callback;
 
-                        let delta = match last_instant {
-                            Some(last_instant) => new_instant.duration_since(&last_instant),
-                            None => None,
-                        }
-                        .unwrap_or(Duration::from_nanos(0));
-                        last_instant = Some(new_instant);
-                        write_data::<u16>(
-                            data,
-                            channels,
-                            &sampleables,
-                            &tracks,
-                            sample_rate,
-                            &delta,
-                        )
+                    let delta = match last_instant {
+                        Some(last_instant) => new_instant.duration_since(&last_instant),
+                        None => None,
                     }
+                    .unwrap_or(Duration::from_nanos(0));
+                    last_instant = Some(new_instant);
+                    let mut patch = patch_clone.write();
+                    write_data::<u16>(data, channels, &mut patch, &delta)
                 },
                 err_fn,
             )?,
@@ -136,67 +104,61 @@ impl Patch {
 
         stream.play()?;
 
-        for message in reciever {
-            handle_message(message, &mut patch, &sender)?;
+        for message in receiver {
+            handle_message(message, &patch, &sender, sample_rate)?;
         }
-
         Ok(())
     }
 }
 
-fn write_data<T>(
-    output: &mut [T],
-    channels: usize,
-    sampleables: &SampleableMap,
-    tracks: &TrackMap,
-    sample_rate: f32,
-    delta: &Duration,
-) where
+fn write_data<T>(output: &mut [T], channels: usize, patch: &mut Patch, delta: &Duration)
+where
     T: cpal::Sample,
 {
     for frame in output.chunks_mut(channels) {
-        let value =
-            cpal::Sample::from::<f32>(&process_frame(sampleables, tracks, sample_rate, delta));
+        let value = cpal::Sample::from::<f32>(&process_frame(patch, delta));
         for sample in frame.iter_mut() {
             *sample = value;
         }
     }
 }
 
-fn update_tracks(tracks: &TrackMap, delta: &Duration) {
+fn update_tracks(tracks: &mut TrackMap, delta: &Duration) {
     for (_, track) in tracks {
-        track.tick(delta);
+        track.write().tick(delta);
     }
 }
 
-fn update_sampleables(sampleables: &SampleableMap, sample_rate: f32) {
+fn update_sampleables(sampleables: &mut SampleableMap) {
     for (_, module) in sampleables {
-        module.update(sample_rate);
+        module.write().update();
     }
 }
 
-fn tick_sampleables(sampleables: &SampleableMap) {
+fn tick_sampleables(sampleables: &mut SampleableMap) {
     for (_, module) in sampleables {
-        module.tick();
+        module.write().tick();
     }
 }
 
 fn get_patch_output(sampleables: &SampleableMap) -> f32 {
     if let Some(root) = sampleables.get(&*ROOT_ID) {
-        return root.get_sample(&*ROOT_OUTPUT_PORT).unwrap_or_default();
+        return root
+            .read()
+            .get_sample(&*ROOT_OUTPUT_PORT)
+            .unwrap_or_default();
     } else {
         return 0.0;
     }
 }
 
-fn process_frame(
-    sampleables: &SampleableMap,
-    tracks: &TrackMap,
-    sample_rate: f32,
-    delta: &Duration,
-) -> f32 {
+fn process_frame(patch: &mut Patch, delta: &Duration) -> f32 {
+    let Patch {
+        ref mut sampleables,
+        ref mut tracks,
+    } = patch;
     update_tracks(tracks, delta);
-    update_sampleables(sampleables, sample_rate);
+    update_sampleables(sampleables);
     tick_sampleables(sampleables);
     get_patch_output(sampleables) / 5.0
 }

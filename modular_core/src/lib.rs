@@ -5,8 +5,10 @@ extern crate lazy_static;
 extern crate modular_derive;
 
 extern crate anyhow;
+extern crate atomic_float;
 extern crate cpal;
 extern crate hound;
+extern crate parking_lot;
 extern crate serde;
 extern crate serde_json;
 
@@ -19,12 +21,12 @@ pub mod types;
 use std::thread;
 
 use cpal::traits::{DeviceTrait, HostTrait};
+pub use crossbeam_channel;
 use crossbeam_channel::{Receiver, Sender};
 use message::{InputMessage, OutputMessage};
 use patch::Patch;
 use thread::JoinHandle;
 pub use uuid;
-pub use crossbeam_channel;
 
 pub struct Modular;
 
