@@ -1,5 +1,5 @@
 use anyhow::Result;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
@@ -47,7 +47,7 @@ pub struct Config {
     pub params: Value,
 }
 
-pub type SampleableMap = HashMap<Uuid, Arc<RwLock<Box<dyn Sampleable>>>>;
+pub type SampleableMap = HashMap<Uuid, Arc<Box<dyn Sampleable>>>;
 
 #[derive(Clone)]
 pub enum InternalParam {
@@ -58,11 +58,11 @@ pub enum InternalParam {
         value: u8,
     },
     Cable {
-        module: sync::Weak<RwLock<Box<dyn Sampleable>>>,
+        module: sync::Weak<Box<dyn Sampleable>>,
         port: String,
     },
     Track {
-        track: sync::Weak<RwLock<InternalTrack>>,
+        track: sync::Weak<InternalTrack>,
     },
     Disconnected,
 }
@@ -87,12 +87,11 @@ impl PartialEq for InternalParam {
                 },
             ) => {
                 *port1 == *port2
-                    && module1.upgrade().map(|module| module.read().get_id())
-                        == module2.upgrade().map(|module| module.read().get_id())
+                    && module1.upgrade().map(|module| module.get_id())
+                        == module2.upgrade().map(|module| module.get_id())
             }
             (InternalParam::Track { track: track1 }, InternalParam::Track { track: track2 }) => {
-                track1.upgrade().map(|track| track.read().id)
-                    == track2.upgrade().map(|track| track.read().id)
+                track1.upgrade().map(|track| track.id) == track2.upgrade().map(|track| track.id)
             }
             (InternalParam::Disconnected, InternalParam::Disconnected) => true,
             _ => false,
@@ -107,15 +106,13 @@ impl InternalParam {
             InternalParam::Note { value } => Param::Note { value: *value },
             InternalParam::Cable { module, port } => match module.upgrade() {
                 Some(module) => Param::Cable {
-                    module: module.read().get_id(),
+                    module: module.get_id(),
                     port: port.clone(),
                 },
                 None => Param::Disconnected,
             },
             InternalParam::Track { track } => match track.upgrade() {
-                Some(track) => Param::Track {
-                    track: track.read().id,
-                },
+                Some(track) => Param::Track { track: track.id },
                 None => Param::Disconnected,
             },
             InternalParam::Disconnected => Param::Disconnected,
@@ -132,14 +129,14 @@ impl InternalParam {
             InternalParam::Value { value } => Some(*value),
             InternalParam::Note { value } => Some((*value as f32 - 21.0) / 12.0),
             InternalParam::Cable { module, port } => match module.upgrade() {
-                Some(module) => match module.read().get_sample(port) {
+                Some(module) => match module.get_sample(port) {
                     Ok(sample) => Some(sample),
                     Err(_) => None,
                 },
                 None => None,
             },
             InternalParam::Track { track } => match track.upgrade() {
-                Some(track) => match track.read().get_value_optional() {
+                Some(track) => match track.get_value_optional() {
                     Some(sample) => Some(sample),
                     None => None,
                 },
@@ -395,57 +392,76 @@ impl InnerTrack {
 
 pub struct InternalTrack {
     id: Uuid,
-    inner_track: InnerTrack,
-    sample: Option<f32>,
+    inner_track: Mutex<InnerTrack>,
+    sample: Mutex<Option<f32>>,
 }
 
 impl InternalTrack {
     pub fn new(id: Uuid) -> Self {
         InternalTrack {
             id,
-            inner_track: InnerTrack {
+            inner_track: Mutex::new(InnerTrack {
                 playhead: Duration::from_nanos(0),
                 playhead_idx: 0,
                 length: Duration::from_nanos(0),
                 play_mode: Playmode::Once,
                 keyframes: Vec::new(),
-            },
-            sample: None,
+            }),
+            sample: Mutex::new(None),
         }
     }
 
-    pub fn seek(&mut self, playhead: Duration) {
-        self.inner_track.seek(playhead)
+    pub fn seek(&self, playhead: Duration) {
+        self.inner_track
+            .try_lock_for(Duration::from_millis(10))
+            .unwrap()
+            .seek(playhead)
     }
 
-    pub fn add_keyframe(&mut self, keyframe: InternalKeyframe) {
-        self.inner_track.add_keyframe(keyframe)
+    pub fn add_keyframe(&self, keyframe: InternalKeyframe) {
+        self.inner_track
+            .try_lock_for(Duration::from_millis(10))
+            .unwrap()
+            .add_keyframe(keyframe)
     }
 
-    pub fn remove_keyframe(&mut self, id: Uuid) -> Option<InternalKeyframe> {
-        self.inner_track.remove_keyframe(id)
+    pub fn remove_keyframe(&self, id: Uuid) -> Option<InternalKeyframe> {
+        self.inner_track
+            .try_lock_for(Duration::from_millis(10))
+            .unwrap()
+            .remove_keyframe(id)
     }
 
-    pub fn tick(&mut self, delta: &Duration) {
-        self.sample = self.inner_track.tick(delta);
+    pub fn tick(&self, delta: &Duration) {
+        *(self.sample.try_lock_for(Duration::from_millis(10)).unwrap()) = self
+            .inner_track
+            .try_lock_for(Duration::from_millis(10))
+            .unwrap()
+            .tick(delta);
     }
 
-    pub fn update(&mut self, update: &TrackUpdate) {
-        self.inner_track.update(update);
+    pub fn update(&self, update: &TrackUpdate) {
+        self.inner_track
+            .try_lock_for(Duration::from_millis(10))
+            .unwrap()
+            .update(update);
     }
 
     pub fn get_value_optional(&self) -> Option<f32> {
-        self.sample
+        *self.sample.try_lock_for(Duration::from_millis(10)).unwrap()
     }
 
     pub fn to_track(&self) -> Track {
+        let inner_track = self
+            .inner_track
+            .try_lock_for(Duration::from_millis(10))
+            .unwrap();
         Track {
             id: self.id,
-            playhead: self.inner_track.playhead,
-            length: self.inner_track.length,
-            play_mode: self.inner_track.play_mode,
-            keyframes: self
-                .inner_track
+            playhead: inner_track.playhead,
+            length: inner_track.length,
+            play_mode: inner_track.play_mode,
+            keyframes: inner_track
                 .keyframes
                 .iter()
                 .map(|k| k.to_keyframe())
@@ -454,7 +470,7 @@ impl InternalTrack {
     }
 }
 
-pub type TrackMap = HashMap<Uuid, Arc<RwLock<InternalTrack>>>;
+pub type TrackMap = HashMap<Uuid, Arc<InternalTrack>>;
 
 #[derive(Debug, Clone, PartialOrd, PartialEq)]
 pub struct Track {
@@ -492,5 +508,4 @@ pub struct ModuleState {
     pub params: HashMap<String, Param>,
 }
 
-pub type SampleableConstructor =
-    Box<dyn Fn(&Uuid, f32) -> Result<Arc<RwLock<Box<dyn Sampleable>>>>>;
+pub type SampleableConstructor = Box<dyn Fn(&Uuid, f32) -> Result<Arc<Box<dyn Sampleable>>>>;

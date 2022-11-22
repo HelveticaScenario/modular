@@ -222,7 +222,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                             outputs.#name = module.#name;
                         },
                         quote! {
-                            #output_name => Ok(self.outputs.read().#name),
+                            #output_name => Ok(self.outputs.try_read_for(core::time::Duration::from_millis(10)).unwrap().#name),
                         },
                         quote! {
                             crate::types::PortSchema {
@@ -278,7 +278,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 ) {
                     let mut module = self.module.lock();
                     module.update(self.sample_rate);
-                    let mut outputs = self.outputs.write();
+                    let mut outputs = self.outputs.try_write_for(core::time::Duration::from_millis(10)).unwrap();
                     #(#output_assignments)*
                 }
             }
@@ -315,12 +315,12 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             }
         }
 
-        fn #constructor_name(id: &uuid::Uuid, sample_rate: f32) -> Result<std::sync::Arc<parking_lot::RwLock<Box<dyn crate::types::Sampleable>>>> {
-            Ok(std::sync::Arc::new(parking_lot::lock_api::RwLock::new(Box::new(#struct_name {
+        fn #constructor_name(id: &uuid::Uuid, sample_rate: f32) -> Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
+            Ok(std::sync::Arc::new(Box::new(#struct_name {
                 id: *id,
                 sample_rate,
                 ..#struct_name::default()
-            }))))
+            })))
         }
 
         impl crate::types::Module for #name {

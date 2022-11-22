@@ -78,7 +78,7 @@ async fn main() {
 
     tokio::task::spawn(async move {
         while let Some(msg) = incoming.recv().await {
-            for sender in incoming_map.read().await.values() {
+            for sender in incoming_map.try_read_for(Duration::from_millis(10)).unwrap().await.values() {
                 sender.send(msg.clone()).unwrap();
             }
         }
@@ -103,7 +103,7 @@ async fn on_websocket(websocket: WebSocket, incoming_map: IncomingMap, outgoing:
     let (user_ws_tx, mut user_ws_rx) = websocket.split();
 
     let (tx, mut rx) = mpsc::unbounded_channel();
-    incoming_map.write().await.insert(my_id, tx);
+    incoming_map.try_write_for(Duration::from_millis(10)).unwrap().await.insert(my_id, tx);
 
     let (command_tx, mut command_rx) = mpsc::unbounded_channel();
     
@@ -123,7 +123,7 @@ async fn on_websocket(websocket: WebSocket, incoming_map: IncomingMap, outgoing:
     });
 
     while let Some(command) = command_rx.recv().await {}
-    incoming_map.write().await.remove(&my_id);
+    incoming_map.try_write_for(Duration::from_millis(10)).unwrap().await.remove(&my_id);
 }
 
 static INDEX_HTML: &str = include_str!("../client/src/index.html");

@@ -1,6 +1,6 @@
 use crossbeam_channel::Sender;
-use parking_lot::RwLock;
-use std::sync::{Arc, Mutex};
+use parking_lot::{Mutex, RwLock};
+use std::{sync::Arc, time::Duration};
 use uuid::Uuid;
 
 use crate::{
@@ -44,7 +44,7 @@ pub enum OutputMessage {
 
 pub fn handle_message(
     message: InputMessage,
-    patch: &Arc<RwLock<Patch>>,
+    patch: &Arc<Mutex<Patch>>,
     sender: &Sender<OutputMessage>,
     sample_rate: f32,
 ) -> anyhow::Result<()> {
@@ -55,19 +55,21 @@ pub fn handle_message(
         InputMessage::GetModules => {
             sender.send(OutputMessage::PatchState(
                 patch
-                    .read()
+                    .try_lock_for(Duration::from_millis(10))
+                    .unwrap()
                     .sampleables
                     .iter()
-                    .map(|(_key, val)| val.read().get_state())
+                    .map(|(_key, val)| val.get_state())
                     .collect(),
             ))?;
         }
         InputMessage::GetModule(id) => {
             let state = patch
-                .read()
+                .try_lock_for(Duration::from_millis(10))
+                .unwrap()
                 .sampleables
                 .get(&id)
-                .map(|module| module.read().get_state());
+                .map(|module| module.get_state());
             sender.send(OutputMessage::ModuleState(id, state))?;
         }
         InputMessage::CreateModule(module_type, id) => {
@@ -77,7 +79,11 @@ pub fn handle_message(
                 match constructor(&id, sample_rate) {
                     Ok(module) => {
                         println!("attempt write");
-                        patch.write().sampleables.insert(id.clone(), module);
+                        patch
+                            .try_lock_for(Duration::from_millis(10))
+                            .unwrap()
+                            .sampleables
+                            .insert(id.clone(), module);
                         println!("written");
                         sender.send(OutputMessage::CreateModule(module_type, id))?
                     }
@@ -94,58 +100,82 @@ pub fn handle_message(
             }
         }
         InputMessage::UpdateParam(id, param_name, new_param) => {
-            let patch = patch.read();
+            let patch = patch.try_lock_for(Duration::from_millis(10)).unwrap();
             match patch.sampleables.get(&id) {
-                Some(module) => module
-                    .write()
-                    .update_param(&param_name, &new_param.to_internal_param(&patch))?,
+                Some(module) => {
+                    module.update_param(&param_name, &new_param.to_internal_param(&patch))?
+                }
                 None => sender.send(OutputMessage::Error(format!("{} not found", id)))?,
             }
         }
         InputMessage::DeleteModule(id) => {
-            patch.write().sampleables.remove(&id);
+            patch
+                .try_lock_for(Duration::from_millis(10))
+                .unwrap()
+                .sampleables
+                .remove(&id);
         }
         InputMessage::GetTracks => {
-            let patch = patch.read();
-            for (_, internal_track) in patch.tracks.iter() {
-                sender.send(OutputMessage::Track(internal_track.read().to_track()))?;
+            for (_, internal_track) in patch
+                .try_lock_for(Duration::from_millis(10))
+                .unwrap()
+                .tracks
+                .iter()
+            {
+                sender.send(OutputMessage::Track(internal_track.to_track()))?;
             }
         }
         InputMessage::GetTrack(id) => {
-            let patch = patch.read();
-            if let Some(ref internal_track) = patch.tracks.get(&id) {
-                sender.send(OutputMessage::Track(internal_track.read().to_track()))?;
+            if let Some(ref internal_track) = patch
+                .try_lock_for(Duration::from_millis(10))
+                .unwrap()
+                .tracks
+                .get(&id)
+            {
+                sender.send(OutputMessage::Track(internal_track.to_track()))?;
             }
         }
         InputMessage::CreateTrack(id) => {
-            let mut patch = patch.write();
-            patch.tracks.insert(
-                id.clone(),
-                Arc::new(RwLock::new(InternalTrack::new(id.clone()))),
-            );
+            patch
+                .try_lock_for(Duration::from_millis(10))
+                .unwrap()
+                .tracks
+                .insert(id.clone(), Arc::new(InternalTrack::new(id.clone())));
             sender.send(OutputMessage::CreateTrack(id))?
         }
         InputMessage::UpdateTrack(id, track_update) => {
-            let patch = patch.write();
-            if let Some(ref internal_track) = patch.tracks.get(&id) {
-                internal_track.write().update(&track_update)
+            if let Some(ref internal_track) = patch.lock().tracks.get(&id) {
+                internal_track.update(&track_update)
             }
         }
         InputMessage::DeleteTrack(id) => {
-            patch.write().tracks.remove(&id);
+            patch
+                .try_lock_for(Duration::from_millis(10))
+                .unwrap()
+                .tracks
+                .remove(&id);
         }
         InputMessage::UpsertKeyframe(keyframe) => {
-            let patch = patch.read();
-            let internal_keyframe = keyframe.to_internal_keyframe(&patch);
+            let internal_keyframe = keyframe
+                .to_internal_keyframe(&patch.try_lock_for(Duration::from_millis(10)).unwrap());
 
-            if let Some(ref track) = patch.tracks.get(&keyframe.track_id) {
-                track.write().add_keyframe(internal_keyframe);
+            if let Some(ref track) = patch
+                .try_lock_for(Duration::from_millis(10))
+                .unwrap()
+                .tracks
+                .get(&keyframe.track_id)
+            {
+                track.add_keyframe(internal_keyframe);
             }
         }
         InputMessage::DeleteKeyframe(id, track_id) => {
-            let patch = patch.read();
-            if let Some(ref track) = patch.tracks.get(&track_id) {
-                track.write().remove_keyframe(id);
+            if let Some(ref track) = patch
+                .try_lock_for(Duration::from_millis(10))
+                .unwrap()
+                .tracks
+                .get(&track_id)
+            {
+                track.remove_keyframe(id);
             }
         }
     };

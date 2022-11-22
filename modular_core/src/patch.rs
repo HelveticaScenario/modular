@@ -1,6 +1,6 @@
 use atomic_float::AtomicF32;
 use crossbeam_channel::{Receiver, Sender};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use crate::{
@@ -38,12 +38,12 @@ impl Patch {
         T: cpal::Sample,
     {
         let sample_rate = config.sample_rate().0 as f32;
-        let patch = Arc::new(RwLock::new(Patch::new(HashMap::new(), HashMap::new())));
+        let patch = Arc::new(Mutex::new(Patch::new(HashMap::new(), HashMap::new())));
         let channels = config.channels() as usize;
         println!("{} {}", sample_rate, channels);
 
         let err_fn = |err| eprintln!("error: {}", err);
-        patch.clone().write().sampleables.insert(
+        patch.clone().lock().sampleables.insert(
             Uuid::nil(),
             get_constructors().get(&"signal".to_owned()).unwrap()(&Uuid::nil(), sample_rate)
                 .unwrap(),
@@ -63,7 +63,7 @@ impl Patch {
                     }
                     .unwrap_or(Duration::from_nanos(0));
                     last_instant = Some(new_instant);
-                    let mut patch = patch_clone.write();
+                    let mut patch = patch_clone.lock();
                     write_data::<f32>(data, channels, &mut patch, &delta)
                 },
                 err_fn,
@@ -79,7 +79,7 @@ impl Patch {
                     }
                     .unwrap_or(Duration::from_nanos(0));
                     last_instant = Some(new_instant);
-                    let mut patch = patch_clone.write();
+                    let mut patch = patch_clone.lock();
                     write_data::<i16>(data, channels, &mut patch, &delta)
                 },
                 err_fn,
@@ -95,7 +95,7 @@ impl Patch {
                     }
                     .unwrap_or(Duration::from_nanos(0));
                     last_instant = Some(new_instant);
-                    let mut patch = patch_clone.write();
+                    let mut patch = patch_clone.lock();
                     write_data::<u16>(data, channels, &mut patch, &delta)
                 },
                 err_fn,
@@ -125,28 +125,25 @@ where
 
 fn update_tracks(tracks: &mut TrackMap, delta: &Duration) {
     for (_, track) in tracks {
-        track.write().tick(delta);
+        track.tick(delta);
     }
 }
 
 fn update_sampleables(sampleables: &mut SampleableMap) {
     for (_, module) in sampleables {
-        module.write().update();
+        module.update();
     }
 }
 
 fn tick_sampleables(sampleables: &mut SampleableMap) {
     for (_, module) in sampleables {
-        module.write().tick();
+        module.tick();
     }
 }
 
 fn get_patch_output(sampleables: &SampleableMap) -> f32 {
     if let Some(root) = sampleables.get(&*ROOT_ID) {
-        return root
-            .read()
-            .get_sample(&*ROOT_OUTPUT_PORT)
-            .unwrap_or_default();
+        return root.get_sample(&*ROOT_OUTPUT_PORT).unwrap_or_default();
     } else {
         return 0.0;
     }
