@@ -5,7 +5,6 @@ extern crate lazy_static;
 extern crate modular_derive;
 
 extern crate anyhow;
-extern crate atomic_float;
 extern crate cpal;
 extern crate hound;
 extern crate parking_lot;

@@ -1,6 +1,5 @@
-use atomic_float::AtomicF32;
 use crossbeam_channel::{Receiver, Sender};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use crate::{
@@ -17,8 +16,6 @@ pub struct Patch {
     pub sampleables: SampleableMap,
     pub tracks: TrackMap,
 }
-
-pub const SAMPLE_RATE: AtomicF32 = AtomicF32::new(0.0);
 
 impl Patch {
     pub fn new(sampleables: SampleableMap, tracks: TrackMap) -> Self {
