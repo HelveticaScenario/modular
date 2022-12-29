@@ -1,53 +1,85 @@
+use std::{net::SocketAddr, sync::Arc};
+
+use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Router};
+use axum_macros::debug_handler;
+use modular_core::{types::Param, uuid::Uuid, Modular};
+use serde::Serialize;
+
 extern crate anyhow;
 extern crate clap;
-extern crate ctrlc;
 extern crate modular_core;
-extern crate rosc;
 
-use clap::{App, Arg, ArgMatches};
-use modular_server::spawn;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-
-fn main() {
-    let matches = get_matches();
-
-    let running = Arc::new(AtomicBool::new(true));
-    let client_address = matches.value_of(CLIENT_ARG).unwrap();
-    let port = matches.value_of(PORT_ARG).unwrap();
-
-    let (_modular_handle, _receiving_server_handle, _sending_server_handle) =
-        spawn(client_address.to_owned(), port.to_owned());
-    let r = running.clone();
-    ctrlc::set_handler(move || {
-        r.store(false, Ordering::SeqCst);
-    })
-    .expect("Error setting Ctrl-C handler");
-
-    while running.load(Ordering::SeqCst) {}
+#[derive(Serialize)]
+struct JsonResponse {
+    msg: String,
 }
 
-const CLIENT_ARG: &str = "client";
-const PORT_ARG: &str = "port";
+#[tokio::main]
+async fn main() {
+    println!("hello");
+    let modular = Arc::new(Modular::new());
 
-fn get_matches<'a>() -> ArgMatches<'a> {
-    App::new("Modular")
-        .version(env!("CARGO_PKG_VERSION"))
-        .author(env!("CARGO_PKG_AUTHORS"))
-        .about(env!("CARGO_PKG_DESCRIPTION"))
-        .arg(
-            Arg::with_name(CLIENT_ARG)
-                .long(CLIENT_ARG)
-                .value_name("IP_ADDRESS")
-                .default_value("127.0.0.1:7813")
-                .takes_value(true),
+    let app = Router::new()
+        .route("/play", post(play))
+        .route("/pause", post(pause))
+        .route("/demo", post(demo))
+        .with_state(modular);
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], 7812));
+
+    axum::Server::bind(&addr)
+        .serve(app.into_make_service())
+        .await
+        .unwrap();
+}
+
+struct AppError(anyhow::Error);
+
+impl From<anyhow::Error> for AppError {
+    fn from(inner: anyhow::Error) -> Self {
+        AppError(inner)
+    }
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> axum::response::Response {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Something went wrong: {}", self.0.to_string()),
         )
-        .arg(
-            Arg::with_name(PORT_ARG)
-                .long(PORT_ARG)
-                .value_name("PORT")
-                .default_value("7812")
-                .takes_value(true),
-        )
-        .get_matches()
+            .into_response()
+    }
+}
+
+#[debug_handler]
+async fn play(State(modular): State<Arc<Modular>>) -> (StatusCode, std::string::String) {
+    match modular.play() {
+        Ok(_) => (StatusCode::OK, "Ok".into()),
+        Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+    }
+}
+
+#[debug_handler]
+async fn pause(State(modular): State<Arc<Modular>>) -> (StatusCode, std::string::String) {
+    match modular.pause() {
+        Ok(_) => (StatusCode::OK, "Ok".into()),
+        Err(err) => (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+    }
+}
+
+#[debug_handler]
+async fn demo(State(modular): State<Arc<Modular>>) -> Result<(), AppError> {
+    let mut patch = modular.patch.lock();
+    let sine_id = Uuid::new_v4();
+    patch.create_module("sine-oscillator".into(), sine_id.clone())?;
+    patch.update_param(sine_id.clone(), "freq".into(), Param::Note { value: 69 })?;
+    patch.update_param(
+        Uuid::nil(),
+        "source".into(),
+        Param::Cable {
+            module: sine_id.clone(),
+            port: "output".into(),
+        },
+    )?;
+    Ok(())
 }
