@@ -257,7 +257,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
 
         #[derive(Default)]
         struct #struct_name {
-            id: uuid::Uuid,
+            id: String,
             outputs: parking_lot::RwLock<#output_struct_name>,
             module: parking_lot::Mutex<#name>,
             processed: core::sync::atomic::AtomicBool,
@@ -300,7 +300,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 use crate::types::Params;
                 crate::types::ModuleState {
                     module_type: #module_name.to_owned(),
-                    id: self.id,
+                    id: self.id.clone(),
                     params: self.module.lock().params.get_params_state(),
                 }
             }
@@ -310,14 +310,14 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 self.module.lock().params.update_param(param_name, new_param, #module_name)
             }
 
-            fn get_id(&self) -> uuid::Uuid {
-                self.id
+            fn get_id(&self) -> String {
+                self.id.clone()
             }
         }
 
-        fn #constructor_name(id: &uuid::Uuid, sample_rate: f32) -> Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
+        fn #constructor_name(id: &String, sample_rate: f32) -> Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
             Ok(std::sync::Arc::new(Box::new(#struct_name {
-                id: *id,
+                id: id.clone(),
                 sample_rate,
                 ..#struct_name::default()
             })))

@@ -2,7 +2,6 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use crate::{
     dsp::get_constructors,
-    // message::OutputMessage,
     types::{
         InternalTrack, Keyframe, ModuleState, Param, SampleableMap, Track, TrackMap, TrackUpdate,
         ROOT_ID, ROOT_OUTPUT_PORT,
@@ -10,7 +9,6 @@ use crate::{
 };
 use anyhow::anyhow;
 use cpal::SampleRate;
-use uuid::Uuid;
 pub struct Patch {
     pub sampleables: SampleableMap,
     pub tracks: TrackMap,
@@ -23,9 +21,8 @@ impl Patch {
         let tracks = HashMap::new();
         let sample_rate = sample_rate.0 as f32;
         sampleables.insert(
-            Uuid::nil(),
-            get_constructors().get(&"signal".to_owned()).unwrap()(&Uuid::nil(), sample_rate)
-                .unwrap(),
+            ROOT_ID.clone(),
+            get_constructors().get(&"signal".to_owned()).unwrap()(&ROOT_ID, sample_rate).unwrap(),
         );
         Patch {
             sampleables,
@@ -86,15 +83,15 @@ impl Patch {
             .collect()
     }
 
-    pub fn get_module(&self, id: Uuid) -> Option<ModuleState> {
-        self.sampleables.get(&id).map(|module| module.get_state())
+    pub fn get_module(&self, id: &String) -> Option<ModuleState> {
+        self.sampleables.get(id).map(|module| module.get_state())
     }
 
-    pub fn create_module(&mut self, module_type: String, id: Uuid) -> Result<(), anyhow::Error> {
+    pub fn create_module(&mut self, module_type: String, id: &String) -> Result<(), anyhow::Error> {
         let constructors = get_constructors();
         println!("sample rate {}", self.sample_rate);
         if let Some(constructor) = constructors.get(&module_type) {
-            constructor(&id, self.sample_rate).map(|module| {
+            constructor(id, self.sample_rate).map(|module| {
                 self.sampleables.insert(id.clone(), module);
             })
         } else {
@@ -104,18 +101,18 @@ impl Patch {
 
     pub fn update_param(
         &self,
-        id: Uuid,
-        param_name: String,
-        new_param: Param,
+        id: &String,
+        param_name: &String,
+        new_param: &Param,
     ) -> Result<(), anyhow::Error> {
-        match self.sampleables.get(&id) {
-            Some(module) => module.update_param(&param_name, &new_param.to_internal_param(self)),
+        match self.sampleables.get(id) {
+            Some(module) => module.update_param(param_name, &new_param.to_internal_param(self)),
             None => Err(anyhow!("{} not found", id)),
         }
     }
 
-    pub fn delete_module(&mut self, id: Uuid) {
-        self.sampleables.remove(&id);
+    pub fn delete_module(&mut self, id: &String) {
+        self.sampleables.remove(id);
     }
 
     pub fn get_tracks(&self) -> Vec<Track> {
@@ -124,19 +121,23 @@ impl Patch {
             .map(|(_, internal_track)| internal_track.to_track())
             .collect()
     }
-    pub fn get_track(&self, id: Uuid) -> Option<Track> {
+    pub fn get_track(&self, id: &String) -> Option<Track> {
         self.tracks
-            .get(&id)
+            .get(id)
             .map(|internal_track| internal_track.to_track())
     }
 
-    pub fn create_track(&mut self, id: Uuid) -> Option<Arc<InternalTrack>> {
+    pub fn create_track(&mut self, id: &String) -> Option<Arc<InternalTrack>> {
         self.tracks
             .insert(id.clone(), Arc::new(InternalTrack::new(id.clone())))
     }
 
-    pub fn update_track(&self, id: Uuid, track_update: TrackUpdate) -> Result<(), anyhow::Error> {
-        match self.tracks.get(&id) {
+    pub fn update_track(
+        &self,
+        id: &String,
+        track_update: TrackUpdate,
+    ) -> Result<(), anyhow::Error> {
+        match self.tracks.get(id) {
             Some(ref internal_track) => {
                 internal_track.update(&track_update);
                 Ok(())
@@ -145,8 +146,8 @@ impl Patch {
         }
     }
 
-    pub fn delete_track(&mut self, id: Uuid) {
-        self.tracks.remove(&id);
+    pub fn delete_track(&mut self, id: &String) {
+        self.tracks.remove(id);
     }
 
     pub fn upsert_keyframe(&self, keyframe: &Keyframe) -> Result<(), anyhow::Error> {
@@ -161,9 +162,9 @@ impl Patch {
         }
     }
 
-    pub fn delete_keyframe(&self, id: Uuid, track_id: Uuid) {
-        if let Some(ref track) = self.tracks.get(&track_id) {
-            track.remove_keyframe(id);
+    pub fn delete_keyframe(&self, id: &String, track_id: &String) {
+        if let Some(ref track) = self.tracks.get(track_id) {
+            track.remove_keyframe(id.clone());
         }
     }
 }

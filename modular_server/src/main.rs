@@ -1,9 +1,20 @@
 use std::{net::SocketAddr, sync::Arc};
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Router};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, post},
+    Json, Router,
+};
 use axum_macros::debug_handler;
-use modular_core::{types::Param, uuid::Uuid, Modular};
+use modular_core::{
+    types::{ModuleSchema, ModuleState, Param, ROOT_ID},
+    Modular,
+};
 use serde::Serialize;
+use tracing::metadata::LevelFilter;
+use tracing_subscriber::EnvFilter;
 
 extern crate anyhow;
 extern crate clap;
@@ -16,17 +27,35 @@ struct JsonResponse {
 
 #[tokio::main]
 async fn main() {
-    println!("hello");
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(
+                    if cfg!(debug_assertions) {
+                        LevelFilter::INFO
+                    } else {
+                        LevelFilter::ERROR
+                    }
+                    .into(),
+                )
+                .from_env_lossy(),
+        )
+        .init();
+
     let modular = Arc::new(Modular::new());
 
     let app = Router::new()
+        .route("/", post(update))
+        .route("/schema", get(get_schema))
         .route("/play", post(play))
         .route("/pause", post(pause))
         .route("/demo", post(demo))
+        .route("/modules", get(get_modules))
+        .route("/module/:id", get(get_module))
         .with_state(modular);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 7812));
-
+    tracing::info!("listening on {}", addr);
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
@@ -70,16 +99,38 @@ async fn pause(State(modular): State<Arc<Modular>>) -> (StatusCode, std::string:
 #[debug_handler]
 async fn demo(State(modular): State<Arc<Modular>>) -> Result<(), AppError> {
     let mut patch = modular.patch.lock();
-    let sine_id = Uuid::new_v4();
-    patch.create_module("sine-oscillator".into(), sine_id.clone())?;
-    patch.update_param(sine_id.clone(), "freq".into(), Param::Note { value: 69 })?;
+    let sine_id: String = "sine".into();
+    patch.create_module("sine-oscillator".into(), &sine_id)?;
+    patch.update_param(&sine_id, &"freq".into(), &Param::Note { value: 69 })?;
     patch.update_param(
-        Uuid::nil(),
-        "source".into(),
-        Param::Cable {
+        &ROOT_ID,
+        &"source".into(),
+        &Param::Cable {
             module: sine_id.clone(),
             port: "output".into(),
         },
     )?;
     Ok(())
+}
+#[debug_handler]
+async fn update(State(_modular): State<Arc<Modular>>) -> Result<(), AppError> {
+    unimplemented!()
+}
+
+#[debug_handler]
+async fn get_modules(State(modular): State<Arc<Modular>>) -> Json<Vec<ModuleState>> {
+    Json(modular.patch.lock().get_modules())
+}
+
+#[debug_handler]
+async fn get_module(
+    State(modular): State<Arc<Modular>>,
+    Path(id): Path<String>,
+) -> Json<Option<ModuleState>> {
+    Json(modular.patch.lock().get_module(&id))
+}
+
+#[debug_handler]
+async fn get_schema(State(modular): State<Arc<Modular>>) -> Json<Vec<ModuleSchema>> {
+    Json(modular.schema.clone())
 }

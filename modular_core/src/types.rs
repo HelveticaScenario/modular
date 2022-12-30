@@ -7,12 +7,11 @@ use std::{
     collections::HashMap,
     sync::{self, Arc},
 };
-use uuid::Uuid;
 
 use crate::patch::Patch;
 
 lazy_static! {
-    pub static ref ROOT_ID: Uuid = Uuid::nil();
+    pub static ref ROOT_ID: String = "root".into();
     pub static ref ROOT_OUTPUT_PORT: String = "output".into();
 }
 
@@ -28,7 +27,7 @@ pub trait Params {
 }
 
 pub trait Sampleable: Send + Sync {
-    fn get_id(&self) -> Uuid;
+    fn get_id(&self) -> String;
     fn tick(&self) -> ();
     fn update(&self) -> ();
     fn get_sample(&self, port: &String) -> Result<f32>;
@@ -42,12 +41,13 @@ pub trait Module {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct Config {
     pub module_type: String,
     pub params: Value,
 }
 
-pub type SampleableMap = HashMap<Uuid, Arc<Box<dyn Sampleable>>>;
+pub type SampleableMap = HashMap<String, Arc<Box<dyn Sampleable>>>;
 
 #[derive(Clone)]
 pub enum InternalParam {
@@ -91,7 +91,8 @@ impl PartialEq for InternalParam {
                         == module2.upgrade().map(|module| module.get_id())
             }
             (InternalParam::Track { track: track1 }, InternalParam::Track { track: track2 }) => {
-                track1.upgrade().map(|track| track.id) == track2.upgrade().map(|track| track.id)
+                track1.upgrade().map(|track| track.id.clone())
+                    == track2.upgrade().map(|track| track.id.clone())
             }
             (InternalParam::Disconnected, InternalParam::Disconnected) => true,
             _ => false,
@@ -112,7 +113,9 @@ impl InternalParam {
                 None => Param::Disconnected,
             },
             InternalParam::Track { track } => match track.upgrade() {
-                Some(track) => Param::Track { track: track.id },
+                Some(track) => Param::Track {
+                    track: track.id.clone(),
+                },
                 None => Param::Disconnected,
             },
             InternalParam::Disconnected => Param::Disconnected,
@@ -154,12 +157,12 @@ impl Default for InternalParam {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[serde(tag = "param_type", rename_all = "kebab-case")]
+#[serde(tag = "paramType", rename_all = "camelCase")]
 pub enum Param {
     Value { value: f32 },
     Note { value: u8 },
-    Cable { module: Uuid, port: String },
-    Track { track: Uuid },
+    Cable { module: String, port: String },
+    Track { track: String },
     Disconnected,
 }
 
@@ -188,14 +191,14 @@ impl Param {
 
 #[derive(PartialEq)]
 pub struct InternalKeyframe {
-    id: Uuid,
-    track_id: Uuid,
+    id: String,
+    track_id: String,
     pub time: Duration,
     pub param: InternalParam,
 }
 
 impl InternalKeyframe {
-    pub fn new(id: Uuid, track_id: Uuid, time: Duration, param: InternalParam) -> Self {
+    pub fn new(id: String, track_id: String, time: Duration, param: InternalParam) -> Self {
         InternalKeyframe {
             id,
             track_id,
@@ -203,13 +206,13 @@ impl InternalKeyframe {
             param,
         }
     }
-    pub fn get_id(&self) -> Uuid {
-        self.id
+    pub fn get_id(&self) -> String {
+        self.id.clone()
     }
     pub fn to_keyframe(&self) -> Keyframe {
         Keyframe {
-            id: self.id,
-            track_id: self.track_id,
+            id: self.id.clone(),
+            track_id: self.track_id.clone(),
             time: self.time,
             param: self.param.to_param(),
         }
@@ -224,14 +227,14 @@ impl PartialOrd for InternalKeyframe {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Keyframe {
-    pub id: Uuid,
-    pub track_id: Uuid,
+    pub id: String,
+    pub track_id: String,
     pub time: Duration,
     pub param: Param,
 }
 
 impl Keyframe {
-    pub fn new(id: Uuid, track_id: Uuid, time: Duration, param: Param) -> Self {
+    pub fn new(id: String, track_id: String, time: Duration, param: Param) -> Self {
         Keyframe {
             id,
             track_id,
@@ -239,13 +242,13 @@ impl Keyframe {
             param,
         }
     }
-    pub fn get_id(&self) -> Uuid {
-        self.id
+    pub fn get_id(&self) -> String {
+        self.id.clone()
     }
     pub fn to_internal_keyframe(&self, patch: &Patch) -> InternalKeyframe {
         InternalKeyframe {
-            id: self.id,
-            track_id: self.track_id,
+            id: self.id.clone(),
+            track_id: self.track_id.clone(),
             time: self.time,
             param: self.param.to_internal_param(patch),
         }
@@ -354,7 +357,7 @@ impl InnerTrack {
         self.seek(playhead);
     }
 
-    pub fn remove_keyframe(&mut self, id: Uuid) -> Option<InternalKeyframe> {
+    pub fn remove_keyframe(&mut self, id: String) -> Option<InternalKeyframe> {
         match self.keyframes.iter().position(|k| k.id == id) {
             Some(idx) => {
                 let ret = Some(self.keyframes.remove(idx));
@@ -391,13 +394,13 @@ impl InnerTrack {
 }
 
 pub struct InternalTrack {
-    id: Uuid,
+    id: String,
     inner_track: Mutex<InnerTrack>,
     sample: Mutex<Option<f32>>,
 }
 
 impl InternalTrack {
-    pub fn new(id: Uuid) -> Self {
+    pub fn new(id: String) -> Self {
         InternalTrack {
             id,
             inner_track: Mutex::new(InnerTrack {
@@ -425,7 +428,7 @@ impl InternalTrack {
             .add_keyframe(keyframe)
     }
 
-    pub fn remove_keyframe(&self, id: Uuid) -> Option<InternalKeyframe> {
+    pub fn remove_keyframe(&self, id: String) -> Option<InternalKeyframe> {
         self.inner_track
             .try_lock_for(Duration::from_millis(10))
             .unwrap()
@@ -457,7 +460,7 @@ impl InternalTrack {
             .try_lock_for(Duration::from_millis(10))
             .unwrap();
         Track {
-            id: self.id,
+            id: self.id.clone(),
             playhead: inner_track.playhead,
             length: inner_track.length,
             play_mode: inner_track.play_mode,
@@ -470,11 +473,11 @@ impl InternalTrack {
     }
 }
 
-pub type TrackMap = HashMap<Uuid, Arc<InternalTrack>>;
+pub type TrackMap = HashMap<String, Arc<InternalTrack>>;
 
 #[derive(Debug, Clone, PartialOrd, PartialEq)]
 pub struct Track {
-    pub id: Uuid,
+    pub id: String,
     pub playhead: Duration,
     pub length: Duration,
     pub play_mode: Playmode,
@@ -487,13 +490,15 @@ pub struct TrackUpdate {
     play_mode: Option<Playmode>,
 }
 
-#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PortSchema {
     pub name: &'static str,
     pub description: &'static str,
 }
 
-#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ModuleSchema {
     pub name: &'static str,
     pub description: &'static str,
@@ -501,11 +506,12 @@ pub struct ModuleSchema {
     pub outputs: &'static [PortSchema],
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ModuleState {
-    pub id: Uuid,
+    pub id: String,
     pub module_type: String,
     pub params: HashMap<String, Param>,
 }
 
-pub type SampleableConstructor = Box<dyn Fn(&Uuid, f32) -> Result<Arc<Box<dyn Sampleable>>>>;
+pub type SampleableConstructor = Box<dyn Fn(&String, f32) -> Result<Arc<Box<dyn Sampleable>>>>;
