@@ -25,7 +25,7 @@ pub fn start_sending_client(client_address: String, rx: Receiver<InputMessage>) 
     }
 }
 
-pub fn start_recieving_client(host_address: String, tx: Sender<Message>) {
+pub fn start_receiving_client(host_address: String, tx: Sender<Message>) {
     let addr = SocketAddrV4::from_str(&host_address).unwrap();
     let sock = UdpSocket::bind(addr).unwrap();
     println!("Listening to {}", addr);
@@ -58,11 +58,11 @@ pub fn spawn_client(
     rx: Receiver<InputMessage>,
 ) -> (JoinHandle<()>, JoinHandle<()>) {
     let host_address = format!("127.0.0.1:{}", client_port);
-    let recieving_client_handle = {
+    let receiving_client_handle = {
         let host_address = host_address.clone();
-        thread::spawn(move || start_recieving_client(host_address, tx))
+        thread::spawn(move || start_receiving_client(host_address, tx))
     };
     let sending_client_handle = thread::spawn(move || start_sending_client(server_address, rx));
 
-    (recieving_client_handle, sending_client_handle)
+    (receiving_client_handle, sending_client_handle)
 }

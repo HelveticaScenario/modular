@@ -3,6 +3,8 @@
     "Asio",
     "cpal",
     "crossterm",
+    "idents",
+    "Punct",
     "Queueable",
     "readline",
     "rustyline"

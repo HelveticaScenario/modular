@@ -12,7 +12,6 @@ extern crate serde;
 extern crate serde_json;
 
 pub mod dsp;
-pub mod message;
 pub mod patch;
 mod procedure;
 mod sequence;

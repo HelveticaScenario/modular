@@ -45,10 +45,6 @@ fn main() -> anyhow::Result<()> {
 
     set_cable(Uuid::nil(), "source", atten_id, "output", &outgoing_tx)?;
 
-    // for i in incoming_rx {
-    //     println!("asdasd {:?}", i);
-    // }
-    // let dur = Duration::from_millis(1000);
     const A: u8 = 69;
     const B: u8 = 67;
     const C: u8 = 65;

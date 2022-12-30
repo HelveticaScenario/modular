@@ -4,8 +4,8 @@ use crate::{
     dsp::get_constructors,
     // message::OutputMessage,
     types::{
-        InternalTrack, ModuleState, Param, SampleableMap, Track, TrackMap, ROOT_ID,
-        ROOT_OUTPUT_PORT,
+        InternalTrack, Keyframe, ModuleState, Param, SampleableMap, Track, TrackMap, TrackUpdate,
+        ROOT_ID, ROOT_OUTPUT_PORT,
     },
 };
 use anyhow::anyhow;
@@ -33,88 +33,6 @@ impl Patch {
             sample_rate,
         }
     }
-
-    // pub fn run<T>(
-    //     device: &cpal::Device,
-    //     config: cpal::SupportedStreamConfig,
-    //     receiver: Receiver<InputMessage>,
-    //     sender: Sender<OutputMessage>,
-    // ) -> Result<(), anyhow::Error>
-    // where
-    //     T: cpal::Sample,
-    // {
-    //     let sample_rate = config.sample_rate().0 as f32;
-    //     let patch = Arc::new(Mutex::new(Patch::new(HashMap::new(), HashMap::new())));
-    //     let channels = config.channels() as usize;
-    //     println!("{} {}", sample_rate, channels);
-
-    //     let err_fn = |err| eprintln!("error: {}", err);
-    //     patch.clone().lock().sampleables.insert(
-    //         Uuid::nil(),
-    //         get_constructors().get(&"signal".to_owned()).unwrap()(&Uuid::nil(), sample_rate)
-    //             .unwrap(),
-    //     );
-    //     let patch_clone = patch.clone();
-
-    //     let mut last_instant: Option<StreamInstant> = None;
-    //     // let stream = match config.sample_format() {
-    //     //     cpal::SampleFormat::F32 => device.build_output_stream(
-    //     //         &config.into(),
-    //     //         move |data, info: &_| {
-    //     //             let new_instant = info.timestamp().callback;
-
-    //     //             let delta = match last_instant {
-    //     //                 Some(last_instant) => new_instant.duration_since(&last_instant),
-    //     //                 None => None,
-    //     //             }
-    //     //             .unwrap_or(Duration::from_nanos(0));
-    //     //             last_instant = Some(new_instant);
-    //     //             let mut patch = patch_clone.lock();
-    //     //             write_data::<f32>(data, channels, &mut patch, &delta)
-    //     //         },
-    //     //         err_fn,
-    //     //     )?,
-    //     //     cpal::SampleFormat::I16 => device.build_output_stream(
-    //     //         &config.into(),
-    //     //         move |data, info: &_| {
-    //     //             let new_instant = info.timestamp().callback;
-
-    //     //             let delta = match last_instant {
-    //     //                 Some(last_instant) => new_instant.duration_since(&last_instant),
-    //     //                 None => None,
-    //     //             }
-    //     //             .unwrap_or(Duration::from_nanos(0));
-    //     //             last_instant = Some(new_instant);
-    //     //             let mut patch = patch_clone.lock();
-    //     //             write_data::<i16>(data, channels, &mut patch, &delta)
-    //     //         },
-    //     //         err_fn,
-    //     //     )?,
-    //     //     cpal::SampleFormat::U16 => device.build_output_stream(
-    //     //         &config.into(),
-    //     //         move |data, info: &_| {
-    //     //             let new_instant = info.timestamp().callback;
-
-    //     //             let delta = match last_instant {
-    //     //                 Some(last_instant) => new_instant.duration_since(&last_instant),
-    //     //                 None => None,
-    //     //             }
-    //     //             .unwrap_or(Duration::from_nanos(0));
-    //     //             last_instant = Some(new_instant);
-    //     //             let mut patch = patch_clone.lock();
-    //     //             write_data::<u16>(data, channels, &mut patch, &delta)
-    //     //         },
-    //     //         err_fn,
-    //     //     )?,
-    //     // };
-
-    //     stream.play()?;
-
-    //     // for message in receiver {
-    //     //     handle_message(message, &patch, &sender, sample_rate)?;
-    //     // }
-    //     Ok(())
-    // }
 
     pub fn write_data<T>(&mut self, output: &mut [T], channels: usize, delta: &Duration)
     where
@@ -200,23 +118,6 @@ impl Patch {
         self.sampleables.remove(&id);
     }
 
-    /*
-    Schema,
-    GetModules,
-    GetModule(Uuid),
-    CreateModule(String, Uuid),
-    UpdateParam(Uuid, String, Param),
-    DeleteModule(Uuid),
-
-    GetTracks,
-    GetTrack(Uuid),
-    CreateTrack(Uuid),
-    UpdateTrack(Uuid, TrackUpdate),
-    DeleteTrack(Uuid),
-    UpsertKeyframe(Keyframe),
-    DeleteKeyframe(Uuid, Uuid),
-     */
-
     pub fn get_tracks(&self) -> Vec<Track> {
         self.tracks
             .iter()
@@ -234,27 +135,35 @@ impl Patch {
             .insert(id.clone(), Arc::new(InternalTrack::new(id.clone())))
     }
 
-    // pub fn update_track(&self, i)
+    pub fn update_track(&self, id: Uuid, track_update: TrackUpdate) -> Result<(), anyhow::Error> {
+        match self.tracks.get(&id) {
+            Some(ref internal_track) => {
+                internal_track.update(&track_update);
+                Ok(())
+            }
+            None => Err(anyhow!("{} not found", id)),
+        }
+    }
 
-    //         InputMessage::UpdateTrack(id, track_update) => {
-    //             if let Some(ref internal_track) = patch.lock().tracks.get(&id) {
-    //                 internal_track.update(&track_update)
-    //             }
-    //         }
-    //         InputMessage::DeleteTrack(id) => {
-    //             patch.tracks.remove(&id);
-    //         }
-    //         InputMessage::UpsertKeyframe(keyframe) => {
-    //             let internal_keyframe = keyframe
-    //                 .to_internal_keyframe(&patch.try_lock_for(Duration::from_millis(10)).unwrap());
+    pub fn delete_track(&mut self, id: Uuid) {
+        self.tracks.remove(&id);
+    }
 
-    //             if let Some(ref track) = patch.tracks.get(&keyframe.track_id) {
-    //                 track.add_keyframe(internal_keyframe);
-    //             }
-    //         }
-    //         InputMessage::DeleteKeyframe(id, track_id) => {
-    //             if let Some(ref track) = patch.tracks.get(&track_id) {
-    //                 track.remove_keyframe(id);
-    //             }
-    //         }
+    pub fn upsert_keyframe(&self, keyframe: &Keyframe) -> Result<(), anyhow::Error> {
+        let internal_keyframe = keyframe.to_internal_keyframe(self);
+
+        match self.tracks.get(&keyframe.track_id) {
+            Some(ref track) => {
+                track.add_keyframe(internal_keyframe);
+                Ok(())
+            }
+            None => Err(anyhow!("{} not found", keyframe.track_id)),
+        }
+    }
+
+    pub fn delete_keyframe(&self, id: Uuid, track_id: Uuid) {
+        if let Some(ref track) = self.tracks.get(&track_id) {
+            track.remove_keyframe(id);
+        }
+    }
 }

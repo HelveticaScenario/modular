@@ -1,5 +1,5 @@
 use anyhow::Result;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
