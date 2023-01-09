@@ -111,7 +111,7 @@ where
 
 fn impl_params_macro(ast: &DeriveInput) -> TokenStream {
     let name = &ast.ident;
-    let (inserts, updates, schemas) = match ast.data {
+    let (inserts, updates, schemas, regenerators) = match ast.data {
         Data::Struct(ref data) => match data.fields {
             Fields::Named(ref fields) => {
                 let v = map_name_description(fields, "param", |f, f_name, name, description| {
@@ -133,11 +133,21 @@ fn impl_params_macro(ast: &DeriveInput) -> TokenStream {
                                 description: #description,
                             },
                         },
+                        quote_spanned! {f.span() =>
+                            if let crate::types::InternalParam::Cable {ref mut module, port: _} = self.#f_name {
+                                if let Some(m) = sampleable_map.get(module.get_id()) {
+                                    module.update_reference(m);
+                                } else {
+                                    self.#f_name = crate::types::InternalParam::Disconnected;
+                                }
+                            };
+                        },
                     )
                 });
-                let insert_iter = v.iter().map(|(insert, _, _)| insert);
-                let update_iter = v.iter().map(|(_, update, _)| update);
-                let schema_iter = v.iter().map(|(_, _, schema)| schema);
+                let insert_iter = v.iter().map(|(insert, _, _, _)| insert);
+                let update_iter = v.iter().map(|(_, update, _, _)| update);
+                let schema_iter = v.iter().map(|(_, _, schema, _)| schema);
+                let regenerator_iter = v.iter().map(|(_, _, _, regenerator)| regenerator);
                 (
                     quote! {
                         #(#insert_iter)*
@@ -147,6 +157,9 @@ fn impl_params_macro(ast: &DeriveInput) -> TokenStream {
                     },
                     quote! {
                         #(#schema_iter)*
+                    },
+                    quote! {
+                        #(#regenerator_iter)*
                     },
                 )
             }
@@ -164,8 +177,8 @@ fn impl_params_macro(ast: &DeriveInput) -> TokenStream {
                 #inserts
                 state
             }
-            fn update_param(&mut self, param_name: &String, new_param: &crate::types::InternalParam, module_name: &str) -> Result<()> {
-                match param_name.as_str() {
+            fn update_param(&mut self, param_name: &str, new_param: &crate::types::InternalParam, module_name: &str) -> Result<()> {
+                match param_name {
                     #updates
                     _ => Err(anyhow!(
                         "{} is not a valid param name for {}",
@@ -178,6 +191,10 @@ fn impl_params_macro(ast: &DeriveInput) -> TokenStream {
                 &[
                     #schemas
                 ]
+            }
+            fn regenerate_cables(&mut self, sampleable_map: &crate::types::SampleableMap) {
+                use crate::types::HasId;
+                #regenerators
             }
         }
     };
@@ -283,9 +300,9 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 }
             }
 
-            fn get_sample(&self, port: &String) -> Result<f32> {
+            fn get_sample(&self, port: &str) -> Result<f32> {
                 self.update();
-                match port.as_str() {
+                match port {
                     #(#output_retrievals)*
                     _ => Err(anyhow!(
                         "{} with id {} does not have port {}",
@@ -305,19 +322,26 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 }
             }
 
-            fn update_param(&self, param_name: &String, new_param: &crate::types::InternalParam) -> Result<()> {
+            fn update_param(&self, param_name: &str, new_param: &crate::types::InternalParam) -> Result<()> {
                 use crate::types::Params;
                 self.module.lock().params.update_param(param_name, new_param, #module_name)
             }
 
-            fn get_id(&self) -> String {
-                self.id.clone()
+            fn regenerate_cables(&self, sampleable_map: &crate::types::SampleableMap) {
+                use crate::types::Params;
+                self.module.lock().params.regenerate_cables(sampleable_map);
             }
         }
 
-        fn #constructor_name(id: &String, sample_rate: f32) -> Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
+        impl crate::types::HasId for #struct_name {
+            fn get_id<'a>(&'a self) -> &'a str {
+                &self.id
+            }
+        }
+
+        fn #constructor_name(id: &str, sample_rate: f32) -> Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
             Ok(std::sync::Arc::new(Box::new(#struct_name {
-                id: id.clone(),
+                id: id.into(),
                 sample_rate,
                 ..#struct_name::default()
             })))

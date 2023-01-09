@@ -3,8 +3,8 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use crate::{
     dsp::get_constructors,
     types::{
-        InternalTrack, Keyframe, ModuleState, Param, SampleableMap, Track, TrackMap, TrackUpdate,
-        ROOT_ID, ROOT_OUTPUT_PORT,
+        InternalTrack, Keyframe, ModuleState, Param, Sampleable, SampleableMap, Track, TrackMap,
+        TrackUpdate, ROOT_ID, ROOT_OUTPUT_PORT,
     },
 };
 use anyhow::anyhow;
@@ -83,26 +83,40 @@ impl Patch {
             .collect()
     }
 
-    pub fn get_module(&self, id: &String) -> Option<ModuleState> {
+    pub fn get_module(&self, id: &str) -> Option<ModuleState> {
         self.sampleables.get(id).map(|module| module.get_state())
     }
 
-    pub fn create_module(&mut self, module_type: String, id: &String) -> Result<(), anyhow::Error> {
+    pub fn create_module(&mut self, module_type: &str, id: &str) -> Result<(), anyhow::Error> {
         let constructors = get_constructors();
         println!("sample rate {}", self.sample_rate);
-        if let Some(constructor) = constructors.get(&module_type) {
-            constructor(id, self.sample_rate).map(|module| {
-                self.sampleables.insert(id.clone(), module);
-            })
+        if let Some(constructor) = constructors.get(module_type) {
+            let module = constructor(id, self.sample_rate)?;
+            let should_regenerate = self.sampleables.contains_key(id);
+            self.sampleables.insert(id.into(), module.clone());
+            if should_regenerate {
+                self.regenerate_cables(id);
+            }
+            Ok(())
         } else {
             Err(anyhow!("{} is not a valid module type", module_type))
         }
     }
 
+    fn regenerate_cables(&mut self, id: &str) -> () {
+        for (_, sampleable) in self.sampleables.iter() {
+            sampleable.regenerate_cables(&self.sampleables);
+        }
+        let module = self.sampleables.get(id);
+        for (_, track) in self.tracks.iter() {
+            track.update_keyframes(id, &module);
+        }
+    }
+
     pub fn update_param(
         &self,
-        id: &String,
-        param_name: &String,
+        id: &str,
+        param_name: &str,
         new_param: &Param,
     ) -> Result<(), anyhow::Error> {
         match self.sampleables.get(id) {
@@ -111,8 +125,12 @@ impl Patch {
         }
     }
 
-    pub fn delete_module(&mut self, id: &String) {
+    pub fn delete_module(&mut self, id: &str) {
+        let should_regenerate = self.sampleables.contains_key(id);
         self.sampleables.remove(id);
+        if should_regenerate {
+            self.regenerate_cables(id);
+        }
     }
 
     pub fn get_tracks(&self) -> Vec<Track> {
@@ -121,32 +139,28 @@ impl Patch {
             .map(|(_, internal_track)| internal_track.to_track())
             .collect()
     }
-    pub fn get_track(&self, id: &String) -> Option<Track> {
+    pub fn get_track(&self, id: &str) -> Option<Track> {
         self.tracks
             .get(id)
             .map(|internal_track| internal_track.to_track())
     }
 
-    pub fn create_track(&mut self, id: &String) -> Option<Arc<InternalTrack>> {
+    pub fn create_track(&mut self, id: &str) -> () {
         self.tracks
-            .insert(id.clone(), Arc::new(InternalTrack::new(id.clone())))
+            .insert(id.into(), Arc::new(InternalTrack::new(id.into())));
     }
 
-    pub fn update_track(
-        &self,
-        id: &String,
-        track_update: TrackUpdate,
-    ) -> Result<(), anyhow::Error> {
+    pub fn update_track(&self, id: &str, track_update: &TrackUpdate) -> Result<(), anyhow::Error> {
         match self.tracks.get(id) {
             Some(ref internal_track) => {
-                internal_track.update(&track_update);
+                internal_track.update(track_update);
                 Ok(())
             }
             None => Err(anyhow!("{} not found", id)),
         }
     }
 
-    pub fn delete_track(&mut self, id: &String) {
+    pub fn delete_track(&mut self, id: &str) {
         self.tracks.remove(id);
     }
 
@@ -162,9 +176,9 @@ impl Patch {
         }
     }
 
-    pub fn delete_keyframe(&self, id: &String, track_id: &String) {
+    pub fn delete_keyframe(&self, id: &str, track_id: &str) {
         if let Some(ref track) = self.tracks.get(track_id) {
-            track.remove_keyframe(id.clone());
+            track.remove_keyframe(id);
         }
     }
 }

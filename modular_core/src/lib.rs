@@ -121,9 +121,6 @@ impl Modular {
     pub fn pause(&self) -> Result<(), PauseStreamError> {
         self.pause_procedure.call(Box::new(|stream| stream.pause()))
     }
-    // pub fn pause(&self) {
-    //     self.message_sender.send(StreamMessage::Pause).unwrap()
-    // }
 }
 
 // fn create_patch(mut configs: HashMap<Uuid, Config>) -> Result<Patch> {

@@ -19,20 +19,21 @@ pub trait Params {
     fn get_params_state(&self) -> HashMap<String, Param>;
     fn update_param(
         &mut self,
-        param_name: &String,
+        param_name: &str,
         new_param: &InternalParam,
         module_name: &str,
     ) -> Result<()>;
     fn get_schema() -> &'static [PortSchema];
+    fn regenerate_cables(&mut self, sampleable_map: &SampleableMap) -> ();
 }
 
-pub trait Sampleable: Send + Sync {
-    fn get_id(&self) -> String;
+pub trait Sampleable: Send + Sync + HasId {
     fn tick(&self) -> ();
     fn update(&self) -> ();
-    fn get_sample(&self, port: &String) -> Result<f32>;
+    fn get_sample(&self, port: &str) -> Result<f32>;
     fn get_state(&self) -> ModuleState;
-    fn update_param(&self, param_name: &String, new_param: &InternalParam) -> Result<()>;
+    fn update_param(&self, param_name: &str, new_param: &InternalParam) -> Result<()>;
+    fn regenerate_cables(&self, sampleable_map: &SampleableMap) -> ();
 }
 
 pub trait Module {
@@ -49,6 +50,71 @@ pub struct Config {
 
 pub type SampleableMap = HashMap<String, Arc<Box<dyn Sampleable>>>;
 
+pub trait HasId {
+    fn get_id<'a>(&'a self) -> &'a str;
+}
+
+#[derive(Debug, Default)]
+pub struct Connection<T>
+where
+    T: HasId,
+{
+    id: String,
+    reference: sync::Weak<T>,
+}
+
+impl<T: HasId> PartialEq for Connection<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self
+                .reference
+                .upgrade()
+                .map(|track| track.get_id().to_owned())
+                == other
+                    .reference
+                    .upgrade()
+                    .map(|track| track.get_id().to_owned())
+    }
+}
+
+impl<T: HasId> Clone for Connection<T> {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            reference: self.reference.clone(),
+        }
+    }
+}
+
+impl<T: HasId> Connection<T> {
+    pub fn new(id: String, reference: &Arc<T>) -> Self {
+        Self {
+            id,
+            reference: Arc::downgrade(reference),
+        }
+    }
+
+    pub fn upgrade(&self) -> Option<Arc<T>> {
+        self.reference.upgrade()
+    }
+
+    pub fn update_reference(&mut self, reference: &Arc<T>) {
+        self.reference = Arc::downgrade(reference);
+    }
+}
+
+impl<T: HasId> HasId for Connection<T> {
+    fn get_id<'a>(&'a self) -> &'a str {
+        &self.id
+    }
+}
+
+impl HasId for Box<dyn Sampleable> {
+    fn get_id<'a>(&'a self) -> &'a str {
+        self.as_ref().get_id()
+    }
+}
+
 #[derive(Clone)]
 pub enum InternalParam {
     Value {
@@ -58,11 +124,11 @@ pub enum InternalParam {
         value: u8,
     },
     Cable {
-        module: sync::Weak<Box<dyn Sampleable>>,
+        module: Connection<Box<dyn Sampleable>>,
         port: String,
     },
     Track {
-        track: sync::Weak<InternalTrack>,
+        track: Connection<InternalTrack>,
     },
     Disconnected,
 }
@@ -85,14 +151,9 @@ impl PartialEq for InternalParam {
                     module: module2,
                     port: port2,
                 },
-            ) => {
-                *port1 == *port2
-                    && module1.upgrade().map(|module| module.get_id())
-                        == module2.upgrade().map(|module| module.get_id())
-            }
+            ) => *port1 == *port2 && module1 == module2,
             (InternalParam::Track { track: track1 }, InternalParam::Track { track: track2 }) => {
-                track1.upgrade().map(|track| track.id.clone())
-                    == track2.upgrade().map(|track| track.id.clone())
+                *track1 == *track2
             }
             (InternalParam::Disconnected, InternalParam::Disconnected) => true,
             _ => false,
@@ -107,7 +168,7 @@ impl InternalParam {
             InternalParam::Note { value } => Param::Note { value: *value },
             InternalParam::Cable { module, port } => match module.upgrade() {
                 Some(module) => Param::Cable {
-                    module: module.get_id(),
+                    module: module.get_id().to_owned(),
                     port: port.clone(),
                 },
                 None => Param::Disconnected,
@@ -157,7 +218,7 @@ impl Default for InternalParam {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[serde(tag = "paramType", rename_all = "camelCase")]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub enum Param {
     Value { value: f32 },
     Note { value: u8 },
@@ -171,16 +232,16 @@ impl Param {
         match self {
             Param::Value { value } => InternalParam::Value { value: *value },
             Param::Note { value } => InternalParam::Note { value: *value },
-            Param::Cable { module, port } => match patch.sampleables.get(module) {
+            Param::Cable { module: id, port } => match patch.sampleables.get(id) {
                 Some(module) => InternalParam::Cable {
-                    module: Arc::downgrade(module),
+                    module: Connection::new(id.into(), module),
                     port: port.clone(),
                 },
                 None => InternalParam::Disconnected,
             },
-            Param::Track { track } => match patch.tracks.get(track) {
+            Param::Track { track: id } => match patch.tracks.get(id) {
                 Some(track) => InternalParam::Track {
-                    track: Arc::downgrade(track),
+                    track: Connection::new(id.into(), track),
                 },
                 None => InternalParam::Disconnected,
             },
@@ -198,10 +259,10 @@ pub struct InternalKeyframe {
 }
 
 impl InternalKeyframe {
-    pub fn new(id: String, track_id: String, time: Duration, param: InternalParam) -> Self {
+    pub fn new(id: &str, track_id: &str, time: Duration, param: InternalParam) -> Self {
         InternalKeyframe {
-            id,
-            track_id,
+            id: id.into(),
+            track_id: track_id.into(),
             time,
             param,
         }
@@ -225,7 +286,9 @@ impl PartialOrd for InternalKeyframe {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+
 pub struct Keyframe {
     pub id: String,
     pub track_id: String,
@@ -234,10 +297,10 @@ pub struct Keyframe {
 }
 
 impl Keyframe {
-    pub fn new(id: String, track_id: String, time: Duration, param: Param) -> Self {
+    pub fn new(id: &str, track_id: &str, time: Duration, param: Param) -> Self {
         Keyframe {
-            id,
-            track_id,
+            id: id.into(),
+            track_id: track_id.into(),
             time,
             param,
         }
@@ -261,7 +324,8 @@ impl PartialOrd for Keyframe {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Playmode {
     Once,
     Loop,
@@ -357,7 +421,7 @@ impl InnerTrack {
         self.seek(playhead);
     }
 
-    pub fn remove_keyframe(&mut self, id: String) -> Option<InternalKeyframe> {
+    pub fn remove_keyframe(&mut self, id: &str) -> Option<InternalKeyframe> {
         match self.keyframes.iter().position(|k| k.id == id) {
             Some(idx) => {
                 let ret = Some(self.keyframes.remove(idx));
@@ -399,10 +463,16 @@ pub struct InternalTrack {
     sample: Mutex<Option<f32>>,
 }
 
+impl HasId for InternalTrack {
+    fn get_id<'a>(&'a self) -> &'a str {
+        &self.id
+    }
+}
+
 impl InternalTrack {
-    pub fn new(id: String) -> Self {
+    pub fn new(id: &str) -> Self {
         InternalTrack {
-            id,
+            id: id.into(),
             inner_track: Mutex::new(InnerTrack {
                 playhead: Duration::from_nanos(0),
                 playhead_idx: 0,
@@ -428,7 +498,7 @@ impl InternalTrack {
             .add_keyframe(keyframe)
     }
 
-    pub fn remove_keyframe(&self, id: String) -> Option<InternalKeyframe> {
+    pub fn remove_keyframe(&self, id: &str) -> Option<InternalKeyframe> {
         self.inner_track
             .try_lock_for(Duration::from_millis(10))
             .unwrap()
@@ -471,6 +541,21 @@ impl InternalTrack {
                 .collect(),
         }
     }
+
+    pub fn update_keyframes(&self, module_id: &str, module: &Option<&Arc<Box<dyn Sampleable>>>) {
+        let m = module;
+        for keyframe in self.inner_track.lock().keyframes.iter_mut() {
+            if let InternalParam::Cable { ref mut module, .. } = keyframe.param {
+                if module.get_id() == module_id {
+                    if let Some(m) = m {
+                        module.update_reference(m);
+                    } else {
+                        keyframe.param = InternalParam::Disconnected;
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub type TrackMap = HashMap<String, Arc<InternalTrack>>;
@@ -484,10 +569,11 @@ pub struct Track {
     pub keyframes: Vec<Keyframe>,
 }
 
-#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TrackUpdate {
-    length: Option<Duration>,
-    play_mode: Option<Playmode>,
+    pub length: Option<Duration>,
+    pub play_mode: Option<Playmode>,
 }
 
 #[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Serialize)]
@@ -514,4 +600,4 @@ pub struct ModuleState {
     pub params: HashMap<String, Param>,
 }
 
-pub type SampleableConstructor = Box<dyn Fn(&String, f32) -> Result<Arc<Box<dyn Sampleable>>>>;
+pub type SampleableConstructor = Box<dyn Fn(&str, f32) -> Result<Arc<Box<dyn Sampleable>>>>;
