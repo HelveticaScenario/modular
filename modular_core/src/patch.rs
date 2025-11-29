@@ -11,7 +11,6 @@ use cpal::{
     traits::{DeviceTrait, StreamTrait},
     StreamInstant,
 };
-use uuid::Uuid;
 pub struct Patch {
     pub sampleables: SampleableMap,
     pub tracks: TrackMap,
@@ -41,8 +40,8 @@ impl Patch {
 
         let err_fn = |err| eprintln!("error: {}", err);
         patch.clone().lock().sampleables.insert(
-            Uuid::nil(),
-            get_constructors().get(&"signal".to_owned()).unwrap()(&Uuid::nil(), sample_rate)
+            String::from("root"),
+            get_constructors().get(&"signal".to_owned()).unwrap()(&String::from("root"), sample_rate)
                 .unwrap(),
         );
         let patch_clone = patch.clone();
@@ -64,6 +63,7 @@ impl Patch {
                     write_data::<f32>(data, channels, &mut patch, &delta)
                 },
                 err_fn,
+                None,
             )?,
             cpal::SampleFormat::I16 => device.build_output_stream(
                 &config.into(),
@@ -80,6 +80,7 @@ impl Patch {
                     write_data::<i16>(data, channels, &mut patch, &delta)
                 },
                 err_fn,
+                None,
             )?,
             cpal::SampleFormat::U16 => device.build_output_stream(
                 &config.into(),
@@ -96,7 +97,9 @@ impl Patch {
                     write_data::<u16>(data, channels, &mut patch, &delta)
                 },
                 err_fn,
+                None,
             )?,
+            _ => panic!("Unsupported sample format"),
         };
 
         stream.play()?;
@@ -110,10 +113,10 @@ impl Patch {
 
 fn write_data<T>(output: &mut [T], channels: usize, patch: &mut Patch, delta: &Duration)
 where
-    T: cpal::Sample,
+    T: cpal::Sample + cpal::FromSample<f32>,
 {
     for frame in output.chunks_mut(channels) {
-        let value = cpal::Sample::from::<f32>(&process_frame(patch, delta));
+        let value: T = cpal::Sample::from_sample(process_frame(patch, delta));
         for sample in frame.iter_mut() {
             *sample = value;
         }
@@ -148,8 +151,8 @@ fn get_patch_output(sampleables: &SampleableMap) -> f32 {
 
 fn process_frame(patch: &mut Patch, delta: &Duration) -> f32 {
     let Patch {
-        ref mut sampleables,
-        ref mut tracks,
+        sampleables,
+        tracks,
     } = patch;
     update_tracks(tracks, delta);
     update_sampleables(sampleables);

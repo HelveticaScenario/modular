@@ -1,68 +1,110 @@
 use std::{
-    net::SocketAddrV4,
-    net::UdpSocket,
-    str::FromStr,
+    io::{BufRead, BufReader, Write},
+    net::{TcpListener, TcpStream},
+    sync::{Arc, Mutex as StdMutex},
     thread::{self, JoinHandle},
 };
-use modular_core::crossbeam_channel::{Sender, Receiver};
+use modular_core::crossbeam_channel::{Receiver, Sender};
 
 use modular_core::message::{InputMessage, OutputMessage};
-use rosc::encoder;
 
-use crate::osc::{message_to_osc, osc_to_message};
-
-pub fn start_sending_server(client_address: String, rx: Receiver<OutputMessage>) {
-    let host_addr = SocketAddrV4::from_str("0.0.0.0:0").unwrap();
-    let to_addr = SocketAddrV4::from_str(&client_address).unwrap();
-    println!("Sending to {}", to_addr);
-    let sock = UdpSocket::bind(host_addr).unwrap();
-
+pub fn start_sending_server(rx: Receiver<OutputMessage>, clients: Arc<StdMutex<Vec<TcpStream>>>) {
     for message in rx {
-        for packet in message_to_osc(message) {
-            let msg_buf = encoder::encode(&packet).unwrap();
-            sock.send_to(&msg_buf, to_addr).unwrap();
+        let json = serde_json::to_string(&message).unwrap_or_else(|_| {
+            serde_json::json!({
+                "type": "Error",
+                "message": "Failed to serialize message"
+            })
+            .to_string()
+        });
+        let json_line = format!("{}\n", json);
+        
+        let mut clients_lock = clients.lock().unwrap();
+        clients_lock.retain_mut(|client| {
+            match client.write_all(json_line.as_bytes()) {
+                Ok(_) => true,
+                Err(_) => {
+                    println!("Client disconnected");
+                    false
+                }
+            }
+        });
+    }
+}
+
+pub fn start_receiving_server(host_address: String, tx: Sender<InputMessage>, clients: Arc<StdMutex<Vec<TcpStream>>>) {
+    let listener = TcpListener::bind(&host_address).unwrap();
+    println!("JSON API listening on {}", host_address);
+
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                println!("New client connected: {:?}", stream.peer_addr());
+                
+                // Add client to broadcast list
+                {
+                    let mut clients_lock = clients.lock().unwrap();
+                    clients_lock.push(stream.try_clone().unwrap());
+                }
+
+                let tx = tx.clone();
+                thread::spawn(move || {
+                    handle_client(stream, tx);
+                });
+            }
+            Err(e) => {
+                println!("Error accepting connection: {}", e);
+            }
         }
     }
 }
 
-pub fn start_recieving_server(host_address: String, tx: Sender<InputMessage>) {
-    let addr = SocketAddrV4::from_str(&host_address).unwrap();
-    let sock = UdpSocket::bind(addr).unwrap();
-    println!("Listening to {}", addr);
-
-    let mut buf = [0u8; rosc::decoder::MTU];
-
-    loop {
-        match sock.recv_from(&mut buf) {
-            Ok((size, _addr)) => match rosc::decoder::decode(&buf[..size]) {
-                Ok(packet) => {
-                    // println!("{:?}", packet);
-                    osc_to_message(packet, &tx)
+fn handle_client(stream: TcpStream, tx: Sender<InputMessage>) {
+    let reader = BufReader::new(stream);
+    
+    for line in reader.lines() {
+        match line {
+            Ok(json) => {
+                if json.trim().is_empty() {
+                    continue;
                 }
-                Err(err) => {
-                    println!("{:?}", err);
+                match serde_json::from_str::<InputMessage>(&json) {
+                    Ok(message) => {
+                        if let Err(e) = tx.send(message) {
+                            println!("Error sending message to modular core: {}", e);
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        println!("Error parsing JSON: {}", e);
+                    }
                 }
-            },
+            }
             Err(e) => {
-                println!("Error receiving from socket: {}", e);
-                return;
+                println!("Client disconnected: {}", e);
+                break;
             }
         }
     }
 }
 
 pub fn spawn_server(
-    client_address: String,
+    _client_address: String,
     server_port: String,
     tx: Sender<InputMessage>,
     rx: Receiver<OutputMessage>,
 ) -> (JoinHandle<()>, JoinHandle<()>) {
     let host_address = format!("127.0.0.1:{}", server_port);
-    let recieving_server_handle = {
-        let host_address = host_address.clone();
-        thread::spawn(move || start_recieving_server(host_address, tx))
+    let clients = Arc::new(StdMutex::new(Vec::new()));
+    
+    let receiving_server_handle = {
+        let clients = clients.clone();
+        thread::spawn(move || start_receiving_server(host_address, tx, clients))
     };
-    let sending_server_handle = thread::spawn(move || start_sending_server(client_address, rx));
+    
+    let sending_server_handle = {
+        thread::spawn(move || start_sending_server(rx, clients))
+    };
 
-    (recieving_server_handle, sending_server_handle)
+    (receiving_server_handle, sending_server_handle)
 }

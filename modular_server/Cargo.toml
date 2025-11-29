@@ -2,16 +2,14 @@
 name = "modular_server"
 version = "0.1.0"
 authors = ["Daniel Lewis <daniel.lewis.software.engineer@gmail.com>"]
-edition = "2018"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.34"
-serde_json = "1.0.59"
-serde = { version = "1.0.117", features = ["derive"] }
-ctrlc = "3.1.7"
-rosc = "~0.4"
-clap = "~2"
-stringreader = "*"
+anyhow = "1.0"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+ctrlc = "3.4"
+clap = "4.5"
 modular_core = { version = "*", path = "../modular_core"}

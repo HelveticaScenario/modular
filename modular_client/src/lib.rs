@@ -1,8 +1,5 @@
 extern crate anyhow;
 extern crate modular_core;
-extern crate rosc;
+extern crate serde_json;
 
 pub mod client;
-pub mod osc;
-pub mod ui;
-pub mod app;

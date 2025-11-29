@@ -25,7 +25,6 @@ use crossbeam_channel::{Receiver, Sender};
 use message::{InputMessage, OutputMessage};
 use patch::Patch;
 use thread::JoinHandle;
-pub use uuid;
 
 pub struct Modular;
 
@@ -45,6 +44,7 @@ impl Modular {
             cpal::SampleFormat::I16 => Patch::run::<i16>(&device, config, incoming_rx, outgoing_tx),
             cpal::SampleFormat::U16 => Patch::run::<u16>(&device, config, incoming_rx, outgoing_tx),
             cpal::SampleFormat::F32 => Patch::run::<f32>(&device, config, incoming_rx, outgoing_tx),
+            _ => panic!("Unsupported sample format"),
         })
     }
 }

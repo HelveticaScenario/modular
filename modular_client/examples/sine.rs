@@ -1,11 +1,10 @@
 use std::{sync::mpsc, thread, time::Duration};
 
 use anyhow::anyhow;
-use modular_client::{client::spawn_client, osc::Message::Server};
+use modular_client::client::spawn_client;
 use modular_core::{
     message::{InputMessage, OutputMessage},
     types::Param,
-    uuid::Uuid,
 };
 use modular_server::spawn;
 
@@ -24,26 +23,26 @@ fn main() -> anyhow::Result<()> {
         incoming_tx,
         outgoing_rx,
     );
-    let osc_id = create_mod("sine-oscillator", &outgoing_tx, &incoming_rx)?;
-    let atten_id = create_mod("scale-and-shift", &outgoing_tx, &incoming_rx)?;
-    let atten_id_2 = create_mod("scale-and-shift", &outgoing_tx, &incoming_rx)?;
-    let sum_id_2 = create_mod("sum", &outgoing_tx, &incoming_rx)?;
+    let osc_id = create_mod("sine-oscillator", "osc", &outgoing_tx, &incoming_rx)?;
+    let atten_id = create_mod("scale-and-shift", "amp", &outgoing_tx, &incoming_rx)?;
+    let atten_id_2 = create_mod("scale-and-shift", "vibrato", &outgoing_tx, &incoming_rx)?;
+    let sum_id_2 = create_mod("sum", "freq-sum", &outgoing_tx, &incoming_rx)?;
 
-    set_cable(atten_id_2, "input", osc_id, "output", &outgoing_tx)?;
+    set_cable(atten_id_2.clone(), "input", osc_id.clone(), "output", &outgoing_tx)?;
 
-    set_value(atten_id_2, "scale", 1.0, &outgoing_tx)?;
+    set_value(atten_id_2.clone(), "scale", 1.0, &outgoing_tx)?;
 
-    set_cable(sum_id_2, "input-1", atten_id_2, "output", &outgoing_tx)?;
+    set_cable(sum_id_2.clone(), "input-1", atten_id_2.clone(), "output", &outgoing_tx)?;
 
-    set_note(sum_id_2, "input-2", 69, &outgoing_tx)?;
+    set_note(sum_id_2.clone(), "input-2", 69, &outgoing_tx)?;
 
-    set_cable(osc_id, "freq", sum_id_2, "output", &outgoing_tx)?;
+    set_cable(osc_id.clone(), "freq", sum_id_2.clone(), "output", &outgoing_tx)?;
 
-    set_cable(atten_id, "input", osc_id, "output", &outgoing_tx)?;
+    set_cable(atten_id.clone(), "input", osc_id.clone(), "output", &outgoing_tx)?;
 
-    set_value(atten_id, "scale", 5.0, &outgoing_tx)?;
+    set_value(atten_id.clone(), "scale", 5.0, &outgoing_tx)?;
 
-    set_cable(Uuid::nil(), "source", atten_id, "output", &outgoing_tx)?;
+    set_cable(String::from("root"), "source", atten_id.clone(), "output", &outgoing_tx)?;
 
     // for i in incoming_rx {
     //     println!("asdasd {:?}", i);
@@ -55,25 +54,25 @@ fn main() -> anyhow::Result<()> {
     let part1 = [A, B, C];
     for _ in 0..2 {
         for i in part1.iter() {
-            set_note(sum_id_2, "input-2", *i, &outgoing_tx)?;
+            set_note(sum_id_2.clone(), "input-2", *i, &outgoing_tx)?;
             thread::sleep(Duration::from_millis(500));
         }
         thread::sleep(Duration::from_millis(500));
     }
     let part2 = [C, C, C, C, B, B, B, B];
     for i in part2.iter() {
-        set_note(sum_id_2, "input-2", *i, &outgoing_tx)?;
+        set_note(sum_id_2.clone(), "input-2", *i, &outgoing_tx)?;
 
         thread::sleep(Duration::from_millis(100));
-        set_value(atten_id, "scale", 4.0, &outgoing_tx)?;
+        set_value(atten_id.clone(), "scale", 4.0, &outgoing_tx)?;
         thread::sleep(Duration::from_millis(100));
-        set_value(atten_id, "scale", 5.0, &outgoing_tx)?;
+        set_value(atten_id.clone(), "scale", 5.0, &outgoing_tx)?;
     }
     for i in part1.iter() {
-        set_note(sum_id_2, "input-2", *i, &outgoing_tx)?;
+        set_note(sum_id_2.clone(), "input-2", *i, &outgoing_tx)?;
         thread::sleep(Duration::from_millis(500));
     }
-    thread::sleep(Duration::from_millis(500));
+    thread::sleep(Duration::from_millis(2000));
     // for _ in 0..10 {
     //     for i in 0..12 {
     //         outgoing_tx.send(InputMessage::UpdateParam(
@@ -95,62 +94,66 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn set_value(
-    dest_mod: Uuid,
+    dest_mod: String,
     dest_port: &str,
     value: f32,
     outgoing_tx: &mpsc::Sender<InputMessage>,
 ) -> Result<(), anyhow::Error> {
-    outgoing_tx.send(InputMessage::UpdateParam(
-        dest_mod.clone(),
-        dest_port.into(),
-        Param::Value { value },
-    ))?;
+    outgoing_tx.send(InputMessage::UpdateParam {
+        id: dest_mod,
+        param_name: dest_port.into(),
+        param: Param::Value { value },
+    })?;
     Ok(())
 }
 
 fn set_note(
-    dest_mod: Uuid,
+    dest_mod: String,
     dest_port: &str,
     value: u8,
     outgoing_tx: &mpsc::Sender<InputMessage>,
 ) -> Result<(), anyhow::Error> {
-    outgoing_tx.send(InputMessage::UpdateParam(
-        dest_mod.clone(),
-        dest_port.into(),
-        Param::Note { value },
-    ))?;
+    outgoing_tx.send(InputMessage::UpdateParam {
+        id: dest_mod,
+        param_name: dest_port.into(),
+        param: Param::Note { value },
+    })?;
     Ok(())
 }
 
 fn set_cable(
-    dest_mod: Uuid,
+    dest_mod: String,
     dest_port: &str,
-    source_mod: Uuid,
+    source_mod: String,
     source_port: &str,
     outgoing_tx: &mpsc::Sender<InputMessage>,
 ) -> Result<(), anyhow::Error> {
-    Ok(outgoing_tx.send(InputMessage::UpdateParam(
-        dest_mod.clone(),
-        dest_port.into(),
-        Param::Cable {
-            module: source_mod.clone(),
+    Ok(outgoing_tx.send(InputMessage::UpdateParam {
+        id: dest_mod,
+        param_name: dest_port.into(),
+        param: Param::Cable {
+            module: source_mod,
             port: source_port.into(),
         },
-    ))?)
+    })?)
 }
 
 fn create_mod(
     mod_type: &str,
+    id: &str,
     outgoing_tx: &mpsc::Sender<InputMessage>,
-    incoming_rx: &mpsc::Receiver<modular_client::osc::Message>,
-) -> Result<Uuid, anyhow::Error> {
-    let id = Uuid::new_v4();
-    outgoing_tx.send(InputMessage::CreateModule(mod_type.into(), id))?;
+    incoming_rx: &mpsc::Receiver<OutputMessage>,
+) -> Result<String, anyhow::Error> {
+    let id = id.to_string();
+    outgoing_tx.send(InputMessage::CreateModule {
+        module_type: mod_type.into(),
+        id: id.clone(),
+    })?;
     let abc = incoming_rx.recv();
     println!("{:?}", abc);
     let id = match abc? {
-        Server(OutputMessage::CreateModule(module_type, id)) => {
-            if module_type == mod_type && id == id {
+        OutputMessage::CreateModule { module_type, id } => {
+            if module_type == mod_type {
                 Ok(id)
             } else {
                 Err(anyhow!("something happened"))

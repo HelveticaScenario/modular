@@ -2,19 +2,19 @@
 name = "modular_core"
 version = "0.1.0"
 authors = ["helveticascenario"]
-edition = "2018"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cpal = { version = "0.14.1", features = ["asio"] }
-anyhow = "1.0.66"
-serde_json = "1.0.88"
-serde = { version = "1.0.147", features = ["derive"] }
-lazy_static = "1.4.0"
-hound = "3.5.0"
-uuid = { version = "1.2.2", features = ["v4", "serde"] }
-keyframe = "1.1.1"
+cpal = { version = "0.16", features = ["asio"] }
+anyhow = "1.0"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+lazy_static = "1.5"
+hound = "3.5"
+uuid = { version = "1.11", features = ["v4", "serde"] }
+keyframe = "1.1"
 modular_derive = { version = "*", path = "../modular_derive" }
-crossbeam-channel = "0.5.6"
-parking_lot = "0.12.1"
+crossbeam-channel = "0.5"
+parking_lot = "0.12"

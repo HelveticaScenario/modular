@@ -3,10 +3,8 @@ use modular_core::crossbeam_channel::unbounded;
 use std::thread::JoinHandle;
 
 use modular_core::Modular;
-pub use rosc;
 use server::spawn_server;
 
-mod osc;
 mod server;
 
 pub fn spawn(

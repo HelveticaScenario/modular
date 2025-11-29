@@ -11,7 +11,7 @@ use std::vec;
 fn bndl(content: Vec<OscPacket>) -> OscPacket {
     OscPacket::Bundle(OscBundle {
         content,
-        timetag: (0, 1),
+        timetag: rosc::OscTime { seconds: 0, fractional: 1 },
     })
 }
 
@@ -204,8 +204,8 @@ pub fn osc_to_message(packet: OscPacket, tx: &Sender<InputMessage>) {
                 } else if let (
                     Some(&"create-module"),
                     None,
-                    Some(OscStr(ref module_type)),
-                    Some(OscStr(ref id)),
+                    Some(OscStr(module_type)),
+                    Some(OscStr(id)),
                     None,
                 ) = (addr.0, addr.1, args.0, args.1, args.2)
                 {

@@ -2,7 +2,7 @@
 name = "modular_derive"
 version = "0.1.0"
 authors = ["Daniel Lewis <daniel.lewis.software.engineer@gmail.com>"]
-edition = "2018"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -10,7 +10,7 @@ edition = "2018"
 proc-macro = true
 
 [dependencies]
-proc-macro2 = "1.0.24"
-quote = "1.0.7"
-syn = {version = "1.0.54", features = ["full"]}
-convert_case = "0.4.0"
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = {version = "2.0", features = ["full"]}
+convert_case = "0.6"

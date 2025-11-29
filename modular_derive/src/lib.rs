@@ -26,26 +26,14 @@ pub fn params_macro_derive(input: TokenStream) -> TokenStream {
 fn unwrap_attr(attrs: &Vec<Attribute>, ident: &str) -> Option<TokenStream2> {
     attrs
         .iter()
-        .filter(|attr| attr.path.is_ident(ident))
+        .filter(|attr| attr.path().is_ident(ident))
         .next()
-        .map(|attr| {
-            attr.tokens
-                .clone()
-                .into_iter()
-                .map(|token| match token {
-                    proc_macro2::TokenTree::Group(group) => group.stream(),
-                    proc_macro2::TokenTree::Ident(_) => {
-                        unimplemented!()
-                    }
-                    proc_macro2::TokenTree::Punct(_) => {
-                        unimplemented!()
-                    }
-                    proc_macro2::TokenTree::Literal(_) => {
-                        unimplemented!()
-                    }
-                })
-                .next()
-                .unwrap()
+        .and_then(|attr| {
+            if let syn::Meta::List(list) = &attr.meta {
+                Some(list.tokens.clone())
+            } else {
+                None
+            }
         })
 }
 
@@ -76,7 +64,7 @@ where
         .filter(|f| {
             f.attrs
                 .iter()
-                .filter(|attr| attr.path.is_ident(ident))
+                .filter(|attr| attr.path().is_ident(ident))
                 .count()
                 > 0
         })
@@ -129,8 +117,8 @@ fn impl_params_macro(ast: &DeriveInput) -> TokenStream {
                         },
                         quote_spanned! {f.span()=>
                             crate::types::PortSchema {
-                                name: #name,
-                                description: #description,
+                                name: #name.to_string(),
+                                description: #description.to_string(),
                             },
                         },
                     )
@@ -157,7 +145,7 @@ fn impl_params_macro(ast: &DeriveInput) -> TokenStream {
         Data::Enum(_) | Data::Union(_) => unimplemented!(),
     };
 
-    let gen = quote! {
+    let generated = quote! {
         impl crate::types::Params for #name {
             fn get_params_state(&self) -> std::collections::HashMap<String, crate::types::Param>{
                 let mut state = std::collections::HashMap::new();
@@ -174,14 +162,14 @@ fn impl_params_macro(ast: &DeriveInput) -> TokenStream {
                     )),
                 }
             }
-            fn get_schema() -> &'static [crate::types::PortSchema] {
-                &[
+            fn get_schema() -> Vec<crate::types::PortSchema> {
+                vec![
                     #schemas
                 ]
             }
         }
     };
-    gen.into()
+    generated.into()
 }
 
 #[proc_macro_derive(Module, attributes(output, module))]
@@ -226,8 +214,8 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                         },
                         quote! {
                             crate::types::PortSchema {
-                                name: #output_name,
-                                description: #description,
+                                name: #output_name.to_string(),
+                                description: #description.to_string(),
                             },
                         },
                     )
@@ -248,7 +236,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         .to_case(Case::Snake);
     let constructor_name = Ident::new(&constructor_name, Span::call_site());
     let params_struct_name = format_ident!("{}Params", name);
-    let gen = quote! {
+    let generated = quote! {
 
         #[derive(Default)]
         struct #output_struct_name {
@@ -257,7 +245,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
 
         #[derive(Default)]
         struct #struct_name {
-            id: uuid::Uuid,
+            id: String,
             outputs: parking_lot::RwLock<#output_struct_name>,
             module: parking_lot::Mutex<#name>,
             processed: core::sync::atomic::AtomicBool,
@@ -290,7 +278,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                     _ => Err(anyhow!(
                         "{} with id {} does not have port {}",
                         #module_name,
-                        self.id,
+                        &self.id,
                         port
                     ))
                 }
@@ -300,7 +288,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 use crate::types::Params;
                 crate::types::ModuleState {
                     module_type: #module_name.to_owned(),
-                    id: self.id,
+                    id: self.id.clone(),
                     params: self.module.lock().params.get_params_state(),
                 }
             }
@@ -310,14 +298,14 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 self.module.lock().params.update_param(param_name, new_param, #module_name)
             }
 
-            fn get_id(&self) -> uuid::Uuid {
-                self.id
+            fn get_id(&self) -> &String {
+                &self.id
             }
         }
 
-        fn #constructor_name(id: &uuid::Uuid, sample_rate: f32) -> Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
+        fn #constructor_name(id: &String, sample_rate: f32) -> Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
             Ok(std::sync::Arc::new(Box::new(#struct_name {
-                id: *id,
+                id: id.clone(),
                 sample_rate,
                 ..#struct_name::default()
             })))
@@ -330,15 +318,15 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             fn get_schema() -> crate::types::ModuleSchema {
                 use crate::types::Params;
                 crate::types::ModuleSchema {
-                    name: #module_name,
-                    description: #module_description,
+                    name: #module_name.to_string(),
+                    description: #module_description.to_string(),
                     params: #params_struct_name::get_schema(),
-                    outputs: &[
+                    outputs: vec![
                         #(#output_schemas)*
                     ],
                 }
             }
         }
     };
-    gen.into()
+    generated.into()
 }
