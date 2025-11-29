@@ -1,11 +1,4 @@
-use anyhow::{anyhow, Result};
-
-use rand::prelude::*;
-use std::{
-    thread,
-    time::{Duration, Instant},
-};
-use stretch::style::FlexDirection;
+use anyhow::Result;
 
 pub fn main() -> Result<()> {
     println!("Modular Client starting...");

@@ -92,6 +92,14 @@ pub struct Config {
 
 pub type SampleableMap = HashMap<String, Arc<Box<dyn Sampleable>>>;
 
+/// One-pole lowpass filter for parameter smoothing to prevent clicking
+/// Coefficient of 0.99 gives roughly 5ms smoothing time at 48kHz
+const SMOOTHING_COEFF: f32 = 0.99;
+
+pub fn smooth_value(current: f32, target: f32) -> f32 {
+    current * SMOOTHING_COEFF + target * (1.0 - SMOOTHING_COEFF)
+}
+
 #[derive(Clone)]
 pub enum InternalParam {
     Value {
@@ -555,6 +563,11 @@ pub struct ModuleState {
     pub id: String,
     pub module_type: String,
     pub params: HashMap<String, Param>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PatchGraph {
+    pub modules: Vec<ModuleState>,
 }
 
 pub type SampleableConstructor = Box<dyn Fn(&String, f32) -> Result<Arc<Box<dyn Sampleable>>>>;

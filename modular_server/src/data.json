@@ -1,5 +1,5 @@
 {
-    "25c79f90-d7cb-43ff-a34b-2812b9a44cf2": {
+    "carrier-osc": {
         "module_type": "sine-oscillator",
         "params": {
             "freq": {
@@ -8,7 +8,7 @@
             }
         }
     },
-    "e0669d8a-4b36-4ca5-90d1-e1cd4c0952fe": {
+    "lfo": {
         "module_type": "sine-oscillator",
         "params": {
             "freq": {
@@ -17,12 +17,12 @@
             }
         }
     },
-    "49a07652-341b-4fbb-a277-beb1641f23ed": {
+    "lfo-attenuator": {
         "module_type": "scale-and-shift",
         "params": {
             "input": {
                 "param_type": "cable",
-                "module": "e0669d8a-4b36-4ca5-90d1-e1cd4c0952fe",
+                "module": "lfo",
                 "port": "output"
             },
             "scale": {
@@ -31,27 +31,27 @@
             }
         }
     },
-    "47546cc8-69ca-49ca-97a6-394fb6471488": {
+    "amplitude": {
         "module_type": "scale-and-shift",
         "params": {
             "input": {
                 "param_type": "cable",
-                "module": "25c79f90-d7cb-43ff-a34b-2812b9a44cf2",
+                "module": "carrier-osc",
                 "port": "output"
             },
             "scale": {
                 "param_type": "cable",
-                "module": "49a07652-341b-4fbb-a277-beb1641f23ed",
+                "module": "lfo-attenuator",
                 "port": "output"
             }
         }
     },
-    "ROOT": {
+    "root": {
         "module_type": "signal",
         "params": {
             "source": {
                 "param_type": "cable",
-                "module": "47546cc8-69ca-49ca-97a6-394fb6471488",
+                "module": "amplitude",
                 "port": "output"
             }
         }

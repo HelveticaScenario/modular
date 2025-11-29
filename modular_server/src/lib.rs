@@ -1,34 +1,58 @@
 pub use modular_core::crossbeam_channel;
 use modular_core::crossbeam_channel::unbounded;
-use std::thread::JoinHandle;
+use std::sync::Arc;
+use tokio::sync::{broadcast, Mutex as TokioMutex};
 
 use modular_core::Modular;
-use server::spawn_server;
 
-mod server;
+mod http_server;
+pub use http_server::{create_router, forward_output_messages, AppState};
 
-pub fn spawn(
-    client_address: String,
-    port: String,
-) -> (
-    JoinHandle<anyhow::Result<()>>,
-    JoinHandle<()>,
-    JoinHandle<()>,
+pub fn create_app_state() -> (
+    AppState,
+    modular_core::crossbeam_channel::Receiver<modular_core::message::InputMessage>,
+    modular_core::crossbeam_channel::Sender<modular_core::message::OutputMessage>,
+    modular_core::crossbeam_channel::Receiver<modular_core::message::OutputMessage>,
 ) {
     let (incoming_tx, incoming_rx) = unbounded();
     let (outgoing_tx, outgoing_rx) = unbounded();
+    
+    let (broadcast_tx, _) = broadcast::channel(100);
+    
+    let state = AppState {
+        input_tx: Arc::new(TokioMutex::new(incoming_tx)),
+        broadcast_tx,
+    };
+    
+    (state, incoming_rx, outgoing_tx, outgoing_rx)
+}
 
+pub async fn run_server(port: u16) -> anyhow::Result<()> {
+    // Initialize tracing
+    tracing_subscriber::fmt::init();
+    
+    // Create app state and channels
+    let (state, incoming_rx, outgoing_tx, outgoing_rx) = create_app_state();
+    
+    // Spawn modular core thread
     let _modular_handle = Modular::spawn(incoming_rx, outgoing_tx);
-
-    let (_receiving_server_handle, _sending_server_handle) = spawn_server(
-        client_address.to_owned(),
-        port.to_owned(),
-        incoming_tx,
-        outgoing_rx,
-    );
-    (
-        _modular_handle,
-        _receiving_server_handle,
-        _sending_server_handle,
-    )
+    
+    // Spawn task to forward output messages to broadcast
+    let output_rx = Arc::new(TokioMutex::new(outgoing_rx));
+    let broadcast_tx = state.broadcast_tx.clone();
+    tokio::spawn(async move {
+        forward_output_messages(output_rx, broadcast_tx).await;
+    });
+    
+    // Create router
+    let app = create_router(state);
+    
+    // Start server
+    let addr = format!("127.0.0.1:{}", port);
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    tracing::info!("HTTP server listening on {}", addr);
+    
+    axum::serve(listener, app).await?;
+    
+    Ok(())
 }

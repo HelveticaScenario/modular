@@ -1,25 +1,31 @@
-use std::{sync::mpsc, thread, time::Duration};
+use std::sync::mpsc;
+use std::time::Duration;
 
 use anyhow::anyhow;
-use modular_client::client::spawn_client;
+use modular_client::http_client::spawn_client;
 use modular_core::{
     message::{InputMessage, OutputMessage},
     types::Param,
 };
-use modular_server::spawn;
+use modular_server::run_server;
 
-fn main() -> anyhow::Result<()> {
-    // let matches = get_matches();
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Spawn the server
+    tokio::spawn(async {
+        if let Err(e) = run_server(7812).await {
+            eprintln!("Server error: {}", e);
+        }
+    });
 
-    let (_modular_handle, _receiving_server_handle, _sending_server_handle) =
-        spawn("127.0.0.1:7813".to_owned(), "7812".to_owned());
+    // Give server time to start
+    tokio::time::sleep(Duration::from_millis(1000)).await;
 
     let (incoming_tx, incoming_rx) = mpsc::channel();
     let (outgoing_tx, outgoing_rx) = mpsc::channel();
 
     let (_receiving_client_handle, _sending_client_handle) = spawn_client(
         "127.0.0.1:7812".to_owned(),
-        "7813".to_owned(),
         incoming_tx,
         outgoing_rx,
     );
@@ -55,24 +61,24 @@ fn main() -> anyhow::Result<()> {
     for _ in 0..2 {
         for i in part1.iter() {
             set_note(sum_id_2.clone(), "input-2", *i, &outgoing_tx)?;
-            thread::sleep(Duration::from_millis(500));
+            tokio::time::sleep(Duration::from_millis(500)).await;
         }
-        thread::sleep(Duration::from_millis(500));
+        tokio::time::sleep(Duration::from_millis(500)).await;
     }
     let part2 = [C, C, C, C, B, B, B, B];
     for i in part2.iter() {
         set_note(sum_id_2.clone(), "input-2", *i, &outgoing_tx)?;
 
-        thread::sleep(Duration::from_millis(100));
+        tokio::time::sleep(Duration::from_millis(100)).await;
         set_value(atten_id.clone(), "scale", 4.0, &outgoing_tx)?;
-        thread::sleep(Duration::from_millis(100));
+        tokio::time::sleep(Duration::from_millis(100)).await;
         set_value(atten_id.clone(), "scale", 5.0, &outgoing_tx)?;
     }
     for i in part1.iter() {
         set_note(sum_id_2.clone(), "input-2", *i, &outgoing_tx)?;
-        thread::sleep(Duration::from_millis(500));
+        tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    thread::sleep(Duration::from_millis(2000));
+    tokio::time::sleep(Duration::from_millis(3000)).await;
     // for _ in 0..10 {
     //     for i in 0..12 {
     //         outgoing_tx.send(InputMessage::UpdateParam(

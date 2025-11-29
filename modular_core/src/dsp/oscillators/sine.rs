@@ -23,6 +23,7 @@ pub struct SineOscillator {
     #[output("output", "signal output")]
     sample: f32,
     phase: f32,
+    smoothed_freq: f32,
     params: SineOscillatorParams,
 }
 
@@ -31,7 +32,9 @@ impl SineOscillator {
         if self.params.phase != InternalParam::Disconnected {
             self.sample = wrap(0.0..1.0, self.params.phase.get_value())
         } else {
-            let voltage = clamp(self.params.freq.get_value_or(4.0), 12.0, 0.0);
+            let target_freq = clamp(self.params.freq.get_value_or(4.0), 12.0, 0.0);
+            self.smoothed_freq = crate::types::smooth_value(self.smoothed_freq, target_freq);
+            let voltage = self.smoothed_freq;
             let frequency = 27.5f32 * 2.0f32.powf(voltage) / sample_rate;
             // let frequency = semitones_to_ratio(voltage * 12.0) * 220.0 / SAMPLE_RATE * 100.0;
             self.phase += frequency;

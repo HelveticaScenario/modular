@@ -1,0 +1,51 @@
+{
+  "modules": [
+    {
+      "id": "osc",
+      "module_type": "sine-oscillator",
+      "params": {
+        "freq": {
+          "param_type": "cable",
+          "module": "lfo",
+          "port": "output"
+        }
+      }
+    },
+    {
+      "id": "lfo",
+      "module_type": "sine-oscillator",
+      "params": {
+        "freq": {
+          "param_type": "value",
+          "value": 2.4
+        }
+      }
+    },
+    {
+      "id": "amp",
+      "module_type": "scale-and-shift",
+      "params": {
+        "scale": {
+          "param_type": "value",
+          "value": 5.0
+        },
+        "input": {
+          "param_type": "cable",
+          "module": "osc",
+          "port": "output"
+        }
+      }
+    },
+    {
+      "id": "root",
+      "module_type": "signal",
+      "params": {
+        "source": {
+          "param_type": "cable",
+          "module": "amp",
+          "port": "output"
+        }
+      }
+    }
+  ]
+}

@@ -3,12 +3,14 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
 
+use std::collections::{HashMap, HashSet};
+
 use crate::{
     dsp::get_constructors,
     dsp::schema,
     patch::Patch,
     types::ModuleSchema,
-    types::{InternalTrack, Keyframe, ModuleState, Param, Track, TrackUpdate},
+    types::{InternalTrack, Keyframe, ModuleState, Param, PatchGraph, Track, TrackUpdate},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,6 +23,9 @@ pub enum InputMessage {
     CreateModule { module_type: String, id: String },
     UpdateParam { id: String, param_name: String, param: Param },
     DeleteModule { id: String },
+    
+    // New declarative API - send complete desired state
+    SetPatch { graph: PatchGraph },
 
     GetTracks,
     GetTrack { id: String },
@@ -116,6 +121,9 @@ pub fn handle_message(
                 .sampleables
                 .remove(&id);
         }
+        InputMessage::SetPatch { graph } => {
+            apply_patch_diff(patch, graph, sender, sample_rate)?;
+        }
         InputMessage::GetTracks => {
             for (_, internal_track) in patch
                 .try_lock_for(Duration::from_millis(10))
@@ -180,5 +188,110 @@ pub fn handle_message(
             }
         }
     };
+    Ok(())
+}
+
+fn apply_patch_diff(
+    patch: &Arc<Mutex<Patch>>,
+    desired_graph: PatchGraph,
+    sender: &Sender<OutputMessage>,
+    sample_rate: f32,
+) -> anyhow::Result<()> {
+    let mut patch_lock = patch.try_lock_for(Duration::from_millis(10)).unwrap();
+    
+    // Build maps for efficient lookup
+    let desired_modules: HashMap<String, ModuleState> = desired_graph
+        .modules
+        .into_iter()
+        .map(|m| (m.id.clone(), m))
+        .collect();
+    
+    let current_ids: HashSet<String> = patch_lock.sampleables.keys().cloned().collect();
+    let desired_ids: HashSet<String> = desired_modules.keys().cloned().collect();
+    
+    // Find modules to delete (in current but not in desired)
+    let to_delete: Vec<String> = current_ids.difference(&desired_ids).cloned().collect();
+    
+    // Find modules to create (in desired but not in current)
+    let to_create: Vec<String> = desired_ids.difference(&current_ids).cloned().collect();
+    
+    // Delete modules
+    for id in to_delete {
+        patch_lock.sampleables.remove(&id);
+    }
+    
+    // Create new modules
+    let constructors = get_constructors();
+    for id in to_create {
+        if let Some(desired_module) = desired_modules.get(&id) {
+            if let Some(constructor) = constructors.get(&desired_module.module_type) {
+                match constructor(&id, sample_rate) {
+                    Ok(module) => {
+                        patch_lock.sampleables.insert(id.clone(), module);
+                    }
+                    Err(err) => {
+                        sender.send(OutputMessage::Error {
+                            message: format!("Failed to create module {}: {}", id, err),
+                        })?;
+                    }
+                }
+            } else {
+                sender.send(OutputMessage::Error {
+                    message: format!("{} is not a valid module type", desired_module.module_type),
+                })?;
+            }
+        }
+    }
+    
+    // Update parameters for all desired modules (both new and existing)
+    // We need to do this in two passes to handle cable connections properly:
+    // Pass 1: Update all non-cable parameters
+    // Pass 2: Update cable parameters (after all modules exist)
+    
+    for id in desired_ids.iter() {
+        if let Some(desired_module) = desired_modules.get(id) {
+            if let Some(module) = patch_lock.sampleables.get(id) {
+                // Pass 1: Non-cable parameters
+                for (param_name, param) in &desired_module.params {
+                    if !matches!(param, Param::Cable { .. }) {
+                        let internal_param = param.to_internal_param(&patch_lock);
+                        if let Err(err) = module.update_param(param_name, &internal_param) {
+                            sender.send(OutputMessage::Error {
+                                message: format!("Failed to update param {}.{}: {}", id, param_name, err),
+                            })?;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Pass 2: Cable parameters
+    for id in desired_ids.iter() {
+        if let Some(desired_module) = desired_modules.get(id) {
+            if let Some(module) = patch_lock.sampleables.get(id) {
+                for (param_name, param) in &desired_module.params {
+                    if matches!(param, Param::Cable { .. }) {
+                        let internal_param = param.to_internal_param(&patch_lock);
+                        if let Err(err) = module.update_param(param_name, &internal_param) {
+                            sender.send(OutputMessage::Error {
+                                message: format!("Failed to update param {}.{}: {}", id, param_name, err),
+                            })?;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Send success response with current state
+    sender.send(OutputMessage::PatchState {
+        modules: patch_lock
+            .sampleables
+            .iter()
+            .map(|(_, module)| module.get_state())
+            .collect(),
+    })?;
+    
     Ok(())
 }
