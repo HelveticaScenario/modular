@@ -1,11 +1,11 @@
 use std::{collections::HashMap, path::PathBuf, sync::{mpsc, Arc, Mutex}, time::Duration};
 
 use modular_client::http_client::spawn_client;
-use modular_core::{
-    message::InputMessage,
-    types::{ModuleState, Param, PatchGraph},
+use modular_core::types::{ModuleState, Param, PatchGraph};
+use modular_server::{
+    protocol::InputMessage,
+    run_server, ServerConfig,
 };
-use modular_server::run_server;
 use notify::{Watcher, RecursiveMode, Result as NotifyResult};
 use notify::event::{EventKind, ModifyKind};
 use serde::{Deserialize, Serialize};
@@ -47,7 +47,8 @@ async fn main() -> anyhow::Result<()> {
 
     // Spawn the server
     tokio::spawn(async {
-        if let Err(e) = run_server(7812).await {
+        let config = ServerConfig { port: 7812, patch_file: None };
+        if let Err(e) = run_server(config).await {
             eprintln!("Server error: {}", e);
         }
     });
@@ -147,7 +148,7 @@ fn load_and_apply_patch(
         println!("    - {} ({})", module.id, module.module_type);
     }
     
-    outgoing_tx.send(InputMessage::SetPatch { graph })?;
+    outgoing_tx.send(InputMessage::SetPatch { patch: graph })?;
     Ok(())
 }
 

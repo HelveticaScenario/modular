@@ -1,63 +1,37 @@
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Path, State,
+        State,
     },
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing::{delete, get, post, put},
-    Json, Router,
+    response::IntoResponse,
+    routing::get,
+    Router,
 };
-use modular_core::{
-    crossbeam_channel::{Receiver, Sender},
-    message::{InputMessage, OutputMessage},
-    types::{Param, PatchGraph},
-};
-use serde::{Deserialize, Serialize};
+use crossbeam_channel::Receiver;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tokio::sync::{broadcast, Mutex as TokioMutex};
+use tokio::sync::broadcast;
 use tower_http::cors::CorsLayer;
 use tracing::{error, info};
+
+use modular_core::dsp::{get_constructors, schema};
+use modular_core::types::{InternalTrack, Param, PatchGraph};
+
+use crate::audio::{AudioState, AudioSubscription};
+use crate::protocol::{InputMessage, OutputMessage};
+use crate::validation::validate_patch;
 
 // Shared server state
 #[derive(Clone)]
 pub struct AppState {
-    pub input_tx: Arc<TokioMutex<Sender<InputMessage>>>,
+    pub audio_state: Arc<AudioState>,
     pub broadcast_tx: broadcast::Sender<OutputMessage>,
-}
-
-// REST API request/response types
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateModuleRequest {
-    module_type: String,
-    id: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UpdateParamRequest {
-    param: Param,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SetPatchRequest {
-    graph: PatchGraph,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ErrorResponse {
-    error: String,
+    pub sample_rate: f32,
 }
 
 // Build the Axum router
 pub fn create_router(state: AppState) -> Router {
     Router::new()
-        // Primary declarative API
-        .route("/patch", put(set_patch))
-        // REST endpoints (legacy/convenience)
-        .route("/schemas", get(get_schemas))
-        .route("/modules", post(create_module))
-        .route("/modules/:id", delete(delete_module))
-        .route("/params/:id/:param_name", put(update_param))
         // WebSocket endpoint
         .route("/ws", get(ws_handler))
         // Health check
@@ -69,86 +43,6 @@ pub fn create_router(state: AppState) -> Router {
 // Health check endpoint
 async fn health_check() -> &'static str {
     "OK"
-}
-
-// PUT /patch - Set complete patch state (declarative API)
-async fn set_patch(
-    State(state): State<AppState>,
-    Json(payload): Json<SetPatchRequest>,
-) -> Result<StatusCode, AppError> {
-    let input_tx = state.input_tx.lock().await;
-    
-    input_tx
-        .send(InputMessage::SetPatch {
-            graph: payload.graph,
-        })
-        .map_err(|e| AppError::Internal(format!("Failed to send message: {}", e)))?;
-
-    // Response with updated state will be sent via WebSocket
-    Ok(StatusCode::ACCEPTED)
-}
-
-// GET /schemas - Get all available module schemas
-async fn get_schemas(State(state): State<AppState>) -> Result<StatusCode, AppError> {
-    let input_tx = state.input_tx.lock().await;
-    
-    input_tx
-        .send(InputMessage::Schema)
-        .map_err(|e| AppError::Internal(format!("Failed to send message: {}", e)))?;
-
-    // Response will be sent via WebSocket
-    Ok(StatusCode::ACCEPTED)
-}
-
-// POST /modules - Create a new module
-async fn create_module(
-    State(state): State<AppState>,
-    Json(payload): Json<CreateModuleRequest>,
-) -> Result<StatusCode, AppError> {
-    let input_tx = state.input_tx.lock().await;
-    
-    input_tx
-        .send(InputMessage::CreateModule {
-            module_type: payload.module_type.clone(),
-            id: payload.id.clone(),
-        })
-        .map_err(|e| AppError::Internal(format!("Failed to send message: {}", e)))?;
-
-    // Response will be sent via WebSocket
-    Ok(StatusCode::ACCEPTED)
-}
-
-// DELETE /modules/:id - Delete a module
-async fn delete_module(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<StatusCode, AppError> {
-    let input_tx = state.input_tx.lock().await;
-    
-    input_tx
-        .send(InputMessage::DeleteModule { id })
-        .map_err(|e| AppError::Internal(format!("Failed to send message: {}", e)))?;
-
-    Ok(StatusCode::NO_CONTENT)
-}
-
-// PUT /params/:id/:param_name - Update a parameter
-async fn update_param(
-    State(state): State<AppState>,
-    Path((id, param_name)): Path<(String, String)>,
-    Json(payload): Json<UpdateParamRequest>,
-) -> Result<StatusCode, AppError> {
-    let input_tx = state.input_tx.lock().await;
-    
-    input_tx
-        .send(InputMessage::UpdateParam {
-            id,
-            param_name,
-            param: payload.param,
-        })
-        .map_err(|e| AppError::Internal(format!("Failed to send message: {}", e)))?;
-
-    Ok(StatusCode::NO_CONTENT)
 }
 
 // WebSocket handler
@@ -181,15 +75,15 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 }
                 Message::Binary(bytes)
             } else {
-                // Regular JSON message
-                let json = match serde_json::to_string(&msg) {
-                    Ok(j) => j,
+                // YAML message
+                let yaml = match serde_yaml::to_string(&msg) {
+                    Ok(y) => y,
                     Err(e) => {
                         error!("Failed to serialize message: {}", e);
                         continue;
                     }
                 };
-                Message::Text(json)
+                Message::Text(yaml)
             };
             
             if sender.send(message).await.is_err() {
@@ -199,22 +93,11 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     });
     
     // Handle incoming messages from client
-    let input_tx = state.input_tx.clone();
+    let state_clone = state.clone();
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = receiver.next().await {
             if let Message::Text(text) = msg {
-                let input_tx = input_tx.lock().await;
-                match serde_json::from_str::<InputMessage>(&text) {
-                    Ok(message) => {
-                        if let Err(e) = input_tx.send(message) {
-                            error!("Failed to send message to core: {}", e);
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to parse message: {}", e);
-                    }
-                }
+                handle_client_message(&text, &state_clone).await;
             }
         }
     });
@@ -228,51 +111,299 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     info!("WebSocket connection closed");
 }
 
-// Task to forward output messages to broadcast channel
-pub async fn forward_output_messages(
-    output_rx: Arc<TokioMutex<Receiver<OutputMessage>>>,
-    broadcast_tx: broadcast::Sender<OutputMessage>,
-) {
-    loop {
-        let msg = {
-            let rx = output_rx.lock().await;
-            rx.recv_timeout(std::time::Duration::from_millis(100))
-        };
+// Handle a message from a WebSocket client
+async fn handle_client_message(text: &str, state: &AppState) {
+    // Try to parse as YAML first, then fall back to JSON for backward compatibility
+    let message: InputMessage = match serde_yaml::from_str(text) {
+        Ok(m) => m,
+        Err(_) => match serde_json::from_str(text) {
+            Ok(m) => m,
+            Err(e) => {
+                error!("Failed to parse message: {}", e);
+                let _ = state.broadcast_tx.send(OutputMessage::Error {
+                    message: format!("Failed to parse message: {}", e),
+                    errors: None,
+                });
+                return;
+            }
+        }
+    };
+    
+    tracing::debug!("{:?}", message);
+    
+    match message {
+        InputMessage::Echo { message } => {
+            let _ = state.broadcast_tx.send(OutputMessage::Echo {
+                message: format!("{}!", message),
+            });
+        }
         
-        match msg {
-            Ok(msg) => {
-                // Ignore send errors (no subscribers is fine)
-                let _ = broadcast_tx.send(msg);
+        InputMessage::GetSchemas => {
+            let _ = state.broadcast_tx.send(OutputMessage::Schemas {
+                schemas: schema(),
+            });
+        }
+        
+        InputMessage::GetPatch => {
+            let patch = state.audio_state.patch.lock();
+            let modules = patch.get_state();
+            let _ = state.broadcast_tx.send(OutputMessage::PatchState {
+                patch: PatchGraph { modules },
+            });
+        }
+        
+        InputMessage::SetPatch { patch } => {
+            // Validate patch
+            let schemas = schema();
+            if let Err(errors) = validate_patch(&patch, &schemas) {
+                let _ = state.broadcast_tx.send(OutputMessage::Error {
+                    message: "Validation failed".to_string(),
+                    errors: Some(errors),
+                });
+                return;
             }
-            Err(modular_core::crossbeam_channel::RecvTimeoutError::Timeout) => {
-                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-                continue;
+            
+            // Apply patch
+            if let Err(e) = apply_patch(&state.audio_state, &patch, state.sample_rate) {
+                let _ = state.broadcast_tx.send(OutputMessage::Error {
+                    message: format!("Failed to apply patch: {}", e),
+                    errors: None,
+                });
+                return;
             }
-            Err(modular_core::crossbeam_channel::RecvTimeoutError::Disconnected) => {
-                error!("Output channel disconnected");
-                break;
+            
+            // Auto-unmute on SetPatch
+            state.audio_state.set_muted(false);
+            
+            // Send updated state
+            let patch_lock = state.audio_state.patch.lock();
+            let modules = patch_lock.get_state();
+            let _ = state.broadcast_tx.send(OutputMessage::PatchState {
+                patch: PatchGraph { modules },
+            });
+        }
+        
+        InputMessage::GetTracks => {
+            let patch = state.audio_state.patch.lock();
+            for (_, internal_track) in patch.tracks.iter() {
+                let _ = state.broadcast_tx.send(OutputMessage::Track {
+                    track: internal_track.to_track(),
+                });
+            }
+        }
+        
+        InputMessage::GetTrack { id } => {
+            let patch = state.audio_state.patch.lock();
+            if let Some(ref internal_track) = patch.tracks.get(&id) {
+                let _ = state.broadcast_tx.send(OutputMessage::Track {
+                    track: internal_track.to_track(),
+                });
+            }
+        }
+        
+        InputMessage::CreateTrack { id } => {
+            let mut patch = state.audio_state.patch.lock();
+            patch.tracks.insert(id.clone(), Arc::new(InternalTrack::new(id.clone())));
+            let _ = state.broadcast_tx.send(OutputMessage::CreateTrack { id });
+        }
+        
+        InputMessage::UpdateTrack { id, update } => {
+            let patch = state.audio_state.patch.lock();
+            if let Some(ref internal_track) = patch.tracks.get(&id) {
+                internal_track.update(&update);
+            }
+        }
+        
+        InputMessage::DeleteTrack { id } => {
+            let mut patch = state.audio_state.patch.lock();
+            patch.tracks.remove(&id);
+        }
+        
+        InputMessage::UpsertKeyframe { keyframe } => {
+            let patch = state.audio_state.patch.lock();
+            let internal_keyframe = keyframe.to_internal_keyframe(&patch);
+            if let Some(ref track) = patch.tracks.get(&keyframe.track_id) {
+                track.add_keyframe(internal_keyframe);
+            }
+        }
+        
+        InputMessage::DeleteKeyframe { track_id, keyframe_id } => {
+            let patch = state.audio_state.patch.lock();
+            if let Some(ref track) = patch.tracks.get(&track_id) {
+                track.remove_keyframe(keyframe_id);
+            }
+        }
+        
+        InputMessage::SubscribeAudio { module_id, port, buffer_size } => {
+            let subscription_id = uuid::Uuid::new_v4().to_string();
+            let subscription = AudioSubscription {
+                id: subscription_id.clone(),
+                module_id,
+                port,
+                buffer_size,
+            };
+            
+            state.audio_state.add_subscription(subscription);
+            let _ = state.broadcast_tx.send(OutputMessage::AudioSubscribed { subscription_id });
+        }
+        
+        InputMessage::UnsubscribeAudio { subscription_id } => {
+            state.audio_state.remove_subscription(&subscription_id);
+        }
+        
+        InputMessage::Mute => {
+            state.audio_state.set_muted(true);
+            let _ = state.broadcast_tx.send(OutputMessage::Muted);
+        }
+        
+        InputMessage::Unmute => {
+            state.audio_state.set_muted(false);
+            let _ = state.broadcast_tx.send(OutputMessage::Unmuted);
+        }
+        
+        InputMessage::StartRecording { filename } => {
+            match state.audio_state.start_recording(filename) {
+                Ok(path) => {
+                    let _ = state.broadcast_tx.send(OutputMessage::RecordingStarted { filename: path });
+                }
+                Err(e) => {
+                    let _ = state.broadcast_tx.send(OutputMessage::Error {
+                        message: format!("Failed to start recording: {}", e),
+                        errors: None,
+                    });
+                }
+            }
+        }
+        
+        InputMessage::StopRecording => {
+            match state.audio_state.stop_recording() {
+                Ok(Some(path)) => {
+                    let _ = state.broadcast_tx.send(OutputMessage::RecordingStopped { filename: path });
+                }
+                Ok(None) => {
+                    let _ = state.broadcast_tx.send(OutputMessage::Error {
+                        message: "No recording in progress".to_string(),
+                        errors: None,
+                    });
+                }
+                Err(e) => {
+                    let _ = state.broadcast_tx.send(OutputMessage::Error {
+                        message: format!("Failed to stop recording: {}", e),
+                        errors: None,
+                    });
+                }
             }
         }
     }
 }
 
-// Error handling
-pub enum AppError {
-    BadRequest(String),
-    Internal(String),
+// Apply a patch graph to the audio state
+fn apply_patch(
+    audio_state: &Arc<AudioState>,
+    desired_graph: &PatchGraph,
+    sample_rate: f32,
+) -> anyhow::Result<()> {
+    let mut patch_lock = audio_state.patch.lock();
+    
+    // Build maps for efficient lookup
+    let desired_modules: HashMap<String, _> = desired_graph
+        .modules
+        .iter()
+        .map(|m| (m.id.clone(), m))
+        .collect();
+    
+    let current_ids: HashSet<String> = patch_lock.sampleables.keys().cloned().collect();
+    let desired_ids: HashSet<String> = desired_modules.keys().cloned().collect();
+    
+    // Find modules to delete (in current but not in desired), excluding root
+    let to_delete: Vec<String> = current_ids
+        .difference(&desired_ids)
+        .filter(|id| *id != "root")
+        .cloned()
+        .collect();
+    
+    // Find modules to create (in desired but not in current)
+    let to_create: Vec<String> = desired_ids.difference(&current_ids).cloned().collect();
+    
+    // Delete modules
+    for id in to_delete {
+        patch_lock.sampleables.remove(&id);
+    }
+    
+    // Create new modules
+    let constructors = get_constructors();
+    for id in &to_create {
+        if let Some(desired_module) = desired_modules.get(id) {
+            if let Some(constructor) = constructors.get(&desired_module.module_type) {
+                match constructor(id, sample_rate) {
+                    Ok(module) => {
+                        patch_lock.sampleables.insert(id.clone(), module);
+                    }
+                    Err(err) => {
+                        return Err(anyhow::anyhow!("Failed to create module {}: {}", id, err));
+                    }
+                }
+            } else {
+                return Err(anyhow::anyhow!("{} is not a valid module type", desired_module.module_type));
+            }
+        }
+    }
+    
+    // Update parameters for all desired modules (both new and existing)
+    // Pass 1: Non-cable parameters
+    for id in desired_ids.iter() {
+        if let Some(desired_module) = desired_modules.get(id) {
+            if let Some(module) = patch_lock.sampleables.get(id) {
+                for (param_name, param) in &desired_module.params {
+                    if !matches!(param, Param::Cable { .. }) {
+                        let internal_param = param.to_internal_param(&patch_lock);
+                        if let Err(err) = module.update_param(param_name, &internal_param) {
+                            return Err(anyhow::anyhow!("Failed to update param {}.{}: {}", id, param_name, err));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Pass 2: Cable parameters (after all modules exist)
+    for id in desired_ids.iter() {
+        if let Some(desired_module) = desired_modules.get(id) {
+            if let Some(module) = patch_lock.sampleables.get(id) {
+                for (param_name, param) in &desired_module.params {
+                    if matches!(param, Param::Cable { .. }) {
+                        let internal_param = param.to_internal_param(&patch_lock);
+                        if let Err(err) = module.update_param(param_name, &internal_param) {
+                            return Err(anyhow::anyhow!("Failed to update param {}.{}: {}", id, param_name, err));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(())
 }
 
-impl IntoResponse for AppError {
-    fn into_response(self) -> Response {
-        let (status, error_message) = match self {
-            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
-            AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-        };
-
-        let body = Json(ErrorResponse {
-            error: error_message,
-        });
-
-        (status, body).into_response()
+// Task to forward output messages to broadcast channel
+pub async fn forward_output_messages(
+    output_rx: Receiver<OutputMessage>,
+    broadcast_tx: broadcast::Sender<OutputMessage>,
+) {
+    loop {
+        match output_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+            Ok(msg) => {
+                // Ignore send errors (no subscribers is fine)
+                let _ = broadcast_tx.send(msg);
+            }
+            Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                continue;
+            }
+            Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                error!("Output channel disconnected");
+                break;
+            }
+        }
     }
 }

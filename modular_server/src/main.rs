@@ -1,5 +1,5 @@
 use clap::{Arg, Command};
-use modular_server::run_server;
+use modular_server::{run_server, ServerConfig};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -22,5 +22,10 @@ async fn main() -> anyhow::Result<()> {
         .unwrap()
         .parse::<u16>()?;
 
-    run_server(port).await
+    let config = ServerConfig {
+        port,
+        patch_file: None,
+    };
+
+    run_server(config).await
 }

@@ -3,17 +3,18 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use modular_client::http_client::spawn_client;
-use modular_core::{
-    message::{InputMessage, OutputMessage},
-    types::{ModuleState, Param, PatchGraph},
+use modular_core::types::{ModuleState, Param, PatchGraph};
+use modular_server::{
+    protocol::{InputMessage, OutputMessage},
+    run_server, ServerConfig,
 };
-use modular_server::run_server;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Spawn the server
     tokio::spawn(async {
-        if let Err(e) = run_server(7812).await {
+        let config = ServerConfig { port: 7812, patch_file: None };
+        if let Err(e) = run_server(config).await {
             eprintln!("Server error: {}", e);
         }
     });
@@ -105,13 +106,13 @@ async fn main() -> anyhow::Result<()> {
 
     // Set initial patch
     outgoing_tx.send(InputMessage::SetPatch {
-        graph: build_patch(69, 5.0),
+        patch: build_patch(69, 5.0),
     })?;
 
     // Wait for response
     match incoming_rx.recv_timeout(Duration::from_millis(500)) {
-        Ok(OutputMessage::PatchState { modules }) => {
-            println!("Patch initialized with {} modules", modules.len());
+        Ok(OutputMessage::PatchState { patch }) => {
+            println!("Patch initialized with {} modules", patch.modules.len());
         }
         Ok(msg) => println!("Unexpected response: {:?}", msg),
         Err(e) => println!("No response: {}", e),
@@ -126,7 +127,7 @@ async fn main() -> anyhow::Result<()> {
     for _ in 0..2 {
         for note in part1.iter() {
             outgoing_tx.send(InputMessage::SetPatch {
-                graph: build_patch(*note, 5.0),
+                patch: build_patch(*note, 5.0),
             })?;
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
@@ -137,19 +138,19 @@ async fn main() -> anyhow::Result<()> {
     for note in part2.iter() {
         // Accent pattern with amplitude
         outgoing_tx.send(InputMessage::SetPatch {
-            graph: build_patch(*note, 5.0),
+            patch: build_patch(*note, 5.0),
         })?;
         tokio::time::sleep(Duration::from_millis(100)).await;
         
         outgoing_tx.send(InputMessage::SetPatch {
-            graph: build_patch(*note, 4.0),
+            patch: build_patch(*note, 4.0),
         })?;
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
     for note in part1.iter() {
         outgoing_tx.send(InputMessage::SetPatch {
-            graph: build_patch(*note, 5.0),
+            patch: build_patch(*note, 5.0),
         })?;
         tokio::time::sleep(Duration::from_millis(500)).await;
     }

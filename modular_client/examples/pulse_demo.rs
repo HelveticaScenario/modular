@@ -1,16 +1,13 @@
 use std::{collections::HashMap, sync::mpsc, time::Duration};
 
 use modular_client::http_client::spawn_client;
-use modular_core::{
-    message::InputMessage,
-    types::{ModuleState, Param, PatchGraph},
-};
-use modular_server::run_server;
+use modular_core::types::{ModuleState, Param, PatchGraph};
+use modular_server::{protocol::InputMessage, run_server, ServerConfig};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tokio::spawn(async {
-        if let Err(e) = run_server(7812).await {
+        if let Err(e) = run_server(ServerConfig { port: 7812, patch_file: None }).await {
             eprintln!("Server error: {}", e);
         }
     });
@@ -78,19 +75,19 @@ async fn main() -> anyhow::Result<()> {
     
     println!("  Square wave (width=2.5, 50% duty cycle)");
     outgoing_tx.send(InputMessage::SetPatch {
-        graph: build_basic_patch(57, 2.5, None),
+        patch: build_basic_patch(57, 2.5, None),
     })?;
     tokio::time::sleep(Duration::from_millis(1200)).await;
 
     println!("  Narrow pulse (width=0.5, 10% duty cycle)");
     outgoing_tx.send(InputMessage::SetPatch {
-        graph: build_basic_patch(57, 0.5, None),
+        patch: build_basic_patch(57, 0.5, None),
     })?;
     tokio::time::sleep(Duration::from_millis(1200)).await;
 
     println!("  Wide pulse (width=4.5, 90% duty cycle)");
     outgoing_tx.send(InputMessage::SetPatch {
-        graph: build_basic_patch(57, 4.5, None),
+        patch: build_basic_patch(57, 4.5, None),
     })?;
     tokio::time::sleep(Duration::from_millis(1200)).await;
 
@@ -100,7 +97,7 @@ async fn main() -> anyhow::Result<()> {
     for i in 0..100 {
         let width = 0.5 + (i as f32 / 100.0) * 4.0;
         outgoing_tx.send(InputMessage::SetPatch {
-            graph: build_basic_patch(57, width, None),
+            patch: build_basic_patch(57, width, None),
         })?;
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
@@ -160,7 +157,7 @@ async fn main() -> anyhow::Result<()> {
     
     println!("  Playing with slow PWM modulation");
     outgoing_tx.send(InputMessage::SetPatch {
-        graph: build_pwm_patch(57, -1.0), // ~13.75 Hz
+        patch: build_pwm_patch(57, -1.0), // ~13.75 Hz
     })?;
     tokio::time::sleep(Duration::from_millis(3000)).await;
 
@@ -168,7 +165,7 @@ async fn main() -> anyhow::Result<()> {
     println!("Part 4: Fast PWM (Creates chorus effect)");
     println!("  PWM LFO at ~84 Hz");
     outgoing_tx.send(InputMessage::SetPatch {
-        graph: build_pwm_patch(57, 1.5), // ~84.43 Hz
+        patch: build_pwm_patch(57, 1.5), // ~84.43 Hz
     })?;
     tokio::time::sleep(Duration::from_millis(2000)).await;
 
@@ -180,7 +177,7 @@ async fn main() -> anyhow::Result<()> {
     
     for note in melody.iter() {
         outgoing_tx.send(InputMessage::SetPatch {
-            graph: build_pwm_patch(*note, 0.0), // ~27.5 Hz
+            patch: build_pwm_patch(*note, 0.0), // ~27.5 Hz
         })?;
         tokio::time::sleep(Duration::from_millis(400)).await;
     }
@@ -283,7 +280,7 @@ async fn main() -> anyhow::Result<()> {
     
     println!("  Playing A minor chord (A3, C4, E4) with different pulse widths");
     outgoing_tx.send(InputMessage::SetPatch {
-        graph: chord_patch,
+        patch: chord_patch,
     })?;
     tokio::time::sleep(Duration::from_millis(2500)).await;
 

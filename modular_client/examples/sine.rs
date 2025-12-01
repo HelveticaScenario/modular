@@ -1,19 +1,25 @@
+//! Example: Simple sine wave using declarative SetPatch API
+//! 
+//! This example demonstrates the new declarative patch API where
+//! you send the complete desired state rather than imperative commands.
+
+use std::collections::HashMap;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use anyhow::anyhow;
 use modular_client::http_client::spawn_client;
-use modular_core::{
-    message::{InputMessage, OutputMessage},
-    types::Param,
+use modular_core::types::{ModuleState, Param, PatchGraph};
+use modular_server::{
+    protocol::{InputMessage, OutputMessage},
+    run_server, ServerConfig,
 };
-use modular_server::run_server;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Spawn the server
     tokio::spawn(async {
-        if let Err(e) = run_server(7812).await {
+        let config = ServerConfig { port: 7812, patch_file: None };
+        if let Err(e) = run_server(config).await {
             eprintln!("Server error: {}", e);
         }
     });
@@ -29,143 +35,75 @@ async fn main() -> anyhow::Result<()> {
         incoming_tx,
         outgoing_rx,
     );
-    let osc_id = create_mod("sine-oscillator", "osc", &outgoing_tx, &incoming_rx)?;
-    let atten_id = create_mod("scale-and-shift", "amp", &outgoing_tx, &incoming_rx)?;
-    let atten_id_2 = create_mod("scale-and-shift", "vibrato", &outgoing_tx, &incoming_rx)?;
-    let sum_id_2 = create_mod("sum", "freq-sum", &outgoing_tx, &incoming_rx)?;
 
-    set_cable(atten_id_2.clone(), "input", osc_id.clone(), "output", &outgoing_tx)?;
+    // Give client time to connect
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
-    set_value(atten_id_2.clone(), "scale", 1.0, &outgoing_tx)?;
+    // Build patch helper function
+    let build_patch = |note: u8, amp: f32| -> PatchGraph {
+        PatchGraph {
+            modules: vec![
+                ModuleState {
+                    id: "osc".to_string(),
+                    module_type: "sine-oscillator".to_string(),
+                    params: HashMap::from([
+                        ("freq".to_string(), Param::Note { value: note }),
+                    ]),
+                },
+                ModuleState {
+                    id: "amp".to_string(),
+                    module_type: "scale-and-shift".to_string(),
+                    params: HashMap::from([
+                        ("input".to_string(), Param::Cable {
+                            module: "osc".to_string(),
+                            port: "output".to_string(),
+                        }),
+                        ("scale".to_string(), Param::Value { value: amp }),
+                    ]),
+                },
+                ModuleState {
+                    id: "root".to_string(),
+                    module_type: "signal".to_string(),
+                    params: HashMap::from([
+                        ("source".to_string(), Param::Cable {
+                            module: "amp".to_string(),
+                            port: "output".to_string(),
+                        }),
+                    ]),
+                },
+            ],
+        }
+    };
 
-    set_cable(sum_id_2.clone(), "input-1", atten_id_2.clone(), "output", &outgoing_tx)?;
+    // Send initial patch
+    outgoing_tx.send(InputMessage::SetPatch {
+        patch: build_patch(69, 5.0), // A4
+    })?;
 
-    set_note(sum_id_2.clone(), "input-2", 69, &outgoing_tx)?;
+    // Wait for response
+    match incoming_rx.recv_timeout(Duration::from_millis(500)) {
+        Ok(OutputMessage::PatchState { patch }) => {
+            println!("Patch initialized with {} modules", patch.modules.len());
+        }
+        Ok(msg) => println!("Unexpected response: {:?}", msg),
+        Err(e) => println!("No response: {}", e),
+    }
 
-    set_cable(osc_id.clone(), "freq", sum_id_2.clone(), "output", &outgoing_tx)?;
-
-    set_cable(atten_id.clone(), "input", osc_id.clone(), "output", &outgoing_tx)?;
-
-    set_value(atten_id.clone(), "scale", 5.0, &outgoing_tx)?;
-
-    set_cable(String::from("root"), "source", atten_id.clone(), "output", &outgoing_tx)?;
-
-    // for i in incoming_rx {
-    //     println!("asdasd {:?}", i);
-    // }
-    // let dur = Duration::from_millis(1000);
+    // Play a simple melody
     const A: u8 = 69;
     const B: u8 = 67;
     const C: u8 = 65;
-    let part1 = [A, B, C];
-    for _ in 0..2 {
-        for i in part1.iter() {
-            set_note(sum_id_2.clone(), "input-2", *i, &outgoing_tx)?;
-            tokio::time::sleep(Duration::from_millis(500)).await;
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
+    let melody = [A, B, C, A, B, C, A, B, C];
+    
+    for note in melody.iter() {
+        outgoing_tx.send(InputMessage::SetPatch {
+            patch: build_patch(*note, 5.0),
+        })?;
+        tokio::time::sleep(Duration::from_millis(400)).await;
     }
-    let part2 = [C, C, C, C, B, B, B, B];
-    for i in part2.iter() {
-        set_note(sum_id_2.clone(), "input-2", *i, &outgoing_tx)?;
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        set_value(atten_id.clone(), "scale", 4.0, &outgoing_tx)?;
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        set_value(atten_id.clone(), "scale", 5.0, &outgoing_tx)?;
-    }
-    for i in part1.iter() {
-        set_note(sum_id_2.clone(), "input-2", *i, &outgoing_tx)?;
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-    tokio::time::sleep(Duration::from_millis(3000)).await;
-    // for _ in 0..10 {
-    //     for i in 0..12 {
-    //         outgoing_tx.send(InputMessage::UpdateParam(
-    //             id.clone(),
-    //             "freq".into(),
-    //             Param::Note { value: 69+i },
-    //         ))?;
-    //         thread::sleep(dur);
-    //     }
-    // }
-    // let r = running.clone();
-    // ctrlc::set_handler(move || {
-    //     r.store(false, Ordering::SeqCst);
-    // })
-    // .expect("Error setting Ctrl-C handler");
-
-    // while running.load(Ordering::SeqCst) {}
+    tokio::time::sleep(Duration::from_millis(2000)).await;
+    println!("Melody complete!");
+    
     Ok(())
-}
-
-fn set_value(
-    dest_mod: String,
-    dest_port: &str,
-    value: f32,
-    outgoing_tx: &mpsc::Sender<InputMessage>,
-) -> Result<(), anyhow::Error> {
-    outgoing_tx.send(InputMessage::UpdateParam {
-        id: dest_mod,
-        param_name: dest_port.into(),
-        param: Param::Value { value },
-    })?;
-    Ok(())
-}
-
-fn set_note(
-    dest_mod: String,
-    dest_port: &str,
-    value: u8,
-    outgoing_tx: &mpsc::Sender<InputMessage>,
-) -> Result<(), anyhow::Error> {
-    outgoing_tx.send(InputMessage::UpdateParam {
-        id: dest_mod,
-        param_name: dest_port.into(),
-        param: Param::Note { value },
-    })?;
-    Ok(())
-}
-
-fn set_cable(
-    dest_mod: String,
-    dest_port: &str,
-    source_mod: String,
-    source_port: &str,
-    outgoing_tx: &mpsc::Sender<InputMessage>,
-) -> Result<(), anyhow::Error> {
-    Ok(outgoing_tx.send(InputMessage::UpdateParam {
-        id: dest_mod,
-        param_name: dest_port.into(),
-        param: Param::Cable {
-            module: source_mod,
-            port: source_port.into(),
-        },
-    })?)
-}
-
-fn create_mod(
-    mod_type: &str,
-    id: &str,
-    outgoing_tx: &mpsc::Sender<InputMessage>,
-    incoming_rx: &mpsc::Receiver<OutputMessage>,
-) -> Result<String, anyhow::Error> {
-    let id = id.to_string();
-    outgoing_tx.send(InputMessage::CreateModule {
-        module_type: mod_type.into(),
-        id: id.clone(),
-    })?;
-    let abc = incoming_rx.recv();
-    println!("{:?}", abc);
-    let id = match abc? {
-        OutputMessage::CreateModule { module_type, id } => {
-            if module_type == mod_type {
-                Ok(id)
-            } else {
-                Err(anyhow!("something happened"))
-            }
-        }
-        _ => Err(anyhow!("something happened")),
-    }?;
-    Ok(id)
 }

@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use modular_core::message::{InputMessage, OutputMessage};
+use modular_server::protocol::{InputMessage, OutputMessage};
 
 pub fn start_sending_client(server_address: String, rx: Receiver<InputMessage>) {
     loop {
@@ -15,16 +15,15 @@ pub fn start_sending_client(server_address: String, rx: Receiver<InputMessage>) 
                 println!("Connected to server at {}", server_address);
                 
                 for message in &rx {
-                    let json = match serde_json::to_string(&message) {
-                        Ok(j) => j,
+                    let yaml = match serde_yaml::to_string(&message) {
+                        Ok(y) => y,
                         Err(e) => {
                             println!("Failed to serialize message: {}", e);
                             continue;
                         }
                     };
-                    let json_line = format!("{}\n", json);
                     
-                    if let Err(e) = stream.write_all(json_line.as_bytes()) {
+                    if let Err(e) = stream.write_all(yaml.as_bytes()) {
                         println!("Failed to send message: {}", e);
                         break;
                     }
@@ -48,11 +47,11 @@ pub fn start_receiving_client(server_address: String, tx: Sender<OutputMessage>)
                 
                 for line in reader.lines() {
                     match line {
-                        Ok(json) => {
-                            if json.trim().is_empty() {
+                        Ok(yaml) => {
+                            if yaml.trim().is_empty() {
                                 continue;
                             }
-                            match serde_json::from_str::<OutputMessage>(&json) {
+                            match serde_yaml::from_str::<OutputMessage>(&yaml) {
                                 Ok(message) => {
                                     if let Err(e) = tx.send(message) {
                                         println!("Error sending message to handler: {}", e);
@@ -60,7 +59,7 @@ pub fn start_receiving_client(server_address: String, tx: Sender<OutputMessage>)
                                     }
                                 }
                                 Err(e) => {
-                                    println!("Error parsing JSON: {}", e);
+                                    println!("Error parsing YAML: {}", e);
                                 }
                             }
                         }

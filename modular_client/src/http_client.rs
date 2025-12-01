@@ -1,6 +1,6 @@
 use anyhow::Result;
 use futures_util::{SinkExt, StreamExt};
-use modular_core::message::{InputMessage, OutputMessage};
+use modular_server::protocol::{InputMessage, OutputMessage};
 use std::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
@@ -44,8 +44,8 @@ async fn websocket_send_loop(ws_url: String, outgoing_rx: Receiver<InputMessage>
                     // Check for messages from the channel (non-blocking via try_recv)
                     match outgoing_rx.try_recv() {
                         Ok(message) => {
-                            let json = serde_json::to_string(&message)?;
-                            if write.send(Message::Text(json)).await.is_err() {
+                            let yaml = serde_yaml::to_string(&message)?;
+                            if write.send(Message::Text(yaml)).await.is_err() {
                                 eprintln!("Failed to send message, reconnecting...");
                                 break;
                             }
@@ -79,9 +79,13 @@ async fn websocket_recv_loop(ws_url: String, incoming_tx: Sender<OutputMessage>)
                 while let Some(msg) = read.next().await {
                     match msg {
                         Ok(Message::Text(text)) => {
-                            match serde_json::from_str::<OutputMessage>(&text) {
-                                Ok(output_msg) => {
-                                    if incoming_tx.send(output_msg).is_err() {
+                            // Try YAML first, then JSON for backward compatibility
+                            let output_msg: Result<OutputMessage, _> = serde_yaml::from_str(&text)
+                                .or_else(|_| serde_json::from_str(&text));
+                            
+                            match output_msg {
+                                Ok(msg) => {
+                                    if incoming_tx.send(msg).is_err() {
                                         println!("Incoming channel disconnected");
                                         return Ok(());
                                     }

@@ -1,16 +1,13 @@
 use std::{collections::HashMap, sync::mpsc, time::Duration};
 
 use modular_client::http_client::spawn_client;
-use modular_core::{
-    message::InputMessage,
-    types::{ModuleState, Param, PatchGraph},
-};
-use modular_server::run_server;
+use modular_core::types::{ModuleState, Param, PatchGraph};
+use modular_server::{protocol::InputMessage, run_server, ServerConfig};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tokio::spawn(async {
-        if let Err(e) = run_server(7812).await {
+        if let Err(e) = run_server(ServerConfig { port: 7812, patch_file: None }).await {
             eprintln!("Server error: {}", e);
         }
     });
@@ -77,19 +74,19 @@ async fn main() -> anyhow::Result<()> {
     println!("Part 1: Shape Morphing");
     println!("  Playing pure sawtooth (shape=0)");
     outgoing_tx.send(InputMessage::SetPatch {
-        graph: build_basic_patch(57, 0.0, None),
+        patch: build_basic_patch(57, 0.0, None),
     })?;
     tokio::time::sleep(Duration::from_millis(1500)).await;
 
     println!("  Morphing to triangle (shape=2.5)");
     outgoing_tx.send(InputMessage::SetPatch {
-        graph: build_basic_patch(57, 2.5, None),
+        patch: build_basic_patch(57, 2.5, None),
     })?;
     tokio::time::sleep(Duration::from_millis(1500)).await;
 
     println!("  Morphing to ramp/reverse saw (shape=5)");
     outgoing_tx.send(InputMessage::SetPatch {
-        graph: build_basic_patch(57, 5.0, None),
+        patch: build_basic_patch(57, 5.0, None),
     })?;
     tokio::time::sleep(Duration::from_millis(1500)).await;
 
@@ -97,7 +94,7 @@ async fn main() -> anyhow::Result<()> {
     for i in 0..50 {
         let shape = (i as f32 / 50.0) * 5.0;
         outgoing_tx.send(InputMessage::SetPatch {
-            graph: build_basic_patch(57, shape, None),
+            patch: build_basic_patch(57, shape, None),
         })?;
         tokio::time::sleep(Duration::from_millis(40)).await;
     }
@@ -110,7 +107,7 @@ async fn main() -> anyhow::Result<()> {
     
     for (note, shape) in melody.iter().zip(shapes.iter()) {
         outgoing_tx.send(InputMessage::SetPatch {
-            graph: build_basic_patch(*note, *shape, None),
+            patch: build_basic_patch(*note, *shape, None),
         })?;
         tokio::time::sleep(Duration::from_millis(400)).await;
     }
@@ -183,7 +180,7 @@ async fn main() -> anyhow::Result<()> {
     };
     
     outgoing_tx.send(InputMessage::SetPatch {
-        graph: build_phase_sync_patch(69, 0.0),
+        patch: build_phase_sync_patch(69, 0.0),
     })?;
     
     println!("  Oscillator is now synced to LFO phase");
