@@ -115,7 +115,7 @@ pub fn handle_message(
                     }
                     Err(err) => {
                         println!("{}", err);
-                        sender.send(OutputMessage::Error { message: format!("an error occured: {}", err) })?;
+                        sender.send(OutputMessage::Error { message: format!("an error occurred: {}", err) })?;
                     }
                 };
             } else {
