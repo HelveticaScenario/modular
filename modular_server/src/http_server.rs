@@ -172,7 +172,8 @@ async fn handle_client_message(text: &str, state: &AppState) {
                 return;
             }
             
-            // Auto-unmute on SetPatch
+            // Auto-unmute on SetPatch - convenient for live editing workflows
+            // where you typically want to hear changes immediately
             state.audio_state.set_muted(false);
             
             // Send updated state

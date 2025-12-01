@@ -15,6 +15,11 @@ use std::time::Duration;
 use modular_core::patch::Patch;
 use crate::protocol::OutputMessage;
 
+/// Attenuation factor applied to audio output to prevent clipping.
+/// DSP modules output signals in the range [-5, 5] volts (modular synth convention).
+/// This factor brings the output into a reasonable range for audio output.
+const AUDIO_OUTPUT_ATTENUATION: f32 = 5.0;
+
 /// Audio subscription for streaming samples to clients
 #[derive(Clone)]
 pub struct AudioSubscription {
@@ -187,7 +192,7 @@ fn write_audio_data(
     for frame in output.chunks_mut(channels) {
         let sample = process_frame(audio_state, delta, output_tx);
         let muted = audio_state.is_muted();
-        let output_sample = if muted { 0.0 } else { sample / 5.0 };
+        let output_sample = if muted { 0.0 } else { sample / AUDIO_OUTPUT_ATTENUATION };
         
         for s in frame.iter_mut() {
             *s = output_sample;
@@ -210,7 +215,7 @@ fn write_audio_data_i16(
     for frame in output.chunks_mut(channels) {
         let sample = process_frame(audio_state, delta, output_tx);
         let muted = audio_state.is_muted();
-        let output_sample = if muted { 0.0 } else { sample / 5.0 };
+        let output_sample = if muted { 0.0 } else { sample / AUDIO_OUTPUT_ATTENUATION };
         let sample_i16 = (output_sample * i16::MAX as f32) as i16;
         
         for s in frame.iter_mut() {
@@ -234,7 +239,7 @@ fn write_audio_data_u16(
     for frame in output.chunks_mut(channels) {
         let sample = process_frame(audio_state, delta, output_tx);
         let muted = audio_state.is_muted();
-        let output_sample = if muted { 0.0 } else { sample / 5.0 };
+        let output_sample = if muted { 0.0 } else { sample / AUDIO_OUTPUT_ATTENUATION };
         let sample_u16 = ((output_sample + 1.0) * 0.5 * u16::MAX as f32) as u16;
         
         for s in frame.iter_mut() {

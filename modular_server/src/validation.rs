@@ -25,7 +25,10 @@ pub fn validate_patch(patch: &PatchGraph, schemas: &[ModuleSchema]) -> Result<()
                 format!("Unknown module type '{}'", module.module_type),
                 format!("modules.{}", module.id),
             ));
-            continue; // Skip param validation if module type is unknown
+            // Skip param validation for unknown module types since we can't know
+            // which parameters are valid. Cable target validation will still occur
+            // when other modules reference this one.
+            continue;
         }
         
         let schema = schema_map.get(module.module_type.as_str()).unwrap();
@@ -77,8 +80,8 @@ pub fn validate_patch(patch: &PatchGraph, schemas: &[ModuleSchema]) -> Result<()
             
             // Check track references
             if let Param::Track { track: track_id } = param {
-                // Note: Track validation would require track state to be passed in
-                // For now, we skip track validation as it's handled at runtime
+                // TODO: Track validation requires track state to be passed in.
+                // For now, track validation is handled at runtime when applying the patch.
                 let _ = track_id; // Suppress unused warning
             }
         }
