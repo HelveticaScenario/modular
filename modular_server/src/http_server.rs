@@ -1,19 +1,16 @@
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Path, State,
+        State,
     },
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing::{delete, get, post, put},
-    Json, Router,
+    response::IntoResponse,
+    routing::get,
+    Router,
 };
 use modular_core::{
     crossbeam_channel::{Receiver, Sender},
     message::{InputMessage, OutputMessage},
-    types::{Param, PatchGraph},
 };
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex as TokioMutex};
 use tower_http::cors::CorsLayer;
@@ -26,38 +23,9 @@ pub struct AppState {
     pub broadcast_tx: broadcast::Sender<OutputMessage>,
 }
 
-// REST API request/response types
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateModuleRequest {
-    module_type: String,
-    id: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UpdateParamRequest {
-    param: Param,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SetPatchRequest {
-    graph: PatchGraph,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ErrorResponse {
-    error: String,
-}
-
 // Build the Axum router
 pub fn create_router(state: AppState) -> Router {
     Router::new()
-        // Primary declarative API
-        .route("/patch", put(set_patch))
-        // REST endpoints (legacy/convenience)
-        .route("/schemas", get(get_schemas))
-        .route("/modules", post(create_module))
-        .route("/modules/:id", delete(delete_module))
-        .route("/params/:id/:param_name", put(update_param))
         // WebSocket endpoint
         .route("/ws", get(ws_handler))
         // Health check
@@ -69,86 +37,6 @@ pub fn create_router(state: AppState) -> Router {
 // Health check endpoint
 async fn health_check() -> &'static str {
     "OK"
-}
-
-// PUT /patch - Set complete patch state (declarative API)
-async fn set_patch(
-    State(state): State<AppState>,
-    Json(payload): Json<SetPatchRequest>,
-) -> Result<StatusCode, AppError> {
-    let input_tx = state.input_tx.lock().await;
-    
-    input_tx
-        .send(InputMessage::SetPatch {
-            graph: payload.graph,
-        })
-        .map_err(|e| AppError::Internal(format!("Failed to send message: {}", e)))?;
-
-    // Response with updated state will be sent via WebSocket
-    Ok(StatusCode::ACCEPTED)
-}
-
-// GET /schemas - Get all available module schemas
-async fn get_schemas(State(state): State<AppState>) -> Result<StatusCode, AppError> {
-    let input_tx = state.input_tx.lock().await;
-    
-    input_tx
-        .send(InputMessage::Schema)
-        .map_err(|e| AppError::Internal(format!("Failed to send message: {}", e)))?;
-
-    // Response will be sent via WebSocket
-    Ok(StatusCode::ACCEPTED)
-}
-
-// POST /modules - Create a new module
-async fn create_module(
-    State(state): State<AppState>,
-    Json(payload): Json<CreateModuleRequest>,
-) -> Result<StatusCode, AppError> {
-    let input_tx = state.input_tx.lock().await;
-    
-    input_tx
-        .send(InputMessage::CreateModule {
-            module_type: payload.module_type.clone(),
-            id: payload.id.clone(),
-        })
-        .map_err(|e| AppError::Internal(format!("Failed to send message: {}", e)))?;
-
-    // Response will be sent via WebSocket
-    Ok(StatusCode::ACCEPTED)
-}
-
-// DELETE /modules/:id - Delete a module
-async fn delete_module(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<StatusCode, AppError> {
-    let input_tx = state.input_tx.lock().await;
-    
-    input_tx
-        .send(InputMessage::DeleteModule { id })
-        .map_err(|e| AppError::Internal(format!("Failed to send message: {}", e)))?;
-
-    Ok(StatusCode::NO_CONTENT)
-}
-
-// PUT /params/:id/:param_name - Update a parameter
-async fn update_param(
-    State(state): State<AppState>,
-    Path((id, param_name)): Path<(String, String)>,
-    Json(payload): Json<UpdateParamRequest>,
-) -> Result<StatusCode, AppError> {
-    let input_tx = state.input_tx.lock().await;
-    
-    input_tx
-        .send(InputMessage::UpdateParam {
-            id,
-            param_name,
-            param: payload.param,
-        })
-        .map_err(|e| AppError::Internal(format!("Failed to send message: {}", e)))?;
-
-    Ok(StatusCode::NO_CONTENT)
 }
 
 // WebSocket handler
@@ -181,15 +69,15 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 }
                 Message::Binary(bytes)
             } else {
-                // Regular JSON message
-                let json = match serde_json::to_string(&msg) {
-                    Ok(j) => j,
+                // Try YAML serialization first for non-binary messages
+                let yaml = match serde_yaml::to_string(&msg) {
+                    Ok(y) => y,
                     Err(e) => {
-                        error!("Failed to serialize message: {}", e);
+                        error!("Failed to serialize message to YAML: {}", e);
                         continue;
                     }
                 };
-                Message::Text(json)
+                Message::Text(yaml)
             };
             
             if sender.send(message).await.is_err() {
@@ -204,7 +92,11 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         while let Some(Ok(msg)) = receiver.next().await {
             if let Message::Text(text) = msg {
                 let input_tx = input_tx.lock().await;
-                match serde_json::from_str::<InputMessage>(&text) {
+                // Try YAML first, then fallback to JSON for backward compatibility
+                let message: Result<InputMessage, _> = serde_yaml::from_str(&text)
+                    .or_else(|_| serde_json::from_str(&text));
+                
+                match message {
                     Ok(message) => {
                         if let Err(e) = input_tx.send(message) {
                             error!("Failed to send message to core: {}", e);
@@ -212,7 +104,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         }
                     }
                     Err(e) => {
-                        error!("Failed to parse message: {}", e);
+                        error!("Failed to parse message (YAML/JSON): {}", e);
                     }
                 }
             }
@@ -253,26 +145,5 @@ pub async fn forward_output_messages(
                 break;
             }
         }
-    }
-}
-
-// Error handling
-pub enum AppError {
-    BadRequest(String),
-    Internal(String),
-}
-
-impl IntoResponse for AppError {
-    fn into_response(self) -> Response {
-        let (status, error_message) = match self {
-            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
-            AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-        };
-
-        let body = Json(ErrorResponse {
-            error: error_message,
-        });
-
-        (status, body).into_response()
     }
 }
