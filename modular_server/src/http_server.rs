@@ -79,7 +79,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 let yaml = match serde_yaml::to_string(&msg) {
                     Ok(y) => y,
                     Err(e) => {
-                        error!("Failed to serialize message: {}", e);
+                        error!("Failed to serialize message to YAML: {}", e);
                         continue;
                     }
                 };

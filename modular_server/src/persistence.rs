@@ -33,7 +33,8 @@ mod tests {
     use super::*;
     use modular_core::types::{ModuleState, Param};
     use std::collections::HashMap;
-    use tempfile::tempdir;
+    use std::io::Write;
+    use tempfile::{tempdir, NamedTempFile};
     
     #[test]
     fn test_save_load_roundtrip() {
@@ -60,10 +61,48 @@ mod tests {
         assert_eq!(loaded.modules[0].id, "sine-1");
         assert_eq!(loaded.modules[0].module_type, "sine-oscillator");
     }
+
+    #[test]
+    fn test_load_yaml_format() {
+        let yaml = r#"
+modules:
+  - id: sine-1
+    module_type: sine-oscillator
+    params:
+      freq:
+        param_type: value
+        value: 4.0
+  - id: signal
+    module_type: signal
+    params:
+      input:
+        param_type: cable
+        module: sine-1
+        port: output
+"#;
+        
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(yaml.as_bytes()).unwrap();
+        
+        let loaded = load_patch(temp_file.path()).unwrap();
+        
+        assert_eq!(loaded.modules.len(), 2);
+        assert_eq!(loaded.modules[0].id, "sine-1");
+        assert_eq!(loaded.modules[1].id, "signal");
+    }
     
     #[test]
     fn test_load_nonexistent_file() {
         let result = load_patch(Path::new("/nonexistent/path.yaml"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_invalid_yaml() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(b"invalid: yaml: content: [").unwrap();
+        
+        let result = load_patch(temp_file.path());
         assert!(result.is_err());
     }
     

@@ -82,6 +82,16 @@ impl ValidationError {
     }
 }
 
+impl std::fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(ref location) = self.location {
+            write!(f, "{}: {} (at {})", self.field, self.message, location)
+        } else {
+            write!(f, "{}: {}", self.field, self.message)
+        }
+    }
+}
+
 /// Serialize a message to YAML
 pub fn serialize_message<T: Serialize>(message: &T) -> Result<String, serde_yaml::Error> {
     serde_yaml::to_string(message)
@@ -151,6 +161,32 @@ patch:
                 assert_eq!(patch.modules.len(), 1);
             }
             _ => panic!("Expected SetPatch message"),
+        }
+    }
+    
+    #[test]
+    fn test_yaml_parse_mute() {
+        let yaml = "type: mute\n";
+        let msg: InputMessage = deserialize_message(yaml).unwrap();
+        assert!(matches!(msg, InputMessage::Mute));
+    }
+
+    #[test]
+    fn test_yaml_parse_subscribe_audio() {
+        let yaml = r#"
+type: subscribe-audio
+module_id: sine-1
+port: output
+buffer_size: 512
+"#;
+        let msg: InputMessage = deserialize_message(yaml).unwrap();
+        match msg {
+            InputMessage::SubscribeAudio { module_id, port, buffer_size } => {
+                assert_eq!(module_id, "sine-1");
+                assert_eq!(port, "output");
+                assert_eq!(buffer_size, 512);
+            }
+            _ => panic!("Expected SubscribeAudio message"),
         }
     }
 }

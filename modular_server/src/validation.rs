@@ -5,6 +5,15 @@ use crate::protocol::ValidationError;
 
 /// Validate a patch against the module schemas
 /// Returns all validation errors found (not just the first)
+/// 
+/// Validates:
+/// - All module types exist in the schema
+/// - All cable source/target modules exist in the patch
+/// - All cable source ports (outputs) exist on their respective modules
+/// - All cable target ports (params) exist on their respective modules
+/// 
+/// Note: Cycles in the graph are allowed (not an error condition)
+/// Note: Any output can be routed to any param (no type compatibility checking needed)
 pub fn validate_patch(patch: &PatchGraph, schemas: &[ModuleSchema]) -> Result<(), Vec<ValidationError>> {
     let mut errors = Vec::new();
     
@@ -69,7 +78,7 @@ pub fn validate_patch(patch: &PatchGraph, schemas: &[ModuleSchema]) -> Result<()
                             if !valid_outputs.contains(port.as_str()) {
                                 errors.push(ValidationError::with_location(
                                     format!("params.{}.port", param_name),
-                                    format!("Port '{}' not found on module type '{}'", port, source.module_type),
+                                    format!("Output port '{}' not found on module type '{}'", port, source.module_type),
                                     format!("modules.{}.params.{}", module.id, param_name),
                                 ));
                             }
@@ -80,9 +89,14 @@ pub fn validate_patch(patch: &PatchGraph, schemas: &[ModuleSchema]) -> Result<()
             
             // Check track references
             if let Param::Track { track: track_id } = param {
-                // TODO: Track validation requires track state to be passed in.
-                // For now, track validation is handled at runtime when applying the patch.
-                let _ = track_id; // Suppress unused warning
+                // Track validation: check it's not empty
+                if track_id.is_empty() {
+                    errors.push(ValidationError::with_location(
+                        "track",
+                        "Track ID cannot be empty".to_string(),
+                        format!("modules.{}.params.{}", module.id, param_name),
+                    ));
+                }
             }
         }
     }
@@ -246,7 +260,41 @@ mod tests {
         assert!(result.is_err());
         let errors = result.unwrap_err();
         assert_eq!(errors.len(), 1);
-        assert!(errors[0].message.contains("Port 'invalid_port' not found"));
+        assert!(errors[0].message.contains("Output port 'invalid_port' not found"));
+    }
+
+    #[test]
+    fn test_valid_cable_connection() {
+        let schemas = create_test_schemas();
+        
+        let mut sine_params = HashMap::new();
+        sine_params.insert("freq".to_string(), Param::Value { value: 4.0 });
+        
+        let mut signal_params = HashMap::new();
+        signal_params.insert(
+            "source".to_string(),
+            Param::Cable {
+                module: "sine-1".to_string(),
+                port: "output".to_string(),
+            },
+        );
+        
+        let patch = PatchGraph {
+            modules: vec![
+                ModuleState {
+                    id: "sine-1".to_string(),
+                    module_type: "sine-oscillator".to_string(),
+                    params: sine_params,
+                },
+                ModuleState {
+                    id: "signal-1".to_string(),
+                    module_type: "signal".to_string(),
+                    params: signal_params,
+                },
+            ],
+        };
+        
+        assert!(validate_patch(&patch, &schemas).is_ok());
     }
     
     #[test]
@@ -270,5 +318,15 @@ mod tests {
         assert!(result.is_err());
         let errors = result.unwrap_err();
         assert_eq!(errors.len(), 2);
+    }
+
+    #[test]
+    fn test_empty_patch_is_valid() {
+        let schemas = create_test_schemas();
+        let patch = PatchGraph {
+            modules: Vec::new(),
+        };
+        
+        assert!(validate_patch(&patch, &schemas).is_ok());
     }
 }
