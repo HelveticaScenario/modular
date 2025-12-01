@@ -11,21 +11,33 @@ cargo run --bin modular_server -- --port 7812
 
 ### 2. Create some audio modules
 
-Using the WebSocket API, create a module that generates audio:
+Using the WebSocket API with YAML messages, create a patch that generates audio:
 
 ```bash
 # Connect with a WebSocket client (e.g., wscat)
 npm install -g wscat
 wscat -c ws://localhost:7812/ws
+```
 
-# Create a sine wave oscillator
-{"type":"create-module","module_type":"sine-oscillator","id":"sine-1"}
+Send a patch configuration (declarative API):
 
-# Set its frequency to 440Hz (4.0v in v/oct)
-{"type":"update-param","id":"sine-1","param_name":"freq","param":{"param_type":"value","value":4.0}}
-
-# Connect it to the root output
-{"type":"update-param","id":"root","param_name":"source","param":{"param_type":"cable","module":"sine-1","port":"output"}}
+```yaml
+type: set-patch
+graph:
+  modules:
+    - id: sine-1
+      module_type: sine-oscillator
+      params:
+        freq:
+          param_type: value
+          value: 4.0
+    - id: root
+      module_type: signal
+      params:
+        source:
+          param_type: cable
+          module: sine-1
+          port: output
 ```
 
 ### 3. Open the oscilloscope
@@ -81,21 +93,17 @@ You should now see the waveform visualized in real-time!
 ### Message Protocol
 
 #### Subscribe to audio (Client → Server)
-```json
-{
-  "type": "subscribe-audio",
-  "module_id": "sine-1",
-  "port": "output",
-  "buffer_size": 512
-}
+```yaml
+type: subscribe-audio
+module_id: sine-1
+port: output
+buffer_size: 512
 ```
 
 #### Audio subscribed confirmation (Server → Client)
-```json
-{
-  "type": "audio-subscribed",
-  "subscription_id": "uuid-here"
-}
+```yaml
+type: audio-subscribed
+subscription_id: uuid-here
 ```
 
 #### Audio buffer (Server → Client, binary)
@@ -104,11 +112,9 @@ You should now see the waveform visualized in real-time!
 ```
 
 #### Unsubscribe (Client → Server)
-```json
-{
-  "type": "unsubscribe-audio",
-  "subscription_id": "uuid-here"
-}
+```yaml
+type: unsubscribe-audio
+subscription_id: uuid-here
 ```
 
 ## Tips

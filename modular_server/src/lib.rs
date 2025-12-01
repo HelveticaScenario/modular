@@ -6,7 +6,12 @@ use tokio::sync::{Mutex as TokioMutex, broadcast};
 use modular_core::Modular;
 
 mod http_server;
+pub mod persistence;
+pub mod protocol;
+pub mod validation;
+
 pub use http_server::{AppState, create_router, forward_output_messages};
+pub use protocol::{InputMessage, OutputMessage};
 
 pub fn create_app_state() -> (
     AppState,

@@ -1339,13 +1339,17 @@ dependencies = [
  "ctrlc",
  "futures-util",
  "modular_core",
+ "parking_lot",
  "serde",
  "serde_json",
+ "serde_yaml",
+ "tempfile",
  "tokio",
  "tower",
  "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
