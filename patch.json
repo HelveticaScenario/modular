@@ -1,51 +1,65 @@
 {
-  "modules": [
-    {
-      "id": "osc",
-      "module_type": "sine-oscillator",
-      "params": {
-        "freq": {
-          "param_type": "cable",
-          "module": "lfo",
-          "port": "output"
-        }
-      }
-    },
-    {
-      "id": "lfo",
-      "module_type": "sine-oscillator",
-      "params": {
-        "freq": {
-          "param_type": "value",
-          "value": 2.4
-        }
-      }
-    },
-    {
-      "id": "amp",
-      "module_type": "scale-and-shift",
-      "params": {
-        "scale": {
-          "param_type": "value",
-          "value": 5.0
+    "modules": {
+        "osc": {
+            "module_type": "sine-oscillator",
+            "params": {
+                "freq": {
+                    "param_type": "cable",
+                    "module": "lfo-attenuator",
+                    "port": "output"
+                }
+            }
         },
-        "input": {
-          "param_type": "cable",
-          "module": "osc",
-          "port": "output"
+        "lfo": {
+            "module_type": "sine-oscillator",
+            "params": {
+                "freq": {
+                    "param_type": "value",
+                    "value": 0.01
+                }
+            }
+        },
+        "lfo-attenuator": {
+            "module_type": "scale-and-shift",
+            "params": {
+                "input": {
+                    "param_type": "cable",
+                    "module": "lfo",
+                    "port": "output"
+                },
+                "scale": {
+                    "param_type": "value",
+                    "value": 0.2
+                },
+                "shift": {
+                    "param_type": "note",
+                    "value": 70
+                }
+            }
+        },
+        "amp": {
+            "module_type": "scale-and-shift",
+            "params": {
+                "input": {
+                    "param_type": "cable",
+                    "module": "osc",
+                    "port": "output"
+                },
+                "scale": {
+                    "param_type": "value",
+                    "value": 5.0
+                }
+            }
+        },
+        "root": {
+            "module_type": "signal",
+            "params": {
+                "source": {
+                    "param_type": "cable",
+                    "module": "amp",
+                    "port": "output"
+                }
+            }
         }
-      }
-    },
-    {
-      "id": "root",
-      "module_type": "signal",
-      "params": {
-        "source": {
-          "param_type": "cable",
-          "module": "amp",
-          "port": "output"
-        }
-      }
     }
-  ]
 }

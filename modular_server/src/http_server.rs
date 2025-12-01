@@ -171,15 +171,28 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     
     let mut send_task = tokio::spawn(async move {
         while let Ok(msg) = broadcast_rx.recv().await {
-            let json = match serde_json::to_string(&msg) {
-                Ok(j) => j,
-                Err(e) => {
-                    error!("Failed to serialize message: {}", e);
-                    continue;
+            // Check if this is an audio buffer message - send as binary
+            let message = if let OutputMessage::AudioBuffer { subscription_id, samples } = &msg {
+                // Convert to binary: subscription_id as null-terminated string + f32 samples
+                let mut bytes = subscription_id.as_bytes().to_vec();
+                bytes.push(0); // null terminator
+                for sample in samples {
+                    bytes.extend_from_slice(&sample.to_le_bytes());
                 }
+                Message::Binary(bytes)
+            } else {
+                // Regular JSON message
+                let json = match serde_json::to_string(&msg) {
+                    Ok(j) => j,
+                    Err(e) => {
+                        error!("Failed to serialize message: {}", e);
+                        continue;
+                    }
+                };
+                Message::Text(json)
             };
             
-            if sender.send(Message::Text(json)).await.is_err() {
+            if sender.send(message).await.is_err() {
                 break;
             }
         }

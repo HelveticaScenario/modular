@@ -34,6 +34,10 @@ pub enum InputMessage {
     DeleteTrack { id: String },
     UpsertKeyframe { keyframe: Keyframe },
     DeleteKeyframe { track_id: String, keyframe_id: String },
+    
+    // Audio streaming
+    SubscribeAudio { module_id: String, port: String, buffer_size: usize },
+    UnsubscribeAudio { subscription_id: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,6 +51,10 @@ pub enum OutputMessage {
     CreateModule { module_type: String, id: String },
     CreateTrack { id: String },
     Error { message: String },
+    
+    // Audio streaming
+    AudioSubscribed { subscription_id: String },
+    AudioBuffer { subscription_id: String, samples: Vec<f32> },
 }
 
 pub fn handle_message(
@@ -186,6 +194,30 @@ pub fn handle_message(
             {
                 track.remove_keyframe(keyframe_id);
             }
+        }
+        InputMessage::SubscribeAudio { module_id, port, buffer_size } => {
+            let subscription_id = uuid::Uuid::new_v4().to_string();
+            let subscription = crate::patch::AudioSubscription {
+                id: subscription_id.clone(),
+                module_id,
+                port,
+                buffer_size,
+            };
+            
+            patch
+                .try_lock_for(Duration::from_millis(10))
+                .unwrap()
+                .audio_subscriptions
+                .insert(subscription_id.clone(), subscription);
+            
+            sender.send(OutputMessage::AudioSubscribed { subscription_id })?;
+        }
+        InputMessage::UnsubscribeAudio { subscription_id } => {
+            patch
+                .try_lock_for(Duration::from_millis(10))
+                .unwrap()
+                .audio_subscriptions
+                .remove(&subscription_id);
         }
     };
     Ok(())

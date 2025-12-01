@@ -29,13 +29,13 @@ async fn main() -> anyhow::Result<()> {
     let patch_file = if args.len() > 1 {
         PathBuf::from(&args[1])
     } else {
-        PathBuf::from("patch.json")
+        PathBuf::from("patch.yaml")
     };
 
     if !patch_file.exists() {
         eprintln!("Patch file not found: {}", patch_file.display());
-        eprintln!("Usage: cargo run --example watch_patch [path/to/patch.json]");
-        eprintln!("\nCreating example patch.json file...");
+        eprintln!("Usage: cargo run --example watch_patch [path/to/patch.yaml]");
+        eprintln!("\nCreating example patch.yaml file...");
         create_example_patch(&patch_file)?;
         println!("Created {}", patch_file.display());
     }
@@ -129,7 +129,7 @@ fn load_and_apply_patch(
     outgoing_tx: &mpsc::Sender<InputMessage>,
 ) -> anyhow::Result<()> {
     let contents = std::fs::read_to_string(path)?;
-    let file_graph: FilePatchGraph = serde_json::from_str(&contents)?;
+    let file_graph: FilePatchGraph = serde_yaml::from_str(&contents)?;
     
     // Convert from file format (object with ID keys) to internal format (array with id field)
     let graph = PatchGraph {
@@ -183,7 +183,7 @@ fn create_example_patch(path: &PathBuf) -> anyhow::Result<()> {
         ]),
     };
 
-    let json = serde_json::to_string_pretty(&example_graph)?;
-    std::fs::write(path, json)?;
+    let yaml = serde_yaml::to_string(&example_graph)?;
+    std::fs::write(path, yaml)?;
     Ok(())
 }

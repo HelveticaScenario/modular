@@ -17,6 +17,9 @@ pub mod patch;
 mod sequence;
 pub mod types;
 
+// Re-export audio streaming types
+pub use patch::AudioSubscription;
+
 use std::thread;
 
 use cpal::traits::{DeviceTrait, HostTrait};
