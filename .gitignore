@@ -2,3 +2,9 @@
 *.wav
 .DS_Store
 .patch.yaml
+
+# Generated TypeScript types (run `cargo test export_types -- --ignored` to regenerate)
+modular_web/src/types/generated/
+
+# Built web UI (run `cd modular_web && pnpm run build` to regenerate)
+modular_server/static/
