@@ -49,3 +49,132 @@ where
     }
     val
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Tests for make_integral_fractional
+    #[test]
+    fn test_make_integral_fractional_positive() {
+        let (integral, fractional) = make_integral_fractional(3.75);
+        assert_eq!(integral, 3);
+        assert!((fractional - 0.75).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_make_integral_fractional_whole_number() {
+        let (integral, fractional) = make_integral_fractional(5.0);
+        assert_eq!(integral, 5);
+        assert!((fractional - 0.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_make_integral_fractional_negative() {
+        let (integral, fractional) = make_integral_fractional(-2.25);
+        assert_eq!(integral, -2);
+        // -2.25 - (-2) = -0.25
+        assert!((fractional - (-0.25)).abs() < 0.0001);
+    }
+
+    // Tests for semitones_to_ratio
+    #[test]
+    fn test_semitones_to_ratio_zero() {
+        // 0 semitones = ratio of 1.0
+        let ratio = semitones_to_ratio(0.0);
+        assert!((ratio - 1.0).abs() < 0.01, "0 semitones should be ratio 1.0, got {}", ratio);
+    }
+
+    #[test]
+    fn test_semitones_to_ratio_octave_up() {
+        // 12 semitones = ratio of 2.0 (one octave up)
+        let ratio = semitones_to_ratio(12.0);
+        assert!((ratio - 2.0).abs() < 0.01, "12 semitones should be ratio 2.0, got {}", ratio);
+    }
+
+    #[test]
+    fn test_semitones_to_ratio_octave_down() {
+        // -12 semitones = ratio of 0.5 (one octave down)
+        let ratio = semitones_to_ratio(-12.0);
+        assert!((ratio - 0.5).abs() < 0.01, "-12 semitones should be ratio 0.5, got {}", ratio);
+    }
+
+    #[test]
+    fn test_semitones_to_ratio_perfect_fifth() {
+        // 7 semitones = ratio of ~1.498 (perfect fifth)
+        let ratio = semitones_to_ratio(7.0);
+        assert!((ratio - 1.498).abs() < 0.01, "7 semitones should be ~1.498, got {}", ratio);
+    }
+
+    // Tests for clamp
+    #[test]
+    fn test_clamp_within_range() {
+        assert_eq!(clamp(0.0, 10.0, 5.0), 5.0);
+    }
+
+    #[test]
+    fn test_clamp_below_min() {
+        assert_eq!(clamp(0.0, 10.0, -5.0), 0.0);
+    }
+
+    #[test]
+    fn test_clamp_above_max() {
+        assert_eq!(clamp(0.0, 10.0, 15.0), 10.0);
+    }
+
+    #[test]
+    fn test_clamp_at_min() {
+        assert_eq!(clamp(0.0, 10.0, 0.0), 0.0);
+    }
+
+    #[test]
+    fn test_clamp_at_max() {
+        assert_eq!(clamp(0.0, 10.0, 10.0), 10.0);
+    }
+
+    #[test]
+    fn test_clamp_integers() {
+        assert_eq!(clamp(0, 100, 50), 50);
+        assert_eq!(clamp(0, 100, -10), 0);
+        assert_eq!(clamp(0, 100, 200), 100);
+    }
+
+    // Tests for wrap
+    #[test]
+    fn test_wrap_within_range() {
+        let result: f32 = wrap(0.0..1.0, 0.5);
+        assert!((result - 0.5).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_wrap_above_range() {
+        let result: f32 = wrap(0.0..1.0, 1.5);
+        assert!((result - 0.5).abs() < 0.0001, "1.5 wrapped to 0-1 should be 0.5, got {}", result);
+    }
+
+    #[test]
+    fn test_wrap_below_range() {
+        let result: f32 = wrap(0.0..1.0, -0.25);
+        assert!((result - 0.75).abs() < 0.0001, "-0.25 wrapped to 0-1 should be 0.75, got {}", result);
+    }
+
+    #[test]
+    fn test_wrap_multiple_times_above() {
+        let result: f32 = wrap(0.0..1.0, 2.75);
+        assert!((result - 0.75).abs() < 0.0001, "2.75 wrapped to 0-1 should be 0.75, got {}", result);
+    }
+
+    #[test]
+    fn test_wrap_phase_range() {
+        // Common use case: wrapping phase in range 0..2*PI
+        use std::f32::consts::PI;
+        let result: f32 = wrap(0.0..(2.0 * PI), 3.0 * PI);
+        assert!((result - PI).abs() < 0.0001, "3*PI wrapped to 0..2*PI should be PI, got {}", result);
+    }
+
+    #[test]
+    fn test_wrap_integer() {
+        let result = wrap(0..10, 15);
+        assert_eq!(result, 5);
+    }
+}

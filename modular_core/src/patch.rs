@@ -38,3 +38,30 @@ impl Patch {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_patch_new_empty() {
+        let patch = Patch::new(HashMap::new(), HashMap::new());
+        assert!(patch.sampleables.is_empty());
+        assert!(patch.tracks.is_empty());
+    }
+
+    #[test]
+    fn test_patch_get_state_empty() {
+        let patch = Patch::new(HashMap::new(), HashMap::new());
+        let state = patch.get_state();
+        assert!(state.is_empty());
+    }
+
+    #[test]
+    fn test_patch_get_output_no_root() {
+        let patch = Patch::new(HashMap::new(), HashMap::new());
+        let output = patch.get_output();
+        assert!((output - 0.0).abs() < 0.0001, "No root module should return 0.0");
+    }
+}
