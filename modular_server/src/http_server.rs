@@ -12,6 +12,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tower_http::cors::CorsLayer;
+use tower_http::services::{ServeDir, ServeFile};
 use tracing::{error, info};
 
 use modular_core::dsp::{get_constructors, schema};
@@ -31,11 +32,23 @@ pub struct AppState {
 
 // Build the Axum router
 pub fn create_router(state: AppState) -> Router {
+    // Serve static files from the static directory
+    // Falls back to index.html for SPA routing
+    let static_dir = std::env::current_dir()
+        .unwrap_or_default()
+        .join("modular_server")
+        .join("static");
+    
+    let serve_dir = ServeDir::new(&static_dir)
+        .not_found_service(ServeFile::new(static_dir.join("index.html")));
+
     Router::new()
         // WebSocket endpoint
         .route("/ws", get(ws_handler))
         // Health check
         .route("/health", get(health_check))
+        // Static files (must be last as it's a fallback)
+        .fallback_service(serve_dir)
         .layer(CorsLayer::permissive())
         .with_state(state)
 }
