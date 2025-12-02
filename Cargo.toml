@@ -3,7 +3,5 @@ resolver = "3"
 members = [
     "modular_core",
     "modular_server",
-    "modular_client",
-    "modular_derive",
-    # "modular_web"
+    "modular_derive"
 ]
