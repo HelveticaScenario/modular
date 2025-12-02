@@ -13,7 +13,7 @@ serde_yaml = "0.9"
 serde = { version = "1.0", features = ["derive"] }
 ctrlc = "3.4"
 clap = "4.5"
-uuid = { version = "1.11", features = ["v4"] }
+uuid = { version = "1.11", features = ["v4", "serde"] }
 parking_lot = "0.12"
 modular_core = { version = "*", path = "../modular_core"}
 
@@ -21,10 +21,15 @@ modular_core = { version = "*", path = "../modular_core"}
 axum = { version = "0.7", features = ["ws"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
-tower-http = { version = "0.5", features = ["cors", "trace"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "fs"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 futures-util = "0.3"
+
+# Audio
+cpal = { version = "0.16", features = ["asio"] }
+hound = "3.5"
+crossbeam-channel = "0.5"
 
 [dev-dependencies]
 tempfile = "3"

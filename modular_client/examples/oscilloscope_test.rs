@@ -1,7 +1,7 @@
 // Example: Create a sine wave for oscilloscope testing
 use anyhow::Result;
 use modular_client::http_client;
-use modular_core::message::{InputMessage, OutputMessage};
+use modular_server::protocol::{InputMessage, OutputMessage};
 use modular_core::types::{Param, PatchGraph, ModuleState};
 use std::collections::HashMap;
 use std::sync::mpsc::channel;
@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
 
     // Send complete patch
     input_tx.send(InputMessage::SetPatch {
-        graph: PatchGraph {
+        patch: PatchGraph {
             modules: vec![sine_module, root_module],
         },
     })?;
@@ -70,10 +70,10 @@ async fn main() -> Result<()> {
     // Monitor responses
     for response in rx {
         match response {
-            OutputMessage::PatchState { modules } => {
-                println!("Patch updated with {} modules", modules.len());
+            OutputMessage::PatchState { patch } => {
+                println!("Patch updated with {} modules", patch.modules.len());
             }
-            OutputMessage::Error { message } => {
+            OutputMessage::Error { message, errors: _ } => {
                 eprintln!("Error: {}", message);
             }
             other => {

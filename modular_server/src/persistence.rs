@@ -1,24 +1,30 @@
-use std::path::Path;
+use anyhow::{Context, Result};
 use modular_core::types::PatchGraph;
+use std::fs;
+use std::path::Path;
 
 /// Save a patch to a YAML file
-pub fn save_patch(path: &Path, patch: &PatchGraph) -> anyhow::Result<()> {
-    let yaml = serde_yaml::to_string(patch)?;
-    std::fs::write(path, yaml)?;
+pub fn save_patch(path: &Path, patch: &PatchGraph) -> Result<()> {
+    let yaml = serde_yaml::to_string(patch)
+        .context("Failed to serialize patch to YAML")?;
+    fs::write(path, yaml)
+        .with_context(|| format!("Failed to write patch to {}", path.display()))?;
     Ok(())
 }
 
 /// Load a patch from a YAML file
-pub fn load_patch(path: &Path) -> anyhow::Result<PatchGraph> {
-    let yaml = std::fs::read_to_string(path)?;
-    let patch: PatchGraph = serde_yaml::from_str(&yaml)?;
+pub fn load_patch(path: &Path) -> Result<PatchGraph> {
+    let yaml = fs::read_to_string(path)
+        .with_context(|| format!("Failed to read patch from {}", path.display()))?;
+    let patch: PatchGraph = serde_yaml::from_str(&yaml)
+        .context("Failed to parse patch YAML")?;
     Ok(patch)
 }
 
-/// Create a default empty patch
-pub fn default_patch() -> PatchGraph {
+/// Create an empty default patch
+pub fn create_default_patch() -> PatchGraph {
     PatchGraph {
-        modules: Vec::new(),
+        modules: vec![],
     }
 }
 
@@ -28,10 +34,13 @@ mod tests {
     use modular_core::types::{ModuleState, Param};
     use std::collections::HashMap;
     use std::io::Write;
-    use tempfile::NamedTempFile;
-
+    use tempfile::{tempdir, NamedTempFile};
+    
     #[test]
     fn test_save_load_roundtrip() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("test_patch.yaml");
+        
         let mut params = HashMap::new();
         params.insert("freq".to_string(), Param::Value { value: 4.0 });
         
@@ -41,15 +50,12 @@ mod tests {
                     id: "sine-1".to_string(),
                     module_type: "sine-oscillator".to_string(),
                     params,
-                },
+                }
             ],
         };
         
-        let temp_file = NamedTempFile::new().unwrap();
-        let path = temp_file.path();
-        
-        save_patch(path, &patch).unwrap();
-        let loaded = load_patch(path).unwrap();
+        save_patch(&path, &patch).unwrap();
+        let loaded = load_patch(&path).unwrap();
         
         assert_eq!(loaded.modules.len(), 1);
         assert_eq!(loaded.modules[0].id, "sine-1");
@@ -84,7 +90,7 @@ modules:
         assert_eq!(loaded.modules[0].id, "sine-1");
         assert_eq!(loaded.modules[1].id, "signal");
     }
-
+    
     #[test]
     fn test_load_nonexistent_file() {
         let result = load_patch(Path::new("/nonexistent/path.yaml"));
@@ -99,10 +105,10 @@ modules:
         let result = load_patch(temp_file.path());
         assert!(result.is_err());
     }
-
+    
     #[test]
-    fn test_default_patch() {
-        let patch = default_patch();
+    fn test_create_default_patch() {
+        let patch = create_default_patch();
         assert!(patch.modules.is_empty());
     }
 }

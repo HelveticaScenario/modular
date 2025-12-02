@@ -1,16 +1,13 @@
 use std::{collections::HashMap, sync::mpsc, time::Duration};
 
 use modular_client::http_client::spawn_client;
-use modular_core::{
-    message::InputMessage,
-    types::{ModuleState, Param, PatchGraph},
-};
-use modular_server::run_server;
+use modular_core::types::{ModuleState, Param, PatchGraph};
+use modular_server::{protocol::InputMessage, run_server, ServerConfig};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tokio::spawn(async {
-        if let Err(e) = run_server(7812).await {
+        if let Err(e) = run_server(ServerConfig { port: 7812, patch_file: None }).await {
             eprintln!("Server error: {}", e);
         }
     });
@@ -115,7 +112,7 @@ async fn main() -> anyhow::Result<()> {
             ("mode".to_string(), Param::Value { value: mode }),
         ]);
         outgoing_tx.send(InputMessage::SetPatch {
-            graph: build_patch("sem-filter", "sem", params),
+            patch: build_patch("sem-filter", "sem", params),
         })?;
         tokio::time::sleep(Duration::from_millis(600)).await;
     }
@@ -132,7 +129,7 @@ async fn main() -> anyhow::Result<()> {
             ("vowel".to_string(), Param::Value { value: i as f32 }),
         ]);
         outgoing_tx.send(InputMessage::SetPatch {
-            graph: build_patch("formant-filter", "formant", params),
+            patch: build_patch("formant-filter", "formant", params),
         })?;
         tokio::time::sleep(Duration::from_millis(700)).await;
     }
@@ -189,7 +186,7 @@ async fn main() -> anyhow::Result<()> {
         let cutoff = 2.5 + (i as f32 / 40.0) * 4.0;
         let mut patch = svf_patch.clone();
         patch.modules[1].params.insert("cutoff".to_string(), Param::Value { value: cutoff });
-        outgoing_tx.send(InputMessage::SetPatch { graph: patch })?;
+        outgoing_tx.send(InputMessage::SetPatch { patch: patch })?;
         tokio::time::sleep(Duration::from_millis(30)).await;
     }
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -238,7 +235,7 @@ async fn sweep_filter(
         let cutoff = 2.5 + (i as f32 / 40.0) * 4.0;
         base_params.insert("cutoff".to_string(), Param::Value { value: cutoff });
         outgoing_tx.send(InputMessage::SetPatch {
-            graph: build_patch(filter_type, filter_id, base_params.clone()),
+            patch: build_patch(filter_type, filter_id, base_params.clone()),
         })?;
         tokio::time::sleep(Duration::from_millis(30)).await;
     }

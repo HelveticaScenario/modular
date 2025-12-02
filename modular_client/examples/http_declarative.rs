@@ -2,14 +2,14 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use modular_core::types::{ModuleState, Param, PatchGraph};
-use modular_server::run_server;
+use modular_server::{run_server, ServerConfig};
 use reqwest::Client;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Spawn the server
     tokio::spawn(async {
-        if let Err(e) = run_server(7812).await {
+        if let Err(e) = run_server(ServerConfig { port: 7812, patch_file: None }).await {
             eprintln!("Server error: {}", e);
         }
     });
