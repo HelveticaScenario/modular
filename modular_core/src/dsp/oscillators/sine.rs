@@ -32,7 +32,7 @@ impl SineOscillator {
         if self.params.phase != InternalParam::Disconnected {
             self.sample = wrap(0.0..1.0, self.params.phase.get_value())
         } else {
-            let target_freq = clamp(-12.0, 12.0, self.params.freq.get_value_or(4.0));
+            let target_freq = clamp(-10.0, 10.0, self.params.freq.get_value_or(4.0));
             self.smoothed_freq = crate::types::smooth_value(self.smoothed_freq, target_freq);
             let voltage = self.smoothed_freq;
             let frequency = 27.5f32 * 2.0f32.powf(voltage) / sample_rate;

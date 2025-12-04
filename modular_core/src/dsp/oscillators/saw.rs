@@ -41,7 +41,7 @@ impl SawOscillator {
             (wrapped_phase, phase_inc)
         } else {
             // Normal frequency-driven oscillation
-            let target_freq = clamp(self.params.freq.get_value_or(4.0), 12.0, 0.0);
+            let target_freq = clamp(-10.0, 10.0, self.params.freq.get_value_or(4.0));
             self.smoothed_freq = crate::types::smooth_value(self.smoothed_freq, target_freq);
             
             let voltage = self.smoothed_freq;
@@ -51,7 +51,7 @@ impl SawOscillator {
             self.phase += phase_increment;
             
             // Wrap phase
-            if self.phase >= 1.0 {
+            while self.phase >= 1.0 {
                 self.phase -= 1.0;
             }
             

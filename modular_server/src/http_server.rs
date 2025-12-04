@@ -244,7 +244,6 @@ async fn handle_message(
     }
 }
 
-// TODO handle case where id is the same but module_type is different - need to delete and recreate
 async fn apply_patch(
     audio_state: &Arc<AudioState>,
     desired_graph: &PatchGraph,
@@ -265,16 +264,35 @@ async fn apply_patch(
     println!("Desired IDs: {:?}", desired_ids);
 
     // Find modules to delete (in current but not in desired), excluding root
-    let to_delete: Vec<String> = current_ids
+    let mut to_delete: Vec<String> = current_ids
         .difference(&desired_ids)
         .filter(|id| *id != "root")
         .cloned()
         .collect();
 
+    // Find modules where type changed (same ID but different module_type)
+    // These need to be deleted and recreated
+    let mut to_recreate: Vec<String> = Vec::new();
+    for id in current_ids.intersection(&desired_ids) {
+        if id == "root" {
+            continue; // Never recreate root
+        }
+        if let (Some(current_module), Some(desired_module)) =
+            (patch_lock.sampleables.get(id), desired_modules.get(id))
+        {
+            let current_state = current_module.get_state();
+            if current_state.module_type != desired_module.module_type {
+                to_recreate.push(id.clone());
+                to_delete.push(id.clone());
+            }
+        }
+    }
+
     println!("To delete: {:?}", to_delete);
 
-    // Find modules to create (in desired but not in current)
-    let to_create: Vec<String> = desired_ids.difference(&current_ids).cloned().collect();
+    // Find modules to create (in desired but not in current, plus recreated modules)
+    let mut to_create: Vec<String> = desired_ids.difference(&current_ids).cloned().collect();
+    to_create.extend(to_recreate);
 
     println!("To create: {:?}", to_create);
 
@@ -328,6 +346,8 @@ async fn apply_patch(
 }
 // Handle WebSocket connection
 async fn handle_socket(socket: WebSocket, state: AppState) {
+    info!("New WebSocket connection established");
+
     use futures_util::{SinkExt, StreamExt};
 
     let subscriptions = Arc::new(tokio::sync::Mutex::new(HashMap::<

@@ -24,7 +24,7 @@ pub struct PulseOscillator {
 
 impl PulseOscillator {
     fn update(&mut self, sample_rate: f32) -> () {
-        let target_freq = clamp(self.params.freq.get_value_or(4.0), 12.0, 0.0);
+        let target_freq = clamp(-10.0, 10.0, self.params.freq.get_value_or(4.0));
         let base_width = self.params.width.get_value_or(2.5);
         let pwm = self.params.pwm.get_value_or(0.0);
         let target_width = (base_width + pwm).clamp(0.0, 5.0);

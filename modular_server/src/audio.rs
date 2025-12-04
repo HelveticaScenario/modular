@@ -317,9 +317,7 @@ pub fn send_audio_buffers(audio_state: &Arc<AudioState>) {
                     subscription: sub.clone(),
                     samples: samples.clone(),
                 }) {
-                    Ok(_) => {
-                        println!("Sent audio buffer for subscription: {:?}", sub);
-                    }
+                    Ok(_) => {}
                     Err(e) => {
                         eprintln!("Failed to send audio buffer: {}", e);
                     }
@@ -343,8 +341,8 @@ pub fn get_sample_rate() -> Result<f32> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_audio_subscription() {
+    #[tokio::test]
+    async fn test_audio_subscription() {
         let patch = Arc::new(tokio::sync::Mutex::new(Patch::new(
             HashMap::new(),
             HashMap::new(),
@@ -356,7 +354,7 @@ mod tests {
         };
 
         let (tx, rx) = tokio::sync::mpsc::channel(10);
-        state.add_subscription(sub.clone(), tx);
+        state.add_subscription(sub.clone(), tx).await;
 
         assert!(
             state
