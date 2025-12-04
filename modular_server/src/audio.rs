@@ -1,19 +1,19 @@
 use anyhow::Result;
-use crossbeam_channel::Sender;
+use cpal::FromSample;
+use cpal::SizedSample;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::StreamInstant;
+
 use hound::{WavSpec, WavWriter};
-use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use modular_core::patch::Patch;
+use crate::protocol::AudioSubscription;
 use crate::protocol::OutputMessage;
+use modular_core::patch::Patch;
 
 /// Attenuation factor applied to audio output to prevent clipping.
 /// DSP modules output signals in the range [-5, 5] volts (modular synth convention).
@@ -22,84 +22,156 @@ const AUDIO_OUTPUT_ATTENUATION: f32 = 5.0;
 
 /// Audio subscription for streaming samples to clients
 #[derive(Clone)]
-pub struct AudioSubscription {
-    pub id: String,
-    pub module_id: String,
-    pub port: String,
-    pub buffer_size: usize,
+pub struct RingBuffer {
+    pub buffer: Vec<f32>,
+    capacity: usize,
+    index: usize,
+}
+
+impl RingBuffer {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            buffer: Vec::with_capacity(capacity),
+            capacity,
+            index: 0,
+        }
+    }
+
+    pub fn push(&mut self, value: f32) {
+        if self.buffer.len() < self.capacity {
+            self.buffer.push(value);
+        } else {
+            self.buffer[self.index] = value;
+        }
+        self.index = (self.index + 1) % self.capacity;
+    }
+
+    pub fn to_vec(&self) -> Vec<f32> {
+        let mut vec = Vec::with_capacity(self.buffer.len());
+        for i in 0..self.buffer.len() {
+            let idx = (self.index + i) % self.buffer.len();
+            vec.push(self.buffer[idx]);
+        }
+        vec
+    }
 }
 
 /// Shared audio state between audio thread and server
 pub struct AudioState {
-    pub patch: Arc<Mutex<Patch>>,
+    pub patch: Arc<tokio::sync::Mutex<Patch>>,
+    pub patch_code: String,
     pub muted: Arc<AtomicBool>,
-    pub subscriptions: Arc<Mutex<HashMap<String, AudioSubscription>>>,
-    pub audio_buffers: Arc<Mutex<HashMap<String, Vec<f32>>>>,
-    pub recording_writer: Arc<Mutex<Option<WavWriter<BufWriter<File>>>>>,
-    pub recording_path: Arc<Mutex<Option<PathBuf>>>,
+    pub subscription_collection: Arc<tokio::sync::Mutex<AudioSubscriptionCollection>>,
+    pub recording_writer: Arc<tokio::sync::Mutex<Option<WavWriter<BufWriter<File>>>>>,
+    pub recording_path: Arc<tokio::sync::Mutex<Option<PathBuf>>>,
     pub sample_rate: f32,
 }
 
+pub struct AudioSubscriptionCollection {
+    pub subscriptions: HashMap<AudioSubscription, AudioSubscriptionBuffer>,
+}
+
+impl AudioSubscriptionCollection {
+    pub fn new() -> Self {
+        Self {
+            subscriptions: HashMap::new(),
+        }
+    }
+
+    pub fn clean(&mut self) {
+        self.subscriptions.retain(|_, buf| {
+            buf.clean_txs();
+            !buf.txs.is_empty()
+        });
+    }
+}
+
+pub struct AudioSubscriptionBuffer {
+    pub buffer: RingBuffer,
+    pub txs: Vec<tokio::sync::mpsc::Sender<OutputMessage>>,
+}
+
+impl AudioSubscriptionBuffer {
+    pub fn new(buffer_size: usize) -> Self {
+        Self {
+            buffer: RingBuffer::new(buffer_size),
+            txs: Vec::new(),
+        }
+    }
+
+    pub fn clean_txs(&mut self) {
+        self.txs.retain(|tx| !tx.is_closed());
+    }
+}
+
 impl AudioState {
-    pub fn new(patch: Arc<Mutex<Patch>>, sample_rate: f32) -> Self {
+    pub fn new(
+        patch: Arc<tokio::sync::Mutex<Patch>>,
+        patch_code: String,
+        sample_rate: f32,
+    ) -> Self {
         Self {
             patch,
+            patch_code,
             muted: Arc::new(AtomicBool::new(false)),
-            subscriptions: Arc::new(Mutex::new(HashMap::new())),
-            audio_buffers: Arc::new(Mutex::new(HashMap::new())),
-            recording_writer: Arc::new(Mutex::new(None)),
-            recording_path: Arc::new(Mutex::new(None)),
+            subscription_collection: Arc::new(tokio::sync::Mutex::new(
+                AudioSubscriptionCollection::new(),
+            )),
+            recording_writer: Arc::new(tokio::sync::Mutex::new(None)),
+            recording_path: Arc::new(tokio::sync::Mutex::new(None)),
             sample_rate,
         }
     }
-    
+
     pub fn set_muted(&self, muted: bool) {
         self.muted.store(muted, Ordering::SeqCst);
     }
-    
+
     pub fn is_muted(&self) -> bool {
         self.muted.load(Ordering::SeqCst)
     }
-    
-    pub fn add_subscription(&self, subscription: AudioSubscription) -> String {
-        let id = subscription.id.clone();
-        self.subscriptions.lock().insert(id.clone(), subscription);
-        id
+
+    pub async fn add_subscription(
+        &self,
+        subscription: AudioSubscription,
+        tx: tokio::sync::mpsc::Sender<OutputMessage>,
+    ) {
+        let mut subscription_collection = self.subscription_collection.lock().await;
+        let subscription_buffer = subscription_collection
+            .subscriptions
+            .entry(subscription.clone())
+            .or_insert(AudioSubscriptionBuffer::new(512));
+
+        subscription_buffer.txs.push(tx);
     }
-    
-    pub fn remove_subscription(&self, id: &str) {
-        self.subscriptions.lock().remove(id);
-        self.audio_buffers.lock().remove(id);
-    }
-    
-    pub fn start_recording(&self, filename: Option<String>) -> Result<String> {
-        let filename = filename.unwrap_or_else(|| {
-            format!("recording_{}.wav", chrono_simple_timestamp())
-        });
+
+    pub async fn start_recording(&self, filename: Option<String>) -> Result<String> {
+        let filename =
+            filename.unwrap_or_else(|| format!("recording_{}.wav", chrono_simple_timestamp()));
         let path = PathBuf::from(&filename);
-        
+
         let spec = WavSpec {
             channels: 1,
             sample_rate: self.sample_rate as u32,
             bits_per_sample: 32,
             sample_format: hound::SampleFormat::Float,
         };
-        
+
         let writer = WavWriter::create(&path, spec)?;
-        *self.recording_writer.lock() = Some(writer);
-        *self.recording_path.lock() = Some(path);
-        
+        *self.recording_writer.lock().await = Some(writer);
+        *self.recording_path.lock().await = Some(path);
+
         Ok(filename)
     }
-    
-    pub fn stop_recording(&self) -> Result<Option<String>> {
-        let writer = self.recording_writer.lock().take();
-        let path = self.recording_path.lock().take();
-        
+
+    pub async fn stop_recording(&self) -> Result<Option<String>> {
+        let writer = self.recording_writer.lock().await.take();
+        let path = self.recording_path.lock().await.take();
+
         if let Some(w) = writer {
             w.finalize()?;
         }
-        
+
         Ok(path.map(|p| p.to_string_lossy().to_string()))
     }
 }
@@ -111,218 +183,147 @@ fn chrono_simple_timestamp() -> String {
 }
 
 /// Run the audio thread with cpal
-pub fn run_audio_thread(
-    audio_state: Arc<AudioState>,
-    output_tx: Sender<OutputMessage>,
-) -> Result<cpal::Stream> {
+pub fn run_audio_thread(audio_state: Arc<AudioState>) -> Result<cpal::Stream> {
     let host = cpal::default_host();
-    let device = host.default_output_device()
+    let device = host
+        .default_output_device()
         .ok_or_else(|| anyhow::anyhow!("No audio output device found"))?;
     let config = device.default_output_config()?;
     let sample_rate = config.sample_rate().0 as f32;
     let channels = config.channels() as usize;
-    
+
     tracing::info!("Audio: {} Hz, {} channels", sample_rate, channels);
-    
-    let mut last_instant: Option<StreamInstant> = None;
-    
+
     let stream = match config.sample_format() {
-        cpal::SampleFormat::F32 => {
-            device.build_output_stream(
-                &config.into(),
-                move |data: &mut [f32], info: &_| {
-                    let new_instant = info.timestamp().callback;
-                    let delta = last_instant
-                        .and_then(|last| new_instant.duration_since(&last))
-                        .unwrap_or(Duration::from_nanos(0));
-                    last_instant = Some(new_instant);
-                    
-                    write_audio_data(data, channels, &audio_state, &delta, &output_tx);
-                },
-                |err| tracing::error!("Audio error: {}", err),
-                None,
-            )?
-        }
-        cpal::SampleFormat::I16 => {
-            device.build_output_stream(
-                &config.into(),
-                move |data: &mut [i16], info: &_| {
-                    let new_instant = info.timestamp().callback;
-                    let delta = last_instant
-                        .and_then(|last| new_instant.duration_since(&last))
-                        .unwrap_or(Duration::from_nanos(0));
-                    last_instant = Some(new_instant);
-                    
-                    write_audio_data_i16(data, channels, &audio_state, &delta, &output_tx);
-                },
-                |err| tracing::error!("Audio error: {}", err),
-                None,
-            )?
-        }
-        cpal::SampleFormat::U16 => {
-            device.build_output_stream(
-                &config.into(),
-                move |data: &mut [u16], info: &_| {
-                    let new_instant = info.timestamp().callback;
-                    let delta = last_instant
-                        .and_then(|last| new_instant.duration_since(&last))
-                        .unwrap_or(Duration::from_nanos(0));
-                    last_instant = Some(new_instant);
-                    
-                    write_audio_data_u16(data, channels, &audio_state, &delta, &output_tx);
-                },
-                |err| tracing::error!("Audio error: {}", err),
-                None,
-            )?
-        }
-        _ => return Err(anyhow::anyhow!("Unsupported audio sample format")),
+        cpal::SampleFormat::I8 => make_stream::<i8>(&device, &config.into(), &audio_state)?,
+        cpal::SampleFormat::I16 => make_stream::<i16>(&device, &config.into(), &audio_state)?,
+        cpal::SampleFormat::I32 => make_stream::<i32>(&device, &config.into(), &audio_state)?,
+        cpal::SampleFormat::F32 => make_stream::<f32>(&device, &config.into(), &audio_state)?,
+        _ => Err(anyhow::anyhow!(
+            "Unsupported sample format: {:?}",
+            config.sample_format()
+        ))?,
     };
-    
+
     stream.play()?;
     Ok(stream)
 }
 
-fn write_audio_data(
-    output: &mut [f32],
-    channels: usize,
+pub fn make_stream<T>(
+    device: &cpal::Device,
+    config: &cpal::StreamConfig,
     audio_state: &Arc<AudioState>,
-    delta: &Duration,
-    output_tx: &Sender<OutputMessage>,
-) {
-    for frame in output.chunks_mut(channels) {
-        let sample = process_frame(audio_state, delta, output_tx);
-        let muted = audio_state.is_muted();
-        let output_sample = if muted { 0.0 } else { sample / AUDIO_OUTPUT_ATTENUATION };
-        
-        for s in frame.iter_mut() {
-            *s = output_sample;
-        }
-        
-        // Record if enabled
-        if let Some(ref mut writer) = *audio_state.recording_writer.lock() {
-            let _ = writer.write_sample(output_sample);
-        }
-    }
+) -> Result<cpal::Stream, anyhow::Error>
+where
+    T: SizedSample + FromSample<f32> + hound::Sample,
+{
+    let num_channels = config.channels as usize;
+
+    let err_fn = |err| eprintln!("Error building output sound stream: {err}");
+
+    let time_at_start = std::time::Instant::now();
+    println!("Time at start: {time_at_start:?}");
+    let audio_state = audio_state.clone();
+
+    let stream = device.build_output_stream(
+        config,
+        move |output: &mut [T], _: &cpal::OutputCallbackInfo| {
+            for frame in output.chunks_mut(num_channels) {
+                let sample = process_frame(&audio_state);
+                let muted = audio_state.is_muted();
+                let output_sample = T::from_sample(if muted {
+                    0.0
+                } else {
+                    sample / AUDIO_OUTPUT_ATTENUATION
+                });
+
+                for s in frame.iter_mut() {
+                    *s = output_sample;
+                }
+
+                // Record if enabled (use try_lock to avoid blocking audio)
+                if let Ok(mut writer_guard) = audio_state.recording_writer.try_lock() {
+                    if let Some(ref mut writer) = *writer_guard {
+                        let _ = writer.write_sample(output_sample);
+                    }
+                }
+            }
+        },
+        err_fn,
+        None,
+    )?;
+
+    Ok(stream)
 }
 
-fn write_audio_data_i16(
-    output: &mut [i16],
-    channels: usize,
-    audio_state: &Arc<AudioState>,
-    delta: &Duration,
-    output_tx: &Sender<OutputMessage>,
-) {
-    for frame in output.chunks_mut(channels) {
-        let sample = process_frame(audio_state, delta, output_tx);
-        let muted = audio_state.is_muted();
-        let output_sample = if muted { 0.0 } else { sample / AUDIO_OUTPUT_ATTENUATION };
-        let sample_i16 = (output_sample * i16::MAX as f32) as i16;
-        
-        for s in frame.iter_mut() {
-            *s = sample_i16;
-        }
-        
-        // Record if enabled
-        if let Some(ref mut writer) = *audio_state.recording_writer.lock() {
-            let _ = writer.write_sample(output_sample);
-        }
-    }
-}
-
-fn write_audio_data_u16(
-    output: &mut [u16],
-    channels: usize,
-    audio_state: &Arc<AudioState>,
-    delta: &Duration,
-    output_tx: &Sender<OutputMessage>,
-) {
-    for frame in output.chunks_mut(channels) {
-        let sample = process_frame(audio_state, delta, output_tx);
-        let muted = audio_state.is_muted();
-        let output_sample = if muted { 0.0 } else { sample / AUDIO_OUTPUT_ATTENUATION };
-        let sample_u16 = ((output_sample + 1.0) * 0.5 * u16::MAX as f32) as u16;
-        
-        for s in frame.iter_mut() {
-            *s = sample_u16;
-        }
-        
-        // Record if enabled
-        if let Some(ref mut writer) = *audio_state.recording_writer.lock() {
-            let _ = writer.write_sample(output_sample);
-        }
-    }
-}
-
-fn process_frame(
-    audio_state: &Arc<AudioState>,
-    delta: &Duration,
-    output_tx: &Sender<OutputMessage>,
-) -> f32 {
+fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
     use modular_core::types::ROOT_ID;
-    
-    let patch = audio_state.patch.lock();
-    
+
+    // Try to acquire patch lock - if we can't, skip this frame to avoid blocking audio
+    let patch_guard = match audio_state.patch.try_lock() {
+        Ok(guard) => guard,
+        Err(_) => return 0.0, // Skip frame if patch is locked by another thread
+    };
+
     // Update tracks
-    for (_, track) in patch.tracks.iter() {
-        track.tick(delta);
+    for (_, track) in patch_guard.tracks.iter() {
+        track.tick();
     }
-    
+
     // Update sampleables
-    for (_, module) in patch.sampleables.iter() {
+    for (_, module) in patch_guard.sampleables.iter() {
         module.update();
     }
-    
+
     // Tick sampleables
-    for (_, module) in patch.sampleables.iter() {
+    for (_, module) in patch_guard.sampleables.iter() {
         module.tick();
     }
-    
+
     // Capture audio for subscriptions
-    let subscriptions = audio_state.subscriptions.lock();
-    for (sub_id, subscription) in subscriptions.iter() {
-        if let Some(module) = patch.sampleables.get(&subscription.module_id) {
-            if let Ok(sample) = module.get_sample(&subscription.port) {
-                let mut buffers = audio_state.audio_buffers.lock();
-                let buffer = buffers.entry(sub_id.clone()).or_insert_with(Vec::new);
-                buffer.push(sample);
-                
-                // Keep buffer from growing indefinitely
-                if buffer.len() > subscription.buffer_size * 10 {
-                    buffer.drain(0..subscription.buffer_size);
+    if let Ok(mut sub_collection) = audio_state.subscription_collection.try_lock() {
+        for (subscription, subscription_buffer) in sub_collection.subscriptions.iter_mut() {
+            if let Some(module) = patch_guard.sampleables.get(&subscription.module_id) {
+                if let Ok(sample) = module.get_sample(&subscription.port) {
+                    subscription_buffer.buffer.push(sample);
                 }
             }
         }
     }
-    drop(subscriptions);
-    
-    // Send audio buffers when ready
-    send_audio_buffers(audio_state, output_tx);
-    
-    // Get output sample
-    if let Some(root) = patch.sampleables.get(&*ROOT_ID) {
+
+    // Get output sample before dropping lock
+    let output_sample = if let Some(root) = patch_guard.sampleables.get(&*ROOT_ID) {
         root.get_sample(&"output".to_string()).unwrap_or(0.0)
     } else {
         0.0
-    }
+    };
+
+    output_sample
 }
 
-fn send_audio_buffers(audio_state: &Arc<AudioState>, output_tx: &Sender<OutputMessage>) {
-    let subscriptions: Vec<(String, usize)> = audio_state
-        .subscriptions
-        .lock()
-        .iter()
-        .map(|(id, sub)| (id.clone(), sub.buffer_size))
-        .collect();
-    
-    let mut buffers = audio_state.audio_buffers.lock();
-    for (sub_id, buffer_size) in subscriptions {
-        if let Some(buffer) = buffers.get_mut(&sub_id) {
-            if buffer.len() >= buffer_size {
-                let samples: Vec<f32> = buffer.drain(0..buffer_size).collect();
-                let _ = output_tx.try_send(OutputMessage::AudioBuffer {
-                    subscription_id: sub_id,
-                    samples,
-                });
+pub fn send_audio_buffers(audio_state: &Arc<AudioState>) {
+    let mut subscription_collection = match audio_state.subscription_collection.try_lock() {
+        Ok(subscription_collection) => subscription_collection,
+        Err(_) => return, // Skip if locked
+    };
+    subscription_collection.clean();
+    for (sub, AudioSubscriptionBuffer { buffer, txs }) in
+        subscription_collection.subscriptions.iter()
+    {
+        if buffer.buffer.len() >= buffer.capacity {
+            let samples: Vec<f32> = buffer.to_vec();
+            for tx in txs.iter() {
+                match tx.try_send(OutputMessage::AudioBuffer {
+                    subscription: sub.clone(),
+                    samples: samples.clone(),
+                }) {
+                    Ok(_) => {
+                        println!("Sent audio buffer for subscription: {:?}", sub);
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to send audio buffer: {}", e);
+                    }
+                }
             }
         }
     }
@@ -331,7 +332,8 @@ fn send_audio_buffers(audio_state: &Arc<AudioState>, output_tx: &Sender<OutputMe
 /// Get the sample rate from the default audio device
 pub fn get_sample_rate() -> Result<f32> {
     let host = cpal::default_host();
-    let device = host.default_output_device()
+    let device = host
+        .default_output_device()
         .ok_or_else(|| anyhow::anyhow!("No audio output device found"))?;
     let config = device.default_output_config()?;
     Ok(config.sample_rate().0 as f32)
@@ -340,33 +342,50 @@ pub fn get_sample_rate() -> Result<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_audio_subscription() {
-        let patch = Arc::new(Mutex::new(Patch::new(HashMap::new(), HashMap::new())));
-        let state = AudioState::new(patch, 48000.0);
-        
+        let patch = Arc::new(tokio::sync::Mutex::new(Patch::new(
+            HashMap::new(),
+            HashMap::new(),
+        )));
+        let state = AudioState::new(patch, "".into(), 48000.0);
         let sub = AudioSubscription {
-            id: "test-sub".to_string(),
             module_id: "sine-1".to_string(),
             port: "output".to_string(),
-            buffer_size: 512,
         };
-        
-        let id = state.add_subscription(sub);
-        assert_eq!(id, "test-sub");
-        
-        assert!(state.subscriptions.lock().contains_key("test-sub"));
-        
-        state.remove_subscription("test-sub");
-        assert!(!state.subscriptions.lock().contains_key("test-sub"));
+
+        let (tx, rx) = tokio::sync::mpsc::channel(10);
+        state.add_subscription(sub.clone(), tx);
+
+        assert!(
+            state
+                .subscription_collection
+                .try_lock()
+                .unwrap()
+                .subscriptions
+                .contains_key(&sub)
+        );
+        drop(rx); // Close the receiver to simulate client disconnect
+        state.subscription_collection.try_lock().unwrap().clean();
+        assert!(
+            !state
+                .subscription_collection
+                .try_lock()
+                .unwrap()
+                .subscriptions
+                .contains_key(&sub)
+        );
     }
-    
+
     #[test]
     fn test_mute_state() {
-        let patch = Arc::new(Mutex::new(Patch::new(HashMap::new(), HashMap::new())));
-        let state = AudioState::new(patch, 48000.0);
-        
+        let patch = Arc::new(tokio::sync::Mutex::new(Patch::new(
+            HashMap::new(),
+            HashMap::new(),
+        )));
+        let state = AudioState::new(patch, "".into(), 48000.0);
+
         assert!(!state.is_muted());
         state.set_muted(true);
         assert!(state.is_muted());

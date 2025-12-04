@@ -64,7 +64,7 @@ fn test_sine_oscillator_produces_output() {
     if let Some(module) = patch.sampleables.get("sine-1") {
         let _ = module.update_param(
             &"freq".to_string(),
-            &InternalParam::Value { value: 4.0 },
+            &InternalParam::Volts { value: 4.0 },
         );
     }
     
@@ -93,7 +93,7 @@ fn test_sine_oscillator_amplitude() {
     if let Some(module) = patch.sampleables.get("sine-1") {
         let _ = module.update_param(
             &"freq".to_string(),
-            &InternalParam::Value { value: 4.0 },
+            &InternalParam::Volts { value: 4.0 },
         );
     }
     
@@ -122,7 +122,7 @@ fn test_cable_connection() {
     if let Some(module) = patch.sampleables.get("sine-1") {
         let _ = module.update_param(
             &"freq".to_string(),
-            &InternalParam::Value { value: 4.0 },
+            &InternalParam::Volts { value: 4.0 },
         );
     }
     
@@ -159,7 +159,7 @@ fn test_scale_and_shift_module() {
     if let Some(module) = patch.sampleables.get("sine-1") {
         let _ = module.update_param(
             &"freq".to_string(),
-            &InternalParam::Value { value: 4.0 },
+            &InternalParam::Volts { value: 4.0 },
         );
     }
     
@@ -176,7 +176,7 @@ fn test_scale_and_shift_module() {
         // Set scale to 0.5 (halve amplitude)
         let _ = scaler.update_param(
             &"scale".to_string(),
-            &InternalParam::Value { value: 0.5 },
+            &InternalParam::Volts { value: 0.5 },
         );
     }
     
@@ -208,7 +208,7 @@ fn test_patch_get_state() {
     if let Some(module) = patch.sampleables.get("sine-1") {
         let _ = module.update_param(
             &"freq".to_string(),
-            &InternalParam::Value { value: 4.0 },
+            &InternalParam::Volts { value: 4.0 },
         );
     }
     
@@ -252,7 +252,7 @@ fn test_saw_oscillator_produces_output() {
     if let Some(module) = patch.sampleables.get("saw-1") {
         let _ = module.update_param(
             &"freq".to_string(),
-            &InternalParam::Value { value: 4.0 },
+            &InternalParam::Volts { value: 4.0 },
         );
     }
     
@@ -280,12 +280,12 @@ fn test_pulse_oscillator_produces_output() {
     if let Some(module) = patch.sampleables.get("pulse-1") {
         let _ = module.update_param(
             &"freq".to_string(),
-            &InternalParam::Value { value: 4.0 },
+            &InternalParam::Volts { value: 4.0 },
         );
         // Set pulse width to square wave (2.5)
         let _ = module.update_param(
             &"width".to_string(),
-            &InternalParam::Value { value: 2.5 },
+            &InternalParam::Volts { value: 2.5 },
         );
     }
     
@@ -314,7 +314,7 @@ fn test_lowpass_filter() {
     if let Some(module) = patch.sampleables.get("sine-1") {
         let _ = module.update_param(
             &"freq".to_string(),
-            &InternalParam::Value { value: 8.0 }, // High frequency
+            &InternalParam::Volts { value: 8.0 }, // High frequency
         );
     }
     
@@ -331,7 +331,7 @@ fn test_lowpass_filter() {
         // Very low cutoff to attenuate high frequencies
         let _ = lp.update_param(
             &"cutoff".to_string(),
-            &InternalParam::Value { value: 1.0 },
+            &InternalParam::Volts { value: 1.0 },
         );
     }
     
@@ -361,10 +361,10 @@ fn test_sum_module() {
     
     // Set different frequencies
     if let Some(module) = patch.sampleables.get("sine-1") {
-        let _ = module.update_param(&"freq".to_string(), &InternalParam::Value { value: 4.0 });
+        let _ = module.update_param(&"freq".to_string(), &InternalParam::Volts { value: 4.0 });
     }
     if let Some(module) = patch.sampleables.get("sine-2") {
-        let _ = module.update_param(&"freq".to_string(), &InternalParam::Value { value: 5.0 });
+        let _ = module.update_param(&"freq".to_string(), &InternalParam::Volts { value: 5.0 });
     }
     
     // Connect both sines to sum (using correct param names: input-1, input-2)
@@ -405,7 +405,7 @@ fn test_highpass_filter() {
     if let Some(module) = patch.sampleables.get("sine-1") {
         let _ = module.update_param(
             &"freq".to_string(),
-            &InternalParam::Value { value: 2.0 }, // Low frequency
+            &InternalParam::Volts { value: 2.0 }, // Low frequency
         );
     }
     
@@ -422,7 +422,7 @@ fn test_highpass_filter() {
         // High cutoff to attenuate low frequencies
         let _ = hp.update_param(
             &"cutoff".to_string(),
-            &InternalParam::Value { value: 8.0 },
+            &InternalParam::Volts { value: 8.0 },
         );
     }
     
@@ -450,7 +450,7 @@ fn test_bandpass_filter() {
     add_module(&mut patch, "bp", "bandpass-filter");
     
     if let Some(module) = patch.sampleables.get("sine-1") {
-        let _ = module.update_param(&"freq".to_string(), &InternalParam::Value { value: 4.0 });
+        let _ = module.update_param(&"freq".to_string(), &InternalParam::Volts { value: 4.0 });
     }
     
     if let Some(bp) = patch.sampleables.get("bp") {
@@ -462,8 +462,8 @@ fn test_bandpass_filter() {
                 port: "output".to_string(),
             },
         );
-        let _ = bp.update_param(&"center".to_string(), &InternalParam::Value { value: 4.0 });
-        let _ = bp.update_param(&"q".to_string(), &InternalParam::Value { value: 1.0 });
+        let _ = bp.update_param(&"center".to_string(), &InternalParam::Volts { value: 4.0 });
+        let _ = bp.update_param(&"q".to_string(), &InternalParam::Volts { value: 1.0 });
     }
     
     let mut filtered_samples = Vec::new();
@@ -487,7 +487,7 @@ fn test_notch_filter() {
     add_module(&mut patch, "notch", "notch");
     
     if let Some(module) = patch.sampleables.get("sine-1") {
-        let _ = module.update_param(&"freq".to_string(), &InternalParam::Value { value: 4.0 });
+        let _ = module.update_param(&"freq".to_string(), &InternalParam::Volts { value: 4.0 });
     }
     
     if let Some(notch) = patch.sampleables.get("notch") {
@@ -500,8 +500,8 @@ fn test_notch_filter() {
             },
         );
         // Set notch at the signal frequency to reject it
-        let _ = notch.update_param(&"cutoff".to_string(), &InternalParam::Value { value: 4.0 });
-        let _ = notch.update_param(&"resonance".to_string(), &InternalParam::Value { value: 0.9 });
+        let _ = notch.update_param(&"cutoff".to_string(), &InternalParam::Volts { value: 4.0 });
+        let _ = notch.update_param(&"resonance".to_string(), &InternalParam::Volts { value: 0.9 });
     }
     
     let mut sine_samples = Vec::new();
@@ -527,7 +527,7 @@ fn test_allpass_filter() {
     add_module(&mut patch, "ap", "allpass-filter");
     
     if let Some(module) = patch.sampleables.get("sine-1") {
-        let _ = module.update_param(&"freq".to_string(), &InternalParam::Value { value: 4.0 });
+        let _ = module.update_param(&"freq".to_string(), &InternalParam::Volts { value: 4.0 });
     }
     
     if let Some(ap) = patch.sampleables.get("ap") {
@@ -539,8 +539,8 @@ fn test_allpass_filter() {
                 port: "output".to_string(),
             },
         );
-        let _ = ap.update_param(&"frequency".to_string(), &InternalParam::Value { value: 4.0 });
-        let _ = ap.update_param(&"q".to_string(), &InternalParam::Value { value: 1.0 });
+        let _ = ap.update_param(&"frequency".to_string(), &InternalParam::Volts { value: 4.0 });
+        let _ = ap.update_param(&"q".to_string(), &InternalParam::Volts { value: 1.0 });
     }
     
     let mut sine_samples = Vec::new();
@@ -568,10 +568,10 @@ fn test_mix_module() {
     add_module(&mut patch, "mixer", "mix");
     
     if let Some(module) = patch.sampleables.get("sine-1") {
-        let _ = module.update_param(&"freq".to_string(), &InternalParam::Value { value: 4.0 });
+        let _ = module.update_param(&"freq".to_string(), &InternalParam::Volts { value: 4.0 });
     }
     if let Some(module) = patch.sampleables.get("sine-2") {
-        let _ = module.update_param(&"freq".to_string(), &InternalParam::Value { value: 5.0 });
+        let _ = module.update_param(&"freq".to_string(), &InternalParam::Volts { value: 5.0 });
     }
     
     if let Some(mixer) = patch.sampleables.get("mixer") {
@@ -586,7 +586,7 @@ fn test_mix_module() {
             &InternalParam::Cable { module: Arc::downgrade(sine2), port: "output".to_string() },
         );
         // Set mix to midpoint
-        let _ = mixer.update_param(&"mix".to_string(), &InternalParam::Value { value: 2.5 });
+        let _ = mixer.update_param(&"mix".to_string(), &InternalParam::Volts { value: 2.5 });
     }
     
     let mut mix_samples = Vec::new();
@@ -609,7 +609,7 @@ fn test_frequency_modulation() {
     
     // LFO at very low frequency
     if let Some(lfo) = patch.sampleables.get("lfo") {
-        let _ = lfo.update_param(&"freq".to_string(), &InternalParam::Value { value: 0.0 });
+        let _ = lfo.update_param(&"freq".to_string(), &InternalParam::Volts { value: 0.0 });
     }
     
     // Scale LFO output for FM depth
@@ -619,8 +619,8 @@ fn test_frequency_modulation() {
             &"input".to_string(),
             &InternalParam::Cable { module: Arc::downgrade(lfo), port: "output".to_string() },
         );
-        let _ = scaler.update_param(&"scale".to_string(), &InternalParam::Value { value: 0.1 });
-        let _ = scaler.update_param(&"shift".to_string(), &InternalParam::Value { value: 4.0 });
+        let _ = scaler.update_param(&"scale".to_string(), &InternalParam::Volts { value: 0.1 });
+        let _ = scaler.update_param(&"shift".to_string(), &InternalParam::Volts { value: 4.0 });
     }
     
     // Connect scaled LFO to carrier frequency
@@ -650,7 +650,7 @@ fn test_parameter_update() {
     
     // Set initial frequency
     if let Some(module) = patch.sampleables.get("sine-1") {
-        let _ = module.update_param(&"freq".to_string(), &InternalParam::Value { value: 4.0 });
+        let _ = module.update_param(&"freq".to_string(), &InternalParam::Volts { value: 4.0 });
     }
     
     // Process a few frames
@@ -660,7 +660,7 @@ fn test_parameter_update() {
     
     // Update frequency
     if let Some(module) = patch.sampleables.get("sine-1") {
-        let _ = module.update_param(&"freq".to_string(), &InternalParam::Value { value: 5.0 });
+        let _ = module.update_param(&"freq".to_string(), &InternalParam::Volts { value: 5.0 });
     }
     
     // Process more frames and ensure no crash
@@ -682,8 +682,8 @@ fn test_module_get_state_accuracy() {
     
     // Set multiple params
     if let Some(module) = patch.sampleables.get("sine-1") {
-        let _ = module.update_param(&"freq".to_string(), &InternalParam::Value { value: 4.5 });
-        let _ = module.update_param(&"phase".to_string(), &InternalParam::Value { value: 0.25 });
+        let _ = module.update_param(&"freq".to_string(), &InternalParam::Volts { value: 4.5 });
+        let _ = module.update_param(&"phase".to_string(), &InternalParam::Volts { value: 0.25 });
     }
     
     let state = patch.get_state();
@@ -720,7 +720,7 @@ fn test_signal_passthrough() {
     add_module(&mut patch, "sig", "signal");
     
     if let Some(module) = patch.sampleables.get("sine-1") {
-        let _ = module.update_param(&"freq".to_string(), &InternalParam::Value { value: 4.0 });
+        let _ = module.update_param(&"freq".to_string(), &InternalParam::Volts { value: 4.0 });
     }
     
     if let Some(sig) = patch.sampleables.get("sig") {

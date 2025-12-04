@@ -1,5 +1,3 @@
-pub const SAMPLE_RATE: f32 = 44100.0;
-
 // ported from https://github.com/pichenettes/stmlib/blob/fd5a4203acf7741f8e13bd4c067ac465bfd1bf25/dsp/units.cc
 // Conversion from semitones to frequency ratio.
 pub const LUT_PITCH_RATIO_HIGH: &'static [f32] = &[

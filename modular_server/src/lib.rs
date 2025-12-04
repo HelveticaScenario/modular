@@ -1,12 +1,13 @@
-use crossbeam_channel::unbounded;
+use modular_core::PatchGraph;
 use parking_lot::Mutex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
+use tracing::{error, info};
 
 use modular_core::dsp::get_constructors;
-use modular_core::Patch;
+use modular_core::{Patch, dsp::schema};
 
 pub mod audio;
 mod http_server;
@@ -14,9 +15,12 @@ pub mod persistence;
 pub mod protocol;
 pub mod validation;
 
-pub use audio::{AudioState, AudioSubscription};
-pub use http_server::{AppState, create_router, forward_output_messages};
-pub use protocol::{InputMessage, OutputMessage, ValidationError};
+pub use audio::AudioState;
+pub use http_server::{AppState, create_router};
+pub use protocol::{AudioSubscription, InputMessage, OutputMessage, ValidationError};
+
+use crate::audio::send_audio_buffers;
+use crate::validation::validate_patch;
 
 /// Server configuration
 pub struct ServerConfig {
@@ -34,9 +38,7 @@ impl Default for ServerConfig {
 }
 
 /// Create shared state for the server
-pub fn create_server_state(sample_rate: f32) -> (Arc<AudioState>, crossbeam_channel::Sender<OutputMessage>, crossbeam_channel::Receiver<OutputMessage>) {
-    let (output_tx, output_rx) = unbounded();
-    
+pub fn create_server_state(sample_rate: f32) -> Arc<AudioState> {
     // Create patch with root module
     let mut sampleables = HashMap::new();
     let constructors = get_constructors();
@@ -45,11 +47,14 @@ pub fn create_server_state(sample_rate: f32) -> (Arc<AudioState>, crossbeam_chan
             sampleables.insert("root".to_string(), module);
         }
     }
-    
-    let patch = Arc::new(Mutex::new(Patch::new(sampleables, HashMap::new())));
-    let audio_state = Arc::new(AudioState::new(patch, sample_rate));
-    
-    (audio_state, output_tx, output_rx)
+
+    let patch = Arc::new(tokio::sync::Mutex::new(Patch::new(
+        sampleables,
+        HashMap::new(),
+    )));
+    let audio_state = Arc::new(AudioState::new(patch, "".into(), sample_rate));
+
+    audio_state
 }
 
 pub async fn run_server(config: ServerConfig) -> anyhow::Result<()> {
@@ -59,40 +64,67 @@ pub async fn run_server(config: ServerConfig) -> anyhow::Result<()> {
     // Get sample rate from audio device
     let sample_rate = audio::get_sample_rate()?;
     tracing::info!("Audio sample rate: {} Hz", sample_rate);
-    
+
     // Create server state
-    let (audio_state, output_tx, output_rx) = create_server_state(sample_rate);
-    
+    let audio_state = create_server_state(sample_rate);
+
     // Start audio thread
-    let audio_state_clone = Arc::clone(&audio_state);
-    let output_tx_clone = output_tx.clone();
-    let _stream = audio::run_audio_thread(audio_state_clone, output_tx_clone)?;
-    
-    // Create broadcast channel for WebSocket clients
-    let (broadcast_tx, _) = broadcast::channel(100);
-    
+    let _stream = audio::run_audio_thread(audio_state.clone())?;
+
     // Create app state
     let state = AppState {
-        audio_state,
-        broadcast_tx: broadcast_tx.clone(),
-        sample_rate,
+        audio_state: audio_state.clone(),
     };
-    
-    // Spawn task to forward output messages to broadcast
-    let output_rx_clone = output_rx;
+
+    // Spawn task to send audio buffers periodically
+    let audio_state_clone = audio_state.clone();
     tokio::spawn(async move {
-        forward_output_messages(output_rx_clone, broadcast_tx).await;
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            send_audio_buffers(&audio_state_clone.clone());
+        }
     });
 
     // Create router
     let app = create_router(state);
 
     // Start server
-    let addr = format!("127.0.0.1:{}", config.port);
+    let addr = format!("localhost:{}", config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    tracing::info!("HTTP server listening on {}", addr);
+    tracing::info!("HTTP server listening on http://{}", addr);
 
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    /// This test exports TypeScript types from Rust structs.
+    /// Run with: cargo test export_types -- --ignored
+    #[test]
+    #[ignore]
+    fn export_types() {
+        use crate::protocol::*;
+        use modular_core::types::*;
+        use ts_rs::TS;
+
+        // Core types
+        Param::export_all().expect("Failed to export Param");
+        Keyframe::export_all().expect("Failed to export Keyframe");
+        Playmode::export_all().expect("Failed to export Playmode");
+        Track::export_all().expect("Failed to export Track");
+        TrackUpdate::export_all().expect("Failed to export TrackUpdate");
+        PortSchema::export_all().expect("Failed to export PortSchema");
+        ModuleSchema::export_all().expect("Failed to export ModuleSchema");
+        ModuleState::export_all().expect("Failed to export ModuleState");
+        PatchGraph::export_all().expect("Failed to export PatchGraph");
+
+        // Protocol types
+        InputMessage::export_all().expect("Failed to export InputMessage");
+        OutputMessage::export_all().expect("Failed to export OutputMessage");
+        ValidationError::export_all().expect("Failed to export ValidationError");
+
+        println!("TypeScript types exported successfully!");
+    }
 }

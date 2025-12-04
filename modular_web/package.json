@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "codegen": "cd .. && cargo test export_types -- --ignored"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.0",
@@ -17,7 +18,9 @@
     "@uiw/react-codemirror": "^4.25.3",
     "codemirror": "^6.0.2",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-use-websocket": "^4.13.0",
+    "yaml": "^2.8.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

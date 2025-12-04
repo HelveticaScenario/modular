@@ -31,5 +31,8 @@ cpal = { version = "0.16", features = ["asio"] }
 hound = "3.5"
 crossbeam-channel = "0.5"
 
+# TypeScript type generation
+ts-rs = { version = "11", features = ["serde-compat"] }
+
 [dev-dependencies]
 tempfile = "3"

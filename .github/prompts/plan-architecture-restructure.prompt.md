@@ -115,8 +115,6 @@
      - Add unit tests for each validation case
 
 4. **Update documentation**
-   - Revise `JSON_API.md` to show only declarative SetPatch + audio streaming examples
-   - Update `OSCILLOSCOPE.md` and `demo.sh` to use SetPatch instead of imperative calls
    - Remove examples of CRUD operations from docs
 
 5. **Add static file serving to `modular_server`**

@@ -19,7 +19,7 @@ export function PatchEditor({ value, onChange, onSubmit, onStop, disabled }: Pat
   const customKeymap = useMemo(() => keymap.of([
     {
       key: 'Ctrl-Enter',
-      mac: 'Cmd-Enter',
+      mac: 'Alt-Enter',
       run: () => {
         onSubmit()
         return true
@@ -27,7 +27,7 @@ export function PatchEditor({ value, onChange, onSubmit, onStop, disabled }: Pat
     },
     {
       key: 'Ctrl-.',
-      mac: 'Cmd-.',
+      mac: 'Alt-.',
       run: () => {
         onStop()
         return true

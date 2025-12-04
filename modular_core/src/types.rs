@@ -7,6 +7,7 @@ use std::{
     collections::HashMap,
     sync::{self, Arc},
 };
+use ts_rs::TS;
 
 use crate::patch::Patch;
 
@@ -102,7 +103,10 @@ pub fn smooth_value(current: f32, target: f32) -> f32 {
 
 #[derive(Clone)]
 pub enum InternalParam {
-    Value {
+    Volts {
+        value: f32,
+    },
+    Hz {
         value: f32,
     },
     Note {
@@ -121,9 +125,14 @@ pub enum InternalParam {
 impl std::fmt::Debug for InternalParam {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            InternalParam::Value { value } => f.debug_struct("Value").field("value", value).finish(),
+            InternalParam::Volts { value } => {
+                f.debug_struct("Value").field("value", value).finish()
+            }
+            InternalParam::Hz { value } => f.debug_struct("Hz").field("value", value).finish(),
             InternalParam::Note { value } => f.debug_struct("Note").field("value", value).finish(),
-            InternalParam::Cable { port, .. } => f.debug_struct("Cable").field("port", port).finish(),
+            InternalParam::Cable { port, .. } => {
+                f.debug_struct("Cable").field("port", port).finish()
+            }
             InternalParam::Track { .. } => f.debug_struct("Track").finish(),
             InternalParam::Disconnected => write!(f, "Disconnected"),
         }
@@ -133,7 +142,10 @@ impl std::fmt::Debug for InternalParam {
 impl PartialEq for InternalParam {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (InternalParam::Value { value: value1 }, InternalParam::Value { value: value2 }) => {
+            (InternalParam::Volts { value: value1 }, InternalParam::Volts { value: value2 }) => {
+                *value1 == *value2
+            }
+            (InternalParam::Hz { value: value1 }, InternalParam::Hz { value: value2 }) => {
                 *value1 == *value2
             }
             (InternalParam::Note { value: value1 }, InternalParam::Note { value: value2 }) => {
@@ -154,7 +166,8 @@ impl PartialEq for InternalParam {
                         == module2.upgrade().map(|module| module.get_id().clone())
             }
             (InternalParam::Track { track: track1 }, InternalParam::Track { track: track2 }) => {
-                track1.upgrade().map(|track| track.id.clone()) == track2.upgrade().map(|track| track.id.clone())
+                track1.upgrade().map(|track| track.id.clone())
+                    == track2.upgrade().map(|track| track.id.clone())
             }
             (InternalParam::Disconnected, InternalParam::Disconnected) => true,
             _ => false,
@@ -165,7 +178,8 @@ impl PartialEq for InternalParam {
 impl InternalParam {
     pub fn to_param(&self) -> Param {
         match self {
-            InternalParam::Value { value } => Param::Value { value: *value },
+            InternalParam::Volts { value } => Param::Value { value: *value },
+            InternalParam::Hz { value } => Param::Hz { value: *value },
             InternalParam::Note { value } => Param::Note { value: *value },
             InternalParam::Cable { module, port } => match module.upgrade() {
                 Some(module) => Param::Cable {
@@ -175,7 +189,9 @@ impl InternalParam {
                 None => Param::Disconnected,
             },
             InternalParam::Track { track } => match track.upgrade() {
-                Some(track) => Param::Track { track: track.id.clone() },
+                Some(track) => Param::Track {
+                    track: track.id.clone(),
+                },
                 None => Param::Disconnected,
             },
             InternalParam::Disconnected => Param::Disconnected,
@@ -189,7 +205,8 @@ impl InternalParam {
     }
     fn get_value_optional(&self) -> Option<f32> {
         match self {
-            InternalParam::Value { value } => Some(*value),
+            InternalParam::Volts { value } => Some(*value),
+            InternalParam::Hz { value } => Some(((*value).max(0.0) / 27.5).log2()),
             InternalParam::Note { value } => Some((*value as f32 - 21.0) / 12.0),
             InternalParam::Cable { module, port } => match module.upgrade() {
                 Some(module) => match module.get_sample(port) {
@@ -216,10 +233,12 @@ impl Default for InternalParam {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, TS)]
+#[ts(export, export_to = "../../modular_web/src/types/generated/")]
 #[serde(tag = "param_type", rename_all = "kebab-case")]
 pub enum Param {
     Value { value: f32 },
+    Hz { value: f32 },
     Note { value: u8 },
     Cable { module: String, port: String },
     Track { track: String },
@@ -229,7 +248,8 @@ pub enum Param {
 impl Param {
     pub fn to_internal_param(&self, patch: &Patch) -> InternalParam {
         match self {
-            Param::Value { value } => InternalParam::Value { value: *value },
+            Param::Value { value } => InternalParam::Volts { value: *value },
+            Param::Hz { value } => InternalParam::Hz { value: *value },
             Param::Note { value } => InternalParam::Note { value: *value },
             Param::Cable { module, port } => match patch.sampleables.get(module) {
                 Some(module) => InternalParam::Cable {
@@ -285,11 +305,13 @@ impl PartialOrd for InternalKeyframe {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct Keyframe {
     pub id: String,
     pub track_id: String,
     #[serde(with = "duration_millis")]
+    #[ts(type = "number")]
     pub time: Duration,
     pub param: Param,
 }
@@ -322,48 +344,81 @@ impl PartialOrd for Keyframe {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+#[serde(rename_all = "camelCase")]
 pub enum Playmode {
     Once,
     Loop,
 }
 
+fn duration_to_samples(duration: Duration, sample_rate: u32) -> u64 {
+    if sample_rate == 0 {
+        return 0;
+    }
+    let nanos = duration.as_nanos();
+    let numerator = nanos * sample_rate as u128 + 500_000_000u128;
+    (numerator / 1_000_000_000u128).min(u64::MAX as u128) as u64
+}
+
+fn samples_to_duration(samples: u64, sample_rate: u32) -> Duration {
+    if sample_rate == 0 {
+        return Duration::from_nanos(0);
+    }
+    let numerator = samples as u128 * 1_000_000_000u128 + (sample_rate as u128 / 2);
+    let nanos = (numerator / sample_rate as u128).min(u64::MAX as u128) as u64;
+    Duration::from_nanos(nanos)
+}
+
 struct InnerTrack {
-    playhead: Duration,
-    length: Duration,
+    sample_rate: u32,
+    playhead_samples: u64,
+    length_samples: u64,
     play_mode: Playmode,
     playhead_idx: usize,
     keyframes: Vec<InternalKeyframe>,
 }
 
 impl InnerTrack {
-    pub fn seek(&mut self, mut playhead: Duration) {
-        if self.length < playhead {
+    pub fn seek(&mut self, playhead: Duration) {
+        let samples = duration_to_samples(playhead, self.sample_rate);
+        self.seek_samples(samples);
+    }
+
+    fn seek_samples(&mut self, mut playhead_samples: u64) {
+        if self.length_samples < playhead_samples {
             match self.play_mode {
                 Playmode::Once => {
-                    self.playhead = self.length;
-                    self.playhead_idx = (self.keyframes.len() - 1).max(0);
+                    self.playhead_samples = self.length_samples;
+                    self.playhead_idx = self.keyframes.len().saturating_sub(1);
                     return;
                 }
                 Playmode::Loop => {
-                    while self.length < playhead {
-                        playhead -= self.length;
+                    if self.length_samples == 0 {
+                        self.playhead_samples = 0;
+                    } else {
+                        while self.length_samples < playhead_samples {
+                            playhead_samples -= self.length_samples;
+                        }
+                        self.playhead_samples = playhead_samples;
                     }
-                    self.playhead = playhead;
                 }
             }
         } else {
-            self.playhead = playhead;
+            self.playhead_samples = playhead_samples;
         }
+
         let len = self.keyframes.len();
         while self.playhead_idx < len {
             let curr = self.keyframes.get(self.playhead_idx).unwrap();
+            let curr_time_samples = duration_to_samples(curr.time, self.sample_rate);
             let next = self.keyframes.get(self.playhead_idx + 1);
+
             match next {
                 Some(next) => {
-                    let curr_is_behind_or_equal = self.playhead >= curr.time;
-                    let next_is_ahead = self.playhead < next.time;
+                    let next_time_samples = duration_to_samples(next.time, self.sample_rate);
+                    let curr_is_behind_or_equal = self.playhead_samples >= curr_time_samples;
+                    let next_is_ahead = self.playhead_samples < next_time_samples;
                     match (curr_is_behind_or_equal, next_is_ahead) {
                         (true, true) => return,
                         (true, false) => {
@@ -376,13 +431,11 @@ impl InnerTrack {
                                 self.playhead_idx -= 1;
                             }
                         }
-                        (false, false) => {
-                            unreachable!()
-                        }
+                        (false, false) => unreachable!(),
                     };
                 }
                 None => {
-                    if self.playhead < curr.time {
+                    if self.playhead_samples < curr_time_samples {
                         if self.playhead_idx == 0 {
                             return;
                         } else {
@@ -409,32 +462,33 @@ impl InnerTrack {
 
         {
             let time = self.keyframes.last().unwrap().time;
-            if self.length < time {
-                self.length = time
+            let samples = duration_to_samples(time, self.sample_rate);
+            if self.length_samples < samples {
+                self.length_samples = samples;
             }
         }
-        let playhead = self.playhead;
-        self.playhead = Duration::from_nanos(0);
+        let playhead_samples = self.playhead_samples;
+        self.playhead_samples = 0;
         self.playhead_idx = 0;
-        self.seek(playhead);
+        self.seek_samples(playhead_samples);
     }
 
     pub fn remove_keyframe(&mut self, id: String) -> Option<InternalKeyframe> {
         match self.keyframes.iter().position(|k| k.id == id) {
             Some(idx) => {
                 let ret = Some(self.keyframes.remove(idx));
-                let playhead = self.playhead;
-                self.playhead = Duration::from_nanos(0);
+                let playhead_samples = self.playhead_samples;
+                self.playhead_samples = 0;
                 self.playhead_idx = 0;
-                self.seek(playhead);
+                self.seek_samples(playhead_samples);
                 ret
             }
             None => None,
         }
     }
 
-    pub fn tick(&mut self, delta: &Duration) -> Option<f32> {
-        self.seek(self.playhead + *delta);
+    pub fn tick(&mut self) -> Option<f32> {
+        self.seek_samples(self.playhead_samples.saturating_add(1));
         match self.keyframes.get(self.playhead_idx) {
             Some(keyframe) => keyframe.param.get_value_optional(),
             None => None,
@@ -446,11 +500,11 @@ impl InnerTrack {
             self.play_mode = play_mode;
         }
         if let Some(length) = update.length {
-            self.length = length;
-            if self.playhead > self.length {
-                self.playhead = self.length
+            self.length_samples = duration_to_samples(length, self.sample_rate);
+            if self.playhead_samples > self.length_samples {
+                self.playhead_samples = self.length_samples;
             }
-            self.seek(self.playhead);
+            self.seek_samples(self.playhead_samples);
         }
     }
 }
@@ -462,13 +516,14 @@ pub struct InternalTrack {
 }
 
 impl InternalTrack {
-    pub fn new(id: String) -> Self {
+    pub fn new(id: String, sample_rate: u32) -> Self {
         InternalTrack {
             id,
             inner_track: Mutex::new(InnerTrack {
-                playhead: Duration::from_nanos(0),
+                sample_rate,
+                playhead_samples: 0,
                 playhead_idx: 0,
-                length: Duration::from_nanos(0),
+                length_samples: 0,
                 play_mode: Playmode::Once,
                 keyframes: Vec::new(),
             }),
@@ -497,12 +552,12 @@ impl InternalTrack {
             .remove_keyframe(id)
     }
 
-    pub fn tick(&self, delta: &Duration) {
+    pub fn tick(&self) {
         *(self.sample.try_lock_for(Duration::from_millis(10)).unwrap()) = self
             .inner_track
             .try_lock_for(Duration::from_millis(10))
             .unwrap()
-            .tick(delta);
+            .tick();
     }
 
     pub fn update(&self, update: &TrackUpdate) {
@@ -523,8 +578,8 @@ impl InternalTrack {
             .unwrap();
         Track {
             id: self.id.clone(),
-            playhead: inner_track.playhead,
-            length: inner_track.length,
+            playhead: samples_to_duration(inner_track.playhead_samples, inner_track.sample_rate),
+            length: samples_to_duration(inner_track.length_samples, inner_track.sample_rate),
             play_mode: inner_track.play_mode,
             keyframes: inner_track
                 .keyframes
@@ -537,32 +592,43 @@ impl InternalTrack {
 
 pub type TrackMap = HashMap<String, Arc<InternalTrack>>;
 
-#[derive(Debug, Clone, PartialOrd, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialOrd, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct Track {
     pub id: String,
     #[serde(with = "duration_millis")]
+    #[ts(type = "number")]
     pub playhead: Duration,
     #[serde(with = "duration_millis")]
+    #[ts(type = "number")]
     pub length: Duration,
     pub play_mode: Playmode,
     pub keyframes: Vec<Keyframe>,
 }
 
-#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct TrackUpdate {
-    #[serde(default, with = "option_duration_millis", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        with = "option_duration_millis",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[ts(type = "number | null")]
     pub length: Option<Duration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub play_mode: Option<Playmode>,
 }
 
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct PortSchema {
     pub name: String,
     pub description: String,
 }
 
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct ModuleSchema {
     pub name: String,
     pub description: String,
@@ -570,14 +636,16 @@ pub struct ModuleSchema {
     pub outputs: Vec<PortSchema>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct ModuleState {
     pub id: String,
     pub module_type: String,
     pub params: HashMap<String, Param>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct PatchGraph {
     pub modules: Vec<ModuleState>,
 }
@@ -593,14 +661,19 @@ mod tests {
     fn test_smooth_value_converges_to_target() {
         let target = 1.0;
         let mut current = 0.0;
-        
+
         // Apply smoothing many times
         for _ in 0..1000 {
             current = smooth_value(current, target);
         }
-        
+
         // Should converge close to target
-        assert!((current - target).abs() < 0.01, "Expected {} to be close to {}", current, target);
+        assert!(
+            (current - target).abs() < 0.01,
+            "Expected {} to be close to {}",
+            current,
+            target
+        );
     }
 
     #[test]
@@ -608,7 +681,10 @@ mod tests {
         let target = 5.0;
         let current = 5.0;
         let result = smooth_value(current, target);
-        assert!((result - target).abs() < 0.0001, "Value at target should stay at target");
+        assert!(
+            (result - target).abs() < 0.0001,
+            "Value at target should stay at target"
+        );
     }
 
     #[test]
@@ -616,7 +692,7 @@ mod tests {
         let target = 10.0;
         let current = 0.0;
         let result = smooth_value(current, target);
-        
+
         // Should move towards target but not reach it immediately
         assert!(result > current, "Should move towards positive target");
         assert!(result < target, "Should not immediately reach target");
@@ -625,13 +701,13 @@ mod tests {
     // Tests for InternalParam
     #[test]
     fn test_internal_param_value_get_value() {
-        let param = InternalParam::Value { value: 3.5 };
+        let param = InternalParam::Volts { value: 3.5 };
         assert!((param.get_value() - 3.5).abs() < 0.0001);
     }
 
     #[test]
     fn test_internal_param_value_get_value_or() {
-        let param = InternalParam::Value { value: 2.0 };
+        let param = InternalParam::Volts { value: 2.0 };
         assert!((param.get_value_or(5.0) - 2.0).abs() < 0.0001);
     }
 
@@ -674,7 +750,7 @@ mod tests {
     // Tests for InternalParam to Param conversion
     #[test]
     fn test_internal_param_value_to_param() {
-        let internal = InternalParam::Value { value: 1.5 };
+        let internal = InternalParam::Volts { value: 1.5 };
         let param = internal.to_param();
         assert!(matches!(param, Param::Value { value } if (value - 1.5).abs() < 0.0001));
     }
@@ -696,9 +772,9 @@ mod tests {
     // Tests for InternalParam equality
     #[test]
     fn test_internal_param_value_equality() {
-        let a = InternalParam::Value { value: 1.0 };
-        let b = InternalParam::Value { value: 1.0 };
-        let c = InternalParam::Value { value: 2.0 };
+        let a = InternalParam::Volts { value: 1.0 };
+        let b = InternalParam::Volts { value: 1.0 };
+        let c = InternalParam::Volts { value: 2.0 };
         assert_eq!(a, b);
         assert_ne!(a, c);
     }
@@ -721,7 +797,7 @@ mod tests {
 
     #[test]
     fn test_internal_param_different_types_not_equal() {
-        let value = InternalParam::Value { value: 60.0 };
+        let value = InternalParam::Volts { value: 60.0 };
         let note = InternalParam::Note { value: 60 };
         let disconnected = InternalParam::Disconnected;
         assert_ne!(value.clone(), note.clone());
@@ -747,9 +823,9 @@ mod tests {
 
     #[test]
     fn test_param_cable_serialization() {
-        let param = Param::Cable { 
-            module: "sine-1".to_string(), 
-            port: "output".to_string() 
+        let param = Param::Cable {
+            module: "sine-1".to_string(),
+            port: "output".to_string(),
         };
         let json = serde_json::to_string(&param).unwrap();
         assert!(json.contains("sine-1"));
@@ -811,10 +887,10 @@ mod tests {
     fn test_playmode_serialization() {
         let once = Playmode::Once;
         let looped = Playmode::Loop;
-        
+
         let once_json = serde_json::to_string(&once).unwrap();
         let loop_json = serde_json::to_string(&looped).unwrap();
-        
+
         assert!(once_json.contains("once"));
         assert!(loop_json.contains("loop"));
     }
@@ -832,13 +908,13 @@ mod tests {
     fn test_module_state_serialization() {
         let mut params = HashMap::new();
         params.insert("freq".to_string(), Param::Value { value: 4.0 });
-        
+
         let state = ModuleState {
             id: "sine-1".to_string(),
             module_type: "sine-oscillator".to_string(),
             params,
         };
-        
+
         let json = serde_json::to_string(&state).unwrap();
         assert!(json.contains("sine-1"));
         assert!(json.contains("sine-oscillator"));
@@ -848,10 +924,10 @@ mod tests {
     fn test_module_state_equality() {
         let mut params1 = HashMap::new();
         params1.insert("freq".to_string(), Param::Value { value: 4.0 });
-        
+
         let mut params2 = HashMap::new();
         params2.insert("freq".to_string(), Param::Value { value: 4.0 });
-        
+
         let state1 = ModuleState {
             id: "sine-1".to_string(),
             module_type: "sine-oscillator".to_string(),
@@ -862,7 +938,7 @@ mod tests {
             module_type: "sine-oscillator".to_string(),
             params: params2,
         };
-        
+
         assert_eq!(state1, state2);
     }
 
@@ -880,7 +956,9 @@ mod tests {
             module_type: "signal".to_string(),
             params: HashMap::new(),
         };
-        let patch = PatchGraph { modules: vec![state] };
+        let patch = PatchGraph {
+            modules: vec![state],
+        };
         assert_eq!(patch.modules.len(), 1);
     }
 
@@ -888,17 +966,15 @@ mod tests {
     fn test_patch_graph_serialization_roundtrip() {
         let mut params = HashMap::new();
         params.insert("source".to_string(), Param::Disconnected);
-        
+
         let original = PatchGraph {
-            modules: vec![
-                ModuleState {
-                    id: "signal-1".to_string(),
-                    module_type: "signal".to_string(),
-                    params,
-                },
-            ],
+            modules: vec![ModuleState {
+                id: "signal-1".to_string(),
+                module_type: "signal".to_string(),
+                params,
+            }],
         };
-        
+
         let json = serde_json::to_string(&original).unwrap();
         let restored: PatchGraph = serde_json::from_str(&json).unwrap();
         assert_eq!(original, restored);
@@ -945,12 +1021,14 @@ mod tests {
         let schema = ModuleSchema {
             name: "sine-oscillator".to_string(),
             description: "A sine wave generator".to_string(),
-            params: vec![
-                PortSchema { name: "freq".to_string(), description: "Frequency in v/oct".to_string() },
-            ],
-            outputs: vec![
-                PortSchema { name: "output".to_string(), description: "Audio output".to_string() },
-            ],
+            params: vec![PortSchema {
+                name: "freq".to_string(),
+                description: "Frequency in v/oct".to_string(),
+            }],
+            outputs: vec![PortSchema {
+                name: "output".to_string(),
+                description: "Audio output".to_string(),
+            }],
         };
         assert_eq!(schema.name, "sine-oscillator");
         assert_eq!(schema.params.len(), 1);

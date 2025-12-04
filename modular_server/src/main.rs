@@ -1,5 +1,5 @@
 use clap::{Arg, Command};
-use modular_server::{run_server, ServerConfig};
+use modular_server::{ServerConfig, run_server};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -17,10 +17,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .get_matches();
 
-    let port = matches
-        .get_one::<String>("port")
-        .unwrap()
-        .parse::<u16>()?;
+    let port = matches.get_one::<String>("port").unwrap().parse::<u16>()?;
 
     let config = ServerConfig {
         port,

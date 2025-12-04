@@ -1,16 +1,31 @@
+import type { ValidationError } from '../types'
+
 interface ErrorDisplayProps {
   error: string | null
+  errors?: ValidationError[] | null
   onDismiss: () => void
 }
 
-export function ErrorDisplay({ error, onDismiss }: ErrorDisplayProps) {
-  if (!error) return null
+export function ErrorDisplay({ error, errors, onDismiss }: ErrorDisplayProps) {
+  if (!error && (!errors || errors.length === 0)) return null
 
   return (
     <div className="error-display">
       <div className="error-content">
         <span className="error-icon">⚠️</span>
-        <pre className="error-message">{error}</pre>
+        <div className="error-messages">
+          {error && <pre className="error-message">{error}</pre>}
+          {errors && errors.length > 0 && (
+            <ul className="validation-errors">
+              {errors.map((err, i) => (
+                <li key={i} className="validation-error">
+                  <strong>{err.field}</strong>: {err.message}
+                  {err.location && <span className="error-location"> at {err.location}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         <button className="error-dismiss" onClick={onDismiss}>
           ×
         </button>
