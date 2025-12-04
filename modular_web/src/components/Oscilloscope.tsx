@@ -1,14 +1,14 @@
 import { useEffect, useRef } from 'react'
 
 interface OscilloscopeProps {
-  data: number[] | null
+  data: Float32Array | null
   width?: number
   height?: number
 }
 
 export function Oscilloscope({ data, width = 800, height = 200 }: OscilloscopeProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-
+  // console.log('Oscilloscope data:', data)
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return

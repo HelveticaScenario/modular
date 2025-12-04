@@ -20,7 +20,6 @@ pub use http_server::{AppState, create_router};
 pub use protocol::{AudioSubscription, InputMessage, OutputMessage, ValidationError};
 
 use crate::audio::send_audio_buffers;
-use crate::validation::validate_patch;
 
 /// Server configuration
 pub struct ServerConfig {
@@ -80,7 +79,7 @@ pub async fn run_server(config: ServerConfig) -> anyhow::Result<()> {
     let audio_state_clone = audio_state.clone();
     tokio::spawn(async move {
         loop {
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(16)).await;
             send_audio_buffers(&audio_state_clone.clone());
         }
     });

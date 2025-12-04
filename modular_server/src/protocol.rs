@@ -46,6 +46,7 @@ pub enum OutputMessage {
     // Audio streaming
     AudioBuffer {
         subscription: AudioSubscription,
+        #[ts(type = "Float32Array")]
         samples: Vec<f32>,
     },
 }

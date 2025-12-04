@@ -37,15 +37,15 @@ function App() {
     });
     const [isMuted, setIsMuted] = useState(true);
     const [isRecording, setIsRecording] = useState(false);
-    const [oscilloscopeData, setOscilloscopeData] = useState<number[] | null>(
-        null
-    );
+    const [oscilloscopeData, setOscilloscopeData] =
+        useState<Float32Array | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [validationErrors, setValidationErrors] = useState<
         ValidationError[] | null
     >(null);
     const [, setSchemas] = useState<ModuleSchema[]>([]);
     const handleMessage = useCallback((msg: OutputMessage) => {
+        // console.log('Received message:', msg);
         switch (msg.type) {
             case 'patch':
                 // Convert patch object back to YAML for editor
@@ -61,7 +61,7 @@ function App() {
                 setValidationErrors(msg.errors ?? null);
                 break;
             case 'audioBuffer':
-                console.log('Audio buffer received', msg.samples.length);
+                // console.log('Audio buffer received', msg.samples.length);
                 setOscilloscopeData(msg.samples);
                 break;
         }
