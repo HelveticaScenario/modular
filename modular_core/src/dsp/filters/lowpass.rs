@@ -14,7 +14,7 @@ struct LowpassFilterParams {
 #[derive(Default, Module)]
 #[module("lowpass-filter", "12dB/octave lowpass filter with resonance")]
 pub struct LowpassFilter {
-    #[output("output", "filtered signal")]
+    #[output("output", "filtered signal", default)]
     sample: f32,
     // State variables for 2-pole (12dB/oct) filter
     z1: f32,

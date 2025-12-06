@@ -23,6 +23,6 @@ pub mod types;
 pub use patch::Patch;
 pub use types::{
     InternalParam, InternalTrack, Keyframe, Module, ModuleSchema, ModuleState, Param, Params,
-    PatchGraph, Playmode, PortSchema, Sampleable, SampleableConstructor, SampleableMap, Track,
+    PatchGraph, Playmode, ParamSchema, Sampleable, SampleableConstructor, SampleableMap, Track,
     TrackMap, TrackUpdate, ROOT_ID, ROOT_OUTPUT_PORT,
 };

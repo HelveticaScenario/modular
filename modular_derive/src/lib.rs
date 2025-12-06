@@ -8,10 +8,17 @@ use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote, quote_spanned};
 use syn::{
-    parse::Parser, punctuated::Punctuated, spanned::Spanned, Attribute, Field, FieldsNamed, LitStr,
-    Token,
+    Attribute, Field, FieldsNamed, LitStr, Token, parse::Parser, punctuated::Punctuated,
+    spanned::Spanned,
 };
 use syn::{Data, DeriveInput, Fields};
+
+/// Parsed output attribute data
+struct OutputAttr {
+    name: LitStr,
+    description: Option<LitStr>,
+    is_default: bool,
+}
 
 #[proc_macro_derive(Params, attributes(name, description, param))]
 pub fn params_macro_derive(input: TokenStream) -> TokenStream {
@@ -52,6 +59,67 @@ fn unwrap_name_description(
     let name = iter.next().map(|lit| lit.clone());
     let description = iter.next().map(|lit| lit.clone());
     (name, description)
+}
+
+/// Parse output attribute tokens into OutputAttr
+/// Supports:
+/// - #[output("name", "description")]
+/// - #[output("name", "description", default)]
+fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
+    use syn::Result as SynResult;
+    use syn::parse::{Parse, ParseStream};
+
+    struct OutputAttrParser {
+        name: LitStr,
+        description: Option<LitStr>,
+        is_default: bool,
+    }
+
+    impl Parse for OutputAttrParser {
+        fn parse(input: ParseStream) -> SynResult<Self> {
+            // Parse first string literal (name)
+            let name: LitStr = input.parse()?;
+
+            input.parse::<Token![,]>()?;
+
+            // Try to parse second element - description (string)
+            // It's a description string
+            let description: LitStr = input.parse()?;
+
+            // Check if there's another comma
+            if !input.peek(Token![,]) {
+                return Ok(OutputAttrParser {
+                    name,
+                    description: Some(description),
+                    is_default: false,
+                });
+            }
+            input.parse::<Token![,]>()?;
+
+            // Parse the 'default' keyword
+            let default_ident: Ident = input.parse()?;
+            if default_ident != "default" {
+                return Err(syn::Error::new(
+                    default_ident.span(),
+                    format!("Expected 'default', found '{}'", default_ident),
+                ));
+            }
+
+            Ok(OutputAttrParser {
+                name,
+                description: Some(description),
+                is_default: true,
+            })
+        }
+    }
+
+    let parsed = syn::parse2::<OutputAttrParser>(tokens).expect("Failed to parse output attribute");
+
+    OutputAttr {
+        name: parsed.name,
+        description: parsed.description,
+        is_default: parsed.is_default,
+    }
 }
 
 fn map_name_description<F, B>(fields: &FieldsNamed, ident: &str, mut closure: F) -> Vec<B>
@@ -116,7 +184,7 @@ fn impl_params_macro(ast: &DeriveInput) -> TokenStream {
                             }
                         },
                         quote_spanned! {f.span()=>
-                            crate::types::PortSchema {
+                            crate::types::ParamSchema {
                                 name: #name.to_string(),
                                 description: #description.to_string(),
                             },
@@ -162,7 +230,7 @@ fn impl_params_macro(ast: &DeriveInput) -> TokenStream {
                     )),
                 }
             }
-            fn get_schema() -> Vec<crate::types::PortSchema> {
+            fn get_schema() -> Vec<crate::types::ParamSchema> {
                 vec![
                     #schemas
                 ]
@@ -193,29 +261,31 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 .iter()
                 .filter(|f| unwrap_attr(&f.attrs, "output").is_some())
                 .map(|f| {
-                    let name = f.ident.clone();
-                    let output = unwrap_attr(&f.attrs, "output")
-                        .map(|tokens| {
-                            Punctuated::<LitStr, Token![,]>::parse_terminated
-                                .parse2(tokens)
-                                .unwrap()
-                        })
-                        .unwrap_or_default();
-                    let mut output_iter = output.iter();
-                    let output_name = output_iter.next();
-                    let description = output_iter.next();
+                    let field_name = f.ident.clone();
+                    let output_attr = unwrap_attr(&f.attrs, "output")
+                        .map(|tokens| parse_output_attr(tokens))
+                        .expect("Failed to parse output attribute");
+
+                    let output_name = &output_attr.name;
+                    let description = output_attr.description.as_ref()
+                        .map(|d| quote!(#d.to_string()))
+                        .unwrap_or(quote!("".to_string()));
+                    let is_default = output_attr.is_default;
+
                     (
-                        name.clone().unwrap(),
+                        field_name.clone().unwrap(),
+                        is_default,
                         quote! {
-                            outputs.#name = module.#name;
+                            outputs.#field_name = module.#field_name;
                         },
                         quote! {
-                            #output_name => Ok(self.outputs.try_read_for(core::time::Duration::from_millis(10)).unwrap().#name),
+                            #output_name => Ok(self.outputs.try_read_for(core::time::Duration::from_millis(10)).unwrap().#field_name),
                         },
                         quote! {
-                            crate::types::PortSchema {
+                            crate::types::OutputSchema {
                                 name: #output_name.to_string(),
-                                description: #description.to_string(),
+                                description: #description,
+                                default: #is_default,
                             },
                         },
                     )
@@ -225,10 +295,29 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         },
         Data::Enum(_) | Data::Union(_) => unimplemented!(),
     };
-    let output_names = outputs.iter().map(|(idents, _, _, _)| idents);
-    let output_assignments = outputs.iter().map(|(_, assignment, _, _)| assignment);
-    let output_retrievals = outputs.iter().map(|(_, _, retrieval, _)| retrieval);
-    let output_schemas = outputs.iter().map(|(_, _, _, schema)| schema);
+    // Validate that at most one output is marked as default
+    let default_count = outputs
+        .iter()
+        .filter(|(_, is_default, _, _, _)| *is_default)
+        .count();
+    if default_count > 1 {
+        let error_msg = format!(
+            "Module '{}' has {} outputs marked as default, but only one is allowed",
+            module_name
+                .as_ref()
+                .map(|n| n.value())
+                .unwrap_or_else(|| "unknown".to_string()),
+            default_count
+        );
+        return syn::Error::new(Span::call_site(), error_msg)
+            .to_compile_error()
+            .into();
+    }
+
+    let output_names = outputs.iter().map(|(idents, _, _, _, _)| idents);
+    let output_assignments = outputs.iter().map(|(_, _, assignment, _, _)| assignment);
+    let output_retrievals = outputs.iter().map(|(_, _, _, retrieval, _)| retrieval);
+    let output_schemas = outputs.iter().map(|(_, _, _, _, schema)| schema);
     let struct_name = format_ident!("{}Sampleable", name);
     let output_struct_name = format_ident!("{}Outputs", name);
     let constructor_name = format_ident!("{}Constructor", name)

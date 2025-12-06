@@ -20,7 +20,7 @@ struct SineOscillatorParams {
 #[derive(Default, Module)]
 #[module("sine-osc", "A sine wave oscillator")]
 pub struct SineOscillator {
-    #[output("output", "signal output")]
+    #[output("output", "signal output", default)]
     sample: f32,
     phase: f32,
     smoothed_freq: f32,

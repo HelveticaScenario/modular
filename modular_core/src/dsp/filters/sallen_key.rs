@@ -16,7 +16,7 @@ struct SallenKeyFilterParams {
 #[derive(Default, Module)]
 #[module("sallen-key-filter", "Sallen-Key topology filter with smooth response")]
 pub struct SallenKeyFilter {
-    #[output("output", "filtered signal")]
+    #[output("output", "filtered signal", default)]
     sample: f32,
     // State variables for 2-pole Sallen-Key topology
     z1: f32,

@@ -16,7 +16,7 @@ struct SEMFilterParams {
 #[derive(Default, Module)]
 #[module("sem-filter", "Oberheim SEM style multi-mode filter")]
 pub struct SEMFilter {
-    #[output("output", "filtered signal")]
+    #[output("output", "filtered signal", default)]
     sample: f32,
     // State variables
     z1_low: f32,

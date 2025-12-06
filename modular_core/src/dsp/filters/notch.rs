@@ -14,7 +14,7 @@ struct NotchFilterParams {
 #[derive(Default, Module)]
 #[module("notch-filter", "Band-reject/notch filter")]
 pub struct NotchFilter {
-    #[output("output", "filtered signal")]
+    #[output("output", "filtered signal", default)]
     sample: f32,
     // State variables for 2-pole filter
     z1: f32,

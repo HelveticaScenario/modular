@@ -10,7 +10,7 @@ struct SignalParams {
 #[derive(Default, Module)]
 #[module("signal", "a signal")]
 pub struct Signal {
-    #[output("output", "signal output")]
+    #[output("output", "signal output", default)]
     sample: f32,
     params: SignalParams,
 }

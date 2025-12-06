@@ -16,7 +16,7 @@ struct TB303FilterParams {
 #[derive(Default, Module)]
 #[module("tb303-filter", "TB-303 style 24dB/octave lowpass with aggressive resonance")]
 pub struct TB303Filter {
-    #[output("output", "filtered signal")]
+    #[output("output", "filtered signal", default)]
     sample: f32,
     // State variables for 4-pole cascade
     z1: f32,

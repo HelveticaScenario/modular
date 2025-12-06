@@ -17,7 +17,7 @@ struct SumParams {
 #[derive(Default, Module)]
 #[module("sum", "A 4 channel signal adder")]
 pub struct Sum {
-    #[output("output", "signal output")]
+    #[output("output", "signal output", default)]
     sample: f32,
     params: SumParams,
 }

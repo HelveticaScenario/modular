@@ -17,7 +17,7 @@ struct MixParams {
 #[derive(Default, Module)]
 #[module("mix", "A 4 channel mixer")]
 pub struct Mix {
-    #[output("output", "signal output")]
+    #[output("output", "signal output", default)]
     sample: f32,
     params: MixParams,
 }

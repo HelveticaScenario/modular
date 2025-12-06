@@ -68,7 +68,7 @@ pub trait Params {
         new_param: &InternalParam,
         module_name: &str,
     ) -> Result<()>;
-    fn get_schema() -> Vec<PortSchema>;
+    fn get_schema() -> Vec<ParamSchema>;
 }
 
 pub trait Sampleable: Send + Sync {
@@ -288,7 +288,7 @@ impl InternalKeyframe {
             interpolation: InterpolationType::default(),
         }
     }
-    
+
     pub fn with_interpolation(mut self, interpolation: InterpolationType) -> Self {
         self.interpolation = interpolation;
         self
@@ -352,7 +352,7 @@ impl Keyframe {
             interpolation: InterpolationType::default(),
         }
     }
-    
+
     pub fn with_interpolation(mut self, interpolation: InterpolationType) -> Self {
         self.interpolation = interpolation;
         self
@@ -522,14 +522,14 @@ impl InnerTrack {
 
     pub fn tick(&mut self) -> Option<f32> {
         self.seek_samples(self.playhead_samples.saturating_add(1));
-        
+
         if self.keyframes.is_empty() {
             return None;
         }
-        
+
         let curr = self.keyframes.get(self.playhead_idx)?;
         let curr_time_samples = duration_to_samples(curr.time, self.sample_rate);
-        
+
         // Determine next keyframe - for looping tracks, wrap to first keyframe
         let (next, next_time_samples) = if let Some(n) = self.keyframes.get(self.playhead_idx + 1) {
             // Normal case: next keyframe exists
@@ -549,38 +549,34 @@ impl InnerTrack {
                 }
             }
         };
-        
+
         // If playhead before current keyframe, return current value
         if self.playhead_samples < curr_time_samples {
             return curr.param.get_value_optional();
         }
-        
+
         // If playhead at or after next keyframe, shouldn't happen but handle it
         if self.playhead_samples >= next_time_samples {
             return next.param.get_value_optional();
         }
-        
+
         // Interpolate between curr and next
         let curr_value = curr.param.get_value_optional()?;
         let next_value = next.param.get_value_optional()?;
-        
+
         // Calculate interpolation factor (0.0 to 1.0)
         let time_range = (next_time_samples - curr_time_samples) as f32;
         if time_range <= 0.0 {
             return Some(curr_value);
         }
-        
+
         let t = ((self.playhead_samples - curr_time_samples) as f32) / time_range;
         let t = t.clamp(0.0, 1.0);
-        
+
         // Apply interpolation based on type
         let interpolated = match curr.interpolation {
-            InterpolationType::Linear => {
-                curr_value + (next_value - curr_value) * t
-            }
-            InterpolationType::Step => {
-                curr_value
-            }
+            InterpolationType::Linear => curr_value + (next_value - curr_value) * t,
+            InterpolationType::Step => curr_value,
             InterpolationType::Cubic => {
                 // Cubic ease-in-out interpolation
                 let t2 = if t < 0.5 {
@@ -599,7 +595,7 @@ impl InnerTrack {
                 }
             }
         };
-        
+
         Some(interpolated)
     }
 
@@ -730,9 +726,18 @@ pub struct TrackUpdate {
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
-pub struct PortSchema {
+pub struct ParamSchema {
     pub name: String,
     pub description: String,
+}
+
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+pub struct OutputSchema {
+    pub name: String,
+    pub description: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub default: bool,
 }
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
@@ -740,8 +745,8 @@ pub struct PortSchema {
 pub struct ModuleSchema {
     pub name: String,
     pub description: String,
-    pub params: Vec<PortSchema>,
-    pub outputs: Vec<PortSchema>,
+    pub params: Vec<ParamSchema>,
+    pub outputs: Vec<OutputSchema>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -1054,7 +1059,10 @@ mod tests {
     // Tests for PatchGraph
     #[test]
     fn test_patch_graph_empty() {
-        let patch = PatchGraph { modules: vec![], tracks: vec![] };
+        let patch = PatchGraph {
+            modules: vec![],
+            tracks: vec![],
+        };
         assert!(patch.modules.is_empty());
         assert!(patch.tracks.is_empty());
     }
@@ -1116,15 +1124,70 @@ mod tests {
     // Tests for PortSchema
     #[test]
     fn test_port_schema_equality() {
-        let a = PortSchema {
+        let a = OutputSchema {
             name: "output".to_string(),
             description: "Main output".to_string(),
+            default: false,
         };
-        let b = PortSchema {
+        let b = OutputSchema {
             name: "output".to_string(),
             description: "Main output".to_string(),
+            default: false,
         };
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_port_schema_default_serialization() {
+        // Test that default: true is included in JSON
+        let schema = OutputSchema {
+            name: "output".to_string(),
+            description: "Main output".to_string(),
+            default: true,
+        };
+        let json = serde_json::to_string(&schema).unwrap();
+        assert!(
+            json.contains("\"default\":true"),
+            "JSON should contain default:true"
+        );
+
+        // Test that default: false is omitted from JSON
+        let schema_no_default = OutputSchema {
+            name: "output".to_string(),
+            description: "Main output".to_string(),
+            default: false,
+        };
+        let json = serde_json::to_string(&schema_no_default).unwrap();
+        assert!(
+            !json.contains("default"),
+            "JSON should not contain default field when false"
+        );
+    }
+
+    #[test]
+    fn test_port_schema_deserialization_without_default() {
+        // Backward compatibility test - old JSON without default field
+        let json = r#"{"name":"output","description":"Main output"}"#;
+        let schema: OutputSchema = serde_json::from_str(json).unwrap();
+        assert_eq!(schema.name, "output");
+        assert_eq!(schema.description, "Main output");
+        assert_eq!(
+            schema.default, false,
+            "default should be false when not present"
+        );
+    }
+
+    #[test]
+    fn test_port_schema_deserialization_with_default() {
+        // Test deserialization with default: true
+        let json = r#"{"name":"output","description":"Main output","default":true}"#;
+        let schema: OutputSchema = serde_json::from_str(json).unwrap();
+        assert_eq!(schema.default, true);
+
+        // Test deserialization with default: false
+        let json = r#"{"name":"output","description":"Main output","default":false}"#;
+        let schema: OutputSchema = serde_json::from_str(json).unwrap();
+        assert_eq!(schema.default, false);
     }
 
     // Tests for ModuleSchema
@@ -1133,13 +1196,14 @@ mod tests {
         let schema = ModuleSchema {
             name: "sine-oscillator".to_string(),
             description: "A sine wave generator".to_string(),
-            params: vec![PortSchema {
+            params: vec![ParamSchema {
                 name: "freq".to_string(),
                 description: "Frequency in v/oct".to_string(),
             }],
-            outputs: vec![PortSchema {
+            outputs: vec![OutputSchema {
                 name: "output".to_string(),
                 description: "Audio output".to_string(),
+                default: false,
             }],
         };
         assert_eq!(schema.name, "sine-oscillator");

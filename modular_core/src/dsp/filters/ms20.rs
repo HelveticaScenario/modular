@@ -14,7 +14,7 @@ struct MS20FilterParams {
 #[derive(Default, Module)]
 #[module("ms20-filter", "Korg MS-20 style lowpass with aggressive distortion")]
 pub struct MS20Filter {
-    #[output("output", "filtered signal")]
+    #[output("output", "filtered signal", default)]
     sample: f32,
     // State variables for 2-pole filter
     z1: f32,

@@ -14,7 +14,7 @@ struct MoogLadderFilterParams {
 #[derive(Default, Module)]
 #[module("moog-ladder-filter", "24dB/octave Moog-style ladder filter")]
 pub struct MoogLadderFilter {
-    #[output("output", "filtered signal")]
+    #[output("output", "filtered signal", default)]
     sample: f32,
     // State variables for 4-pole (24dB/oct) ladder filter
     stage: [f32; 4],

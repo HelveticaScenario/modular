@@ -8,26 +8,26 @@ const testSchemas: ModuleSchema[] = [
     name: 'sine-osc',
     description: 'Sine oscillator',
     params: [
-      { name: 'freq', description: 'Frequency in V/oct' },
-      { name: 'phase', description: 'Phase' },
+      { name: 'freq', description: 'Frequency in V/oct', default: false },
+      { name: 'phase', description: 'Phase', default: false },
     ],
-    outputs: [{ name: 'output', description: 'Audio output' }],
+    outputs: [{ name: 'output', description: 'Audio output', default: true }],
   },
   {
     name: 'signal',
     description: 'Signal passthrough',
-    params: [{ name: 'source', description: 'Input signal' }],
-    outputs: [{ name: 'output', description: 'Output signal' }],
+    params: [{ name: 'source', description: 'Input signal', default: false }],
+    outputs: [{ name: 'output', description: 'Output signal', default: true }],
   },
   {
     name: 'scale-and-shift',
     description: 'Scale and shift',
     params: [
-      { name: 'input', description: 'Input' },
-      { name: 'scale', description: 'Scale factor' },
-      { name: 'shift', description: 'Shift amount' },
+      { name: 'input', description: 'Input', default: false },
+      { name: 'scale', description: 'Scale factor', default: false },
+      { name: 'shift', description: 'Shift amount', default: false },
     ],
-    outputs: [{ name: 'output', description: 'Output' }],
+    outputs: [{ name: 'output', description: 'Output', default: true }],
   },
 ];
 

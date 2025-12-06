@@ -114,7 +114,7 @@ mod tests {
         Playmode::export_all().expect("Failed to export Playmode");
         Track::export_all().expect("Failed to export Track");
         TrackUpdate::export_all().expect("Failed to export TrackUpdate");
-        PortSchema::export_all().expect("Failed to export PortSchema");
+        ParamSchema::export_all().expect("Failed to export PortSchema");
         ModuleSchema::export_all().expect("Failed to export ModuleSchema");
         ModuleState::export_all().expect("Failed to export ModuleState");
         PatchGraph::export_all().expect("Failed to export PatchGraph");

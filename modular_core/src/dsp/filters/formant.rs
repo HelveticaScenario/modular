@@ -16,7 +16,7 @@ struct FormantFilterParams {
 #[derive(Default, Module)]
 #[module("formant-filter", "Vowel formant filter for vocal-like sounds")]
 pub struct FormantFilter {
-    #[output("output", "formant filtered signal")]
+    #[output("output", "formant filtered signal", default)]
     sample: f32,
     // Three parallel bandpass filters for formants
     bp1_z1: f32,
