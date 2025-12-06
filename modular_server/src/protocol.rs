@@ -1,4 +1,4 @@
-use modular_core::types::ModuleSchema;
+use modular_core::types::{ModuleSchema, PatchGraph};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -11,7 +11,7 @@ pub enum InputMessage {
     GetSchemas,
     GetPatch,
 
-    SetPatch { yaml: String },
+    SetPatch { patch: PatchGraph },
 
     // Audio control
     SubscribeAudio { subscription: AudioSubscription },
@@ -22,6 +22,12 @@ pub enum InputMessage {
     // Recording
     StartRecording { filename: Option<String> },
     StopRecording,
+
+    // File operations
+    ListFiles,
+    ReadFile { path: String },
+    WriteFile { path: String, content: String },
+    DeleteFile { path: String },
 }
 
 /// Output messages to clients
@@ -35,9 +41,6 @@ pub enum OutputMessage {
     Schemas {
         schemas: Vec<ModuleSchema>,
     },
-    Patch {
-        patch: String,
-    },
     Error {
         message: String,
         errors: Option<Vec<ValidationError>>,
@@ -48,6 +51,15 @@ pub enum OutputMessage {
         subscription: AudioSubscription,
         #[ts(type = "Float32Array")]
         samples: Vec<f32>,
+    },
+
+    // File operations
+    FileList {
+        files: Vec<String>,
+    },
+    FileContent {
+        path: String,
+        content: String,
     },
 }
 
@@ -98,18 +110,6 @@ impl std::fmt::Display for ValidationError {
             write!(f, "{}: {}", self.field, self.message)
         }
     }
-}
-
-/// Serialize a message to YAML
-pub fn serialize_message<T: Serialize>(message: &T) -> Result<String, serde_yaml::Error> {
-    serde_yaml::to_string(message)
-}
-
-/// Deserialize a message from YAML
-pub fn deserialize_message<T: for<'de> Deserialize<'de>>(
-    yaml: &str,
-) -> Result<T, serde_yaml::Error> {
-    serde_yaml::from_str(yaml)
 }
 /*
 #[cfg(test)]

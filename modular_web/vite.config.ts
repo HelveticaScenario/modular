@@ -4,7 +4,11 @@ import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react({
+    babel: {
+      plugins: ['babel-plugin-react-compiler'],
+    },
+  })],
   build: {
     outDir: path.resolve(__dirname, '../modular_server/static'),
     emptyOutDir: true,

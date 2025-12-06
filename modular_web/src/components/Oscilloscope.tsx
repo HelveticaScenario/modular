@@ -7,8 +7,8 @@ interface OscilloscopeProps {
 }
 
 export function Oscilloscope({ data, width = 800, height = 200 }: OscilloscopeProps) {
+  console.log('Oscilloscope render, data length:', data?.length)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  // console.log('Oscilloscope data:', data)
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return

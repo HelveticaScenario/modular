@@ -1,30 +1,70 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { useModularWebSocket, type OutputMessage } from './hooks/useWebSocket';
 import { PatchEditor } from './components/PatchEditor';
 import { Oscilloscope } from './components/Oscilloscope';
 import { AudioControls } from './components/AudioControls';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import type { ValidationError, ModuleSchema } from './types';
+import { executePatchScript } from './dsl';
 import './App.css';
 
-const DEFAULT_PATCH = `modules:
-  - id: osc1
-    module_type: sine-osc
-    params:
-      freq:
-        param_type: hz
-        value: 440.0
-  - id: root
-    module_type: signal
-    params:
-      source:
-        param_type: cable
-        module: osc1
-        port: output
-tracks: []
+const DEFAULT_PATCH = `// Simple 440 Hz sine wave
+const osc = sine('osc1').freq(hz(440));
+out.source(osc);
 `;
 
-const PATCH_STORAGE_KEY = 'modular_patch_yaml';
+const PATCH_STORAGE_KEY = 'modular_patch_dsl';
+
+const width = 800;
+const height = 200;
+
+const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Clear canvas
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(0, 0, width, height);
+
+    // Draw center line
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, height / 2);
+    ctx.lineTo(width, height / 2);
+    ctx.stroke();
+
+    if (!data || data.length === 0) {
+        // Draw "No Signal" text
+        ctx.fillStyle = '#666';
+        ctx.font = '14px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('No Signal', width / 2, height / 2);
+        return;
+    }
+
+    // Draw waveform
+    ctx.strokeStyle = '#00ff00';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+
+    const step = width / data.length;
+    const midY = height / 2;
+    const amplitude = height / 2 - 10;
+
+    for (let i = 0; i < data.length; i++) {
+        const x = i * step;
+        const y = midY - data[i] * amplitude;
+
+        if (i === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+    }
+
+    ctx.stroke();
+};
 
 // TODO persist yaml code to local storage and load on startup
 function App() {
@@ -38,22 +78,15 @@ function App() {
     });
     const [isMuted, setIsMuted] = useState(true);
     const [isRecording, setIsRecording] = useState(false);
-    const [oscilloscopeData, setOscilloscopeData] =
-        useState<Float32Array | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [validationErrors, setValidationErrors] = useState<
         ValidationError[] | null
     >(null);
-    const [, setSchemas] = useState<ModuleSchema[]>([]);
+    const [schemas, setSchemas] = useState<ModuleSchema[]>([]);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
     const handleMessage = useCallback((msg: OutputMessage) => {
         // console.log('Received message:', msg);
         switch (msg.type) {
-            case 'patch':
-                // Convert patch object back to YAML for editor
-                setPatchYaml(msg.patch);
-                setError(null);
-                setValidationErrors(null);
-                break;
             case 'schemas':
                 setSchemas(msg.schemas);
                 break;
@@ -61,9 +94,19 @@ function App() {
                 setError(msg.message);
                 setValidationErrors(msg.errors ?? null);
                 break;
-            case 'audioBuffer':
+            case 'audioBuffer': {
                 // console.log('Audio buffer received', msg.samples.length);
-                setOscilloscopeData(msg.samples);
+                const canvas = canvasRef.current;
+                if (!canvas) break;
+                drawOscilloscope(msg.samples, canvas);
+                // setOscilloscopeData(msg.samples);
+                break;
+            }
+            case 'fileList':
+                // Handle file list if needed
+                break;
+            case 'fileContent':
+                // Handle file content if needed
                 break;
         }
     }, []);
@@ -101,9 +144,19 @@ function App() {
     }, [connectionState, getPatch, getSchemas, subscribeAudio]);
 
     const handleSubmit = useCallback(() => {
-        // Send raw YAML to server - server will parse and validate
-        setPatch(patchYaml);
-    }, [setPatch, patchYaml]);
+        try {
+            // Execute DSL script to generate PatchGraph
+            const patch = executePatchScript(patchYaml, schemas);
+            setPatch(patch);
+            setError(null);
+            setValidationErrors(null);
+        } catch (err) {
+            const errorMessage =
+                err instanceof Error ? err.message : 'Unknown error';
+            setError(errorMessage);
+            setValidationErrors(null);
+        }
+    }, [setPatch, patchYaml, schemas]);
 
     const handleStop = useCallback(() => {
         mute();
@@ -176,19 +229,31 @@ function App() {
                         onSubmit={handleSubmit}
                         onStop={handleStop}
                         disabled={connectionState !== 'connected'}
+                        schemas={schemas}
                     />
                 </div>
 
                 <div className="visualization-panel">
-                    <Oscilloscope data={oscilloscopeData} />
+                    <div className="oscilloscope">
+                        <canvas
+                            ref={canvasRef}
+                            width={width}
+                            height={height}
+                            style={{
+                                width: '100%',
+                                height: 'auto',
+                                maxWidth: width,
+                            }}
+                        />
+                    </div>
                     <div className="keyboard-shortcuts">
                         <h3>Keyboard Shortcuts</h3>
                         <ul>
                             <li>
-                                <kbd>Ctrl</kbd>+<kbd>Enter</kbd> Update Patch
+                                <kbd>Alt</kbd>+<kbd>Enter</kbd> Execute DSL
                             </li>
                             <li>
-                                <kbd>Ctrl</kbd>+<kbd>.</kbd> Stop Audio
+                                <kbd>Alt</kbd>+<kbd>.</kbd> Stop Audio
                             </li>
                             <li>
                                 <kbd>Ctrl</kbd>+<kbd>R</kbd> Toggle Recording

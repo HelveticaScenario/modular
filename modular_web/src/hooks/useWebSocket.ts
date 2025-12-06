@@ -60,7 +60,8 @@ export function useModularWebSocket(options: UseModularWebSocketOptions = {}) {
                 }
             } else if (event.data instanceof Blob) {
                 // event.data is a blob of binary data prepended with a null terminated string message type
-                event.data.bytes().then((data) => {
+                event.data.arrayBuffer().then((buffer) => {
+                    const data = new Uint8Array(buffer);
 
                     let i = 0
                     while (i < data.length && data[i] !== 0) {
@@ -111,8 +112,24 @@ export function useModularWebSocket(options: UseModularWebSocketOptions = {}) {
         send({ type: 'getSchemas' })
     }, [send])
 
-    const setPatch = useCallback((yaml: string) => {
-        send({ type: 'setPatch', yaml })
+    const setPatch = useCallback((patch: import('../types').PatchGraph) => {
+        send({ type: 'setPatch', patch })
+    }, [send])
+
+    const listFiles = useCallback(() => {
+        send({ type: 'listFiles' })
+    }, [send])
+
+    const readFile = useCallback((path: string) => {
+        send({ type: 'readFile', path })
+    }, [send])
+
+    const writeFile = useCallback((path: string, content: string) => {
+        send({ type: 'writeFile', path, content })
+    }, [send])
+
+    const deleteFile = useCallback((path: string) => {
+        send({ type: 'deleteFile', path })
     }, [send])
     const mute = useCallback(() => {
         send({ type: 'mute' })
@@ -135,6 +152,7 @@ export function useModularWebSocket(options: UseModularWebSocketOptions = {}) {
     const unsubscribeAudio = useCallback((moduleId: string, port: string) => {
         send({ type: 'unsubscribeAudio', subscription: { moduleId, port } })
     }, [send])
+
     return {
         connectionState,
         getPatch,
@@ -146,5 +164,9 @@ export function useModularWebSocket(options: UseModularWebSocketOptions = {}) {
         stopRecording,
         subscribeAudio,
         unsubscribeAudio,
+        listFiles,
+        readFile,
+        writeFile,
+        deleteFile,
     }
 }

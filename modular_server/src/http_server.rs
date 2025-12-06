@@ -1,8 +1,11 @@
 use std::{
     collections::{HashMap, HashSet},
+    fs,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
+use anyhow::{Context, Result};
 use axum::{
     Router,
     extract::{
@@ -126,30 +129,10 @@ async fn handle_message(
             let _ = send_message(socket_tx, OutputMessage::Schemas { schemas: schema() }).await;
         }
         InputMessage::GetPatch => {
-            let _ = send_message(
-                socket_tx,
-                OutputMessage::Patch {
-                    patch: audio_state.patch_code.clone(),
-                },
-            );
+            // GetPatch is deprecated - DSL scripts are the source of truth on the client
+            // This is kept for backwards compatibility but does nothing
         }
-        InputMessage::SetPatch { yaml } => {
-            // Parse YAML into PatchGraph
-            let patch: PatchGraph = match serde_yaml::from_str(&yaml) {
-                Ok(p) => p,
-                Err(e) => {
-                    let _ = send_message(
-                        socket_tx,
-                        OutputMessage::Error {
-                            message: format!("YAML parse error: {}", e),
-                            errors: None,
-                        },
-                    )
-                    .await;
-                    return;
-                }
-            };
-
+        InputMessage::SetPatch { patch } => {
             println!("Patch {:?}", patch);
 
             // Validate patch
@@ -182,6 +165,81 @@ async fn handle_message(
             // Auto-unmute on SetPatch - convenient for live editing workflows
             // where you typically want to hear changes immediately
             audio_state.set_muted(false);
+        }
+        InputMessage::ListFiles => {
+            match list_dsl_files() {
+                Ok(files) => {
+                    let _ = send_message(socket_tx, OutputMessage::FileList { files }).await;
+                }
+                Err(e) => {
+                    let _ = send_message(
+                        socket_tx,
+                        OutputMessage::Error {
+                            message: format!("Failed to list files: {}", e),
+                            errors: None,
+                        },
+                    )
+                    .await;
+                }
+            }
+        }
+        InputMessage::ReadFile { path } => {
+            match read_dsl_file(&path) {
+                Ok(content) => {
+                    let _ = send_message(
+                        socket_tx,
+                        OutputMessage::FileContent {
+                            path: path.clone(),
+                            content,
+                        },
+                    )
+                    .await;
+                }
+                Err(e) => {
+                    let _ = send_message(
+                        socket_tx,
+                        OutputMessage::Error {
+                            message: format!("Failed to read file: {}", e),
+                            errors: None,
+                        },
+                    )
+                    .await;
+                }
+            }
+        }
+        InputMessage::WriteFile { path, content } => {
+            match write_dsl_file(&path, &content) {
+                Ok(_) => {
+                    // Success - no response needed
+                }
+                Err(e) => {
+                    let _ = send_message(
+                        socket_tx,
+                        OutputMessage::Error {
+                            message: format!("Failed to write file: {}", e),
+                            errors: None,
+                        },
+                    )
+                    .await;
+                }
+            }
+        }
+        InputMessage::DeleteFile { path } => {
+            match delete_dsl_file(&path) {
+                Ok(_) => {
+                    // Success - no response needed
+                }
+                Err(e) => {
+                    let _ = send_message(
+                        socket_tx,
+                        OutputMessage::Error {
+                            message: format!("Failed to delete file: {}", e),
+                            errors: None,
+                        },
+                    )
+                    .await;
+                }
+            }
         }
         InputMessage::Mute => {
             audio_state.set_muted(true);
@@ -544,4 +602,87 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         .for_each(|(_, handle)| handle.abort());
 
     info!("WebSocket connection closed");
+}
+
+// File operation functions for DSL persistence
+
+/// Get the patches directory path (current working directory)
+fn get_patches_dir() -> PathBuf {
+    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
+/// Validate that a path is safe (no path traversal attacks)
+fn is_safe_path(path: &str) -> bool {
+    // Reject paths with .. or absolute paths
+    !path.contains("..") && !Path::new(path).is_absolute()
+}
+
+/// List all .js files in the patches directory
+fn list_dsl_files() -> Result<Vec<String>> {
+    let patches_dir = get_patches_dir();
+    let mut files = Vec::new();
+
+    for entry in fs::read_dir(&patches_dir).context("Failed to read patches directory")? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.is_file() {
+            if let Some(ext) = path.extension() {
+                if ext == "js" {
+                    if let Some(filename) = path.file_name() {
+                        if let Some(name) = filename.to_str() {
+                            files.push(name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    files.sort();
+    Ok(files)
+}
+
+/// Read a DSL file from the patches directory
+fn read_dsl_file(filename: &str) -> Result<String> {
+    if !is_safe_path(filename) {
+        anyhow::bail!("Invalid file path");
+    }
+
+    let patches_dir = get_patches_dir();
+    let file_path = patches_dir.join(filename);
+
+    fs::read_to_string(&file_path)
+        .with_context(|| format!("Failed to read file: {}", filename))
+}
+
+/// Write a DSL file to the patches directory
+fn write_dsl_file(filename: &str, content: &str) -> Result<()> {
+    if !is_safe_path(filename) {
+        anyhow::bail!("Invalid file path");
+    }
+
+    // Ensure filename ends with .js
+    if !filename.ends_with(".js") {
+        anyhow::bail!("File must have .js extension");
+    }
+
+    let patches_dir = get_patches_dir();
+    let file_path = patches_dir.join(filename);
+
+    fs::write(&file_path, content)
+        .with_context(|| format!("Failed to write file: {}", filename))
+}
+
+/// Delete a DSL file from the patches directory
+fn delete_dsl_file(filename: &str) -> Result<()> {
+    if !is_safe_path(filename) {
+        anyhow::bail!("Invalid file path");
+    }
+
+    let patches_dir = get_patches_dir();
+    let file_path = patches_dir.join(filename);
+
+    fs::remove_file(&file_path)
+        .with_context(|| format!("Failed to delete file: {}", filename))
 }
