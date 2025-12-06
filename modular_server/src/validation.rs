@@ -153,6 +153,7 @@ mod tests {
                     params,
                 }
             ],
+            tracks: vec![],
         };
         
         let result = validate_patch(&patch, &schemas);
@@ -170,6 +171,7 @@ mod tests {
                     params: HashMap::new(),
                 }
             ],
+            tracks: vec![],
         };
         
         let result = validate_patch(&patch, &schemas);
@@ -193,6 +195,7 @@ mod tests {
                     params,
                 }
             ],
+            tracks: vec![],
         };
         
         let result = validate_patch(&patch, &schemas);
@@ -219,6 +222,7 @@ mod tests {
                     params,
                 }
             ],
+            tracks: vec![],
         };
         
         let result = validate_patch(&patch, &schemas);
@@ -254,6 +258,7 @@ mod tests {
                     params: root_params,
                 },
             ],
+            tracks: vec![],
         };
         
         let result = validate_patch(&patch, &schemas);
@@ -292,6 +297,7 @@ mod tests {
                     params: signal_params,
                 },
             ],
+            tracks: vec![],
         };
         
         assert!(validate_patch(&patch, &schemas).is_ok());
@@ -312,6 +318,7 @@ mod tests {
                     params,
                 }
             ],
+            tracks: vec![],
         };
         
         let result = validate_patch(&patch, &schemas);
@@ -325,6 +332,7 @@ mod tests {
         let schemas = create_test_schemas();
         let patch = PatchGraph {
             modules: Vec::new(),
+            tracks: vec![],
         };
         
         assert!(validate_patch(&patch, &schemas).is_ok());

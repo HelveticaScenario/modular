@@ -275,6 +275,7 @@ pub struct InternalKeyframe {
     track_id: String,
     pub time: Duration,
     pub param: InternalParam,
+    pub interpolation: InterpolationType,
 }
 
 impl InternalKeyframe {
@@ -284,7 +285,13 @@ impl InternalKeyframe {
             track_id,
             time,
             param,
+            interpolation: InterpolationType::default(),
         }
+    }
+    
+    pub fn with_interpolation(mut self, interpolation: InterpolationType) -> Self {
+        self.interpolation = interpolation;
+        self
     }
     pub fn get_id(&self) -> String {
         self.id.clone()
@@ -295,6 +302,7 @@ impl InternalKeyframe {
             track_id: self.track_id.clone(),
             time: self.time,
             param: self.param.to_param(),
+            interpolation: self.interpolation,
         }
     }
 }
@@ -302,6 +310,22 @@ impl InternalKeyframe {
 impl PartialOrd for InternalKeyframe {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.time.partial_cmp(&other.time)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+#[serde(rename_all = "camelCase")]
+pub enum InterpolationType {
+    Linear,
+    Step,
+    Cubic,
+    Exponential,
+}
+
+impl Default for InterpolationType {
+    fn default() -> Self {
+        InterpolationType::Linear
     }
 }
 
@@ -314,6 +338,8 @@ pub struct Keyframe {
     #[ts(type = "number")]
     pub time: Duration,
     pub param: Param,
+    #[serde(default)]
+    pub interpolation: InterpolationType,
 }
 
 impl Keyframe {
@@ -323,7 +349,13 @@ impl Keyframe {
             track_id,
             time,
             param,
+            interpolation: InterpolationType::default(),
         }
+    }
+    
+    pub fn with_interpolation(mut self, interpolation: InterpolationType) -> Self {
+        self.interpolation = interpolation;
+        self
     }
     pub fn get_id(&self) -> &String {
         &self.id
@@ -334,6 +366,7 @@ impl Keyframe {
             track_id: self.track_id.clone(),
             time: self.time,
             param: self.param.to_internal_param(patch),
+            interpolation: self.interpolation,
         }
     }
 }
@@ -489,10 +522,85 @@ impl InnerTrack {
 
     pub fn tick(&mut self) -> Option<f32> {
         self.seek_samples(self.playhead_samples.saturating_add(1));
-        match self.keyframes.get(self.playhead_idx) {
-            Some(keyframe) => keyframe.param.get_value_optional(),
-            None => None,
+        
+        if self.keyframes.is_empty() {
+            return None;
         }
+        
+        let curr = self.keyframes.get(self.playhead_idx)?;
+        let curr_time_samples = duration_to_samples(curr.time, self.sample_rate);
+        
+        // Determine next keyframe - for looping tracks, wrap to first keyframe
+        let (next, next_time_samples) = if let Some(n) = self.keyframes.get(self.playhead_idx + 1) {
+            // Normal case: next keyframe exists
+            (n, duration_to_samples(n.time, self.sample_rate))
+        } else {
+            // Last keyframe case
+            match self.play_mode {
+                Playmode::Loop => {
+                    // Loop mode: wrap to first keyframe
+                    let first = self.keyframes.get(0)?;
+                    // Next keyframe time is first keyframe time + track length
+                    (first, self.length_samples)
+                }
+                Playmode::Once => {
+                    // Once mode: hold last keyframe value
+                    return curr.param.get_value_optional();
+                }
+            }
+        };
+        
+        // If playhead before current keyframe, return current value
+        if self.playhead_samples < curr_time_samples {
+            return curr.param.get_value_optional();
+        }
+        
+        // If playhead at or after next keyframe, shouldn't happen but handle it
+        if self.playhead_samples >= next_time_samples {
+            return next.param.get_value_optional();
+        }
+        
+        // Interpolate between curr and next
+        let curr_value = curr.param.get_value_optional()?;
+        let next_value = next.param.get_value_optional()?;
+        
+        // Calculate interpolation factor (0.0 to 1.0)
+        let time_range = (next_time_samples - curr_time_samples) as f32;
+        if time_range <= 0.0 {
+            return Some(curr_value);
+        }
+        
+        let t = ((self.playhead_samples - curr_time_samples) as f32) / time_range;
+        let t = t.clamp(0.0, 1.0);
+        
+        // Apply interpolation based on type
+        let interpolated = match curr.interpolation {
+            InterpolationType::Linear => {
+                curr_value + (next_value - curr_value) * t
+            }
+            InterpolationType::Step => {
+                curr_value
+            }
+            InterpolationType::Cubic => {
+                // Cubic ease-in-out interpolation
+                let t2 = if t < 0.5 {
+                    2.0 * t * t
+                } else {
+                    1.0 - (-2.0 * t + 2.0).powi(2) / 2.0
+                };
+                curr_value + (next_value - curr_value) * t2
+            }
+            InterpolationType::Exponential => {
+                // Exponential interpolation (good for frequency)
+                if curr_value > 0.0 && next_value > 0.0 {
+                    curr_value * (next_value / curr_value).powf(t)
+                } else {
+                    curr_value + (next_value - curr_value) * t
+                }
+            }
+        };
+        
+        Some(interpolated)
     }
 
     pub fn update(&mut self, update: &TrackUpdate) {
@@ -648,6 +756,7 @@ pub struct ModuleState {
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct PatchGraph {
     pub modules: Vec<ModuleState>,
+    pub tracks: Vec<Track>,
 }
 
 pub type SampleableConstructor = Box<dyn Fn(&String, f32) -> Result<Arc<Box<dyn Sampleable>>>>;
@@ -945,8 +1054,9 @@ mod tests {
     // Tests for PatchGraph
     #[test]
     fn test_patch_graph_empty() {
-        let patch = PatchGraph { modules: vec![] };
+        let patch = PatchGraph { modules: vec![], tracks: vec![] };
         assert!(patch.modules.is_empty());
+        assert!(patch.tracks.is_empty());
     }
 
     #[test]
@@ -958,6 +1068,7 @@ mod tests {
         };
         let patch = PatchGraph {
             modules: vec![state],
+            tracks: vec![],
         };
         assert_eq!(patch.modules.len(), 1);
     }
@@ -973,6 +1084,7 @@ mod tests {
                 module_type: "signal".to_string(),
                 params,
             }],
+            tracks: vec![],
         };
 
         let json = serde_json::to_string(&original).unwrap();

@@ -25,6 +25,7 @@ pub fn load_patch(path: &Path) -> Result<PatchGraph> {
 pub fn create_default_patch() -> PatchGraph {
     PatchGraph {
         modules: vec![],
+        tracks: vec![],
     }
 }
 
@@ -52,6 +53,7 @@ mod tests {
                     params,
                 }
             ],
+            tracks: vec![],
         };
         
         save_patch(&path, &patch).unwrap();

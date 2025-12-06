@@ -323,7 +323,85 @@ async fn apply_patch(
         }
     }
 
+    // ===== TRACK LIFECYCLE =====
+    
+    // Build maps for efficient track lookup
+    let desired_tracks: HashMap<String, _> = desired_graph
+        .tracks
+        .iter()
+        .map(|t| (t.id.clone(), t))
+        .collect();
+    
+    let current_track_ids: HashSet<String> = patch_lock.tracks.keys().cloned().collect();
+    let desired_track_ids: HashSet<String> = desired_tracks.keys().cloned().collect();
+    
+    println!("Current track IDs: {:?}", current_track_ids);
+    println!("Desired track IDs: {:?}", desired_track_ids);
+    
+    // Delete removed tracks (in current but not in desired)
+    let tracks_to_delete: Vec<String> = current_track_ids
+        .difference(&desired_track_ids)
+        .cloned()
+        .collect();
+    
+    println!("Tracks to delete: {:?}", tracks_to_delete);
+    
+    for track_id in tracks_to_delete {
+        patch_lock.tracks.remove(&track_id);
+    }
+    
+    // Two-pass track creation to handle keyframes that reference other tracks
+    
+    // PASS 1: Create/update track shells (without keyframes)
+    for track in &desired_graph.tracks {
+        match patch_lock.tracks.get(&track.id) {
+            Some(existing_track) => {
+                // Update existing track metadata
+                println!("Updating track: {}", track.id);
+                
+                existing_track.update(&modular_core::types::TrackUpdate {
+                    length: Some(track.length),
+                    play_mode: Some(track.play_mode),
+                });
+                
+                // Clear all existing keyframes (will re-add in pass 2)
+                let current_keyframes = existing_track.to_track().keyframes;
+                for kf in current_keyframes {
+                    existing_track.remove_keyframe(kf.id);
+                }
+            }
+            None => {
+                // Create new track shell
+                println!("Creating track: {}", track.id);
+                
+                let internal_track = Arc::new(modular_core::types::InternalTrack::new(
+                    track.id.clone(),
+                    sample_rate as u32,
+                ));
+                
+                internal_track.update(&modular_core::types::TrackUpdate {
+                    length: Some(track.length),
+                    play_mode: Some(track.play_mode),
+                });
+                
+                patch_lock.tracks.insert(track.id.clone(), internal_track);
+            }
+        }
+    }
+    
+    // PASS 2: Add keyframes to all tracks (now all tracks exist for Track param resolution)
+    for track in &desired_graph.tracks {
+        if let Some(internal_track) = patch_lock.tracks.get(&track.id) {
+            println!("Adding keyframes to track: {}", track.id);
+            for kf in &track.keyframes {
+                let internal_kf = kf.to_internal_keyframe(&patch_lock);
+                internal_track.add_keyframe(internal_kf);
+            }
+        }
+    }
+    
     // Update parameters for all desired modules (both new and existing)
+    // This happens AFTER tracks are created so Track params can resolve
     for id in desired_ids.iter() {
         if let Some(desired_module) = desired_modules.get(id) {
             if let Some(module) = patch_lock.sampleables.get(id) {

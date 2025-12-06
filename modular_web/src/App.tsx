@@ -21,6 +21,7 @@ const DEFAULT_PATCH = `modules:
         param_type: cable
         module: osc1
         port: output
+tracks: []
 `;
 
 const PATCH_STORAGE_KEY = 'modular_patch_yaml';

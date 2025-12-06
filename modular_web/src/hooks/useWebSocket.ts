@@ -76,7 +76,7 @@ export function useModularWebSocket(options: UseModularWebSocketOptions = {}) {
                     const port = new TextDecoder().decode(data.slice(firstSection + 1, secondSection))
                     const payload = data.slice(secondSection + 1) // skip null terminator
                     // Handle different binary message types here if needed
-                    onMessageRef.current?.({ type: 'audioBuffer', subscription: { moduleId: module_id, port }, samples: Array.from(new Float32Array(payload.buffer)) })
+                    onMessageRef.current?.({ type: 'audioBuffer', subscription: { moduleId: module_id, port }, samples: new Float32Array(payload.buffer) })
                 }
                 ).catch((e) => {
                     console.error('Failed to read binary WebSocket message:', e)
