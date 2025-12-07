@@ -7,14 +7,14 @@ struct TB303FilterParams {
     input: InternalParam,
     #[param("cutoff", "cutoff frequency in v/oct")]
     cutoff: InternalParam,
-    #[param("resonance", "filter resonance (0-5)")]
+    #[param("q", "filter resonance (0-5)")]
     resonance: InternalParam,
-    #[param("env-mod", "envelope modulation amount")]
+    #[param("envMod", "envelope modulation amount")]
     env_mod: InternalParam,
 }
 
 #[derive(Default, Module)]
-#[module("tb303-filter", "TB-303 style 24dB/octave lowpass with aggressive resonance")]
+#[module("tb303", "TB-303 style 24dB/octave lowpass with aggressive resonance")]
 pub struct TB303Filter {
     #[output("output", "filtered signal", default)]
     sample: f32,

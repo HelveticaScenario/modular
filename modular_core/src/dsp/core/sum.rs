@@ -4,13 +4,13 @@ use crate::types::InternalParam;
 
 #[derive(Default, Params)]
 struct SumParams {
-    #[param("input-1", "a signal input")]
+    #[param("in1", "a signal input")]
     input1: InternalParam,
-    #[param("input-2", "a signal input")]
+    #[param("in2", "a signal input")]
     input2: InternalParam,
-    #[param("input-3", "a signal input")]
+    #[param("in3", "a signal input")]
     input3: InternalParam,
-    #[param("input-4", "a signal input")]
+    #[param("in4", "a signal input")]
     input4: InternalParam,
 }
 

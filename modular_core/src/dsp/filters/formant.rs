@@ -14,7 +14,7 @@ struct FormantFilterParams {
 }
 
 #[derive(Default, Module)]
-#[module("formant-filter", "Vowel formant filter for vocal-like sounds")]
+#[module("formant", "Vowel formant filter for vocal-like sounds")]
 pub struct FormantFilter {
     #[output("output", "formant filtered signal", default)]
     sample: f32,

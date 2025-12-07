@@ -79,6 +79,12 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
         fn parse(input: ParseStream) -> SynResult<Self> {
             // Parse first string literal (name)
             let name: LitStr = input.parse()?;
+            if name.value() == "o" {
+                return Err(syn::Error::new(
+                    name.span(),
+                    "Output name cannot be 'o' as it is a reserved keyword",
+                ));
+            }
 
             input.parse::<Token![,]>()?;
 
@@ -267,6 +273,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                         .expect("Failed to parse output attribute");
 
                     let output_name = &output_attr.name;
+                    let output_name_string = output_name.value();
                     let description = output_attr.description.as_ref()
                         .map(|d| quote!(#d.to_string()))
                         .unwrap_or(quote!("".to_string()));
@@ -275,6 +282,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                     (
                         field_name.clone().unwrap(),
                         is_default,
+                        output_name_string,
                         quote! {
                             outputs.#field_name = module.#field_name;
                         },
@@ -298,7 +306,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     // Validate that at most one output is marked as default
     let default_count = outputs
         .iter()
-        .filter(|(_, is_default, _, _, _)| *is_default)
+        .filter(|(_, is_default, _, _, _, _)| *is_default)
         .count();
     if default_count > 1 {
         let error_msg = format!(
@@ -314,10 +322,10 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             .into();
     }
 
-    let output_names = outputs.iter().map(|(idents, _, _, _, _)| idents);
-    let output_assignments = outputs.iter().map(|(_, _, assignment, _, _)| assignment);
-    let output_retrievals = outputs.iter().map(|(_, _, _, retrieval, _)| retrieval);
-    let output_schemas = outputs.iter().map(|(_, _, _, _, schema)| schema);
+    let output_names = outputs.iter().map(|(idents, _, _, _, _, _)| idents);
+    let output_assignments = outputs.iter().map(|(_, _, _, assignment, _, _)| assignment);
+    let output_retrievals = outputs.iter().map(|(_, _, _, _, retrieval, _)| retrieval);
+    let output_schemas = outputs.iter().map(|(_, _, _, _, _, schema)| schema);
     let struct_name = format_ident!("{}Sampleable", name);
     let output_struct_name = format_ident!("{}Outputs", name);
     let constructor_name = format_ident!("{}Constructor", name)
@@ -406,13 +414,31 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             }
             fn get_schema() -> crate::types::ModuleSchema {
                 use crate::types::Params;
+
+                // Validate that parameter names and output names don't overlap
+                let param_schemas = #params_struct_name::get_schema();
+                let output_schemas = vec![
+                    #(#output_schemas)*
+                ];
+
+                // Check for name collisions
+                for param in &param_schemas {
+                    for output in &output_schemas {
+                        if param.name == output.name {
+                            panic!(
+                                "Module '{}' has parameter and output with the same name '{}'. Parameters and outputs must have unique names.",
+                                #module_name,
+                                param.name
+                            );
+                        }
+                    }
+                }
+
                 crate::types::ModuleSchema {
                     name: #module_name.to_string(),
                     description: #module_description.to_string(),
-                    params: #params_struct_name::get_schema(),
-                    outputs: vec![
-                        #(#output_schemas)*
-                    ],
+                    params: param_schemas,
+                    outputs: output_schemas,
                 }
             }
         }

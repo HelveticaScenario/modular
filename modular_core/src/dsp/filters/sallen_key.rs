@@ -7,14 +7,14 @@ struct SallenKeyFilterParams {
     input: InternalParam,
     #[param("cutoff", "cutoff frequency in v/oct")]
     cutoff: InternalParam,
-    #[param("resonance", "filter resonance (0-5)")]
+    #[param("q", "filter resonance (0-5)")]
     resonance: InternalParam,
     #[param("type", "filter type: 0=LP, 1=HP, 2=BP")]
     filter_type: InternalParam,
 }
 
 #[derive(Default, Module)]
-#[module("sallen-key-filter", "Sallen-Key topology filter with smooth response")]
+#[module("sallenKey", "Sallen-Key topology filter with smooth response")]
 pub struct SallenKeyFilter {
     #[output("output", "filtered signal", default)]
     sample: f32,

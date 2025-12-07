@@ -31,7 +31,7 @@ export class GraphBuilder {
    */
   addModule(moduleType: string, explicitId?: string): ModuleNode {
     const id = this.generateId(moduleType, explicitId);
-    
+
     // Check if module type exists in schemas
     const schema = this.schemas.find(s => s.name === moduleType);
     if (!schema) {
@@ -91,11 +91,14 @@ export class GraphBuilder {
   }
 }
 
+type Value = number | ModuleOutput | ModuleNode
+
 /**
  * ModuleNode represents a module instance in the DSL with fluent API
  */
 export class ModuleNode {
   // Dynamic parameter methods will be added via Proxy
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 
   readonly builder: GraphBuilder;
@@ -116,21 +119,13 @@ export class ModuleNode {
     // Create a proxy to intercept parameter method calls
     return new Proxy(this, {
       get(target, prop: string) {
-        // If it's an existing property, return it
-        if (prop in target) {
-          return (target as any)[prop];
-        }
 
         // Check if it's a parameter name
         const paramSchema = target.schema.params.find(p => p.name === prop);
         if (paramSchema) {
           // Return a function that sets the parameter
-          return (value: number | ModuleOutput) => {
-            if (value instanceof ModuleOutput) {
-              target.connect(prop, value);
-            } else {
-              target.setParam(prop, value);
-            }
+          return (value: Value) => {
+            target._setParam(prop, value);
             return target;
           };
         }
@@ -138,7 +133,12 @@ export class ModuleNode {
         // Check if it's an output name
         const outputSchema = target.schema.outputs.find(o => o.name === prop);
         if (outputSchema) {
-          return target.output(prop);
+          return target._output(prop);
+        }
+
+        if (prop in target) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return (target as any)[prop];
         }
 
         return undefined;
@@ -146,35 +146,51 @@ export class ModuleNode {
     });
   }
 
+  get o(): ModuleOutput {
+    const defaultOutput = this.schema.outputs.find(o => o.default);
+    if (!defaultOutput) {
+      throw new Error(`Module ${this.moduleType} has no default output`);
+    }
+    return this._output(defaultOutput.name);
+  }
+
+  scale(value: Value): ModuleNode {
+    return this.o.scale(value);
+  }
+
+  shift(value: Value): ModuleNode {
+    return this.o.shift(value);
+  }
+
   /**
    * Set a parameter to a constant value
    */
-  setParam(paramName: string, value: number | Param): this {
-    const param: Param = typeof value === 'number'
-      ? { param_type: 'value', value }
-      : value;
+  _setParam(paramName: string, value: Value): this {
+    if (value instanceof ModuleNode) {
+      value = value.o
+    }
 
-    this.builder.setParam(this.id, paramName, param);
+    if (value instanceof ModuleOutput) {
+      this.builder.setParam(this.id, paramName, {
+        param_type: 'cable',
+        module: value.moduleId,
+        port: value.portName,
+      });
+    } else {
+      this.builder.setParam(this.id, paramName, {
+        param_type: 'value',
+        value: value,
+      });
+    }
+
     return this;
   }
 
-  /**
-   * Connect a parameter to another module's output
-   */
-  connect(paramName: string, source: ModuleOutput): this {
-    const param: Param = {
-      param_type: 'cable',
-      module: source.moduleId,
-      port: source.portName,
-    };
-    this.builder.setParam(this.id, paramName, param);
-    return this;
-  }
 
   /**
    * Get an output port of this module
    */
-  output(portName: string = 'output'): ModuleOutput {
+  _output(portName: string): ModuleOutput {
     // Verify output exists
     const outputSchema = this.schema.outputs.find(o => o.name === portName);
     if (!outputSchema) {
@@ -205,21 +221,21 @@ export class ModuleOutput {
   /**
    * Scale this output by a factor
    */
-  scale(factor: number): ModuleOutput {
-    const scaleNode = this.builder.addModule('scale-and-shift');
-    scaleNode.connect('input', this);
-    scaleNode.setParam('scale', factor);
-    return scaleNode.output();
+  scale(factor: Value): ModuleNode {
+    const scaleNode = this.builder.addModule('scaleAndShift');
+    scaleNode._setParam('input', this);
+    scaleNode._setParam('scale', factor);
+    return scaleNode;
   }
 
   /**
    * Shift this output by an offset
    */
-  shift(offset: number): ModuleOutput {
-    const shiftNode = this.builder.addModule('scale-and-shift');
-    shiftNode.connect('input', this);
-    shiftNode.setParam('shift', offset);
-    return shiftNode.output();
+  shift(offset: Value): ModuleNode {
+    const shiftNode = this.builder.addModule('scaleAndShift');
+    shiftNode._setParam('input', this);
+    shiftNode._setParam('shift', offset);
+    return shiftNode;
   }
 }
 

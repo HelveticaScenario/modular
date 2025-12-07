@@ -13,7 +13,7 @@ struct ScaleAndShiftParams {
 }
 
 #[derive(Default, Module)]
-#[module("scale-and-shift", "attenuate, invert, offset")]
+#[module("scaleAndShift", "attenuate, invert, offset")]
 pub struct ScaleAndShift {
     #[output("output", "signal output", default)]
     sample: f32,

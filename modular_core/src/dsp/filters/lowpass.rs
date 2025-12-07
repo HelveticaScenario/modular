@@ -7,12 +7,12 @@ struct LowpassFilterParams {
     input: InternalParam,
     #[param("cutoff", "cutoff frequency in v/oct")]
     cutoff: InternalParam,
-    #[param("resonance", "filter resonance (0-5)")]
+    #[param("q", "filter resonance (0-5)")]
     resonance: InternalParam,
 }
 
 #[derive(Default, Module)]
-#[module("lowpass-filter", "12dB/octave lowpass filter with resonance")]
+#[module("lpf", "12dB/octave lowpass filter with resonance")]
 pub struct LowpassFilter {
     #[output("output", "filtered signal", default)]
     sample: f32,

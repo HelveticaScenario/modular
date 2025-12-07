@@ -12,7 +12,7 @@ struct AllpassFilterParams {
 }
 
 #[derive(Default, Module)]
-#[module("allpass-filter", "Allpass filter for phase shifting")]
+#[module("apf", "Allpass filter for phase shifting")]
 pub struct AllpassFilter {
     #[output("output", "phase-shifted signal", default)]
     sample: f32,

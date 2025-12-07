@@ -7,12 +7,12 @@ struct MoogLadderFilterParams {
     input: InternalParam,
     #[param("cutoff", "cutoff frequency in v/oct")]
     cutoff: InternalParam,
-    #[param("resonance", "filter resonance (0-5)")]
+    #[param("q", "filter resonance (0-5)")]
     resonance: InternalParam,
 }
 
 #[derive(Default, Module)]
-#[module("moog-ladder-filter", "24dB/octave Moog-style ladder filter")]
+#[module("ladder", "24dB/octave Moog-style ladder filter")]
 pub struct MoogLadderFilter {
     #[output("output", "filtered signal", default)]
     sample: f32,

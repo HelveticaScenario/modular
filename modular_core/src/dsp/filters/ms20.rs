@@ -7,12 +7,12 @@ struct MS20FilterParams {
     input: InternalParam,
     #[param("cutoff", "cutoff frequency in v/oct")]
     cutoff: InternalParam,
-    #[param("resonance", "filter resonance (0-5)")]
+    #[param("q", "filter resonance (0-5)")]
     resonance: InternalParam,
 }
 
 #[derive(Default, Module)]
-#[module("ms20-filter", "Korg MS-20 style lowpass with aggressive distortion")]
+#[module("ms20", "Korg MS-20 style lowpass with aggressive distortion")]
 pub struct MS20Filter {
     #[output("output", "filtered signal", default)]
     sample: f32,

@@ -12,7 +12,7 @@ struct SawOscillatorParams {
 }
 
 #[derive(Default, Module)]
-#[module("saw-osc", "Sawtooth/Triangle/Ramp oscillator")]
+#[module("saw", "Sawtooth/Triangle/Ramp oscillator")]
 pub struct SawOscillator {
     #[output("output", "signal output", default)]
     sample: f32,

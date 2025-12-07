@@ -7,12 +7,12 @@ struct StateVariableFilterParams {
     input: InternalParam,
     #[param("cutoff", "cutoff frequency in v/oct")]
     cutoff: InternalParam,
-    #[param("resonance", "filter resonance (0-5)")]
+    #[param("q", "filter resonance (0-5)")]
     resonance: InternalParam,
 }
 
 #[derive(Default, Module)]
-#[module("state-variable-filter", "State-variable filter with LP/BP/HP outputs")]
+#[module("stateVariable", "State-variable filter with LP/BP/HP outputs")]
 pub struct StateVariableFilter {
     #[output("lowpass", "lowpass output")]
     lowpass: f32,

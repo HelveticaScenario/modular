@@ -12,7 +12,7 @@ struct PulseOscillatorParams {
 }
 
 #[derive(Default, Module)]
-#[module("pulse-osc", "Pulse/Square oscillator with PWM")]
+#[module("pulse", "Pulse/Square oscillator with PWM")]
 pub struct PulseOscillator {
     #[output("output", "signal output", default)]
     sample: f32,

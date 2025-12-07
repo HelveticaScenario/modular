@@ -7,12 +7,12 @@ struct HighpassFilterParams {
     input: InternalParam,
     #[param("cutoff", "cutoff frequency in v/oct")]
     cutoff: InternalParam,
-    #[param("resonance", "filter resonance (0-5)")]
+    #[param("q", "filter resonance (0-5)")]
     resonance: InternalParam,
 }
 
 #[derive(Default, Module)]
-#[module("highpass-filter", "12dB/octave highpass filter with resonance")]
+#[module("hpf", "12dB/octave highpass filter with resonance")]
 pub struct HighpassFilter {
     #[output("output", "filtered signal", default)]
     sample: f32,

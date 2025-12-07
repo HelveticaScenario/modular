@@ -18,7 +18,7 @@ struct SineOscillatorParams {
 }
 
 #[derive(Default, Module)]
-#[module("sine-osc", "A sine wave oscillator")]
+#[module("sine", "A sine wave oscillator")]
 pub struct SineOscillator {
     #[output("output", "signal output", default)]
     sample: f32,

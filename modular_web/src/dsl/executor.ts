@@ -1,5 +1,6 @@
 import type { PatchGraph, ModuleSchema } from '../types';
-import { DSLContext, createOutputHelper, hz, note, volts } from './factories';
+import { DSLContext, hz, note } from './factories';
+
 
 /**
  * Execute a DSL script and return the resulting PatchGraph
@@ -10,35 +11,14 @@ export function executePatchScript(
 ): PatchGraph {
   // Create DSL context
   const context = new DSLContext(schemas);
-  const out = createOutputHelper(context);
+  const out = context.factories.signal('root');
 
   // Create the execution environment with all DSL functions
   const dslGlobals = {
-    // Module factories
-    sine: context.sine,
-    saw: context.saw,
-    pulse: context.pulse,
-    signal: context.signal,
-    scaleAndShift: context.scaleAndShift,
-    sum: context.sum,
-    mix: context.mix,
-    lowpass: context.lowpass,
-    highpass: context.highpass,
-    bandpass: context.bandpass,
-    notch: context.notch,
-    allpass: context.allpass,
-    stateVariable: context.stateVariable,
-    moogLadder: context.moogLadder,
-    tb303: context.tb303,
-    sem: context.sem,
-    ms20: context.ms20,
-    formant: context.formant,
-    sallenKey: context.sallenKey,
-
+    ...context.factories,
     // Helper functions
     hz,
     note,
-    volts,
 
     // Output helper
     out,
@@ -60,7 +40,9 @@ export function executePatchScript(
     fn(...paramValues);
 
     // Build and return the patch
-    return context.getBuilder().toPatch();
+    const patch = context.getBuilder().toPatch()
+    console.log(patch);
+    return patch;
   } catch (error) {
     if (error instanceof Error) {
       throw new Error(`DSL execution error: ${error.message}`);

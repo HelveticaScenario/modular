@@ -12,7 +12,7 @@ struct BandpassFilterParams {
 }
 
 #[derive(Default, Module)]
-#[module("bandpass-filter", "12dB/octave bandpass filter")]
+#[module("bpf", "12dB/octave bandpass filter")]
 pub struct BandpassFilter {
     #[output("output", "filtered signal", default)]
     sample: f32,
