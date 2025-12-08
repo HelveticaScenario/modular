@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { InputMessage } from '../types/generated/InputMessage'
 import type { OutputMessage } from '../types/generated/OutputMessage'
 import type { PatchGraph } from '../types/generated/PatchGraph'
+import type { ScopeItem } from '../types/generated/ScopeItem'
 
 export type ConnectionState =
     | 'connecting'
@@ -118,8 +119,12 @@ export function useModularWebSocket(options: UseModularWebSocketOptions = {}) {
                         const module_id = new TextDecoder().decode(data.slice(0, firstSection))
                         const port = new TextDecoder().decode(data.slice(firstSection + 1, secondSection))
                         const payload = data.slice(secondSection + 1) // skip null terminator
+                        const subscription: ScopeItem =
+                            port.length > 0
+                                ? { type: 'moduleOutput', module_id, port_name: port }
+                                : { type: 'track', track_id: module_id }
                         // Handle different binary message types here if needed
-                        onMessageRef.current?.({ type: 'audioBuffer', subscription: { moduleId: module_id, port }, samples: new Float32Array(payload.buffer) })
+                        onMessageRef.current?.({ type: 'audioBuffer', subscription, samples: new Float32Array(payload.buffer) })
                     }).catch((e) => {
                         console.error('Failed to read binary WebSocket message:', e)
                     })
@@ -227,14 +232,6 @@ export function useModularWebSocket(options: UseModularWebSocketOptions = {}) {
     const stopRecording = useCallback(() => {
         send({ type: 'stopRecording' })
     }, [send])
-    const subscribeAudio = useCallback((moduleId: string, port: string) => {
-        send({ type: 'subscribeAudio', subscription: { moduleId, port } })
-    }, [send])
-
-    const unsubscribeAudio = useCallback((moduleId: string, port: string) => {
-        send({ type: 'unsubscribeAudio', subscription: { moduleId, port } })
-    }, [send])
-
     return {
         connectionState,
         getPatch,
@@ -244,8 +241,6 @@ export function useModularWebSocket(options: UseModularWebSocketOptions = {}) {
         unmute,
         startRecording,
         stopRecording,
-        subscribeAudio,
-        unsubscribeAudio,
         listFiles,
         readFile,
         writeFile,

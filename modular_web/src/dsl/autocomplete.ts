@@ -1,6 +1,6 @@
 import { CompletionContext } from '@codemirror/autocomplete';
 import type { CompletionResult, Completion } from '@codemirror/autocomplete';
-import type { ModuleSchema } from '../types';
+import type { ModuleSchema } from '../types/generated/ModuleSchema';
 
 /**
  * Build autocomplete completions from module schemas

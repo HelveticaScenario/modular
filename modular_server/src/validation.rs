@@ -1,4 +1,4 @@
-use modular_core::types::{ModuleSchema, Param, PatchGraph};
+use modular_core::types::{ModuleSchema, Param, PatchGraph, ScopeItem};
 use std::collections::{HashMap, HashSet};
 
 use crate::protocol::ValidationError;
@@ -24,8 +24,9 @@ pub fn validate_patch(
     let schema_map: HashMap<&str, &ModuleSchema> =
         schemas.iter().map(|s| (s.name.as_str(), s)).collect();
 
-    // Build module ID lookup set
+    // Build module and track ID lookup sets
     let module_ids: HashSet<&str> = patch.modules.iter().map(|m| m.id.as_str()).collect();
+    let track_ids: HashSet<&str> = patch.tracks.iter().map(|t| t.id.as_str()).collect();
 
     for module in &patch.modules {
         // Check if module type exists
@@ -112,6 +113,53 @@ pub fn validate_patch(
         }
     }
 
+    // Validate scopes (declarative audio subscriptions)
+    for (idx, scope) in patch.scopes.iter().enumerate() {
+        let location = format!("scopes[{}]", idx);
+        match scope {
+            ScopeItem::ModuleOutput { module_id, port_name } => {
+                if !module_ids.contains(module_id.as_str()) {
+                    errors.push(ValidationError::with_location(
+                        "scopes.module_id",
+                        format!("Module '{}' not found for scope", module_id),
+                        location.clone(),
+                    ));
+                    continue;
+                }
+
+                if let Some(module) = patch.modules.iter().find(|m| m.id == *module_id) {
+                    if let Some(module_schema) = schema_map.get(module.module_type.as_str()) {
+                        let valid_outputs: HashSet<&str> = module_schema
+                            .outputs
+                            .iter()
+                            .map(|o| o.name.as_str())
+                            .collect();
+
+                        if !valid_outputs.contains(port_name.as_str()) {
+                            errors.push(ValidationError::with_location(
+                                "scopes.port_name",
+                                format!(
+                                    "Output port '{}' not found on module type '{}'",
+                                    port_name, module.module_type
+                                ),
+                                location.clone(),
+                            ));
+                        }
+                    }
+                }
+            }
+            ScopeItem::Track { track_id } => {
+                if !track_ids.contains(track_id.as_str()) {
+                    errors.push(ValidationError::with_location(
+                        "scopes.track_id",
+                        format!("Track '{}' not found for scope", track_id),
+                        location.clone(),
+                    ));
+                }
+            }
+        }
+    }
+
     if errors.is_empty() {
         Ok(())
     } else {
@@ -174,6 +222,7 @@ mod tests {
                 params,
             }],
             tracks: vec![],
+            scopes: vec![],
         };
 
         let result = validate_patch(&patch, &schemas);
@@ -190,6 +239,7 @@ mod tests {
                 params: HashMap::new(),
             }],
             tracks: vec![],
+            scopes: vec![],
         };
 
         let result = validate_patch(&patch, &schemas);
@@ -212,6 +262,7 @@ mod tests {
                 params,
             }],
             tracks: vec![],
+            scopes: vec![],
         };
 
         let result = validate_patch(&patch, &schemas);
@@ -240,6 +291,7 @@ mod tests {
                 params,
             }],
             tracks: vec![],
+            scopes: vec![],
         };
 
         let result = validate_patch(&patch, &schemas);
@@ -279,6 +331,7 @@ mod tests {
                 },
             ],
             tracks: vec![],
+            scopes: vec![],
         };
 
         let result = validate_patch(&patch, &schemas);
@@ -322,6 +375,7 @@ mod tests {
                 },
             ],
             tracks: vec![],
+            scopes: vec![],
         };
 
         assert!(validate_patch(&patch, &schemas).is_ok());
@@ -341,6 +395,7 @@ mod tests {
                 params,
             }],
             tracks: vec![],
+            scopes: vec![],
         };
 
         let result = validate_patch(&patch, &schemas);
@@ -355,6 +410,7 @@ mod tests {
         let patch = PatchGraph {
             modules: Vec::new(),
             tracks: vec![],
+            scopes: vec![],
         };
 
         assert!(validate_patch(&patch, &schemas).is_ok());

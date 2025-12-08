@@ -19,10 +19,11 @@ export function executePatchScript(
   const dslGlobals = {
     ...context.factories,
     track: context.createTrack.bind(context),
+    scope: context.scope.bind(context),
     // Helper functions
     hz,
     note,
-
+    
     // Output helper
     out,
   };

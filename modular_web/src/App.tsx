@@ -9,7 +9,16 @@ import { updateTsWorkerSchemas } from './lsp/tsClient';
 import { SchemasContext } from './SchemaContext';
 import './App.css';
 import type { ModuleSchema } from './types/generated/ModuleSchema';
+import type { ScopeItem } from './types/generated/ScopeItem';
 import type { ValidationError } from './types/generated/ValidationError';
+import type { editor } from 'monaco-editor';
+import { findScopeCallEndLines } from './utils/findScopeCallEndLines';
+
+declare global {
+    interface Window {
+        __APP_SCHEMAS__?: ModuleSchema[];
+    }
+}
 
 const DEFAULT_PATCH = `// Simple 440 Hz sine wave
 const osc = sine('osc1').freq(hz(440));
@@ -21,6 +30,21 @@ const PATCH_STORAGE_KEY = 'modular_patch_dsl';
 const width = 800;
 const height = 200;
 
+type ScopeView = {
+    key: string;
+    lineNumber: number;
+};
+
+const scopeKeyFromSubscription = (subscription: ScopeItem) => {
+    if (subscription.type === 'moduleOutput') {
+        const { module_id, port_name } = subscription;
+        return `:module:${module_id}:${port_name}`;
+    }
+
+    const { track_id } = subscription;
+    return `:track:${track_id}`;
+};
+
 const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -29,7 +53,7 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
     const h = canvas.height;
 
     // Clear canvas background
-    ctx.fillStyle = '#1a1a1a';
+    ctx.fillStyle = 'rgb(30, 30, 30)';
     ctx.fillRect(0, 0, w, h);
 
     const midY = h / 2;
@@ -85,7 +109,7 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
     }
 
     // Draw waveform across full width using only the selected window
-    ctx.strokeStyle = '#00ff00';
+    ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2;
     ctx.beginPath();
 
@@ -133,8 +157,23 @@ function App() {
     >(null);
 
     const [schemas, setSchemas] = useState<ModuleSchema[]>([]);
+    const [scopeViews, setScopeViews] = useState<ScopeView[]>([]);
+
+    const editorRef = useRef<editor.IStandaloneCodeEditor>(null);
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const scopeCanvasMapRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
+
+    const registerScopeCanvas = useCallback(
+        (key: string, canvas: HTMLCanvasElement) => {
+            scopeCanvasMapRef.current.set(key, canvas);
+        },
+        []
+    );
+
+    const unregisterScopeCanvas = useCallback((key: string) => {
+        scopeCanvasMapRef.current.delete(key);
+    }, []);
     const handleMessage = useCallback(
         (msg: OutputMessage) => {
             switch (msg.type) {
@@ -142,7 +181,7 @@ function App() {
                     console.log('Received schemas:', msg.schemas);
                     setSchemas(msg.schemas);
                     if (typeof window !== 'undefined') {
-                        (window as any).__APP_SCHEMAS__ = msg.schemas;
+                        window.__APP_SCHEMAS__ = msg.schemas;
                     }
                     void updateTsWorkerSchemas(msg.schemas);
                     break;
@@ -155,10 +194,14 @@ function App() {
                     setIsMuted(msg.muted);
                     break;
                 case 'audioBuffer': {
-                    // console.log('Audio buffer received', msg.samples.length);
-                    const canvas = canvasRef.current;
-                    if (!canvas) break;
-                    drawOscilloscope(msg.samples, canvas);
+                    const scopeKey = scopeKeyFromSubscription(msg.subscription);
+                    const scopedCanvas =
+                        scopeCanvasMapRef.current.get(scopeKey);
+                    if (scopedCanvas) {
+                        drawOscilloscope(msg.samples, scopedCanvas);
+                        break;
+                    }
+
                     break;
                 }
                 case 'fileList':
@@ -181,7 +224,6 @@ function App() {
         unmute,
         startRecording,
         stopRecording,
-        subscribeAudio,
     } = useModularWebSocket({ onMessage: handleMessage });
 
     useEffect(() => {
@@ -199,27 +241,57 @@ function App() {
     useEffect(() => {
         if (connectionState === 'connected') {
             getSchemas();
-            // Subscribe to root module output for oscilloscope
-            subscribeAudio('root', 'output');
         }
-    }, [connectionState, getPatch, getSchemas, subscribeAudio]);
+    }, [connectionState, getPatch, getSchemas]);
 
+    const schemaRef = useRef<ModuleSchema[]>([]);
+    useEffect(() => {
+        schemaRef.current = schemas;
+    }, [schemas]);
+    const patchCodeRef = useRef<string>(patchCode);
+    useEffect(() => {
+        patchCodeRef.current = patchCode;
+    }, [patchCode]);
     const handleSubmit = useCallback(() => {
         try {
+            const schemas = schemaRef.current;
+            const patchCode = patchCodeRef.current;
             // Execute DSL script to generate PatchGraph
-            console.log(schemas);
             const patch = executePatchScript(patchCode, schemas);
             setPatch(patch);
             setError(null);
             setValidationErrors(null);
+
+            const scopeCalls = findScopeCallEndLines(patchCode);
+
+            const views: ScopeView[] = patch.scopes
+                .map((scope, idx) => {
+                    const call = scopeCalls[idx];
+                    if (!call) return null;
+                    if (scope.type === 'moduleOutput') {
+                        const { module_id, port_name } = scope;
+                        return {
+                            key: `:module:${module_id}:${port_name}`,
+                            lineNumber: call.endLine,
+                        };
+                    } else {
+                        const { track_id } = scope;
+                        return {
+                            key: `:track:${track_id}`,
+                            lineNumber: call.endLine,
+                        };
+                    }
+                })
+                .filter((v): v is ScopeView => v !== null);
+
+            setScopeViews(views);
         } catch (err) {
             const errorMessage =
                 err instanceof Error ? err.message : 'Unknown error';
             setError(errorMessage);
             setValidationErrors(null);
         }
-    }, [patchCode, schemas, setPatch, setError, setValidationErrors]);
-    console.log('schemas in App:', schemas);
+    }, [setPatch, setError, setValidationErrors]);
 
     const handleStop = useCallback(() => {
         mute();
@@ -254,7 +326,7 @@ function App() {
         <SchemasContext.Provider value={schemas}>
             <div className="app">
                 <header className="app-header">
-                    <h1>Modular Synthesizer</h1>
+                    <h1>Jeff</h1>
                     <AudioControls
                         connectionState={connectionState}
                         isPlaying={!isMuted}
@@ -292,7 +364,11 @@ function App() {
                             onChange={setPatchCode}
                             onSubmit={handleSubmit}
                             onStop={handleStop}
+                            editorRef={editorRef}
                             schemas={schemas}
+                            scopeViews={scopeViews}
+                            onRegisterScopeCanvas={registerScopeCanvas}
+                            onUnregisterScopeCanvas={unregisterScopeCanvas}
                         />
                     </div>
 

@@ -617,11 +617,27 @@ pub struct ModuleState {
     pub params: HashMap<String, Param>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq, Hash)]
+#[serde(tag = "type", rename_all = "camelCase")]
+#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+pub enum ScopeItem {
+    ModuleOutput {
+        module_id: String,
+        port_name: String,
+    },
+    Track {
+        track_id: String,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct PatchGraph {
     pub modules: Vec<ModuleState>,
+    #[serde(default)]
     pub tracks: Vec<Track>,
+    #[serde(default)]
+    pub scopes: Vec<ScopeItem>,
 }
 
 pub type SampleableConstructor = Box<dyn Fn(&String, f32) -> Result<Arc<Box<dyn Sampleable>>>>;
@@ -901,9 +917,11 @@ mod tests {
         let patch = PatchGraph {
             modules: vec![],
             tracks: vec![],
+            scopes: vec![],
         };
         assert!(patch.modules.is_empty());
         assert!(patch.tracks.is_empty());
+        assert!(patch.scopes.is_empty());
     }
 
     #[test]
@@ -916,6 +934,7 @@ mod tests {
         let patch = PatchGraph {
             modules: vec![state],
             tracks: vec![],
+            scopes: vec![],
         };
         assert_eq!(patch.modules.len(), 1);
     }
@@ -932,6 +951,7 @@ mod tests {
                 params,
             }],
             tracks: vec![],
+            scopes: vec![],
         };
 
         let json = serde_json::to_string(&original).unwrap();

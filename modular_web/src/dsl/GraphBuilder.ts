@@ -5,6 +5,7 @@ import type { PatchGraph } from "../types/generated/PatchGraph";
 import type { InterpolationType } from "../types/generated/InterpolationType";
 import type { Track } from "../types/generated/Track";
 import type { TrackKeyframe } from "../types/generated/TrackKeyframe";
+import type { ScopeItem } from "../types/generated/ScopeItem";
 
 /**
  * GraphBuilder manages the construction of a PatchGraph from DSL code.
@@ -16,6 +17,8 @@ export class GraphBuilder {
   private tracks: Map<string, Track> = new Map();
   private counters: Map<string, number> = new Map();
   private schemas: ModuleSchema[] = [];
+  private scopes: ScopeItem[] = [];
+
 
   constructor(schemas: ModuleSchema[]) {
     this.schemas = schemas;
@@ -111,6 +114,7 @@ export class GraphBuilder {
     return {
       modules: Array.from(this.modules.values()),
       tracks: Array.from(this.tracks.values()),
+      scopes: Array.from(this.scopes),
     };
   }
 
@@ -119,6 +123,8 @@ export class GraphBuilder {
    */
   reset(): void {
     this.modules.clear();
+    this.tracks.clear();
+    this.scopes = [];
     this.counters.clear();
   }
 
@@ -132,6 +138,20 @@ export class GraphBuilder {
     })
 
     return track;
+  }
+
+  addScope(value: ModuleOutput | ModuleNode | TrackNode) {
+    if (value instanceof TrackNode) {
+      this.scopes.push({ type: 'track', track_id: value.id });
+      return;
+    }
+
+    const output = value instanceof ModuleNode ? value.o : value;
+    this.scopes.push({
+      type: 'moduleOutput',
+      module_id: output.moduleId,
+      port_name: output.portName,
+    });
   }
 }
 
@@ -161,7 +181,7 @@ export class ModuleNode {
     this.moduleType = moduleType;
     this.schema = schema;
     // Create a proxy to intercept parameter method calls
-    return new Proxy(this, {
+    const proxy = new Proxy(this, {
       get(target, prop: string) {
 
         // Check if it's a parameter name
@@ -170,14 +190,18 @@ export class ModuleNode {
           // Return a function that sets the parameter
           return (value: Value) => {
             target._setParam(prop, value);
-            return target;
+            return proxy;
           };
         }
 
         // Check if it's an output name
-        const outputSchema = target.schema.outputs.find(o => o.name === prop);
+        const outputSchema =
+          target.schema.outputs.find(o => o.name === prop)
+          ?? (prop === "output"
+            ? target.schema.outputs.find(o => o.default) ?? target.schema.outputs[0]
+            : undefined);
         if (outputSchema) {
-          return target._output(prop);
+          return target._output(outputSchema.name);
         }
 
         if (prop in target) {
@@ -188,6 +212,8 @@ export class ModuleNode {
         return undefined;
       }
     });
+
+    return proxy as unknown as ModuleNode;
   }
 
   get o(): ModuleOutput {

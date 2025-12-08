@@ -1,8 +1,19 @@
 
 import type { ModuleSchema } from '../types/generated/ModuleSchema';
-import { GraphBuilder, ModuleNode } from './GraphBuilder';
+import { GraphBuilder, ModuleNode, ModuleOutput, TrackNode } from './GraphBuilder';
 
 type FactoryFunction = (id?: string) => ModuleNode;
+
+function sanitizeIdentifier(name: string): string {
+  let id = name.replace(
+    /[^a-zA-Z0-9_$]+(.)?/g,
+    (_match, chr: string | undefined) => (chr ? chr.toUpperCase() : '')
+  );
+  if (!/^[A-Za-z_$]/.test(id)) {
+    id = `_${id}`;
+  }
+  return id || '_';
+}
 
 /**
  * DSL Context holds the builder and provides factory functions
@@ -14,8 +25,8 @@ export class DSLContext {
   constructor(schemas: ModuleSchema[]) {
     this.builder = new GraphBuilder(schemas);
     for (const schema of schemas) {
-      const factoryName = schema.name;
-      this.factories[factoryName] = this.createFactory(factoryName);
+      const factoryName = sanitizeIdentifier(schema.name);
+      this.factories[factoryName] = this.createFactory(schema.name);
     }
   }
 
@@ -33,6 +44,10 @@ export class DSLContext {
    */
   getBuilder(): GraphBuilder {
     return this.builder;
+  }
+
+  scope(target: ModuleNode | ModuleOutput | TrackNode) {
+    this.builder.addScope(target);
   }
 
   createTrack(id?: string) {

@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { executePatchScript } from '../executor';
 import { hz, note } from '../factories';
-import type { ModuleSchema } from '../../types';
+import type { ModuleSchema } from '../../types/generated/ModuleSchema';
 
 const testSchemas: ModuleSchema[] = [
   {
-    name: 'sine-osc',
+    name: 'sine',
     description: 'Sine oscillator',
     params: [
       { name: 'freq', description: 'Frequency in V/oct' },
@@ -20,7 +20,7 @@ const testSchemas: ModuleSchema[] = [
     outputs: [{ name: 'output', description: 'Output signal', default: true }],
   },
   {
-    name: 'scale-and-shift',
+    name: 'scaleAndShift',
     description: 'Scale and shift',
     params: [
       { name: 'input', description: 'Input' },
@@ -43,6 +43,14 @@ describe('DSL Executor', () => {
     expect(patch.modules).toHaveLength(2); // osc + root
     expect(patch.modules.find(m => m.id === 'osc1')).toBeDefined();
     expect(patch.modules.find(m => m.id === 'root')).toBeDefined();
+    expect(patch.scopes).toEqual([
+      {
+        ModuleOutput: {
+          module_id: 'root',
+          port_name: 'output',
+        },
+      },
+    ]);
   });
 
   it('should handle note helper', () => {
@@ -52,7 +60,7 @@ describe('DSL Executor', () => {
     `;
 
     const patch = executePatchScript(script, testSchemas);
-    const sineModule = patch.modules.find(m => m.module_type === 'sine-osc');
+    const sineModule = patch.modules.find(m => m.module_type === 'sine');
 
     expect(sineModule).toBeDefined();
     expect(sineModule?.params.freq).toEqual({
@@ -72,7 +80,26 @@ describe('DSL Executor', () => {
 
     // Should have sine + scale-and-shift + root
     expect(patch.modules.length).toBeGreaterThanOrEqual(3);
-    expect(patch.modules.find(m => m.module_type === 'scale-and-shift')).toBeDefined();
+    expect(patch.modules.find(m => m.module_type === 'scaleAndShift')).toBeDefined();
+  });
+
+  it('allows declaring explicit scopes', () => {
+    const script = `
+      const osc = sine('osc1').freq(hz(440));
+      scope(osc.output);
+      out.source(osc);
+    `;
+
+    const patch = executePatchScript(script, testSchemas);
+
+    expect(patch.scopes).toEqual([
+      {
+        ModuleOutput: {
+          module_id: 'osc1',
+          port_name: 'output',
+        },
+      },
+    ]);
   });
 
   it('should throw error for unknown module type', () => {

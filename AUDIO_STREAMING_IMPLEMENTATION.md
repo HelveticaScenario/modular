@@ -21,7 +21,7 @@ Added new message types for audio subscription:
 ### 2. Audio Capture System (`modular_core/src/patch.rs`)
 
 **New structures:**
-- `AudioSubscription` - Stores subscription metadata (id, module_id, port, buffer_size)
+- `ScopeItem` - Identifies a module output or track scope (module_id + port_name, or track_id)
 - Added `audio_subscriptions` and `audio_buffers` fields to `Patch`
 
 **Capture mechanism:**
@@ -34,7 +34,7 @@ Added new message types for audio subscription:
 
 **Binary frame format:**
 ```
-[subscription_id as UTF-8 string][0x00 null byte][f32 samples as little-endian bytes]
+[scope id UTF-8][0x00][port name UTF-8 or empty for tracks][0x00][f32 samples as little-endian bytes]
 ```
 
 **Handling:**
@@ -70,7 +70,7 @@ Added new message types for audio subscription:
 ### Modified Files:
 1. `modular_core/src/message.rs` - Added audio subscription messages and handlers
 2. `modular_core/src/patch.rs` - Added audio capture and subscription management
-3. `modular_core/src/lib.rs` - Export AudioSubscription type
+3. `modular_core/src/lib.rs` - Export ScopeItem for subscriptions
 4. `modular_server/src/http_server.rs` - Binary audio frame handling in WebSocket
 
 ### New Files:

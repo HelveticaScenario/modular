@@ -19,6 +19,7 @@ use modular_core::{
     PatchGraph,
     dsp::{get_constructors, schema},
 };
+use modular_core::types::ScopeItem;
 use tokio::sync::mpsc::{self, Sender};
 use tokio::task::JoinHandle;
 
@@ -28,7 +29,7 @@ use tracing::{error, info};
 
 use crate::{
     AudioState,
-    protocol::{AudioSubscription, InputMessage, OutputMessage},
+    protocol::{InputMessage, OutputMessage},
     validation::validate_patch,
 };
 
@@ -70,7 +71,7 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl
 
 async fn handle_subscription(
     audio_state: Arc<AudioState>,
-    subscription: AudioSubscription,
+    subscription: ScopeItem,
     socket_tx: Sender<Message>,
 ) {
     let (tx, mut rx) = mpsc::channel(32);
@@ -78,15 +79,28 @@ async fn handle_subscription(
     while let Some(msg) = rx.recv().await {
         match msg {
             OutputMessage::AudioBuffer {
-                subscription: AudioSubscription { module_id, port },
+                subscription,
                 samples,
             } => {
-                // println!("Sending audio buffer for subscription: {}", subscription_id);
-                // Convert to binary: subscription_id as null-terminated string + f32 samples
-                let mut bytes = module_id.as_bytes().to_vec();
-                bytes.push(0); // null terminator
-                bytes.extend_from_slice(port.as_bytes());
-                bytes.push(0); // null terminator
+                let mut bytes = Vec::new();
+
+                match subscription {
+                    ScopeItem::ModuleOutput {
+                        module_id,
+                        port_name,
+                    } => {
+                        bytes.extend_from_slice(module_id.as_bytes());
+                        bytes.push(0);
+                        bytes.extend_from_slice(port_name.as_bytes());
+                    }
+                    ScopeItem::Track { track_id } => {
+                        bytes.extend_from_slice(track_id.as_bytes());
+                        bytes.push(0);
+                        // Use empty port segment to signal track samples
+                    }
+                }
+
+                bytes.push(0); // null terminator between metadata and payload
                 for sample in samples {
                     bytes.extend_from_slice(&sample.to_le_bytes());
                 }
@@ -107,6 +121,77 @@ async fn send_message(socket_tx: Sender<Message>, message: OutputMessage) -> any
     let json = serde_json::to_string(&message)?;
     socket_tx.send(Message::Text(json)).await?;
     Ok(())
+}
+
+async fn handle_set_patch(
+    patch: &PatchGraph,
+    audio_state: &Arc<AudioState>,
+    sample_rate: f32,
+    socket_tx: Sender<Message>,
+) -> bool {
+    // Validate patch
+    let schemas = schema();
+    if let Err(errors) = validate_patch(patch, &schemas) {
+        let _ = send_message(
+            socket_tx,
+            OutputMessage::Error {
+                message: "Validation failed".to_string(),
+                errors: Some(errors),
+            },
+        )
+        .await;
+        return false;
+    }
+
+    // Apply patch
+    if let Err(e) = apply_patch(audio_state, patch, sample_rate).await {
+        let _ = send_message(
+            socket_tx,
+            OutputMessage::Error {
+                message: format!("Failed to apply patch: {}", e),
+                errors: None,
+            },
+        )
+        .await;
+        return false;
+    }
+
+    // Auto-unmute on SetPatch to match prior imperative flow
+    audio_state.set_muted(false);
+    let _ = send_message(socket_tx, OutputMessage::MuteState { muted: false }).await;
+
+    true
+}
+
+async fn sync_scopes_for_connection(
+    scopes: &[ScopeItem],
+    audio_state: Arc<AudioState>,
+    subscriptions: Arc<tokio::sync::Mutex<HashMap<ScopeItem, JoinHandle<()>>>>,
+    socket_tx: Sender<Message>,
+) {
+    let desired: HashSet<ScopeItem> = scopes.iter().cloned().collect();
+
+    let mut guard = subscriptions.lock().await;
+    let existing: HashSet<ScopeItem> = guard.keys().cloned().collect();
+
+    for sub in existing.difference(&desired) {
+        if let Some(handle) = guard.remove(sub) {
+            handle.abort();
+        }
+    }
+
+    for sub in desired.difference(&existing) {
+        let sub = sub.clone();
+        let sub_for_task = sub.clone();
+        let audio_state = audio_state.clone();
+        let socket_tx = socket_tx.clone();
+
+        let handle = tokio::spawn(async move {
+            handle_subscription(audio_state, sub_for_task, socket_tx).await;
+        });
+
+        guard.insert(sub, handle);
+    }
 }
 
 async fn handle_message(
@@ -133,43 +218,7 @@ async fn handle_message(
             // This is kept for backwards compatibility but does nothing
         }
         InputMessage::SetPatch { patch } => {
-            println!("Patch {:?}", patch);
-
-            // Validate patch
-            let schemas = schema();
-            if let Err(errors) = validate_patch(&patch, &schemas) {
-                let _ = send_message(
-                    socket_tx,
-                    OutputMessage::Error {
-                        message: "Validation failed".to_string(),
-                        errors: Some(errors),
-                    },
-                )
-                .await;
-                return;
-            }
-
-            // Apply patch
-            if let Err(e) = apply_patch(audio_state, &patch, sample_rate).await {
-                let _ = send_message(
-                    socket_tx,
-                    OutputMessage::Error {
-                        message: format!("Failed to apply patch: {}", e),
-                        errors: None,
-                    },
-                )
-                .await;
-                return;
-            }
-
-            // Auto-unmute on SetPatch - convenient for live editing workflows
-            // where you typically want to hear changes immediately
-            audio_state.set_muted(false);
-            let _ = send_message(
-                socket_tx,
-                OutputMessage::MuteState { muted: false },
-            )
-            .await;
+            let _ = handle_set_patch(&patch, audio_state, sample_rate, socket_tx).await;
         }
         InputMessage::ListFiles => match list_dsl_files() {
             Ok(files) => {
@@ -307,9 +356,6 @@ async fn handle_message(
                 }
             }
         },
-        _ => {
-            info!("Unhandled input message: {:?}", message);
-        }
     }
 }
 
@@ -493,7 +539,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     use futures_util::{SinkExt, StreamExt};
 
     let subscriptions = Arc::new(tokio::sync::Mutex::new(HashMap::<
-        AudioSubscription,
+        ScopeItem,
         JoinHandle<()>,
     >::new()));
     let handles: Arc<tokio::sync::Mutex<Vec<JoinHandle<()>>>> =
@@ -546,29 +592,26 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 println!("Received WebSocket message: {:?}", msg);
                 match msg {
                     Message::Text(text) => match serde_json::from_str::<InputMessage>(&text) {
-                        Ok(InputMessage::SubscribeAudio { subscription }) => {
+                        Ok(InputMessage::SetPatch { patch }) => {
+                            info!("Received input message: SetPatch");
                             let audio_state = state.audio_state.clone();
+                            let sample_rate = state.audio_state.sample_rate;
                             let socket_tx = fan_tx.clone();
-                            subscriptions.lock().await.insert(
-                                subscription.clone(),
-                                tokio::spawn(async move {
-                                    handle_subscription(audio_state, subscription, socket_tx).await;
-                                }),
-                            );
-                        }
-
-                        Ok(InputMessage::UnsubscribeAudio { subscription }) => {
-                            match subscriptions.lock().await.remove(&subscription) {
-                                Some(handle) => {
-                                    handle.abort();
-                                    info!("Unsubscribed from audio subscription");
+                            let subscriptions = subscriptions.clone();
+                            handles.lock().await.push(tokio::spawn(async move {
+                                if handle_set_patch(&patch, &audio_state, sample_rate, socket_tx.clone())
+                                    .await
+                                {
+                                    sync_scopes_for_connection(
+                                        &patch.scopes,
+                                        audio_state,
+                                        subscriptions,
+                                        socket_tx,
+                                    )
+                                    .await;
                                 }
-                                None => {
-                                    info!("No active subscription found to unsubscribe");
-                                }
-                            }
+                            }));
                         }
-
                         Ok(input_msg) => {
                             info!("Received input message: {:?}", input_msg);
                             let audio_state = state.audio_state.clone();

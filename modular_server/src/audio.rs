@@ -11,8 +11,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::protocol::AudioSubscription;
 use crate::protocol::OutputMessage;
+use modular_core::types::ScopeItem;
 use modular_core::patch::Patch;
 
 /// Attenuation factor applied to audio output to prevent clipping.
@@ -68,7 +68,7 @@ pub struct AudioState {
 }
 
 pub struct AudioSubscriptionCollection {
-    pub subscriptions: HashMap<AudioSubscription, AudioSubscriptionBuffer>,
+    pub subscriptions: HashMap<ScopeItem, AudioSubscriptionBuffer>,
 }
 
 impl AudioSubscriptionCollection {
@@ -133,7 +133,7 @@ impl AudioState {
 
     pub async fn add_subscription(
         &self,
-        subscription: AudioSubscription,
+        subscription: ScopeItem,
         tx: tokio::sync::mpsc::Sender<OutputMessage>,
     ) {
         let mut subscription_collection = self.subscription_collection.lock().await;
@@ -283,9 +283,23 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
     // Capture audio for subscriptions
     if let Ok(mut sub_collection) = audio_state.subscription_collection.try_lock() {
         for (subscription, subscription_buffer) in sub_collection.subscriptions.iter_mut() {
-            if let Some(module) = patch_guard.sampleables.get(&subscription.module_id) {
-                if let Ok(sample) = module.get_sample(&subscription.port) {
-                    subscription_buffer.buffer.push(sample);
+            match subscription {
+                ScopeItem::ModuleOutput {
+                    module_id,
+                    port_name,
+                } => {
+                    if let Some(module) = patch_guard.sampleables.get(module_id) {
+                        if let Ok(sample) = module.get_sample(port_name) {
+                            subscription_buffer.buffer.push(sample);
+                        }
+                    }
+                }
+                ScopeItem::Track { track_id } => {
+                    if let Some(track) = patch_guard.tracks.get(track_id) {
+                        if let Some(sample) = track.get_value_optional() {
+                            subscription_buffer.buffer.push(sample);
+                        }
+                    }
                 }
             }
         }
@@ -348,9 +362,9 @@ mod tests {
             HashMap::new(),
         )));
         let state = AudioState::new(patch, "".into(), 48000.0);
-        let sub = AudioSubscription {
+        let sub = ScopeItem::ModuleOutput {
             module_id: "sine-1".to_string(),
-            port: "output".to_string(),
+            port_name: "output".to_string(),
         };
 
         let (tx, rx) = tokio::sync::mpsc::channel(10);

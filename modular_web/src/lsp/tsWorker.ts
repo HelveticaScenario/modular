@@ -2,8 +2,6 @@ import * as ts from "typescript";
 import { buildLibSource } from "../dsl/typescriptLibGen";
 import type { ModuleSchema } from "../types/generated/ModuleSchema";
 
-console.log(buildLibSource)
-
 const DEFAULT_FILE_NAME = "file:///modular/dsl.js";
 const LIB_FILE_NAME = "lib.dsl.d.ts";
 

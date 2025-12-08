@@ -49,6 +49,7 @@ interface ModuleNode {
 declare function hz(frequency: number): number;
 declare function note(noteName: string): number;
 declare function track(id?: string): TrackNode;
+declare function scope(target: ModuleOutput | ModuleNode | TrackNode): void;
 `;
 
 function escapeDocComment(text: string): string {
@@ -135,6 +136,5 @@ function generateSchemaLib(schemas: ModuleSchema[]): string {
 export function buildLibSource(schemas: ModuleSchema[]): string {
     // console.log('buildLibSource schemas:', schemas);
     const schemaLib = generateSchemaLib(schemas);
-    console.log('Generated DSL lib source:\n', schemaLib);
     return `declare global {\n${BASE_LIB_SOURCE}\n\n${schemaLib} \n}\n\n export {};\n`;
 }

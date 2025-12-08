@@ -1,13 +1,9 @@
-use modular_core::PatchGraph;
-use parking_lot::Mutex;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc};
-use tracing::{error, info};
 
+use modular_core::Patch;
 use modular_core::dsp::get_constructors;
-use modular_core::{Patch, dsp::schema};
 
 pub mod audio;
 mod http_server;
@@ -17,7 +13,7 @@ pub mod validation;
 
 pub use audio::AudioState;
 pub use http_server::{AppState, create_router};
-pub use protocol::{AudioSubscription, InputMessage, OutputMessage, ValidationError};
+pub use protocol::{InputMessage, OutputMessage, ValidationError};
 
 use crate::audio::send_audio_buffers;
 
@@ -111,7 +107,7 @@ mod tests {
         // Core types
         Param::export_all().expect("Failed to export Param");
         Keyframe::export_all().expect("Failed to export Keyframe");
-	        InterpolationType::export_all().expect("Failed to export InterpolationType");
+        InterpolationType::export_all().expect("Failed to export InterpolationType");
         Track::export_all().expect("Failed to export Track");
         ParamSchema::export_all().expect("Failed to export PortSchema");
         ModuleSchema::export_all().expect("Failed to export ModuleSchema");
