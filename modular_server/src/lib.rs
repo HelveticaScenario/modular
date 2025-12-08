@@ -111,9 +111,8 @@ mod tests {
         // Core types
         Param::export_all().expect("Failed to export Param");
         Keyframe::export_all().expect("Failed to export Keyframe");
-        Playmode::export_all().expect("Failed to export Playmode");
+	        InterpolationType::export_all().expect("Failed to export InterpolationType");
         Track::export_all().expect("Failed to export Track");
-        TrackUpdate::export_all().expect("Failed to export TrackUpdate");
         ParamSchema::export_all().expect("Failed to export PortSchema");
         ModuleSchema::export_all().expect("Failed to export ModuleSchema");
         ModuleState::export_all().expect("Failed to export ModuleState");

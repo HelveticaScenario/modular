@@ -1,4 +1,5 @@
-import type { ModuleSchema } from '../types';
+
+import type { ModuleSchema } from '../types/generated/ModuleSchema';
 import { GraphBuilder, ModuleNode } from './GraphBuilder';
 
 type FactoryFunction = (id?: string) => ModuleNode;
@@ -34,7 +35,9 @@ export class DSLContext {
     return this.builder;
   }
 
-
+  createTrack(id?: string) {
+    return this.builder.addTrack(id);
+  }
 }
 
 /**

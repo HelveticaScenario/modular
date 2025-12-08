@@ -165,48 +165,49 @@ async fn handle_message(
             // Auto-unmute on SetPatch - convenient for live editing workflows
             // where you typically want to hear changes immediately
             audio_state.set_muted(false);
+            let _ = send_message(
+                socket_tx,
+                OutputMessage::MuteState { muted: false },
+            )
+            .await;
         }
-        InputMessage::ListFiles => {
-            match list_dsl_files() {
-                Ok(files) => {
-                    let _ = send_message(socket_tx, OutputMessage::FileList { files }).await;
-                }
-                Err(e) => {
-                    let _ = send_message(
-                        socket_tx,
-                        OutputMessage::Error {
-                            message: format!("Failed to list files: {}", e),
-                            errors: None,
-                        },
-                    )
-                    .await;
-                }
+        InputMessage::ListFiles => match list_dsl_files() {
+            Ok(files) => {
+                let _ = send_message(socket_tx, OutputMessage::FileList { files }).await;
             }
-        }
-        InputMessage::ReadFile { path } => {
-            match read_dsl_file(&path) {
-                Ok(content) => {
-                    let _ = send_message(
-                        socket_tx,
-                        OutputMessage::FileContent {
-                            path: path.clone(),
-                            content,
-                        },
-                    )
-                    .await;
-                }
-                Err(e) => {
-                    let _ = send_message(
-                        socket_tx,
-                        OutputMessage::Error {
-                            message: format!("Failed to read file: {}", e),
-                            errors: None,
-                        },
-                    )
-                    .await;
-                }
+            Err(e) => {
+                let _ = send_message(
+                    socket_tx,
+                    OutputMessage::Error {
+                        message: format!("Failed to list files: {}", e),
+                        errors: None,
+                    },
+                )
+                .await;
             }
-        }
+        },
+        InputMessage::ReadFile { path } => match read_dsl_file(&path) {
+            Ok(content) => {
+                let _ = send_message(
+                    socket_tx,
+                    OutputMessage::FileContent {
+                        path: path.clone(),
+                        content,
+                    },
+                )
+                .await;
+            }
+            Err(e) => {
+                let _ = send_message(
+                    socket_tx,
+                    OutputMessage::Error {
+                        message: format!("Failed to read file: {}", e),
+                        errors: None,
+                    },
+                )
+                .await;
+            }
+        },
         InputMessage::WriteFile { path, content } => {
             match write_dsl_file(&path, &content) {
                 Ok(_) => {
@@ -242,11 +243,21 @@ async fn handle_message(
             }
         }
         InputMessage::Mute => {
-            audio_state.set_muted(true);
-        }
-        InputMessage::Unmute => {
-            audio_state.set_muted(false);
-        }
+	            audio_state.set_muted(true);
+	            let _ = send_message(
+	                socket_tx,
+	                OutputMessage::MuteState { muted: true },
+	            )
+	            .await;
+	        }
+	        InputMessage::Unmute => {
+	            audio_state.set_muted(false);
+	            let _ = send_message(
+	                socket_tx,
+	                OutputMessage::MuteState { muted: false },
+	            )
+	            .await;
+	        }
         InputMessage::StartRecording { filename } => {
             match audio_state.start_recording(filename).await {
                 Ok(path) => {
@@ -382,82 +393,77 @@ async fn apply_patch(
     }
 
     // ===== TRACK LIFECYCLE =====
-    
+
     // Build maps for efficient track lookup
     let desired_tracks: HashMap<String, _> = desired_graph
         .tracks
         .iter()
         .map(|t| (t.id.clone(), t))
         .collect();
-    
+
     let current_track_ids: HashSet<String> = patch_lock.tracks.keys().cloned().collect();
     let desired_track_ids: HashSet<String> = desired_tracks.keys().cloned().collect();
-    
+
     println!("Current track IDs: {:?}", current_track_ids);
     println!("Desired track IDs: {:?}", desired_track_ids);
-    
+
     // Delete removed tracks (in current but not in desired)
     let tracks_to_delete: Vec<String> = current_track_ids
         .difference(&desired_track_ids)
         .cloned()
         .collect();
-    
+
     println!("Tracks to delete: {:?}", tracks_to_delete);
-    
+
     for track_id in tracks_to_delete {
         patch_lock.tracks.remove(&track_id);
     }
-    
+
     // Two-pass track creation to handle keyframes that reference other tracks
-    
-    // PASS 1: Create/update track shells (without keyframes)
-    for track in &desired_graph.tracks {
-        match patch_lock.tracks.get(&track.id) {
-            Some(existing_track) => {
-                // Update existing track metadata
-                println!("Updating track: {}", track.id);
-                
-                existing_track.update(&modular_core::types::TrackUpdate {
-                    length: Some(track.length),
-                    play_mode: Some(track.play_mode),
-                });
-                
-                // Clear all existing keyframes (will re-add in pass 2)
-                let current_keyframes = existing_track.to_track().keyframes;
-                for kf in current_keyframes {
-                    existing_track.remove_keyframe(kf.id);
-                }
-            }
-            None => {
-                // Create new track shell
-                println!("Creating track: {}", track.id);
-                
-                let internal_track = Arc::new(modular_core::types::InternalTrack::new(
-                    track.id.clone(),
-                    sample_rate as u32,
-                ));
-                
-                internal_track.update(&modular_core::types::TrackUpdate {
-                    length: Some(track.length),
-                    play_mode: Some(track.play_mode),
-                });
-                
-                patch_lock.tracks.insert(track.id.clone(), internal_track);
-            }
-        }
-    }
-    
-    // PASS 2: Add keyframes to all tracks (now all tracks exist for Track param resolution)
-    for track in &desired_graph.tracks {
-        if let Some(internal_track) = patch_lock.tracks.get(&track.id) {
-            println!("Adding keyframes to track: {}", track.id);
-            for kf in &track.keyframes {
-                let internal_kf = kf.to_internal_keyframe(&patch_lock);
-                internal_track.add_keyframe(internal_kf);
-            }
-        }
-    }
-    
+
+	    // PASS 1: Create/update track shells (without configuration or keyframes)
+	    for track in &desired_graph.tracks {
+	        match patch_lock.tracks.get(&track.id) {
+	            Some(existing_track) => {
+	                // Existing track: clear all keyframes (will re-add in pass 2)
+	                println!("Updating track: {}", track.id);
+	                let current_keyframes = existing_track.to_track().keyframes;
+	                for kf in current_keyframes {
+	                    existing_track.remove_keyframe(kf.id);
+	                }
+	            }
+	            None => {
+	                // Create new track shell with a disconnected playhead param
+	                println!("Creating track: {}", track.id);
+	                let default_playhead_param = modular_core::Param::Disconnected
+	                    .to_internal_param(&patch_lock);
+	                let internal_track = Arc::new(modular_core::types::InternalTrack::new(
+	                    track.id.clone(),
+	                    default_playhead_param,
+	                    track.interpolation_type,
+	                ));
+	                patch_lock.tracks.insert(track.id.clone(), internal_track);
+	            }
+	        }
+	    }
+
+	    // PASS 2: Configure tracks and add keyframes (all tracks now exist for Track param resolution)
+	    for track in &desired_graph.tracks {
+	        if let Some(internal_track) = patch_lock.tracks.get(&track.id) {
+	            println!("Configuring track and adding keyframes: {}", track.id);
+
+	            // Configure playhead parameter and interpolation type
+	            let playhead_param = track.playhead.to_internal_param(&patch_lock);
+	            internal_track.configure(playhead_param, track.interpolation_type);
+
+	            // Add keyframes (params may reference other tracks, which now exist)
+	            for kf in &track.keyframes {
+	                let internal_kf = kf.to_internal_keyframe(&patch_lock);
+	                internal_track.add_keyframe(internal_kf);
+	            }
+	        }
+	    }
+
     // Update parameters for all desired modules (both new and existing)
     // This happens AFTER tracks are created so Track params can resolve
     for id in desired_ids.iter() {
@@ -493,8 +499,17 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let handles: Arc<tokio::sync::Mutex<Vec<JoinHandle<()>>>> =
         Arc::new(tokio::sync::Mutex::new(Vec::new()));
     // Spawn task to forward broadcast messages to this client
-    let (mut socket_tx, mut socket_rx) = socket.split();
-    let (fan_tx, mut fan_rx) = mpsc::channel::<Message>(1024);
+	    let (mut socket_tx, mut socket_rx) = socket.split();
+	    let (fan_tx, mut fan_rx) = mpsc::channel::<Message>(1024);
+
+	    // Send initial mute state to the client on connect
+	    let _ = send_message(
+	        fan_tx.clone(),
+	        OutputMessage::MuteState {
+	            muted: state.audio_state.is_muted(),
+	        },
+	    )
+	    .await;
     let mut socket_task = tokio::spawn(async move {
         // Implementation for sending messages to client
         while let Some(message) = fan_rx.recv().await {
@@ -652,8 +667,7 @@ fn read_dsl_file(filename: &str) -> Result<String> {
     let patches_dir = get_patches_dir();
     let file_path = patches_dir.join(filename);
 
-    fs::read_to_string(&file_path)
-        .with_context(|| format!("Failed to read file: {}", filename))
+    fs::read_to_string(&file_path).with_context(|| format!("Failed to read file: {}", filename))
 }
 
 /// Write a DSL file to the patches directory
@@ -670,8 +684,7 @@ fn write_dsl_file(filename: &str, content: &str) -> Result<()> {
     let patches_dir = get_patches_dir();
     let file_path = patches_dir.join(filename);
 
-    fs::write(&file_path, content)
-        .with_context(|| format!("Failed to write file: {}", filename))
+    fs::write(&file_path, content).with_context(|| format!("Failed to write file: {}", filename))
 }
 
 /// Delete a DSL file from the patches directory
@@ -683,6 +696,5 @@ fn delete_dsl_file(filename: &str) -> Result<()> {
     let patches_dir = get_patches_dir();
     let file_path = patches_dir.join(filename);
 
-    fs::remove_file(&file_path)
-        .with_context(|| format!("Failed to delete file: {}", filename))
+    fs::remove_file(&file_path).with_context(|| format!("Failed to delete file: {}", filename))
 }

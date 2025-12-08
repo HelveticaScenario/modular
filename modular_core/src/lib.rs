@@ -22,7 +22,7 @@ pub mod types;
 // Re-export commonly used items
 pub use patch::Patch;
 pub use types::{
-    InternalParam, InternalTrack, Keyframe, Module, ModuleSchema, ModuleState, Param, Params,
-    PatchGraph, Playmode, ParamSchema, Sampleable, SampleableConstructor, SampleableMap, Track,
-    TrackMap, TrackUpdate, ROOT_ID, ROOT_OUTPUT_PORT,
+	InternalParam, InternalTrack, Keyframe, Module, ModuleSchema, ModuleState, Param, Params,
+	PatchGraph, ParamSchema, Sampleable, SampleableConstructor, SampleableMap, Track, TrackMap,
+	ROOT_ID, ROOT_OUTPUT_PORT,
 };

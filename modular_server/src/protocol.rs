@@ -46,6 +46,11 @@ pub enum OutputMessage {
         errors: Option<Vec<ValidationError>>,
     },
 
+    /// Current mute state of the audio engine
+    MuteState {
+        muted: bool,
+    },
+
     // Audio streaming
     AudioBuffer {
         subscription: AudioSubscription,

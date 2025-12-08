@@ -1,12 +1,20 @@
-import type { PatchGraph, ModuleState, Param, ModuleSchema } from '../types';
+import type { ModuleSchema } from "../types/generated/ModuleSchema";
+import type { ModuleState } from "../types/generated/ModuleState";
+import type { Param } from "../types/generated/Param";
+import type { PatchGraph } from "../types/generated/PatchGraph";
+import type { InterpolationType } from "../types/generated/InterpolationType";
+import type { Track } from "../types/generated/Track";
+import type { TrackKeyframe } from "../types/generated/TrackKeyframe";
 
 /**
  * GraphBuilder manages the construction of a PatchGraph from DSL code.
  * It tracks modules, generates deterministic IDs, and builds the final graph.
  */
 export class GraphBuilder {
+
   private modules: Map<string, ModuleState> = new Map();
-  private moduleCounters: Map<string, number> = new Map();
+  private tracks: Map<string, Track> = new Map();
+  private counters: Map<string, number> = new Map();
   private schemas: ModuleSchema[] = [];
 
   constructor(schemas: ModuleSchema[]) {
@@ -21,8 +29,8 @@ export class GraphBuilder {
       return explicitId;
     }
 
-    const counter = (this.moduleCounters.get(moduleType) || 0) + 1;
-    this.moduleCounters.set(moduleType, counter);
+    const counter = (this.counters.get(moduleType) || 0) + 1;
+    this.counters.set(moduleType, counter);
     return `${moduleType}-${counter}`;
   }
 
@@ -72,13 +80,37 @@ export class GraphBuilder {
     module.params[paramName] = value;
   }
 
+  addTrackKeyframe(trackId: string, keyframe: TrackKeyframe) {
+    const track = this.tracks.get(trackId);
+    if (!track) {
+      throw new Error(`Track not found: ${trackId}`);
+    }
+    track.keyframes.push(keyframe);
+  }
+
+  setTrackInterpolation(trackId: string, interpolation: InterpolationType) {
+    const track = this.tracks.get(trackId);
+    if (!track) {
+      throw new Error(`Track not found: ${trackId}`);
+    }
+    track.interpolation_type = interpolation;
+  }
+
+  setTrackPlayheadParam(trackId: string, playhead: Param) {
+    const track = this.tracks.get(trackId);
+    if (!track) {
+      throw new Error(`Track not found: ${trackId}`);
+    }
+    track.playhead = playhead;
+  }
+
   /**
    * Build the final PatchGraph
    */
   toPatch(): PatchGraph {
     return {
       modules: Array.from(this.modules.values()),
-      tracks: [],
+      tracks: Array.from(this.tracks.values()),
     };
   }
 
@@ -87,11 +119,23 @@ export class GraphBuilder {
    */
   reset(): void {
     this.modules.clear();
-    this.moduleCounters.clear();
+    this.counters.clear();
+  }
+
+  addTrack(explicitId?: string) {
+    const track = new TrackNode(this, this.generateId("track", explicitId));
+    this.tracks.set(track.id, {
+      id: track.id,
+      playhead: { param_type: 'value', value: 0 },
+      interpolation_type: 'linear',
+      keyframes: [],
+    })
+
+    return track;
   }
 }
 
-type Value = number | ModuleOutput | ModuleNode
+type Value = number | ModuleOutput | ModuleNode | TrackNode;
 
 /**
  * ModuleNode represents a module instance in the DSL with fluent API
@@ -176,6 +220,11 @@ export class ModuleNode {
         module: value.moduleId,
         port: value.portName,
       });
+    } else if (value instanceof TrackNode) {
+      this.builder.setParam(this.id, paramName, {
+        param_type: 'track',
+        track: value.id,
+      });
     } else {
       this.builder.setParam(this.id, paramName, {
         param_type: 'value',
@@ -239,3 +288,113 @@ export class ModuleOutput {
   }
 }
 
+export class TrackNode {
+  readonly builder: GraphBuilder;
+  readonly id: string;
+  private counter: number = 0;
+
+  constructor(
+    builder: GraphBuilder,
+    id: string,
+  ) {
+    this.builder = builder;
+    this.id = id;
+  }
+
+  /**
+   * Set the interpolation type for this track.
+   */
+  interpolation(interpolation: InterpolationType) {
+    this.builder.setTrackInterpolation(this.id, interpolation);
+    return this;
+  }
+
+  /**
+   * Set the playhead parameter for this track.
+   *
+   * The value range [-5.0, 5.0] maps linearly to normalized time [0.0, 1.0].
+   */
+  playhead(value: Value) {
+    if (value instanceof ModuleNode) {
+      value = value.o;
+    }
+
+    let param: Param;
+
+    if (value instanceof ModuleOutput) {
+      param = {
+        param_type: 'cable',
+        module: value.moduleId,
+        port: value.portName,
+      };
+    } else if (value instanceof TrackNode) {
+      param = {
+        param_type: 'track',
+        track: value.id,
+      };
+    } else {
+      param = {
+        param_type: 'value',
+        value,
+      };
+    }
+
+    this.builder.setTrackPlayheadParam(this.id, param);
+    return this;
+  }
+
+  addKeyframe(time: number, value: Value) {
+    if (value instanceof ModuleNode) {
+      value = value.o
+    }
+
+    let param: Param;
+
+    if (value instanceof ModuleOutput) {
+      param = {
+        param_type: 'cable',
+        module: value.moduleId,
+        port: value.portName,
+      }
+    } else if (value instanceof TrackNode) {
+      param = {
+        param_type: 'track',
+        track: value.id,
+      }
+    } else {
+      param = {
+        param_type: 'value',
+        value: value,
+      }
+    }
+
+    this.builder.addTrackKeyframe(this.id, {
+      id: `keyframe-${this.counter++}`,
+      track_id: this.id,
+      time,
+      param,
+    });
+
+    return this;
+  }
+
+  /**
+ * Scale this output by a factor
+ */
+  scale(factor: Value): ModuleNode {
+    const scaleNode = this.builder.addModule('scaleAndShift');
+    scaleNode._setParam('input', this);
+    scaleNode._setParam('scale', factor);
+    return scaleNode;
+  }
+
+  /**
+   * Shift this output by an offset
+   */
+  shift(offset: Value): ModuleNode {
+    const shiftNode = this.builder.addModule('scaleAndShift');
+    shiftNode._setParam('input', this);
+    shiftNode._setParam('shift', offset);
+    return shiftNode;
+  }
+}

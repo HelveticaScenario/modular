@@ -271,46 +271,35 @@ impl Param {
 
 #[derive(PartialEq)]
 pub struct InternalKeyframe {
-    id: String,
-    track_id: String,
-    pub time: Duration,
-    pub param: InternalParam,
-    pub interpolation: InterpolationType,
+	id: String,
+	track_id: String,
+	/// Normalized time in the range [0.0, 1.0]
+	pub time: f32,
+	pub param: InternalParam,
 }
 
 impl InternalKeyframe {
-    pub fn new(id: String, track_id: String, time: Duration, param: InternalParam) -> Self {
-        InternalKeyframe {
-            id,
-            track_id,
-            time,
-            param,
-            interpolation: InterpolationType::default(),
-        }
-    }
+	pub fn new(id: String, track_id: String, time: f32, param: InternalParam) -> Self {
+		InternalKeyframe { id, track_id, time, param }
+	}
 
-    pub fn with_interpolation(mut self, interpolation: InterpolationType) -> Self {
-        self.interpolation = interpolation;
-        self
-    }
-    pub fn get_id(&self) -> String {
-        self.id.clone()
-    }
-    pub fn to_keyframe(&self) -> Keyframe {
-        Keyframe {
-            id: self.id.clone(),
-            track_id: self.track_id.clone(),
-            time: self.time,
-            param: self.param.to_param(),
-            interpolation: self.interpolation,
-        }
-    }
+	pub fn get_id(&self) -> String {
+		self.id.clone()
+	}
+	pub fn to_keyframe(&self) -> Keyframe {
+		Keyframe {
+			id: self.id.clone(),
+			track_id: self.track_id.clone(),
+			time: self.time,
+			param: self.param.to_param(),
+		}
+	}
 }
 
 impl PartialOrd for InternalKeyframe {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.time.partial_cmp(&other.time)
-    }
+	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+		self.time.partial_cmp(&other.time)
+	}
 }
 
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize, TS)]
@@ -330,398 +319,253 @@ impl Default for InterpolationType {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename = "TrackKeyframe")]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct Keyframe {
-    pub id: String,
-    pub track_id: String,
-    #[serde(with = "duration_millis")]
-    #[ts(type = "number")]
-    pub time: Duration,
-    pub param: Param,
-    #[serde(default)]
-    pub interpolation: InterpolationType,
+	pub id: String,
+	pub track_id: String,
+	/// Normalized time in the range [0.0, 1.0]
+	pub time: f32,
+	pub param: Param,
 }
 
 impl Keyframe {
-    pub fn new(id: String, track_id: String, time: Duration, param: Param) -> Self {
-        Keyframe {
-            id,
-            track_id,
-            time,
-            param,
-            interpolation: InterpolationType::default(),
-        }
-    }
+	pub fn new(id: String, track_id: String, time: f32, param: Param) -> Self {
+		Keyframe { id, track_id, time, param }
+	}
 
-    pub fn with_interpolation(mut self, interpolation: InterpolationType) -> Self {
-        self.interpolation = interpolation;
-        self
-    }
-    pub fn get_id(&self) -> &String {
-        &self.id
-    }
-    pub fn to_internal_keyframe(&self, patch: &Patch) -> InternalKeyframe {
-        InternalKeyframe {
-            id: self.id.clone(),
-            track_id: self.track_id.clone(),
-            time: self.time,
-            param: self.param.to_internal_param(patch),
-            interpolation: self.interpolation,
-        }
-    }
+	pub fn get_id(&self) -> &String {
+		&self.id
+	}
+	pub fn to_internal_keyframe(&self, patch: &Patch) -> InternalKeyframe {
+		InternalKeyframe {
+			id: self.id.clone(),
+			track_id: self.track_id.clone(),
+			time: self.time,
+			param: self.param.to_internal_param(patch),
+		}
+	}
 }
 
 impl PartialOrd for Keyframe {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.time.partial_cmp(&other.time)
-    }
+	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+		self.time.partial_cmp(&other.time)
+	}
 }
 
-#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
-#[serde(rename_all = "camelCase")]
-pub enum Playmode {
-    Once,
-    Loop,
-}
-
-fn duration_to_samples(duration: Duration, sample_rate: u32) -> u64 {
-    if sample_rate == 0 {
-        return 0;
-    }
-    let nanos = duration.as_nanos();
-    let numerator = nanos * sample_rate as u128 + 500_000_000u128;
-    (numerator / 1_000_000_000u128).min(u64::MAX as u128) as u64
-}
-
-fn samples_to_duration(samples: u64, sample_rate: u32) -> Duration {
-    if sample_rate == 0 {
-        return Duration::from_nanos(0);
-    }
-    let numerator = samples as u128 * 1_000_000_000u128 + (sample_rate as u128 / 2);
-    let nanos = (numerator / sample_rate as u128).min(u64::MAX as u128) as u64;
-    Duration::from_nanos(nanos)
+fn normalize_playhead_value_to_t(value: f32) -> f32 {
+	// Map [-5.0, 5.0] linearly to [0.0, 1.0]
+	((value + 5.0) / 10.0).clamp(0.0, 1.0)
 }
 
 struct InnerTrack {
-    sample_rate: u32,
-    playhead_samples: u64,
-    length_samples: u64,
-    play_mode: Playmode,
-    playhead_idx: usize,
-    keyframes: Vec<InternalKeyframe>,
+	interpolation_type: InterpolationType,
+	keyframes: Vec<InternalKeyframe>,
 }
 
 impl InnerTrack {
-    pub fn seek(&mut self, playhead: Duration) {
-        let samples = duration_to_samples(playhead, self.sample_rate);
-        self.seek_samples(samples);
-    }
+	fn new(interpolation_type: InterpolationType) -> Self {
+		InnerTrack {
+			interpolation_type,
+			keyframes: Vec::new(),
+		}
+	}
 
-    fn seek_samples(&mut self, mut playhead_samples: u64) {
-        if self.length_samples < playhead_samples {
-            match self.play_mode {
-                Playmode::Once => {
-                    self.playhead_samples = self.length_samples;
-                    self.playhead_idx = self.keyframes.len().saturating_sub(1);
-                    return;
-                }
-                Playmode::Loop => {
-                    if self.length_samples == 0 {
-                        self.playhead_samples = 0;
-                    } else {
-                        while self.length_samples < playhead_samples {
-                            playhead_samples -= self.length_samples;
-                        }
-                        self.playhead_samples = playhead_samples;
-                    }
-                }
-            }
-        } else {
-            self.playhead_samples = playhead_samples;
-        }
+	fn set_interpolation_type(&mut self, interpolation_type: InterpolationType) {
+		self.interpolation_type = interpolation_type;
+	}
 
-        let len = self.keyframes.len();
-        while self.playhead_idx < len {
-            let curr = self.keyframes.get(self.playhead_idx).unwrap();
-            let curr_time_samples = duration_to_samples(curr.time, self.sample_rate);
-            let next = self.keyframes.get(self.playhead_idx + 1);
+	pub fn add_keyframe(&mut self, keyframe: InternalKeyframe) {
+		match self.keyframes.iter().position(|k| k.id == keyframe.id) {
+			Some(idx) => {
+				self.keyframes[idx] = keyframe;
+			}
+			None => {
+				self.keyframes.push(keyframe);
+			}
+		}
+		self.keyframes.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
+	}
 
-            match next {
-                Some(next) => {
-                    let next_time_samples = duration_to_samples(next.time, self.sample_rate);
-                    let curr_is_behind_or_equal = self.playhead_samples >= curr_time_samples;
-                    let next_is_ahead = self.playhead_samples < next_time_samples;
-                    match (curr_is_behind_or_equal, next_is_ahead) {
-                        (true, true) => return,
-                        (true, false) => {
-                            self.playhead_idx += 1;
-                        }
-                        (false, true) => {
-                            if self.playhead_idx == 0 {
-                                return;
-                            } else {
-                                self.playhead_idx -= 1;
-                            }
-                        }
-                        (false, false) => unreachable!(),
-                    };
-                }
-                None => {
-                    if self.playhead_samples < curr_time_samples {
-                        if self.playhead_idx == 0 {
-                            return;
-                        } else {
-                            self.playhead_idx -= 1;
-                        }
-                    } else {
-                        return;
-                    }
-                }
-            }
-        }
-    }
+	pub fn remove_keyframe(&mut self, id: String) -> Option<InternalKeyframe> {
+		match self.keyframes.iter().position(|k| k.id == id) {
+			Some(idx) => Some(self.keyframes.remove(idx)),
+			None => None,
+		}
+	}
 
-    pub fn add_keyframe(&mut self, keyframe: InternalKeyframe) {
-        match self.keyframes.iter().position(|k| k.id == keyframe.id) {
-            Some(idx) => {
-                self.keyframes[idx] = keyframe;
-            }
-            None => {
-                self.keyframes.push(keyframe);
-            }
-        }
-        self.keyframes.sort_by_key(|a| a.time);
+	/// Tick the track for the current playhead value and return the interpolated sample.
+	///
+	/// `playhead_value` is expected to be in the range [-5.0, 5.0]. It will be
+	/// mapped linearly to a normalized time in [0.0, 1.0].
+	pub fn tick(&mut self, playhead_value: Option<f32>) -> Option<f32> {
+		let playhead_value = playhead_value?;
+		if self.keyframes.is_empty() {
+			return None;
+		}
 
-        {
-            let time = self.keyframes.last().unwrap().time;
-            let samples = duration_to_samples(time, self.sample_rate);
-            if self.length_samples < samples {
-                self.length_samples = samples;
-            }
-        }
-        let playhead_samples = self.playhead_samples;
-        self.playhead_samples = 0;
-        self.playhead_idx = 0;
-        self.seek_samples(playhead_samples);
-    }
+		let t = normalize_playhead_value_to_t(playhead_value);
 
-    pub fn remove_keyframe(&mut self, id: String) -> Option<InternalKeyframe> {
-        match self.keyframes.iter().position(|k| k.id == id) {
-            Some(idx) => {
-                let ret = Some(self.keyframes.remove(idx));
-                let playhead_samples = self.playhead_samples;
-                self.playhead_samples = 0;
-                self.playhead_idx = 0;
-                self.seek_samples(playhead_samples);
-                ret
-            }
-            None => None,
-        }
-    }
+		// Single keyframe: always return its value
+		if self.keyframes.len() == 1 {
+			return self.keyframes[0].param.get_value_optional();
+		}
 
-    pub fn tick(&mut self) -> Option<f32> {
-        self.seek_samples(self.playhead_samples.saturating_add(1));
+		// Clamp to first/last keyframe times
+		let first = &self.keyframes[0];
+		if t <= first.time {
+			return first.param.get_value_optional();
+		}
+		let last = self.keyframes.last().unwrap();
+		if t >= last.time {
+			return last.param.get_value_optional();
+		}
 
-        if self.keyframes.is_empty() {
-            return None;
-        }
+		// Find the segment [curr, next] such that curr.time <= t <= next.time
+		let mut idx = 0usize;
+		for i in 0..(self.keyframes.len() - 1) {
+			let curr = &self.keyframes[i];
+			let next = &self.keyframes[i + 1];
+			if t >= curr.time && t <= next.time {
+				idx = i;
+				break;
+			}
+		}
 
-        let curr = self.keyframes.get(self.playhead_idx)?;
-        let curr_time_samples = duration_to_samples(curr.time, self.sample_rate);
+		let curr = &self.keyframes[idx];
+		let next = &self.keyframes[idx + 1];
 
-        // Determine next keyframe - for looping tracks, wrap to first keyframe
-        let (next, next_time_samples) = if let Some(n) = self.keyframes.get(self.playhead_idx + 1) {
-            // Normal case: next keyframe exists
-            (n, duration_to_samples(n.time, self.sample_rate))
-        } else {
-            // Last keyframe case
-            match self.play_mode {
-                Playmode::Loop => {
-                    // Loop mode: wrap to first keyframe
-                    let first = self.keyframes.get(0)?;
-                    // Next keyframe time is first keyframe time + track length
-                    (first, self.length_samples)
-                }
-                Playmode::Once => {
-                    // Once mode: hold last keyframe value
-                    return curr.param.get_value_optional();
-                }
-            }
-        };
+		let curr_value = curr.param.get_value_optional()?;
+		let next_value = next.param.get_value_optional()?;
 
-        // If playhead before current keyframe, return current value
-        if self.playhead_samples < curr_time_samples {
-            return curr.param.get_value_optional();
-        }
+		let time_range = (next.time - curr.time).max(f32::EPSILON);
+		let mut local_t = (t - curr.time) / time_range;
+		local_t = local_t.clamp(0.0, 1.0);
 
-        // If playhead at or after next keyframe, shouldn't happen but handle it
-        if self.playhead_samples >= next_time_samples {
-            return next.param.get_value_optional();
-        }
+		let interpolated = match self.interpolation_type {
+			InterpolationType::Linear => curr_value + (next_value - curr_value) * local_t,
+			InterpolationType::Step => curr_value,
+			InterpolationType::Cubic => {
+				let t2 = if local_t < 0.5 {
+					2.0 * local_t * local_t
+				} else {
+					1.0 - (-2.0 * local_t + 2.0).powi(2) / 2.0
+				};
+				curr_value + (next_value - curr_value) * t2
+			}
+			InterpolationType::Exponential => {
+				if curr_value > 0.0 && next_value > 0.0 {
+					curr_value * (next_value / curr_value).powf(local_t)
+				} else {
+					curr_value + (next_value - curr_value) * local_t
+				}
+			}
+		};
 
-        // Interpolate between curr and next
-        let curr_value = curr.param.get_value_optional()?;
-        let next_value = next.param.get_value_optional()?;
-
-        // Calculate interpolation factor (0.0 to 1.0)
-        let time_range = (next_time_samples - curr_time_samples) as f32;
-        if time_range <= 0.0 {
-            return Some(curr_value);
-        }
-
-        let t = ((self.playhead_samples - curr_time_samples) as f32) / time_range;
-        let t = t.clamp(0.0, 1.0);
-
-        // Apply interpolation based on type
-        let interpolated = match curr.interpolation {
-            InterpolationType::Linear => curr_value + (next_value - curr_value) * t,
-            InterpolationType::Step => curr_value,
-            InterpolationType::Cubic => {
-                // Cubic ease-in-out interpolation
-                let t2 = if t < 0.5 {
-                    2.0 * t * t
-                } else {
-                    1.0 - (-2.0 * t + 2.0).powi(2) / 2.0
-                };
-                curr_value + (next_value - curr_value) * t2
-            }
-            InterpolationType::Exponential => {
-                // Exponential interpolation (good for frequency)
-                if curr_value > 0.0 && next_value > 0.0 {
-                    curr_value * (next_value / curr_value).powf(t)
-                } else {
-                    curr_value + (next_value - curr_value) * t
-                }
-            }
-        };
-
-        Some(interpolated)
-    }
-
-    pub fn update(&mut self, update: &TrackUpdate) {
-        if let Some(play_mode) = update.play_mode {
-            self.play_mode = play_mode;
-        }
-        if let Some(length) = update.length {
-            self.length_samples = duration_to_samples(length, self.sample_rate);
-            if self.playhead_samples > self.length_samples {
-                self.playhead_samples = self.length_samples;
-            }
-            self.seek_samples(self.playhead_samples);
-        }
-    }
+		Some(interpolated)
+	}
 }
 
 pub struct InternalTrack {
-    id: String,
-    inner_track: Mutex<InnerTrack>,
-    sample: Mutex<Option<f32>>,
+	id: String,
+	inner_track: Mutex<InnerTrack>,
+	playhead_param: Mutex<InternalParam>,
+	sample: Mutex<Option<f32>>,
 }
 
 impl InternalTrack {
-    pub fn new(id: String, sample_rate: u32) -> Self {
-        InternalTrack {
-            id,
-            inner_track: Mutex::new(InnerTrack {
-                sample_rate,
-                playhead_samples: 0,
-                playhead_idx: 0,
-                length_samples: 0,
-                play_mode: Playmode::Once,
-                keyframes: Vec::new(),
-            }),
-            sample: Mutex::new(None),
-        }
-    }
+	pub fn new(id: String, playhead_param: InternalParam, interpolation_type: InterpolationType) -> Self {
+		InternalTrack {
+			id,
+			inner_track: Mutex::new(InnerTrack::new(interpolation_type)),
+			playhead_param: Mutex::new(playhead_param),
+			sample: Mutex::new(None),
+		}
+	}
 
-    pub fn seek(&self, playhead: Duration) {
-        self.inner_track
-            .try_lock_for(Duration::from_millis(10))
-            .unwrap()
-            .seek(playhead)
-    }
+	pub fn configure(&self, playhead_param: InternalParam, interpolation_type: InterpolationType) {
+		{
+			let mut inner = self
+				.inner_track
+				.try_lock_for(Duration::from_millis(10))
+				.unwrap();
+			inner.set_interpolation_type(interpolation_type);
+		}
+		*self
+			.playhead_param
+			.try_lock_for(Duration::from_millis(10))
+			.unwrap() = playhead_param;
+	}
 
-    pub fn add_keyframe(&self, keyframe: InternalKeyframe) {
-        self.inner_track
-            .try_lock_for(Duration::from_millis(10))
-            .unwrap()
-            .add_keyframe(keyframe)
-    }
+	pub fn add_keyframe(&self, keyframe: InternalKeyframe) {
+		self
+			.inner_track
+			.try_lock_for(Duration::from_millis(10))
+			.unwrap()
+			.add_keyframe(keyframe)
+	}
 
-    pub fn remove_keyframe(&self, id: String) -> Option<InternalKeyframe> {
-        self.inner_track
-            .try_lock_for(Duration::from_millis(10))
-            .unwrap()
-            .remove_keyframe(id)
-    }
+	pub fn remove_keyframe(&self, id: String) -> Option<InternalKeyframe> {
+		self
+			.inner_track
+			.try_lock_for(Duration::from_millis(10))
+			.unwrap()
+			.remove_keyframe(id)
+	}
 
-    pub fn tick(&self) {
-        *(self.sample.try_lock_for(Duration::from_millis(10)).unwrap()) = self
-            .inner_track
-            .try_lock_for(Duration::from_millis(10))
-            .unwrap()
-            .tick();
-    }
+	pub fn tick(&self) {
+		let playhead_value = self
+			.playhead_param
+			.try_lock_for(Duration::from_millis(10))
+			.unwrap()
+			.get_value_optional();
 
-    pub fn update(&self, update: &TrackUpdate) {
-        self.inner_track
-            .try_lock_for(Duration::from_millis(10))
-            .unwrap()
-            .update(update);
-    }
+		let sample = self
+			.inner_track
+			.try_lock_for(Duration::from_millis(10))
+			.unwrap()
+			.tick(playhead_value);
 
-    pub fn get_value_optional(&self) -> Option<f32> {
-        *self.sample.try_lock_for(Duration::from_millis(10)).unwrap()
-    }
+		*(self.sample.try_lock_for(Duration::from_millis(10)).unwrap()) = sample;
+	}
 
-    pub fn to_track(&self) -> Track {
-        let inner_track = self
-            .inner_track
-            .try_lock_for(Duration::from_millis(10))
-            .unwrap();
-        Track {
-            id: self.id.clone(),
-            playhead: samples_to_duration(inner_track.playhead_samples, inner_track.sample_rate),
-            length: samples_to_duration(inner_track.length_samples, inner_track.sample_rate),
-            play_mode: inner_track.play_mode,
-            keyframes: inner_track
-                .keyframes
-                .iter()
-                .map(|k| k.to_keyframe())
-                .collect(),
-        }
-    }
+	pub fn get_value_optional(&self) -> Option<f32> {
+		*self.sample.try_lock_for(Duration::from_millis(10)).unwrap()
+	}
+
+	pub fn to_track(&self) -> Track {
+		let inner_track = self
+			.inner_track
+			.try_lock_for(Duration::from_millis(10))
+			.unwrap();
+		let playhead_param = self
+			.playhead_param
+			.try_lock_for(Duration::from_millis(10))
+			.unwrap();
+		Track {
+			id: self.id.clone(),
+			playhead: playhead_param.to_param(),
+			interpolation_type: inner_track.interpolation_type,
+			keyframes: inner_track
+				.keyframes
+				.iter()
+				.map(|k| k.to_keyframe())
+				.collect(),
+		}
+	}
 }
 
 pub type TrackMap = HashMap<String, Arc<InternalTrack>>;
 
-#[derive(Debug, Clone, PartialOrd, PartialEq, Serialize, Deserialize, TS)]
+	#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct Track {
     pub id: String,
-    #[serde(with = "duration_millis")]
-    #[ts(type = "number")]
-    pub playhead: Duration,
-    #[serde(with = "duration_millis")]
-    #[ts(type = "number")]
-    pub length: Duration,
-    pub play_mode: Playmode,
+	/// Parameter controlling the playhead position in the range [-5.0, 5.0]
+	pub playhead: Param,
+	/// Interpolation type applied to all keyframes in this track
+	pub interpolation_type: InterpolationType,
     pub keyframes: Vec<Keyframe>,
-}
-
-#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
-pub struct TrackUpdate {
-    #[serde(
-        default,
-        with = "option_duration_millis",
-        skip_serializing_if = "Option::is_none"
-    )]
-    #[ts(type = "number | null")]
-    pub length: Option<Duration>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub play_mode: Option<Playmode>,
 }
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
@@ -960,12 +804,12 @@ mod tests {
         let kf = Keyframe::new(
             "kf-1".to_string(),
             "track-1".to_string(),
-            Duration::from_millis(500),
+	            0.5,
             Param::Value { value: 1.0 },
         );
         assert_eq!(kf.id, "kf-1");
         assert_eq!(kf.track_id, "track-1");
-        assert_eq!(kf.time, Duration::from_millis(500));
+	        assert_eq!(kf.time, 0.5);
     }
 
     #[test]
@@ -973,7 +817,7 @@ mod tests {
         let kf = Keyframe::new(
             "kf-abc".to_string(),
             "track-1".to_string(),
-            Duration::from_millis(100),
+	            0.1,
             Param::Value { value: 2.0 },
         );
         assert_eq!(kf.get_id(), &"kf-abc".to_string());
@@ -984,37 +828,16 @@ mod tests {
         let kf1 = Keyframe::new(
             "kf-1".to_string(),
             "track-1".to_string(),
-            Duration::from_millis(100),
+	            0.1,
             Param::Value { value: 1.0 },
         );
         let kf2 = Keyframe::new(
             "kf-2".to_string(),
             "track-1".to_string(),
-            Duration::from_millis(200),
+	            0.2,
             Param::Value { value: 2.0 },
         );
         assert!(kf1 < kf2);
-    }
-
-    // Tests for Playmode
-    #[test]
-    fn test_playmode_serialization() {
-        let once = Playmode::Once;
-        let looped = Playmode::Loop;
-
-        let once_json = serde_json::to_string(&once).unwrap();
-        let loop_json = serde_json::to_string(&looped).unwrap();
-
-        assert!(once_json.contains("once"));
-        assert!(loop_json.contains("loop"));
-    }
-
-    #[test]
-    fn test_playmode_deserialization() {
-        let once: Playmode = serde_json::from_str("\"once\"").unwrap();
-        let looped: Playmode = serde_json::from_str("\"loop\"").unwrap();
-        assert_eq!(once, Playmode::Once);
-        assert_eq!(looped, Playmode::Loop);
     }
 
     // Tests for ModuleState
@@ -1098,27 +921,6 @@ mod tests {
         let json = serde_json::to_string(&original).unwrap();
         let restored: PatchGraph = serde_json::from_str(&json).unwrap();
         assert_eq!(original, restored);
-    }
-
-    // Tests for TrackUpdate
-    #[test]
-    fn test_track_update_partial() {
-        let update = TrackUpdate {
-            length: Some(Duration::from_secs(10)),
-            play_mode: None,
-        };
-        assert_eq!(update.length, Some(Duration::from_secs(10)));
-        assert_eq!(update.play_mode, None);
-    }
-
-    #[test]
-    fn test_track_update_full() {
-        let update = TrackUpdate {
-            length: Some(Duration::from_secs(5)),
-            play_mode: Some(Playmode::Loop),
-        };
-        assert_eq!(update.length, Some(Duration::from_secs(5)));
-        assert_eq!(update.play_mode, Some(Playmode::Loop));
     }
 
     // Tests for PortSchema
@@ -1224,29 +1026,29 @@ mod tests {
 
     // Tests for Duration serialization helpers
     #[test]
-    fn test_keyframe_duration_serialization() {
-        let kf = Keyframe::new(
-            "test".to_string(),
-            "track".to_string(),
-            Duration::from_millis(1500),
-            Param::Value { value: 1.0 },
-        );
-        let json = serde_json::to_string(&kf).unwrap();
-        // Duration should serialize as milliseconds
-        assert!(json.contains("1500"));
-    }
+	    fn test_keyframe_time_serialization() {
+	        let kf = Keyframe::new(
+	            "test".to_string(),
+	            "track".to_string(),
+	            0.5,
+	            Param::Value { value: 1.0 },
+	        );
+	        let json = serde_json::to_string(&kf).unwrap();
+	        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+	        assert_eq!(v["time"].as_f64().unwrap(), 0.5f64);
+	    }
 
-    #[test]
-    fn test_track_duration_serialization() {
-        let track = Track {
-            id: "test-track".to_string(),
-            playhead: Duration::from_millis(500),
-            length: Duration::from_millis(10000),
-            play_mode: Playmode::Loop,
-            keyframes: vec![],
-        };
-        let json = serde_json::to_string(&track).unwrap();
-        assert!(json.contains("500"));
-        assert!(json.contains("10000"));
-    }
+	    #[test]
+	    fn test_track_serialization() {
+	        let track = Track {
+	            id: "test-track".to_string(),
+	            playhead: Param::Value { value: 0.0 },
+	            interpolation_type: InterpolationType::Linear,
+	            keyframes: vec![],
+	        };
+	        let json = serde_json::to_string(&track).unwrap();
+	        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+	        assert_eq!(v["id"].as_str().unwrap(), "test-track");
+	        assert_eq!(v["interpolation_type"].as_str().unwrap(), "linear");
+	    }
 }

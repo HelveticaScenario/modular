@@ -30,7 +30,8 @@ export function AudioControls({
         <span className="status-text">
           {connectionState === 'connected' && 'Connected'}
           {connectionState === 'connecting' && 'Connecting...'}
-          {connectionState === 'disconnected' && 'Disconnected'}
+	          {connectionState === 'disconnected' && 'Disconnected'}
+	          {connectionState === 'reconnecting' && 'Reconnecting...'}
           {connectionState === 'error' && 'Connection Error'}
         </span>
       </div>

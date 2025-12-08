@@ -1,12 +1,15 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useModularWebSocket, type OutputMessage } from './hooks/useWebSocket';
-import { PatchEditor } from './components/PatchEditor';
-import { Oscilloscope } from './components/Oscilloscope';
+// import { PatchEditor } from './components/PatchEditor';
+import { MonacoPatchEditor as PatchEditor } from './components/MonacoPatchEditor';
 import { AudioControls } from './components/AudioControls';
 import { ErrorDisplay } from './components/ErrorDisplay';
-import type { ValidationError, ModuleSchema } from './types';
 import { executePatchScript } from './dsl';
+import { updateTsWorkerSchemas } from './lsp/tsClient';
+import { SchemasContext } from './SchemaContext';
 import './App.css';
+import type { ModuleSchema } from './types/generated/ModuleSchema';
+import type { ValidationError } from './types/generated/ValidationError';
 
 const DEFAULT_PATCH = `// Simple 440 Hz sine wave
 const osc = sine('osc1').freq(hz(440));
@@ -22,39 +25,82 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Clear canvas
-    ctx.fillStyle = '#1a1a1a';
-    ctx.fillRect(0, 0, width, height);
+    const w = canvas.width;
+    const h = canvas.height;
 
-    // Draw center line
+    // Clear canvas background
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(0, 0, w, h);
+
+    const midY = h / 2;
+    const maxAbsAmplitude = 5; // expected sample range is roughly [-5, 5]
+    const pixelsPerUnit = h / 2 / maxAbsAmplitude; // so ±5 spans full height
+
+    // Center line at 0.0
     ctx.strokeStyle = '#333';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(0, height / 2);
-    ctx.lineTo(width, height / 2);
+    ctx.moveTo(0, midY);
+    ctx.lineTo(w, midY);
     ctx.stroke();
 
     if (!data || data.length === 0) {
-        // Draw "No Signal" text
         ctx.fillStyle = '#666';
         ctx.font = '14px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('No Signal', width / 2, height / 2);
+        ctx.fillText('No Signal', w / 2, midY);
         return;
     }
 
-    // Draw waveform
+    const totalSamples = data.length; // typically 512
+    const windowSize = 256;
+
+    // 1. Find first positive-going zero-crossing (prev <= 0, curr > 0)
+    let startIndex = -1;
+    for (let i = 1; i < totalSamples; i++) {
+        const prev = data[i - 1];
+        const curr = data[i];
+        const crossedZero = prev <= 0 && curr > 0;
+        if (crossedZero) {
+            startIndex = i;
+            break;
+        }
+    }
+
+    // 2. Fallback: if no zero-crossing found, start from midpoint of buffer
+    if (startIndex === -1) {
+        startIndex = Math.floor(totalSamples / 2); // e.g. 256 for 512-sample buffer
+    }
+
+    // 3. Compute window [startIndex, startIndex + windowSize)
+    let endExclusive = startIndex + windowSize;
+    if (endExclusive > totalSamples) {
+        endExclusive = totalSamples;
+    }
+    const sampleCount = Math.max(0, endExclusive - startIndex);
+
+    if (sampleCount < 2) {
+        // Not enough data to draw a waveform
+        return;
+    }
+
+    // Draw waveform across full width using only the selected window
     ctx.strokeStyle = '#00ff00';
     ctx.lineWidth = 2;
     ctx.beginPath();
 
-    const step = width / data.length;
-    const midY = height / 2;
-    const amplitude = height / 2 - 10;
+    const stepX = w / (sampleCount - 1);
 
-    for (let i = 0; i < data.length; i++) {
-        const x = i * step;
-        const y = midY - data[i] * amplitude;
+    for (let i = 0; i < sampleCount; i++) {
+        const x = stepX * i;
+        const rawSample = data[startIndex + i];
+        // Clamp to expected range so outliers don't blow up the scale
+        const s = Math.max(
+            -maxAbsAmplitude,
+            Math.min(maxAbsAmplitude, rawSample)
+        );
+        // Canvas Y grows downward, so positive samples move up (subtract)
+        const y = midY - s * pixelsPerUnit;
 
         if (i === 0) {
             ctx.moveTo(x, y);
@@ -68,7 +114,7 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
 
 // TODO persist yaml code to local storage and load on startup
 function App() {
-    const [patchYaml, setPatchYaml] = useState(() => {
+    const [patchCode, setPatchCode] = useState(() => {
         if (typeof window === 'undefined') {
             return DEFAULT_PATCH;
         }
@@ -76,40 +122,55 @@ function App() {
         const storedPatch = window.localStorage.getItem(PATCH_STORAGE_KEY);
         return storedPatch ?? DEFAULT_PATCH;
     });
+
     const [isMuted, setIsMuted] = useState(true);
+
     const [isRecording, setIsRecording] = useState(false);
+
     const [error, setError] = useState<string | null>(null);
     const [validationErrors, setValidationErrors] = useState<
         ValidationError[] | null
     >(null);
+
     const [schemas, setSchemas] = useState<ModuleSchema[]>([]);
+
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const handleMessage = useCallback((msg: OutputMessage) => {
-        // console.log('Received message:', msg);
-        switch (msg.type) {
-            case 'schemas':
-                setSchemas(msg.schemas);
-                break;
-            case 'error':
-                setError(msg.message);
-                setValidationErrors(msg.errors ?? null);
-                break;
-            case 'audioBuffer': {
-                // console.log('Audio buffer received', msg.samples.length);
-                const canvas = canvasRef.current;
-                if (!canvas) break;
-                drawOscilloscope(msg.samples, canvas);
-                // setOscilloscopeData(msg.samples);
-                break;
+    const handleMessage = useCallback(
+        (msg: OutputMessage) => {
+            switch (msg.type) {
+                case 'schemas': {
+                    console.log('Received schemas:', msg.schemas);
+                    setSchemas(msg.schemas);
+                    if (typeof window !== 'undefined') {
+                        (window as any).__APP_SCHEMAS__ = msg.schemas;
+                    }
+                    void updateTsWorkerSchemas(msg.schemas);
+                    break;
+                }
+                case 'error':
+                    setError(msg.message);
+                    setValidationErrors(msg.errors ?? null);
+                    break;
+                case 'muteState':
+                    setIsMuted(msg.muted);
+                    break;
+                case 'audioBuffer': {
+                    // console.log('Audio buffer received', msg.samples.length);
+                    const canvas = canvasRef.current;
+                    if (!canvas) break;
+                    drawOscilloscope(msg.samples, canvas);
+                    break;
+                }
+                case 'fileList':
+                    // Handle file list if needed
+                    break;
+                case 'fileContent':
+                    // Handle file content if needed
+                    break;
             }
-            case 'fileList':
-                // Handle file list if needed
-                break;
-            case 'fileContent':
-                // Handle file content if needed
-                break;
-        }
-    }, []);
+        },
+        [setError, setSchemas, setValidationErrors, setIsMuted]
+    );
 
     const {
         connectionState,
@@ -128,11 +189,11 @@ function App() {
             return;
         }
         try {
-            window.localStorage.setItem(PATCH_STORAGE_KEY, patchYaml);
+            window.localStorage.setItem(PATCH_STORAGE_KEY, patchCode);
         } catch {
             // Ignore storage quota/access issues to avoid breaking editing flow
         }
-    }, [patchYaml]);
+    }, [patchCode]);
 
     // Request initial state when connected
     useEffect(() => {
@@ -146,7 +207,8 @@ function App() {
     const handleSubmit = useCallback(() => {
         try {
             // Execute DSL script to generate PatchGraph
-            const patch = executePatchScript(patchYaml, schemas);
+            console.log(schemas);
+            const patch = executePatchScript(patchCode, schemas);
             setPatch(patch);
             setError(null);
             setValidationErrors(null);
@@ -156,7 +218,8 @@ function App() {
             setError(errorMessage);
             setValidationErrors(null);
         }
-    }, [setPatch, patchYaml, schemas]);
+    }, [patchCode, schemas, setPatch, setError, setValidationErrors]);
+    console.log('schemas in App:', schemas);
 
     const handleStop = useCallback(() => {
         mute();
@@ -188,81 +251,83 @@ function App() {
     }, [isMuted, isRecording, startRecording, stopRecording]);
 
     return (
-        <div className="app">
-            <header className="app-header">
-                <h1>Modular Synthesizer</h1>
-                <AudioControls
-                    connectionState={connectionState}
-                    isPlaying={!isMuted}
-                    isRecording={isRecording}
-                    onStartAudio={() => {
-                        setIsMuted(false);
-                        unmute();
-                    }}
-                    onStopAudio={() => {
-                        setIsMuted(true);
-                        mute();
-                    }}
-                    onStartRecording={() => {
-                        setIsRecording(true);
-                        startRecording();
-                    }}
-                    onStopRecording={() => {
-                        setIsRecording(false);
-                        stopRecording();
-                    }}
-                    onUpdatePatch={handleSubmit}
-                />
-            </header>
-
-            <ErrorDisplay
-                error={error}
-                errors={validationErrors}
-                onDismiss={dismissError}
-            />
-
-            <main className="app-main">
-                <div className="editor-panel">
-                    <PatchEditor
-                        value={patchYaml}
-                        onChange={setPatchYaml}
-                        onSubmit={handleSubmit}
-                        onStop={handleStop}
-                        disabled={connectionState !== 'connected'}
-                        schemas={schemas}
+        <SchemasContext.Provider value={schemas}>
+            <div className="app">
+                <header className="app-header">
+                    <h1>Modular Synthesizer</h1>
+                    <AudioControls
+                        connectionState={connectionState}
+                        isPlaying={!isMuted}
+                        isRecording={isRecording}
+                        onStartAudio={() => {
+                            setIsMuted(false);
+                            unmute();
+                        }}
+                        onStopAudio={() => {
+                            setIsMuted(true);
+                            mute();
+                        }}
+                        onStartRecording={() => {
+                            setIsRecording(true);
+                            startRecording();
+                        }}
+                        onStopRecording={() => {
+                            setIsRecording(false);
+                            stopRecording();
+                        }}
+                        onUpdatePatch={handleSubmit}
                     />
-                </div>
+                </header>
 
-                <div className="visualization-panel">
-                    <div className="oscilloscope">
-                        <canvas
-                            ref={canvasRef}
-                            width={width}
-                            height={height}
-                            style={{
-                                width: '100%',
-                                height: 'auto',
-                                maxWidth: width,
-                            }}
+                <ErrorDisplay
+                    error={error}
+                    errors={validationErrors}
+                    onDismiss={dismissError}
+                />
+
+                <main className="app-main">
+                    <div className="editor-panel">
+                        <PatchEditor
+                            value={patchCode}
+                            onChange={setPatchCode}
+                            onSubmit={handleSubmit}
+                            onStop={handleStop}
+                            schemas={schemas}
                         />
                     </div>
-                    <div className="keyboard-shortcuts">
-                        <h3>Keyboard Shortcuts</h3>
-                        <ul>
-                            <li>
-                                <kbd>Alt</kbd>+<kbd>Enter</kbd> Execute DSL
-                            </li>
-                            <li>
-                                <kbd>Alt</kbd>+<kbd>.</kbd> Stop Audio
-                            </li>
-                            <li>
-                                <kbd>Ctrl</kbd>+<kbd>R</kbd> Toggle Recording
-                            </li>
-                        </ul>
+
+                    <div className="visualization-panel">
+                        <div className="oscilloscope">
+                            <canvas
+                                ref={canvasRef}
+                                width={width}
+                                height={height}
+                                style={{
+                                    width: '100%',
+                                    height: 'auto',
+                                    maxWidth: width,
+                                }}
+                            />
+                        </div>
+                        <div className="keyboard-shortcuts">
+                            <h3>Keyboard Shortcuts</h3>
+                            <ul>
+                                <li>
+                                    <kbd>Alt</kbd>+<kbd>Enter</kbd> Execute DSL
+                                </li>
+                                <li>
+                                    <kbd>Alt</kbd>+<kbd>.</kbd> Stop Audio
+                                </li>
+                                <li>
+                                    <kbd>Ctrl</kbd>+<kbd>R</kbd> Toggle
+                                    Recording
+                                </li>
+                            </ul>
+                        </div>
                     </div>
-                </div>
-            </main>
-        </div>
+                </main>
+            </div>
+        </SchemasContext.Provider>
     );
 }
 

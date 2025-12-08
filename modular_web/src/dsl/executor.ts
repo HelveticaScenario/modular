@@ -1,4 +1,5 @@
-import type { PatchGraph, ModuleSchema } from '../types';
+import type { ModuleSchema } from '../types/generated/ModuleSchema';
+import type { PatchGraph } from '../types/generated/PatchGraph';
 import { DSLContext, hz, note } from './factories';
 
 
@@ -10,12 +11,14 @@ export function executePatchScript(
   schemas: ModuleSchema[]
 ): PatchGraph {
   // Create DSL context
+  console.log('Executing DSL script with schemas:', schemas);
   const context = new DSLContext(schemas);
   const out = context.factories.signal('root');
 
   // Create the execution environment with all DSL functions
   const dslGlobals = {
     ...context.factories,
+    track: context.createTrack.bind(context),
     // Helper functions
     hz,
     note,

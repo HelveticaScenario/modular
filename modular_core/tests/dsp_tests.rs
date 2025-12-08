@@ -25,15 +25,21 @@ fn create_test_patch() -> Patch {
     Patch::new(sampleables, HashMap::new())
 }
 
-/// Add a module to the patch
-fn add_module(patch: &mut Patch, id: &str, module_type: &str) {
-    let constructors = get_constructors();
-    if let Some(constructor) = constructors.get(module_type) {
-        if let Ok(module) = constructor(&id.to_string(), SAMPLE_RATE) {
-            patch.sampleables.insert(id.to_string(), module);
-        }
-    }
-}
+	/// Add a module to the patch.
+	///
+	/// Note: `module_type` must match the DSP module's `#[module("…")]` name
+	/// (e.g. "sine", "saw", "pulse", "lpf", "hpf", "bpf", "apf",
+	/// "scaleAndShift", "signal", "mix", "sum"). These are the canonical
+	/// identifiers used by `dsp::get_constructors()` and by the runtime
+	/// schema/DSL.
+	fn add_module(patch: &mut Patch, id: &str, module_type: &str) {
+	    let constructors = get_constructors();
+	    if let Some(constructor) = constructors.get(module_type) {
+	        if let Ok(module) = constructor(&id.to_string(), SAMPLE_RATE) {
+	            patch.sampleables.insert(id.to_string(), module);
+	        }
+	    }
+	}
 
 /// Process one frame of audio (tick + update all modules)
 fn process_frame(patch: &Patch) {
@@ -58,7 +64,7 @@ fn get_sample(patch: &Patch, module_id: &str, port: &str) -> f32 {
 #[test]
 fn test_sine_oscillator_produces_output() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "sine-1", "sine-oscillator");
+	    add_module(&mut patch, "sine-1", "sine");
     
     // Set frequency to 4.0 v/oct (440Hz)
     if let Some(module) = patch.sampleables.get("sine-1") {
@@ -87,7 +93,7 @@ fn test_sine_oscillator_produces_output() {
 #[test]
 fn test_sine_oscillator_amplitude() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "sine-1", "sine-oscillator");
+	    add_module(&mut patch, "sine-1", "sine");
     
     // Set frequency to produce several cycles
     if let Some(module) = patch.sampleables.get("sine-1") {
@@ -116,7 +122,7 @@ fn test_sine_oscillator_amplitude() {
 #[test]
 fn test_cable_connection() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "sine-1", "sine-oscillator");
+	    add_module(&mut patch, "sine-1", "sine");
     
     // Set sine frequency
     if let Some(module) = patch.sampleables.get("sine-1") {
@@ -152,8 +158,8 @@ fn test_cable_connection() {
 #[test]
 fn test_scale_and_shift_module() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "sine-1", "sine-oscillator");
-    add_module(&mut patch, "scaler", "scale-and-shift");
+	    add_module(&mut patch, "sine-1", "sine");
+	    add_module(&mut patch, "scaler", "scaleAndShift");
     
     // Set sine frequency
     if let Some(module) = patch.sampleables.get("sine-1") {
@@ -202,7 +208,7 @@ fn test_scale_and_shift_module() {
 #[test]
 fn test_patch_get_state() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "sine-1", "sine-oscillator");
+	    add_module(&mut patch, "sine-1", "sine");
     
     // Set a parameter
     if let Some(module) = patch.sampleables.get("sine-1") {
@@ -221,8 +227,8 @@ fn test_patch_get_state() {
     let sine_state = state.iter().find(|m| m.id == "sine-1");
     assert!(sine_state.is_some());
     
-    let sine_state = sine_state.unwrap();
-    assert_eq!(sine_state.module_type, "sine-oscillator");
+	    let sine_state = sine_state.unwrap();
+	    assert_eq!(sine_state.module_type, "sine");
     
     // Check freq param
     if let Some(Param::Value { value }) = sine_state.params.get("freq") {
@@ -246,7 +252,7 @@ fn test_disconnected_input_produces_zero() {
 #[test]
 fn test_saw_oscillator_produces_output() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "saw-1", "saw-oscillator");
+	    add_module(&mut patch, "saw-1", "saw");
     
     // Set frequency
     if let Some(module) = patch.sampleables.get("saw-1") {
@@ -274,7 +280,7 @@ fn test_saw_oscillator_produces_output() {
 #[test]
 fn test_pulse_oscillator_produces_output() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "pulse-1", "pulse-oscillator");
+	    add_module(&mut patch, "pulse-1", "pulse");
     
     // Set frequency
     if let Some(module) = patch.sampleables.get("pulse-1") {
@@ -307,8 +313,8 @@ fn test_pulse_oscillator_produces_output() {
 #[test]
 fn test_lowpass_filter() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "sine-1", "sine-oscillator");
-    add_module(&mut patch, "lp", "lowpass");
+	    add_module(&mut patch, "sine-1", "sine");
+	    add_module(&mut patch, "lp", "lpf");
     
     // High frequency sine
     if let Some(module) = patch.sampleables.get("sine-1") {
@@ -355,8 +361,8 @@ fn test_lowpass_filter() {
 #[test]
 fn test_sum_module() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "sine-1", "sine-oscillator");
-    add_module(&mut patch, "sine-2", "sine-oscillator");
+	    add_module(&mut patch, "sine-1", "sine");
+	    add_module(&mut patch, "sine-2", "sine");
     add_module(&mut patch, "summer", "sum");
     
     // Set different frequencies
@@ -372,11 +378,11 @@ fn test_sum_module() {
         let sine1 = patch.sampleables.get("sine-1").unwrap();
         let sine2 = patch.sampleables.get("sine-2").unwrap();
         let _ = summer.update_param(
-            &"input-1".to_string(),
+	            &"in1".to_string(),
             &InternalParam::Cable { module: Arc::downgrade(sine1), port: "output".to_string() },
         );
         let _ = summer.update_param(
-            &"input-2".to_string(),
+	            &"in2".to_string(),
             &InternalParam::Cable { module: Arc::downgrade(sine2), port: "output".to_string() },
         );
     }
@@ -398,8 +404,8 @@ fn test_sum_module() {
 #[test]
 fn test_highpass_filter() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "sine-1", "sine-oscillator");
-    add_module(&mut patch, "hp", "highpass");
+	    add_module(&mut patch, "sine-1", "sine");
+	    add_module(&mut patch, "hp", "hpf");
     
     // Low frequency sine
     if let Some(module) = patch.sampleables.get("sine-1") {
@@ -446,8 +452,8 @@ fn test_highpass_filter() {
 #[test]
 fn test_bandpass_filter() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "sine-1", "sine-oscillator");
-    add_module(&mut patch, "bp", "bandpass-filter");
+	    add_module(&mut patch, "sine-1", "sine");
+	    add_module(&mut patch, "bp", "bpf");
     
     if let Some(module) = patch.sampleables.get("sine-1") {
         let _ = module.update_param(&"freq".to_string(), &InternalParam::Volts { value: 4.0 });
@@ -483,7 +489,7 @@ fn test_bandpass_filter() {
 #[test]
 fn test_notch_filter() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "sine-1", "sine-oscillator");
+	    add_module(&mut patch, "sine-1", "sine");
     add_module(&mut patch, "notch", "notch");
     
     if let Some(module) = patch.sampleables.get("sine-1") {
@@ -523,8 +529,8 @@ fn test_notch_filter() {
 #[test]
 fn test_allpass_filter() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "sine-1", "sine-oscillator");
-    add_module(&mut patch, "ap", "allpass-filter");
+	    add_module(&mut patch, "sine-1", "sine");
+	    add_module(&mut patch, "ap", "apf");
     
     if let Some(module) = patch.sampleables.get("sine-1") {
         let _ = module.update_param(&"freq".to_string(), &InternalParam::Volts { value: 4.0 });
@@ -563,8 +569,8 @@ fn test_allpass_filter() {
 #[test]
 fn test_mix_module() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "sine-1", "sine-oscillator");
-    add_module(&mut patch, "sine-2", "sine-oscillator");
+	    add_module(&mut patch, "sine-1", "sine");
+	    add_module(&mut patch, "sine-2", "sine");
     add_module(&mut patch, "mixer", "mix");
     
     if let Some(module) = patch.sampleables.get("sine-1") {
@@ -578,11 +584,11 @@ fn test_mix_module() {
         let sine1 = patch.sampleables.get("sine-1").unwrap();
         let sine2 = patch.sampleables.get("sine-2").unwrap();
         let _ = mixer.update_param(
-            &"input-1".to_string(),
+	            &"in1".to_string(),
             &InternalParam::Cable { module: Arc::downgrade(sine1), port: "output".to_string() },
         );
         let _ = mixer.update_param(
-            &"input-2".to_string(),
+	            &"in2".to_string(),
             &InternalParam::Cable { module: Arc::downgrade(sine2), port: "output".to_string() },
         );
         // Set mix to midpoint
@@ -603,9 +609,9 @@ fn test_mix_module() {
 #[test]
 fn test_frequency_modulation() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "lfo", "sine-oscillator");
-    add_module(&mut patch, "carrier", "sine-oscillator");
-    add_module(&mut patch, "scaler", "scale-and-shift");
+	    add_module(&mut patch, "lfo", "sine");
+	    add_module(&mut patch, "carrier", "sine");
+	    add_module(&mut patch, "scaler", "scaleAndShift");
     
     // LFO at very low frequency
     if let Some(lfo) = patch.sampleables.get("lfo") {
@@ -646,7 +652,7 @@ fn test_frequency_modulation() {
 #[test]
 fn test_parameter_update() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "sine-1", "sine-oscillator");
+	    add_module(&mut patch, "sine-1", "sine");
     
     // Set initial frequency
     if let Some(module) = patch.sampleables.get("sine-1") {
@@ -678,7 +684,7 @@ fn test_parameter_update() {
 #[test]
 fn test_module_get_state_accuracy() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "sine-1", "sine-oscillator");
+	    add_module(&mut patch, "sine-1", "sine");
     
     // Set multiple params
     if let Some(module) = patch.sampleables.get("sine-1") {
@@ -686,10 +692,10 @@ fn test_module_get_state_accuracy() {
         let _ = module.update_param(&"phase".to_string(), &InternalParam::Volts { value: 0.25 });
     }
     
-    let state = patch.get_state();
-    let sine_state = state.iter().find(|s| s.id == "sine-1").unwrap();
-    
-    assert_eq!(sine_state.module_type, "sine-oscillator");
+	    let state = patch.get_state();
+	    let sine_state = state.iter().find(|s| s.id == "sine-1").unwrap();
+	    
+	    assert_eq!(sine_state.module_type, "sine");
     
     // Check freq param
     if let Some(Param::Value { value }) = sine_state.params.get("freq") {
@@ -716,7 +722,7 @@ fn test_empty_patch() {
 #[test]
 fn test_signal_passthrough() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "sine-1", "sine-oscillator");
+	    add_module(&mut patch, "sine-1", "sine");
     add_module(&mut patch, "sig", "signal");
     
     if let Some(module) = patch.sampleables.get("sine-1") {

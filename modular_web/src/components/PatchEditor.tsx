@@ -1,10 +1,12 @@
 import CodeMirror from '@uiw/react-codemirror'
 import { javascript } from '@codemirror/lang-javascript'
 import { keymap } from '@codemirror/view'
-import { autocompletion } from '@codemirror/autocomplete'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { tsCompletion } from '../lsp/tsCompletion'
+import { tsLinter } from '../lsp/tsDiagnostics'
+import { tsHover } from '../lsp/tsHover'
+import { initTsWorker, disposeTsWorker } from '../lsp/tsClient'
 import type { ModuleSchema } from '../types'
-import { dslAutocomplete } from '../dsl'
 
 interface PatchEditorProps {
   value: string
@@ -13,18 +15,22 @@ interface PatchEditorProps {
   onStop: () => void
   onSave?: () => void
   disabled?: boolean
+  // Optional explicit schemas prop; currently unused but keeps the
+  // MonacoPatchEditor and PatchEditor prop shapes compatible.
   schemas?: ModuleSchema[]
 }
 
 export function PatchEditor({
-  value,
-  onChange,
-  onSubmit,
-  onStop,
-  onSave,
-  disabled,
-  schemas = []
-}: PatchEditorProps) {
+	  value,
+	  onChange,
+	  onSubmit,
+	  onStop,
+	  onSave,
+	  disabled,
+	  schemas: _schemas,
+	}: PatchEditorProps) {
+	  const initialValueRef = useRef(value)
+
   const handleChange = useCallback((val: string) => {
     onChange(val)
   }, [onChange])
@@ -58,18 +64,30 @@ export function PatchEditor({
     },
   ]), [onSubmit, onStop, onSave])
 
+	  useEffect(() => {
+	    // Initialize the TypeScript language service worker with the initial DSL value
+	    void initTsWorker('file:///modular/dsl.js', initialValueRef.current ?? '')
+	    return () => {
+	      disposeTsWorker()
+	    }
+	  }, [initialValueRef])
+
   const extensions = useMemo(() => {
     const exts = [
       javascript(),
       customKeymap,
+	      // Frontend-only TypeScript language service features for the DSL editor
+	      tsCompletion,
+	      tsLinter,
+	      tsHover,
     ];
 
-    if (schemas.length > 0) {
-      exts.push(autocompletion({ override: [dslAutocomplete(schemas)] }));
-    }
+    // if (schemas.length > 0) {
+    //   exts.push(autocompletion({ override: [dslAutocomplete(schemas)] }));
+    // }
 
     return exts;
-  }, [customKeymap, schemas]);
+  }, [customKeymap]);
 
   return (
     <div className="patch-editor">
