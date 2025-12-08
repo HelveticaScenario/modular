@@ -271,35 +271,40 @@ impl Param {
 
 #[derive(PartialEq)]
 pub struct InternalKeyframe {
-	id: String,
-	track_id: String,
-	/// Normalized time in the range [0.0, 1.0]
-	pub time: f32,
-	pub param: InternalParam,
+    id: String,
+    track_id: String,
+    /// Normalized time in the range [0.0, 1.0]
+    pub time: f32,
+    pub param: InternalParam,
 }
 
 impl InternalKeyframe {
-	pub fn new(id: String, track_id: String, time: f32, param: InternalParam) -> Self {
-		InternalKeyframe { id, track_id, time, param }
-	}
+    pub fn new(id: String, track_id: String, time: f32, param: InternalParam) -> Self {
+        InternalKeyframe {
+            id,
+            track_id,
+            time,
+            param,
+        }
+    }
 
-	pub fn get_id(&self) -> String {
-		self.id.clone()
-	}
-	pub fn to_keyframe(&self) -> Keyframe {
-		Keyframe {
-			id: self.id.clone(),
-			track_id: self.track_id.clone(),
-			time: self.time,
-			param: self.param.to_param(),
-		}
-	}
+    pub fn get_id(&self) -> String {
+        self.id.clone()
+    }
+    pub fn to_keyframe(&self) -> Keyframe {
+        Keyframe {
+            id: self.id.clone(),
+            track_id: self.track_id.clone(),
+            time: self.time,
+            param: self.param.to_param(),
+        }
+    }
 }
 
 impl PartialOrd for InternalKeyframe {
-	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-		self.time.partial_cmp(&other.time)
-	}
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.time.partial_cmp(&other.time)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize, TS)]
@@ -322,249 +327,260 @@ impl Default for InterpolationType {
 #[serde(rename = "TrackKeyframe")]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct Keyframe {
-	pub id: String,
-	pub track_id: String,
-	/// Normalized time in the range [0.0, 1.0]
-	pub time: f32,
-	pub param: Param,
+    pub id: String,
+    pub track_id: String,
+    /// Normalized time in the range [0.0, 1.0]
+    pub time: f32,
+    pub param: Param,
 }
 
 impl Keyframe {
-	pub fn new(id: String, track_id: String, time: f32, param: Param) -> Self {
-		Keyframe { id, track_id, time, param }
-	}
+    pub fn new(id: String, track_id: String, time: f32, param: Param) -> Self {
+        Keyframe {
+            id,
+            track_id,
+            time,
+            param,
+        }
+    }
 
-	pub fn get_id(&self) -> &String {
-		&self.id
-	}
-	pub fn to_internal_keyframe(&self, patch: &Patch) -> InternalKeyframe {
-		InternalKeyframe {
-			id: self.id.clone(),
-			track_id: self.track_id.clone(),
-			time: self.time,
-			param: self.param.to_internal_param(patch),
-		}
-	}
+    pub fn get_id(&self) -> &String {
+        &self.id
+    }
+    pub fn to_internal_keyframe(&self, patch: &Patch) -> InternalKeyframe {
+        InternalKeyframe {
+            id: self.id.clone(),
+            track_id: self.track_id.clone(),
+            time: self.time,
+            param: self.param.to_internal_param(patch),
+        }
+    }
 }
 
 impl PartialOrd for Keyframe {
-	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-		self.time.partial_cmp(&other.time)
-	}
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.time.partial_cmp(&other.time)
+    }
 }
 
 fn normalize_playhead_value_to_t(value: f32) -> f32 {
-	// Map [-5.0, 5.0] linearly to [0.0, 1.0]
-	((value + 5.0) / 10.0).clamp(0.0, 1.0)
+    // Map [-5.0, 5.0] linearly to [0.0, 1.0]
+    ((value + 5.0) / 10.0).clamp(0.0, 1.0)
 }
 
 struct InnerTrack {
-	interpolation_type: InterpolationType,
-	keyframes: Vec<InternalKeyframe>,
+    interpolation_type: InterpolationType,
+    keyframes: Vec<InternalKeyframe>,
 }
 
 impl InnerTrack {
-	fn new(interpolation_type: InterpolationType) -> Self {
-		InnerTrack {
-			interpolation_type,
-			keyframes: Vec::new(),
-		}
-	}
+    fn new(interpolation_type: InterpolationType) -> Self {
+        InnerTrack {
+            interpolation_type,
+            keyframes: Vec::new(),
+        }
+    }
 
-	fn set_interpolation_type(&mut self, interpolation_type: InterpolationType) {
-		self.interpolation_type = interpolation_type;
-	}
+    fn set_interpolation_type(&mut self, interpolation_type: InterpolationType) {
+        self.interpolation_type = interpolation_type;
+    }
 
-	pub fn add_keyframe(&mut self, keyframe: InternalKeyframe) {
-		match self.keyframes.iter().position(|k| k.id == keyframe.id) {
-			Some(idx) => {
-				self.keyframes[idx] = keyframe;
-			}
-			None => {
-				self.keyframes.push(keyframe);
-			}
-		}
-		self.keyframes.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
-	}
+    pub fn add_keyframe(&mut self, keyframe: InternalKeyframe) {
+        match self.keyframes.iter().position(|k| k.id == keyframe.id) {
+            Some(idx) => {
+                self.keyframes[idx] = keyframe;
+            }
+            None => {
+                self.keyframes.push(keyframe);
+            }
+        }
+        self.keyframes.sort_by(|a, b| {
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
 
-	pub fn remove_keyframe(&mut self, id: String) -> Option<InternalKeyframe> {
-		match self.keyframes.iter().position(|k| k.id == id) {
-			Some(idx) => Some(self.keyframes.remove(idx)),
-			None => None,
-		}
-	}
+    pub fn remove_keyframe(&mut self, id: String) -> Option<InternalKeyframe> {
+        match self.keyframes.iter().position(|k| k.id == id) {
+            Some(idx) => Some(self.keyframes.remove(idx)),
+            None => None,
+        }
+    }
 
-	/// Tick the track for the current playhead value and return the interpolated sample.
-	///
-	/// `playhead_value` is expected to be in the range [-5.0, 5.0]. It will be
-	/// mapped linearly to a normalized time in [0.0, 1.0].
-	pub fn tick(&mut self, playhead_value: Option<f32>) -> Option<f32> {
-		let playhead_value = playhead_value?;
-		if self.keyframes.is_empty() {
-			return None;
-		}
+    /// Tick the track for the current playhead value and return the interpolated sample.
+    ///
+    /// `playhead_value` is expected to be in the range [-5.0, 5.0]. It will be
+    /// mapped linearly to a normalized time in [0.0, 1.0].
+    pub fn tick(&mut self, playhead_value: Option<f32>) -> Option<f32> {
+        let playhead_value = playhead_value?;
+        if self.keyframes.is_empty() {
+            return None;
+        }
 
-		let t = normalize_playhead_value_to_t(playhead_value);
+        let t = normalize_playhead_value_to_t(playhead_value);
 
-		// Single keyframe: always return its value
-		if self.keyframes.len() == 1 {
-			return self.keyframes[0].param.get_value_optional();
-		}
+        // Single keyframe: always return its value
+        if self.keyframes.len() == 1 {
+            return self.keyframes[0].param.get_value_optional();
+        }
 
-		// Clamp to first/last keyframe times
-		let first = &self.keyframes[0];
-		if t <= first.time {
-			return first.param.get_value_optional();
-		}
-		let last = self.keyframes.last().unwrap();
-		if t >= last.time {
-			return last.param.get_value_optional();
-		}
+        // Clamp to first/last keyframe times
+        let first = &self.keyframes[0];
+        if t <= first.time {
+            return first.param.get_value_optional();
+        }
+        let last = self.keyframes.last().unwrap();
+        if t >= last.time {
+            return last.param.get_value_optional();
+        }
 
-		// Find the segment [curr, next] such that curr.time <= t <= next.time
-		let mut idx = 0usize;
-		for i in 0..(self.keyframes.len() - 1) {
-			let curr = &self.keyframes[i];
-			let next = &self.keyframes[i + 1];
-			if t >= curr.time && t <= next.time {
-				idx = i;
-				break;
-			}
-		}
+        // Find the segment [curr, next] such that curr.time <= t <= next.time
+        let mut idx = 0usize;
+        for i in 0..(self.keyframes.len() - 1) {
+            let curr = &self.keyframes[i];
+            let next = &self.keyframes[i + 1];
+            if t >= curr.time && t <= next.time {
+                idx = i;
+                break;
+            }
+        }
 
-		let curr = &self.keyframes[idx];
-		let next = &self.keyframes[idx + 1];
+        let curr = &self.keyframes[idx];
+        let next = &self.keyframes[idx + 1];
 
-		let curr_value = curr.param.get_value_optional()?;
-		let next_value = next.param.get_value_optional()?;
+        let curr_value = curr.param.get_value_optional()?;
+        let next_value = next.param.get_value_optional()?;
 
-		let time_range = (next.time - curr.time).max(f32::EPSILON);
-		let mut local_t = (t - curr.time) / time_range;
-		local_t = local_t.clamp(0.0, 1.0);
+        let time_range = (next.time - curr.time).max(f32::EPSILON);
+        let mut local_t = (t - curr.time) / time_range;
+        local_t = local_t.clamp(0.0, 1.0);
 
-		let interpolated = match self.interpolation_type {
-			InterpolationType::Linear => curr_value + (next_value - curr_value) * local_t,
-			InterpolationType::Step => curr_value,
-			InterpolationType::Cubic => {
-				let t2 = if local_t < 0.5 {
-					2.0 * local_t * local_t
-				} else {
-					1.0 - (-2.0 * local_t + 2.0).powi(2) / 2.0
-				};
-				curr_value + (next_value - curr_value) * t2
-			}
-			InterpolationType::Exponential => {
-				if curr_value > 0.0 && next_value > 0.0 {
-					curr_value * (next_value / curr_value).powf(local_t)
-				} else {
-					curr_value + (next_value - curr_value) * local_t
-				}
-			}
-		};
+        let interpolated = match self.interpolation_type {
+            InterpolationType::Linear => curr_value + (next_value - curr_value) * local_t,
+            InterpolationType::Step => curr_value,
+            InterpolationType::Cubic => {
+                let t2 = if local_t < 0.5 {
+                    2.0 * local_t * local_t
+                } else {
+                    1.0 - (-2.0 * local_t + 2.0).powi(2) / 2.0
+                };
+                curr_value + (next_value - curr_value) * t2
+            }
+            InterpolationType::Exponential => {
+                if curr_value > 0.0 && next_value > 0.0 {
+                    curr_value * (next_value / curr_value).powf(local_t)
+                } else {
+                    curr_value + (next_value - curr_value) * local_t
+                }
+            }
+        };
 
-		Some(interpolated)
-	}
+        Some(interpolated)
+    }
 }
 
 pub struct InternalTrack {
-	id: String,
-	inner_track: Mutex<InnerTrack>,
-	playhead_param: Mutex<InternalParam>,
-	sample: Mutex<Option<f32>>,
+    id: String,
+    inner_track: Mutex<InnerTrack>,
+    playhead_param: Mutex<InternalParam>,
+    sample: Mutex<Option<f32>>,
 }
 
 impl InternalTrack {
-	pub fn new(id: String, playhead_param: InternalParam, interpolation_type: InterpolationType) -> Self {
-		InternalTrack {
-			id,
-			inner_track: Mutex::new(InnerTrack::new(interpolation_type)),
-			playhead_param: Mutex::new(playhead_param),
-			sample: Mutex::new(None),
-		}
-	}
+    pub fn new(
+        id: String,
+        playhead_param: InternalParam,
+        interpolation_type: InterpolationType,
+    ) -> Self {
+        InternalTrack {
+            id,
+            inner_track: Mutex::new(InnerTrack::new(interpolation_type)),
+            playhead_param: Mutex::new(playhead_param),
+            sample: Mutex::new(None),
+        }
+    }
 
-	pub fn configure(&self, playhead_param: InternalParam, interpolation_type: InterpolationType) {
-		{
-			let mut inner = self
-				.inner_track
-				.try_lock_for(Duration::from_millis(10))
-				.unwrap();
-			inner.set_interpolation_type(interpolation_type);
-		}
-		*self
-			.playhead_param
-			.try_lock_for(Duration::from_millis(10))
-			.unwrap() = playhead_param;
-	}
+    pub fn configure(&self, playhead_param: InternalParam, interpolation_type: InterpolationType) {
+        {
+            let mut inner = self
+                .inner_track
+                .try_lock_for(Duration::from_millis(10))
+                .unwrap();
+            inner.set_interpolation_type(interpolation_type);
+        }
+        *self
+            .playhead_param
+            .try_lock_for(Duration::from_millis(10))
+            .unwrap() = playhead_param;
+    }
 
-	pub fn add_keyframe(&self, keyframe: InternalKeyframe) {
-		self
-			.inner_track
-			.try_lock_for(Duration::from_millis(10))
-			.unwrap()
-			.add_keyframe(keyframe)
-	}
+    pub fn add_keyframe(&self, keyframe: InternalKeyframe) {
+        self.inner_track
+            .try_lock_for(Duration::from_millis(10))
+            .unwrap()
+            .add_keyframe(keyframe)
+    }
 
-	pub fn remove_keyframe(&self, id: String) -> Option<InternalKeyframe> {
-		self
-			.inner_track
-			.try_lock_for(Duration::from_millis(10))
-			.unwrap()
-			.remove_keyframe(id)
-	}
+    pub fn remove_keyframe(&self, id: String) -> Option<InternalKeyframe> {
+        self.inner_track
+            .try_lock_for(Duration::from_millis(10))
+            .unwrap()
+            .remove_keyframe(id)
+    }
 
-	pub fn tick(&self) {
-		let playhead_value = self
-			.playhead_param
-			.try_lock_for(Duration::from_millis(10))
-			.unwrap()
-			.get_value_optional();
+    pub fn tick(&self) {
+        let playhead_value = self
+            .playhead_param
+            .try_lock_for(Duration::from_millis(10))
+            .unwrap()
+            .get_value_optional();
 
-		let sample = self
-			.inner_track
-			.try_lock_for(Duration::from_millis(10))
-			.unwrap()
-			.tick(playhead_value);
+        let sample = self
+            .inner_track
+            .try_lock_for(Duration::from_millis(10))
+            .unwrap()
+            .tick(playhead_value);
 
-		*(self.sample.try_lock_for(Duration::from_millis(10)).unwrap()) = sample;
-	}
+        *(self.sample.try_lock_for(Duration::from_millis(10)).unwrap()) = sample;
+    }
 
-	pub fn get_value_optional(&self) -> Option<f32> {
-		*self.sample.try_lock_for(Duration::from_millis(10)).unwrap()
-	}
+    pub fn get_value_optional(&self) -> Option<f32> {
+        *self.sample.try_lock_for(Duration::from_millis(10)).unwrap()
+    }
 
-	pub fn to_track(&self) -> Track {
-		let inner_track = self
-			.inner_track
-			.try_lock_for(Duration::from_millis(10))
-			.unwrap();
-		let playhead_param = self
-			.playhead_param
-			.try_lock_for(Duration::from_millis(10))
-			.unwrap();
-		Track {
-			id: self.id.clone(),
-			playhead: playhead_param.to_param(),
-			interpolation_type: inner_track.interpolation_type,
-			keyframes: inner_track
-				.keyframes
-				.iter()
-				.map(|k| k.to_keyframe())
-				.collect(),
-		}
-	}
+    pub fn to_track(&self) -> Track {
+        let inner_track = self
+            .inner_track
+            .try_lock_for(Duration::from_millis(10))
+            .unwrap();
+        let playhead_param = self
+            .playhead_param
+            .try_lock_for(Duration::from_millis(10))
+            .unwrap();
+        Track {
+            id: self.id.clone(),
+            playhead: playhead_param.to_param(),
+            interpolation_type: inner_track.interpolation_type,
+            keyframes: inner_track
+                .keyframes
+                .iter()
+                .map(|k| k.to_keyframe())
+                .collect(),
+        }
+    }
 }
 
 pub type TrackMap = HashMap<String, Arc<InternalTrack>>;
 
-	#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct Track {
     pub id: String,
-	/// Parameter controlling the playhead position in the range [-5.0, 5.0]
-	pub playhead: Param,
-	/// Interpolation type applied to all keyframes in this track
-	pub interpolation_type: InterpolationType,
+    /// Parameter controlling the playhead position in the range [-5.0, 5.0]
+    pub playhead: Param,
+    /// Interpolation type applied to all keyframes in this track
+    pub interpolation_type: InterpolationType,
     pub keyframes: Vec<Keyframe>,
 }
 
@@ -804,12 +820,12 @@ mod tests {
         let kf = Keyframe::new(
             "kf-1".to_string(),
             "track-1".to_string(),
-	            0.5,
+            0.5,
             Param::Value { value: 1.0 },
         );
         assert_eq!(kf.id, "kf-1");
         assert_eq!(kf.track_id, "track-1");
-	        assert_eq!(kf.time, 0.5);
+        assert_eq!(kf.time, 0.5);
     }
 
     #[test]
@@ -817,7 +833,7 @@ mod tests {
         let kf = Keyframe::new(
             "kf-abc".to_string(),
             "track-1".to_string(),
-	            0.1,
+            0.1,
             Param::Value { value: 2.0 },
         );
         assert_eq!(kf.get_id(), &"kf-abc".to_string());
@@ -828,13 +844,13 @@ mod tests {
         let kf1 = Keyframe::new(
             "kf-1".to_string(),
             "track-1".to_string(),
-	            0.1,
+            0.1,
             Param::Value { value: 1.0 },
         );
         let kf2 = Keyframe::new(
             "kf-2".to_string(),
             "track-1".to_string(),
-	            0.2,
+            0.2,
             Param::Value { value: 2.0 },
         );
         assert!(kf1 < kf2);
@@ -1026,29 +1042,29 @@ mod tests {
 
     // Tests for Duration serialization helpers
     #[test]
-	    fn test_keyframe_time_serialization() {
-	        let kf = Keyframe::new(
-	            "test".to_string(),
-	            "track".to_string(),
-	            0.5,
-	            Param::Value { value: 1.0 },
-	        );
-	        let json = serde_json::to_string(&kf).unwrap();
-	        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-	        assert_eq!(v["time"].as_f64().unwrap(), 0.5f64);
-	    }
+    fn test_keyframe_time_serialization() {
+        let kf = Keyframe::new(
+            "test".to_string(),
+            "track".to_string(),
+            0.5,
+            Param::Value { value: 1.0 },
+        );
+        let json = serde_json::to_string(&kf).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["time"].as_f64().unwrap(), 0.5f64);
+    }
 
-	    #[test]
-	    fn test_track_serialization() {
-	        let track = Track {
-	            id: "test-track".to_string(),
-	            playhead: Param::Value { value: 0.0 },
-	            interpolation_type: InterpolationType::Linear,
-	            keyframes: vec![],
-	        };
-	        let json = serde_json::to_string(&track).unwrap();
-	        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-	        assert_eq!(v["id"].as_str().unwrap(), "test-track");
-	        assert_eq!(v["interpolation_type"].as_str().unwrap(), "linear");
-	    }
+    #[test]
+    fn test_track_serialization() {
+        let track = Track {
+            id: "test-track".to_string(),
+            playhead: Param::Value { value: 0.0 },
+            interpolation_type: InterpolationType::Linear,
+            keyframes: vec![],
+        };
+        let json = serde_json::to_string(&track).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["id"].as_str().unwrap(), "test-track");
+        assert_eq!(v["interpolation_type"].as_str().unwrap(), "linear");
+    }
 }
