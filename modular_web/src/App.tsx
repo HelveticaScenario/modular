@@ -5,7 +5,6 @@ import { MonacoPatchEditor as PatchEditor } from './components/MonacoPatchEditor
 import { AudioControls } from './components/AudioControls';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { executePatchScript } from './dsl';
-import { updateTsWorkerSchemas } from './lsp/tsClient';
 import { SchemasContext } from './SchemaContext';
 import './App.css';
 import type { ModuleSchema } from './types/generated/ModuleSchema';
@@ -26,9 +25,6 @@ out.source(osc);
 `;
 
 const PATCH_STORAGE_KEY = 'modular_patch_dsl';
-
-const width = 800;
-const height = 200;
 
 type ScopeView = {
     key: string;
@@ -161,7 +157,6 @@ function App() {
 
     const editorRef = useRef<editor.IStandaloneCodeEditor>(null);
 
-    const canvasRef = useRef<HTMLCanvasElement>(null);
     const scopeCanvasMapRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
 
     const registerScopeCanvas = useCallback(
@@ -183,7 +178,6 @@ function App() {
                     if (typeof window !== 'undefined') {
                         window.__APP_SCHEMAS__ = msg.schemas;
                     }
-                    void updateTsWorkerSchemas(msg.schemas);
                     break;
                 }
                 case 'error':
@@ -372,35 +366,7 @@ function App() {
                         />
                     </div>
 
-                    <div className="visualization-panel">
-                        <div className="oscilloscope">
-                            <canvas
-                                ref={canvasRef}
-                                width={width}
-                                height={height}
-                                style={{
-                                    width: '100%',
-                                    height: 'auto',
-                                    maxWidth: width,
-                                }}
-                            />
-                        </div>
-                        <div className="keyboard-shortcuts">
-                            <h3>Keyboard Shortcuts</h3>
-                            <ul>
-                                <li>
-                                    <kbd>Alt</kbd>+<kbd>Enter</kbd> Execute DSL
-                                </li>
-                                <li>
-                                    <kbd>Alt</kbd>+<kbd>.</kbd> Stop Audio
-                                </li>
-                                <li>
-                                    <kbd>Ctrl</kbd>+<kbd>R</kbd> Toggle
-                                    Recording
-                                </li>
-                            </ul>
-                        </div>
-                    </div>
+                    <div className="visualization-panel"></div>
                 </main>
             </div>
         </SchemasContext.Provider>

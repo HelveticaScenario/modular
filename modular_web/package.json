@@ -11,14 +11,7 @@
         "codegen": "cd .. && cargo test export_types -- --ignored"
     },
     "dependencies": {
-        "@codemirror/autocomplete": "^6.20.0",
-        "@codemirror/lang-javascript": "^6.2.4",
-        "@codemirror/lang-yaml": "^6.1.2",
-        "@codemirror/state": "^6.5.2",
-        "@codemirror/view": "^6.38.8",
         "@monaco-editor/react": "^4.7.0",
-        "@uiw/react-codemirror": "^4.25.3",
-        "codemirror": "^6.0.2",
         "events": "^3.3.0",
         "monaco-editor": "^0.55.1",
         "react": "^19.2.0",
