@@ -1,7 +1,6 @@
 /target
 *.wav
 .DS_Store
-.patch.yaml
 
 # Generated TypeScript types (run `cargo test export_types -- --ignored` to regenerate)
 modular_web/src/types/generated/

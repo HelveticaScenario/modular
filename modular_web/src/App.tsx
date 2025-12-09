@@ -132,7 +132,6 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
     ctx.stroke();
 };
 
-// TODO persist yaml code to local storage and load on startup
 function App() {
     const [patchCode, setPatchCode] = useState(() => {
         if (typeof window === 'undefined') {
