@@ -61,10 +61,10 @@ out.source(osc);
 
 **FM Synthesis:**
 ```javascript
-const modulator = sine('mod').freq(note('a4').scale(2));
+const modulator = sine('mod').freq(note('a4'));
 const carrier = sine('carrier')
   .freq(note('a4'))
-  .phase(modulator.output.scale(0.5));
+  .phase(modulator.scale(0.5));
 out.source(carrier);
 ```
 
@@ -94,9 +94,8 @@ modular/
 ### Frontend (TypeScript/React)
 
 - **DSL Runtime** - Executes JavaScript patches, generates PatchGraph JSON
-- **Editor** - CodeMirror-based editor with autocomplete
+- **Editor** - Monaco-based editor with autocomplete and oscilloscopes
 - **WebSocket Client** - Communicates with server
-- **Oscilloscope** - Real-time waveform visualization
 
 ## Development
 
