@@ -1,6 +1,5 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import { useModularWebSocket, type OutputMessage } from './hooks/useWebSocket';
-// import { PatchEditor } from './components/PatchEditor';
 import { MonacoPatchEditor as PatchEditor } from './components/MonacoPatchEditor';
 import { AudioControls } from './components/AudioControls';
 import { ErrorDisplay } from './components/ErrorDisplay';
@@ -12,6 +11,7 @@ import type { ScopeItem } from './types/generated/ScopeItem';
 import type { ValidationError } from './types/generated/ValidationError';
 import type { editor } from 'monaco-editor';
 import { findScopeCallEndLines } from './utils/findScopeCallEndLines';
+import { FileExplorer } from './components/FileExplorer';
 
 declare global {
     interface Window {
@@ -158,6 +158,8 @@ function App() {
     const editorRef = useRef<editor.IStandaloneCodeEditor>(null);
 
     const scopeCanvasMapRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
+    const [files, setFiles] = useState<string[]>([]);
+    const [currentFile, setCurrentFile] = useState<string | null>(null);
 
     const registerScopeCanvas = useCallback(
         (key: string, canvas: HTMLCanvasElement) => {
@@ -169,6 +171,7 @@ function App() {
     const unregisterScopeCanvas = useCallback((key: string) => {
         scopeCanvasMapRef.current.delete(key);
     }, []);
+
     const handleMessage = useCallback(
         (msg: OutputMessage) => {
             switch (msg.type) {
@@ -200,13 +203,25 @@ function App() {
                 }
                 case 'fileList':
                     // Handle file list if needed
+                    setFiles(msg.files);
                     break;
-                case 'fileContent':
+                case 'fileContent': {
                     // Handle file content if needed
+                    if (msg.path === currentFile) {
+                        setPatchCode(msg.content);
+                    }
                     break;
+                }
             }
         },
-        [setError, setSchemas, setValidationErrors, setIsMuted]
+        [
+            setError,
+            setSchemas,
+            setValidationErrors,
+            setIsMuted,
+            setFiles,
+            currentFile,
+        ]
     );
 
     const {
@@ -218,7 +233,21 @@ function App() {
         unmute,
         startRecording,
         stopRecording,
+        listFiles,
+        readFile,
+        writeFile,
+        deleteFile,
     } = useModularWebSocket({ onMessage: handleMessage });
+
+    useEffect(() => {
+        listFiles();
+    }, [listFiles]);
+
+    useEffect(() => {
+        if (currentFile) {
+            readFile(currentFile);
+        }
+    }, [currentFile, readFile]);
 
     useEffect(() => {
         if (typeof window === 'undefined') {
@@ -366,7 +395,12 @@ function App() {
                         />
                     </div>
 
-                    <div className="visualization-panel"></div>
+                    <FileExplorer
+                        files={files}
+                        currentFile={currentFile}
+                        onFileSelect={setCurrentFile}
+                        onRefresh={listFiles}
+                    />
                 </main>
             </div>
         </SchemasContext.Provider>

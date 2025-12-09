@@ -1,3 +1,5 @@
+Activate the serena project modular
+
 # Modular Synth Codebase Guide
 
 ## Architecture Overview
@@ -9,7 +11,7 @@ This is a **modular audio synthesis system** with a Rust backend and React/TypeS
 ```
 ┌─────────────────────────────────────────────────────┐
 │  modular_web (React/TS)                             │
-│  - WebSocket client, YAML editor, oscilloscope      │
+│  - WebSocket client, JS DSL editor, oscilloscope      │
 └──────────────────┬──────────────────────────────────┘
                    │ WebSocket (JSON + Binary)
 ┌──────────────────▼──────────────────────────────────┐
@@ -27,6 +29,8 @@ This is a **modular audio synthesis system** with a Rust backend and React/TypeS
 ```
 
 **Critical: `modular_core` is a pure DSP library.** Never add HTTP, WebSocket, serialization, or I/O code here. Server concerns belong in `modular_server`.
+
+Frontend workflow: `modular_web` runs a JavaScript DSL (see `src/dsl/`) that builds `PatchGraph` JSON (modules + tracks + scopes) from schemas and sends it via `SetPatch { patch }` over WebSocket. The server also exposes file APIs for `.js` patches.
 
 ## Key Concepts
 
@@ -46,7 +50,7 @@ Modules implement `Sampleable` via the `#[derive(Module)]` proc macro from `modu
 struct SineOscillatorParams {
     #[param("freq", "frequency in v/oct")]
     freq: InternalParam,
-    #[param("phase", "the phase of the oscillator")]  
+    #[param("phase", "the phase of the oscillator")]
     phase: InternalParam,
 }
 
@@ -78,48 +82,40 @@ Audio modules use **modular synth voltage conventions**:
 
 ### Patch System
 
-A `Patch` is a graph of connected modules:
-- **`PatchGraph`**: Serializable YAML representation (`modules: Vec<ModuleState>`)
+A `Patch` is a graph of connected modules and tracks:
+- **`PatchGraph`**: Structured JSON from the JS DSL (`modules: Vec<ModuleState>`, `tracks: Vec<Track>`, `scopes: Vec<ScopeItem>`)
 - **`Patch`**: Runtime representation with `sampleables: SampleableMap` and `tracks: TrackMap`
 - Params can be: `Value`, `Hz`, `Note`, `Cable` (connect to another module's output), or `Track` (automation)
+- Scopes describe which module outputs or tracks to stream to the client; see `ScopeItem` in `modular_core::types`.
 
 Processing order in `process_frame()` (audio.rs):
 1. Tick all tracks (advance automation playheads)
 2. Update all modules (smooth params, prepare for next sample)
 3. Tick all modules (compute output samples)
-4. Capture samples for subscribed audio streams
+4. Capture samples for subscribed audio streams (`subscription_collection` guarded by `try_lock`)
 5. Get root module output
 
 ### Hot-Reload Patch Updates
 
 Patches are updated incrementally without stopping audio:
 
-1. Parse YAML → `PatchGraph` struct
+1. Receive `SetPatch { patch }` JSON from the DSL → `PatchGraph`
 2. Validate against module schemas (see `validation.rs`)
 3. Diff current patch to determine changes:
    - **Remove**: Modules in current but not in new patch
    - **Add**: Modules in new patch but not current
    - **Recreate**: Modules with same ID but different `module_type` (delete then recreate)
    - **Update**: Modules in both with same type - update params via `update_param()`
-4. Apply changes while audio thread uses `try_lock()`
-
-Key implementation details from `http_server.rs`:
-- Compare `module_type` for modules with matching IDs to detect type changes
-- Type changes require full deletion and recreation (can't just update params)
-- Root module (id `"root"`) is never deleted or recreated
-- Parameters are updated for all modules (new, recreated, and existing)
+4. Tracks are applied in two passes (create/clear shells, then configure playhead/interpolation and add keyframes) so track params can reference other tracks
+5. Apply changes while audio thread uses `try_lock()`
+6. After a successful `SetPatch`, the server syncs `patch.scopes` to start/stop audio streaming tasks (no explicit subscribe/unsubscribe messages)
 
 ### Track/Automation System
 
-Tracks enable timeline-based parameter automation. **Note: YAML serialization is planned but not yet implemented** - tracks currently exist only in the runtime `Patch` and must be created programmatically.
-
-Structure:
-- **Keyframes**: Store param values at specific times (Duration-based)
-- **Playback modes**: `Once` (stop at end) or `Loop` (repeat)
-- **Real-time interpolation**: Playhead advances by 1 sample per `tick()`
-- **Parameter connection**: `Param::Track { track: "track_id" }` references a track by ID
-
-When implementing YAML support, tracks will need to be added to the `PatchGraph` struct (currently only contains `modules: Vec<ModuleState>`). Keyframes are sorted by time on insertion, and `InnerTrack` maintains `playhead_idx` for efficient interpolation during playback.
+Tracks are fully serialized in `PatchGraph.tracks` and applied in `SetPatch`:
+- Fields: `id`, `playhead: Param` (expects −5.0..5.0 volts → normalized 0..1), `interpolation_type` (`Linear`, `Step`, `Cubic`, `Exponential`), and `keyframes` (sorted by time).
+- Runtime tracks live in `Patch.tracks` (`InternalTrack`) and tick each audio frame to interpolate samples.
+- Track params can feed module params or other tracks; the server builds tracks in two passes to allow cross-references before configuring keyframes.
 
 ### Type Generation & Validation
 
@@ -145,7 +141,7 @@ cargo run
 # Frontend dev server
 cd modular_web
 pnpm install
-pnpm run dev
+pnpm dev
 
 # Build optimized release
 cargo build --release
@@ -164,16 +160,18 @@ Example modules: `modular_core/src/dsp/oscillators/sine.rs`, `filters/lowpass.rs
 
 ### WebSocket Protocol
 
-Binary messages for audio streaming:
-```
-[module_id UTF-8][0x00][port UTF-8][0x00][f32 samples as little-endian]
-```
+Control messages are JSON (see `protocol.rs`):
+- `Echo`, `GetSchemas`, `GetPatch` (no-op/back-compat)
+- `SetPatch { patch: PatchGraph }` built by the JS DSL (includes `modules`, `tracks`, `scopes`)
+- `Mute/Unmute`
+- Recording: `StartRecording { filename? }`, `StopRecording`
+- File ops for DSL persistence: `ListFiles`, `ReadFile { path }`, `WriteFile { path, content }`, `DeleteFile { path }`
 
-JSON messages for control (see `protocol.rs`):
-- `SetPatch { yaml }` - Update entire patch from YAML
-- `SubscribeAudio { subscription }` - Stream audio from module output
-- `Mute/Unmute` - Control audio output
-- `StartRecording/StopRecording` - WAV file recording
+Audio streaming uses `PatchGraph.scopes` to declare desired module outputs or tracks. After `SetPatch`, the server spawns per-scope tasks that forward audio buffers as **binary WebSocket frames**:
+```
+[module_id UTF-8][0x00][port UTF-8 or empty for tracks][0x00][f32 samples as little-endian]
+```
+Control responses include `Schemas`, `Error { message, errors? }`, `MuteState`, `FileList`, `FileContent`. `OutputMessage::AudioBuffer` is converted to binary before sending.
 
 ### Recording Workflow
 
@@ -228,12 +226,13 @@ Recording captures post-attenuation, post-mute audio - exactly what goes to spea
 
 Example test pattern from `dsp_tests.rs`:
 ```rust
-let mut patch = create_patch_from_yaml(sample_rate, yaml)?;
+let mut patch = create_test_patch();
+add_module(&mut patch, "sine-1", "sine");
 for _ in 0..1000 {
     process_frame(&patch);
 }
-let output = patch.get_output();
-assert!((output - expected).abs() < tolerance);
+let output = get_sample(&patch, "sine-1", "output");
+assert!(output.abs() < 5.0);
 ```
 
 ### Fish Shell Commands
@@ -241,15 +240,16 @@ This project uses fish shell. Note: fish doesn't support heredocs - use `printf`
 
 ## Integration Points
 
-- **Audio subscriptions**: Ring buffers in `AudioState.subscription_collection` capture samples per-frame, sent via tokio channels to WebSocket clients
-- **YAML patches**: Serialize `PatchGraph` ↔ YAML for patch storage/loading (see `persistence.rs`)
+- **Audio subscriptions**: `patch.scopes` drive subscriptions; ring buffers in `AudioState.subscription_collection` capture samples per-frame and are pushed to clients as binary frames.
+- **Patches**: `PatchGraph` travels as JSON from the DSL; `Patch` is the runtime graph guarded by `tokio::Mutex`.
 - **Root module**: Special "root" module (id `ROOT_ID`) with "output" port - its output goes to speakers
-- **Tracks**: Timeline automation system with keyframes, supports Once/Loop playback modes
+- **Tracks**: Timeline automation with serialized `Track` definitions and keyframes; two-pass application allows track-to-track references
 
 ## Common Pitfalls
 
 - Don't add async or I/O to `modular_core` - it's a pure library
-- Don't use blocking locks in audio callback (`process_frame()`) - always `try_lock()`
+- Don't use blocking locks in the audio callback (`process_frame()`) - always `try_lock()`
 - Remember to register new modules in `get_constructors()` and export TS types
-- Patch updates must be validated before applying to prevent invalid graph states
+- Patch updates must be validated before applying to prevent invalid graph states; `SetPatch` auto-unmutes on success
+- `PatchGraph.scopes` controls streaming; omit unused scopes to avoid extra work
 - Sample rate is passed to module constructors - store it for frequency calculations

@@ -1,9 +1,5 @@
 import type { ModuleSchema } from "../types/generated/ModuleSchema";
 
-// Base library: minimal JS built-ins plus core DSL types and helpers.
-
-
-// Keep this in sync with BASE_LIB_SOURCE in src/lsp/tsWorker.ts.
 const BASE_LIB_SOURCE = `
 // Core DSL types used by the generated declarations
 type DSLValue = number | ModuleOutput | ModuleNode | TrackNode;
@@ -23,27 +19,27 @@ interface ModuleNode {
   shift(value: DSLValue): ModuleNode;
 }
 
-	interface TrackNode {
-	  /**
-	   * Set the interpolation type for this track.
-	   */
-	  interpolation(interpolation: "linear" | "step" | "cubic" | "exponential"): TrackNode;
-	
-	  /**
-	   * Set the playhead control value for this track.
-	   *
-	   * The value range [-5.0, 5.0] maps linearly to the normalized time range [0.0, 1.0].
-	   */
-	  playhead(value: DSLValue): TrackNode;
-	
-	  /**
-	   * Add a keyframe at the given normalized time in [0.0, 1.0].
-	   */
-	  addKeyframe(time: number, value: DSLValue): TrackNode;
+interface TrackNode {
+    /**
+     * Set the interpolation type for this track.
+     */
+    interpolation(interpolation: "linear" | "step" | "cubic" | "exponential"): TrackNode;
 
-        scale(value: DSLValue): ModuleNode;
-        shift(value: DSLValue): ModuleNode;
-	}
+    /**
+     * Set the playhead control value for this track.
+     *
+     * The value range [-5.0, 5.0] maps linearly to the normalized time range [0.0, 1.0].
+     */
+    playhead(value: DSLValue): TrackNode;
+
+    /**
+     * Add a keyframe at the given normalized time in [0.0, 1.0].
+     */
+    addKeyframe(time: number, value: DSLValue): TrackNode;
+
+    scale(value: DSLValue): ModuleNode;
+    shift(value: DSLValue): ModuleNode;
+}
 
 // Helper functions exposed by the DSL runtime
 declare function hz(frequency: number): number;

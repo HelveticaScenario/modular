@@ -1,0 +1,79 @@
+INFO  2025-12-09 12:18:15,399 serena.cli:health_check:627 - Starting health check for project: /Users/helveticascenario/dev/modular
+INFO  2025-12-09 12:18:15,399 serena.cli:health_check:631 - Creating SerenaAgent with disabled dashboard...
+INFO  2025-12-09 12:18:15,400 serena.agent:__init__:222 - Will record tool usage statistics with token count estimator: CHAR_COUNT.
+INFO  2025-12-09 12:18:15,435 serena.agent:__init__:226 - Starting Serena server (version=0.1.4-1db02d08-dirty, process id=69611, parent process id=69610)
+INFO  2025-12-09 12:18:15,435 serena.agent:__init__:227 - Configuration file: None
+INFO  2025-12-09 12:18:15,435 serena.agent:__init__:228 - Available projects: 
+INFO  2025-12-09 12:18:15,435 serena.agent:__init__:229 - Loaded tools (38): read_file, create_text_file, list_dir, find_file, replace_content, delete_lines, replace_lines, insert_at_line, search_for_pattern, restart_language_server, get_symbols_overview, find_symbol, find_referencing_symbols, replace_symbol_body, insert_after_symbol, insert_before_symbol, rename_symbol, write_memory, read_memory, list_memories, delete_memory, edit_memory, execute_shell_command, activate_project, remove_project, switch_modes, get_current_config, check_onboarding_performed, onboarding, think_about_collected_information, think_about_task_adherence, think_about_whether_you_are_done, summarize_changes, prepare_for_new_conversation, initial_instructions, jet_brains_find_symbol, jet_brains_find_referencing_symbols, jet_brains_get_symbols_overview
+INFO  2025-12-09 12:18:15,435 serena.agent:apply:126 - SerenaAgentContext[name='desktop-app'] included 1 tools: switch_modes
+INFO  2025-12-09 12:18:15,437 serena.agent:__init__:243 - Number of exposed tools: 29
+INFO  2025-12-09 12:18:15,450 serena.agent:_update_active_tools:477 - Active tools (29): activate_project, check_onboarding_performed, create_text_file, delete_memory, edit_memory, execute_shell_command, find_file, find_referencing_symbols, find_symbol, get_current_config, get_symbols_overview, initial_instructions, insert_after_symbol, insert_before_symbol, list_dir, list_memories, onboarding, prepare_for_new_conversation, read_file, read_memory, rename_symbol, replace_content, replace_symbol_body, search_for_pattern, switch_modes, think_about_collected_information, think_about_task_adherence, think_about_whether_you_are_done, write_memory
+INFO  2025-12-09 12:18:15,454 serena.util.file_system:start:360 - Loading of .gitignore files starting ...
+INFO  2025-12-09 12:18:15,454 serena.util.file_system:_load_gitignore_files:148 - Processing .gitignore file: /Users/helveticascenario/dev/modular/.gitignore
+INFO  2025-12-09 12:18:15,454 serena.util.file_system:_load_gitignore_files:148 - Processing .gitignore file: /Users/helveticascenario/dev/modular/modular_core/.gitignore
+INFO  2025-12-09 12:18:15,454 serena.util.file_system:_load_gitignore_files:148 - Processing .gitignore file: /Users/helveticascenario/dev/modular/.serena/.gitignore
+INFO  2025-12-09 12:18:15,455 serena.util.file_system:_load_gitignore_files:148 - Processing .gitignore file: /Users/helveticascenario/dev/modular/modular_web/.gitignore
+INFO  2025-12-09 12:18:15,457 serena.util.file_system:stop:367 - Loading of .gitignore files completed in 0.003 seconds
+INFO  2025-12-09 12:18:15,457 serena.agent:load_project_from_path_or_name:544 - Added new project modular for path /Users/helveticascenario/dev/modular
+INFO  2025-12-09 12:18:15,457 serena.agent:_activate_project:514 - Activating modular at /Users/helveticascenario/dev/modular
+INFO  2025-12-09 12:18:15,457 serena.agent:_update_active_tools:477 - Active tools (29): activate_project, check_onboarding_performed, create_text_file, delete_memory, edit_memory, execute_shell_command, find_file, find_referencing_symbols, find_symbol, get_current_config, get_symbols_overview, initial_instructions, insert_after_symbol, insert_before_symbol, list_dir, list_memories, onboarding, prepare_for_new_conversation, read_file, read_memory, rename_symbol, replace_content, replace_symbol_body, search_for_pattern, switch_modes, think_about_collected_information, think_about_task_adherence, think_about_whether_you_are_done, write_memory
+INFO  2025-12-09 12:18:15,457 serena.task_executor:issue_task:192 - Scheduling Task-1:init_language_server_manager
+INFO  2025-12-09 12:18:15,457 serena.cli:health_check:634 - SerenaAgent created successfully
+INFO  2025-12-09 12:18:15,458 serena.cli:health_check:637 - Searching for analyzable files...
+INFO  2025-12-09 12:18:15,465 serena.cli:health_check:646 - Found analyzable file: example.js
+INFO  2025-12-09 12:18:15,465 serena.cli:health_check:664 - Testing GetSymbolsOverviewTool on file: example.js
+INFO  2025-12-09 12:18:15,465 serena.task_executor:issue_task:192 - Scheduling Task-2:<lambda>
+INFO  2025-12-09 12:18:15,542 serena.task_executor:_process_task_queue:123 - Starting execution of Task-1:init_language_server_manager
+INFO  2025-12-09 12:18:15,542 serena.task_executor:start:360 - Task-1:init_language_server_manager starting ...
+INFO  2025-12-09 12:18:15,542 serena.agent:start:360 - Language server initialization starting ...
+INFO  2025-12-09 12:18:15,542 serena.project:create_language_server_manager:384 - Creating language server manager for /Users/helveticascenario/dev/modular
+INFO  2025-12-09 12:18:15,542 sensai.util.logging:start:360 - Language server startup (language=rust) starting ...
+INFO  2025-12-09 12:18:15,542 sensai.util.logging:start:360 - Language server startup (language=typescript) starting ...
+INFO  2025-12-09 12:18:15,542 serena.ls_manager:create_language_server:41 - Creating language server instance for /Users/helveticascenario/dev/modular, language=rust.
+INFO  2025-12-09 12:18:15,542 serena.ls_manager:create_language_server:41 - Creating language server instance for /Users/helveticascenario/dev/modular, language=typescript.
+INFO  2025-12-09 12:18:15,574 solidlsp.ls:start:1883 - Starting language server with language typescript for /Users/helveticascenario/dev/modular
+INFO  2025-12-09 12:18:15,574 solidlsp.language_servers.typescript_language_server:_start_server:275 - Starting TypeScript server process
+INFO  2025-12-09 12:18:15,574 solidlsp.ls_handler:start:194 - Starting language server process via command: ['/Users/helveticascenario/.serena/language_servers/static/TypeScriptLanguageServer/ts-lsp/node_modules/.bin/typescript-language-server', '--stdio']
+INFO  2025-12-09 12:18:15,577 solidlsp.language_servers.typescript_language_server:_start_server:279 - Sending initialize request from LSP client to LSP server and awaiting response
+INFO  2025-12-09 12:18:15,584 solidlsp.language_servers.rust_analyzer:__init__:104 - Using rust-analyzer at: /Users/helveticascenario/.rustup/toolchains/nightly-aarch64-apple-darwin/bin/rust-analyzer
+INFO  2025-12-09 12:18:15,584 solidlsp.ls:start:1883 - Starting language server with language rust for /Users/helveticascenario/dev/modular
+INFO  2025-12-09 12:18:15,584 solidlsp.language_servers.rust_analyzer:_start_server:638 - Starting RustAnalyzer server process
+INFO  2025-12-09 12:18:15,585 solidlsp.ls_handler:start:194 - Starting language server process via command: /Users/helveticascenario/.rustup/toolchains/nightly-aarch64-apple-darwin/bin/rust-analyzer
+INFO  2025-12-09 12:18:15,587 solidlsp.language_servers.rust_analyzer:_start_server:642 - Sending initialize request from LSP client to LSP server and awaiting response
+INFO  2025-12-09 12:18:15,662 solidlsp.language_servers.typescript_language_server:window_log_message:258 - LSP: window/logMessage: {'type': 3, 'message': 'Using Typescript version (bundled) 5.9.3 from path "/Users/helveticascenario/.serena/language_servers/static/TypeScriptLanguageServer/ts-lsp/node_modules/typescript/lib/tsserver.js"'}
+INFO  2025-12-09 12:18:16,663 solidlsp.language_servers.typescript_language_server:_start_server:296 - Timeout waiting for TypeScript server to become ready, proceeding anyway
+INFO  2025-12-09 12:18:16,664 sensai.util.logging:stop:367 - Language server startup (language=typescript) completed in 1.121 seconds
+INFO  2025-12-09 12:18:20,492 solidlsp.ls_handler:_read_ls_process_stderr:390 - 2025-12-09T12:18:20.492646-06:00  WARN overly long loop turn took 283.116417ms (event handling took 283.080542ms): PrimeCaches(End { cancelled: false })
+
+INFO  2025-12-09 12:18:20,492 sensai.util.logging:stop:367 - Language server startup (language=rust) completed in 4.950 seconds
+INFO  2025-12-09 12:18:20,493 serena.agent:stop:367 - Language server initialization completed in 4.951 seconds
+INFO  2025-12-09 12:18:20,493 serena.task_executor:stop:367 - Task-1:init_language_server_manager completed in 4.951 seconds
+INFO  2025-12-09 12:18:20,493 serena.task_executor:_process_task_queue:123 - Starting execution of Task-2:<lambda>
+INFO  2025-12-09 12:18:20,493 serena.task_executor:start:360 - Task-2:<lambda> starting ...
+INFO  2025-12-09 12:18:20,767 serena.task_executor:stop:367 - Task-2:<lambda> completed in 0.274 seconds
+INFO  2025-12-09 12:18:20,768 serena.cli:health_check:667 - GetSymbolsOverviewTool returned 1 symbols
+INFO  2025-12-09 12:18:20,769 serena.cli:health_check:688 - No class or function found, using first available symbol
+INFO  2025-12-09 12:18:20,774 serena.cli:health_check:695 - Testing FindSymbolTool for symbol: osc
+INFO  2025-12-09 12:18:20,774 serena.task_executor:issue_task:192 - Scheduling Task-3:<lambda>
+INFO  2025-12-09 12:18:20,873 serena.task_executor:_process_task_queue:123 - Starting execution of Task-3:<lambda>
+INFO  2025-12-09 12:18:20,874 serena.task_executor:start:360 - Task-3:<lambda> starting ...
+ERROR 2025-12-09 12:18:20,874 solidlsp.ls:request_full_symbol_tree:1122 - You passed a file explicitly, but it is ignored. This is probably an error. File: example.js
+INFO  2025-12-09 12:18:20,874 serena.task_executor:stop:367 - Task-3:<lambda> completed in 0.001 seconds
+INFO  2025-12-09 12:18:20,874 serena.cli:health_check:700 - FindSymbolTool found 1 matches for symbol osc
+INFO  2025-12-09 12:18:20,875 serena.cli:health_check:703 - Testing FindReferencingSymbolsTool for symbol: osc
+INFO  2025-12-09 12:18:20,875 serena.task_executor:issue_task:192 - Scheduling Task-4:<lambda>
+INFO  2025-12-09 12:18:20,975 serena.task_executor:_process_task_queue:123 - Starting execution of Task-4:<lambda>
+INFO  2025-12-09 12:18:20,975 serena.task_executor:start:360 - Task-4:<lambda> starting ...
+ERROR 2025-12-09 12:18:20,976 solidlsp.ls:request_full_symbol_tree:1122 - You passed a file explicitly, but it is ignored. This is probably an error. File: example.js
+WARNING 2025-12-09 12:18:22,014 solidlsp.ls:request_referencing_symbols:1446 - Could not find containing symbol for example.js:2:11. Returning file symbol instead
+INFO  2025-12-09 12:18:22,015 serena.task_executor:stop:367 - Task-4:<lambda> completed in 1.039 seconds
+INFO  2025-12-09 12:18:22,015 serena.cli:health_check:707 - FindReferencingSymbolsTool found 1 references for symbol osc
+INFO  2025-12-09 12:18:22,015 serena.cli:health_check:713 - Testing SearchForPatternTool for pattern: osc
+INFO  2025-12-09 12:18:22,015 serena.task_executor:issue_task:192 - Scheduling Task-5:<lambda>
+INFO  2025-12-09 12:18:22,118 serena.task_executor:_process_task_queue:123 - Starting execution of Task-5:<lambda>
+INFO  2025-12-09 12:18:22,119 serena.task_executor:start:360 - Task-5:<lambda> starting ...
+INFO  2025-12-09 12:18:22,127 serena.text_utils:search_files:365 - Processing 58 files.
+INFO  2025-12-09 12:18:22,149 serena.text_utils:search_files:406 - Found 65 total matches across 58 files
+INFO  2025-12-09 12:18:22,149 serena.task_executor:stop:367 - Task-5:<lambda> completed in 0.030 seconds
+INFO  2025-12-09 12:18:22,149 serena.cli:health_check:720 - SearchForPatternTool found 65 pattern matches for osc
+INFO  2025-12-09 12:18:22,149 serena.cli:health_check:734 - Health check completed successfully
