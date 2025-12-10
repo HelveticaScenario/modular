@@ -319,7 +319,7 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
 
     // Get output sample before dropping lock
     let output_sample = if let Some(root) = patch_guard.sampleables.get(&ROOT_ID) {
-        root.get_sample(&*ROOT_OUTPUT_PORT).unwrap_or(0.0)
+        root.get_sample(&ROOT_OUTPUT_PORT).unwrap_or(0.0)
     } else {
         0.0
     };
