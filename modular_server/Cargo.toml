@@ -25,6 +25,8 @@ tower-http = { version = "0.5", features = ["cors", "trace", "fs"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 futures-util = "0.3"
+zeroconf = "0.17"
+zeroconf-tokio = "0.3.0"
 
 # Audio
 cpal = { version = "0.16", features = ["asio"] }

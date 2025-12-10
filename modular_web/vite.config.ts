@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
-import monacoEditorEsmPlugin from 'vite-plugin-monaco-editor-esm'
+// import monacoEditorEsmPlugin from 'vite-plugin-monaco-editor-esm'
+
+const prefix = `monaco-editor/esm/vs`;
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -11,7 +13,7 @@ export default defineConfig({
         plugins: ['babel-plugin-react-compiler'],
       },
     }),
-    monacoEditorEsmPlugin(),
+    // monacoEditorEsmPlugin(),
   ],
   build: {
     outDir: path.resolve(__dirname, '../modular_server/static'),
@@ -28,5 +30,14 @@ export default defineConfig({
         ws: true,
       },
     },
+  },
+  optimizeDeps: {
+    include: [
+      `${prefix}/language/json/json.worker`,
+      `${prefix}/language/css/css.worker`,
+      `${prefix}/language/html/html.worker`,
+      `${prefix}/language/typescript/ts.worker`,
+      `${prefix}/editor/editor.worker`,
+    ],
   },
 })

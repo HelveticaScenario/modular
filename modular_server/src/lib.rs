@@ -4,6 +4,9 @@ use std::sync::Arc;
 
 use modular_core::Patch;
 use modular_core::dsp::get_constructors;
+use zeroconf::prelude::*;
+use zeroconf::{MdnsService, ServiceType, TxtRecord};
+use zeroconf_tokio::MdnsServiceAsync;
 
 pub mod audio;
 mod http_server;
@@ -83,14 +86,50 @@ pub async fn run_server(config: ServerConfig) -> anyhow::Result<()> {
     // Create router
     let app = create_router(state);
 
+    // Advertise the HTTP/WebSocket service over mDNS/Bonjour
+    let mut mdns_service = start_mdns_service(config.port).await?;
+
     // Start server
-    let addr = format!("localhost:{}", config.port);
+    let addr = format!("0.0.0.0:{}", config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    tracing::info!("HTTP server listening on http://{}", addr);
+    tracing::info!(
+        "HTTP server listening on http://localhost:{} (also via http://modular.local:{})",
+        config.port, config.port
+    );
 
     axum::serve(listener, app).await?;
 
+    // Best-effort shutdown of the advertised service on exit
+    let _ = mdns_service.shutdown().await;
+
     Ok(())
+}
+
+async fn start_mdns_service(port: u16) -> anyhow::Result<MdnsServiceAsync> {
+    let service_type = ServiceType::new("http", "tcp")?;
+    let mut service = MdnsService::new(service_type, port);
+
+    service.set_name("modular");
+    service.set_host("modular.local");
+    service.set_domain("local.");
+
+    let mut txt_record = TxtRecord::new();
+    txt_record.insert("path", "/")?;
+    txt_record.insert("ws_path", "/ws")?;
+    txt_record.insert("proto", "http+ws")?;
+    service.set_txt_record(txt_record);
+
+    let mut service = MdnsServiceAsync::new(service)?;
+    let registration = service.start().await?;
+
+    tracing::info!(
+        "Published Bonjour service '{}' at {:?} on {}",
+        registration.name(),
+        registration.service_type(),
+        registration.domain()
+    );
+
+    Ok(service)
 }
 
 #[cfg(test)]
