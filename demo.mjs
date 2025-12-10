@@ -12,7 +12,7 @@ const t = track('t')
   .interpolation("exponential")
   .playhead(phead)
 
-// scope(t)
+scope(t)
 
 
 const makeSeq = (id, notes) => {
@@ -35,7 +35,7 @@ const osc = sine('osc1')
     seq
   ).scale(t);
 
-// scope(osc)
+scope(osc)
 
 
 

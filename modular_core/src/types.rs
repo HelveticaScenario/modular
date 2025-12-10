@@ -395,7 +395,7 @@ impl InnerTrack {
                 // Updating existing keyframe - check if time changed
                 let old_time = self.keyframes[idx].time;
                 self.keyframes[idx] = keyframe;
-                
+
                 // Only re-sort if the time changed and might affect ordering
                 if old_time != self.keyframes[idx].time {
                     self.keyframes.sort_by(|a, b| {
@@ -407,7 +407,8 @@ impl InnerTrack {
             }
             None => {
                 // New keyframe - insert in sorted position using binary search
-                let insert_pos = self.keyframes
+                let insert_pos = self
+                    .keyframes
                     .binary_search_by(|k| {
                         k.time
                             .partial_cmp(&keyframe.time)
@@ -457,11 +458,11 @@ impl InnerTrack {
         // Use partition_point to find the first keyframe with time > t
         // Then back up one to get the last keyframe with time <= t
         let idx = self.keyframes.partition_point(|kf| kf.time <= t);
-        
+
         // partition_point returns the index of the first element > t
         // So idx-1 is the last element <= t, which is the start of our interpolation segment
         let idx = if idx > 0 { idx - 1 } else { 0 };
-        
+
         // Ensure idx is valid for the segment [idx, idx+1]
         let idx = idx.min(self.keyframes.len() - 2);
 
@@ -674,7 +675,7 @@ pub struct PatchGraph {
     pub scopes: Vec<ScopeItem>,
 }
 
-pub type SampleableConstructor = Box<dyn Fn(&String, f32) -> Result<Arc<Box<dyn Sampleable>>>>;
+pub type SampleableConstructor = Box<dyn Fn(String, f32) -> Result<Arc<Box<dyn Sampleable>>>>;
 
 #[cfg(test)]
 mod tests {

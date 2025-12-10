@@ -265,39 +265,33 @@ async fn handle_message(
                 }
             }
         }
-        InputMessage::RenameFile { from, to } => {
-            match rename_dsl_file(&from, &to) {
-                Ok(_) => match list_dsl_files() {
-                    Ok(files) => {
-                        let _ =
-                            send_message(socket_tx, OutputMessage::FileList { files }).await;
-                    }
-                    Err(e) => {
-                        let _ = send_message(
-                            socket_tx,
-                            OutputMessage::Error {
-                                message: format!(
-                                    "Renamed file but failed to refresh list: {}",
-                                    e
-                                ),
-                                errors: None,
-                            },
-                        )
-                        .await;
-                    }
-                },
+        InputMessage::RenameFile { from, to } => match rename_dsl_file(&from, &to) {
+            Ok(_) => match list_dsl_files() {
+                Ok(files) => {
+                    let _ = send_message(socket_tx, OutputMessage::FileList { files }).await;
+                }
                 Err(e) => {
                     let _ = send_message(
                         socket_tx,
                         OutputMessage::Error {
-                            message: format!("Failed to rename file: {}", e),
+                            message: format!("Renamed file but failed to refresh list: {}", e),
                             errors: None,
                         },
                     )
                     .await;
                 }
+            },
+            Err(e) => {
+                let _ = send_message(
+                    socket_tx,
+                    OutputMessage::Error {
+                        message: format!("Failed to rename file: {}", e),
+                        errors: None,
+                    },
+                )
+                .await;
             }
-        }
+        },
         InputMessage::DeleteFile { path } => {
             match delete_dsl_file(&path) {
                 Ok(_) => {
@@ -383,47 +377,53 @@ async fn apply_patch(
     let mut patch_lock = audio_state.patch.lock().await;
 
     // Build maps for efficient lookup (use references to avoid cloning)
-    let desired_modules: HashMap<&str, _> = desired_graph
+    let desired_modules: HashMap<String, _> = desired_graph
         .modules
         .iter()
-        .map(|m| (m.id.as_str(), m))
+        .map(|m| (m.id.clone(), m))
         .collect();
 
-    let current_ids: HashSet<&str> = patch_lock.sampleables.keys().map(|k| k.as_str()).collect();
-    let desired_ids: HashSet<&str> = desired_modules.keys().copied().collect();
+    let current_ids: HashSet<String> = patch_lock.sampleables.keys().cloned().collect();
+    let desired_ids: HashSet<String> = desired_modules.keys().cloned().collect();
+    println!("Current IDs: {:?}", current_ids);
+    println!("Desired IDs: {:?}", desired_ids);
 
     // Find modules to delete (in current but not in desired), excluding root
-    let mut to_delete: Vec<&str> = current_ids
+    let mut to_delete: Vec<String> = current_ids
         .difference(&desired_ids)
-        .filter(|id| *id != "root")
-        .copied()
+        .filter(|id| **id != "root")
+        .cloned()
         .collect();
 
     // Find modules where type changed (same ID but different module_type)
     // These need to be deleted and recreated
-    let mut to_recreate: Vec<&str> = Vec::new();
+    let mut to_recreate: Vec<String> = Vec::new();
     for id in current_ids.intersection(&desired_ids) {
         if *id == "root" {
             continue; // Never recreate root
         }
         if let (Some(current_module), Some(desired_module)) =
-            (patch_lock.sampleables.get(*id), desired_modules.get(id))
+            (patch_lock.sampleables.get(id), desired_modules.get(id))
         {
             let current_state = current_module.get_state();
             if current_state.module_type != desired_module.module_type {
-                to_recreate.push(id);
-                to_delete.push(id);
+                to_recreate.push(id.clone());
+                to_delete.push(id.clone());
             }
         }
     }
 
+    println!("To delete: {:?}", to_delete);
+
     // Find modules to create (in desired but not in current, plus recreated modules)
-    let mut to_create: Vec<&str> = desired_ids.difference(&current_ids).copied().collect();
+    let mut to_create: Vec<String> = desired_ids.difference(&current_ids).cloned().collect();
     to_create.extend(to_recreate);
+
+    println!("To create: {:?}", to_create);
 
     // Delete modules
     for id in to_delete {
-        patch_lock.sampleables.remove(id);
+        patch_lock.sampleables.remove(&id);
     }
 
     // Create new modules
@@ -431,9 +431,9 @@ async fn apply_patch(
     for id in &to_create {
         if let Some(desired_module) = desired_modules.get(id) {
             if let Some(constructor) = constructors.get(&desired_module.module_type) {
-                match constructor(*id, sample_rate) {
+                match constructor(id.clone(), sample_rate) {
                     Ok(module) => {
-                        patch_lock.sampleables.insert((*id).to_string(), module);
+                        patch_lock.sampleables.insert(id.clone(), module);
                     }
                     Err(err) => {
                         return Err(anyhow::anyhow!("Failed to create module {}: {}", id, err));
@@ -451,23 +451,25 @@ async fn apply_patch(
     // ===== TRACK LIFECYCLE =====
 
     // Build maps for efficient track lookup (use references to avoid cloning)
-    let desired_tracks: HashMap<&str, _> = desired_graph
+    let desired_tracks: HashMap<String, _> = desired_graph
         .tracks
         .iter()
-        .map(|t| (t.id.as_str(), t))
+        .map(|t| (t.id.clone(), t))
         .collect();
 
-    let current_track_ids: HashSet<&str> = patch_lock.tracks.keys().map(|k| k.as_str()).collect();
-    let desired_track_ids: HashSet<&str> = desired_tracks.keys().copied().collect();
+    let current_track_ids: HashSet<String> = patch_lock.tracks.keys().cloned().collect();
+    let desired_track_ids: HashSet<String> = desired_tracks.keys().cloned().collect();
 
     // Delete removed tracks (in current but not in desired)
-    let tracks_to_delete: Vec<&str> = current_track_ids
+    let tracks_to_delete: Vec<String> = current_track_ids
         .difference(&desired_track_ids)
-        .copied()
+        .cloned()
         .collect();
 
+    println!("Tracks to delete: {:?}", tracks_to_delete);
+
     for track_id in tracks_to_delete {
-        patch_lock.tracks.remove(track_id);
+        patch_lock.tracks.remove(&track_id);
     }
 
     // Two-pass track creation to handle keyframes that reference other tracks
@@ -477,6 +479,7 @@ async fn apply_patch(
         match patch_lock.tracks.get(&track.id) {
             Some(existing_track) => {
                 // Existing track: clear all keyframes (will re-add in pass 2)
+                println!("Updating track: {}", track.id);
                 let current_keyframes = existing_track.to_track().keyframes;
                 for kf in current_keyframes {
                     existing_track.remove_keyframe(kf.id);
@@ -484,6 +487,7 @@ async fn apply_patch(
             }
             None => {
                 // Create new track shell with a disconnected playhead param
+                println!("Creating track: {}", track.id);
                 let default_playhead_param =
                     modular_core::Param::Disconnected.to_internal_param(&patch_lock);
                 let internal_track = Arc::new(modular_core::types::InternalTrack::new(
@@ -515,9 +519,7 @@ async fn apply_patch(
     // This happens AFTER tracks are created so Track params can resolve
     for id in desired_ids.iter() {
         if let Some(desired_module) = desired_modules.get(id) {
-            // Need to get the String key for sampleables HashMap lookup
-            let id_string = (*id).to_string();
-            if let Some(module) = patch_lock.sampleables.get(&id_string) {
+            if let Some(module) = patch_lock.sampleables.get(id) {
                 for (param_name, param) in &desired_module.params {
                     let internal_param = param.to_internal_param(&patch_lock);
                     if let Err(err) = module.update_param(param_name, &internal_param) {
@@ -592,6 +594,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         let handles = handles.clone();
         tokio::spawn(async move {
             while let Some(Ok(msg)) = socket_rx.next().await {
+                println!("Received WebSocket message: {:?}", msg);
                 match msg {
                     Message::Text(text) => match serde_json::from_str::<InputMessage>(&text) {
                         Ok(InputMessage::SetPatch { patch }) => {
@@ -601,8 +604,13 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             let socket_tx = fan_tx.clone();
                             let subscriptions = subscriptions.clone();
                             handles.lock().await.push(tokio::spawn(async move {
-                                if handle_set_patch(&patch, &audio_state, sample_rate, socket_tx.clone())
-                                    .await
+                                if handle_set_patch(
+                                    &patch,
+                                    &audio_state,
+                                    sample_rate,
+                                    socket_tx.clone(),
+                                )
+                                .await
                                 {
                                     sync_scopes_for_connection(
                                         &patch.scopes,
@@ -621,13 +629,8 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             let socket_tx = fan_tx.clone();
                             handles.lock().await.push(tokio::spawn({
                                 async move {
-                                    handle_message(
-                                        input_msg,
-                                        &audio_state,
-                                        sample_rate,
-                                        socket_tx,
-                                    )
-                                    .await;
+                                    handle_message(input_msg, &audio_state, sample_rate, socket_tx)
+                                        .await;
                                 }
                             }));
                         }
