@@ -164,8 +164,11 @@ impl PlaitsModal {
             // Calculate damping from timbre (0.0 = fast decay, 1.0 = long decay)
             let base_damping = 0.99 + timbre * 0.009;  // 0.99 to 0.999
             
-            // Generate noise values before iterating
-            let noise_values: Vec<f32> = (0..6).map(|_| self.random()).collect();
+            // Generate noise values before iterating (use fixed-size array to avoid heap allocation)
+            let mut noise_values = [0.0f32; 6];
+            for i in 0..6 {
+                noise_values[i] = self.random();
+            }
             
             // Excite resonators
             for (i, resonator) in self.resonators.iter_mut().enumerate() {

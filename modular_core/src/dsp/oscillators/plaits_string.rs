@@ -118,8 +118,12 @@ impl PlaitsString {
         // Calculate required delay line length
         let required_length = (sample_rate / frequency).max(2.0) as usize;
         
-        // Resize delay line if needed (with some hysteresis to avoid constant resizing)
-        if required_length > self.delay_line.len() || required_length < self.delay_line.len() / 2 {
+        // Resize delay line only if significantly different (with hysteresis to avoid constant resizing)
+        // Only resize if new size differs by more than 25% to prevent audio glitches
+        let current_len = self.delay_line.len();
+        let needs_resize = required_length > current_len * 5 / 4 || required_length < current_len * 3 / 4;
+        
+        if needs_resize {
             let new_size = required_length.max(64).min(8192);
             self.delay_line.resize(new_size, 0.0);
             self.write_pos = 0;

@@ -41,6 +41,7 @@ pub struct PlaitsNoise {
     // Filter state for aux output
     aux_filter_lp: f32,
     aux_filter_bp: f32,
+    aux_filter_hp: f32,
     
     // Clocked noise
     clock_phase: f32,
@@ -64,6 +65,7 @@ impl Default for PlaitsNoise {
             filter_hp: 0.0,
             aux_filter_lp: 0.0,
             aux_filter_bp: 0.0,
+            aux_filter_hp: 0.0,
             clock_phase: 0.0,
             hold_sample: 0.0,
             smoothed_freq: 4.0,
@@ -176,7 +178,7 @@ impl PlaitsNoise {
                 resonance * 0.5,
                 &mut self.aux_filter_lp,
                 &mut self.aux_filter_bp,
-                &mut self.filter_hp,  // Reuse hp state
+                &mut self.aux_filter_hp,
                 sample_rate,
             );
             self.aux_sample = 5.0 * aux_bp;

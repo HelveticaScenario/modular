@@ -52,8 +52,8 @@ impl PlaitsVA {
         let sign = if detune < 0.0 { -1.0 } else { 1.0 };
         let abs_detune = detune.abs();
         
-        // Quantize to musical intervals
-        let intervals = [0.0, 7.0, 12.0, 19.0, 24.0];  // Unison, fifth, octave, octave+fifth, 2 octaves
+        // Quantize to musical intervals (in semitones)
+        let intervals = [0.0, 7.0, 12.0, 19.0, 24.0];  // Unison, Perfect Fifth, Octave, Octave+Perfect Fifth, Two Octaves
         let scaled = abs_detune * (intervals.len() - 1) as f32;
         let index = scaled.floor() as usize;
         let frac = scaled - scaled.floor();

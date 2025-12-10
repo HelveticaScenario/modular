@@ -54,7 +54,7 @@ fn test_plaits_fm_produces_output() {
     let mut patch = create_test_patch();
     add_module(&mut patch, "fm-1", "plaits-fm");
     
-    // Set frequency to 4.0 v/oct (440Hz)
+    // Set frequency to 4.0 v/oct (A4 = 440Hz at standard tuning)
     if let Some(module) = patch.sampleables.get("fm-1") {
         let _ = module.update_param(
             &"freq".to_string(),

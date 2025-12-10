@@ -156,16 +156,16 @@ impl PlaitsGrain {
         if self.grain_counter >= grain_interval {
             self.grain_counter -= grain_interval;
             
-            // Generate random values first before iterating
-            let random1 = self.random();
-            let random2 = self.random();
+            // Generate random values first before iterating to avoid multiple mutable borrows
+            let frequency_random = self.random();
+            let size_random = self.random();
             
             // Find an inactive grain to trigger
             for grain in self.grains.iter_mut() {
                 if !grain.active {
                     // Calculate grain frequency with randomization
                     let freq_variation = if randomness > 0.01 {
-                        let random_semitones = (random1 - 0.5) * randomness * 24.0;
+                        let random_semitones = (frequency_random - 0.5) * randomness * 24.0;
                         2.0f32.powf(random_semitones / 12.0)
                     } else {
                         1.0
@@ -175,7 +175,7 @@ impl PlaitsGrain {
                     
                     // Size variation
                     let size_variation = if randomness > 0.01 {
-                        0.8 + random2 * 0.4 * randomness
+                        0.8 + size_random * 0.4 * randomness
                     } else {
                         1.0
                     };
