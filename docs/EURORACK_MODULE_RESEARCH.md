@@ -283,21 +283,11 @@ This document summarizes research from Eurorack module catalogs (Perfect Circuit
 - **Use Case**: Splitting signals to multiple destinations
 - **Implementation Notes**: Basic utility - copy signal to multiple outputs
 
-### Happy Nerding 3x MIA
-- **Function**: Mixer/attenuator/offset
-- **Features**: Three channels with offset and attenuation
-- **Use Case**: Flexible CV and audio mixing
-- **Implementation Notes**: Attenuverter with offset control
-
 ---
 
 ## Mixers
 
-### Intellijel Quad VCA
-- **Function**: VCA with summed output
-- **Features**: Four VCAs with mix output
-- **Use Case**: Submixing voices or modulation
-- **Implementation Notes**: VCA mixer combination
+*Note: See VCAs section for Intellijel Quad VCA and Happy Nerding 3x MIA, which also function as mixers*
 
 ### Make Noise ModDemix
 - **Function**: Dual ring modulator/mixer
