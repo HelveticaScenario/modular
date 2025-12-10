@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::protocol::OutputMessage;
 use modular_core::patch::Patch;
-use modular_core::types::ScopeItem;
+use modular_core::types::{ScopeItem, ROOT_OUTPUT_PORT};
 
 /// Attenuation factor applied to audio output to prevent clipping.
 /// DSP modules output signals in the range [-5, 5] volts (modular synth convention).
@@ -47,11 +47,23 @@ impl RingBuffer {
     }
 
     pub fn to_vec(&self) -> Vec<f32> {
-        let mut vec = Vec::with_capacity(self.buffer.len());
-        for i in 0..self.buffer.len() {
-            let idx = (self.index + i) % self.buffer.len();
-            vec.push(self.buffer[idx]);
+        if self.buffer.is_empty() {
+            return Vec::new();
         }
+        
+        let len = self.buffer.len();
+        let mut vec = Vec::with_capacity(len);
+        
+        // Optimize by splitting into two slices to avoid modulo on every iteration
+        if self.index < len {
+            // Copy from index to end, then from start to index
+            vec.extend_from_slice(&self.buffer[self.index..]);
+            vec.extend_from_slice(&self.buffer[..self.index]);
+        } else {
+            // Buffer not yet wrapped, just copy everything
+            vec.extend_from_slice(&self.buffer);
+        }
+        
         vec
     }
 }
@@ -307,7 +319,7 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
 
     // Get output sample before dropping lock
     let output_sample = if let Some(root) = patch_guard.sampleables.get(&*ROOT_ID) {
-        root.get_sample(&"output".to_string()).unwrap_or(0.0)
+        root.get_sample(&*ROOT_OUTPUT_PORT).unwrap_or(0.0)
     } else {
         0.0
     };

@@ -392,17 +392,31 @@ impl InnerTrack {
     pub fn add_keyframe(&mut self, keyframe: InternalKeyframe) {
         match self.keyframes.iter().position(|k| k.id == keyframe.id) {
             Some(idx) => {
+                // Updating existing keyframe - check if time changed
+                let old_time = self.keyframes[idx].time;
                 self.keyframes[idx] = keyframe;
+                
+                // Only re-sort if the time changed and might affect ordering
+                if old_time != self.keyframes[idx].time {
+                    self.keyframes.sort_by(|a, b| {
+                        a.time
+                            .partial_cmp(&b.time)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                }
             }
             None => {
-                self.keyframes.push(keyframe);
+                // New keyframe - insert in sorted position using binary search
+                let insert_pos = self.keyframes
+                    .binary_search_by(|k| {
+                        k.time
+                            .partial_cmp(&keyframe.time)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .unwrap_or_else(|pos| pos);
+                self.keyframes.insert(insert_pos, keyframe);
             }
         }
-        self.keyframes.sort_by(|a, b| {
-            a.time
-                .partial_cmp(&b.time)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
     }
 
     pub fn remove_keyframe(&mut self, id: String) -> Option<InternalKeyframe> {
@@ -440,15 +454,27 @@ impl InnerTrack {
         }
 
         // Find the segment [curr, next] such that curr.time <= t <= next.time
-        let mut idx = 0usize;
-        for i in 0..(self.keyframes.len() - 1) {
-            let curr = &self.keyframes[i];
-            let next = &self.keyframes[i + 1];
-            if t >= curr.time && t <= next.time {
-                idx = i;
-                break;
+        // Use binary search since keyframes are sorted by time
+        let idx = match self.keyframes.binary_search_by(|kf| {
+            if kf.time <= t {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
             }
-        }
+        }) {
+            Ok(i) => i,
+            Err(i) => {
+                // binary_search returns the insertion point, so we need the previous element
+                if i > 0 {
+                    i - 1
+                } else {
+                    0
+                }
+            }
+        };
+        
+        // Ensure idx is valid for the segment
+        let idx = idx.min(self.keyframes.len() - 2);
 
         let curr = &self.keyframes[idx];
         let next = &self.keyframes[idx + 1];
