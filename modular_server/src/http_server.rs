@@ -376,7 +376,7 @@ async fn apply_patch(
 ) -> anyhow::Result<()> {
     let mut patch_lock = audio_state.patch.lock().await;
 
-    // Build maps for efficient lookup (use references to avoid cloning)
+    // Build maps for efficient lookup
     let desired_modules: HashMap<String, _> = desired_graph
         .modules
         .iter()
@@ -391,7 +391,7 @@ async fn apply_patch(
     // Find modules to delete (in current but not in desired), excluding root
     let mut to_delete: Vec<String> = current_ids
         .difference(&desired_ids)
-        .filter(|id| **id != "root")
+        .filter(|id| *id != "root")
         .cloned()
         .collect();
 
@@ -450,7 +450,7 @@ async fn apply_patch(
 
     // ===== TRACK LIFECYCLE =====
 
-    // Build maps for efficient track lookup (use references to avoid cloning)
+    // Build maps for efficient track lookup
     let desired_tracks: HashMap<String, _> = desired_graph
         .tracks
         .iter()

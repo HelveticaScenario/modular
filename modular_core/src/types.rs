@@ -56,7 +56,7 @@ mod option_duration_millis {
 }
 
 lazy_static! {
-    pub static ref ROOT_ID: String = String::from("root");
+    pub static ref ROOT_ID: String = "root".into();
     pub static ref ROOT_OUTPUT_PORT: String = "output".into();
 }
 

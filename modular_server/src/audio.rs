@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::protocol::OutputMessage;
 use modular_core::patch::Patch;
-use modular_core::types::{ScopeItem, ROOT_OUTPUT_PORT};
+use modular_core::types::{ROOT_OUTPUT_PORT, ScopeItem};
 
 /// Attenuation factor applied to audio output to prevent clipping.
 /// DSP modules output signals in the range [-5, 5] volts (modular synth convention).
@@ -50,10 +50,10 @@ impl RingBuffer {
         if self.buffer.is_empty() {
             return Vec::new();
         }
-        
+
         let len = self.buffer.len();
         let mut vec = Vec::with_capacity(len);
-        
+
         // Optimize by splitting into two slices to avoid modulo on every iteration
         if len == self.capacity {
             // Buffer is full and has wrapped - copy from index to end, then start to index
@@ -63,7 +63,7 @@ impl RingBuffer {
             // Buffer not yet full - copy everything in order
             vec.extend_from_slice(&self.buffer);
         }
-        
+
         vec
     }
 }
@@ -318,7 +318,7 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
     }
 
     // Get output sample before dropping lock
-    let output_sample = if let Some(root) = patch_guard.sampleables.get(&*ROOT_ID) {
+    let output_sample = if let Some(root) = patch_guard.sampleables.get(&ROOT_ID) {
         root.get_sample(&*ROOT_OUTPUT_PORT).unwrap_or(0.0)
     } else {
         0.0
