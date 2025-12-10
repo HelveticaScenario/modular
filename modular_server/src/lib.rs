@@ -38,7 +38,7 @@ pub fn create_server_state(sample_rate: f32) -> Arc<AudioState> {
     let mut sampleables = HashMap::new();
     let constructors = get_constructors();
     if let Some(constructor) = constructors.get("signal") {
-        if let Ok(module) = constructor("root".to_string(), sample_rate) {
+        if let Ok(module) = constructor(&"root".to_string(), sample_rate) {
             sampleables.insert("root".to_string(), module);
         }
     }

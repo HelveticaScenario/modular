@@ -675,7 +675,7 @@ pub struct PatchGraph {
     pub scopes: Vec<ScopeItem>,
 }
 
-pub type SampleableConstructor = Box<dyn Fn(String, f32) -> Result<Arc<Box<dyn Sampleable>>>>;
+pub type SampleableConstructor = Box<dyn Fn(&String, f32) -> Result<Arc<Box<dyn Sampleable>>>>;
 
 #[cfg(test)]
 mod tests {

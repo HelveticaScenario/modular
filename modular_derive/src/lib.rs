@@ -400,9 +400,9 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             }
         }
 
-        fn #constructor_name(id: String, sample_rate: f32) -> Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
+        fn #constructor_name(id: &String, sample_rate: f32) -> Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
             Ok(std::sync::Arc::new(Box::new(#struct_name {
-                id,
+                id: id.clone(),
                 sample_rate,
                 ..#struct_name::default()
             })))

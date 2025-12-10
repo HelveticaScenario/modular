@@ -431,7 +431,7 @@ async fn apply_patch(
     for id in &to_create {
         if let Some(desired_module) = desired_modules.get(id) {
             if let Some(constructor) = constructors.get(&desired_module.module_type) {
-                match constructor(id.clone(), sample_rate) {
+                match constructor(id, sample_rate) {
                     Ok(module) => {
                         patch_lock.sampleables.insert(id.clone(), module);
                     }
