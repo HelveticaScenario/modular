@@ -153,7 +153,7 @@ impl PlaitsWavetable {
             base_sample
         };
         
-        // Scale to ±5V range
-        self.sample = 5.0 * output;
+        // Scale to ±5V range and clamp
+        self.sample = 5.0 * clamp(-1.0, 1.0, output);
     }
 }
