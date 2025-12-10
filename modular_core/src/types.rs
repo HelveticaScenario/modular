@@ -560,23 +560,27 @@ impl InternalTrack {
     }
 
     pub fn tick(&self) {
-        let playhead_value = self
-            .playhead_param
-            .try_lock_for(Duration::from_millis(10))
-            .unwrap()
-            .get_value_optional();
+        // Use try_lock in audio hot path to avoid timeout overhead
+        // If we can't acquire locks, keep the previous sample value
+        let playhead_value = match self.playhead_param.try_lock() {
+            Some(guard) => guard.get_value_optional(),
+            None => return, // Keep previous sample if locked
+        };
 
-        let sample = self
-            .inner_track
-            .try_lock_for(Duration::from_millis(10))
-            .unwrap()
-            .tick(playhead_value);
+        let sample = match self.inner_track.try_lock() {
+            Some(mut guard) => guard.tick(playhead_value),
+            None => return, // Keep previous sample if locked
+        };
 
-        *(self.sample.try_lock_for(Duration::from_millis(10)).unwrap()) = sample;
+        if let Some(mut sample_guard) = self.sample.try_lock() {
+            *sample_guard = sample;
+        }
+        // If sample lock fails, keep previous value (graceful degradation)
     }
 
     pub fn get_value_optional(&self) -> Option<f32> {
-        *self.sample.try_lock_for(Duration::from_millis(10)).unwrap()
+        // Use try_lock in audio hot path - return None if locked
+        self.sample.try_lock().and_then(|guard| *guard)
     }
 
     pub fn to_track(&self) -> Track {
