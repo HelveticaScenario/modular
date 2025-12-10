@@ -27,10 +27,19 @@ out.source(osc);
 `;
 
 const PATCH_STORAGE_KEY = 'modular_patch_dsl';
+const SCRATCH_FILE = '__scratch__.mjs';
+
+type FileBuffer = {
+    content: string;
+    dirty: boolean;
+    isNew?: boolean;
+    loaded?: boolean;
+};
 
 type ScopeView = {
     key: string;
     lineNumber: number;
+    file: string;
 };
 
 const scopeKeyFromSubscription = (subscription: ScopeItem) => {
@@ -126,14 +135,26 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
 };
 
 function App() {
-    const [patchCode, setPatchCode] = useState(() => {
+    const getInitialPatch = () => {
         if (typeof window === 'undefined') {
             return DEFAULT_PATCH;
         }
 
         const storedPatch = window.localStorage.getItem(PATCH_STORAGE_KEY);
         return storedPatch ?? DEFAULT_PATCH;
-    });
+    };
+
+    const [patchCode, setPatchCode] = useState<string>(() => getInitialPatch());
+    const [fileBuffers, setFileBuffers] = useState<Record<string, FileBuffer>>(
+        () => ({
+            [SCRATCH_FILE]: {
+                content: getInitialPatch(),
+                dirty: false,
+                isNew: true,
+                loaded: true,
+            },
+        })
+    );
 
     const [isMuted, setIsMuted] = useState(true);
     const [isRecording, setIsRecording] = useState(false);
@@ -147,7 +168,8 @@ function App() {
     const editorRef = useRef<editor.IStandaloneCodeEditor>(null);
     const scopeCanvasMapRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
     const [files, setFiles] = useState<string[]>([]);
-    const [currentFile, setCurrentFile] = useState<string | null>(null);
+    const [openFiles, setOpenFiles] = useState<string[]>([SCRATCH_FILE]);
+    const [currentFile, setCurrentFile] = useState<string>(SCRATCH_FILE);
 
     const registerScopeCanvas = useCallback(
         (key: string, canvas: HTMLCanvasElement) => {
@@ -191,6 +213,28 @@ function App() {
                     setFiles(msg.files);
                     break;
                 case 'fileContent': {
+                    setFileBuffers((prev) => {
+                        const existing = prev[msg.path];
+
+                        if (existing && existing.dirty && existing.content !== msg.content) {
+                            return prev;
+                        }
+
+                        return {
+                            ...prev,
+                            [msg.path]: {
+                                content: msg.content,
+                                dirty: false,
+                                isNew: false,
+                                loaded: true,
+                            },
+                        };
+                    });
+
+                    setOpenFiles((prev) =>
+                        prev.includes(msg.path) ? prev : [...prev, msg.path]
+                    );
+
                     if (msg.path === currentFile) {
                         setPatchCode(msg.content);
                     }
@@ -205,7 +249,6 @@ function App() {
 
     const {
         connectionState,
-        sendMessage,
         getSchemas,
         setPatch,
         mute,
@@ -214,6 +257,8 @@ function App() {
         stopRecording,
         listFiles,
         readFile,
+        writeFile,
+        renameFile,
     } = useModularWebSocket({ onMessage: handleMessage });
 
     useEffect(() => {
@@ -221,22 +266,20 @@ function App() {
     }, [listFiles]);
 
     useEffect(() => {
-        if (currentFile) {
-            readFile(currentFile);
-        }
-    }, [currentFile, readFile]);
-
-
-    useEffect(() => {
         if (typeof window === 'undefined') {
             return;
         }
+
+        if (currentFile !== SCRATCH_FILE) {
+            return;
+        }
+
         try {
             window.localStorage.setItem(PATCH_STORAGE_KEY, patchCode);
         } catch {
             // Ignore storage quota/access issues to avoid breaking editing flow
         }
-    }, [patchCode]);
+    }, [patchCode, currentFile]);
 
     // Request initial state when connected
     useEffect(() => {
@@ -254,6 +297,228 @@ function App() {
     useEffect(() => {
         patchCodeRef.current = patchCode;
     }, [patchCode]);
+
+    useEffect(() => {
+        const active = currentFile || SCRATCH_FILE;
+        const buffer = fileBuffers[active];
+
+        if (buffer && buffer.content !== patchCode) {
+            setPatchCode(buffer.content);
+        }
+    }, [currentFile, fileBuffers, patchCode]);
+
+    const formatFileLabel = useCallback(
+        (file: string) => (file === SCRATCH_FILE ? 'Scratch Pad' : file),
+        []
+    );
+
+    const normalizeFileName = useCallback((name: string) => {
+        const trimmed = name.trim();
+        if (!trimmed) {
+            return trimmed;
+        }
+        return trimmed.endsWith('.mjs') ? trimmed : `${trimmed}.mjs`;
+    }, []);
+
+    const handlePatchChange = useCallback(
+        (value: string) => {
+            setPatchCode(value);
+            const active = currentFile || SCRATCH_FILE;
+            setFileBuffers((prev) => {
+                const existing = prev[active] ?? { content: '', dirty: false };
+                return {
+                    ...prev,
+                    [active]: {
+                        ...existing,
+                        content: value,
+                        dirty: true,
+                        loaded: true,
+                    },
+                };
+            });
+        },
+        [currentFile]
+    );
+
+    const selectFile = useCallback(
+        (filename: string) => {
+            const target = filename || SCRATCH_FILE;
+
+            setOpenFiles((prev) =>
+                prev.includes(target) ? prev : [...prev, target]
+            );
+            setCurrentFile(target);
+
+            const buffer = fileBuffers[target];
+
+            if (!buffer || buffer.loaded === false) {
+                setFileBuffers((prev) => ({
+                    ...prev,
+                    [target]:
+                        buffer ?? { content: '', dirty: false, loaded: false },
+                }));
+                if (target !== SCRATCH_FILE) {
+                    readFile(target);
+                }
+                setPatchCode(buffer?.content ?? '');
+                return;
+            }
+
+            if (buffer.content !== patchCode) {
+                setPatchCode(buffer.content);
+            }
+        },
+        [fileBuffers, patchCode, readFile]
+    );
+
+    const handleCreateFile = useCallback(() => {
+        const input = window.prompt('Create new patch file (.js)');
+        if (!input) return;
+
+        const normalized = normalizeFileName(input);
+        if (!normalized) return;
+
+        if (files.includes(normalized) || fileBuffers[normalized]) {
+            setError(`A file named ${normalized} already exists.`);
+            return;
+        }
+
+        const initialContent = DEFAULT_PATCH;
+        setFileBuffers((prev) => ({
+            ...prev,
+            [normalized]: {
+                content: initialContent,
+                dirty: true,
+                isNew: true,
+                loaded: true,
+            },
+        }));
+        setOpenFiles((prev) =>
+            prev.includes(normalized) ? prev : [...prev, normalized]
+        );
+        setCurrentFile(normalized);
+        setPatchCode(initialContent);
+    }, [files, fileBuffers, normalizeFileName]);
+
+    const handleRenameFile = useCallback(() => {
+        const active = currentFile || SCRATCH_FILE;
+        const buffer = fileBuffers[active];
+        const suggestion = active === SCRATCH_FILE ? 'untitled.mjs' : active;
+        const nextName = window.prompt('Rename file', suggestion);
+        if (!nextName) return;
+
+        const normalized = normalizeFileName(nextName);
+        if (!normalized || normalized === active) {
+            return;
+        }
+
+        if (files.includes(normalized) || fileBuffers[normalized]) {
+            setError(`A file named ${normalized} already exists.`);
+            return;
+        }
+
+        if (active !== SCRATCH_FILE && !buffer?.isNew) {
+            renameFile(active, normalized);
+        }
+
+        setFileBuffers((prev) => {
+            const { [active]: currentBuffer, ...rest } = prev;
+            const nextBuffer =
+                currentBuffer ?? { content: patchCodeRef.current, dirty: true };
+            return {
+                ...rest,
+                [normalized]: {
+                    ...nextBuffer,
+                    dirty: nextBuffer.dirty,
+                    isNew: currentBuffer?.isNew,
+                    loaded: true,
+                },
+            };
+        });
+        setOpenFiles((prev) =>
+            prev.map((file) => (file === active ? normalized : file))
+        );
+        setCurrentFile(normalized);
+        listFiles();
+    }, [
+        currentFile,
+        fileBuffers,
+        files,
+        listFiles,
+        normalizeFileName,
+        renameFile,
+    ]);
+
+    const handleSaveFile = useCallback(() => {
+        const active = currentFile || SCRATCH_FILE;
+        const buffer = fileBuffers[active];
+        let target = active;
+
+        if (active === SCRATCH_FILE || buffer?.isNew) {
+            const nextName = window.prompt(
+                'Save file as (.mjs)',
+                active === SCRATCH_FILE ? 'patch.mjs' : active
+            );
+            if (!nextName) return;
+
+            const normalized = normalizeFileName(nextName);
+            if (!normalized) return;
+
+            if (files.includes(normalized) && normalized !== active) {
+                setError(`A file named ${normalized} already exists.`);
+                return;
+            }
+
+            target = normalized;
+
+            setFileBuffers((prev) => {
+                const { [active]: currentBuffer, ...rest } = prev;
+                const nextBuffer =
+                    currentBuffer ?? {
+                        content: patchCodeRef.current,
+                        dirty: true,
+                    };
+                return {
+                    ...rest,
+                    [normalized]: {
+                        ...nextBuffer,
+                        content: patchCodeRef.current,
+                        dirty: true,
+                        isNew: false,
+                        loaded: true,
+                    },
+                };
+            });
+
+            setOpenFiles((prev) =>
+                prev.includes(normalized) ? prev : [...prev, normalized]
+            );
+            setCurrentFile(normalized);
+        }
+
+        writeFile(target, patchCodeRef.current);
+        setFileBuffers((prev) => ({
+            ...prev,
+            [target]: {
+                ...(prev[target] ?? {
+                    content: patchCodeRef.current,
+                    dirty: false,
+                }),
+                content: patchCodeRef.current,
+                dirty: false,
+                isNew: false,
+                loaded: true,
+            },
+        }));
+        listFiles();
+    }, [
+        currentFile,
+        fileBuffers,
+        files,
+        listFiles,
+        normalizeFileName,
+        writeFile,
+    ]);
 
     const handleSubmit = useCallback(() => {
         try {
@@ -274,12 +539,14 @@ function App() {
                         return {
                             key: `:module:${moduleId}:${portName}`,
                             lineNumber: call.endLine,
+                            file: currentFile,
                         };
                     }
                     const { trackId } = scope;
                     return {
                         key: `:track:${trackId}`,
                         lineNumber: call.endLine,
+                        file: currentFile,
                     };
                 })
                 .filter((v): v is ScopeView => v !== null);
@@ -291,7 +558,7 @@ function App() {
             setError(errorMessage);
             setValidationErrors(null);
         }
-    }, [setPatch]);
+    }, [currentFile, setPatch]);
 
     const handleStop = useCallback(() => {
         mute();
@@ -359,9 +626,11 @@ function App() {
                     <div className="editor-panel">
                         <PatchEditor
                             value={patchCode}
-                            onChange={setPatchCode}
+                            currentFile={currentFile}
+                            onChange={handlePatchChange}
                             onSubmit={handleSubmit}
                             onStop={handleStop}
+                            onSave={handleSaveFile}
                             editorRef={editorRef}
                             schemas={schemas}
                             scopeViews={scopeViews}
@@ -372,9 +641,15 @@ function App() {
 
                     <FileExplorer
                         files={files}
+                        openFiles={openFiles}
                         currentFile={currentFile}
-                        onFileSelect={setCurrentFile}
+                        fileStates={fileBuffers}
+                        formatLabel={formatFileLabel}
+                        onFileSelect={selectFile}
                         onRefresh={listFiles}
+                        onCreateFile={handleCreateFile}
+                        onSaveFile={handleSaveFile}
+                        onRenameFile={handleRenameFile}
                     />
                 </main>
             </div>

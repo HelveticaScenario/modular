@@ -38,6 +38,10 @@ pub enum InputMessage {
         path: String,
         content: String,
     },
+    RenameFile {
+        from: String,
+        to: String,
+    },
     DeleteFile {
         path: String,
     },

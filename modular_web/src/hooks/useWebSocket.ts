@@ -217,6 +217,10 @@ export function useModularWebSocket(options: UseModularWebSocketOptions = {}) {
     const deleteFile = useCallback((path: string) => {
         send({ type: 'deleteFile', path })
     }, [send])
+
+    const renameFile = useCallback((from: string, to: string) => {
+        send({ type: 'renameFile', from, to })
+    }, [send])
     const mute = useCallback(() => {
         send({ type: 'mute' })
     }, [send])
@@ -244,6 +248,7 @@ export function useModularWebSocket(options: UseModularWebSocketOptions = {}) {
         listFiles,
         readFile,
         writeFile,
+        renameFile,
         deleteFile,
     }
 }

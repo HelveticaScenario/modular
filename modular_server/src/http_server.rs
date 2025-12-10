@@ -20,10 +20,7 @@ use modular_core::{
     PatchGraph,
     dsp::{get_constructors, schema},
 };
-use tokio::sync::{
-    broadcast,
-    mpsc::{self, Sender},
-};
+use tokio::sync::mpsc::{self, Sender};
 use tokio::task::JoinHandle;
 
 use tower_http::cors::CorsLayer;
@@ -261,6 +258,39 @@ async fn handle_message(
                         socket_tx,
                         OutputMessage::Error {
                             message: format!("Failed to write file: {}", e),
+                            errors: None,
+                        },
+                    )
+                    .await;
+                }
+            }
+        }
+        InputMessage::RenameFile { from, to } => {
+            match rename_dsl_file(&from, &to) {
+                Ok(_) => match list_dsl_files() {
+                    Ok(files) => {
+                        let _ =
+                            send_message(socket_tx, OutputMessage::FileList { files }).await;
+                    }
+                    Err(e) => {
+                        let _ = send_message(
+                            socket_tx,
+                            OutputMessage::Error {
+                                message: format!(
+                                    "Renamed file but failed to refresh list: {}",
+                                    e
+                                ),
+                                errors: None,
+                            },
+                        )
+                        .await;
+                    }
+                },
+                Err(e) => {
+                    let _ = send_message(
+                        socket_tx,
+                        OutputMessage::Error {
+                            message: format!("Failed to rename file: {}", e),
                             errors: None,
                         },
                     )
@@ -679,7 +709,7 @@ fn list_dsl_files() -> Result<Vec<String>> {
 
         if path.is_file() {
             if let Some(ext) = path.extension() {
-                if ext == "js" {
+                if ext == "mjs" {
                     if let Some(filename) = path.file_name() {
                         if let Some(name) = filename.to_str() {
                             files.push(name.to_string());
@@ -712,9 +742,9 @@ fn write_dsl_file(filename: &str, content: &str) -> Result<()> {
         anyhow::bail!("Invalid file path");
     }
 
-    // Ensure filename ends with .js
-    if !filename.ends_with(".js") {
-        anyhow::bail!("File must have .js extension");
+    // Ensure filename ends with .mjs
+    if !filename.ends_with(".mjs") {
+        anyhow::bail!("File must have .mjs extension");
     }
 
     let patches_dir = get_patches_dir();
@@ -733,4 +763,30 @@ fn delete_dsl_file(filename: &str) -> Result<()> {
     let file_path = patches_dir.join(filename);
 
     fs::remove_file(&file_path).with_context(|| format!("Failed to delete file: {}", filename))
+}
+
+/// Rename a DSL file within the patches directory
+fn rename_dsl_file(from: &str, to: &str) -> Result<()> {
+    if !is_safe_path(from) || !is_safe_path(to) {
+        anyhow::bail!("Invalid file path");
+    }
+
+    if !from.ends_with(".mjs") || !to.ends_with(".mjs") {
+        anyhow::bail!("File must have .mjs extension");
+    }
+
+    let patches_dir = get_patches_dir();
+    let from_path = patches_dir.join(from);
+    let to_path = patches_dir.join(to);
+
+    if !from_path.exists() {
+        anyhow::bail!("Source file does not exist");
+    }
+
+    if to_path.exists() {
+        anyhow::bail!("A file with that name already exists");
+    }
+
+    fs::rename(&from_path, &to_path)
+        .with_context(|| format!("Failed to rename file: {} -> {}", from, to))
 }

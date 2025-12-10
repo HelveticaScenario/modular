@@ -21,10 +21,12 @@ declare global {
 export type ScopeView = {
     key: string;
     lineNumber: number;
+    file: string;
 };
 
 export interface PatchEditorProps {
     value: string;
+    currentFile: string;
     onChange: (value: string) => void;
     onSubmit: () => void;
     onStop: () => void;
@@ -101,6 +103,7 @@ function findSliderCalls(code: string) {
 
 export function MonacoPatchEditor({
     value,
+    currentFile,
     onChange,
     onSubmit,
     onStop,
@@ -120,6 +123,11 @@ export function MonacoPatchEditor({
     const monaco = useMonaco();
     const [editor, setEditor] = useState<editor.IStandaloneCodeEditor | null>(
         null
+    );
+
+    const activeScopeViews = useMemo(
+        () => scopeViews.filter((view) => view.file === currentFile),
+        [scopeViews, currentFile]
     );
 
     const isMac = useMemo(() => {
@@ -171,12 +179,14 @@ export function MonacoPatchEditor({
             allowNonTsExtensions: true,
             target: ts.ScriptTarget.ES2020,
             module: ts.ModuleKind.ESNext,
+            moduleResolution: ts.ModuleResolutionKind.NodeJs,
             noEmit: true,
         });
 
         jsDefaults.setDiagnosticsOptions({
             noSemanticValidation: false,
             noSyntaxValidation: false,
+
         });
 
         jsDefaults.setEagerModelSync(true);
@@ -316,7 +326,7 @@ export function MonacoPatchEditor({
 
         disposeViewZones();
 
-        if (scopeViews.length === 0) {
+        if (activeScopeViews.length === 0) {
             return;
         }
 
@@ -324,7 +334,7 @@ export function MonacoPatchEditor({
             typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
         const layoutInfo = editor.getLayoutInfo();
 
-        const zones = scopeViews.map((view) => {
+        const zones = activeScopeViews.map((view) => {
             const container = document.createElement('div');
             container.className = 'scope-view-zone';
             container.style.height = '120px';
@@ -386,7 +396,7 @@ export function MonacoPatchEditor({
     }, [
         editor,
         monaco,
-        scopeViews,
+        activeScopeViews,
         onRegisterScopeCanvas,
         onUnregisterScopeCanvas,
     ]);
@@ -396,7 +406,7 @@ export function MonacoPatchEditor({
             <Editor
                 height="100%"
                 defaultLanguage="javascript"
-                path="file:///modular/dsl.js"
+                path={`file:///${currentFile}`}
                 theme="vs-dark"
                 value={value}
                 onChange={(val) => {
