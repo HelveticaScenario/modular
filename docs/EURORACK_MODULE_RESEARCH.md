@@ -390,11 +390,11 @@ Based on the research and current module inventory, here are suggested prioritie
 ## Notes on Software Implementation
 
 ### Considerations for Digital Implementation
-- **V/Oct Standard**: Maintain 1V/octave pitch standard
-- **Modulation Range**: Typically -5V to +5V for audio, -10V to +10V for CV
-- **Sample Rate**: Consider oversampling for nonlinear effects (distortion, waveshaping)
-- **Smoothing**: Parameter changes should be smoothed to avoid clicks
-- **Efficiency**: Some hardware modules use DSP chips; ensure CPU-efficient algorithms
+- **V/Oct Standard**: Maintain 1V/octave pitch standard (each volt change represents one musical octave; e.g., 0V = A0 at 27.5Hz, 1V = A1 at 55Hz, 4V = A4 at 440Hz)
+- **Modulation Range**: Typically -5V to +5V for audio signals, -10V to +10V for control voltage (CV)
+- **Sample Rate**: Consider oversampling for nonlinear effects (distortion, waveshaping) to reduce aliasing
+- **Smoothing**: Parameter changes should be smoothed to avoid clicks and zipper noise
+- **Efficiency**: Some hardware modules use DSP chips; ensure CPU-efficient algorithms for real-time performance
 
 ### Modules Best Suited for Software
 - Multi-algorithm modules (like Plaits) are ideal for software
