@@ -391,9 +391,9 @@ Based on the research and current module inventory, here are suggested prioritie
 
 ### Considerations for Digital Implementation
 - **V/Oct Standard**: Maintain 1V/octave pitch standard (each volt change represents one musical octave; e.g., 0V = A0 at 27.5Hz, 1V = A1 at 55Hz, 4V = A4 at 440Hz)
-- **Modulation Range**: Typically -5V to +5V for audio signals, -10V to +10V for control voltage (CV)
+- **Modulation Range**: This project uses -10.0V to +10.0V for all parameters and signals (standard Eurorack range); audio output is attenuated to ±5V before speaker output
 - **Sample Rate**: Consider oversampling for nonlinear effects (distortion, waveshaping) to reduce aliasing
-- **Smoothing**: Parameter changes should be smoothed to avoid clicks and zipper noise
+- **Smoothing**: Parameter changes should be smoothed to avoid clicks and zipper noise (this project uses SMOOTHING_COEFF = 0.99)
 - **Efficiency**: Some hardware modules use DSP chips; ensure CPU-efficient algorithms for real-time performance
 
 ### Modules Best Suited for Software
