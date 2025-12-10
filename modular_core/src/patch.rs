@@ -31,7 +31,7 @@ impl Patch {
 
     /// Get the output sample from the root module
     pub fn get_output(&self) -> f32 {
-        if let Some(root) = self.sampleables.get(&ROOT_ID) {
+        if let Some(root) = self.sampleables.get(&*ROOT_ID) {
             root.get_sample(&ROOT_OUTPUT_PORT).unwrap_or_default()
         } else {
             0.0
