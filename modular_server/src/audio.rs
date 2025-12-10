@@ -55,7 +55,7 @@ impl RingBuffer {
         let mut vec = Vec::with_capacity(len);
         
         // Optimize by splitting into two slices to avoid modulo on every iteration
-        if len >= self.capacity {
+        if len == self.capacity {
             // Buffer is full and has wrapped - copy from index to end, then start to index
             vec.extend_from_slice(&self.buffer[self.index..]);
             vec.extend_from_slice(&self.buffer[..self.index]);

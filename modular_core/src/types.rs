@@ -454,25 +454,13 @@ impl InnerTrack {
         }
 
         // Find the segment [curr, next] such that curr.time <= t <= next.time
-        // Use binary search to find the rightmost keyframe with time <= t
-        let idx = match self.keyframes.binary_search_by(|kf| {
-            if kf.time > t {
-                std::cmp::Ordering::Greater
-            } else {
-                std::cmp::Ordering::Less
-            }
-        }) {
-            // Err(i) means we found the insertion point; i-1 is the last keyframe <= t
-            Err(i) => {
-                if i > 0 {
-                    i - 1
-                } else {
-                    0
-                }
-            }
-            // Ok should not happen with this ordering, but handle it anyway
-            Ok(i) => i,
-        };
+        // Use partition_point to find the first keyframe with time > t
+        // Then back up one to get the last keyframe with time <= t
+        let idx = self.keyframes.partition_point(|kf| kf.time <= t);
+        
+        // partition_point returns the index of the first element > t
+        // So idx-1 is the last element <= t, which is the start of our interpolation segment
+        let idx = if idx > 0 { idx - 1 } else { 0 };
         
         // Ensure idx is valid for the segment [idx, idx+1]
         let idx = idx.min(self.keyframes.len() - 2);
