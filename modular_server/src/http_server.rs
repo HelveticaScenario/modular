@@ -391,8 +391,6 @@ async fn apply_patch(
 
     let current_ids: HashSet<&str> = patch_lock.sampleables.keys().map(|k| k.as_str()).collect();
     let desired_ids: HashSet<&str> = desired_modules.keys().copied().collect();
-    println!("Current IDs: {:?}", current_ids);
-    println!("Desired IDs: {:?}", desired_ids);
 
     // Find modules to delete (in current but not in desired), excluding root
     let mut to_delete: Vec<&str> = current_ids
@@ -419,13 +417,9 @@ async fn apply_patch(
         }
     }
 
-    println!("To delete: {:?}", to_delete);
-
     // Find modules to create (in desired but not in current, plus recreated modules)
     let mut to_create: Vec<&str> = desired_ids.difference(&current_ids).copied().collect();
     to_create.extend(to_recreate);
-
-    println!("To create: {:?}", to_create);
 
     // Delete modules
     for id in to_delete {
@@ -466,16 +460,11 @@ async fn apply_patch(
     let current_track_ids: HashSet<&str> = patch_lock.tracks.keys().map(|k| k.as_str()).collect();
     let desired_track_ids: HashSet<&str> = desired_tracks.keys().copied().collect();
 
-    println!("Current track IDs: {:?}", current_track_ids);
-    println!("Desired track IDs: {:?}", desired_track_ids);
-
     // Delete removed tracks (in current but not in desired)
     let tracks_to_delete: Vec<&str> = current_track_ids
         .difference(&desired_track_ids)
         .copied()
         .collect();
-
-    println!("Tracks to delete: {:?}", tracks_to_delete);
 
     for track_id in tracks_to_delete {
         patch_lock.tracks.remove(track_id);
@@ -488,7 +477,6 @@ async fn apply_patch(
         match patch_lock.tracks.get(&track.id) {
             Some(existing_track) => {
                 // Existing track: clear all keyframes (will re-add in pass 2)
-                println!("Updating track: {}", track.id);
                 let current_keyframes = existing_track.to_track().keyframes;
                 for kf in current_keyframes {
                     existing_track.remove_keyframe(kf.id);
@@ -496,7 +484,6 @@ async fn apply_patch(
             }
             None => {
                 // Create new track shell with a disconnected playhead param
-                println!("Creating track: {}", track.id);
                 let default_playhead_param =
                     modular_core::Param::Disconnected.to_internal_param(&patch_lock);
                 let internal_track = Arc::new(modular_core::types::InternalTrack::new(
@@ -512,8 +499,6 @@ async fn apply_patch(
     // PASS 2: Configure tracks and add keyframes (all tracks now exist for Track param resolution)
     for track in &desired_graph.tracks {
         if let Some(internal_track) = patch_lock.tracks.get(&track.id) {
-            println!("Configuring track and adding keyframes: {}", track.id);
-
             // Configure playhead parameter and interpolation type
             let playhead_param = track.playhead.to_internal_param(&patch_lock);
             internal_track.configure(playhead_param, track.interpolation_type);
@@ -607,8 +592,6 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         let handles = handles.clone();
         tokio::spawn(async move {
             while let Some(Ok(msg)) = socket_rx.next().await {
-                println!("Received WebSocket message: {:?}", msg);
-
                 match msg {
                     Message::Text(text) => match serde_json::from_str::<InputMessage>(&text) {
                         Ok(InputMessage::SetPatch { patch }) => {
