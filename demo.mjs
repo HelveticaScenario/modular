@@ -2,13 +2,15 @@
 
 const phead = saw('track-phead').freq(hz(.5))
 
+
+
 scope(phead)
 
 const t = track('t')
   .addKeyframe(0, sine('k1').freq(hz(4)))
   .addKeyframe(1, 0)
   .interpolation("exponential")
-  .playhead(  phead)
+  .playhead(phead)
 
 // scope(t)
 

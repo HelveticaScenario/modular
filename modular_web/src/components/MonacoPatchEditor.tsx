@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { type OnMount, useMonaco } from '@monaco-editor/react';
 import { editor, type IDisposable } from 'monaco-editor';
 import prettier from 'prettier/standalone';
@@ -28,9 +28,9 @@ export interface PatchEditorProps {
     value: string;
     currentFile: string;
     onChange: (value: string) => void;
-    onSubmit: () => void;
-    onStop: () => void;
-    onSave?: () => void;
+    onSubmit: React.RefObject<() => void>;
+    onStop: React.RefObject<() => void>;
+    onSave?: React.RefObject<() => void>;
     editorRef: React.RefObject<editor.IStandaloneCodeEditor | null>;
     scopeViews?: ScopeView[];
     onRegisterScopeCanvas?: (key: string, canvas: HTMLCanvasElement) => void;
@@ -45,7 +45,7 @@ export interface PatchEditorProps {
 function applyDslLibToMonaco(
     monaco: Monaco,
     schemas: ModuleSchema[],
-    extraLibDisposeRef: { current: IDisposable | null }
+    extraLibDisposeRef: { current: IDisposable | null },
 ) {
     if (!monaco) return;
 
@@ -65,7 +65,7 @@ function applyDslLibToMonaco(
     const jsDefaults = ts.javascriptDefaults;
     extraLibDisposeRef.current = jsDefaults.addExtraLib(
         libSource,
-        'file:///modular/dsl-lib.d.ts'
+        'file:///modular/dsl-lib.d.ts',
     );
 }
 
@@ -122,12 +122,12 @@ export function MonacoPatchEditor({
     const layoutListenerRef = useRef<IDisposable | null>(null);
     const monaco = useMonaco();
     const [editor, setEditor] = useState<editor.IStandaloneCodeEditor | null>(
-        null
+        null,
     );
 
     const activeScopeViews = useMemo(
         () => scopeViews.filter((view) => view.file === currentFile),
-        [scopeViews, currentFile]
+        [scopeViews, currentFile],
     );
 
     const isMac = useMemo(() => {
@@ -147,23 +147,23 @@ export function MonacoPatchEditor({
 
         if (isMac) {
             ed.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.Enter, () => {
-                onSubmit();
+                onSubmit.current();
             });
             ed.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.Period, () => {
-                onStop();
+                onStop.current();
             });
         } else {
             ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
-                onSubmit();
+                onSubmit.current();
             });
             ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period, () => {
-                onStop();
+                onStop.current();
             });
         }
 
         ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
             if (onSave) {
-                onSave();
+                onSave.current();
             }
         });
     };
@@ -186,7 +186,6 @@ export function MonacoPatchEditor({
         jsDefaults.setDiagnosticsOptions({
             noSemanticValidation: false,
             noSyntaxValidation: false,
-
         });
 
         jsDefaults.setEagerModelSync(true);
@@ -202,12 +201,12 @@ export function MonacoPatchEditor({
                     const sliderCalls = findSliderCalls(code);
                     console.log(
                         'Providing inlay hints for slider calls:',
-                        sliderCalls
+                        sliderCalls,
                     );
                     return {
                         hints: sliderCalls.map((call) => {
                             const position = model.getPositionAt(
-                                call.openParenIndex + 1
+                                call.openParenIndex + 1,
                             );
                             return {
                                 position,
@@ -254,7 +253,7 @@ export function MonacoPatchEditor({
                                 trailingComma: 'all',
                                 semi: false,
                                 tabWidth: 2,
-                            }
+                            },
                         );
 
                         return [
@@ -264,7 +263,7 @@ export function MonacoPatchEditor({
                             },
                         ];
                     },
-                }
+                },
             );
 
         return () => {
@@ -284,14 +283,14 @@ export function MonacoPatchEditor({
         const calls = findScopeCallEndLines(code);
         console.log(
             'Found scope() calls:',
-            calls.map((c) => c.endLine)
+            calls.map((c) => c.endLine),
         );
 
         const sliderWidgets: editor.IContentWidget[] = createSliderWidgets(
             editor,
             model,
             monaco,
-            code
+            code,
         );
         return () => {
             for (const widget of sliderWidgets) {
@@ -348,7 +347,7 @@ export function MonacoPatchEditor({
 
             const pixelWidth = Math.max(
                 1,
-                Math.floor(layoutInfo.contentWidth * dpr)
+                Math.floor(layoutInfo.contentWidth * dpr),
             );
             const pixelHeight = Math.floor(120 * dpr);
             canvas.width = pixelWidth;
@@ -382,7 +381,7 @@ export function MonacoPatchEditor({
             scopeCanvasMapRef.current.forEach((canvas) => {
                 canvas.width = Math.max(
                     1,
-                    Math.floor(info.contentWidth * nextDpr)
+                    Math.floor(info.contentWidth * nextDpr),
                 );
                 canvas.height = Math.floor(120 * nextDpr);
             });
@@ -428,7 +427,7 @@ function createSliderWidgets(
     editor: editor.IStandaloneCodeEditor,
     model: editor.ITextModel,
     monaco: Monaco,
-    code: string
+    code: string,
 ) {
     if (!monaco) return [];
     let sliderCalls = findSliderCalls(code);
@@ -447,7 +446,7 @@ function createSliderWidgets(
                 .typicalHalfwidthCharacterWidth * 10
         }px`;
         slider.style.height = `${editor.getOption(
-            monaco.editor.EditorOption.lineHeight
+            monaco.editor.EditorOption.lineHeight,
         )}px`;
         slider.style.pointerEvents = 'auto';
 
@@ -483,7 +482,7 @@ function createSliderWidgets(
                         valuePos.lineNumber,
                         valuePos.column,
                         valueEndPos.lineNumber,
-                        valueEndPos.column
+                        valueEndPos.column,
                     ),
                     text: formattedValue,
                 },

@@ -316,6 +316,11 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
 }
 
 pub fn send_audio_buffers(audio_state: &Arc<AudioState>) {
+    // Skip emitting audio buffers entirely when muted
+    if audio_state.is_muted() {
+        return;
+    }
+
     let mut subscription_collection = match audio_state.subscription_collection.try_lock() {
         Ok(subscription_collection) => subscription_collection,
         Err(_) => return, // Skip if locked
@@ -354,6 +359,7 @@ pub fn get_sample_rate() -> Result<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::sync::mpsc::error::TryRecvError;
 
     #[tokio::test]
     async fn test_audio_subscription() {
@@ -403,5 +409,38 @@ mod tests {
         assert!(state.is_muted());
         state.set_muted(false);
         assert!(!state.is_muted());
+    }
+
+    #[tokio::test]
+    async fn test_send_audio_buffers_respects_mute() {
+        let patch = Arc::new(tokio::sync::Mutex::new(Patch::new(
+            HashMap::new(),
+            HashMap::new(),
+        )));
+        let state = Arc::new(AudioState::new(patch, "".into(), 48_000.0));
+
+        let sub = ScopeItem::ModuleOutput {
+            module_id: "sine-1".to_string(),
+            port_name: "output".to_string(),
+        };
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+        state.add_subscription(sub.clone(), tx).await;
+
+        {
+            let mut guard = state.subscription_collection.try_lock().unwrap();
+            let buffer = guard.subscriptions.get_mut(&sub).unwrap();
+            let capacity = buffer.buffer.capacity;
+            for i in 0..capacity {
+                buffer.buffer.push(i as f32);
+            }
+        }
+
+        send_audio_buffers(&state);
+        assert!(rx.try_recv().is_ok());
+
+        state.set_muted(true);
+        send_audio_buffers(&state);
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
     }
 }
