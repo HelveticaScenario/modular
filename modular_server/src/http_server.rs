@@ -265,39 +265,33 @@ async fn handle_message(
                 }
             }
         }
-        InputMessage::RenameFile { from, to } => {
-            match rename_dsl_file(&from, &to) {
-                Ok(_) => match list_dsl_files() {
-                    Ok(files) => {
-                        let _ =
-                            send_message(socket_tx, OutputMessage::FileList { files }).await;
-                    }
-                    Err(e) => {
-                        let _ = send_message(
-                            socket_tx,
-                            OutputMessage::Error {
-                                message: format!(
-                                    "Renamed file but failed to refresh list: {}",
-                                    e
-                                ),
-                                errors: None,
-                            },
-                        )
-                        .await;
-                    }
-                },
+        InputMessage::RenameFile { from, to } => match rename_dsl_file(&from, &to) {
+            Ok(_) => match list_dsl_files() {
+                Ok(files) => {
+                    let _ = send_message(socket_tx, OutputMessage::FileList { files }).await;
+                }
                 Err(e) => {
                     let _ = send_message(
                         socket_tx,
                         OutputMessage::Error {
-                            message: format!("Failed to rename file: {}", e),
+                            message: format!("Renamed file but failed to refresh list: {}", e),
                             errors: None,
                         },
                     )
                     .await;
                 }
+            },
+            Err(e) => {
+                let _ = send_message(
+                    socket_tx,
+                    OutputMessage::Error {
+                        message: format!("Failed to rename file: {}", e),
+                        errors: None,
+                    },
+                )
+                .await;
             }
-        }
+        },
         InputMessage::DeleteFile { path } => {
             match delete_dsl_file(&path) {
                 Ok(_) => {
@@ -466,9 +460,6 @@ async fn apply_patch(
     let current_track_ids: HashSet<String> = patch_lock.tracks.keys().cloned().collect();
     let desired_track_ids: HashSet<String> = desired_tracks.keys().cloned().collect();
 
-    println!("Current track IDs: {:?}", current_track_ids);
-    println!("Desired track IDs: {:?}", desired_track_ids);
-
     // Delete removed tracks (in current but not in desired)
     let tracks_to_delete: Vec<String> = current_track_ids
         .difference(&desired_track_ids)
@@ -512,8 +503,6 @@ async fn apply_patch(
     // PASS 2: Configure tracks and add keyframes (all tracks now exist for Track param resolution)
     for track in &desired_graph.tracks {
         if let Some(internal_track) = patch_lock.tracks.get(&track.id) {
-            println!("Configuring track and adding keyframes: {}", track.id);
-
             // Configure playhead parameter and interpolation type
             let playhead_param = track.playhead.to_internal_param(&patch_lock);
             internal_track.configure(playhead_param, track.interpolation_type);
@@ -606,7 +595,6 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         tokio::spawn(async move {
             while let Some(Ok(msg)) = socket_rx.next().await {
                 println!("Received WebSocket message: {:?}", msg);
-
                 match msg {
                     Message::Text(text) => match serde_json::from_str::<InputMessage>(&text) {
                         Ok(InputMessage::SetPatch { patch }) => {
@@ -616,8 +604,13 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             let socket_tx = fan_tx.clone();
                             let subscriptions = subscriptions.clone();
                             handles.lock().await.push(tokio::spawn(async move {
-                                if handle_set_patch(&patch, &audio_state, sample_rate, socket_tx.clone())
-                                    .await
+                                if handle_set_patch(
+                                    &patch,
+                                    &audio_state,
+                                    sample_rate,
+                                    socket_tx.clone(),
+                                )
+                                .await
                                 {
                                     sync_scopes_for_connection(
                                         &patch.scopes,
@@ -636,13 +629,8 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             let socket_tx = fan_tx.clone();
                             handles.lock().await.push(tokio::spawn({
                                 async move {
-                                    handle_message(
-                                        input_msg,
-                                        &audio_state,
-                                        sample_rate,
-                                        socket_tx,
-                                    )
-                                    .await;
+                                    handle_message(input_msg, &audio_state, sample_rate, socket_tx)
+                                        .await;
                                 }
                             }));
                         }
