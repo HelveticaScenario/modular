@@ -56,7 +56,7 @@ mod option_duration_millis {
 }
 
 lazy_static! {
-    pub static ref ROOT_ID: String = String::from("root");
+    pub static ref ROOT_ID: String = "root".into();
     pub static ref ROOT_OUTPUT_PORT: String = "output".into();
 }
 
@@ -392,17 +392,32 @@ impl InnerTrack {
     pub fn add_keyframe(&mut self, keyframe: InternalKeyframe) {
         match self.keyframes.iter().position(|k| k.id == keyframe.id) {
             Some(idx) => {
+                // Updating existing keyframe - check if time changed
+                let old_time = self.keyframes[idx].time;
                 self.keyframes[idx] = keyframe;
+
+                // Only re-sort if the time changed and might affect ordering
+                if old_time != self.keyframes[idx].time {
+                    self.keyframes.sort_by(|a, b| {
+                        a.time
+                            .partial_cmp(&b.time)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                }
             }
             None => {
-                self.keyframes.push(keyframe);
+                // New keyframe - insert in sorted position using binary search
+                let insert_pos = self
+                    .keyframes
+                    .binary_search_by(|k| {
+                        k.time
+                            .partial_cmp(&keyframe.time)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .unwrap_or_else(|pos| pos);
+                self.keyframes.insert(insert_pos, keyframe);
             }
         }
-        self.keyframes.sort_by(|a, b| {
-            a.time
-                .partial_cmp(&b.time)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
     }
 
     pub fn remove_keyframe(&mut self, id: String) -> Option<InternalKeyframe> {
@@ -440,15 +455,16 @@ impl InnerTrack {
         }
 
         // Find the segment [curr, next] such that curr.time <= t <= next.time
-        let mut idx = 0usize;
-        for i in 0..(self.keyframes.len() - 1) {
-            let curr = &self.keyframes[i];
-            let next = &self.keyframes[i + 1];
-            if t >= curr.time && t <= next.time {
-                idx = i;
-                break;
-            }
-        }
+        // Use partition_point to find the first keyframe with time > t
+        // Then back up one to get the last keyframe with time <= t
+        let idx = self.keyframes.partition_point(|kf| kf.time <= t);
+
+        // partition_point returns the index of the first element > t
+        // So idx-1 is the last element <= t, which is the start of our interpolation segment
+        let idx = if idx > 0 { idx - 1 } else { 0 };
+
+        // Ensure idx is valid for the segment [idx, idx+1]
+        let idx = idx.min(self.keyframes.len() - 2);
 
         let curr = &self.keyframes[idx];
         let next = &self.keyframes[idx + 1];
@@ -534,23 +550,28 @@ impl InternalTrack {
     }
 
     pub fn tick(&self) {
-        let playhead_value = self
-            .playhead_param
-            .try_lock_for(Duration::from_millis(10))
-            .unwrap()
-            .get_value_optional();
+        // Use try_lock in audio hot path to avoid timeout overhead
+        // If we can't acquire locks, keep the previous sample value
+        let playhead_value = match self.playhead_param.try_lock() {
+            Some(guard) => guard.get_value_optional(),
+            None => return, // Keep previous sample if locked
+        };
 
-        let sample = self
-            .inner_track
-            .try_lock_for(Duration::from_millis(10))
-            .unwrap()
-            .tick(playhead_value);
+        let sample = match self.inner_track.try_lock() {
+            Some(mut guard) => guard.tick(playhead_value),
+            None => return, // Keep previous sample if locked
+        };
 
-        *(self.sample.try_lock_for(Duration::from_millis(10)).unwrap()) = sample;
+        if let Some(mut sample_guard) = self.sample.try_lock() {
+            *sample_guard = sample;
+        }
+        // If sample lock fails, keep previous value (graceful degradation)
     }
 
     pub fn get_value_optional(&self) -> Option<f32> {
-        *self.sample.try_lock_for(Duration::from_millis(10)).unwrap()
+        // Use try_lock in audio hot path - return None if locked
+        // sample is Mutex<Option<f32>>, so *guard is Option<f32>
+        self.sample.try_lock().and_then(|guard| *guard)
     }
 
     pub fn to_track(&self) -> Track {
