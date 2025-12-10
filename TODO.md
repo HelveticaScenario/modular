@@ -1,0 +1,23 @@
+- [ ] zeroconf
+- [ ] make scope narrower
+- [ ] make custom scope for track
+- [ ] make seq type (cv + gate with mini (mondo?) notation)
+- [ ] make seq scope
+- [ ] give scope a speed option, for slow moving signals that need to be seen over long periods
+- [ ] reverb (erbe verb?)
+- [ ] fix filters
+- [ ] other effects (chorus, delay, waveshaper, distortion, etc.)
+- [ ] buffer type
+- [ ] sample loading into buffer
+- [ ] live recording into buffer
+- [ ] polyphony?
+- [ ] some sort of "make module" composition system
+- [ ] midi in (notes would pretend to be seq, cc would be signal)
+- [ ] midi out (no idea how to do this. some sort of sample and hold?)
+- [ ] signal in
+- [ ] more oscillators
+- [ ] more filters
+- [ ] more effects
+- [ ] more math
+- [ ] more utilities
+- [ ] more everything
