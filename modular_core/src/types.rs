@@ -454,26 +454,27 @@ impl InnerTrack {
         }
 
         // Find the segment [curr, next] such that curr.time <= t <= next.time
-        // Use binary search since keyframes are sorted by time
+        // Use binary search to find the rightmost keyframe with time <= t
         let idx = match self.keyframes.binary_search_by(|kf| {
-            if kf.time <= t {
-                std::cmp::Ordering::Less
-            } else {
+            if kf.time > t {
                 std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Less
             }
         }) {
-            Ok(i) => i,
+            // Err(i) means we found the insertion point; i-1 is the last keyframe <= t
             Err(i) => {
-                // binary_search returns the insertion point, so we need the previous element
                 if i > 0 {
                     i - 1
                 } else {
                     0
                 }
             }
+            // Ok should not happen with this ordering, but handle it anyway
+            Ok(i) => i,
         };
         
-        // Ensure idx is valid for the segment
+        // Ensure idx is valid for the segment [idx, idx+1]
         let idx = idx.min(self.keyframes.len() - 2);
 
         let curr = &self.keyframes[idx];
@@ -580,7 +581,7 @@ impl InternalTrack {
 
     pub fn get_value_optional(&self) -> Option<f32> {
         // Use try_lock in audio hot path - return None if locked
-        self.sample.try_lock().and_then(|guard| *guard)
+        self.sample.try_lock().map(|guard| *guard).flatten()
     }
 
     pub fn to_track(&self) -> Track {
