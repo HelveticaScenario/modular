@@ -32,7 +32,6 @@ use tracing::{error, info};
 
 use crate::{
     AudioState,
-    collab::{CollabBroadcast, CollabEngine},
     protocol::{InputMessage, OutputMessage},
     validation::validate_patch,
 };
@@ -41,14 +40,6 @@ use crate::{
 #[derive(Clone)]
 pub struct AppState {
     pub audio_state: Arc<AudioState>,
-    pub collab: Arc<CollabEngine>,
-    pub collab_tx: broadcast::Sender<CollabBroadcast>,
-}
-
-#[derive(Clone, Debug)]
-struct JoinedDocInfo {
-    client_id: String,
-    awareness_client_id: u64,
 }
 
 // Build the Axum router
@@ -211,145 +202,14 @@ async fn handle_message(
     audio_state: &Arc<AudioState>,
     sample_rate: f32,
     socket_tx: Sender<Message>,
-    collab: &Arc<CollabEngine>,
-    collab_tx: broadcast::Sender<CollabBroadcast>,
-    joined_docs: &Arc<tokio::sync::Mutex<HashMap<String, JoinedDocInfo>>>,
 ) {
     match message {
-        InputMessage::Echo { message } => {
-            let _ = send_message(
-                socket_tx,
-                OutputMessage::Echo {
-                    message: format!("{}!", message),
-                },
-            )
-            .await;
-        }
         InputMessage::GetSchemas => {
-            println!("GetSchemas!!!!!!!!!!");
             let _ = send_message(socket_tx, OutputMessage::Schemas { schemas: schema() }).await;
         }
         InputMessage::GetPatch => {
             // GetPatch is deprecated - DSL scripts are the source of truth on the client
             // This is kept for backwards compatibility but does nothing
-        }
-        InputMessage::CollabYrsJoin {
-            doc_id,
-            client_id,
-            awareness_client_id,
-            awareness_update,
-        } => match collab.join(&doc_id, awareness_update.clone()).await {
-            Ok(init) => {
-                {
-                    let mut docs = joined_docs.lock().await;
-                    docs.insert(
-                        doc_id.clone(),
-                        JoinedDocInfo {
-                            client_id: client_id.clone(),
-                            awareness_client_id,
-                        },
-                    );
-                }
-
-                let _ =
-                    send_message(socket_tx.clone(), OutputMessage::CollabYrsInit { init }).await;
-
-                if let Some(update) = awareness_update {
-                    let _ = collab_tx.send(CollabBroadcast {
-                        doc_id: doc_id.clone(),
-                        origin_client_id: Some(client_id.clone()),
-                        message: OutputMessage::CollabYrsAwareness {
-                            doc_id: doc_id.clone(),
-                            update,
-                        },
-                    });
-                }
-            }
-            Err(e) => {
-                let _ = send_message(
-                    socket_tx,
-                    OutputMessage::Error {
-                        message: format!("Collab join failed: {}", e),
-                        errors: None,
-                    },
-                )
-                .await;
-            }
-        },
-        InputMessage::CollabYrsUpdate { doc_id, update } => {
-            match collab.apply_update(&doc_id, &update).await {
-                Ok(_) => {
-                    let _ = collab_tx.send(CollabBroadcast {
-                        doc_id: doc_id.clone(),
-                        origin_client_id: None,
-                        message: OutputMessage::CollabYrsUpdate { doc_id, update },
-                    });
-                }
-                Err(e) => {
-                    let _ = send_message(
-                        socket_tx,
-                        OutputMessage::Error {
-                            message: format!("Collab update failed: {}", e),
-                            errors: None,
-                        },
-                    )
-                    .await;
-                }
-            }
-        }
-        InputMessage::CollabYrsAwareness { doc_id, update } => {
-            match collab.apply_awareness(&doc_id, &update).await {
-                Ok(_) => {
-                    let _ = collab_tx.send(CollabBroadcast {
-                        doc_id: doc_id.clone(),
-                        origin_client_id: None,
-                        message: OutputMessage::CollabYrsAwareness { doc_id, update },
-                    });
-                }
-                Err(e) => {
-                    let _ = send_message(
-                        socket_tx,
-                        OutputMessage::Error {
-                            message: format!("Collab awareness failed: {}", e),
-                            errors: None,
-                        },
-                    )
-                    .await;
-                }
-            }
-        }
-        InputMessage::CollabYrsLeave {
-            doc_id,
-            awareness_client_id,
-        } => {
-            {
-                let mut docs = joined_docs.lock().await;
-                docs.remove(&doc_id);
-            }
-
-            match collab
-                .remove_client_awareness(&doc_id, awareness_client_id)
-                .await
-            {
-                Ok(Some(update)) => {
-                    let _ = collab_tx.send(CollabBroadcast {
-                        doc_id: doc_id.clone(),
-                        origin_client_id: None,
-                        message: OutputMessage::CollabYrsAwareness { doc_id, update },
-                    });
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    let _ = send_message(
-                        socket_tx,
-                        OutputMessage::Error {
-                            message: format!("Collab leave failed: {}", e),
-                            errors: None,
-                        },
-                    )
-                    .await;
-                }
-            }
         }
         InputMessage::SetPatch { patch } => {
             let _ = handle_set_patch(&patch, audio_state, sample_rate, socket_tx).await;
@@ -667,11 +527,6 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let subscriptions = Arc::new(tokio::sync::Mutex::new(
         HashMap::<ScopeItem, JoinHandle<()>>::new(),
     ));
-    let joined_docs: Arc<tokio::sync::Mutex<HashMap<String, JoinedDocInfo>>> =
-        Arc::new(tokio::sync::Mutex::new(HashMap::new()));
-    let joined_docs_for_cleanup = joined_docs.clone();
-    let collab_for_cleanup = state.collab.clone();
-    let collab_tx_for_cleanup = state.collab_tx.clone();
     let handles: Arc<tokio::sync::Mutex<Vec<JoinHandle<()>>>> =
         Arc::new(tokio::sync::Mutex::new(Vec::new()));
     // Spawn task to forward broadcast messages to this client
@@ -686,16 +541,6 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         },
     )
     .await;
-    let mut collab_rx = state.collab_tx.subscribe();
-    let collab_fan = fan_tx.clone();
-    handles.lock().await.push(tokio::spawn(async move {
-        while let Ok(evt) = collab_rx.recv().await {
-            if let Err(e) = send_message(collab_fan.clone(), evt.message).await {
-                error!("Failed to forward collab message: {}", e);
-                break;
-            }
-        }
-    }));
 
     let mut socket_task = tokio::spawn(async move {
         // Implementation for sending messages to client
@@ -757,9 +602,6 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         Ok(input_msg) => {
                             info!("Received input message: {:?}", input_msg);
                             let audio_state = state.audio_state.clone();
-                            let collab = state.collab.clone();
-                            let collab_tx = state.collab_tx.clone();
-                            let joined_docs = joined_docs.clone();
                             let sample_rate = state.audio_state.sample_rate;
                             let socket_tx = fan_tx.clone();
                             handles.lock().await.push(tokio::spawn({
@@ -769,9 +611,6 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                         &audio_state,
                                         sample_rate,
                                         socket_tx,
-                                        &collab,
-                                        collab_tx,
-                                        &joined_docs,
                                     )
                                     .await;
                                 }
@@ -802,21 +641,6 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     }
     info!("WebSocket connection handler ending, cleaning up");
 
-    {
-        let docs = joined_docs_for_cleanup.lock().await.clone();
-        for (doc_id, info) in docs {
-            if let Ok(Some(update)) = collab_for_cleanup
-                .remove_client_awareness(&doc_id, info.awareness_client_id)
-                .await
-            {
-                let _ = collab_tx_for_cleanup.send(CollabBroadcast {
-                    doc_id: doc_id.clone(),
-                    origin_client_id: Some(info.client_id.clone()),
-                    message: OutputMessage::CollabYrsAwareness { doc_id, update },
-                });
-            }
-        }
-    }
     handles
         .lock()
         .await

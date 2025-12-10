@@ -8,23 +8,17 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "codegen": "cd .. && cargo test export_types -- --ignored",
-    "prepare": "ts-patch install"
+    "codegen": "cd .. && cargo test export_types -- --ignored"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
-    "@msgpack/msgpack": "^3.1.2",
-    "@ryoppippi/unplugin-typia": "^2.6.5",
     "events": "^3.3.0",
     "monaco-editor": "^0.55.1",
+    "prettier": "^3.4.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-use-websocket": "^4.13.0",
-    "typia": "^10.1.0",
-    "vite-plugin-monaco-editor-esm": "^2.0.2",
-    "y-protocols": "^1.0.6",
-    "yjs": "^13.6.27",
-    "ywasm": "^0.25.0"
+    "vite-plugin-monaco-editor-esm": "^2.0.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
@@ -37,7 +31,6 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
-    "ts-patch": "^3.3.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",

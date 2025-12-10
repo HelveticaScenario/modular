@@ -3,8 +3,6 @@ use serde::{Deserialize, Serialize};
 
 use ts_rs::TS;
 
-use crate::collab::CollabInitPayload;
-
 /// Input messages from clients
 #[derive(Debug, Serialize, Deserialize, TS)]
 #[serde(
@@ -14,37 +12,11 @@ use crate::collab::CollabInitPayload;
 )]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub enum InputMessage {
-    Echo {
-        message: String,
-    },
     GetSchemas,
     GetPatch,
 
     SetPatch {
         patch: PatchGraph,
-    },
-
-    // Collaborative editing powered by yrs
-    CollabYrsJoin {
-        doc_id: String,
-        client_id: String,
-        /// Client-side awareness id (usually yjs doc.clientID) so the server can clean up on disconnect.
-        #[ts(type = "number")]
-        awareness_client_id: u64,
-        awareness_update: Option<Vec<u8>>,
-    },
-    CollabYrsUpdate {
-        doc_id: String,
-        update: Vec<u8>,
-    },
-    CollabYrsAwareness {
-        doc_id: String,
-        update: Vec<u8>,
-    },
-    CollabYrsLeave {
-        doc_id: String,
-        #[ts(type = "number")]
-        awareness_client_id: u64,
     },
 
     // Audio control
@@ -80,22 +52,8 @@ pub enum InputMessage {
 )]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub enum OutputMessage {
-    Echo {
-        message: String,
-    },
     Schemas {
         schemas: Vec<ModuleSchema>,
-    },
-    CollabYrsInit {
-        init: CollabInitPayload,
-    },
-    CollabYrsUpdate {
-        doc_id: String,
-        update: Vec<u8>,
-    },
-    CollabYrsAwareness {
-        doc_id: String,
-        update: Vec<u8>,
     },
     Error {
         message: String,

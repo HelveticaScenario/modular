@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { type OnMount, useMonaco } from '@monaco-editor/react';
 import { editor, type IDisposable } from 'monaco-editor';
+import prettier from 'prettier/standalone';
+import prettierBabel from 'prettier/plugins/babel';
+import prettierEstree from 'prettier/plugins/estree';
 import { useSchemas } from '../SchemaContext';
 import { buildLibSource } from '../dsl/typescriptLibGen';
 import type { ModuleSchema } from '../types/generated/ModuleSchema';
@@ -110,6 +113,7 @@ export function MonacoPatchEditor({
     const schemas = useSchemas();
     const extraLibDisposeRef = useRef<IDisposable | null>(null);
     const inlayHintDisposeRef = useRef<IDisposable | null>(null);
+    const formattingProviderRef = useRef<IDisposable | null>(null);
     const viewZoneIdsRef = useRef<string[]>([]);
     const scopeCanvasMapRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
     const layoutListenerRef = useRef<IDisposable | null>(null);
@@ -216,6 +220,50 @@ export function MonacoPatchEditor({
             }
         };
     }, [monaco, schemas]);
+
+    useEffect(() => {
+        if (!monaco) return;
+
+        if (formattingProviderRef.current) {
+            formattingProviderRef.current.dispose();
+            formattingProviderRef.current = null;
+        }
+
+        // Use Prettier for Monaco's format action so users get consistent DSL formatting.
+        formattingProviderRef.current =
+            monaco.languages.registerDocumentFormattingEditProvider(
+                'javascript',
+                {
+                    async provideDocumentFormattingEdits(model) {
+                        const formatted = await prettier.format(
+                            model.getValue(),
+                            {
+                                parser: 'babel',
+                                plugins: [prettierBabel, prettierEstree],
+                                singleQuote: true,
+                                trailingComma: 'all',
+                                semi: false,
+                                tabWidth: 2,
+                            }
+                        );
+
+                        return [
+                            {
+                                range: model.getFullModelRange(),
+                                text: formatted.trimEnd(),
+                            },
+                        ];
+                    },
+                }
+            );
+
+        return () => {
+            if (formattingProviderRef.current) {
+                formattingProviderRef.current.dispose();
+                formattingProviderRef.current = null;
+            }
+        };
+    }, [monaco]);
 
     useEffect(() => {
         if (!monaco || !editor) return;

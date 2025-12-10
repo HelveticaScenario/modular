@@ -5,7 +5,6 @@ import { AudioControls } from './components/AudioControls';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { executePatchScript } from './dsl';
 import { SchemasContext } from './SchemaContext';
-import { useMonacoCollabAdapter } from './hooks/useMonacoCollabAdapter';
 import './App.css';
 import type { ModuleSchema } from './types/generated/ModuleSchema';
 import type { ScopeItem } from './types/generated/ScopeItem';
@@ -14,6 +13,7 @@ import type { editor } from 'monaco-editor';
 import { findScopeCallEndLines } from './utils/findScopeCallEndLines';
 import { FileExplorer } from './components/FileExplorer';
 import type { OutputMessage } from './types/generated/OutputMessage';
+import { exhaustiveSwitch } from './utils/exhaustingSwitch';
 
 declare global {
     interface Window {
@@ -27,7 +27,6 @@ out.source(osc);
 `;
 
 const PATCH_STORAGE_KEY = 'modular_patch_dsl';
-const COLLAB_CLIENT_KEY = 'modular_collab_client_id';
 
 type ScopeView = {
     key: string;
@@ -127,9 +126,14 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
 };
 
 function App() {
-    const handleMessageRef = useRef<(msg: OutputMessage) => void | null>(null);
+    const [patchCode, setPatchCode] = useState(() => {
+        if (typeof window === 'undefined') {
+            return DEFAULT_PATCH;
+        }
 
-    const [patchCode, setPatchCode] = useState('');
+        const storedPatch = window.localStorage.getItem(PATCH_STORAGE_KEY);
+        return storedPatch ?? DEFAULT_PATCH;
+    });
 
     const [isMuted, setIsMuted] = useState(true);
     const [isRecording, setIsRecording] = useState(false);
@@ -145,15 +149,6 @@ function App() {
     const [files, setFiles] = useState<string[]>([]);
     const [currentFile, setCurrentFile] = useState<string | null>(null);
 
-    const [clientId] = useState(() => {
-        if (typeof window === 'undefined') return 'web-client';
-        const existing = window.localStorage.getItem(COLLAB_CLIENT_KEY);
-        if (existing) return existing;
-        const generated = crypto.randomUUID?.() ?? `web-${Date.now()}`;
-        window.localStorage.setItem(COLLAB_CLIENT_KEY, generated);
-        return generated;
-    });
-
     const registerScopeCanvas = useCallback(
         (key: string, canvas: HTMLCanvasElement) => {
             scopeCanvasMapRef.current.set(key, canvas);
@@ -165,39 +160,8 @@ function App() {
         scopeCanvasMapRef.current.delete(key);
     }, []);
 
-    const handleMessageRefWrapper = useCallback(
-        (msg: OutputMessage) => handleMessageRef.current?.(msg),
-        []
-    );
-
-    const {
-        connectionState,
-        sendMessage,
-        getSchemas,
-        setPatch,
-        mute,
-        unmute,
-        startRecording,
-        stopRecording,
-        listFiles,
-        readFile,
-    } = useModularWebSocket({ onMessage: handleMessageRefWrapper });
-
-    const handleCollabOutputMessage = useMonacoCollabAdapter({
-        editorRef,
-        docId: currentFile ?? 'dsl-patch',
-        clientId,
-        sendMessage: (msg) => sendMessage(msg),
-        connectionState,
-        enabled: true,
-        userDisplayName: clientId,
-        initialText: patchCode,
-        onTextUpdated: setPatchCode,
-    });
-
     const handleMessage = useCallback(
         (msg: OutputMessage) => {
-            if (handleCollabOutputMessage(msg)) return;
             switch (msg.type) {
                 case 'schemas': {
                     setSchemas(msg.schemas);
@@ -232,14 +196,25 @@ function App() {
                     }
                     break;
                 }
+                default:
+                    exhaustiveSwitch(msg);
             }
         },
-        [currentFile, handleCollabOutputMessage]
+        [currentFile]
     );
 
-    useEffect(() => {
-        handleMessageRef.current = handleMessage;
-    }, [handleMessage]);
+    const {
+        connectionState,
+        sendMessage,
+        getSchemas,
+        setPatch,
+        mute,
+        unmute,
+        startRecording,
+        stopRecording,
+        listFiles,
+        readFile,
+    } = useModularWebSocket({ onMessage: handleMessage });
 
     useEffect(() => {
         listFiles();
@@ -251,6 +226,19 @@ function App() {
         }
     }, [currentFile, readFile]);
 
+
+    useEffect(() => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        try {
+            window.localStorage.setItem(PATCH_STORAGE_KEY, patchCode);
+        } catch {
+            // Ignore storage quota/access issues to avoid breaking editing flow
+        }
+    }, [patchCode]);
+
+    // Request initial state when connected
     useEffect(() => {
         if (connectionState === 'connected') {
             getSchemas();
