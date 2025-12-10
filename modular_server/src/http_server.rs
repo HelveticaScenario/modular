@@ -399,7 +399,7 @@ async fn apply_patch(
     // These need to be deleted and recreated
     let mut to_recreate: Vec<String> = Vec::new();
     for id in current_ids.intersection(&desired_ids) {
-        if *id == "root" {
+        if id == "root" {
             continue; // Never recreate root
         }
         if let (Some(current_module), Some(desired_module)) =
