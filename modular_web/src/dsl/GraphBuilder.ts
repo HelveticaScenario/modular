@@ -52,12 +52,12 @@ export class GraphBuilder {
     // Initialize module with disconnected params
     const params: Record<string, Param> = {};
     for (const param of schema.params) {
-      params[param.name] = { param_type: 'disconnected' };
+      params[param.name] = { type: 'disconnected' };
     }
 
     const moduleState: ModuleState = {
       id,
-      module_type: moduleType,
+      moduleType,
       params,
     };
 
@@ -96,7 +96,7 @@ export class GraphBuilder {
     if (!track) {
       throw new Error(`Track not found: ${trackId}`);
     }
-    track.interpolation_type = interpolation;
+    track.interpolationType = interpolation;
   }
 
   setTrackPlayheadParam(trackId: string, playhead: Param) {
@@ -132,8 +132,8 @@ export class GraphBuilder {
     const track = new TrackNode(this, this.generateId("track", explicitId));
     this.tracks.set(track.id, {
       id: track.id,
-      playhead: { param_type: 'value', value: 0 },
-      interpolation_type: 'linear',
+      playhead: { type: 'value', value: 0 },
+      interpolationType: 'linear',
       keyframes: [],
     })
 
@@ -142,15 +142,15 @@ export class GraphBuilder {
 
   addScope(value: ModuleOutput | ModuleNode | TrackNode) {
     if (value instanceof TrackNode) {
-      this.scopes.push({ type: 'track', track_id: value.id });
+      this.scopes.push({ type: 'track', trackId: value.id });
       return;
     }
 
     const output = value instanceof ModuleNode ? value.o : value;
     this.scopes.push({
       type: 'moduleOutput',
-      module_id: output.moduleId,
-      port_name: output.portName,
+      moduleId: output.moduleId,
+      portName: output.portName,
     });
   }
 }
@@ -242,18 +242,18 @@ export class ModuleNode {
 
     if (value instanceof ModuleOutput) {
       this.builder.setParam(this.id, paramName, {
-        param_type: 'cable',
+        type: 'cable',
         module: value.moduleId,
         port: value.portName,
       });
     } else if (value instanceof TrackNode) {
       this.builder.setParam(this.id, paramName, {
-        param_type: 'track',
+        type: 'track',
         track: value.id,
       });
     } else {
       this.builder.setParam(this.id, paramName, {
-        param_type: 'value',
+        type: 'value',
         value: value,
       });
     }
@@ -349,18 +349,18 @@ export class TrackNode {
 
     if (value instanceof ModuleOutput) {
       param = {
-        param_type: 'cable',
+        type: 'cable',
         module: value.moduleId,
         port: value.portName,
       };
     } else if (value instanceof TrackNode) {
       param = {
-        param_type: 'track',
+        type: 'track',
         track: value.id,
       };
     } else {
       param = {
-        param_type: 'value',
+        type: 'value',
         value,
       };
     }
@@ -378,25 +378,25 @@ export class TrackNode {
 
     if (value instanceof ModuleOutput) {
       param = {
-        param_type: 'cable',
+        type: 'cable',
         module: value.moduleId,
         port: value.portName,
       }
     } else if (value instanceof TrackNode) {
       param = {
-        param_type: 'track',
+        type: 'track',
         track: value.id,
       }
     } else {
       param = {
-        param_type: 'value',
+        type: 'value',
         value: value,
       }
     }
 
     this.builder.addTrackKeyframe(this.id, {
       id: `keyframe-${this.counter++}`,
-      track_id: this.id,
+      trackId: this.id,
       time,
       param,
     });

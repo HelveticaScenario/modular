@@ -15,12 +15,15 @@ use axum::{
     response::IntoResponse,
     routing::get,
 };
+use modular_core::types::ScopeItem;
 use modular_core::{
     PatchGraph,
     dsp::{get_constructors, schema},
 };
-use modular_core::types::ScopeItem;
-use tokio::sync::mpsc::{self, Sender};
+use tokio::sync::{
+    broadcast,
+    mpsc::{self, Sender},
+};
 use tokio::task::JoinHandle;
 
 use tower_http::cors::CorsLayer;
@@ -29,6 +32,7 @@ use tracing::{error, info};
 
 use crate::{
     AudioState,
+    collab::{CollabBroadcast, CollabEngine},
     protocol::{InputMessage, OutputMessage},
     validation::validate_patch,
 };
@@ -37,6 +41,14 @@ use crate::{
 #[derive(Clone)]
 pub struct AppState {
     pub audio_state: Arc<AudioState>,
+    pub collab: Arc<CollabEngine>,
+    pub collab_tx: broadcast::Sender<CollabBroadcast>,
+}
+
+#[derive(Clone, Debug)]
+struct JoinedDocInfo {
+    client_id: String,
+    awareness_client_id: u64,
 }
 
 // Build the Axum router
@@ -199,6 +211,9 @@ async fn handle_message(
     audio_state: &Arc<AudioState>,
     sample_rate: f32,
     socket_tx: Sender<Message>,
+    collab: &Arc<CollabEngine>,
+    collab_tx: broadcast::Sender<CollabBroadcast>,
+    joined_docs: &Arc<tokio::sync::Mutex<HashMap<String, JoinedDocInfo>>>,
 ) {
     match message {
         InputMessage::Echo { message } => {
@@ -211,11 +226,130 @@ async fn handle_message(
             .await;
         }
         InputMessage::GetSchemas => {
+            println!("GetSchemas!!!!!!!!!!");
             let _ = send_message(socket_tx, OutputMessage::Schemas { schemas: schema() }).await;
         }
         InputMessage::GetPatch => {
             // GetPatch is deprecated - DSL scripts are the source of truth on the client
             // This is kept for backwards compatibility but does nothing
+        }
+        InputMessage::CollabYrsJoin {
+            doc_id,
+            client_id,
+            awareness_client_id,
+            awareness_update,
+        } => match collab.join(&doc_id, awareness_update.clone()).await {
+            Ok(init) => {
+                {
+                    let mut docs = joined_docs.lock().await;
+                    docs.insert(
+                        doc_id.clone(),
+                        JoinedDocInfo {
+                            client_id: client_id.clone(),
+                            awareness_client_id,
+                        },
+                    );
+                }
+
+                let _ =
+                    send_message(socket_tx.clone(), OutputMessage::CollabYrsInit { init }).await;
+
+                if let Some(update) = awareness_update {
+                    let _ = collab_tx.send(CollabBroadcast {
+                        doc_id: doc_id.clone(),
+                        origin_client_id: Some(client_id.clone()),
+                        message: OutputMessage::CollabYrsAwareness {
+                            doc_id: doc_id.clone(),
+                            update,
+                        },
+                    });
+                }
+            }
+            Err(e) => {
+                let _ = send_message(
+                    socket_tx,
+                    OutputMessage::Error {
+                        message: format!("Collab join failed: {}", e),
+                        errors: None,
+                    },
+                )
+                .await;
+            }
+        },
+        InputMessage::CollabYrsUpdate { doc_id, update } => {
+            match collab.apply_update(&doc_id, &update).await {
+                Ok(_) => {
+                    let _ = collab_tx.send(CollabBroadcast {
+                        doc_id: doc_id.clone(),
+                        origin_client_id: None,
+                        message: OutputMessage::CollabYrsUpdate { doc_id, update },
+                    });
+                }
+                Err(e) => {
+                    let _ = send_message(
+                        socket_tx,
+                        OutputMessage::Error {
+                            message: format!("Collab update failed: {}", e),
+                            errors: None,
+                        },
+                    )
+                    .await;
+                }
+            }
+        }
+        InputMessage::CollabYrsAwareness { doc_id, update } => {
+            match collab.apply_awareness(&doc_id, &update).await {
+                Ok(_) => {
+                    let _ = collab_tx.send(CollabBroadcast {
+                        doc_id: doc_id.clone(),
+                        origin_client_id: None,
+                        message: OutputMessage::CollabYrsAwareness { doc_id, update },
+                    });
+                }
+                Err(e) => {
+                    let _ = send_message(
+                        socket_tx,
+                        OutputMessage::Error {
+                            message: format!("Collab awareness failed: {}", e),
+                            errors: None,
+                        },
+                    )
+                    .await;
+                }
+            }
+        }
+        InputMessage::CollabYrsLeave {
+            doc_id,
+            awareness_client_id,
+        } => {
+            {
+                let mut docs = joined_docs.lock().await;
+                docs.remove(&doc_id);
+            }
+
+            match collab
+                .remove_client_awareness(&doc_id, awareness_client_id)
+                .await
+            {
+                Ok(Some(update)) => {
+                    let _ = collab_tx.send(CollabBroadcast {
+                        doc_id: doc_id.clone(),
+                        origin_client_id: None,
+                        message: OutputMessage::CollabYrsAwareness { doc_id, update },
+                    });
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    let _ = send_message(
+                        socket_tx,
+                        OutputMessage::Error {
+                            message: format!("Collab leave failed: {}", e),
+                            errors: None,
+                        },
+                    )
+                    .await;
+                }
+            }
         }
         InputMessage::SetPatch { patch } => {
             let _ = handle_set_patch(&patch, audio_state, sample_rate, socket_tx).await;
@@ -292,21 +426,13 @@ async fn handle_message(
             }
         }
         InputMessage::Mute => {
-	            audio_state.set_muted(true);
-	            let _ = send_message(
-	                socket_tx,
-	                OutputMessage::MuteState { muted: true },
-	            )
-	            .await;
-	        }
-	        InputMessage::Unmute => {
-	            audio_state.set_muted(false);
-	            let _ = send_message(
-	                socket_tx,
-	                OutputMessage::MuteState { muted: false },
-	            )
-	            .await;
-	        }
+            audio_state.set_muted(true);
+            let _ = send_message(socket_tx, OutputMessage::MuteState { muted: true }).await;
+        }
+        InputMessage::Unmute => {
+            audio_state.set_muted(false);
+            let _ = send_message(socket_tx, OutputMessage::MuteState { muted: false }).await;
+        }
         InputMessage::StartRecording { filename } => {
             match audio_state.start_recording(filename).await {
                 Ok(path) => {
@@ -467,48 +593,48 @@ async fn apply_patch(
 
     // Two-pass track creation to handle keyframes that reference other tracks
 
-	    // PASS 1: Create/update track shells (without configuration or keyframes)
-	    for track in &desired_graph.tracks {
-	        match patch_lock.tracks.get(&track.id) {
-	            Some(existing_track) => {
-	                // Existing track: clear all keyframes (will re-add in pass 2)
-	                println!("Updating track: {}", track.id);
-	                let current_keyframes = existing_track.to_track().keyframes;
-	                for kf in current_keyframes {
-	                    existing_track.remove_keyframe(kf.id);
-	                }
-	            }
-	            None => {
-	                // Create new track shell with a disconnected playhead param
-	                println!("Creating track: {}", track.id);
-	                let default_playhead_param = modular_core::Param::Disconnected
-	                    .to_internal_param(&patch_lock);
-	                let internal_track = Arc::new(modular_core::types::InternalTrack::new(
-	                    track.id.clone(),
-	                    default_playhead_param,
-	                    track.interpolation_type,
-	                ));
-	                patch_lock.tracks.insert(track.id.clone(), internal_track);
-	            }
-	        }
-	    }
+    // PASS 1: Create/update track shells (without configuration or keyframes)
+    for track in &desired_graph.tracks {
+        match patch_lock.tracks.get(&track.id) {
+            Some(existing_track) => {
+                // Existing track: clear all keyframes (will re-add in pass 2)
+                println!("Updating track: {}", track.id);
+                let current_keyframes = existing_track.to_track().keyframes;
+                for kf in current_keyframes {
+                    existing_track.remove_keyframe(kf.id);
+                }
+            }
+            None => {
+                // Create new track shell with a disconnected playhead param
+                println!("Creating track: {}", track.id);
+                let default_playhead_param =
+                    modular_core::Param::Disconnected.to_internal_param(&patch_lock);
+                let internal_track = Arc::new(modular_core::types::InternalTrack::new(
+                    track.id.clone(),
+                    default_playhead_param,
+                    track.interpolation_type,
+                ));
+                patch_lock.tracks.insert(track.id.clone(), internal_track);
+            }
+        }
+    }
 
-	    // PASS 2: Configure tracks and add keyframes (all tracks now exist for Track param resolution)
-	    for track in &desired_graph.tracks {
-	        if let Some(internal_track) = patch_lock.tracks.get(&track.id) {
-	            println!("Configuring track and adding keyframes: {}", track.id);
+    // PASS 2: Configure tracks and add keyframes (all tracks now exist for Track param resolution)
+    for track in &desired_graph.tracks {
+        if let Some(internal_track) = patch_lock.tracks.get(&track.id) {
+            println!("Configuring track and adding keyframes: {}", track.id);
 
-	            // Configure playhead parameter and interpolation type
-	            let playhead_param = track.playhead.to_internal_param(&patch_lock);
-	            internal_track.configure(playhead_param, track.interpolation_type);
+            // Configure playhead parameter and interpolation type
+            let playhead_param = track.playhead.to_internal_param(&patch_lock);
+            internal_track.configure(playhead_param, track.interpolation_type);
 
-	            // Add keyframes (params may reference other tracks, which now exist)
-	            for kf in &track.keyframes {
-	                let internal_kf = kf.to_internal_keyframe(&patch_lock);
-	                internal_track.add_keyframe(internal_kf);
-	            }
-	        }
-	    }
+            // Add keyframes (params may reference other tracks, which now exist)
+            for kf in &track.keyframes {
+                let internal_kf = kf.to_internal_keyframe(&patch_lock);
+                internal_track.add_keyframe(internal_kf);
+            }
+        }
+    }
 
     // Update parameters for all desired modules (both new and existing)
     // This happens AFTER tracks are created so Track params can resolve
@@ -538,24 +664,39 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
     use futures_util::{SinkExt, StreamExt};
 
-    let subscriptions = Arc::new(tokio::sync::Mutex::new(HashMap::<
-        ScopeItem,
-        JoinHandle<()>,
-    >::new()));
+    let subscriptions = Arc::new(tokio::sync::Mutex::new(
+        HashMap::<ScopeItem, JoinHandle<()>>::new(),
+    ));
+    let joined_docs: Arc<tokio::sync::Mutex<HashMap<String, JoinedDocInfo>>> =
+        Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+    let joined_docs_for_cleanup = joined_docs.clone();
+    let collab_for_cleanup = state.collab.clone();
+    let collab_tx_for_cleanup = state.collab_tx.clone();
     let handles: Arc<tokio::sync::Mutex<Vec<JoinHandle<()>>>> =
         Arc::new(tokio::sync::Mutex::new(Vec::new()));
     // Spawn task to forward broadcast messages to this client
-	    let (mut socket_tx, mut socket_rx) = socket.split();
-	    let (fan_tx, mut fan_rx) = mpsc::channel::<Message>(1024);
+    let (mut socket_tx, mut socket_rx) = socket.split();
+    let (fan_tx, mut fan_rx) = mpsc::channel::<Message>(1024);
 
-	    // Send initial mute state to the client on connect
-	    let _ = send_message(
-	        fan_tx.clone(),
-	        OutputMessage::MuteState {
-	            muted: state.audio_state.is_muted(),
-	        },
-	    )
-	    .await;
+    // Send initial mute state to the client on connect
+    let _ = send_message(
+        fan_tx.clone(),
+        OutputMessage::MuteState {
+            muted: state.audio_state.is_muted(),
+        },
+    )
+    .await;
+    let mut collab_rx = state.collab_tx.subscribe();
+    let collab_fan = fan_tx.clone();
+    handles.lock().await.push(tokio::spawn(async move {
+        while let Ok(evt) = collab_rx.recv().await {
+            if let Err(e) = send_message(collab_fan.clone(), evt.message).await {
+                error!("Failed to forward collab message: {}", e);
+                break;
+            }
+        }
+    }));
+
     let mut socket_task = tokio::spawn(async move {
         // Implementation for sending messages to client
         while let Some(message) = fan_rx.recv().await {
@@ -590,6 +731,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         tokio::spawn(async move {
             while let Some(Ok(msg)) = socket_rx.next().await {
                 println!("Received WebSocket message: {:?}", msg);
+
                 match msg {
                     Message::Text(text) => match serde_json::from_str::<InputMessage>(&text) {
                         Ok(InputMessage::SetPatch { patch }) => {
@@ -615,12 +757,23 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         Ok(input_msg) => {
                             info!("Received input message: {:?}", input_msg);
                             let audio_state = state.audio_state.clone();
+                            let collab = state.collab.clone();
+                            let collab_tx = state.collab_tx.clone();
+                            let joined_docs = joined_docs.clone();
                             let sample_rate = state.audio_state.sample_rate;
                             let socket_tx = fan_tx.clone();
                             handles.lock().await.push(tokio::spawn({
                                 async move {
-                                    handle_message(input_msg, &audio_state, sample_rate, socket_tx)
-                                        .await;
+                                    handle_message(
+                                        input_msg,
+                                        &audio_state,
+                                        sample_rate,
+                                        socket_tx,
+                                        &collab,
+                                        collab_tx,
+                                        &joined_docs,
+                                    )
+                                    .await;
                                 }
                             }));
                         }
@@ -633,7 +786,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         break;
                     }
                     msg => {
-                        info!("Ignoring non-text WebSocket message: {:?}", msg);
+                        info!("Ignoring non-binary WebSocket message: {:?}", msg);
                     }
                 }
             }
@@ -648,6 +801,22 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         _ = (&mut recv_task) => recv_task.abort(),
     }
     info!("WebSocket connection handler ending, cleaning up");
+
+    {
+        let docs = joined_docs_for_cleanup.lock().await.clone();
+        for (doc_id, info) in docs {
+            if let Ok(Some(update)) = collab_for_cleanup
+                .remove_client_awareness(&doc_id, info.awareness_client_id)
+                .await
+            {
+                let _ = collab_tx_for_cleanup.send(CollabBroadcast {
+                    doc_id: doc_id.clone(),
+                    origin_client_id: Some(info.client_id.clone()),
+                    message: OutputMessage::CollabYrsAwareness { doc_id, update },
+                });
+            }
+        }
+    }
     handles
         .lock()
         .await

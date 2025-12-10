@@ -117,7 +117,10 @@ pub fn validate_patch(
     for (idx, scope) in patch.scopes.iter().enumerate() {
         let location = format!("scopes[{}]", idx);
         match scope {
-            ScopeItem::ModuleOutput { module_id, port_name } => {
+            ScopeItem::ModuleOutput {
+                module_id,
+                port_name,
+            } => {
                 if !module_ids.contains(module_id.as_str()) {
                     errors.push(ValidationError::with_location(
                         "scopes.module_id",

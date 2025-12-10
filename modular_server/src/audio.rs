@@ -12,8 +12,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::protocol::OutputMessage;
-use modular_core::types::ScopeItem;
 use modular_core::patch::Patch;
+use modular_core::types::ScopeItem;
 
 /// Attenuation factor applied to audio output to prevent clipping.
 /// DSP modules output signals in the range [-5, 5] volts (modular synth convention).

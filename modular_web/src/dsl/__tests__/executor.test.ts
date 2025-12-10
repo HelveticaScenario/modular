@@ -46,8 +46,8 @@ describe('DSL Executor', () => {
     expect(patch.scopes).toEqual([
       {
         ModuleOutput: {
-          module_id: 'root',
-          port_name: 'output',
+          moduleId: 'root',
+          portName: 'output',
         },
       },
     ]);
@@ -60,7 +60,7 @@ describe('DSL Executor', () => {
     `;
 
     const patch = executePatchScript(script, testSchemas);
-    const sineModule = patch.modules.find(m => m.module_type === 'sine');
+    const sineModule = patch.modules.find(m => m.moduleType === 'sine');
 
     expect(sineModule).toBeDefined();
     expect(sineModule?.params.freq).toEqual({
@@ -80,7 +80,7 @@ describe('DSL Executor', () => {
 
     // Should have sine + scale-and-shift + root
     expect(patch.modules.length).toBeGreaterThanOrEqual(3);
-    expect(patch.modules.find(m => m.module_type === 'scaleAndShift')).toBeDefined();
+    expect(patch.modules.find(m => m.moduleType === 'scaleAndShift')).toBeDefined();
   });
 
   it('allows declaring explicit scopes', () => {
@@ -95,8 +95,8 @@ describe('DSL Executor', () => {
     expect(patch.scopes).toEqual([
       {
         ModuleOutput: {
-          module_id: 'osc1',
-          port_name: 'output',
+          moduleId: 'osc1',
+          portName: 'output',
         },
       },
     ]);

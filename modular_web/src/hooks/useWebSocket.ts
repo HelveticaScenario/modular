@@ -11,7 +11,6 @@ export type ConnectionState =
     | 'reconnecting'
     | 'error'
 
-export type { OutputMessage }
 
 export interface UseModularWebSocketOptions {
     url?: string
@@ -116,13 +115,13 @@ export function useModularWebSocket(options: UseModularWebSocketOptions = {}) {
                         }
                         const secondSection = i
 
-                        const module_id = new TextDecoder().decode(data.slice(0, firstSection))
+                        const moduleId = new TextDecoder().decode(data.slice(0, firstSection))
                         const port = new TextDecoder().decode(data.slice(firstSection + 1, secondSection))
                         const payload = data.slice(secondSection + 1) // skip null terminator
                         const subscription: ScopeItem =
                             port.length > 0
-                                ? { type: 'moduleOutput', module_id, port_name: port }
-                                : { type: 'track', track_id: module_id }
+                                ? { type: 'moduleOutput', moduleId, portName: port }
+                                : { type: 'track', trackId: moduleId }
                         // Handle different binary message types here if needed
                         onMessageRef.current?.({ type: 'audioBuffer', subscription, samples: new Float32Array(payload.buffer) })
                     }).catch((e) => {
@@ -234,6 +233,7 @@ export function useModularWebSocket(options: UseModularWebSocketOptions = {}) {
     }, [send])
     return {
         connectionState,
+        sendMessage: send,
         getPatch,
         getSchemas,
         setPatch,

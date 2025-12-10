@@ -1,10 +1,11 @@
-import { useCallback, useState, useEffect, useRef } from 'react';
-import { useModularWebSocket, type OutputMessage } from './hooks/useWebSocket';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useModularWebSocket } from './hooks/useWebSocket';
 import { MonacoPatchEditor as PatchEditor } from './components/MonacoPatchEditor';
 import { AudioControls } from './components/AudioControls';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { executePatchScript } from './dsl';
 import { SchemasContext } from './SchemaContext';
+import { useMonacoCollabAdapter } from './hooks/useMonacoCollabAdapter';
 import './App.css';
 import type { ModuleSchema } from './types/generated/ModuleSchema';
 import type { ScopeItem } from './types/generated/ScopeItem';
@@ -12,6 +13,7 @@ import type { ValidationError } from './types/generated/ValidationError';
 import type { editor } from 'monaco-editor';
 import { findScopeCallEndLines } from './utils/findScopeCallEndLines';
 import { FileExplorer } from './components/FileExplorer';
+import type { OutputMessage } from './types/generated/OutputMessage';
 
 declare global {
     interface Window {
@@ -25,6 +27,7 @@ out.source(osc);
 `;
 
 const PATCH_STORAGE_KEY = 'modular_patch_dsl';
+const COLLAB_CLIENT_KEY = 'modular_collab_client_id';
 
 type ScopeView = {
     key: string;
@@ -33,12 +36,12 @@ type ScopeView = {
 
 const scopeKeyFromSubscription = (subscription: ScopeItem) => {
     if (subscription.type === 'moduleOutput') {
-        const { module_id, port_name } = subscription;
-        return `:module:${module_id}:${port_name}`;
+        const { moduleId, portName } = subscription;
+        return `:module:${moduleId}:${portName}`;
     }
 
-    const { track_id } = subscription;
-    return `:track:${track_id}`;
+    const { trackId } = subscription;
+    return `:track:${trackId}`;
 };
 
 const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
@@ -48,15 +51,13 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
     const w = canvas.width;
     const h = canvas.height;
 
-    // Clear canvas background
     ctx.fillStyle = 'rgb(30, 30, 30)';
     ctx.fillRect(0, 0, w, h);
 
     const midY = h / 2;
-    const maxAbsAmplitude = 5; // expected sample range is roughly [-5, 5]
-    const pixelsPerUnit = h / 2 / maxAbsAmplitude; // so ±5 spans full height
+    const maxAbsAmplitude = 5;
+    const pixelsPerUnit = h / 2 / maxAbsAmplitude;
 
-    // Center line at 0.0
     ctx.strokeStyle = '#333';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -72,10 +73,9 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
         return;
     }
 
-    const totalSamples = data.length; // typically 512
+    const totalSamples = data.length;
     const windowSize = 256;
 
-    // 1. Find first positive-going zero-crossing (prev <= 0, curr > 0)
     let startIndex = -1;
     for (let i = 1; i < totalSamples; i++) {
         const prev = data[i - 1];
@@ -87,12 +87,10 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
         }
     }
 
-    // 2. Fallback: if no zero-crossing found, start from midpoint of buffer
     if (startIndex === -1) {
-        startIndex = Math.floor(totalSamples / 2); // e.g. 256 for 512-sample buffer
+        startIndex = Math.floor(totalSamples / 2);
     }
 
-    // 3. Compute window [startIndex, startIndex + windowSize)
     let endExclusive = startIndex + windowSize;
     if (endExclusive > totalSamples) {
         endExclusive = totalSamples;
@@ -100,11 +98,9 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
     const sampleCount = Math.max(0, endExclusive - startIndex);
 
     if (sampleCount < 2) {
-        // Not enough data to draw a waveform
         return;
     }
 
-    // Draw waveform across full width using only the selected window
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -114,12 +110,10 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
     for (let i = 0; i < sampleCount; i++) {
         const x = stepX * i;
         const rawSample = data[startIndex + i];
-        // Clamp to expected range so outliers don't blow up the scale
         const s = Math.max(
             -maxAbsAmplitude,
             Math.min(maxAbsAmplitude, rawSample)
         );
-        // Canvas Y grows downward, so positive samples move up (subtract)
         const y = midY - s * pixelsPerUnit;
 
         if (i === 0) {
@@ -133,32 +127,32 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
 };
 
 function App() {
-    const [patchCode, setPatchCode] = useState(() => {
-        if (typeof window === 'undefined') {
-            return DEFAULT_PATCH;
-        }
+    const handleMessageRef = useRef<(msg: OutputMessage) => void | null>(null);
 
-        const storedPatch = window.localStorage.getItem(PATCH_STORAGE_KEY);
-        return storedPatch ?? DEFAULT_PATCH;
-    });
+    const [patchCode, setPatchCode] = useState('');
 
     const [isMuted, setIsMuted] = useState(true);
-
     const [isRecording, setIsRecording] = useState(false);
-
     const [error, setError] = useState<string | null>(null);
     const [validationErrors, setValidationErrors] = useState<
         ValidationError[] | null
     >(null);
-
     const [schemas, setSchemas] = useState<ModuleSchema[]>([]);
     const [scopeViews, setScopeViews] = useState<ScopeView[]>([]);
 
     const editorRef = useRef<editor.IStandaloneCodeEditor>(null);
-
     const scopeCanvasMapRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
     const [files, setFiles] = useState<string[]>([]);
     const [currentFile, setCurrentFile] = useState<string | null>(null);
+
+    const [clientId] = useState(() => {
+        if (typeof window === 'undefined') return 'web-client';
+        const existing = window.localStorage.getItem(COLLAB_CLIENT_KEY);
+        if (existing) return existing;
+        const generated = crypto.randomUUID?.() ?? `web-${Date.now()}`;
+        window.localStorage.setItem(COLLAB_CLIENT_KEY, generated);
+        return generated;
+    });
 
     const registerScopeCanvas = useCallback(
         (key: string, canvas: HTMLCanvasElement) => {
@@ -171,11 +165,41 @@ function App() {
         scopeCanvasMapRef.current.delete(key);
     }, []);
 
+    const handleMessageRefWrapper = useCallback(
+        (msg: OutputMessage) => handleMessageRef.current?.(msg),
+        []
+    );
+
+    const {
+        connectionState,
+        sendMessage,
+        getSchemas,
+        setPatch,
+        mute,
+        unmute,
+        startRecording,
+        stopRecording,
+        listFiles,
+        readFile,
+    } = useModularWebSocket({ onMessage: handleMessageRefWrapper });
+
+    const handleCollabOutputMessage = useMonacoCollabAdapter({
+        editorRef,
+        docId: currentFile ?? 'dsl-patch',
+        clientId,
+        sendMessage: (msg) => sendMessage(msg),
+        connectionState,
+        enabled: true,
+        userDisplayName: clientId,
+        initialText: patchCode,
+        onTextUpdated: setPatchCode,
+    });
+
     const handleMessage = useCallback(
         (msg: OutputMessage) => {
+            if (handleCollabOutputMessage(msg)) return;
             switch (msg.type) {
                 case 'schemas': {
-                    console.log('Received schemas:', msg.schemas);
                     setSchemas(msg.schemas);
                     if (typeof window !== 'undefined') {
                         window.__APP_SCHEMAS__ = msg.schemas;
@@ -197,15 +221,12 @@ function App() {
                         drawOscilloscope(msg.samples, scopedCanvas);
                         break;
                     }
-
                     break;
                 }
                 case 'fileList':
-                    // Handle file list if needed
                     setFiles(msg.files);
                     break;
                 case 'fileContent': {
-                    // Handle file content if needed
                     if (msg.path === currentFile) {
                         setPatchCode(msg.content);
                     }
@@ -213,30 +234,12 @@ function App() {
                 }
             }
         },
-        [
-            setError,
-            setSchemas,
-            setValidationErrors,
-            setIsMuted,
-            setFiles,
-            currentFile,
-        ]
+        [currentFile, handleCollabOutputMessage]
     );
 
-    const {
-        connectionState,
-        getPatch,
-        getSchemas,
-        setPatch,
-        mute,
-        unmute,
-        startRecording,
-        stopRecording,
-        listFiles,
-        readFile,
-        writeFile,
-        deleteFile,
-    } = useModularWebSocket({ onMessage: handleMessage });
+    useEffect(() => {
+        handleMessageRef.current = handleMessage;
+    }, [handleMessage]);
 
     useEffect(() => {
         listFiles();
@@ -249,60 +252,47 @@ function App() {
     }, [currentFile, readFile]);
 
     useEffect(() => {
-        if (typeof window === 'undefined') {
-            return;
-        }
-        try {
-            window.localStorage.setItem(PATCH_STORAGE_KEY, patchCode);
-        } catch {
-            // Ignore storage quota/access issues to avoid breaking editing flow
-        }
-    }, [patchCode]);
-
-    // Request initial state when connected
-    useEffect(() => {
         if (connectionState === 'connected') {
             getSchemas();
         }
-    }, [connectionState, getPatch, getSchemas]);
+    }, [connectionState, getSchemas]);
 
     const schemaRef = useRef<ModuleSchema[]>([]);
     useEffect(() => {
         schemaRef.current = schemas;
     }, [schemas]);
+
     const patchCodeRef = useRef<string>(patchCode);
     useEffect(() => {
         patchCodeRef.current = patchCode;
     }, [patchCode]);
+
     const handleSubmit = useCallback(() => {
         try {
-            const schemas = schemaRef.current;
-            const patchCode = patchCodeRef.current;
-            // Execute DSL script to generate PatchGraph
-            const patch = executePatchScript(patchCode, schemas);
+            const schemasValue = schemaRef.current;
+            const patchCodeValue = patchCodeRef.current;
+            const patch = executePatchScript(patchCodeValue, schemasValue);
             setPatch(patch);
             setError(null);
             setValidationErrors(null);
 
-            const scopeCalls = findScopeCallEndLines(patchCode);
-
+            const scopeCalls = findScopeCallEndLines(patchCodeValue);
             const views: ScopeView[] = patch.scopes
                 .map((scope, idx) => {
                     const call = scopeCalls[idx];
                     if (!call) return null;
                     if (scope.type === 'moduleOutput') {
-                        const { module_id, port_name } = scope;
+                        const { moduleId, portName } = scope;
                         return {
-                            key: `:module:${module_id}:${port_name}`,
-                            lineNumber: call.endLine,
-                        };
-                    } else {
-                        const { track_id } = scope;
-                        return {
-                            key: `:track:${track_id}`,
+                            key: `:module:${moduleId}:${portName}`,
                             lineNumber: call.endLine,
                         };
                     }
+                    const { trackId } = scope;
+                    return {
+                        key: `:track:${trackId}`,
+                        lineNumber: call.endLine,
+                    };
                 })
                 .filter((v): v is ScopeView => v !== null);
 
@@ -313,7 +303,7 @@ function App() {
             setError(errorMessage);
             setValidationErrors(null);
         }
-    }, [setPatch, setError, setValidationErrors]);
+    }, [setPatch]);
 
     const handleStop = useCallback(() => {
         mute();
@@ -324,10 +314,8 @@ function App() {
         setValidationErrors(null);
     }, []);
 
-    // Global keyboard shortcuts
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            // If ctrl or alt + R, toggle recording
             if ((e.ctrlKey || e.altKey) && (e.key === 'r' || e.key === 'R')) {
                 if (e.altKey) {
                     e.preventDefault();
@@ -342,7 +330,7 @@ function App() {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isMuted, isRecording, startRecording, stopRecording]);
+    }, [isRecording, startRecording, stopRecording]);
 
     return (
         <SchemasContext.Provider value={schemas}>

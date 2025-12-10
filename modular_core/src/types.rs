@@ -234,8 +234,12 @@ impl Default for InternalParam {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
-#[serde(tag = "param_type", rename_all = "kebab-case")]
 pub enum Param {
     Value { value: f32 },
     Hz { value: f32 },
@@ -308,8 +312,8 @@ impl PartialOrd for InternalKeyframe {
 }
 
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
-#[serde(rename_all = "camelCase")]
 pub enum InterpolationType {
     Linear,
     Step,
@@ -324,7 +328,7 @@ impl Default for InterpolationType {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
-#[serde(rename = "TrackKeyframe")]
+#[serde(rename = "TrackKeyframe", rename_all = "camelCase")]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct Keyframe {
     pub id: String,
@@ -574,6 +578,7 @@ impl InternalTrack {
 pub type TrackMap = HashMap<String, Arc<InternalTrack>>;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct Track {
     pub id: String,
@@ -585,6 +590,7 @@ pub struct Track {
 }
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct ParamSchema {
     pub name: String,
@@ -592,6 +598,7 @@ pub struct ParamSchema {
 }
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct OutputSchema {
     pub name: String,
@@ -601,6 +608,7 @@ pub struct OutputSchema {
 }
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct ModuleSchema {
     pub name: String,
@@ -610,6 +618,7 @@ pub struct ModuleSchema {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct ModuleState {
     pub id: String,
@@ -618,7 +627,11 @@ pub struct ModuleState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq, Hash)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub enum ScopeItem {
     ModuleOutput {
@@ -631,6 +644,7 @@ pub enum ScopeItem {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct PatchGraph {
     pub modules: Vec<ModuleState>,

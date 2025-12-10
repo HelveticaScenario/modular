@@ -1,36 +1,83 @@
 use modular_core::types::{ModuleSchema, PatchGraph, ScopeItem};
 use serde::{Deserialize, Serialize};
+
 use ts_rs::TS;
+
+use crate::collab::CollabInitPayload;
 
 /// Input messages from clients
 #[derive(Debug, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub enum InputMessage {
-    Echo { message: String },
+    Echo {
+        message: String,
+    },
     GetSchemas,
     GetPatch,
 
-    SetPatch { patch: PatchGraph },
+    SetPatch {
+        patch: PatchGraph,
+    },
+
+    // Collaborative editing powered by yrs
+    CollabYrsJoin {
+        doc_id: String,
+        client_id: String,
+        /// Client-side awareness id (usually yjs doc.clientID) so the server can clean up on disconnect.
+        #[ts(type = "number")]
+        awareness_client_id: u64,
+        awareness_update: Option<Vec<u8>>,
+    },
+    CollabYrsUpdate {
+        doc_id: String,
+        update: Vec<u8>,
+    },
+    CollabYrsAwareness {
+        doc_id: String,
+        update: Vec<u8>,
+    },
+    CollabYrsLeave {
+        doc_id: String,
+        #[ts(type = "number")]
+        awareness_client_id: u64,
+    },
 
     // Audio control
     Mute,
     Unmute,
 
     // Recording
-    StartRecording { filename: Option<String> },
+    StartRecording {
+        filename: Option<String>,
+    },
     StopRecording,
 
     // File operations
     ListFiles,
-    ReadFile { path: String },
-    WriteFile { path: String, content: String },
-    DeleteFile { path: String },
+    ReadFile {
+        path: String,
+    },
+    WriteFile {
+        path: String,
+        content: String,
+    },
+    DeleteFile {
+        path: String,
+    },
 }
 
 /// Output messages to clients
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub enum OutputMessage {
     Echo {
@@ -38,6 +85,17 @@ pub enum OutputMessage {
     },
     Schemas {
         schemas: Vec<ModuleSchema>,
+    },
+    CollabYrsInit {
+        init: CollabInitPayload,
+    },
+    CollabYrsUpdate {
+        doc_id: String,
+        update: Vec<u8>,
+    },
+    CollabYrsAwareness {
+        doc_id: String,
+        update: Vec<u8>,
     },
     Error {
         message: String,
@@ -68,6 +126,7 @@ pub enum OutputMessage {
 
 /// Detailed validation error for patch validation
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct ValidationError {
     pub field: String,

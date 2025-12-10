@@ -6,6 +6,7 @@ use modular_core::Patch;
 use modular_core::dsp::get_constructors;
 
 pub mod audio;
+pub mod collab;
 mod http_server;
 pub mod persistence;
 pub mod protocol;
@@ -62,6 +63,8 @@ pub async fn run_server(config: ServerConfig) -> anyhow::Result<()> {
 
     // Create server state
     let audio_state = create_server_state(sample_rate);
+    let collab = Arc::new(collab::CollabEngine::new());
+    let (collab_tx, _collab_rx) = tokio::sync::broadcast::channel(1024);
 
     // Start audio thread
     let _stream = audio::run_audio_thread(audio_state.clone())?;
@@ -69,6 +72,8 @@ pub async fn run_server(config: ServerConfig) -> anyhow::Result<()> {
     // Create app state
     let state = AppState {
         audio_state: audio_state.clone(),
+        collab: collab.clone(),
+        collab_tx: collab_tx.clone(),
     };
 
     // Spawn task to send audio buffers periodically
