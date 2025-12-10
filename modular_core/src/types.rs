@@ -569,7 +569,8 @@ impl InternalTrack {
 
     pub fn get_value_optional(&self) -> Option<f32> {
         // Use try_lock in audio hot path - return None if locked
-        self.sample.try_lock().map(|guard| *guard).flatten()
+        // sample is Mutex<Option<f32>>, so *guard is Option<f32>
+        self.sample.try_lock().and_then(|guard| *guard)
     }
 
     pub fn to_track(&self) -> Track {
