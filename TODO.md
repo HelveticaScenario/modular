@@ -1,4 +1,5 @@
 - [ ] zeroconf
+- [ ] indicator of what file is currently running
 - [ ] make scope narrower
 - [ ] make custom scope for track
 - [ ] make seq type (cv + gate with mini (mondo?) notation)
@@ -10,6 +11,7 @@
 - [ ] buffer type
 - [ ] sample loading into buffer
 - [ ] live recording into buffer
+- [ ] arbitrary param types (like enum) (not modulatable)
 - [ ] polyphony?
 - [ ] some sort of "make module" composition system
 - [ ] midi in (notes would pretend to be seq, cc would be signal)
