@@ -25,3 +25,4 @@
 - [ ] more math
 - [ ] more utilities
 - [ ] more everything
+- [ ] pass whole buffers through modules, not just one sample at a time
