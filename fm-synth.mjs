@@ -1,6 +1,6 @@
 // FM synthesis example
 // Modulator oscillator at 2x carrier frequency
-const modulator = sine('mod').freq(note('a4').scale(2));
+const modulator = sine('mod').freq(note('a4'));
 
 // Carrier oscillator with frequency modulation
 const carrier = sine('carrier')
