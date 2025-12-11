@@ -69,7 +69,7 @@ impl Ad {
         self.smoothed_decay = smooth_value(self.smoothed_decay, target_decay);
 
         let gate = self.params.gate.get_value_or(0.0);
-        let gate_high = gate > 0.0;
+        let gate_high = gate > 2.5;
         let rising_edge = gate_high && !self.gate_was_high;
         self.gate_was_high = gate_high;
 

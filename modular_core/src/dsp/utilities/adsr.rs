@@ -77,7 +77,7 @@ impl Adsr {
         self.smoothed_release = smooth_value(self.smoothed_release, target_release);
         self.smoothed_sustain = smooth_value(self.smoothed_sustain, target_sustain);
 
-        let gate_on = self.params.gate.get_value() > 0.01;
+        let gate_on = self.params.gate.get_value() > 2.5;
 
         if gate_on && !self.gate_was_high {
             self.stage = EnvelopeStage::Attack;
