@@ -25,7 +25,7 @@
 .app-main {
     display: flex;
     flex: 1;
-    overflow: hidden;
+    overflow: visible;
 }
 
 /* Editor Panel */
@@ -38,7 +38,8 @@
 
 .patch-editor {
     flex: 1;
-    overflow: auto;
+    overflow: visible;
+    position: relative;
 }
 
 .patch-editor .cm-editor {
@@ -264,4 +265,11 @@
 
 .scope-view-zone canvas {
     display: block;
+}
+
+/* Ensure Monaco overlays (suggestions, hovers, etc.) sit above the header */
+.monaco-editor .editor-widget,
+.monaco-editor .peekview-widget,
+.monaco-editor .suggest-widget {
+    z-index: 2000 !important;
 }
