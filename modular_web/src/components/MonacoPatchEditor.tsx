@@ -336,20 +336,20 @@ export function MonacoPatchEditor({
         const zones = activeScopeViews.map((view) => {
             const container = document.createElement('div');
             container.className = 'scope-view-zone';
-            container.style.height = '120px';
-            container.style.width = '100%';
+            container.style.height = `60px`;
+            container.style.width = '500px';
             container.style.display = 'flex';
 
             const canvas = document.createElement('canvas');
-            canvas.style.width = '100%';
-            canvas.style.height = '120px';
+            canvas.style.width = '500px';
+            canvas.style.height = '60px';
             canvas.dataset.scopeKey = view.key;
 
             const pixelWidth = Math.max(
                 1,
                 Math.floor(layoutInfo.contentWidth * dpr),
             );
-            const pixelHeight = Math.floor(120 * dpr);
+            const pixelHeight = Math.floor(60 * dpr);
             canvas.width = pixelWidth;
             canvas.height = pixelHeight;
 
@@ -365,7 +365,7 @@ export function MonacoPatchEditor({
             viewZoneIdsRef.current = zones.map(({ view, container }) => {
                 return accessor.addZone({
                     afterLineNumber: Math.max(1, view.lineNumber),
-                    heightInPx: 120,
+                    heightInPx: 60,
                     domNode: container,
                     marginDomNode: undefined,
                 });
@@ -383,7 +383,7 @@ export function MonacoPatchEditor({
                     1,
                     Math.floor(info.contentWidth * nextDpr),
                 );
-                canvas.height = Math.floor(120 * nextDpr);
+                canvas.height = Math.floor(60 * nextDpr);
             });
         };
 

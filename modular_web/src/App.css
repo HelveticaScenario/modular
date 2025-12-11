@@ -265,6 +265,7 @@
 
 .scope-view-zone canvas {
     display: block;
+    width:500px;
 }
 
 /* Ensure Monaco overlays (suggestions, hovers, etc.) sit above the header */
