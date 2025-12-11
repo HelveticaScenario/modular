@@ -11,50 +11,6 @@ use ts_rs::TS;
 
 use crate::patch::Patch;
 
-// Serde helpers for Duration
-mod duration_millis {
-    use serde::{Deserialize, Deserializer, Serializer};
-    use std::time::Duration;
-
-    pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_u64(duration.as_millis() as u64)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let millis = u64::deserialize(deserializer)?;
-        Ok(Duration::from_millis(millis))
-    }
-}
-
-mod option_duration_millis {
-    use serde::{Deserialize, Deserializer, Serializer};
-    use std::time::Duration;
-
-    pub fn serialize<S>(duration: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match duration {
-            Some(d) => serializer.serialize_some(&(d.as_millis() as u64)),
-            None => serializer.serialize_none(),
-        }
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let millis = Option::<u64>::deserialize(deserializer)?;
-        Ok(millis.map(Duration::from_millis))
-    }
-}
-
 lazy_static! {
     pub static ref ROOT_ID: String = "root".into();
     pub static ref ROOT_OUTPUT_PORT: String = "output".into();
