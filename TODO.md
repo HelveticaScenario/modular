@@ -1,6 +1,6 @@
 - [x] zeroconf
 - [x] license?
-- [ ] indicator of what file is currently running
+- [x] indicator of what file is currently running
 - [ ] better way of scaling output to a range? would need to know the period of the oscilator 
 - [ ] make scope narrower
 - [ ] make custom scope for track
