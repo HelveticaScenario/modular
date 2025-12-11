@@ -258,6 +258,7 @@ function App() {
         buildInitialOpenFiles(unsavedSnapshots),
     );
     const [currentFile, setCurrentFile] = useState<string>(SCRATCH_FILE);
+    const [runningFile, setRunningFile] = useState<string | null>(null);
     console.log('Current file in App:', currentFile);
     const registerScopeCanvas = useCallback(
         (key: string, canvas: HTMLCanvasElement) => {
@@ -547,6 +548,7 @@ function App() {
             prev.map((file) => (file === active ? normalized : file)),
         );
         setCurrentFile(normalized);
+        setRunningFile((prev) => (prev === active ? normalized : prev));
         listFiles();
     }, [
         currentFile,
@@ -554,6 +556,7 @@ function App() {
         files,
         listFiles,
         normalizeFileName,
+        runningFile,
         renameFile,
     ]);
 
@@ -624,6 +627,7 @@ function App() {
                     loaded: true,
                 },
             }));
+            setRunningFile((prev) => (prev === active ? target : prev));
             listFiles();
         };
     }, [
@@ -632,6 +636,7 @@ function App() {
         files,
         listFiles,
         normalizeFileName,
+        runningFile,
         writeFile,
     ]);
 
@@ -643,6 +648,7 @@ function App() {
                 const patchCodeValue = patchCodeRef.current;
                 const patch = executePatchScript(patchCodeValue, schemasValue);
                 setPatch(patch);
+                setRunningFile(currentFile || SCRATCH_FILE);
                 setError(null);
                 setValidationErrors(null);
 
@@ -764,6 +770,7 @@ function App() {
                         files={files}
                         openFiles={openFiles}
                         currentFile={currentFile}
+                        runningFile={runningFile}
                         fileStates={fileBuffers}
                         formatLabel={formatFileLabel}
                         onFileSelect={selectFile}

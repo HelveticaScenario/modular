@@ -9,6 +9,7 @@ interface FileExplorerProps {
     files: string[];
     openFiles: string[];
     currentFile: string;
+    runningFile: string | null;
     fileStates: Record<string, FileState>;
     formatLabel?: (filename: string) => string;
     onFileSelect: (filename: string) => void;
@@ -24,6 +25,7 @@ export function FileExplorer({
     files,
     openFiles,
     currentFile,
+    runningFile,
     fileStates,
     formatLabel,
     onFileSelect,
@@ -86,15 +88,27 @@ export function FileExplorer({
                                     if (file !== SCRATCH_FILE) return null;
                                     const state = fileStates[file] ?? {};
                                     const isActive = file === currentFile;
+                                    const isRunning = file === runningFile;
                                     return (
                                         <li
                                             key={`open-${file}`}
-                                            className={`${isActive ? 'active' : ''} ${state.dirty ? 'dirty' : ''}`}
+                                            className={[
+                                                isActive ? 'active' : '',
+                                                state.dirty ? 'dirty' : '',
+                                                isRunning ? 'running' : '',
+                                            ]
+                                                .filter(Boolean)
+                                                .join(' ')}
                                             onClick={() => onFileSelect(file)}
                                         >
                                             <span className="file-name">
                                                 {renderLabel(file)}
                                             </span>
+                                            {isRunning && (
+                                                <span className="running-badge">
+                                                    running
+                                                </span>
+                                            )}
                                             {state.isNew && (
                                                 <span className="badge">
                                                     new
@@ -125,15 +139,27 @@ export function FileExplorer({
                                 {files.map((file) => {
                                     const state = fileStates[file] ?? {};
                                     const isActive = file === currentFile;
+                                    const isRunning = file === runningFile;
                                     return (
                                         <li
                                             key={file}
-                                            className={`${isActive ? 'active' : ''} ${state.dirty ? 'dirty' : ''}`}
+                                            className={[
+                                                isActive ? 'active' : '',
+                                                state.dirty ? 'dirty' : '',
+                                                isRunning ? 'running' : '',
+                                            ]
+                                                .filter(Boolean)
+                                                .join(' ')}
                                             onClick={() => onFileSelect(file)}
                                         >
                                             <span className="file-name">
                                                 {renderLabel(file)}
                                             </span>
+                                            {isRunning && (
+                                                <span className="running-badge">
+                                                    running
+                                                </span>
+                                            )}
                                             {state.dirty && (
                                                 <span className="dirty-dot">
                                                     *

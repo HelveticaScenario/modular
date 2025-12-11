@@ -132,6 +132,22 @@
   color: #fff;
 }
 
+.file-list li.running {
+  border-left: 3px solid #3fb27f;
+  padding-left: calc(1rem - 3px);
+  box-shadow: inset 0 0 0 1px rgba(63, 178, 127, 0.1);
+}
+
+.running-badge {
+  background: #123624;
+  color: #9de2b9;
+  border-radius: 6px;
+  padding: 0.05rem 0.45rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
 .file-list li.dirty .file-name {
   font-weight: 600;
 }
