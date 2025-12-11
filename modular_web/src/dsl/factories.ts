@@ -48,6 +48,7 @@ export class DSLContext {
 
   scope(target: ModuleNode | ModuleOutput | TrackNode) {
     this.builder.addScope(target);
+    return target
   }
 
   createTrack(id?: string) {

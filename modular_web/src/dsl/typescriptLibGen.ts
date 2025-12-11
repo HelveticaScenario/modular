@@ -45,7 +45,7 @@ interface TrackNode {
 declare function hz(frequency: number): number;
 declare function note(noteName: string): number;
 declare function track(id?: string): TrackNode;
-declare function scope(target: ModuleOutput | ModuleNode | TrackNode): void;
+declare function scope(target: ModuleOutput | ModuleNode | TrackNode):  ModuleOutput | ModuleNode | TrackNode;
 `;
 
 function escapeDocComment(text: string): string {
