@@ -13,7 +13,6 @@ interface FileExplorerProps {
     fileStates: Record<string, FileState>;
     formatLabel?: (filename: string) => string;
     onFileSelect: (filename: string) => void;
-    onRefresh: () => void;
     onCreateFile: () => void;
     onSaveFile: () => void;
     onRenameFile: () => void;
@@ -29,7 +28,6 @@ export function FileExplorer({
     fileStates,
     formatLabel,
     onFileSelect,
-    onRefresh,
     onCreateFile,
     onSaveFile,
     onRenameFile,
@@ -65,13 +63,6 @@ export function FileExplorer({
                         className="action-button"
                     >
                         Rename
-                    </button>
-                    <button
-                        onClick={onRefresh}
-                        className="refresh-button"
-                        title="Refresh file list"
-                    >
-                        Refresh
                     </button>
                 </div>
             </div>

@@ -556,7 +556,6 @@ function App() {
         files,
         listFiles,
         normalizeFileName,
-        runningFile,
         renameFile,
     ]);
 
@@ -774,7 +773,6 @@ function App() {
                         fileStates={fileBuffers}
                         formatLabel={formatFileLabel}
                         onFileSelect={selectFile}
-                        onRefresh={listFiles}
                         onCreateFile={handleCreateFile}
                         onSaveFile={handleSaveFileRef.current}
                         onRenameFile={handleRenameFile}
