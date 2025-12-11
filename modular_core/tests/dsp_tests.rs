@@ -605,6 +605,59 @@ fn test_mix_module() {
     assert!(mix_max > 0.0, "Mix module should produce output, got max {}", mix_max);
 }
 
+#[test]
+fn test_adsr_envelope_progression() {
+    let mut patch = create_test_patch();
+    add_module(&mut patch, "gate", "signal");
+    add_module(&mut patch, "env", "adsr");
+
+    // Configure gate to high voltage and connect to ADSR gate
+    if let Some(gate) = patch.sampleables.get("gate") {
+        let _ = gate.update_param(
+            &"source".to_string(),
+            &InternalParam::Volts { value: 5.0 },
+        );
+    }
+
+    if let Some(env) = patch.sampleables.get("env") {
+        let gate_module = patch.sampleables.get("gate").unwrap();
+        let _ = env.update_param(
+            &"gate".to_string(),
+            &InternalParam::Cable {
+                module: Arc::downgrade(gate_module),
+                port: "output".to_string(),
+            },
+        );
+        let _ = env.update_param(&"attack".to_string(), &InternalParam::Volts { value: 0.001 });
+        let _ = env.update_param(&"decay".to_string(), &InternalParam::Volts { value: 0.01 });
+        let _ = env.update_param(&"sustain".to_string(), &InternalParam::Volts { value: 2.5 });
+        let _ = env.update_param(&"release".to_string(), &InternalParam::Volts { value: 0.005 });
+    }
+
+    for _ in 0..800 {
+        process_frame(&patch);
+    }
+
+    let sustain_sample = get_sample(&patch, "env", "output");
+    assert!(
+        sustain_sample > 2.0 && sustain_sample < 3.0,
+        "Envelope should reach sustain level, got {}",
+        sustain_sample
+    );
+
+    // Drop gate and allow release
+    if let Some(gate) = patch.sampleables.get("gate") {
+        let _ = gate.update_param(&"source".to_string(), &InternalParam::Volts { value: 0.0 });
+    }
+
+    for _ in 0..600 {
+        process_frame(&patch);
+    }
+
+    let released_sample = get_sample(&patch, "env", "output");
+    assert!(released_sample < 0.1, "Envelope should release to near zero, got {}", released_sample);
+}
+
 // Test multiple oscillators chained
 #[test]
 fn test_frequency_modulation() {
