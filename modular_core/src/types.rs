@@ -16,6 +16,27 @@ lazy_static! {
     pub static ref ROOT_OUTPUT_PORT: String = "output".into();
 }
 
+/// Fixed channel count for all DSP processing
+pub const NUM_CHANNELS: usize = 16;
+pub type ChannelBuffer = [f32; NUM_CHANNELS];
+
+/// Utility trait to convert different sample representations into a fixed channel buffer
+pub trait IntoChannelBuffer {
+    fn into_buffer(&self) -> ChannelBuffer;
+}
+
+impl IntoChannelBuffer for ChannelBuffer {
+    fn into_buffer(&self) -> ChannelBuffer {
+        *self
+    }
+}
+
+impl IntoChannelBuffer for f32 {
+    fn into_buffer(&self) -> ChannelBuffer {
+        [*self; NUM_CHANNELS]
+    }
+}
+
 pub trait Params {
     fn get_params_state(&self) -> HashMap<String, Param>;
     fn update_param(
@@ -31,7 +52,7 @@ pub trait Sampleable: Send + Sync {
     fn get_id(&self) -> &String;
     fn tick(&self) -> ();
     fn update(&self) -> ();
-    fn get_sample(&self, port: &String) -> Result<f32>;
+    fn get_sample(&self, port: &String, buffer: &mut ChannelBuffer) -> Result<()>;
     fn get_state(&self) -> ModuleState;
     fn update_param(&self, param_name: &String, new_param: &InternalParam) -> Result<()>;
 }
@@ -57,16 +78,16 @@ pub fn smooth_value(current: f32, target: f32) -> f32 {
     current * SMOOTHING_COEFF + target * (1.0 - SMOOTHING_COEFF)
 }
 
-#[derive(Clone)]
+pub fn smooth_buffer(current: &mut ChannelBuffer, target: &ChannelBuffer) {
+    for i in 0..NUM_CHANNELS {
+        current[i] = smooth_value(current[i], target[i]);
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum InternalParam {
     Volts {
-        value: f32,
-    },
-    Hz {
-        value: f32,
-    },
-    Note {
-        value: u8,
+        value: ChannelBuffer,
     },
     Cable {
         module: sync::Weak<Box<dyn Sampleable>>,
@@ -78,34 +99,11 @@ pub enum InternalParam {
     Disconnected,
 }
 
-impl std::fmt::Debug for InternalParam {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            InternalParam::Volts { value } => {
-                f.debug_struct("Value").field("value", value).finish()
-            }
-            InternalParam::Hz { value } => f.debug_struct("Hz").field("value", value).finish(),
-            InternalParam::Note { value } => f.debug_struct("Note").field("value", value).finish(),
-            InternalParam::Cable { port, .. } => {
-                f.debug_struct("Cable").field("port", port).finish()
-            }
-            InternalParam::Track { .. } => f.debug_struct("Track").finish(),
-            InternalParam::Disconnected => write!(f, "Disconnected"),
-        }
-    }
-}
-
 impl PartialEq for InternalParam {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (InternalParam::Volts { value: value1 }, InternalParam::Volts { value: value2 }) => {
-                *value1 == *value2
-            }
-            (InternalParam::Hz { value: value1 }, InternalParam::Hz { value: value2 }) => {
-                *value1 == *value2
-            }
-            (InternalParam::Note { value: value1 }, InternalParam::Note { value: value2 }) => {
-                *value1 == *value2
+                value1 == value2
             }
             (
                 InternalParam::Cable {
@@ -116,14 +114,9 @@ impl PartialEq for InternalParam {
                     module: module2,
                     port: port2,
                 },
-            ) => {
-                *port1 == *port2
-                    && module1.upgrade().map(|module| module.get_id().clone())
-                        == module2.upgrade().map(|module| module.get_id().clone())
-            }
+            ) => port1 == port2 && module1.ptr_eq(&module2),
             (InternalParam::Track { track: track1 }, InternalParam::Track { track: track2 }) => {
-                track1.upgrade().map(|track| track.id.clone())
-                    == track2.upgrade().map(|track| track.id.clone())
+                track1.ptr_eq(&track2)
             }
             (InternalParam::Disconnected, InternalParam::Disconnected) => true,
             _ => false,
@@ -132,11 +125,26 @@ impl PartialEq for InternalParam {
 }
 
 impl InternalParam {
+    /// Convenience constructor for a constant voltage value across all channels.
+    pub fn volts(value: f32) -> Self {
+        InternalParam::Volts {
+            value: [value; NUM_CHANNELS],
+        }
+    }
+
+    /// Convenience helper to build an InternalParam from serialized params.
+    ///
+    /// Historical note: older call sites passed a slice but only used a single value.
+    pub fn from_params(params: &[Param], patch: &Patch) -> InternalParam {
+        match params.first() {
+            Some(p) => p.to_internal_param(patch),
+            None => InternalParam::Disconnected,
+        }
+    }
+
     pub fn to_param(&self) -> Param {
         match self {
             InternalParam::Volts { value } => Param::Value { value: *value },
-            InternalParam::Hz { value } => Param::Hz { value: *value },
-            InternalParam::Note { value } => Param::Note { value: *value },
             InternalParam::Cable { module, port } => match module.upgrade() {
                 Some(module) => Param::Cable {
                     module: module.get_id().clone(),
@@ -153,29 +161,30 @@ impl InternalParam {
             InternalParam::Disconnected => Param::Disconnected,
         }
     }
-    pub fn get_value(&self) -> f32 {
-        self.get_value_or(0.0)
+    pub fn get_value(&self, buffer: &mut ChannelBuffer) {
+        self.get_value_or(buffer, &ChannelBuffer::default());
     }
-    pub fn get_value_or(&self, default: f32) -> f32 {
-        self.get_value_optional().unwrap_or(default)
+    pub fn get_value_or(&self, buffer: &mut ChannelBuffer, default: &ChannelBuffer) {
+        match self.get_value_optional(buffer) {
+            Some(_) => (),
+            None => *buffer = *default,
+        }
     }
-    fn get_value_optional(&self) -> Option<f32> {
+    fn get_value_optional(&self, buffer: &mut ChannelBuffer) -> Option<()> {
         match self {
-            InternalParam::Volts { value } => Some(*value),
-            InternalParam::Hz { value } => Some(((*value).max(0.0) / 27.5).log2()),
-            InternalParam::Note { value } => Some((*value as f32 - 21.0) / 12.0),
+            InternalParam::Volts { value } => {
+                *buffer = *value;
+                Some(())
+            }
             InternalParam::Cable { module, port } => match module.upgrade() {
-                Some(module) => match module.get_sample(port) {
-                    Ok(sample) => Some(sample),
+                Some(module) => match module.get_sample(port, buffer) {
+                    Ok(()) => Some(()),
                     Err(_) => None,
                 },
                 None => None,
             },
             InternalParam::Track { track } => match track.upgrade() {
-                Some(track) => match track.get_value_optional() {
-                    Some(sample) => Some(sample),
-                    None => None,
-                },
+                Some(track) => track.get_value_optional(buffer),
                 None => None,
             },
             InternalParam::Disconnected => None,
@@ -197,9 +206,7 @@ impl Default for InternalParam {
 )]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub enum Param {
-    Value { value: f32 },
-    Hz { value: f32 },
-    Note { value: u8 },
+    Value { value: ChannelBuffer },
     Cable { module: String, port: String },
     Track { track: String },
     Disconnected,
@@ -209,8 +216,6 @@ impl Param {
     pub fn to_internal_param(&self, patch: &Patch) -> InternalParam {
         match self {
             Param::Value { value } => InternalParam::Volts { value: *value },
-            Param::Hz { value } => InternalParam::Hz { value: *value },
-            Param::Note { value } => InternalParam::Note { value: *value },
             Param::Cable { module, port } => match patch.sampleables.get(module) {
                 Some(module) => InternalParam::Cable {
                     module: Arc::downgrade(module),
@@ -323,9 +328,9 @@ impl PartialOrd for Keyframe {
     }
 }
 
-fn normalize_playhead_value_to_t(value: f32) -> f32 {
+fn normalize_playhead_value_to_t(value: &ChannelBuffer) -> ChannelBuffer {
     // Map [-5.0, 5.0] linearly to [0.0, 1.0]
-    ((value + 5.0) / 10.0).clamp(0.0, 1.0)
+    value.map(|v| ((v + 5.0) / 10.0).clamp(0.0, 1.0))
 }
 
 struct InnerTrack {
@@ -383,76 +388,85 @@ impl InnerTrack {
         }
     }
 
-    /// Tick the track for the current playhead value and return the interpolated sample.
+    /// Tick the track for the current playhead value for a given channel and return the interpolated sample.
     ///
     /// `playhead_value` is expected to be in the range [-5.0, 5.0]. It will be
     /// mapped linearly to a normalized time in [0.0, 1.0].
-    pub fn tick(&mut self, playhead_value: Option<f32>) -> Option<f32> {
-        let playhead_value = playhead_value?;
+    pub fn tick(&mut self, playhead_value: &ChannelBuffer, buffer: &mut ChannelBuffer) -> () {
         if self.keyframes.is_empty() {
-            return None;
+            buffer.fill(0.0);
         }
 
         let t = normalize_playhead_value_to_t(playhead_value);
 
         // Single keyframe: always return its value
         if self.keyframes.len() == 1 {
-            return self.keyframes[0].param.get_value_optional();
+            self.keyframes[0].param.get_value(buffer);
+            return;
         }
 
-        // Clamp to first/last keyframe times
-        let first = &self.keyframes[0];
-        if t <= first.time {
-            return first.param.get_value_optional();
-        }
-        let last = self.keyframes.last().unwrap();
-        if t >= last.time {
-            return last.param.get_value_optional();
+        let mut buffers = vec![ChannelBuffer::default(); self.keyframes.len()];
+        let default_value = ChannelBuffer::default();
+        for (i, kf) in self.keyframes.iter().enumerate() {
+            kf.param.get_value_or(&mut buffers[i], &default_value);
         }
 
-        // Find the segment [curr, next] such that curr.time <= t <= next.time
-        // Use partition_point to find the first keyframe with time > t
-        // Then back up one to get the last keyframe with time <= t
-        let idx = self.keyframes.partition_point(|kf| kf.time <= t);
+        for (i, sample) in buffer.iter_mut().enumerate() {
+            let t = t[i];
 
-        // partition_point returns the index of the first element > t
-        // So idx-1 is the last element <= t, which is the start of our interpolation segment
-        let idx = if idx > 0 { idx - 1 } else { 0 };
-
-        // Ensure idx is valid for the segment [idx, idx+1]
-        let idx = idx.min(self.keyframes.len() - 2);
-
-        let curr = &self.keyframes[idx];
-        let next = &self.keyframes[idx + 1];
-
-        let curr_value = curr.param.get_value_optional()?;
-        let next_value = next.param.get_value_optional()?;
-
-        let time_range = (next.time - curr.time).max(f32::EPSILON);
-        let mut local_t = (t - curr.time) / time_range;
-        local_t = local_t.clamp(0.0, 1.0);
-
-        let interpolated = match self.interpolation_type {
-            InterpolationType::Linear => curr_value + (next_value - curr_value) * local_t,
-            InterpolationType::Step => curr_value,
-            InterpolationType::Cubic => {
-                let t2 = if local_t < 0.5 {
-                    2.0 * local_t * local_t
-                } else {
-                    1.0 - (-2.0 * local_t + 2.0).powi(2) / 2.0
-                };
-                curr_value + (next_value - curr_value) * t2
+            // Clamp to first/last keyframe times
+            let first = &self.keyframes[0];
+            if t <= first.time {
+                *sample = buffers[0][i];
+                continue;
             }
-            InterpolationType::Exponential => {
-                if curr_value > 0.0 && next_value > 0.0 {
-                    curr_value * (next_value / curr_value).powf(local_t)
-                } else {
-                    curr_value + (next_value - curr_value) * local_t
+            let last = self.keyframes.last().unwrap();
+            if t >= last.time {
+                *sample = buffers.last().unwrap()[i];
+                continue;
+            }
+
+            // Find the segment [curr, next] such that curr.time <= t <= next.time
+            // Use partition_point to find the first keyframe with time > t
+            // Then back up one to get the last keyframe with time <= t
+            let idx = self.keyframes.partition_point(|kf| kf.time <= t);
+
+            // partition_point returns the index of the first element > t
+            // So idx-1 is the last element <= t, which is the start of our interpolation segment
+            let idx = if idx > 0 { idx - 1 } else { 0 };
+
+            // Ensure idx is valid for the segment [idx, idx+1]
+            let idx = idx.min(self.keyframes.len() - 2);
+
+            let (curr, curr_value) = (&self.keyframes[idx], buffers[idx][i]);
+            let (next, next_value) = (&self.keyframes[idx + 1], buffers[idx + 1][i]);
+
+            let time_range = (next.time - curr.time).max(f32::EPSILON);
+            let mut local_t = (t - curr.time) / time_range;
+            local_t = local_t.clamp(0.0, 1.0);
+
+            let interpolated = match self.interpolation_type {
+                InterpolationType::Linear => curr_value + (next_value - curr_value) * local_t,
+                InterpolationType::Step => curr_value,
+                InterpolationType::Cubic => {
+                    let t2 = if local_t < 0.5 {
+                        2.0 * local_t * local_t
+                    } else {
+                        1.0 - (-2.0 * local_t + 2.0).powi(2) / 2.0
+                    };
+                    curr_value + (next_value - curr_value) * t2
                 }
-            }
-        };
+                InterpolationType::Exponential => {
+                    if curr_value > 0.0 && next_value > 0.0 {
+                        curr_value * (next_value / curr_value).powf(local_t)
+                    } else {
+                        curr_value + (next_value - curr_value) * local_t
+                    }
+                }
+            };
 
-        Some(interpolated)
+            *sample = interpolated;
+        }
     }
 }
 
@@ -460,7 +474,7 @@ pub struct InternalTrack {
     id: String,
     inner_track: Mutex<InnerTrack>,
     playhead_param: Mutex<InternalParam>,
-    sample: Mutex<Option<f32>>,
+    samples: Mutex<ChannelBuffer>,
 }
 
 impl InternalTrack {
@@ -473,7 +487,7 @@ impl InternalTrack {
             id,
             inner_track: Mutex::new(InnerTrack::new(interpolation_type)),
             playhead_param: Mutex::new(playhead_param),
-            sample: Mutex::new(None),
+            samples: Mutex::new([0.0; NUM_CHANNELS]),
         }
     }
 
@@ -508,26 +522,27 @@ impl InternalTrack {
     pub fn tick(&self) {
         // Use try_lock in audio hot path to avoid timeout overhead
         // If we can't acquire locks, keep the previous sample value
-        let playhead_value = match self.playhead_param.try_lock() {
-            Some(guard) => guard.get_value_optional(),
-            None => return, // Keep previous sample if locked
-        };
 
-        let sample = match self.inner_track.try_lock() {
-            Some(mut guard) => guard.tick(playhead_value),
-            None => return, // Keep previous sample if locked
-        };
-
-        if let Some(mut sample_guard) = self.sample.try_lock() {
-            *sample_guard = sample;
+        if let (Some(mut samples_guard), Some(mut inner_guard), Some(playhead_guard)) = (
+            self.samples.try_lock(),
+            self.inner_track.try_lock(),
+            self.playhead_param.try_lock(),
+        ) {
+            let mut playhead_values = ChannelBuffer::default();
+            playhead_guard.get_value(&mut playhead_values);
+            inner_guard.tick(&playhead_values, &mut samples_guard)
         }
-        // If sample lock fails, keep previous value (graceful degradation)
+        // If locks fail, keep previous values (graceful degradation)
     }
 
-    pub fn get_value_optional(&self) -> Option<f32> {
-        // Use try_lock in audio hot path - return None if locked
-        // sample is Mutex<Option<f32>>, so *guard is Option<f32>
-        self.sample.try_lock().and_then(|guard| *guard)
+    pub fn get_value_optional(&self, buffer: &mut ChannelBuffer) -> Option<()> {
+        match self.samples.try_lock() {
+            Some(guard) => {
+                *buffer = *guard;
+                Some(())
+            }
+            None => None,
+        }
     }
 
     pub fn to_track(&self) -> Track {
@@ -682,65 +697,70 @@ mod tests {
     // Tests for InternalParam
     #[test]
     fn test_internal_param_value_get_value() {
-        let param = InternalParam::Volts { value: 3.5 };
-        assert!((param.get_value() - 3.5).abs() < 0.0001);
+        let param = InternalParam::Volts {
+            value: [3.5; NUM_CHANNELS],
+        };
+        let mut buffer = [0.0; NUM_CHANNELS];
+        param.get_value(&mut buffer);
+        for value in buffer {
+            assert!((value - 3.5).abs() < 0.0001f32);
+        }
     }
 
     #[test]
     fn test_internal_param_value_get_value_or() {
-        let param = InternalParam::Volts { value: 2.0 };
-        assert!((param.get_value_or(5.0) - 2.0).abs() < 0.0001);
+        let param = InternalParam::Volts {
+            value: [2.0; NUM_CHANNELS],
+        };
+        let mut buffer = [0.0; NUM_CHANNELS];
+        param.get_value_or(&mut buffer, &[5.0; NUM_CHANNELS]);
+        for value in buffer {
+            assert!((value - 2.0).abs() < 0.0001f32);
+        }
     }
 
     #[test]
     fn test_internal_param_disconnected_get_value_or() {
         let param = InternalParam::Disconnected;
-        assert!((param.get_value_or(5.0) - 5.0).abs() < 0.0001);
+        let mut buffer = [0.0; NUM_CHANNELS];
+        param.get_value_or(&mut buffer, &[5.0; NUM_CHANNELS]);
+        for value in buffer {
+            assert!((value - 5.0).abs() < 0.0001);
+        }
     }
 
     #[test]
     fn test_internal_param_disconnected_get_value() {
         let param = InternalParam::Disconnected;
-        assert!((param.get_value() - 0.0).abs() < 0.0001);
-    }
-
-    #[test]
-    fn test_internal_param_note_conversion() {
-        // MIDI note 69 = A4 = 440Hz, which is 4 v/oct
-        let param = InternalParam::Note { value: 69 };
-        let value = param.get_value();
-        // (69 - 21) / 12 = 48 / 12 = 4.0
-        assert!((value - 4.0).abs() < 0.0001);
-    }
-
-    #[test]
-    fn test_internal_param_note_to_voct_middle_c() {
-        // MIDI note 60 = C4
-        let param = InternalParam::Note { value: 60 };
-        let value = param.get_value();
-        // (60 - 21) / 12 = 39 / 12 = 3.25
-        assert!((value - 3.25).abs() < 0.0001);
+        let mut buffer = [0.0; NUM_CHANNELS];
+        param.get_value(&mut buffer);
+        for value in buffer {
+            assert!((value - 0.0).abs() < 0.0001);
+        }
     }
 
     #[test]
     fn test_internal_param_default() {
         let param = InternalParam::default();
-        assert!(matches!(param, InternalParam::Disconnected));
+        assert!(param == InternalParam::Disconnected);
     }
 
     // Tests for InternalParam to Param conversion
     #[test]
     fn test_internal_param_value_to_param() {
-        let internal = InternalParam::Volts { value: 1.5 };
+        let internal = InternalParam::Volts {
+            value: [1.5; NUM_CHANNELS],
+        };
         let param = internal.to_param();
-        assert!(matches!(param, Param::Value { value } if (value - 1.5).abs() < 0.0001));
-    }
 
-    #[test]
-    fn test_internal_param_note_to_param() {
-        let internal = InternalParam::Note { value: 60 };
-        let param = internal.to_param();
-        assert!(matches!(param, Param::Note { value: 60 }));
+        assert!(matches!(
+            param,
+            Param::Value { value } if (
+                value.iter().all(
+                    |v| (v - 1.5).abs() < 0.0001
+                )
+            )
+        ));
     }
 
     #[test]
@@ -753,18 +773,15 @@ mod tests {
     // Tests for InternalParam equality
     #[test]
     fn test_internal_param_value_equality() {
-        let a = InternalParam::Volts { value: 1.0 };
-        let b = InternalParam::Volts { value: 1.0 };
-        let c = InternalParam::Volts { value: 2.0 };
-        assert_eq!(a, b);
-        assert_ne!(a, c);
-    }
-
-    #[test]
-    fn test_internal_param_note_equality() {
-        let a = InternalParam::Note { value: 60 };
-        let b = InternalParam::Note { value: 60 };
-        let c = InternalParam::Note { value: 72 };
+        let a = InternalParam::Volts {
+            value: [1.0; NUM_CHANNELS],
+        };
+        let b = InternalParam::Volts {
+            value: [1.0; NUM_CHANNELS],
+        };
+        let c = InternalParam::Volts {
+            value: [2.0; NUM_CHANNELS],
+        };
         assert_eq!(a, b);
         assert_ne!(a, c);
     }
@@ -776,30 +793,15 @@ mod tests {
         assert_eq!(a, b);
     }
 
-    #[test]
-    fn test_internal_param_different_types_not_equal() {
-        let value = InternalParam::Volts { value: 60.0 };
-        let note = InternalParam::Note { value: 60 };
-        let disconnected = InternalParam::Disconnected;
-        assert_ne!(value.clone(), note.clone());
-        assert_ne!(value.clone(), disconnected.clone());
-        assert_ne!(note, disconnected);
-    }
-
     // Tests for Param serialization
     #[test]
     fn test_param_value_serialization() {
-        let param = Param::Value { value: 4.0 };
+        let param = Param::Value {
+            value: [4.0; NUM_CHANNELS],
+        };
         let json = serde_json::to_string(&param).unwrap();
         assert!(json.contains("value"));
         assert!(json.contains("4.0") || json.contains("4"));
-    }
-
-    #[test]
-    fn test_param_note_serialization() {
-        let param = Param::Note { value: 69 };
-        let json = serde_json::to_string(&param).unwrap();
-        assert!(json.contains("69"));
     }
 
     #[test]
@@ -815,7 +817,9 @@ mod tests {
 
     #[test]
     fn test_param_deserialization_roundtrip() {
-        let original = Param::Value { value: 3.14 };
+        let original = Param::Value {
+            value: [3.14; NUM_CHANNELS],
+        };
         let json = serde_json::to_string(&original).unwrap();
         let restored: Param = serde_json::from_str(&json).unwrap();
         assert_eq!(original, restored);
@@ -828,7 +832,9 @@ mod tests {
             "kf-1".to_string(),
             "track-1".to_string(),
             0.5,
-            Param::Value { value: 1.0 },
+            Param::Value {
+                value: [1.0; NUM_CHANNELS],
+            },
         );
         assert_eq!(kf.id, "kf-1");
         assert_eq!(kf.track_id, "track-1");
@@ -841,7 +847,9 @@ mod tests {
             "kf-abc".to_string(),
             "track-1".to_string(),
             0.1,
-            Param::Value { value: 2.0 },
+            Param::Value {
+                value: [2.0; NUM_CHANNELS],
+            },
         );
         assert_eq!(kf.get_id(), &"kf-abc".to_string());
     }
@@ -852,13 +860,17 @@ mod tests {
             "kf-1".to_string(),
             "track-1".to_string(),
             0.1,
-            Param::Value { value: 1.0 },
+            Param::Value {
+                value: [1.0; NUM_CHANNELS],
+            },
         );
         let kf2 = Keyframe::new(
             "kf-2".to_string(),
             "track-1".to_string(),
             0.2,
-            Param::Value { value: 2.0 },
+            Param::Value {
+                value: [2.0; NUM_CHANNELS],
+            },
         );
         assert!(kf1 < kf2);
     }
@@ -867,7 +879,12 @@ mod tests {
     #[test]
     fn test_module_state_serialization() {
         let mut params = HashMap::new();
-        params.insert("freq".to_string(), Param::Value { value: 4.0 });
+        params.insert(
+            "freq".to_string(),
+            Param::Value {
+                value: [4.0; NUM_CHANNELS],
+            },
+        );
 
         let state = ModuleState {
             id: "sine-1".to_string(),
@@ -883,10 +900,20 @@ mod tests {
     #[test]
     fn test_module_state_equality() {
         let mut params1 = HashMap::new();
-        params1.insert("freq".to_string(), Param::Value { value: 4.0 });
+        params1.insert(
+            "freq".to_string(),
+            Param::Value {
+                value: [4.0; NUM_CHANNELS],
+            },
+        );
 
         let mut params2 = HashMap::new();
-        params2.insert("freq".to_string(), Param::Value { value: 4.0 });
+        params2.insert(
+            "freq".to_string(),
+            Param::Value {
+                value: [4.0; NUM_CHANNELS],
+            },
+        );
 
         let state1 = ModuleState {
             id: "sine-1".to_string(),
@@ -1058,7 +1085,9 @@ mod tests {
             "test".to_string(),
             "track".to_string(),
             0.5,
-            Param::Value { value: 1.0 },
+            Param::Value {
+                value: [1.0; NUM_CHANNELS],
+            },
         );
         let json = serde_json::to_string(&kf).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -1069,13 +1098,15 @@ mod tests {
     fn test_track_serialization() {
         let track = Track {
             id: "test-track".to_string(),
-            playhead: Param::Value { value: 0.0 },
+            playhead: Param::Value {
+                value: [0.0; NUM_CHANNELS],
+            },
             interpolation_type: InterpolationType::Linear,
             keyframes: vec![],
         };
         let json = serde_json::to_string(&track).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["id"].as_str().unwrap(), "test-track");
-        assert_eq!(v["interpolation_type"].as_str().unwrap(), "linear");
+        assert_eq!(v["interpolationType"].as_str().unwrap(), "linear");
     }
 }

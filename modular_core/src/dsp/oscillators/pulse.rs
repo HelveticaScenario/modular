@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use crate::{dsp::utils::clamp, types::InternalParam};
+use crate::{dsp::utils::clamp, types::{ChannelBuffer, InternalParam, NUM_CHANNELS}};
 
 #[derive(Default, Params)]
 struct PulseOscillatorParams {
@@ -15,54 +15,61 @@ struct PulseOscillatorParams {
 #[module("pulse", "Pulse/Square oscillator with PWM")]
 pub struct PulseOscillator {
     #[output("output", "signal output", default)]
-    sample: f32,
-    phase: f32,
-    smoothed_freq: f32,
-    smoothed_width: f32,
+    sample: ChannelBuffer,
+    phase: ChannelBuffer,
+    smoothed_freq: ChannelBuffer,
+    smoothed_width: ChannelBuffer,
     params: PulseOscillatorParams,
 }
 
 impl PulseOscillator {
     fn update(&mut self, sample_rate: f32) -> () {
-        let target_freq = clamp(-10.0, 10.0, self.params.freq.get_value_or(4.0));
-        let base_width = self.params.width.get_value_or(2.5);
-        let pwm = self.params.pwm.get_value_or(0.0);
-        let target_width = (base_width + pwm).clamp(0.0, 5.0);
-        
-        self.smoothed_freq = crate::types::smooth_value(self.smoothed_freq, target_freq);
-        self.smoothed_width = crate::types::smooth_value(self.smoothed_width, target_width);
-        
-        let voltage = self.smoothed_freq;
-        let frequency = 27.5f32 * 2.0f32.powf(voltage);
-        let phase_increment = frequency / sample_rate;
-        
-        // Pulse width (0.0 to 1.0, 0.5 is square wave)
-        let pulse_width = (self.smoothed_width / 5.0).clamp(0.01, 0.99);
-        
-        self.phase += phase_increment;
-        
-        // Wrap phase
-        if self.phase >= 1.0 {
-            self.phase -= 1.0;
+        let mut target_freq = [4.0; NUM_CHANNELS];
+        let mut base_width = [2.5; NUM_CHANNELS];
+        let mut pwm = ChannelBuffer::default();
+
+        self.params
+            .freq
+            .get_value_or(&mut target_freq, &[4.0; NUM_CHANNELS]);
+        self.params
+            .width
+            .get_value_or(&mut base_width, &[2.5; NUM_CHANNELS]);
+        self.params.pwm.get_value(&mut pwm);
+
+        for i in 0..NUM_CHANNELS {
+            target_freq[i] = clamp(-10.0, 10.0, target_freq[i]);
+            let w = (base_width[i] + pwm[i]).clamp(0.0, 5.0);
+            base_width[i] = w;
         }
-        
-        // Naive pulse wave
-        let mut naive_pulse = if self.phase < pulse_width { 1.0 } else { -1.0 };
-        
-        // Apply PolyBLEP at the rising edge (phase = 0)
-        naive_pulse += poly_blep_pulse(self.phase, phase_increment);
-        
-        // Apply PolyBLEP at the falling edge (phase = pulse_width)
-        naive_pulse -= poly_blep_pulse(
-            if self.phase >= pulse_width {
-                self.phase - pulse_width
-            } else {
-                self.phase - pulse_width + 1.0
-            },
-            phase_increment,
-        );
-        
-        self.sample = naive_pulse * 5.0;
+
+        crate::types::smooth_buffer(&mut self.smoothed_freq, &target_freq);
+        crate::types::smooth_buffer(&mut self.smoothed_width, &base_width);
+
+        let sr = sample_rate.max(1.0);
+        for i in 0..NUM_CHANNELS {
+            let voltage = self.smoothed_freq[i];
+            let frequency = 27.5f32 * voltage.exp2();
+            let phase_increment = frequency / sr;
+            let pulse_width = (self.smoothed_width[i] / 5.0).clamp(0.01, 0.99);
+
+            self.phase[i] += phase_increment;
+            if self.phase[i] >= 1.0 {
+                self.phase[i] -= self.phase[i].floor();
+            }
+
+            let mut naive_pulse = if self.phase[i] < pulse_width { 1.0 } else { -1.0 };
+            naive_pulse += poly_blep_pulse(self.phase[i], phase_increment);
+            naive_pulse -= poly_blep_pulse(
+                if self.phase[i] >= pulse_width {
+                    self.phase[i] - pulse_width
+                } else {
+                    self.phase[i] - pulse_width + 1.0
+                },
+                phase_increment,
+            );
+
+            self.sample[i] = naive_pulse * 5.0;
+        }
     }
 }
 

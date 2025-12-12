@@ -1,5 +1,8 @@
 use anyhow::{anyhow, Result};
-use crate::{dsp::utils::clamp, types::InternalParam};
+use crate::{
+    dsp::utils::{clamp, wrap},
+    types::{ChannelBuffer, InternalParam, NUM_CHANNELS},
+};
 
 #[derive(Default, Params)]
 struct SawOscillatorParams {
@@ -15,69 +18,74 @@ struct SawOscillatorParams {
 #[module("saw", "Sawtooth/Triangle/Ramp oscillator")]
 pub struct SawOscillator {
     #[output("output", "signal output", default)]
-    sample: f32,
-    phase: f32,
-    last_phase: f32,
-    smoothed_freq: f32,
-    smoothed_shape: f32,
+    sample: ChannelBuffer,
+    phase: ChannelBuffer,
+    last_phase: ChannelBuffer,
+    smoothed_freq: ChannelBuffer,
+    smoothed_shape: ChannelBuffer,
     params: SawOscillatorParams,
 }
 
 impl SawOscillator {
     fn update(&mut self, sample_rate: f32) -> () {
-        let target_shape = self.params.shape.get_value_or(0.0).clamp(0.0, 5.0);
-        self.smoothed_shape = crate::types::smooth_value(self.smoothed_shape, target_shape);
-        
-        // If phase input is connected, use it directly (for syncing)
-        let (current_phase, phase_increment) = if self.params.phase != InternalParam::Disconnected {
-            let phase_input = self.params.phase.get_value();
-            let wrapped_phase = crate::dsp::utils::wrap(0.0..1.0, phase_input);
-            // Calculate phase increment from phase change for PolyBLEP
-            let phase_inc = if wrapped_phase >= self.last_phase {
-                wrapped_phase - self.last_phase
+        let mut target_shape = ChannelBuffer::default();
+        let mut target_freq = [4.0; NUM_CHANNELS];
+        let mut phase_in = ChannelBuffer::default();
+
+        self.params.shape.get_value(&mut target_shape);
+        self.params
+            .freq
+            .get_value_or(&mut target_freq, &[4.0; NUM_CHANNELS]);
+        if self.params.phase != InternalParam::Disconnected {
+            self.params.phase.get_value(&mut phase_in);
+        }
+
+        for i in 0..NUM_CHANNELS {
+            target_shape[i] = target_shape[i].clamp(0.0, 5.0);
+            target_freq[i] = clamp(-10.0, 10.0, target_freq[i]);
+        }
+        crate::types::smooth_buffer(&mut self.smoothed_shape, &target_shape);
+        crate::types::smooth_buffer(&mut self.smoothed_freq, &target_freq);
+
+        let sr = sample_rate.max(1.0);
+        for i in 0..NUM_CHANNELS {
+            let (current_phase, phase_increment) = if self.params.phase != InternalParam::Disconnected {
+                let wrapped_phase = wrap(0.0..1.0, phase_in[i]);
+                let phase_inc = if wrapped_phase >= self.last_phase[i] {
+                    wrapped_phase - self.last_phase[i]
+                } else {
+                    wrapped_phase + (1.0 - self.last_phase[i])
+                };
+                self.phase[i] = wrapped_phase;
+                (wrapped_phase, phase_inc)
             } else {
-                wrapped_phase + (1.0 - self.last_phase)
+                let voltage = self.smoothed_freq[i];
+                let frequency = 27.5f32 * voltage.exp2();
+                let phase_increment = frequency / sr;
+                self.phase[i] += phase_increment;
+                if self.phase[i] >= 1.0 {
+                    self.phase[i] -= self.phase[i].floor();
+                }
+                (self.phase[i], phase_increment)
             };
-            (wrapped_phase, phase_inc)
-        } else {
-            // Normal frequency-driven oscillation
-            let target_freq = clamp(-10.0, 10.0, self.params.freq.get_value_or(4.0));
-            self.smoothed_freq = crate::types::smooth_value(self.smoothed_freq, target_freq);
-            
-            let voltage = self.smoothed_freq;
-            let frequency = 27.5f32 * 2.0f32.powf(voltage);
-            let phase_increment = frequency / sample_rate;
-            
-            self.phase += phase_increment;
-            
-            // Wrap phase
-            while self.phase >= 1.0 {
-                self.phase -= 1.0;
-            }
-            
-            (self.phase, phase_increment)
-        };
-        
-        self.last_phase = current_phase;
-        
-        // Shape parameter: 0 = saw, 2.5 = triangle, 5 = ramp (reversed saw)
-        let shape_norm = self.smoothed_shape / 5.0; // 0.0 to 1.0
-        
-        let output = if shape_norm < 0.5 {
-            // Blend from saw (0.0) to triangle (0.5)
-            let blend = shape_norm * 2.0;
-            let saw = generate_saw(current_phase, phase_increment);
-            let triangle = generate_triangle(current_phase, phase_increment);
-            saw * (1.0 - blend) + triangle * blend
-        } else {
-            // Blend from triangle (0.5) to ramp (1.0)
-            let blend = (shape_norm - 0.5) * 2.0;
-            let triangle = generate_triangle(current_phase, phase_increment);
-            let ramp = generate_ramp(current_phase, phase_increment);
-            triangle * (1.0 - blend) + ramp * blend
-        };
-        
-        self.sample = output * 5.0;
+
+            self.last_phase[i] = current_phase;
+
+            let shape_norm = self.smoothed_shape[i] / 5.0;
+            let output = if shape_norm < 0.5 {
+                let blend = shape_norm * 2.0;
+                let saw = generate_saw(current_phase, phase_increment);
+                let triangle = generate_triangle(current_phase, phase_increment);
+                saw * (1.0 - blend) + triangle * blend
+            } else {
+                let blend = (shape_norm - 0.5) * 2.0;
+                let triangle = generate_triangle(current_phase, phase_increment);
+                let ramp = generate_ramp(current_phase, phase_increment);
+                triangle * (1.0 - blend) + ramp * blend
+            };
+
+            self.sample[i] = output * 5.0;
+        }
     }
 }
 

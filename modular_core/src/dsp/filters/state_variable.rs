@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use crate::types::InternalParam;
+use crate::types::{ChannelBuffer, InternalParam, NUM_CHANNELS};
 
 #[derive(Default, Params)]
 struct StateVariableFilterParams {
@@ -15,49 +15,53 @@ struct StateVariableFilterParams {
 #[module("stateVariable", "State-variable filter with LP/BP/HP outputs")]
 pub struct StateVariableFilter {
     #[output("lowpass", "lowpass output")]
-    lowpass: f32,
+    lowpass: ChannelBuffer,
     #[output("bandpass", "bandpass output")]
-    bandpass: f32,
+    bandpass: ChannelBuffer,
     #[output("highpass", "highpass output")]
-    highpass: f32,
+    highpass: ChannelBuffer,
     // State variables
-    z1_low: f32,
-    z1_band: f32,
-    smoothed_cutoff: f32,
-    smoothed_resonance: f32,
+    z1_low: ChannelBuffer,
+    z1_band: ChannelBuffer,
+    smoothed_cutoff: ChannelBuffer,
+    smoothed_resonance: ChannelBuffer,
     params: StateVariableFilterParams,
 }
 
 impl StateVariableFilter {
     fn update(&mut self, sample_rate: f32) -> () {
-        let input = self.params.input.get_value();
-        let target_cutoff = self.params.cutoff.get_value_or(4.0);
-        let target_resonance = self.params.resonance.get_value_or(0.0);
-        
-        self.smoothed_cutoff = crate::types::smooth_value(self.smoothed_cutoff, target_cutoff);
-        self.smoothed_resonance = crate::types::smooth_value(self.smoothed_resonance, target_resonance);
-        
-        // Convert v/oct to frequency
-        let freq = 27.5f32 * 2.0f32.powf(self.smoothed_cutoff);
-        let freq_clamped = freq.min(sample_rate * 0.45).max(20.0);
-        
-        // Calculate filter coefficients
-        let f = 2.0 * (std::f32::consts::PI * freq_clamped / sample_rate).sin();
-        let q = 1.0 - (self.smoothed_resonance / 5.0 * 0.95);
-        let q_clamped = q.max(0.05);
-        
-        // State-variable filter topology
-        self.highpass = input - self.z1_low - q_clamped * self.z1_band;
-        self.bandpass = f * self.highpass + self.z1_band;
-        self.lowpass = f * self.bandpass + self.z1_low;
-        
-        // Update state
-        self.z1_band = self.bandpass;
-        self.z1_low = self.lowpass;
-        
-        // Soft clipping to prevent overflow
-        self.lowpass = self.lowpass.clamp(-5.0, 5.0);
-        self.bandpass = self.bandpass.clamp(-5.0, 5.0);
-        self.highpass = self.highpass.clamp(-5.0, 5.0);
+        let mut input = ChannelBuffer::default();
+        let mut target_cutoff = [4.0; NUM_CHANNELS];
+        let mut target_resonance = ChannelBuffer::default();
+
+        self.params.input.get_value(&mut input);
+        self.params
+            .cutoff
+            .get_value_or(&mut target_cutoff, &[4.0; NUM_CHANNELS]);
+        self.params.resonance.get_value(&mut target_resonance);
+
+        crate::types::smooth_buffer(&mut self.smoothed_cutoff, &target_cutoff);
+        crate::types::smooth_buffer(&mut self.smoothed_resonance, &target_resonance);
+
+        let sr = sample_rate.max(1.0);
+        for i in 0..NUM_CHANNELS {
+            let freq = 27.5f32 * self.smoothed_cutoff[i].exp2();
+            let freq_clamped = freq.min(sr * 0.45).max(20.0);
+
+            let f = 2.0 * (std::f32::consts::PI * freq_clamped / sr).sin();
+            let q = 1.0 - (self.smoothed_resonance[i] / 5.0 * 0.95);
+            let q_clamped = q.max(0.05);
+
+            let highpass = input[i] - self.z1_low[i] - q_clamped * self.z1_band[i];
+            let bandpass = f * highpass + self.z1_band[i];
+            let lowpass = f * bandpass + self.z1_low[i];
+
+            self.z1_band[i] = bandpass;
+            self.z1_low[i] = lowpass;
+
+            self.lowpass[i] = lowpass.clamp(-5.0, 5.0);
+            self.bandpass[i] = bandpass.clamp(-5.0, 5.0);
+            self.highpass[i] = highpass.clamp(-5.0, 5.0);
+        }
     }
 }

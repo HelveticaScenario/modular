@@ -284,10 +284,14 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                         is_default,
                         output_name_string,
                         quote! {
-                            outputs.#field_name = module.#field_name;
+                            outputs.#field_name.copy_from_slice(&module.#field_name);
                         },
                         quote! {
-                            #output_name => Ok(self.outputs.try_read_for(core::time::Duration::from_millis(10)).unwrap().#field_name),
+                            #output_name => {
+                                let guard = self.outputs.try_read_for(core::time::Duration::from_millis(10)).unwrap();
+                                buffer.copy_from_slice(&guard.#field_name);
+                                Ok(())
+                            },
                         },
                         quote! {
                             crate::types::OutputSchema {
@@ -335,9 +339,9 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     let params_struct_name = format_ident!("{}Params", name);
     let generated = quote! {
 
-        #[derive(Default)]
+        #[derive(Default, Clone, Copy)]
         struct #output_struct_name {
-            #(#output_names: f32,)*
+            #(#output_names: crate::types::ChannelBuffer,)*
         }
 
         #[derive(Default)]
@@ -368,7 +372,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 }
             }
 
-            fn get_sample(&self, port: &String) -> Result<f32> {
+            fn get_sample(&self, port: &String, buffer: &mut crate::types::ChannelBuffer) -> Result<()> {
                 self.update();
                 match port.as_str() {
                     #(#output_retrievals)*

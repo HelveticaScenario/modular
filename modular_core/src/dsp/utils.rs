@@ -398,7 +398,9 @@ mod tests {
     #[test]
     fn test_dcblock() {
         let mut d = DcBlock::new();
-        let steady = (0..100).fold(0.0, |_, _| d.process(1.0));
+        // DC blocker is a one-pole highpass with a relatively low cutoff;
+        // give it enough samples to settle.
+        let steady = (0..5000).fold(0.0, |_, _| d.process(1.0));
         assert!(steady.abs() < 0.2); // DC largely removed
     }
 

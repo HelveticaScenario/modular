@@ -1,6 +1,6 @@
 use crate::{
     dsp::utils::clamp,
-    types::{InternalParam, smooth_value},
+    types::{ChannelBuffer, InternalParam, NUM_CHANNELS, smooth_value},
 };
 use anyhow::{Result, anyhow};
 
@@ -37,28 +37,28 @@ impl Default for EnvelopeStage {
 #[module("adsr", "ADSR envelope generator")]
 pub struct Adsr {
     #[output("output", "envelope output", default)]
-    sample: f32,
-    stage: EnvelopeStage,
-    current_level: f32,
-    gate_was_high: bool,
-    smoothed_attack: f32,
-    smoothed_decay: f32,
-    smoothed_release: f32,
-    smoothed_sustain: f32,
+    sample: ChannelBuffer,
+    stage: [EnvelopeStage; NUM_CHANNELS],
+    current_level: ChannelBuffer,
+    gate_was_high: [bool; NUM_CHANNELS],
+    smoothed_attack: ChannelBuffer,
+    smoothed_decay: ChannelBuffer,
+    smoothed_release: ChannelBuffer,
+    smoothed_sustain: ChannelBuffer,
     params: AdsrParams,
 }
 
 impl Default for Adsr {
     fn default() -> Self {
         Self {
-            sample: 0.0,
-            stage: EnvelopeStage::Idle,
-            current_level: 0.0,
-            gate_was_high: false,
-            smoothed_attack: 0.01,
-            smoothed_decay: 0.1,
-            smoothed_release: 0.1,
-            smoothed_sustain: 3.5,
+            sample: ChannelBuffer::default(),
+            stage: [EnvelopeStage::Idle; NUM_CHANNELS],
+            current_level: ChannelBuffer::default(),
+            gate_was_high: [false; NUM_CHANNELS],
+            smoothed_attack: [0.01; NUM_CHANNELS],
+            smoothed_decay: [0.1; NUM_CHANNELS],
+            smoothed_release: [0.1; NUM_CHANNELS],
+            smoothed_sustain: [3.5; NUM_CHANNELS],
             params: AdsrParams::default(),
         }
     }
@@ -66,83 +66,103 @@ impl Default for Adsr {
 
 impl Adsr {
     fn update(&mut self, sample_rate: f32) -> () {
-        // Smooth parameter targets to avoid clicks when values change
-        let target_attack = clamp(0.0, 10.0, self.params.attack.get_value_or(0.01));
-        let target_decay = clamp(0.0, 10.0, self.params.decay.get_value_or(0.1));
-        let target_release = clamp(0.0, 10.0, self.params.release.get_value_or(0.2));
-        let target_sustain = clamp(0.0, 5.0, self.params.sustain.get_value_or(3.5));
+        let mut target_attack = [0.01; NUM_CHANNELS];
+        let mut target_decay = [0.1; NUM_CHANNELS];
+        let mut target_release = [0.2; NUM_CHANNELS];
+        let mut target_sustain = [3.5; NUM_CHANNELS];
+        let mut gate = ChannelBuffer::default();
 
-        self.smoothed_attack = smooth_value(self.smoothed_attack, target_attack);
-        self.smoothed_decay = smooth_value(self.smoothed_decay, target_decay);
-        self.smoothed_release = smooth_value(self.smoothed_release, target_release);
-        self.smoothed_sustain = smooth_value(self.smoothed_sustain, target_sustain);
+        self.params
+            .attack
+            .get_value_or(&mut target_attack, &[0.01; NUM_CHANNELS]);
+        self.params
+            .decay
+            .get_value_or(&mut target_decay, &[0.1; NUM_CHANNELS]);
+        self.params
+            .release
+            .get_value_or(&mut target_release, &[0.2; NUM_CHANNELS]);
+        self.params
+            .sustain
+            .get_value_or(&mut target_sustain, &[3.5; NUM_CHANNELS]);
+        self.params.gate.get_value(&mut gate);
 
-        let gate_on = self.params.gate.get_value() > 2.5;
+        let sr = sample_rate.max(1.0);
+        for i in 0..NUM_CHANNELS {
+            let ta = clamp(0.0, 10.0, target_attack[i]);
+            let td = clamp(0.0, 10.0, target_decay[i]);
+            let tr = clamp(0.0, 10.0, target_release[i]);
+            let ts = clamp(0.0, 5.0, target_sustain[i]);
 
-        if gate_on && !self.gate_was_high {
-            self.stage = EnvelopeStage::Attack;
-        } else if !gate_on && self.gate_was_high {
-            self.stage = EnvelopeStage::Release;
+            self.smoothed_attack[i] = smooth_value(self.smoothed_attack[i], ta);
+            self.smoothed_decay[i] = smooth_value(self.smoothed_decay[i], td);
+            self.smoothed_release[i] = smooth_value(self.smoothed_release[i], tr);
+            self.smoothed_sustain[i] = smooth_value(self.smoothed_sustain[i], ts);
+
+            let gate_on = gate[i] > 2.5;
+            if gate_on && !self.gate_was_high[i] {
+                self.stage[i] = EnvelopeStage::Attack;
+            } else if !gate_on && self.gate_was_high[i] {
+                self.stage[i] = EnvelopeStage::Release;
+            }
+            self.gate_was_high[i] = gate_on;
+
+            let sustain_level = (self.smoothed_sustain[i] / 5.0).clamp(0.0, 1.0);
+            match self.stage[i] {
+                EnvelopeStage::Idle => {
+                    self.current_level[i] = 0.0;
+                }
+                EnvelopeStage::Attack => {
+                    if self.smoothed_attack[i] <= 0.0001 {
+                        self.current_level[i] = 1.0;
+                        self.stage[i] = EnvelopeStage::Decay;
+                    } else {
+                        let step = 1.0 / (self.smoothed_attack[i] * sr);
+                        self.current_level[i] += step;
+                        if self.current_level[i] >= 1.0 {
+                            self.current_level[i] = 1.0;
+                            self.stage[i] = EnvelopeStage::Decay;
+                        }
+                    }
+                }
+                EnvelopeStage::Decay => {
+                    if self.smoothed_decay[i] <= 0.0001 || self.current_level[i] <= sustain_level {
+                        self.current_level[i] = sustain_level;
+                        self.stage[i] = EnvelopeStage::Sustain;
+                    } else {
+                        let step = (1.0 - sustain_level) / (self.smoothed_decay[i] * sr);
+                        self.current_level[i] = (self.current_level[i] - step).max(sustain_level);
+                        if self.current_level[i] <= sustain_level {
+                            self.current_level[i] = sustain_level;
+                            self.stage[i] = EnvelopeStage::Sustain;
+                        }
+                    }
+                }
+                EnvelopeStage::Sustain => {
+                    self.current_level[i] = sustain_level;
+                    if !gate_on {
+                        self.stage[i] = EnvelopeStage::Release;
+                    }
+                }
+                EnvelopeStage::Release => {
+                    if self.smoothed_release[i] <= 0.0001 {
+                        self.current_level[i] = 0.0;
+                        self.stage[i] = EnvelopeStage::Idle;
+                    } else {
+                        let step = self.current_level[i] / (self.smoothed_release[i] * sr);
+                        self.current_level[i] = (self.current_level[i] - step).max(0.0);
+                        if self.current_level[i] <= 0.00001 {
+                            self.current_level[i] = 0.0;
+                            self.stage[i] = if gate_on {
+                                EnvelopeStage::Attack
+                            } else {
+                                EnvelopeStage::Idle
+                            };
+                        }
+                    }
+                }
+            }
+
+            self.sample[i] = clamp(0.0, 5.0, self.current_level[i] * 5.0);
         }
-        self.gate_was_high = gate_on;
-
-        let sustain_level = (self.smoothed_sustain / 5.0).clamp(0.0, 1.0);
-
-        match self.stage {
-            EnvelopeStage::Idle => {
-                self.current_level = 0.0;
-            }
-            EnvelopeStage::Attack => {
-                if self.smoothed_attack <= 0.0001 {
-                    self.current_level = 1.0;
-                    self.stage = EnvelopeStage::Decay;
-                } else {
-                    let step = 1.0 / (self.smoothed_attack * sample_rate);
-                    self.current_level += step;
-                    if self.current_level >= 1.0 {
-                        self.current_level = 1.0;
-                        self.stage = EnvelopeStage::Decay;
-                    }
-                }
-            }
-            EnvelopeStage::Decay => {
-                if self.smoothed_decay <= 0.0001 || self.current_level <= sustain_level {
-                    self.current_level = sustain_level;
-                    self.stage = EnvelopeStage::Sustain;
-                } else {
-                    let step = (1.0 - sustain_level) / (self.smoothed_decay * sample_rate);
-                    self.current_level = (self.current_level - step).max(sustain_level);
-                    if self.current_level <= sustain_level {
-                        self.current_level = sustain_level;
-                        self.stage = EnvelopeStage::Sustain;
-                    }
-                }
-            }
-            EnvelopeStage::Sustain => {
-                self.current_level = sustain_level;
-                if !gate_on {
-                    self.stage = EnvelopeStage::Release;
-                }
-            }
-            EnvelopeStage::Release => {
-                if self.smoothed_release <= 0.0001 {
-                    self.current_level = 0.0;
-                    self.stage = EnvelopeStage::Idle;
-                } else {
-                    let step = self.current_level / (self.smoothed_release * sample_rate);
-                    self.current_level = (self.current_level - step).max(0.0);
-                    if self.current_level <= 0.00001 {
-                        self.current_level = 0.0;
-                        self.stage = if gate_on {
-                            EnvelopeStage::Attack
-                        } else {
-                            EnvelopeStage::Idle
-                        };
-                    }
-                }
-            }
-        }
-
-        self.sample = clamp(0.0, 5.0, self.current_level * 5.0);
     }
 }

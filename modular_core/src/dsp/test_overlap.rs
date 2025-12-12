@@ -1,8 +1,8 @@
 // Test module to verify that overlapping parameter and output names
 // produce a runtime panic when the schema is created.
 
-use anyhow::{anyhow, Result};
-use crate::types::InternalParam;
+use crate::types::{ChannelBuffer, InternalParam, NUM_CHANNELS};
+use anyhow::{Result, anyhow};
 
 #[derive(Default, Params)]
 struct TestOverlapParams {
@@ -14,13 +14,13 @@ struct TestOverlapParams {
 #[module("test-overlap", "Test module with overlapping names")]
 pub struct TestOverlap {
     #[output("output", "this conflicts with the param name", default)]
-    output: f32,
+    output: ChannelBuffer,
     params: TestOverlapParams,
 }
 
 impl TestOverlap {
     fn update(&mut self, _sample_rate: f32) {
-        self.output = 1.0;
+        self.output = [1.0; NUM_CHANNELS];
     }
 }
 
@@ -36,4 +36,3 @@ mod tests {
         let _schema = TestOverlap::get_schema();
     }
 }
-

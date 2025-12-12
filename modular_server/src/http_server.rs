@@ -489,7 +489,7 @@ async fn apply_patch(
                 // Create new track shell with a disconnected playhead param
                 println!("Creating track: {}", track.id);
                 let default_playhead_param =
-                    modular_core::Param::Disconnected.to_internal_param(&patch_lock);
+                    modular_core::types::Param::Disconnected.to_internal_param(&patch_lock);
                 let internal_track = Arc::new(modular_core::types::InternalTrack::new(
                     track.id.clone(),
                     default_playhead_param,

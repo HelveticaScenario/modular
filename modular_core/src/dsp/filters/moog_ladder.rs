@@ -1,6 +1,6 @@
 use crate::{
     dsp::utils::{clamp, cubic_clipper, cv_to_khz},
-    types::InternalParam,
+    types::{ChannelBuffer, InternalParam, NUM_CHANNELS},
 };
 use anyhow::{Result, anyhow};
 
@@ -18,38 +18,46 @@ struct MoogLadderFilterParams {
 #[module("ladder", "24dB/octave Moog-style ladder filter")]
 pub struct MoogLadderFilter {
     #[output("output", "filtered signal", default)]
-    sample: f32,
+    sample: ChannelBuffer,
     // State variables for 4-pole (24dB/oct) ladder filter
-    stage: [f32; 4],
-    delay: [f32; 4],
-    smoothed_cutoff: f32,
-    smoothed_resonance: f32,
+    stage: [ChannelBuffer; 4],
+    delay: [ChannelBuffer; 4],
+    smoothed_cutoff: ChannelBuffer,
+    smoothed_resonance: ChannelBuffer,
     params: MoogLadderFilterParams,
 }
 
 impl MoogLadderFilter {
     fn update(&mut self, sample_rate: f32) -> () {
-        let input = self.params.input.get_value();
-        let target_cutoff = self.params.cutoff.get_value_or(4.0);
-        let target_resonance = self.params.resonance.get_value_or(0.0);
+        let mut input = ChannelBuffer::default();
+        let mut target_cutoff = [4.0; NUM_CHANNELS];
+        let mut target_resonance = ChannelBuffer::default();
 
-        self.smoothed_cutoff = crate::types::smooth_value(self.smoothed_cutoff, target_cutoff);
-        self.smoothed_resonance =
-            crate::types::smooth_value(self.smoothed_resonance, target_resonance);
+        self.params.input.get_value(&mut input);
+        self.params
+            .cutoff
+            .get_value_or(&mut target_cutoff, &[4.0; NUM_CHANNELS]);
+        self.params.resonance.get_value(&mut target_resonance);
 
-        // Convert v/oct to frequency
-        let freq = 27.5f32 * 2.0f32.powf(self.smoothed_cutoff);
-        let freq_clamped = freq.min(sample_rate * 0.45).max(20.0);
+        crate::types::smooth_buffer(&mut self.smoothed_cutoff, &target_cutoff);
+        crate::types::smooth_buffer(&mut self.smoothed_resonance, &target_resonance);
 
-        // Calculate filter coefficients
-        let fc = freq_clamped / sample_rate;
-        let f = fc * 1.16;
-        let fb = self.smoothed_resonance / 5.0 * 4.0;
+        let sr = sample_rate.max(1.0);
+        let mut f_per_channel = [0.0f32; NUM_CHANNELS];
+        let mut input_fb_per_channel = [0.0f32; NUM_CHANNELS];
 
-        // Input with feedback
-        let input_fb = input - self.sample * fb;
+        for c in 0..NUM_CHANNELS {
+            let freq = 27.5f32 * self.smoothed_cutoff[c].exp2();
+            let freq_clamped = freq.min(sr * 0.45).max(20.0);
 
-        // Tanh saturation for non-linearity (simplified)
+            let fc = freq_clamped / sr;
+            let f = fc * 1.16;
+            let fb = self.smoothed_resonance[c] / 5.0 * 4.0;
+
+            f_per_channel[c] = f;
+            input_fb_per_channel[c] = input[c] - self.sample[c] * fb;
+        }
+
         let saturate = |x: f32| {
             if x > 1.0 {
                 1.0
@@ -60,17 +68,23 @@ impl MoogLadderFilter {
             }
         };
 
-        // Process through 4 one-pole stages
-        for i in 0..4 {
-            let stage_input = if i == 0 { input_fb } else { self.stage[i - 1] };
-            self.stage[i] = self.delay[i] + f * (saturate(stage_input) - self.delay[i]);
-            self.delay[i] = self.stage[i];
+        for s in 0..4 {
+            for c in 0..NUM_CHANNELS {
+                let stage_input = if s == 0 {
+                    input_fb_per_channel[c]
+                } else {
+                    self.stage[s - 1][c]
+                };
+                let delay = self.delay[s][c];
+                let y = delay + f_per_channel[c] * (saturate(stage_input) - delay);
+                self.stage[s][c] = y;
+                self.delay[s][c] = y;
+            }
         }
 
-        self.sample = self.stage[3];
-
-        // Soft clipping to prevent overflow
-        self.sample = self.sample.clamp(-5.0, 5.0);
+        for c in 0..NUM_CHANNELS {
+            self.sample[c] = self.stage[3][c].clamp(-5.0, 5.0);
+        }
     }
 }
 
