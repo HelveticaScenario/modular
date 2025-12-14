@@ -306,17 +306,22 @@ export interface ParamSchema {
 
 #### DSL API Design
 
-Extend `ModuleNode` class to support data parameters:
+Extend `ModuleNode` class to support data parameters with **fluent API methods**, consistent with existing audio parameter style:
 
 ```typescript
 class ModuleNode {
   // Existing audio param methods
   freq(value: ParamInput): this { ... }
   
-  // New data param methods (type-safe based on schema)
-  setData(name: string, value: string | number | boolean | DataParam): this {
-    // Convert JS primitives to DataParam
-    // Call builder.setDataParam(moduleId, name, dataParam)
+  // Generated data param methods (one per data param, type-safe based on schema)
+  // For a module with data params "waveform" and "octave":
+  waveform(value: "sine" | "saw" | "square" | "triangle"): this {
+    builder.setDataParam(this.moduleId, "waveform", { type: "enum", variant: value });
+    return this;
+  }
+  
+  octave(value: number): this {
+    builder.setDataParam(this.moduleId, "octave", { type: "int", value });
     return this;
   }
 }
@@ -324,45 +329,65 @@ class ModuleNode {
 
 **Type-Safe Factory Generation**:
 
-Use schema information to generate strongly-typed factory functions:
+Use schema information to generate strongly-typed fluent methods per module:
 
 ```typescript
-// Generated per module type
-interface WaveTableOscillatorParams {
-  waveform?: "sine" | "saw" | "square" | "triangle";  // Enum constraint from schema
-  octave?: number;  // Int constraint from schema
+// Generated per module type - creates ModuleNode with fluent methods
+class WaveTableNode extends ModuleNode {
+  waveform(value: "sine" | "saw" | "square" | "triangle"): this {
+    this.builder.setDataParam(this.id, "waveform", { type: "enum", variant: value });
+    return this;
+  }
+  
+  octave(value: number): this {
+    this.builder.setDataParam(this.id, "octave", { type: "int", value });
+    return this;
+  }
 }
 
-function wavetable(
-  id?: string,
-  data?: WaveTableOscillatorParams
-): ModuleNode {
-  const node = context.getBuilder().addModule("wavetable", id);
-  if (data) {
-    if (data.waveform) node.setData("waveform", data.waveform);
-    if (data.octave) node.setData("octave", data.octave);
-  }
-  return node;
+function wavetable(id?: string): WaveTableNode {
+  return context.getBuilder().addModule("wavetable", id) as WaveTableNode;
 }
 ```
 
-**DSL Usage Examples**:
+**DSL Usage Examples** (Fluent API - Preferred):
 
 ```javascript
-// String data param
-const osc = wavetable("osc1", { waveform: "saw", octave: 1 });
-osc.freq(note("a4"));
+// Fluent API - chained methods like audio params
+const osc = wavetable("osc1")
+  .waveform("saw")
+  .octave(1)
+  .freq(note("a4"));
 
-// Enum via method (alternative API)
-const filter = lowpass("filt1").filterType("butterworth");
-
-// Array data param
-const quantizer = quantize("q1", {
-  scale: [0, 2, 4, 5, 7, 9, 11]  // Major scale in semitones
-});
+// Enum data param
+const filter = lowpass("filt1")
+  .filterType("butterworth")
+  .cutoff(hz(1000));
 
 // Boolean data param
-const delay = delay("d1", { feedback: true });
+const sh = sampleAndHold("sh1")
+  .mode("edge")
+  .smooth(true)
+  .input(signal);
+
+// Array data param (special handling for arrays)
+const seq = sequencer("seq1")
+  .steps([note("c4"), note("e4"), note("g4")])
+  .direction("pingpong")
+  .length(8);
+```
+
+**Alternative: Constructor Initialization** (for complex/bulk configuration):
+
+```javascript
+// Optional: pass data object to constructor for bulk initialization
+const osc = wavetable("osc1", { waveform: "saw", octave: 1 })
+  .freq(note("a4"));
+
+// Still allows fluent overrides
+const filter = lowpass("filt1", { filterType: "butterworth", order: 4 })
+  .cutoff(hz(1000))
+  .resonance(0.7);
 ```
 
 ### 5. Serialization Format

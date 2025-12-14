@@ -100,21 +100,24 @@ impl SampleAndHold {
 }
 ```
 
-**DSL Usage**:
+**DSL Usage** (Fluent API):
 ```javascript
 const input = sine("sig").freq(hz(440));
 const clock = pulse("clk").freq(hz(2));
 
-// Create with data params in constructor
-const sh = sampleAndHold("sh1", { 
-    mode: "edge", 
-    smooth: true 
-});
-
-sh.input(input);
-sh.trigger(clock);
+// Fluent API - chained methods consistent with audio params
+const sh = sampleAndHold("sh1")
+    .mode("edge")
+    .smooth(true)
+    .input(input)
+    .trigger(clock);
 
 out.source(sh);
+
+// Alternative: constructor initialization for bulk config
+const sh2 = sampleAndHold("sh2", { mode: "gate", smooth: false })
+    .input(input)
+    .trigger(clock);
 ```
 
 ## Complex Module with Multiple Data Types
@@ -265,13 +268,13 @@ impl Sequencer {
 }
 ```
 
-**DSL Usage**:
+**DSL Usage** (Fluent API):
 ```javascript
 const clock = pulse("clk").freq(hz(4));
 
-// Create sequencer with step data
-const seq = sequencer("seq1", {
-    steps: [
+// Fluent API - chained methods
+const seq = sequencer("seq1")
+    .steps([
         note("c4"),
         note("e4"),
         note("g4"),
@@ -280,17 +283,22 @@ const seq = sequencer("seq1", {
         note("e4"),
         note("c4"),
         note("c3"),
-    ],
-    length: 8,
-    direction: "pingpong",
-    quantize: true,
-});
-
-seq.clock(clock);
+    ])
+    .length(8)
+    .direction("pingpong")
+    .quantize(true)
+    .clock(clock);
 
 // Use sequence to control oscillator
 const osc = sine("osc1").freq(seq.cv);
 out.source(osc);
+
+// Alternative: constructor for complex initial config
+const seq2 = sequencer("seq2", {
+    steps: [note("c4"), note("e4"), note("g4")],
+    length: 3,
+    direction: "forward"
+}).clock(clock);
 ```
 
 ## Validation Examples
@@ -469,60 +477,114 @@ fn test_validate_array_bounds() {
 
 ## DSL Usage Patterns
 
-### Pattern 1: Configuration in Constructor
+### Pattern 1: Fluent API Methods (Primary/Preferred)
 
 ```javascript
-// Preferred for data that rarely changes
-const filter = lowpass("lpf", {
-    filterType: "butterworth",
-    order: 4,
-    resonance: 0.7
-});
-
-filter.cutoff(hz(1000));
-filter.input(osc);
-```
-
-### Pattern 2: Fluent API Methods
-
-```javascript
-// Alternative API for common data params
+// Fluent API - consistent with audio param style
 const osc = wavetable("osc")
     .waveform("saw")
     .octave(1)
     .freq(note("a4"));
+
+// Enum data param with fluent style
+const filter = lowpass("filt")
+    .filterType("butterworth")
+    .order(4)
+    .resonance(0.7)
+    .cutoff(hz(1000))
+    .input(osc);
+
+// Boolean and array data params
+const sh = sampleAndHold("sh1")
+    .mode("edge")
+    .smooth(true)
+    .input(signal)
+    .trigger(clock);
+
+// Array data param
+const seq = sequencer("seq")
+    .steps([note("c4"), note("e4"), note("g4")])
+    .direction("forward")
+    .length(8);
 ```
 
-### Pattern 3: Array/Object Data
+### Pattern 2: Constructor Initialization (Alternative)
 
 ```javascript
-// Complex configuration data
-const reverb = reverb("verb", {
+// For complex or bulk configuration
+const filter = lowpass("lpf", {
+    filterType: "butterworth",
+    order: 4,
+    resonance: 0.7
+})
+    .cutoff(hz(1000))
+    .input(osc);
+
+// Can still chain fluent methods after constructor init
+const osc = wavetable("osc", { waveform: "saw" })
+    .octave(1)
+    .freq(note("a4"));
+```
+
+### Pattern 3: Mixed Style
+
+```javascript
+// Initialize with complex config, then use fluent methods
+const seq = sequencer("seq", {
+    steps: [note("c4"), note("e4"), note("g4"), note("c5")],
+})
+    .direction("pingpong")
+    .length(4)
+    .quantize(true)
+    .clock(clock);
+```
+
+### Pattern 4: Array/Object Data
+
+```javascript
+// Complex nested data structures
+const reverb = reverb("verb")
+    .algorithm("plate")
+    .earlyReflections([
+        { time: 0.01, gain: 0.8 },
+        { time: 0.02, gain: 0.6 },
+        { time: 0.03, gain: 0.4 },
+    ])
+    .preDelay(0.05)
+    .roomSize(0.8)
+    .input(signal);
+
+// Or with constructor for complex initial state
+const reverb2 = reverb("verb2", {
     algorithm: "plate",
     earlyReflections: [
         { time: 0.01, gain: 0.8 },
         { time: 0.02, gain: 0.6 },
-        { time: 0.03, gain: 0.4 },
     ],
     preDelay: 0.05,
     roomSize: 0.8,
-});
-
-reverb.input(signal);
+}).input(signal);
 ```
 
-### Pattern 4: Preset Systems
+### Pattern 5: Preset Systems
 
 ```javascript
-// Load predefined configurations
-const delay = delay("d1", presets.delay.tape);
+// Load predefined configurations via constructor
+const delay = delay("d1", presets.delay.tape)
+    .input(signal);
 // Where presets.delay.tape = { mode: "tape", saturation: true, wow: 0.1, flutter: 0.05 }
 
+// Then override with fluent methods
+const delay2 = delay("d2", presets.delay.tape)
+    .feedback(0.6)  // Override preset value
+    .input(signal);
+
 // Or factory functions
-const ks = karplusStrong("ks", stringPreset("guitar", "e2"));
+const ks = karplusStrong("ks", stringPreset("guitar", "e2"))
+    .damping(0.5);
 ```
 
-### Pattern 5: Computed Data
+### Pattern 6: Computed Data
 
 ```javascript
 // Helper functions to generate data
@@ -530,10 +592,17 @@ function majorScale() {
     return [0, 2, 4, 5, 7, 9, 11].map(s => s / 12);
 }
 
-const quantizer = quantize("q1", {
+// Fluent style with computed values
+const quantizer = quantize("q1")
+    .scale(majorScale())
+    .rootNote(note("c4"))
+    .input(cv);
+
+// Or constructor style
+const quantizer2 = quantize("q2", {
     scale: majorScale(),
     rootNote: note("c4")
-});
+}).input(cv);
 ```
 
 ## Migration Examples
@@ -612,11 +681,16 @@ impl Filter {
 }
 ```
 
-**DSL (New)**:
+**DSL (New)** - Fluent API:
 ```javascript
-// Clear and type-safe
-const filt = filter("f1", { mode: "lowpass" });
-// TypeScript autocomplete suggests: "lowpass" | "highpass" | "bandpass"
+// Clear, type-safe, and consistent with audio params
+const filt = filter("f1")
+    .mode("lowpass")  // TypeScript autocomplete suggests: "lowpass" | "highpass" | "bandpass"
+    .cutoff(hz(1000));
+
+// Alternative: constructor initialization
+const filt2 = filter("f2", { mode: "lowpass" })
+    .cutoff(hz(1000));
 ```
 
 ### Migration Checklist for Existing Modules
