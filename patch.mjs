@@ -10,7 +10,7 @@ const t = track('t')
   .interpolation('exponential')
   .playhead(phead)
 
-// scope(t)
+scope(t)
 
 const makeSeq = (id, notes) => {
   const t = track(id).interpolation('step')

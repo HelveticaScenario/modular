@@ -7,5 +7,8 @@ const carrier = sine('carrier')
   .freq(note('a4'))
   .phase(modulator.output.scale(0.5));
 
+scope(carrier)
+
+
 out.source(carrier);
 
