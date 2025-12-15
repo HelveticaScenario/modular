@@ -1,6 +1,6 @@
 use anyhow::{Result, anyhow};
 
-use crate::types::InternalParam;
+use crate::types::{ChannelBuffer, InternalParam, NUM_CHANNELS};
 
 #[derive(Default, Params)]
 struct MixParams {
@@ -18,27 +18,44 @@ struct MixParams {
 #[module("mix", "A 4 channel mixer")]
 pub struct Mix {
     #[output("output", "signal output", default)]
-    sample: f32,
+    sample: ChannelBuffer,
     params: MixParams,
 }
 
 impl Mix {
     fn update(&mut self, _sample_rate: f32) -> () {
-        let inputs = [
-            &self.params.input1,
-            &self.params.input2,
-            &self.params.input3,
-            &self.params.input4,
-        ];
-        let count = inputs
-            .iter()
-            .filter(|input| ***input != InternalParam::Disconnected)
-            .count();
+        let mut buffers = [ChannelBuffer::default(); 4];
+        let mut count: usize = 0;
 
-        self.sample = if count > 0 {
-            inputs.iter().fold(0.0, |acc, x| acc + x.get_value()) / count as f32
-        } else {
-            0.0
+        if self.params.input1 != InternalParam::Disconnected {
+            self.params.input1.get_value(&mut buffers[count]);
+            count += 1;
+        }
+        if self.params.input2 != InternalParam::Disconnected {
+            self.params.input2.get_value(&mut buffers[count]);
+            count += 1;
+        }
+        if self.params.input3 != InternalParam::Disconnected {
+            self.params.input3.get_value(&mut buffers[count]);
+            count += 1;
+        }
+        if self.params.input4 != InternalParam::Disconnected {
+            self.params.input4.get_value(&mut buffers[count]);
+            count += 1;
+        }
+
+        if count == 0 {
+            self.sample.fill(0.0);
+            return;
+        }
+
+        let inv = 1.0 / (count as f32);
+        for i in 0..NUM_CHANNELS {
+            let mut sum = 0.0;
+            for b in 0..count {
+                sum += buffers[b][i];
+            }
+            self.sample[i] = sum * inv;
         }
     }
 }

@@ -29,13 +29,17 @@ impl Patch {
             .collect()
     }
 
-    /// Get the output sample from the root module
-    pub fn get_output(&self) -> f32 {
+    /// Get the output samples from the root module
+    pub fn get_output(
+        &self,
+        buffer: &mut crate::types::ChannelBuffer,
+    ) -> Result<(), anyhow::Error> {
         if let Some(root) = self.sampleables.get(&*ROOT_ID) {
-            root.get_sample(&ROOT_OUTPUT_PORT).unwrap_or_default()
+            root.get_sample(&ROOT_OUTPUT_PORT, buffer)?;
         } else {
-            0.0
+            buffer.fill(0.0);
         }
+        Ok(())
     }
 }
 
@@ -61,10 +65,8 @@ mod tests {
     #[test]
     fn test_patch_get_output_no_root() {
         let patch = Patch::new(HashMap::new(), HashMap::new());
-        let output = patch.get_output();
-        assert!(
-            (output - 0.0).abs() < 0.0001,
-            "No root module should return 0.0"
-        );
+        let mut output = [0.0; crate::types::NUM_CHANNELS];
+        let _ = patch.get_output(&mut output);
+        assert!(output.iter().all(|v| (*v - 0.0).abs() < 0.0001));
     }
 }

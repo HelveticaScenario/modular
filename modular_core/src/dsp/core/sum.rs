@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 
-use crate::types::InternalParam;
+use crate::types::{ChannelBuffer, InternalParam, NUM_CHANNELS};
 
 #[derive(Default, Params)]
 struct SumParams {
@@ -18,19 +18,20 @@ struct SumParams {
 #[module("sum", "A 4 channel signal adder")]
 pub struct Sum {
     #[output("output", "signal output", default)]
-    sample: f32,
+    sample: ChannelBuffer,
     params: SumParams,
 }
 
 impl Sum {
     fn update(&mut self, _sample_rate: f32) -> () {
-        let inputs = [
-            &self.params.input1,
-            &self.params.input2,
-            &self.params.input3,
-            &self.params.input4,
-        ];
+        let mut buffers = [ChannelBuffer::default(); 4];
+        self.params.input1.get_value(&mut buffers[0]);
+        self.params.input2.get_value(&mut buffers[1]);
+        self.params.input3.get_value(&mut buffers[2]);
+        self.params.input4.get_value(&mut buffers[3]);
 
-        self.sample = inputs.iter().fold(0.0, |acc, x| acc + x.get_value())
+        for i in 0..NUM_CHANNELS {
+            self.sample[i] = buffers[0][i] + buffers[1][i] + buffers[2][i] + buffers[3][i];
+        }
     }
 }

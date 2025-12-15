@@ -1,4 +1,4 @@
-use crate::types::InternalParam;
+use crate::types::{ChannelBuffer, InternalParam};
 use anyhow::{anyhow, Result};
 
 #[derive(Default, Params)]
@@ -11,12 +11,12 @@ struct SignalParams {
 #[module("signal", "a signal")]
 pub struct Signal {
     #[output("output", "signal output", default)]
-    sample: f32,
+    sample: ChannelBuffer,
     params: SignalParams,
 }
 
 impl Signal {
     fn update(&mut self, _sample_rate: f32) -> () {
-        self.sample = self.params.source.get_value();
+        self.params.source.get_value(&mut self.sample);
     }
 }

@@ -32,6 +32,7 @@ zeroconf-tokio = "0.3.0"
 cpal = { version = "0.16", features = ["asio"] }
 hound = "3.5"
 crossbeam-channel = "0.5"
+ringbuf = "0.4.8"
 
 # TypeScript type generation
 ts-rs = { version = "11", features = ["serde-compat"] }

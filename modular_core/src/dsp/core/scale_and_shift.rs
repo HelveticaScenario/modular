@@ -1,6 +1,6 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
-use crate::types::InternalParam;
+use crate::types::{ChannelBuffer, InternalParam, NUM_CHANNELS};
 
 #[derive(Default, Params)]
 struct ScaleAndShiftParams {
@@ -16,19 +16,27 @@ struct ScaleAndShiftParams {
 #[module("scaleAndShift", "attenuate, invert, offset")]
 pub struct ScaleAndShift {
     #[output("output", "signal output", default)]
-    sample: f32,
-    smoothed_scale: f32,
-    smoothed_shift: f32,
+    sample: ChannelBuffer,
+    smoothed_scale: ChannelBuffer,
+    smoothed_shift: ChannelBuffer,
     params: ScaleAndShiftParams,
 }
 
 impl ScaleAndShift {
     fn update(&mut self, _sample_rate: f32) -> () {
-        let input = self.params.input.get_value();
-        let target_scale = self.params.scale.get_value_or(5.0);
-        let target_shift = self.params.shift.get_value();
-        self.smoothed_scale = crate::types::smooth_value(self.smoothed_scale, target_scale);
-        self.smoothed_shift = crate::types::smooth_value(self.smoothed_shift, target_shift);
-        self.sample = input * (self.smoothed_scale / 5.0) + self.smoothed_shift
+        let mut input = ChannelBuffer::default();
+        let mut target_scale = [5.0; NUM_CHANNELS];
+        let mut target_shift = ChannelBuffer::default();
+
+        self.params.input.get_value(&mut input);
+        self.params.scale.get_value_or(&mut target_scale, &[5.0; NUM_CHANNELS]);
+        self.params.shift.get_value(&mut target_shift);
+
+        crate::types::smooth_buffer(&mut self.smoothed_scale, &target_scale);
+        crate::types::smooth_buffer(&mut self.smoothed_shift, &target_shift);
+
+        for i in 0..NUM_CHANNELS {
+            self.sample[i] = input[i] * (self.smoothed_scale[i] / 5.0) + self.smoothed_shift[i];
+        }
     }
 }

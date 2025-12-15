@@ -7,6 +7,62 @@ import type { Track } from "../types/generated/Track";
 import type { TrackKeyframe } from "../types/generated/TrackKeyframe";
 import type { ScopeItem } from "../types/generated/ScopeItem";
 
+const NUM_CHANNELS = 16;
+type ParamArray = Param[];
+type ParamInput = Value | Param | ParamArray;
+
+const isParam = (value: unknown): value is Param =>
+  typeof value === 'object' && value !== null && 'type' in (value as Record<string, unknown>);
+
+const cloneParam = (param: Param): Param => ({ ...param }) as Param;
+
+const fillParamArray = (param: Param): ParamArray =>
+  Array.from({ length: NUM_CHANNELS }, () => cloneParam(param));
+
+const disconnectedParams = (): ParamArray =>
+  fillParamArray({ type: 'disconnected' });
+
+const normalizeParamInput = (value: ParamInput): ParamArray => {
+  // Allow callers to pass an explicit array (must be correct length or empty)
+  if (Array.isArray(value)) {
+    if (value.length === 0) return disconnectedParams();
+    if (value.length !== NUM_CHANNELS) {
+      throw new Error(`Param arrays must contain exactly ${NUM_CHANNELS} entries`);
+    }
+    return value;
+  }
+
+  let paramLike: Value | Param = value;
+
+  if (value instanceof ModuleNode) {
+    paramLike = value.o;
+  }
+
+  if (value instanceof ModuleOutput) {
+    return fillParamArray({
+      type: 'cable',
+      module: value.moduleId,
+      port: value.portName,
+    });
+  }
+
+  if (value instanceof TrackNode) {
+    return fillParamArray({
+      type: 'track',
+      track: value.id,
+    });
+  }
+
+  if (isParam(paramLike)) {
+    return fillParamArray(paramLike);
+  }
+
+  return fillParamArray({
+    type: 'value',
+    value: paramLike as number,
+  });
+};
+
 /**
  * GraphBuilder manages the construction of a PatchGraph from DSL code.
  * It tracks modules, generates deterministic IDs, and builds the final graph.
@@ -50,9 +106,9 @@ export class GraphBuilder {
     }
 
     // Initialize module with disconnected params
-    const params: Record<string, Param> = {};
+    const params: Record<string, ParamArray> = {};
     for (const param of schema.params) {
-      params[param.name] = { type: 'disconnected' };
+      params[param.name] = disconnectedParams();
     }
 
     const moduleState: ModuleState = {
@@ -75,7 +131,7 @@ export class GraphBuilder {
   /**
    * Set a parameter value for a module
    */
-  setParam(moduleId: string, paramName: string, value: Param): void {
+  setParam(moduleId: string, paramName: string, value: ParamArray): void {
     const module = this.modules.get(moduleId);
     if (!module) {
       throw new Error(`Module not found: ${moduleId}`);
@@ -99,7 +155,7 @@ export class GraphBuilder {
     track.interpolationType = interpolation;
   }
 
-  setTrackPlayheadParam(trackId: string, playhead: Param) {
+  setTrackPlayheadParam(trackId: string, playhead: ParamArray) {
     const track = this.tracks.get(trackId);
     if (!track) {
       throw new Error(`Track not found: ${trackId}`);
@@ -132,7 +188,7 @@ export class GraphBuilder {
     const track = new TrackNode(this, this.generateId("track", explicitId));
     this.tracks.set(track.id, {
       id: track.id,
-      playhead: { type: 'value', value: 0 },
+      playhead: normalizeParamInput({ type: 'value', value: 0 }),
       interpolationType: 'linear',
       keyframes: [],
     })
@@ -235,28 +291,9 @@ export class ModuleNode {
   /**
    * Set a parameter to a constant value
    */
-  _setParam(paramName: string, value: Value): this {
-    if (value instanceof ModuleNode) {
-      value = value.o
-    }
-
-    if (value instanceof ModuleOutput) {
-      this.builder.setParam(this.id, paramName, {
-        type: 'cable',
-        module: value.moduleId,
-        port: value.portName,
-      });
-    } else if (value instanceof TrackNode) {
-      this.builder.setParam(this.id, paramName, {
-        type: 'track',
-        track: value.id,
-      });
-    } else {
-      this.builder.setParam(this.id, paramName, {
-        type: 'value',
-        value: value,
-      });
-    }
+  _setParam(paramName: string, value: ParamInput): this {
+    const paramArray = normalizeParamInput(value);
+    this.builder.setParam(this.id, paramName, paramArray);
 
     return this;
   }
@@ -340,59 +377,14 @@ export class TrackNode {
    *
    * The value range [-5.0, 5.0] maps linearly to normalized time [0.0, 1.0].
    */
-  playhead(value: Value) {
-    if (value instanceof ModuleNode) {
-      value = value.o;
-    }
-
-    let param: Param;
-
-    if (value instanceof ModuleOutput) {
-      param = {
-        type: 'cable',
-        module: value.moduleId,
-        port: value.portName,
-      };
-    } else if (value instanceof TrackNode) {
-      param = {
-        type: 'track',
-        track: value.id,
-      };
-    } else {
-      param = {
-        type: 'value',
-        value,
-      };
-    }
-
-    this.builder.setTrackPlayheadParam(this.id, param);
+  playhead(value: ParamInput) {
+    const paramArray = normalizeParamInput(value);
+    this.builder.setTrackPlayheadParam(this.id, paramArray);
     return this;
   }
 
-  addKeyframe(time: number, value: Value) {
-    if (value instanceof ModuleNode) {
-      value = value.o
-    }
-
-    let param: Param;
-
-    if (value instanceof ModuleOutput) {
-      param = {
-        type: 'cable',
-        module: value.moduleId,
-        port: value.portName,
-      }
-    } else if (value instanceof TrackNode) {
-      param = {
-        type: 'track',
-        track: value.id,
-      }
-    } else {
-      param = {
-        type: 'value',
-        value: value,
-      }
-    }
+  addKeyframe(time: number, value: ParamInput) {
+    const param = normalizeParamInput(value);
 
     this.builder.addTrackKeyframe(this.id, {
       id: `keyframe-${this.counter++}`,

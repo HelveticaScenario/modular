@@ -22,49 +22,86 @@ const AUDIO_OUTPUT_ATTENUATION: f32 = 5.0;
 
 /// Audio subscription for streaming samples to clients
 #[derive(Clone)]
-pub struct RingBuffer {
-    pub buffer: Vec<f32>,
-    capacity: usize,
-    index: usize,
+pub struct CyclicBuffer<const N: usize> {
+    buf: [f32; N],
+    idx: usize, // next write position (0..N-1)
+    filled: usize, // number of new samples written since last drain (0..=N)
 }
 
-impl RingBuffer {
-    pub fn new(capacity: usize) -> Self {
+impl<const N: usize> CyclicBuffer<N> {
+    pub fn new() -> Self {
         Self {
-            buffer: Vec::with_capacity(capacity),
-            capacity,
-            index: 0,
+            buf: [0.0; N],
+            idx: 0,
+            filled: 0,
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.buf.len()
+    }
+    pub fn index(&self) -> usize {
+        self.idx
+    }
+    pub fn as_slice(&self) -> &[f32; N] {
+        &self.buf
     }
 
     pub fn push(&mut self, value: f32) {
-        if self.buffer.len() < self.capacity {
-            self.buffer.push(value);
-        } else {
-            self.buffer[self.index] = value;
-        }
-        self.index = (self.index + 1) % self.capacity;
+        self.push_vec(&[value]);
     }
 
-    pub fn to_vec(&self) -> Vec<f32> {
-        if self.buffer.is_empty() {
+    pub fn to_vec_ordered(&self) -> Vec<f32> {
+        let n = self.buf.len();
+        if n == 0 {
             return Vec::new();
         }
+        let mut out = Vec::with_capacity(n);
+        out.extend_from_slice(&self.buf[self.idx..]);
+        out.extend_from_slice(&self.buf[..self.idx]);
+        out
+    }
 
-        let len = self.buffer.len();
-        let mut vec = Vec::with_capacity(len);
+    pub fn take_vec_if_full(&mut self) -> Option<Vec<f32>> {
+        let n = self.buf.len();
+        if n == 0 || self.filled < n {
+            return None;
+        }
+        self.filled = 0;
+        Some(self.to_vec_ordered())
+    }
 
-        // Optimize by splitting into two slices to avoid modulo on every iteration
-        if len == self.capacity {
-            // Buffer is full and has wrapped - copy from index to end, then start to index
-            vec.extend_from_slice(&self.buffer[self.index..]);
-            vec.extend_from_slice(&self.buffer[..self.index]);
-        } else {
-            // Buffer not yet full - copy everything in order
-            vec.extend_from_slice(&self.buffer);
+    pub fn push_vec(&mut self, data: &[f32]) {
+        let n = self.buf.len();
+        if n == 0 || data.is_empty() {
+            return;
         }
 
-        vec
+        let orig_len = data.len();
+
+        // If data is bigger than N, only the last N values affect final buffer contents,
+        // but the *start position* must account for all the skipped writes.
+        let (to_write, start) = if orig_len >= n {
+            let skipped = orig_len - n;
+            (&data[skipped..], (self.idx + skipped) % n)
+        } else {
+            (data, self.idx)
+        };
+
+        // Copy in at most two chunks (end then wrap to start).
+        let first = (n - start).min(to_write.len());
+        self.buf[start..start + first].copy_from_slice(&to_write[..first]);
+
+        let remaining = to_write.len() - first;
+        if remaining > 0 {
+            self.buf[..remaining].copy_from_slice(&to_write[first..]);
+        }
+
+        // Advance index as-if we wrote the entire input.
+        self.idx = (self.idx + orig_len) % n;
+
+        // Track how much fresh data is available for draining.
+        self.filled = (self.filled + orig_len).min(n);
     }
 }
 
@@ -80,7 +117,8 @@ pub struct AudioState {
 }
 
 pub struct AudioSubscriptionCollection {
-    pub subscriptions: HashMap<ScopeItem, AudioSubscriptionBuffer>,
+    pub subscriptions:
+        HashMap<ScopeItem, AudioSubscriptionBuffer<{ 512 * modular_core::types::NUM_CHANNELS }>>,
 }
 
 impl AudioSubscriptionCollection {
@@ -98,15 +136,15 @@ impl AudioSubscriptionCollection {
     }
 }
 
-pub struct AudioSubscriptionBuffer {
-    pub buffer: RingBuffer,
+pub struct AudioSubscriptionBuffer<const N: usize> {
+    pub buffer: CyclicBuffer<N>,
     pub txs: Vec<tokio::sync::mpsc::Sender<OutputMessage>>,
 }
 
-impl AudioSubscriptionBuffer {
-    pub fn new(buffer_size: usize) -> Self {
+impl<const N: usize> AudioSubscriptionBuffer<N> {
+    pub fn new() -> Self {
         Self {
-            buffer: RingBuffer::new(buffer_size),
+            buffer: CyclicBuffer::new(),
             txs: Vec::new(),
         }
     }
@@ -152,7 +190,7 @@ impl AudioState {
         let subscription_buffer = subscription_collection
             .subscriptions
             .entry(subscription.clone())
-            .or_insert(AudioSubscriptionBuffer::new(512));
+            .or_insert(AudioSubscriptionBuffer::new());
 
         subscription_buffer.txs.push(tx);
     }
@@ -163,7 +201,7 @@ impl AudioState {
         let path = PathBuf::from(&filename);
 
         let spec = WavSpec {
-            channels: 1,
+            channels: 2,
             sample_rate: self.sample_rate as u32,
             bits_per_sample: 32,
             sample_format: hound::SampleFormat::Float,
@@ -237,26 +275,29 @@ where
     println!("Time at start: {time_at_start:?}");
     let audio_state = audio_state.clone();
 
+    let mut buffer = [0.0f32; modular_core::types::NUM_CHANNELS];
+
     let stream = device.build_output_stream(
         config,
         move |output: &mut [T], _: &cpal::OutputCallbackInfo| {
             for frame in output.chunks_mut(num_channels) {
-                let sample = process_frame(&audio_state);
                 let muted = audio_state.is_muted();
-                let output_sample = T::from_sample(if muted {
-                    0.0
-                } else {
-                    sample / AUDIO_OUTPUT_ATTENUATION
-                });
 
-                for s in frame.iter_mut() {
-                    *s = output_sample;
+                process_frame(&audio_state, &mut buffer);
+                let chan_count = num_channels.min(modular_core::types::NUM_CHANNELS);
+                if muted {
+                    frame.fill(T::from_sample(0.0));
+                } else {
+                    for frame_idx in 0..chan_count {
+                        frame[frame_idx] =
+                            T::from_sample(buffer[frame_idx] / AUDIO_OUTPUT_ATTENUATION);
+                    }
                 }
 
                 // Record if enabled (use try_lock to avoid blocking audio)
                 if let Ok(mut writer_guard) = audio_state.recording_writer.try_lock() {
                     if let Some(ref mut writer) = *writer_guard {
-                        let _ = writer.write_sample(output_sample);
+                        let _ = writer.write_sample(buffer[0] / AUDIO_OUTPUT_ATTENUATION);
                     }
                 }
             }
@@ -268,31 +309,29 @@ where
     Ok(stream)
 }
 
-fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
+fn process_frame(
+    audio_state: &Arc<AudioState>,
+    sample_buffer: &mut [f32; modular_core::types::NUM_CHANNELS],
+) {
     use modular_core::types::ROOT_ID;
 
     // Try to acquire patch lock - if we can't, skip this frame to avoid blocking audio
     let patch_guard = match audio_state.patch.try_lock() {
         Ok(guard) => guard,
-        Err(_) => return 0.0, // Skip frame if patch is locked by another thread
+        Err(_) => return, // Skip frame if patch is locked by another thread
     };
 
-    // Update tracks
+    // Tick tracks first (advance playheads)
     for (_, track) in patch_guard.tracks.iter() {
         track.tick();
     }
 
-    // Update sampleables
-    for (_, module) in patch_guard.sampleables.iter() {
-        module.update();
-    }
-
-    // Tick sampleables
+    // Prepare sampleables for this frame
     for (_, module) in patch_guard.sampleables.iter() {
         module.tick();
     }
 
-    // Capture audio for subscriptions
+    // Capture audio for subscriptions (modules will update lazily in get_sample)
     if let Ok(mut sub_collection) = audio_state.subscription_collection.try_lock() {
         for (subscription, subscription_buffer) in sub_collection.subscriptions.iter_mut() {
             match subscription {
@@ -301,15 +340,17 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
                     port_name,
                 } => {
                     if let Some(module) = patch_guard.sampleables.get(module_id) {
-                        if let Ok(sample) = module.get_sample(port_name) {
-                            subscription_buffer.buffer.push(sample);
+                        let mut buf = [0.0; modular_core::types::NUM_CHANNELS];
+                        if let Ok(()) = module.get_sample(port_name, &mut buf) {
+                            subscription_buffer.buffer.push_vec(&buf);
                         }
                     }
                 }
                 ScopeItem::Track { track_id } => {
                     if let Some(track) = patch_guard.tracks.get(track_id) {
-                        if let Some(sample) = track.get_value_optional() {
-                            subscription_buffer.buffer.push(sample);
+                        let mut buf = [0.0; modular_core::types::NUM_CHANNELS];
+                        if track.get_value_optional(&mut buf).is_some() {
+                            subscription_buffer.buffer.push_vec(&buf);
                         }
                     }
                 }
@@ -318,13 +359,9 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
     }
 
     // Get output sample before dropping lock
-    let output_sample = if let Some(root) = patch_guard.sampleables.get(&*ROOT_ID) {
-        root.get_sample(&ROOT_OUTPUT_PORT).unwrap_or(0.0)
-    } else {
-        0.0
-    };
-
-    output_sample
+    if let Some(root) = patch_guard.sampleables.get(&*ROOT_ID) {
+        let _ = root.get_sample(&ROOT_OUTPUT_PORT, sample_buffer);
+    }
 }
 
 pub fn send_audio_buffers(audio_state: &Arc<AudioState>) {
@@ -338,20 +375,14 @@ pub fn send_audio_buffers(audio_state: &Arc<AudioState>) {
         Err(_) => return, // Skip if locked
     };
     subscription_collection.clean();
-    for (sub, AudioSubscriptionBuffer { buffer, txs }) in
-        subscription_collection.subscriptions.iter()
-    {
-        if buffer.buffer.len() >= buffer.capacity {
-            let samples: Vec<f32> = buffer.to_vec();
-            for tx in txs.iter() {
-                match tx.try_send(OutputMessage::AudioBuffer {
+    for (sub, subscription_buffer) in subscription_collection.subscriptions.iter_mut() {
+        if let Some(samples) = subscription_buffer.buffer.take_vec_if_full() {
+            for tx in subscription_buffer.txs.iter() {
+                if let Err(e) = tx.try_send(OutputMessage::AudioBuffer {
                     subscription: sub.clone(),
                     samples: samples.clone(),
                 }) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        eprintln!("Failed to send audio buffer: {}", e);
-                    }
+                    eprintln!("Failed to send audio buffer: {}", e);
                 }
             }
         }
@@ -442,7 +473,7 @@ mod tests {
         {
             let mut guard = state.subscription_collection.try_lock().unwrap();
             let buffer = guard.subscriptions.get_mut(&sub).unwrap();
-            let capacity = buffer.buffer.capacity;
+            let capacity = buffer.buffer.len();
             for i in 0..capacity {
                 buffer.buffer.push(i as f32);
             }

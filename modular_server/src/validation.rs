@@ -61,54 +61,64 @@ pub fn validate_patch(
                 ));
             }
 
-            // Check cable connections
-            if let Param::Cable {
-                module: target_module,
-                port,
-            } = param
-            {
-                // Check if source module exists
-                if !module_ids.contains(target_module.as_str()) {
-                    errors.push(ValidationError::with_location(
-                        format!("params.{}.module", param_name),
-                        format!("Module '{}' not found for cable source", target_module),
-                        format!("modules.{}.params.{}", module.id, param_name),
-                    ));
-                } else {
-                    // Check if source port exists on the source module
-                    let source_module = patch.modules.iter().find(|m| m.id == *target_module);
-                    if let Some(source) = source_module {
-                        if let Some(source_schema) = schema_map.get(source.module_type.as_str()) {
-                            let valid_outputs: HashSet<&str> = source_schema
-                                .outputs
-                                .iter()
-                                .map(|o| o.name.as_str())
-                                .collect();
-                            if !valid_outputs.contains(port.as_str()) {
-                                errors.push(ValidationError::with_location(
-                                    format!("params.{}.port", param_name),
-                                    format!(
-                                        "Output port '{}' not found on module type '{}'",
-                                        port, source.module_type
-                                    ),
-                                    format!("modules.{}.params.{}", module.id, param_name),
-                                ));
+            match param {
+                // Check cable connections
+                Param::Cable {
+                    module: target_module,
+                    port,
+                } => {
+                    // Check if source module exists
+                    if !module_ids.contains(target_module.as_str()) {
+                        errors.push(ValidationError::with_location(
+                            format!("params.{}.module", param_name),
+                            format!("Module '{}' not found for cable source", target_module),
+                            format!("modules.{}.params.{}", module.id, param_name),
+                        ));
+                    } else {
+                        // Check if source port exists on the source module
+                        let source_module = patch.modules.iter().find(|m| m.id == *target_module);
+                        if let Some(source) = source_module {
+                            if let Some(source_schema) = schema_map.get(source.module_type.as_str())
+                            {
+                                let valid_outputs: HashSet<&str> = source_schema
+                                    .outputs
+                                    .iter()
+                                    .map(|o| o.name.as_str())
+                                    .collect();
+                                if !valid_outputs.contains(port.as_str()) {
+                                    errors.push(ValidationError::with_location(
+                                        format!("params.{}.port", param_name),
+                                        format!(
+                                            "Output port '{}' not found on module type '{}'",
+                                            port, source.module_type
+                                        ),
+                                        format!("modules.{}.params.{}", module.id, param_name),
+                                    ));
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            // Check track references
-            if let Param::Track { track: track_id } = param {
-                // Track validation: check it's not empty
-                if track_id.is_empty() {
-                    errors.push(ValidationError::with_location(
-                        "track",
-                        "Track ID cannot be empty".to_string(),
-                        format!("modules.{}.params.{}", module.id, param_name),
-                    ));
+                // Check track references
+                Param::Track { track: track_id } => {
+                    if track_id.is_empty() {
+                        errors.push(ValidationError::with_location(
+                            format!("params.{}", param_name),
+                            "Track ID cannot be empty".to_string(),
+                            format!("modules.{}.params.{}", module.id, param_name),
+                        ));
+                    } else if !track_ids.contains(track_id.as_str()) {
+                        errors.push(ValidationError::with_location(
+                            format!("params.{}", param_name),
+                            format!("Track '{}' not found", track_id),
+                            format!("modules.{}.params.{}", module.id, param_name),
+                        ));
+                    }
                 }
+
+                // Value/Disconnected are always valid here
+                Param::Value { .. } | Param::Disconnected => {}
             }
         }
     }
@@ -212,11 +222,17 @@ mod tests {
         ]
     }
 
+    fn volts(value: f32) -> Param {
+        Param::Value {
+            value: [value; modular_core::types::NUM_CHANNELS],
+        }
+    }
+
     #[test]
     fn test_valid_patch() {
         let schemas = create_test_schemas();
         let mut params = HashMap::new();
-        params.insert("freq".to_string(), Param::Value { value: 4.0 });
+        params.insert("freq".to_string(), volts(4.0));
 
         let patch = PatchGraph {
             modules: vec![ModuleState {
@@ -256,7 +272,7 @@ mod tests {
     fn test_unknown_param() {
         let schemas = create_test_schemas();
         let mut params = HashMap::new();
-        params.insert("unknown_param".to_string(), Param::Value { value: 1.0 });
+        params.insert("unknown_param".to_string(), volts(1.0));
 
         let patch = PatchGraph {
             modules: vec![ModuleState {
@@ -309,7 +325,7 @@ mod tests {
         let schemas = create_test_schemas();
 
         let mut sine_params = HashMap::new();
-        sine_params.insert("freq".to_string(), Param::Value { value: 4.0 });
+        sine_params.insert("freq".to_string(), volts(4.0));
 
         let mut root_params = HashMap::new();
         root_params.insert(
@@ -353,7 +369,7 @@ mod tests {
         let schemas = create_test_schemas();
 
         let mut sine_params = HashMap::new();
-        sine_params.insert("freq".to_string(), Param::Value { value: 4.0 });
+        sine_params.insert("freq".to_string(), volts(4.0));
 
         let mut signal_params = HashMap::new();
         signal_params.insert(
@@ -388,8 +404,8 @@ mod tests {
     fn test_multiple_errors() {
         let schemas = create_test_schemas();
         let mut params = HashMap::new();
-        params.insert("unknown1".to_string(), Param::Value { value: 1.0 });
-        params.insert("unknown2".to_string(), Param::Value { value: 2.0 });
+        params.insert("unknown1".to_string(), volts(1.0));
+        params.insert("unknown2".to_string(), volts(2.0));
 
         let patch = PatchGraph {
             modules: vec![ModuleState {
