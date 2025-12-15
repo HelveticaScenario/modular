@@ -123,7 +123,7 @@ export function FileExplorer({
                     <div className="file-list">
                         {files.length === 0 ? (
                             <div className="empty-message">
-                                No .js files found
+                                No .mjs files found
                             </div>
                         ) : (
                             <ul>

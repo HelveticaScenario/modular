@@ -491,12 +491,16 @@ function App() {
         }
 
         const initialContent = DEFAULT_PATCH;
+
+        // Persist immediately so it shows up in the server-backed file list.
+        writeFile(normalized, initialContent);
+
         setFileBuffers((prev) => ({
             ...prev,
             [normalized]: {
                 content: initialContent,
-                dirty: true,
-                isNew: true,
+                dirty: false,
+                isNew: false,
                 loaded: true,
             },
         }));
@@ -505,7 +509,11 @@ function App() {
         );
         setCurrentFile(normalized);
         setPatchCode(initialContent);
-    }, [files, fileBuffers, normalizeFileName]);
+
+        // If the server doesn't proactively push a list update for some reason,
+        // explicitly request it.
+        listFiles();
+    }, [fileBuffers, files, listFiles, normalizeFileName, writeFile]);
 
     const handleRenameFile = useCallback(() => {
         const active = currentFile || SCRATCH_FILE;
@@ -697,6 +705,12 @@ function App() {
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+                e.preventDefault();
+                handleSaveFileRef.current();
+                return;
+            }
+
             if ((e.ctrlKey || e.altKey) && (e.key === 'r' || e.key === 'R')) {
                 if (e.altKey) {
                     e.preventDefault();
@@ -709,8 +723,11 @@ function App() {
             }
         };
 
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
+        window.addEventListener('keydown', handleKeyDown, { capture: true });
+        return () =>
+            window.removeEventListener('keydown', handleKeyDown, {
+                capture: true,
+            });
     }, [isRecording, startRecording, stopRecording]);
 
     return (
