@@ -14,17 +14,26 @@ use crate::patch::Patch;
 lazy_static! {
     pub static ref ROOT_ID: String = "root".into();
     pub static ref ROOT_OUTPUT_PORT: String = "output".into();
+    pub static ref ROOT_CLOCK_ID: String = "root_clock".into();
 }
 
 pub trait Params {
     fn get_params_state(&self) -> HashMap<String, Param>;
+    fn get_data_params_state(&self) -> HashMap<String, DataParamValue>;
     fn update_param(
         &mut self,
         param_name: &String,
         new_param: &InternalParam,
         module_name: &str,
     ) -> Result<()>;
-    fn get_schema() -> Vec<ParamSchema>;
+    fn update_data_param(
+        &mut self,
+        param_name: &String,
+        new_param: &InternalDataParam,
+        module_name: &str,
+    ) -> Result<()>;
+    fn get_schema() -> Vec<SignalParamSchema>;
+    fn get_data_schema() -> Vec<DataParamSchema>;
 }
 
 pub trait Sampleable: Send + Sync {
@@ -34,6 +43,7 @@ pub trait Sampleable: Send + Sync {
     fn get_sample(&self, port: &String) -> Result<f32>;
     fn get_state(&self) -> ModuleState;
     fn update_param(&self, param_name: &String, new_param: &InternalParam) -> Result<()>;
+    fn update_data_param(&self, param_name: &String, new_param: &InternalDataParam) -> Result<()>;
 }
 
 pub trait Module {
@@ -76,6 +86,13 @@ pub enum InternalParam {
         track: sync::Weak<InternalTrack>,
     },
     Disconnected,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum InternalDataParam {
+    String { value: String },
+    Number { value: f64 },
+    Boolean { value: bool },
 }
 
 impl std::fmt::Debug for InternalParam {
@@ -203,6 +220,40 @@ pub enum Param {
     Cable { module: String, port: String },
     Track { track: String },
     Disconnected,
+}
+
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+pub enum DataParamType {
+    String,
+    Number,
+    Boolean,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+pub enum DataParamValue {
+    String { value: String },
+    Number { value: f64 },
+    Boolean { value: bool },
+}
+
+impl DataParamValue {
+    pub fn to_internal_data_param(&self) -> InternalDataParam {
+        match self {
+            DataParamValue::String { value } => InternalDataParam::String {
+                value: value.clone(),
+            },
+            DataParamValue::Number { value } => InternalDataParam::Number { value: *value },
+            DataParamValue::Boolean { value } => InternalDataParam::Boolean { value: *value },
+        }
+    }
 }
 
 impl Param {
@@ -569,9 +620,18 @@ pub struct Track {
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
-pub struct ParamSchema {
+pub struct SignalParamSchema {
     pub name: String,
     pub description: String,
+}
+
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+pub struct DataParamSchema {
+    pub name: String,
+    pub description: String,
+    pub value_type: DataParamType,
 }
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
@@ -590,7 +650,8 @@ pub struct OutputSchema {
 pub struct ModuleSchema {
     pub name: String,
     pub description: String,
-    pub params: Vec<ParamSchema>,
+    pub signal_params: Vec<SignalParamSchema>,
+    pub data_params: Vec<DataParamSchema>,
     pub outputs: Vec<OutputSchema>,
 }
 
@@ -600,7 +661,10 @@ pub struct ModuleSchema {
 pub struct ModuleState {
     pub id: String,
     pub module_type: String,
-    pub params: HashMap<String, Param>,
+    #[serde(default, alias = "params")]
+    pub signal_params: HashMap<String, Param>,
+    #[serde(default)]
+    pub data_params: HashMap<String, DataParamValue>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq, Hash)]
@@ -872,7 +936,8 @@ mod tests {
         let state = ModuleState {
             id: "sine-1".to_string(),
             module_type: "sine-oscillator".to_string(),
-            params,
+            signal_params: params,
+            data_params: HashMap::new(),
         };
 
         let json = serde_json::to_string(&state).unwrap();
@@ -891,12 +956,14 @@ mod tests {
         let state1 = ModuleState {
             id: "sine-1".to_string(),
             module_type: "sine-oscillator".to_string(),
-            params: params1,
+            signal_params: params1,
+            data_params: HashMap::new(),
         };
         let state2 = ModuleState {
             id: "sine-1".to_string(),
             module_type: "sine-oscillator".to_string(),
-            params: params2,
+            signal_params: params2,
+            data_params: HashMap::new(),
         };
 
         assert_eq!(state1, state2);
@@ -920,7 +987,8 @@ mod tests {
         let state = ModuleState {
             id: "test-1".to_string(),
             module_type: "signal".to_string(),
-            params: HashMap::new(),
+            signal_params: HashMap::new(),
+            data_params: HashMap::new(),
         };
         let patch = PatchGraph {
             modules: vec![state],
@@ -939,7 +1007,8 @@ mod tests {
             modules: vec![ModuleState {
                 id: "signal-1".to_string(),
                 module_type: "signal".to_string(),
-                params,
+                signal_params: params,
+                data_params: HashMap::new(),
             }],
             tracks: vec![],
             scopes: vec![],
@@ -1025,10 +1094,11 @@ mod tests {
         let schema = ModuleSchema {
             name: "sine-oscillator".to_string(),
             description: "A sine wave generator".to_string(),
-            params: vec![ParamSchema {
+            signal_params: vec![SignalParamSchema {
                 name: "freq".to_string(),
                 description: "Frequency in v/oct".to_string(),
             }],
+            data_params: vec![],
             outputs: vec![OutputSchema {
                 name: "output".to_string(),
                 description: "Audio output".to_string(),
@@ -1036,7 +1106,7 @@ mod tests {
             }],
         };
         assert_eq!(schema.name, "sine-oscillator");
-        assert_eq!(schema.params.len(), 1);
+        assert_eq!(schema.signal_params.len(), 1);
         assert_eq!(schema.outputs.len(), 1);
     }
 
@@ -1076,6 +1146,6 @@ mod tests {
         let json = serde_json::to_string(&track).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["id"].as_str().unwrap(), "test-track");
-        assert_eq!(v["interpolation_type"].as_str().unwrap(), "linear");
+        assert_eq!(v["interpolationType"].as_str().unwrap(), "linear");
     }
 }

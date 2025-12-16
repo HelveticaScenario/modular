@@ -173,62 +173,235 @@ where
 
 fn impl_params_macro(ast: &DeriveInput) -> TokenStream {
     let name = &ast.ident;
-    let (inserts, updates, schemas) = match ast.data {
-        Data::Struct(ref data) => match data.fields {
-            Fields::Named(ref fields) => {
-                let v = map_name_description(fields, "param", |f, f_name, name, description| {
-                    (
-                        quote_spanned! {f.span()=>
-                            state.insert(#name.to_owned(), self.#f_name.to_param());
-                        },
-                        quote_spanned! {f.span()=>
-                            #name => {
-                                if self.#f_name != *new_param {
-                                    self.#f_name = new_param.clone();
-                                }
-                                Ok(())
+    let (signal_inserts, signal_updates, signal_schemas, data_inserts, data_updates, data_schemas) =
+        match ast.data {
+            Data::Struct(ref data) => match data.fields {
+                Fields::Named(ref fields) => {
+                    let signal =
+                        map_name_description(fields, "param", |f, f_name, name, description| {
+                            (
+                                quote_spanned! {f.span()=>
+                                    state.insert(#name.to_owned(), self.#f_name.to_param());
+                                },
+                                quote_spanned! {f.span()=>
+                                    #name => {
+                                        if self.#f_name != *new_param {
+                                            self.#f_name = new_param.clone();
+                                        }
+                                        Ok(())
+                                    }
+                                },
+                                quote_spanned! {f.span()=>
+                                    crate::types::SignalParamSchema {
+                                        name: #name.to_string(),
+                                        description: #description.to_string(),
+                                    },
+                                },
+                            )
+                        });
+                    let signal_insert_iter = signal.iter().map(|(insert, _, _)| insert);
+                    let signal_update_iter = signal.iter().map(|(_, update, _)| update);
+                    let signal_schema_iter = signal.iter().map(|(_, _, schema)| schema);
+
+                    let data = map_name_description(
+                        fields,
+                        "data_param",
+                        |f, f_name, name, description| {
+                            let value_type = match &f.ty {
+                                syn::Type::Path(type_path) => type_path
+                                    .path
+                                    .segments
+                                    .last()
+                                    .map(|s| s.ident.to_string())
+                                    .unwrap_or_default(),
+                                _ => String::new(),
+                            };
+
+                            let is_string = value_type == "String";
+                            let is_bool = value_type == "bool";
+                            let is_number = matches!(
+                                value_type.as_str(),
+                                "f32"
+                                    | "f64"
+                                    | "i8"
+                                    | "i16"
+                                    | "i32"
+                                    | "i64"
+                                    | "i128"
+                                    | "isize"
+                                    | "u8"
+                                    | "u16"
+                                    | "u32"
+                                    | "u64"
+                                    | "u128"
+                                    | "usize"
+                            );
+
+                            if !(is_string || is_bool || is_number) {
+                                let field_name = f_name
+                                    .as_ref()
+                                    .map(|i| i.to_string())
+                                    .unwrap_or_else(|| "<unnamed>".to_owned());
+                                let msg = format!(
+                                    "#[data_param] field '{}' must be String, bool, or a numeric primitive (got '{}')",
+                                    field_name, value_type
+                                );
+                                return (
+                                    syn::Error::new(f.span(), msg).to_compile_error(),
+                                    quote! {},
+                                    quote! {},
+                                );
                             }
+
+                            let (insert, update, schema) = if is_string {
+                                (
+                                    quote_spanned! {f.span()=>
+                                        data_state.insert(
+                                            #name.to_owned(),
+                                            crate::types::DataParamValue::String { value: self.#f_name.clone() },
+                                        );
+                                    },
+                                    quote_spanned! {f.span()=>
+                                        #name => match new_param {
+                                            crate::types::InternalDataParam::String { value } => {
+                                                if self.#f_name != *value {
+                                                    self.#f_name = value.clone();
+                                                }
+                                                Ok(())
+                                            }
+                                            _ => Err(anyhow!(
+                                                "{} expects a string data param for {}",
+                                                param_name,
+                                                module_name
+                                            )),
+                                        },
+                                    },
+                                    quote_spanned! {f.span()=>
+                                        crate::types::DataParamSchema {
+                                            name: #name.to_string(),
+                                            description: #description.to_string(),
+                                            value_type: crate::types::DataParamType::String,
+                                        },
+                                    },
+                                )
+                            } else if is_bool {
+                                (
+                                    quote_spanned! {f.span()=>
+                                        data_state.insert(
+                                            #name.to_owned(),
+                                            crate::types::DataParamValue::Boolean { value: self.#f_name },
+                                        );
+                                    },
+                                    quote_spanned! {f.span()=>
+                                        #name => match new_param {
+                                            crate::types::InternalDataParam::Boolean { value } => {
+                                                if self.#f_name != *value {
+                                                    self.#f_name = *value;
+                                                }
+                                                Ok(())
+                                            }
+                                            _ => Err(anyhow!(
+                                                "{} expects a boolean data param for {}",
+                                                param_name,
+                                                module_name
+                                            )),
+                                        },
+                                    },
+                                    quote_spanned! {f.span()=>
+                                        crate::types::DataParamSchema {
+                                            name: #name.to_string(),
+                                            description: #description.to_string(),
+                                            value_type: crate::types::DataParamType::Boolean,
+                                        },
+                                    },
+                                )
+                            } else {
+                                let field_ty = &f.ty;
+                                (
+                                    quote_spanned! {f.span()=>
+                                        data_state.insert(
+                                            #name.to_owned(),
+                                            crate::types::DataParamValue::Number { value: self.#f_name as f64 },
+                                        );
+                                    },
+                                    quote_spanned! {f.span()=>
+                                        #name => match new_param {
+                                            crate::types::InternalDataParam::Number { value } => {
+                                                let v: #field_ty = *value as #field_ty;
+                                                if self.#f_name != v {
+                                                    self.#f_name = v;
+                                                }
+                                                Ok(())
+                                            }
+                                            _ => Err(anyhow!(
+                                                "{} expects a number data param for {}",
+                                                param_name,
+                                                module_name
+                                            )),
+                                        },
+                                    },
+                                    quote_spanned! {f.span()=>
+                                        crate::types::DataParamSchema {
+                                            name: #name.to_string(),
+                                            description: #description.to_string(),
+                                            value_type: crate::types::DataParamType::Number,
+                                        },
+                                    },
+                                )
+                            };
+
+                            (insert, update, schema)
                         },
-                        quote_spanned! {f.span()=>
-                            crate::types::ParamSchema {
-                                name: #name.to_string(),
-                                description: #description.to_string(),
-                            },
+                    );
+
+                    let data_insert_iter = data.iter().map(|(insert, _, _)| insert);
+                    let data_update_iter = data.iter().map(|(_, update, _)| update);
+                    let data_schema_iter = data.iter().map(|(_, _, schema)| schema);
+                    (
+                        quote! {
+                            #(#signal_insert_iter)*
+                        },
+                        quote! {
+                            #(#signal_update_iter)*
+                        },
+                        quote! {
+                            #(#signal_schema_iter)*
+                        },
+                        quote! {
+                            #(#data_insert_iter)*
+                        },
+                        quote! {
+                            #(#data_update_iter)*
+                        },
+                        quote! {
+                            #(#data_schema_iter)*
                         },
                     )
-                });
-                let insert_iter = v.iter().map(|(insert, _, _)| insert);
-                let update_iter = v.iter().map(|(_, update, _)| update);
-                let schema_iter = v.iter().map(|(_, _, schema)| schema);
-                (
-                    quote! {
-                        #(#insert_iter)*
-                    },
-                    quote! {
-                        #(#update_iter)*
-                    },
-                    quote! {
-                        #(#schema_iter)*
-                    },
-                )
-            }
-            Fields::Unnamed(_) | Fields::Unit => {
-                unimplemented!()
-            }
-        },
-        Data::Enum(_) | Data::Union(_) => unimplemented!(),
-    };
+                }
+                Fields::Unnamed(_) | Fields::Unit => {
+                    unimplemented!()
+                }
+            },
+            Data::Enum(_) | Data::Union(_) => unimplemented!(),
+        };
 
     let generated = quote! {
         impl crate::types::Params for #name {
             fn get_params_state(&self) -> std::collections::HashMap<String, crate::types::Param>{
                 let mut state = std::collections::HashMap::new();
-                #inserts
+                #signal_inserts
                 state
             }
+
+            fn get_data_params_state(&self) -> std::collections::HashMap<String, crate::types::DataParamValue>{
+                let mut data_state = std::collections::HashMap::new();
+                #data_inserts
+                data_state
+            }
+
             fn update_param(&mut self, param_name: &String, new_param: &crate::types::InternalParam, module_name: &str) -> Result<()> {
                 match param_name.as_str() {
-                    #updates
+                    #signal_updates
                     _ => Err(anyhow!(
                         "{} is not a valid param name for {}",
                         param_name,
@@ -236,9 +409,27 @@ fn impl_params_macro(ast: &DeriveInput) -> TokenStream {
                     )),
                 }
             }
-            fn get_schema() -> Vec<crate::types::ParamSchema> {
+
+            fn update_data_param(&mut self, param_name: &String, new_param: &crate::types::InternalDataParam, module_name: &str) -> Result<()> {
+                match param_name.as_str() {
+                    #data_updates
+                    _ => Err(anyhow!(
+                        "{} is not a valid data param name for {}",
+                        param_name,
+                        module_name
+                    )),
+                }
+            }
+
+            fn get_schema() -> Vec<crate::types::SignalParamSchema> {
                 vec![
-                    #schemas
+                    #signal_schemas
+                ]
+            }
+
+            fn get_data_schema() -> Vec<crate::types::DataParamSchema> {
+                vec![
+                    #data_schemas
                 ]
             }
         }
@@ -383,16 +574,26 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
 
             fn get_state(&self) -> crate::types::ModuleState {
                 use crate::types::Params;
-                crate::types::ModuleState {
-                    module_type: #module_name.to_owned(),
-                    id: self.id.clone(),
-                    params: self.module.lock().params.get_params_state(),
+                use std::collections::HashMap;
+                {
+                    let module = self.module.try_lock().unwrap();
+                    crate::types::ModuleState {
+                        module_type: #module_name.to_owned(),
+                        id: self.id.clone(),
+                        signal_params: module.params.get_params_state(),
+                        data_params: module.params.get_data_params_state(),
+                    }
                 }
             }
 
             fn update_param(&self, param_name: &String, new_param: &crate::types::InternalParam) -> Result<()> {
                 use crate::types::Params;
                 self.module.lock().params.update_param(param_name, new_param, #module_name)
+            }
+
+            fn update_data_param(&self, param_name: &String, new_param: &crate::types::InternalDataParam) -> Result<()> {
+                use crate::types::Params;
+                self.module.lock().params.update_data_param(param_name, new_param, #module_name)
             }
 
             fn get_id(&self) -> &String {
@@ -416,13 +617,14 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 use crate::types::Params;
 
                 // Validate that parameter names and output names don't overlap
-                let param_schemas = #params_struct_name::get_schema();
+                let signal_param_schemas = #params_struct_name::get_schema();
+                let data_param_schemas = #params_struct_name::get_data_schema();
                 let output_schemas = vec![
                     #(#output_schemas)*
                 ];
 
                 // Check for name collisions
-                for param in &param_schemas {
+                for param in &signal_param_schemas {
                     for output in &output_schemas {
                         if param.name == output.name {
                             panic!(
@@ -434,10 +636,35 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                     }
                 }
 
+                for param in &data_param_schemas {
+                    for output in &output_schemas {
+                        if param.name == output.name {
+                            panic!(
+                                "Module '{}' has data parameter and output with the same name '{}'. Data parameters and outputs must have unique names.",
+                                #module_name,
+                                param.name
+                            );
+                        }
+                    }
+                }
+
+                for s in &signal_param_schemas {
+                    for d in &data_param_schemas {
+                        if s.name == d.name {
+                            panic!(
+                                "Module '{}' has a signal parameter and data parameter with the same name '{}'. Parameters must have unique names.",
+                                #module_name,
+                                s.name
+                            );
+                        }
+                    }
+                }
+
                 crate::types::ModuleSchema {
                     name: #module_name.to_string(),
                     description: #module_description.to_string(),
-                    params: param_schemas,
+                    signal_params: signal_param_schemas,
+                    data_params: data_param_schemas,
                     outputs: output_schemas,
                 }
             }

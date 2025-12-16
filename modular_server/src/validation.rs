@@ -1,4 +1,6 @@
-use modular_core::types::{ModuleSchema, Param, PatchGraph, ScopeItem};
+use modular_core::types::{
+    DataParamType, DataParamValue, ModuleSchema, Param, PatchGraph, ScopeItem,
+};
 use std::collections::{HashMap, HashSet};
 
 use crate::protocol::ValidationError;
@@ -44,11 +46,19 @@ pub fn validate_patch(
 
         let schema = schema_map.get(module.module_type.as_str()).unwrap();
 
-        // Build param name set from schema
-        let valid_params: HashSet<&str> = schema.params.iter().map(|p| p.name.as_str()).collect();
+        // Build signal param name set from schema
+        let valid_params: HashSet<&str> =
+            schema.signal_params.iter().map(|p| p.name.as_str()).collect();
+
+        // Build data param name/type map from schema
+        // let valid_data_params: HashMap<&str, &DataParamType> = schema
+        //     .data_params
+        //     .iter()
+        //     .map(|p| (p.name.as_str(), &p.value_type))
+        //     .collect();
 
         // Validate each param
-        for (param_name, param) in &module.params {
+        for (param_name, param) in &module.signal_params {
             // Check if param name is valid for this module type
             if !valid_params.contains(param_name.as_str()) {
                 errors.push(ValidationError::with_location(
@@ -57,7 +67,7 @@ pub fn validate_patch(
                         "Parameter '{}' not found on module type '{}'",
                         param_name, module.module_type
                     ),
-                    format!("modules.{}.params.{}", module.id, param_name),
+                        format!("modules.{}.signalParams.{}", module.id, param_name),
                 ));
             }
 
@@ -72,7 +82,7 @@ pub fn validate_patch(
                     errors.push(ValidationError::with_location(
                         format!("params.{}.module", param_name),
                         format!("Module '{}' not found for cable source", target_module),
-                        format!("modules.{}.params.{}", module.id, param_name),
+                        format!("modules.{}.signalParams.{}", module.id, param_name),
                     ));
                 } else {
                     // Check if source port exists on the source module
@@ -91,7 +101,7 @@ pub fn validate_patch(
                                         "Output port '{}' not found on module type '{}'",
                                         port, source.module_type
                                     ),
-                                    format!("modules.{}.params.{}", module.id, param_name),
+                                    format!("modules.{}.signalParams.{}", module.id, param_name),
                                 ));
                             }
                         }
@@ -106,11 +116,48 @@ pub fn validate_patch(
                     errors.push(ValidationError::with_location(
                         "track",
                         "Track ID cannot be empty".to_string(),
-                        format!("modules.{}.params.{}", module.id, param_name),
+                        format!("modules.{}.signalParams.{}", module.id, param_name),
                     ));
                 }
             }
         }
+
+        // Validate each data param
+        // for (param_name, param) in &module.data_params {
+        //     // Check if data param name is valid for this module type
+        //     let expected_type = match valid_data_params.get(param_name.as_str()) {
+        //         Some(t) => *t,
+        //         None => {
+        //             errors.push(ValidationError::with_location(
+        //                 format!("dataParams.{}", param_name),
+        //                 format!(
+        //                     "Data parameter '{}' not found on module type '{}'",
+        //                     param_name, module.module_type
+        //                 ),
+        //                 format!("modules.{}.dataParams.{}", module.id, param_name),
+        //             ));
+        //             continue;
+        //         }
+        //     };
+
+        //     // Validate type matches schema
+        //     let actual_type = match param {
+        //         DataParamValue::String { .. } => DataParamType::String,
+        //         DataParamValue::Number { .. } => DataParamType::Number,
+        //         DataParamValue::Boolean { .. } => DataParamType::Boolean,
+        //     };
+
+        //     if &actual_type != expected_type {
+        //         errors.push(ValidationError::with_location(
+        //             format!("dataParams.{}", param_name),
+        //             format!(
+        //                 "Data parameter '{}' on module type '{}' has type '{:?}' but expected '{:?}'",
+        //                 param_name, module.module_type, actual_type, expected_type
+        //             ),
+        //             format!("modules.{}.dataParams.{}", module.id, param_name),
+        //         ));
+        //     }
+        // }
     }
 
     // Validate scopes (declarative audio subscriptions)
@@ -173,23 +220,24 @@ pub fn validate_patch(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use modular_core::types::{ModuleState, OutputSchema, ParamSchema};
+    use modular_core::types::{ModuleState, OutputSchema, SignalParamSchema};
 
     fn create_test_schemas() -> Vec<ModuleSchema> {
         vec![
             ModuleSchema {
                 name: "sine-oscillator".to_string(),
                 description: "A sine wave oscillator".to_string(),
-                params: vec![
-                    ParamSchema {
+                signal_params: vec![
+                    SignalParamSchema {
                         name: "freq".to_string(),
                         description: "frequency".to_string(),
                     },
-                    ParamSchema {
+                    SignalParamSchema {
                         name: "phase".to_string(),
                         description: "phase".to_string(),
                     },
                 ],
+                data_params: vec![],
                 outputs: vec![OutputSchema {
                     name: "output".to_string(),
                     description: "signal output".to_string(),
@@ -199,10 +247,11 @@ mod tests {
             ModuleSchema {
                 name: "signal".to_string(),
                 description: "A signal".to_string(),
-                params: vec![ParamSchema {
+                signal_params: vec![SignalParamSchema {
                     name: "source".to_string(),
                     description: "signal input".to_string(),
                 }],
+                data_params: vec![],
                 outputs: vec![OutputSchema {
                     name: "output".to_string(),
                     description: "signal output".to_string(),
@@ -222,7 +271,8 @@ mod tests {
             modules: vec![ModuleState {
                 id: "sine-1".to_string(),
                 module_type: "sine-oscillator".to_string(),
-                params,
+                signal_params: params,
+                data_params: HashMap::new(),
             }],
             tracks: vec![],
             scopes: vec![],
@@ -239,7 +289,8 @@ mod tests {
             modules: vec![ModuleState {
                 id: "foo-1".to_string(),
                 module_type: "unknown-module".to_string(),
-                params: HashMap::new(),
+                signal_params: HashMap::new(),
+                data_params: HashMap::new(),
             }],
             tracks: vec![],
             scopes: vec![],
@@ -262,7 +313,8 @@ mod tests {
             modules: vec![ModuleState {
                 id: "sine-1".to_string(),
                 module_type: "sine-oscillator".to_string(),
-                params,
+                signal_params: params,
+                data_params: HashMap::new(),
             }],
             tracks: vec![],
             scopes: vec![],
@@ -291,7 +343,8 @@ mod tests {
             modules: vec![ModuleState {
                 id: "root".to_string(),
                 module_type: "signal".to_string(),
-                params,
+                signal_params: params,
+                data_params: HashMap::new(),
             }],
             tracks: vec![],
             scopes: vec![],
@@ -325,12 +378,14 @@ mod tests {
                 ModuleState {
                     id: "sine-1".to_string(),
                     module_type: "sine-oscillator".to_string(),
-                    params: sine_params,
+                    signal_params: sine_params,
+                    data_params: HashMap::new(),
                 },
                 ModuleState {
                     id: "root".to_string(),
                     module_type: "signal".to_string(),
-                    params: root_params,
+                    signal_params: root_params,
+                    data_params: HashMap::new(),
                 },
             ],
             tracks: vec![],
@@ -369,12 +424,14 @@ mod tests {
                 ModuleState {
                     id: "sine-1".to_string(),
                     module_type: "sine-oscillator".to_string(),
-                    params: sine_params,
+                    signal_params: sine_params,
+                    data_params: HashMap::new(),
                 },
                 ModuleState {
                     id: "signal-1".to_string(),
                     module_type: "signal".to_string(),
-                    params: signal_params,
+                    signal_params: signal_params,
+                    data_params: HashMap::new(),
                 },
             ],
             tracks: vec![],
@@ -395,7 +452,8 @@ mod tests {
             modules: vec![ModuleState {
                 id: "sine-1".to_string(),
                 module_type: "sine-oscillator".to_string(),
-                params,
+                signal_params: params,
+                data_params: HashMap::new(),
             }],
             tracks: vec![],
             scopes: vec![],

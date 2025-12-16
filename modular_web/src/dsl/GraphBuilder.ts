@@ -1,6 +1,7 @@
 import type { ModuleSchema } from "../types/generated/ModuleSchema";
 import type { ModuleState } from "../types/generated/ModuleState";
 import type { Param } from "../types/generated/Param";
+import type { DataParamValue } from "../types/generated/DataParamValue";
 import type { PatchGraph } from "../types/generated/PatchGraph";
 import type { InterpolationType } from "../types/generated/InterpolationType";
 import type { Track } from "../types/generated/Track";
@@ -51,14 +52,15 @@ export class GraphBuilder {
 
     // Initialize module with disconnected params
     const params: Record<string, Param> = {};
-    for (const param of schema.params) {
+    for (const param of schema.signalParams) {
       params[param.name] = { type: 'disconnected' };
     }
 
     const moduleState: ModuleState = {
       id,
       moduleType,
-      params,
+      signalParams: params,
+      dataParams: {},
     };
 
     this.modules.set(id, moduleState);
@@ -80,7 +82,18 @@ export class GraphBuilder {
     if (!module) {
       throw new Error(`Module not found: ${moduleId}`);
     }
-    module.params[paramName] = value;
+    module.signalParams[paramName] = value;
+  }
+
+  /**
+   * Set a data parameter value for a module
+   */
+  setDataParam(moduleId: string, paramName: string, value: DataParamValue): void {
+    const module = this.modules.get(moduleId);
+    if (!module) {
+      throw new Error(`Module not found: ${moduleId}`);
+    }
+    module.dataParams[paramName] = value;
   }
 
   addTrackKeyframe(trackId: string, keyframe: TrackKeyframe) {
@@ -156,6 +169,7 @@ export class GraphBuilder {
 }
 
 type Value = number | ModuleOutput | ModuleNode | TrackNode;
+type DataValue = string | number | boolean;
 
 /**
  * ModuleNode represents a module instance in the DSL with fluent API
@@ -185,11 +199,20 @@ export class ModuleNode {
       get(target, prop: string) {
 
         // Check if it's a parameter name
-        const paramSchema = target.schema.params.find(p => p.name === prop);
+        const paramSchema = target.schema.signalParams.find(p => p.name === prop);
         if (paramSchema) {
           // Return a function that sets the parameter
           return (value: Value) => {
             target._setParam(prop, value);
+            return proxy;
+          };
+        }
+
+        // Check if it's a data param name
+        const dataParamSchema = target.schema.dataParams.find(p => p.name === prop);
+        if (dataParamSchema) {
+          return (value: DataValue) => {
+            target._setDataParam(prop, value);
             return proxy;
           };
         }
@@ -256,6 +279,18 @@ export class ModuleNode {
         type: 'value',
         value: value,
       });
+    }
+
+    return this;
+  }
+
+  _setDataParam(paramName: string, value: DataValue): this {
+    if (typeof value === 'string') {
+      this.builder.setDataParam(this.id, paramName, { type: 'string', value });
+    } else if (typeof value === 'boolean') {
+      this.builder.setDataParam(this.id, paramName, { type: 'boolean', value });
+    } else {
+      this.builder.setDataParam(this.id, paramName, { type: 'number', value });
     }
 
     return this;

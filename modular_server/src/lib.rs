@@ -45,6 +45,11 @@ pub fn create_server_state(sample_rate: f32) -> Arc<AudioState> {
             sampleables.insert("root".to_string(), module);
         }
     }
+    if let Some(constructor) = constructors.get("clock") {
+        if let Ok(module) = constructor(&"root_clock".to_string(), sample_rate) {
+            sampleables.insert("root_clock".to_string(), module);
+        }
+    }
 
     let patch = Arc::new(tokio::sync::Mutex::new(Patch::new(
         sampleables,
@@ -94,7 +99,8 @@ pub async fn run_server(config: ServerConfig) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!(
         "HTTP server listening on http://localhost:{} (also via http://modular.local:{})",
-        config.port, config.port
+        config.port,
+        config.port
     );
 
     axum::serve(listener, app).await?;
@@ -145,10 +151,13 @@ mod tests {
 
         // Core types
         Param::export_all().expect("Failed to export Param");
+        DataParamType::export_all().expect("Failed to export DataParamType");
+        DataParamValue::export_all().expect("Failed to export DataParamValue");
+        DataParamSchema::export_all().expect("Failed to export DataParamSchema");
         Keyframe::export_all().expect("Failed to export Keyframe");
         InterpolationType::export_all().expect("Failed to export InterpolationType");
         Track::export_all().expect("Failed to export Track");
-        ParamSchema::export_all().expect("Failed to export PortSchema");
+        SignalParamSchema::export_all().expect("Failed to export SignalParamSchema");
         ModuleSchema::export_all().expect("Failed to export ModuleSchema");
         ModuleState::export_all().expect("Failed to export ModuleState");
         PatchGraph::export_all().expect("Failed to export PatchGraph");

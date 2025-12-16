@@ -231,7 +231,7 @@ fn test_patch_get_state() {
 	    assert_eq!(sine_state.module_type, "sine");
     
     // Check freq param
-    if let Some(Param::Value { value }) = sine_state.params.get("freq") {
+    if let Some(Param::Value { value }) = sine_state.signal_params.get("freq") {
         assert!((value - 4.0).abs() < 0.01, "Freq param should be 4.0");
     } else {
         panic!("Freq param should be a Value");
@@ -751,7 +751,7 @@ fn test_module_get_state_accuracy() {
 	    assert_eq!(sine_state.module_type, "sine");
     
     // Check freq param
-    if let Some(Param::Value { value }) = sine_state.params.get("freq") {
+    if let Some(Param::Value { value }) = sine_state.signal_params.get("freq") {
         assert!((value - 4.5).abs() < 0.01, "Freq should be 4.5, got {}", value);
     } else {
         panic!("Expected freq param to be Value");

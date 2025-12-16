@@ -391,16 +391,17 @@ async fn apply_patch(
     // Find modules to delete (in current but not in desired), excluding root
     let mut to_delete: Vec<String> = current_ids
         .difference(&desired_ids)
-        .filter(|id| *id != "root")
+        .filter(|id| *id != "root" && *id != "root_clock")
         .cloned()
         .collect();
+    println!("Initial to delete: {:?}", to_delete);
 
     // Find modules where type changed (same ID but different module_type)
     // These need to be deleted and recreated
     let mut to_recreate: Vec<String> = Vec::new();
     for id in current_ids.intersection(&desired_ids) {
-        if id == "root" {
-            continue; // Never recreate root
+        if id == "root" || id == "root_clock" {
+            continue; // Never recreate root or root_clock
         }
         if let (Some(current_module), Some(desired_module)) =
             (patch_lock.sampleables.get(id), desired_modules.get(id))
@@ -520,11 +521,23 @@ async fn apply_patch(
     for id in desired_ids.iter() {
         if let Some(desired_module) = desired_modules.get(id) {
             if let Some(module) = patch_lock.sampleables.get(id) {
-                for (param_name, param) in &desired_module.params {
+                for (param_name, param) in &desired_module.signal_params {
                     let internal_param = param.to_internal_param(&patch_lock);
                     if let Err(err) = module.update_param(param_name, &internal_param) {
                         return Err(anyhow::anyhow!(
                             "Failed to update param {}.{}: {}",
+                            id,
+                            param_name,
+                            err
+                        ));
+                    }
+                }
+
+                for (param_name, param) in &desired_module.data_params {
+                    let internal_param = param.to_internal_data_param();
+                    if let Err(err) = module.update_data_param(param_name, &internal_param) {
+                        return Err(anyhow::anyhow!(
+                            "Failed to update data param {}.{}: {}",
                             id,
                             param_name,
                             err

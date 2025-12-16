@@ -7,26 +7,29 @@ const testSchemas: ModuleSchema[] = [
   {
     name: 'sine',
     description: 'Sine oscillator',
-    params: [
+    signalParams: [
       { name: 'freq', description: 'Frequency in V/oct' },
       { name: 'phase', description: 'Phase' },
     ],
+    dataParams: [],
     outputs: [{ name: 'output', description: 'Audio output', default: true }],
   },
   {
     name: 'signal',
     description: 'Signal passthrough',
-    params: [{ name: 'source', description: 'Input signal' }],
+    signalParams: [{ name: 'source', description: 'Input signal' }],
+    dataParams: [],
     outputs: [{ name: 'output', description: 'Output signal', default: true }],
   },
   {
     name: 'scaleAndShift',
     description: 'Scale and shift',
-    params: [
+    signalParams: [
       { name: 'input', description: 'Input' },
       { name: 'scale', description: 'Scale factor' },
       { name: 'shift', description: 'Shift amount' },
     ],
+    dataParams: [],
     outputs: [{ name: 'output', description: 'Output', default: true }],
   },
 ];
@@ -43,14 +46,7 @@ describe('DSL Executor', () => {
     expect(patch.modules).toHaveLength(2); // osc + root
     expect(patch.modules.find(m => m.id === 'osc1')).toBeDefined();
     expect(patch.modules.find(m => m.id === 'root')).toBeDefined();
-    expect(patch.scopes).toEqual([
-      {
-        ModuleOutput: {
-          moduleId: 'root',
-          portName: 'output',
-        },
-      },
-    ]);
+    expect(patch.scopes).toEqual([]);
   });
 
   it('should handle note helper', () => {
@@ -63,10 +59,48 @@ describe('DSL Executor', () => {
     const sineModule = patch.modules.find(m => m.moduleType === 'sine');
 
     expect(sineModule).toBeDefined();
-    expect(sineModule?.params.freq).toEqual({
-      param_type: 'value',
+    expect(sineModule?.signalParams.freq).toEqual({
+      type: 'value',
       value: expect.any(Number),
     });
+  });
+
+  it('should allow setting data params', () => {
+    const schemasWithDataParams: ModuleSchema[] = [
+      {
+        name: 'sine',
+        description: 'Sine oscillator',
+        signalParams: [
+          { name: 'freq', description: 'Frequency in V/oct' },
+          { name: 'phase', description: 'Phase' },
+        ],
+        dataParams: [
+          { name: 'label', description: 'UI label', valueType: 'string' },
+          { name: 'enabled', description: 'Enabled flag', valueType: 'boolean' },
+          { name: 'gain', description: 'Static gain', valueType: 'number' },
+        ],
+        outputs: [{ name: 'output', description: 'Audio output', default: true }],
+      },
+      {
+        name: 'signal',
+        description: 'Signal passthrough',
+        signalParams: [{ name: 'source', description: 'Input signal' }],
+        dataParams: [],
+        outputs: [{ name: 'output', description: 'Output signal', default: true }],
+      },
+    ];
+
+    const script = `
+      const osc = sine('osc1').label('hello').enabled(true).gain(0.5).freq(hz(440));
+      out.source(osc);
+    `;
+
+    const patch = executePatchScript(script, schemasWithDataParams);
+    const sineModule = patch.modules.find(m => m.id === 'osc1');
+
+    expect(sineModule?.dataParams.label).toEqual({ type: 'string', value: 'hello' });
+    expect(sineModule?.dataParams.enabled).toEqual({ type: 'boolean', value: true });
+    expect(sineModule?.dataParams.gain).toEqual({ type: 'number', value: 0.5 });
   });
 
   it('should handle scale and shift', () => {
@@ -94,10 +128,9 @@ describe('DSL Executor', () => {
 
     expect(patch.scopes).toEqual([
       {
-        ModuleOutput: {
-          moduleId: 'osc1',
-          portName: 'output',
-        },
+        type: 'moduleOutput',
+        moduleId: 'osc1',
+        portName: 'output',
       },
     ]);
   });

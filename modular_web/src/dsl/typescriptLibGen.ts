@@ -3,6 +3,7 @@ import type { ModuleSchema } from "../types/generated/ModuleSchema";
 const BASE_LIB_SOURCE = `
 // Core DSL types used by the generated declarations
 type DSLValue = number | ModuleOutput | ModuleNode | TrackNode;
+type DSLDataValue = string | number | boolean;
 
 interface ModuleOutput {
   readonly moduleId: string;
@@ -44,6 +45,7 @@ interface TrackNode {
 // Helper functions exposed by the DSL runtime
 declare function hz(frequency: number): number;
 declare function note(noteName: string): number;
+declare function bpm(beatsPerMinute: number): number;
 declare function track(id?: string): TrackNode;
 declare function scope(target: ModuleOutput | ModuleNode | TrackNode):  ModuleOutput | ModuleNode | TrackNode;
 `;
@@ -85,13 +87,22 @@ function generateSchemaLib(schemas: ModuleSchema[]): string {
         }
         lines.push(`interface ${nodeInterfaceName} extends ModuleNode {`);
 
-        for (const param of schema.params) {
+        for (const param of schema.signalParams) {
             const paramName = sanitizeIdentifier(param.name);
             const doc = escapeDocComment(param.description);
             if (doc) {
                 lines.push(`  /** ${doc} */`);
             }
             lines.push(`  ${paramName}(value: DSLValue): this;`);
+        }
+
+        for (const param of schema.dataParams) {
+            const paramName = sanitizeIdentifier(param.name);
+            const doc = escapeDocComment(param.description);
+            if (doc) {
+                lines.push(`  /** ${doc} */`);
+            }
+            lines.push(`  ${paramName}(value: DSLDataValue): this;`);
         }
 
         for (const output of schema.outputs) {
@@ -124,6 +135,15 @@ function generateSchemaLib(schemas: ModuleSchema[]): string {
         lines.push('');
         lines.push('/** Root output helper. */');
         lines.push('declare const out: ModuleNode;');
+    }
+    
+    const clockSchema = schemas.find((s) => s.name === 'clock');
+    if (clockSchema) {
+        const factoryName = sanitizeIdentifier(clockSchema.name);
+        const nodeInterfaceName = makeNodeInterfaceName(factoryName);
+        lines.push('');
+        lines.push("/** Default clock module running at 120 BPM. */");
+        lines.push(`declare const rootClock: ${nodeInterfaceName};`);
     }
 
     return lines.join('\n');

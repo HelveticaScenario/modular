@@ -104,4 +104,18 @@ export function note(noteName: string): number {
   return hz(frequency);
 }
 
+/**
+ * Convert BPM (beats per minute) to V/oct frequency
+ * BPM is tempo, where 1 beat = 1 quarter note
+ * At 120 BPM, that's 2 beats per second = 2 Hz
+ */
+export function bpm(beatsPerMinute: number): number {
+  if (beatsPerMinute <= 0) {
+    throw new Error('BPM must be positive');
+  }
+  // Convert BPM to Hz: Hz = BPM / 60
+  const frequency = beatsPerMinute / 60;
+  return hz(frequency);
+}
+
 

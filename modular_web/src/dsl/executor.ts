@@ -1,6 +1,6 @@
 import type { ModuleSchema } from '../types/generated/ModuleSchema';
 import type { PatchGraph } from '../types/generated/PatchGraph';
-import { DSLContext, hz, note } from './factories';
+import { DSLContext, hz, note, bpm } from './factories';
 
 
 /**
@@ -15,6 +15,12 @@ export function executePatchScript(
   const context = new DSLContext(schemas);
   const out = context.factories.signal('root');
 
+  // Create default clock module that runs at 120 BPM
+  const rootClock = context.factories.clock('root_clock');
+  console.log('Created clock module:', rootClock);
+  rootClock.freq(bpm(120));
+  rootClock.run(5); // Always running
+
   // Create the execution environment with all DSL functions
   const dslGlobals = {
     ...context.factories,
@@ -23,9 +29,11 @@ export function executePatchScript(
     // Helper functions
     hz,
     note,
-    
-    // Output helper
+    bpm,
+
+    // Built-in modules
     out,
+    rootClock,
   };
 
   // Build the function body
