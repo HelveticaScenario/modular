@@ -47,15 +47,18 @@ pub fn validate_patch(
         let schema = schema_map.get(module.module_type.as_str()).unwrap();
 
         // Build signal param name set from schema
-        let valid_params: HashSet<&str> =
-            schema.signal_params.iter().map(|p| p.name.as_str()).collect();
+        let valid_params: HashSet<&str> = schema
+            .signal_params
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
 
         // Build data param name/type map from schema
-        // let valid_data_params: HashMap<&str, &DataParamType> = schema
-        //     .data_params
-        //     .iter()
-        //     .map(|p| (p.name.as_str(), &p.value_type))
-        //     .collect();
+        let valid_data_params: HashMap<&str, &DataParamType> = schema
+            .data_params
+            .iter()
+            .map(|p| (p.name.as_str(), &p.value_type))
+            .collect();
 
         // Validate each param
         for (param_name, param) in &module.signal_params {
@@ -67,7 +70,7 @@ pub fn validate_patch(
                         "Parameter '{}' not found on module type '{}'",
                         param_name, module.module_type
                     ),
-                        format!("modules.{}.signalParams.{}", module.id, param_name),
+                    format!("modules.{}.signalParams.{}", module.id, param_name),
                 ));
             }
 
@@ -123,41 +126,41 @@ pub fn validate_patch(
         }
 
         // Validate each data param
-        // for (param_name, param) in &module.data_params {
-        //     // Check if data param name is valid for this module type
-        //     let expected_type = match valid_data_params.get(param_name.as_str()) {
-        //         Some(t) => *t,
-        //         None => {
-        //             errors.push(ValidationError::with_location(
-        //                 format!("dataParams.{}", param_name),
-        //                 format!(
-        //                     "Data parameter '{}' not found on module type '{}'",
-        //                     param_name, module.module_type
-        //                 ),
-        //                 format!("modules.{}.dataParams.{}", module.id, param_name),
-        //             ));
-        //             continue;
-        //         }
-        //     };
+        for (param_name, param) in &module.data_params {
+            // Check if data param name is valid for this module type
+            let expected_type = match valid_data_params.get(param_name.as_str()) {
+                Some(t) => *t,
+                None => {
+                    errors.push(ValidationError::with_location(
+                        format!("dataParams.{}", param_name),
+                        format!(
+                            "Data parameter '{}' not found on module type '{}'",
+                            param_name, module.module_type
+                        ),
+                        format!("modules.{}.dataParams.{}", module.id, param_name),
+                    ));
+                    continue;
+                }
+            };
 
-        //     // Validate type matches schema
-        //     let actual_type = match param {
-        //         DataParamValue::String { .. } => DataParamType::String,
-        //         DataParamValue::Number { .. } => DataParamType::Number,
-        //         DataParamValue::Boolean { .. } => DataParamType::Boolean,
-        //     };
+            // Validate type matches schema
+            let actual_type = match param {
+                DataParamValue::String { .. } => DataParamType::String,
+                DataParamValue::Number { .. } => DataParamType::Number,
+                DataParamValue::Boolean { .. } => DataParamType::Boolean,
+            };
 
-        //     if &actual_type != expected_type {
-        //         errors.push(ValidationError::with_location(
-        //             format!("dataParams.{}", param_name),
-        //             format!(
-        //                 "Data parameter '{}' on module type '{}' has type '{:?}' but expected '{:?}'",
-        //                 param_name, module.module_type, actual_type, expected_type
-        //             ),
-        //             format!("modules.{}.dataParams.{}", module.id, param_name),
-        //         ));
-        //     }
-        // }
+            if &actual_type != expected_type {
+                errors.push(ValidationError::with_location(
+                    format!("dataParams.{}", param_name),
+                    format!(
+                        "Data parameter '{}' on module type '{}' has type '{:?}' but expected '{:?}'",
+                        param_name, module.module_type, actual_type, expected_type
+                    ),
+                    format!("modules.{}.dataParams.{}", module.id, param_name),
+                ));
+            }
+        }
     }
 
     // Validate scopes (declarative audio subscriptions)
