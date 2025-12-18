@@ -128,6 +128,7 @@ export class GraphBuilder {
       modules: Array.from(this.modules.values()),
       tracks: Array.from(this.tracks.values()),
       scopes: Array.from(this.scopes),
+      factories: []
     };
   }
 

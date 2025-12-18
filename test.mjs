@@ -1,4 +1,6 @@
-// Simple 440 Hz sine wave
-const osc = sine('osc1').freq(hz(440));
+
+const osc = saw('osc1').shape(sine().freq(hz(1))).freq(note('a4')).scale(2.5);
+scope(osc)
 out.source(osc);
+
 

@@ -10,7 +10,7 @@ const kick = sine();
 kick.freq(note("c1"));
 
 const kickEnv = ad();
-kickEnv.gate(clock.barTrigger);
+kickEnv.gate(rootClock.barTrigger);
 kickEnv.attack(0.001);
 kickEnv.decay(0.3);
 
@@ -21,7 +21,7 @@ const kickVca = kick.scale(kickEnv);
 const hat = noise();
 
 const hatEnv = ad();
-hatEnv.gate(clock.ppqTrigger);
+hatEnv.gate(rootClock.ppqTrigger);
 hatEnv.attack(0.001);
 hatEnv.decay(0.05);
 
@@ -35,7 +35,7 @@ mixer.in2(hatVca);
 
 out.source(mixer);
 
-// Scope the clock signals
-scope(clock.barTrigger);
-scope(clock.ppqTrigger);
-scope(clock.ramp);
+// Scope the rootClock signals
+scope(rootClock.barTrigger);
+scope(rootClock.ppqTrigger);
+scope(rootClock.ramp);

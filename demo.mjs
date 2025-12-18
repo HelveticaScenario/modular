@@ -1,36 +1,36 @@
 
 
-const phead = saw('track-phead').freq(hz(.5))
+const phead = saw('track-phead').freq(hz(.2))
 
 
 
 scope(phead)
 
 const t = track('t')
-  .addKeyframe(0, sine('k1').freq(hz(.4)))
-  .addKeyframe(1, 0)
-  .interpolation("linear")
+  .addKeyframe(0, sine('k1').freq(hz(4)))
+  .addKeyframe(1, saw('k1').freq(hz(3)))
+  .interpolation("exponential")
   .playhead(phead)
 
 scope(t)
 
 
 const makeSeq = (id, notes) => {
-  const tr = track(id).interpolation('exponential')
+  const t = track(id).interpolation('step')
   if (notes.length === 0) {
-    return tr
+    return t
   }
   const inc = 1 / notes.length
   for (const [i, n] of notes.entries()) {
-    tr.addKeyframe(i * inc, note(n))
+    t.addKeyframe(i * inc, note(n))
   }
-  return tr
+  return t
 }
 
 const seq = makeSeq('seq', ["c4", "eb4", "f4", "g4", "bb4"]).playhead(phead)
 
 // Simple 440 Hz sine wave
-const osc = saw('osc1')
+const osc = sine('osc1')
   .freq(
     seq
   ).scale(t);

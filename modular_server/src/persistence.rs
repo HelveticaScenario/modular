@@ -6,6 +6,7 @@ pub fn create_default_patch() -> PatchGraph {
         modules: vec![],
         tracks: vec![],
         scopes: vec![],
+        factories: vec![],
     }
 }
 

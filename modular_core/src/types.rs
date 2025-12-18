@@ -617,6 +617,11 @@ pub struct Track {
     pub keyframes: Vec<Keyframe>,
 }
 
+pub enum Seq {
+    Fast,
+    Slow,
+}
+
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
@@ -693,6 +698,8 @@ pub struct PatchGraph {
     pub tracks: Vec<Track>,
     #[serde(default)]
     pub scopes: Vec<ScopeItem>,
+    #[serde(default)]
+    pub factories: Vec<ModuleState>,
 }
 
 pub type SampleableConstructor = Box<dyn Fn(&String, f32) -> Result<Arc<Box<dyn Sampleable>>>>;
@@ -976,6 +983,7 @@ mod tests {
             modules: vec![],
             tracks: vec![],
             scopes: vec![],
+            factories: vec![],
         };
         assert!(patch.modules.is_empty());
         assert!(patch.tracks.is_empty());
@@ -994,6 +1002,7 @@ mod tests {
             modules: vec![state],
             tracks: vec![],
             scopes: vec![],
+            factories: vec![],
         };
         assert_eq!(patch.modules.len(), 1);
     }
@@ -1012,6 +1021,7 @@ mod tests {
             }],
             tracks: vec![],
             scopes: vec![],
+            factories: vec![],
         };
 
         let json = serde_json::to_string(&original).unwrap();

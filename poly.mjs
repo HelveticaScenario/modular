@@ -10,7 +10,7 @@ const seq = (notes, ph, cb) => {
     tr.addKeyframe(Math.min(s + d, 1), 0)
     tr.interpolation('step')
     tr.playhead(ph)
-    console.log(tr) 
+    console.log(tr)
     return cb(n, tr, i)
   })
   const sm = mix()
@@ -60,7 +60,7 @@ const sm = seq(
   ],
   saw().freq(hz(.1)),
   (pitch, gate, i) => {
-    console.log(pitch,gate)
+    console.log(pitch, gate)
     return sine(`seq-sine-${i}`).freq(note(pitch)).scale(gate)
   },
 )
