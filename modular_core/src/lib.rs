@@ -17,10 +17,12 @@ extern crate serde_json;
 
 pub mod dsp;
 pub mod patch;
+pub mod pattern;
 pub mod types;
 
 // Re-export commonly used items
 pub use patch::Patch;
+pub use pattern::{Condition, MiniError, Pattern, PatternExpr, PatternState, PatternTransform, PatternValue, Span, TickResult, ValueOp, parse_mini};
 pub use types::{
 	DataParamSchema, DataParamType, DataParamValue, InternalDataParam, InternalParam, InternalTrack,
 	Keyframe, Module, ModuleSchema, ModuleState, Param, Params, PatchGraph, Sampleable,
