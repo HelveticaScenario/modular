@@ -68,7 +68,7 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
     ctx.fillRect(0, 0, w, h);
 
     const midY = h / 2;
-    const maxAbsAmplitude = 5;
+    const maxAbsAmplitude = 10;
     const pixelsPerUnit = h / 2 / maxAbsAmplitude;
 
     ctx.strokeStyle = '#333';

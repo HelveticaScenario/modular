@@ -176,6 +176,7 @@ export function MonacoPatchEditor({
         jsDefaults.setCompilerOptions({
             allowJs: true,
             checkJs: true,
+            lib: ['esnext'],
             allowNonTsExtensions: true,
             target: ts.ScriptTarget.ES2020,
             module: ts.ModuleKind.ESNext,
@@ -253,6 +254,7 @@ export function MonacoPatchEditor({
                                 trailingComma: 'all',
                                 semi: false,
                                 tabWidth: 2,
+                                printWidth: 30,
                             },
                         );
 
