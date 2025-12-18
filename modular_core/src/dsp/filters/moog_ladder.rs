@@ -70,7 +70,7 @@ impl MoogLadderFilter {
         self.sample = self.stage[3];
 
         // Soft clipping to prevent overflow
-        self.sample = self.sample.clamp(-5.0, 5.0);
+        // self.sample = self.sample.clamp(-5.0, 5.0);
     }
 }
 

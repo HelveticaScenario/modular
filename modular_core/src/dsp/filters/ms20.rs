@@ -51,9 +51,9 @@ impl MS20Filter {
         let freq_clamped = clamp(20.0, sample_rate * 0.45, freq);
         self.update_coefficients(freq_clamped, self.smoothed_resonance * 2.0, sample_rate);
         self.sample = self.process(input);
-
+        // println!("MS20 Filter output before clip: {}\n", self.sample);
         // Final stage clipping
-        self.sample = self.sample.clamp(-5.0, 5.0);
+        // self.sample = self.sample.clamp(-5.0, 5.0);
     }
 
     fn update_coefficients(&mut self, freq: f32, q: f32, sample_rate: f32) {

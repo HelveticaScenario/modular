@@ -97,6 +97,6 @@ impl SallenKeyFilter {
         self.z1 = w;
         
         // Very gentle soft clipping to preserve Sallen-Key's smooth character
-        self.sample = self.sample.clamp(-5.0, 5.0);
+        // self.sample = self.sample.clamp(-5.0, 5.0);
     }
 }

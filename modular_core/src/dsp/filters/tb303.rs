@@ -72,6 +72,6 @@ impl TB303Filter {
         self.sample = self.z4;
         
         // Soft clipping
-        self.sample = self.sample.clamp(-5.0, 5.0);
+        // self.sample = self.sample.clamp(-5.0, 5.0);
     }
 }

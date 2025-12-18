@@ -66,6 +66,6 @@ impl LowpassFilter {
         self.z1 = w;
 
         // Soft clipping to prevent overflow
-        self.sample = self.sample.clamp(-5.0, 5.0);
+        // self.sample = self.sample.clamp(-5.0, 5.0);
     }
 }

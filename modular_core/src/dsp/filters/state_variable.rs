@@ -56,8 +56,8 @@ impl StateVariableFilter {
         self.z1_low = self.lowpass;
         
         // Soft clipping to prevent overflow
-        self.lowpass = self.lowpass.clamp(-5.0, 5.0);
-        self.bandpass = self.bandpass.clamp(-5.0, 5.0);
-        self.highpass = self.highpass.clamp(-5.0, 5.0);
+        // self.lowpass = self.lowpass.clamp(-5.0, 5.0);
+        // self.bandpass = self.bandpass.clamp(-5.0, 5.0);
+        // self.highpass = self.highpass.clamp(-5.0, 5.0);
     }
 }

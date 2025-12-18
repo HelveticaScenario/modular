@@ -81,6 +81,6 @@ impl SEMFilter {
             _ => lowpass,
         };
         
-        self.sample = self.sample.clamp(-5.0, 5.0);
+        // self.sample = self.sample.clamp(-5.0, 5.0);
     }
 }
