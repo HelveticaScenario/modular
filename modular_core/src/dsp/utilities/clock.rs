@@ -18,11 +18,11 @@ struct ClockParams {
 #[derive(Module)]
 #[module("clock", "A tempo clock with multiple outputs")]
 pub struct Clock {
-    #[output("bar_trigger", "trigger output every bar", default)]
+    #[output("barTrigger", "trigger output every bar", default)]
     bar_trigger: f32,
     #[output("ramp", "ramp from 0 to 5V every bar")]
     ramp: f32,
-    #[output("ppq_trigger", "trigger output at 48 PPQ")]
+    #[output("ppqTrigger", "trigger output at 48 PPQ")]
     ppq_trigger: f32,
     
     phase: f32,
