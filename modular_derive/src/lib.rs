@@ -20,14 +20,14 @@ struct OutputAttr {
     is_default: bool,
 }
 
-#[proc_macro_derive(Params, attributes(name, description, param))]
-pub fn params_macro_derive(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(SignalParams, attributes(name, description, param))]
+pub fn signal_params_macro_derive(input: TokenStream) -> TokenStream {
     // Construct a representation of Rust code as a syntax tree
     // that we can manipulate
     let ast: DeriveInput = syn::parse(input).unwrap();
 
     // // Build the trait implementation
-    impl_params_macro(&ast)
+    impl_signal_params_macro(&ast)
 }
 
 fn unwrap_attr(attrs: &Vec<Attribute>, ident: &str) -> Option<TokenStream2> {
@@ -171,7 +171,7 @@ where
     // })
 }
 
-fn impl_params_macro(ast: &DeriveInput) -> TokenStream {
+fn impl_signal_params_macro(ast: &DeriveInput) -> TokenStream {
     let name = &ast.ident;
     let (signal_inserts, signal_updates, signal_schemas, data_inserts, data_updates, data_schemas) =
         match ast.data {

@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::{Result, anyhow};
 
-#[derive(Default, Params)]
+#[derive(Default, SignalParams)]
 struct AdsrParams {
     #[param("gate", "gate input (expects >0V for on)")]
     gate: InternalParam,

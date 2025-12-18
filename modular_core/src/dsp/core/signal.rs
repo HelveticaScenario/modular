@@ -1,7 +1,7 @@
 use crate::types::InternalParam;
 use anyhow::{anyhow, Result};
 
-#[derive(Default, Params)]
+#[derive(Default, SignalParams)]
 struct SignalParams {
     #[param("source", "signal input")]
     source: InternalParam,

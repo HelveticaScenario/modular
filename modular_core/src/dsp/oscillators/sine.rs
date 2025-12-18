@@ -9,12 +9,14 @@ use crate::{
     types::InternalParam,
 };
 
-#[derive(Default, Params)]
+#[derive(Default, SignalParams)]
 struct SineOscillatorParams {
     #[param("freq", "frequency in v/oct")]
     freq: InternalParam,
     #[param("phase", "the phase of the oscillator, overrides freq if present")]
     phase: InternalParam,
+    #[param("sync", "sync input (expects >0V to trigger)")]
+    sync: InternalParam,
 }
 
 #[derive(Default, Module)]
@@ -22,6 +24,7 @@ struct SineOscillatorParams {
 pub struct SineOscillator {
     #[output("output", "signal output", default)]
     sample: f32,
+    #[output("phaseOut", "current phase output")]
     phase: f32,
     smoothed_freq: f32,
     params: SineOscillatorParams,

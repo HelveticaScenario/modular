@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 
 use crate::types::InternalParam;
 
-#[derive(Default, Params)]
+#[derive(Default, SignalParams)]
 struct MixParams {
     #[param("in1", "a signal input")]
     input1: InternalParam,

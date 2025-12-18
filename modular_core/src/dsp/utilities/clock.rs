@@ -5,7 +5,7 @@ use crate::{
     types::{InternalParam, smooth_value},
 };
 
-#[derive(Default, Params)]
+#[derive(Default, SignalParams)]
 struct ClockParams {
     #[param("freq", "frequency in v/oct (tempo)")]
     freq: InternalParam,

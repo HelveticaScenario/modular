@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 
 use crate::types::InternalParam;
 
-#[derive(Default, Params)]
+#[derive(Default, SignalParams)]
 struct SumParams {
     #[param("in1", "a signal input")]
     input1: InternalParam,

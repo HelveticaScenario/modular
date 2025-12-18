@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use crate::{dsp::utils::clamp, types::InternalParam};
 
-#[derive(Default, Params)]
+#[derive(Default, SignalParams)]
 struct SawOscillatorParams {
     #[param("freq", "frequency in v/oct")]
     freq: InternalParam,

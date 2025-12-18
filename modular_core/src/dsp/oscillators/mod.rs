@@ -5,11 +5,13 @@ use crate::types::{Module, ModuleSchema, SampleableConstructor};
 pub mod sine;
 pub mod saw;
 pub mod pulse;
+pub mod noise;
 
 pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     sine::SineOscillator::install_constructor(map);
     saw::SawOscillator::install_constructor(map);
     pulse::PulseOscillator::install_constructor(map);
+    noise::Noise::install_constructor(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {
@@ -17,5 +19,6 @@ pub fn schemas() -> Vec<ModuleSchema> {
         sine::SineOscillator::get_schema(),
         saw::SawOscillator::get_schema(),
         pulse::PulseOscillator::get_schema(),
+        noise::Noise::get_schema(),
     ]
 }

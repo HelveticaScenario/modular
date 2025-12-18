@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use crate::types::InternalParam;
 
-#[derive(Default, Params)]
+#[derive(Default, SignalParams)]
 struct FormantFilterParams {
     #[param("input", "signal input")]
     input: InternalParam,

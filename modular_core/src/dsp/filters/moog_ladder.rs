@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::{Result, anyhow};
 
-#[derive(Default, Params)]
+#[derive(Default, SignalParams)]
 struct MoogLadderFilterParams {
     #[param("input", "signal input")]
     input: InternalParam,

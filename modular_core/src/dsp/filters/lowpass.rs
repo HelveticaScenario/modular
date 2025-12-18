@@ -1,7 +1,7 @@
 use crate::types::InternalParam;
 use anyhow::{Result, anyhow};
 
-#[derive(Default, Params)]
+#[derive(Default, SignalParams)]
 struct LowpassFilterParams {
     #[param("input", "signal input")]
     input: InternalParam,

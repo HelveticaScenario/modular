@@ -3,7 +3,7 @@ use std::f32::consts::PI;
 use crate::{dsp::utils::clamp, types::InternalParam};
 use anyhow::{Result, anyhow};
 
-#[derive(Default, Params)]
+#[derive(Default, SignalParams)]
 struct MS20FilterParams {
     #[param("input", "signal input")]
     input: InternalParam,

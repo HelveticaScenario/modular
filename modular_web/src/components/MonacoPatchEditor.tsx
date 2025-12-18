@@ -194,7 +194,6 @@ export function MonacoPatchEditor({
         // Ensure the DSL library is registered as soon as the editor mounts,
         // using whatever schemas we currently have.
         applyDslLibToMonaco(monaco, schemas, extraLibDisposeRef);
-
         inlayHintDisposeRef.current =
             monaco.languages.registerInlayHintsProvider('javascript', {
                 provideInlayHints(model, range) {
@@ -205,13 +204,18 @@ export function MonacoPatchEditor({
                         sliderCalls,
                     );
                     return {
-                        hints: sliderCalls.map((call) => {
+                        hints: sliderCalls.map((call, i) => {
                             const position = model.getPositionAt(
                                 call.openParenIndex + 1,
                             );
                             return {
                                 position,
-                                label: ' '.repeat(10), // 10 spaces for slider width
+                                // cursed way of finding if an inlay hint has rendered
+                                label: ' '
+                                    .repeat(10)
+                                    .concat('\u200C')
+                                    .concat('\u200B'.repeat(i))
+                                    .concat('\u200C'), // 10 spaces for slider width
                             };
                         }),
                         dispose() {},

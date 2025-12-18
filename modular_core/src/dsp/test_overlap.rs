@@ -4,7 +4,7 @@
 use anyhow::{anyhow, Result};
 use crate::types::InternalParam;
 
-#[derive(Default, Params)]
+#[derive(Default, SignalParams)]
 struct TestOverlapParams {
     #[param("output", "this conflicts with the output name")]
     output: InternalParam,

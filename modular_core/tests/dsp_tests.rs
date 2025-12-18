@@ -5,7 +5,7 @@
 
 use modular_core::dsp::get_constructors;
 use modular_core::patch::Patch;
-use modular_core::types::{InternalParam, Param, ROOT_ID};
+use modular_core::types::{InternalDataParam, InternalParam, Param, ROOT_ID};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -308,6 +308,54 @@ fn test_pulse_oscillator_produces_output() {
     // Pulse oscillator alternates between +5 and -5
     assert!(max_sample > 1.0 || min_sample < -1.0, 
         "Pulse oscillator should produce varying samples, got max={}, min={}", max_sample, min_sample);
+}
+
+#[test]
+fn test_noise_module_colors_produce_output() {
+    let mut patch = create_test_patch();
+    add_module(&mut patch, "noise-1", "noise");
+
+    let mut measure_max = |frames: usize| {
+        let mut max_abs = 0.0;
+        for _ in 0..frames {
+            process_frame(&patch);
+            let sample = get_sample(&patch, "noise-1", "output").abs();
+            if sample > max_abs {
+                max_abs = sample;
+            }
+        }
+        max_abs
+    };
+
+    let white_max = measure_max(512);
+    assert!(white_max > 0.01, "White noise should produce non-zero output");
+    assert!(white_max <= 5.0, "White noise should stay within +/-5V");
+
+    if let Some(module) = patch.sampleables.get("noise-1") {
+        let _ = module.update_data_param(
+            &"color".to_string(),
+            &InternalDataParam::String {
+                value: "pink".to_string(),
+            },
+        );
+    }
+
+    let pink_max = measure_max(512);
+    assert!(pink_max > 0.01, "Pink noise should produce output");
+    assert!(pink_max <= 5.0, "Pink noise should stay within +/-5V");
+
+    if let Some(module) = patch.sampleables.get("noise-1") {
+        let _ = module.update_data_param(
+            &"color".to_string(),
+            &InternalDataParam::String {
+                value: "brown".to_string(),
+            },
+        );
+    }
+
+    let brown_max = measure_max(512);
+    assert!(brown_max > 0.01, "Brown noise should produce output");
+    assert!(brown_max <= 5.0, "Brown noise should stay within +/-5V");
 }
 
 #[test]
