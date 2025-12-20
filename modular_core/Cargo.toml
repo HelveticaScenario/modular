@@ -16,3 +16,5 @@ keyframe = "1.1"
 modular_derive = { version = "*", path = "../modular_derive" }
 parking_lot = "0.12"
 ts-rs = { version = "11", features = ["serde-compat"] }
+pest = "2.7"
+pest_derive = "2.7"

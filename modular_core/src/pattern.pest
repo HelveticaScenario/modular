@@ -1,0 +1,157 @@
+// Krill mini-notation grammar for Rust pest parser
+// Based on krill.pegjs from Strudel project
+
+WHITESPACE = _{ " " | "\n" | "\r" | "\t" | "\u{00A0}" }
+
+// ----- Numbers -----
+
+number = @{ minus? ~ int ~ frac? ~ exp? }
+
+decimal_point = { "." }
+
+digit1_9 = { '1'..'9' }
+
+e = { "e" | "E" }
+
+exp = { e ~ (minus | plus)? ~ ASCII_DIGIT+ }
+
+frac = { decimal_point ~ ASCII_DIGIT+ }
+
+int = { zero | (digit1_9 ~ ASCII_DIGIT*) }
+
+intneg = @{ minus? ~ int }
+
+minus = { "-" }
+
+plus = { "+" }
+
+zero = { "0" }
+
+// ------------------ delimiters ---------------------------
+
+comma = { "," }
+pipe = { "|" }
+dot = { "." }
+quote = { "\"" | "'" }
+
+// ------------------ steps and cycles ---------------------------
+
+step_char = {
+    unicode_letter | '0'..'9' | "~" | "-" | "#" | "." | "^" | "_"
+}
+
+step = @{ !("." | "_") ~ step_char+ }
+
+sub_cycle = { "[" ~ stack_or_choose ~ "]" }
+
+polymeter = { "{" ~ polymeter_stack ~ "}" ~ polymeter_steps? }
+
+polymeter_steps = { "%" ~ slice }
+
+slow_sequence = { "<" ~ polymeter_stack ~ ">" }
+
+slice = { step | sub_cycle | polymeter | slow_sequence }
+
+// slice modifiers
+slice_op = {
+    op_weight | op_bjorklund | op_slow | op_fast | op_replicate | op_degrade | op_tail | op_range
+}
+
+op_weight = { ("@" | "_") ~ number? }
+
+op_replicate = { "!" ~ number? }
+
+op_bjorklund = { "(" ~ slice_with_ops ~ comma ~ slice_with_ops ~ (comma ~ slice_with_ops)? ~ ")" }
+
+op_slow = { "/" ~ slice }
+
+op_fast = { "*" ~ slice }
+
+op_degrade = { "?" ~ number? }
+
+op_tail = { ":" ~ slice }
+
+op_range = { ".." ~ slice }
+
+slice_with_ops = { slice ~ slice_op* }
+
+sequence = { "^"? ~ slice_with_ops+ }
+
+stack_tail = { (comma ~ sequence)+ }
+
+choose_tail = { (pipe ~ sequence)+ }
+
+dot_tail = { (dot ~ sequence)+ }
+
+stack_or_choose = { sequence ~ (stack_tail | choose_tail | dot_tail)? }
+
+polymeter_stack = { sequence ~ stack_tail? }
+
+// Mini-notation innards ends
+// ---------->8---------->8---------->8---------->8---------->8----------
+
+// mini-notation = a quoted stack
+mini = { quote ~ stack_or_choose ~ quote }
+
+// ------------------ operators ---------------------------
+
+operator = { scale | slow | fast | target | bjorklund | struct_op | rotR | rotL }
+
+struct_op = { "struct" ~ mini_or_operator }
+
+target = { "target" ~ quote ~ step ~ quote }
+
+bjorklund = ${ "euclid" ~ WHITESPACE+ ~ int ~ WHITESPACE+ ~ int ~ (WHITESPACE+ ~ int)? }
+
+slow = { "slow" ~ number }
+
+rotL = { "rotL" ~ number }
+
+rotR = { "rotR" ~ number }
+
+fast = { "fast" ~ number }
+
+scale = { "scale" ~ quote ~ scale_name ~ quote }
+
+scale_name = @{ step_char+ }
+
+comment = { "//" ~ (!"\n" ~ ANY)* }
+
+// ---------------- grouping --------------------------------
+
+group_operator = { cat }
+
+cat = { "cat" ~ "[" ~ mini_or_operator ~ (comma ~ mini_or_operator)* ~ "]" }
+
+// ------------------ high level mini ---------------------------
+
+mini_or_group = { group_operator | mini }
+
+mini_or_operator = {
+    (operator ~ "$" ~ mini_or_operator) |
+    (mini_or_group ~ comment*)
+}
+
+sequ_or_operator_or_comment = { mini_or_operator | comment }
+
+mini_definition = { sequ_or_operator_or_comment }
+
+// ---------------------- statements ----------------------------
+
+command = { setcps | setbpm | hush }
+
+setcps = { "setcps" ~ number }
+
+setbpm = { "setbpm" ~ number }
+
+hush = { "hush" }
+
+// ---------------------- statements ----------------------------
+
+statement = { mini_definition | command }
+
+start = { SOI ~ statement ~ EOI }
+
+// ---------------------- unicode ----------------------------
+
+unicode_letter = { 'a'..'z' | 'A'..'Z' }

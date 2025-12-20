@@ -18,6 +18,7 @@ extern crate serde_json;
 pub mod dsp;
 pub mod patch;
 pub mod pattern;
+pub mod pattern_parser;
 pub mod types;
 
 // Re-export commonly used items
