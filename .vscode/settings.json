@@ -8,6 +8,7 @@
     "heun",
     "playhead",
     "Playmode",
+    "repr",
     "Sampleable",
     "sampleables",
     "Unmute"

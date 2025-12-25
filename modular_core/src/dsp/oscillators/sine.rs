@@ -1,4 +1,6 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
+use schemars::JsonSchema;
+use serde::Deserialize;
 
 use crate::{
     dsp::utils::wrap,
@@ -6,25 +8,32 @@ use crate::{
         consts::{LUT_SINE, LUT_SINE_SIZE},
         utils::{clamp, interpolate},
     },
-    types::InternalParam,
+    types::Signal,
 };
 
-#[derive(Default, SignalParams)]
+#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[serde(default)]
 struct SineOscillatorParams {
-    #[param("freq", "frequency in v/oct")]
-    freq: InternalParam,
-    #[param("phase", "the phase of the oscillator, overrides freq if present")]
-    phase: InternalParam,
-    #[param("sync", "sync input (expects >0V to trigger)")]
-    sync: InternalParam,
+    /// frequency in v/oct
+    freq: Signal,
+    /// the phase of the oscillator, overrides freq if present
+    phase: Signal,
+    /// sync input (expects >0V to trigger)
+    sync: Signal,
+}
+
+#[derive(Outputs, JsonSchema)]
+struct SineOscillatorOutputs {
+    #[output("output", "signal output", default)]
+    sample: f32,
+    #[output("phaseOut", "current phase output")]
+    phase_out: f32,
 }
 
 #[derive(Default, Module)]
 #[module("sine", "A sine wave oscillator")]
 pub struct SineOscillator {
-    #[output("output", "signal output", default)]
-    sample: f32,
-    #[output("phaseOut", "current phase output")]
+    outputs: SineOscillatorOutputs,
     phase: f32,
     smoothed_freq: f32,
     params: SineOscillatorParams,
@@ -32,8 +41,9 @@ pub struct SineOscillator {
 
 impl SineOscillator {
     fn update(&mut self, sample_rate: f32) -> () {
-        if self.params.phase != InternalParam::Disconnected {
-            self.sample = wrap(0.0..1.0, self.params.phase.get_value())
+        if self.params.phase != Signal::Disconnected {
+            self.phase = wrap(0.0..1.0, self.params.phase.get_value());
+            self.outputs.sample = self.phase;
         } else {
             let target_freq = clamp(-10.0, 10.0, self.params.freq.get_value_or(4.0));
             self.smoothed_freq = crate::types::smooth_value(self.smoothed_freq, target_freq);
@@ -43,7 +53,9 @@ impl SineOscillator {
             while self.phase >= 1.0 {
                 self.phase -= 1.0;
             }
-            self.sample = 5.0 * interpolate(LUT_SINE, self.phase, LUT_SINE_SIZE);
+            self.outputs.sample = 5.0 * interpolate(LUT_SINE, self.phase, LUT_SINE_SIZE);
         }
+
+        self.outputs.phase_out = self.phase;
     }
 }

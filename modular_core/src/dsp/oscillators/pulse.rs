@@ -1,21 +1,30 @@
 use anyhow::{anyhow, Result};
-use crate::{dsp::utils::clamp, types::InternalParam};
+use schemars::JsonSchema;
+use serde::Deserialize;
 
-#[derive(Default, SignalParams)]
+use crate::{dsp::utils::clamp, types::Signal};
+
+#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[serde(default)]
 struct PulseOscillatorParams {
-    #[param("freq", "frequency in v/oct")]
-    freq: InternalParam,
-    #[param("width", "pulse width (0-5, 2.5 is square)")]
-    width: InternalParam,
-    #[param("pwm", "pulse width modulation input")]
-    pwm: InternalParam,
+    /// frequency in v/oct
+    freq: Signal,
+    /// pulse width (0-5, 2.5 is square)
+    width: Signal,
+    /// pulse width modulation input
+    pwm: Signal,
+}
+
+#[derive(Outputs, JsonSchema)]
+struct PulseOscillatorOutputs {
+    #[output("output", "signal output", default)]
+    sample: f32,
 }
 
 #[derive(Default, Module)]
 #[module("pulse", "Pulse/Square oscillator with PWM")]
 pub struct PulseOscillator {
-    #[output("output", "signal output", default)]
-    sample: f32,
+    outputs: PulseOscillatorOutputs,
     phase: f32,
     smoothed_freq: f32,
     smoothed_width: f32,
@@ -62,7 +71,7 @@ impl PulseOscillator {
             phase_increment,
         );
         
-        self.sample = naive_pulse * 5.0;
+        self.outputs.sample = naive_pulse * 5.0;
     }
 }
 

@@ -1,22 +1,29 @@
-use crate::types::InternalParam;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
+use schemars::JsonSchema;
+use serde::Deserialize;
 
-#[derive(Default, SignalParams)]
+#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[serde(default)]
 struct SignalParams {
-    #[param("source", "signal input")]
-    source: InternalParam,
+    /// signal input
+    source: crate::types::Signal,
+}
+
+#[derive(Outputs, JsonSchema)]
+struct SignalOutputs {
+    #[output("output", "signal output", default)]
+    sample: f32,
 }
 
 #[derive(Default, Module)]
 #[module("signal", "a signal")]
 pub struct Signal {
-    #[output("output", "signal output", default)]
-    sample: f32,
+    outputs: SignalOutputs,
     params: SignalParams,
 }
 
 impl Signal {
     fn update(&mut self, _sample_rate: f32) -> () {
-        self.sample = self.params.source.get_value();
+        self.outputs.sample = self.params.source.get_value();
     }
 }

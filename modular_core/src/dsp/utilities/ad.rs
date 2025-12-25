@@ -1,18 +1,21 @@
 use crate::{
     dsp::utils::clamp,
-    types::{InternalParam, smooth_value},
+    types::{Signal, smooth_value},
 };
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
+use schemars::JsonSchema;
+use serde::Deserialize;
 
-#[derive(Default, SignalParams)]
+#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[serde(default)]
 struct AdParams {
-    #[param("gate", "gate input (expects >0V for on)")]
-    gate: InternalParam,
-    #[param("attack", "attack time (approximate seconds)")]
-    attack: InternalParam,
-    #[param("decay", "decay time (approximate seconds)")]
-    decay: InternalParam,
+    /// gate input (expects >0V for on)
+    gate: Signal,
+    /// attack time (approximate seconds)
+    attack: Signal,
+    /// decay time (approximate seconds)
+    decay: Signal,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -30,8 +33,7 @@ impl Default for EnvelopeStage {
 #[derive(Module)]
 #[module("ad", "Attack-decay envelope generator")]
 pub struct Ad {
-    #[output("output", "envelope output", default)]
-    sample: f32,
+    outputs: AdOutputs,
     stage: EnvelopeStage,
     current_value: f32,
     target: f32,
@@ -43,10 +45,16 @@ pub struct Ad {
     params: AdParams,
 }
 
+#[derive(Outputs, JsonSchema)]
+struct AdOutputs {
+    #[output("output", "envelope output", default)]
+    sample: f32,
+}
+
 impl Default for Ad {
     fn default() -> Self {
         Self {
-            sample: 0.0,
+            outputs: AdOutputs::default(),
             stage: EnvelopeStage::Idle,
             current_value: 0.0,
             target: 0.0,
@@ -98,6 +106,6 @@ impl Ad {
         self.current_value += step;
 
         let normalized = clamp(0.0, 1.0, self.current_value / 1024.0);
-        self.sample = clamp(0.0, 5.0, normalized * self.scale * 5.0);
+        self.outputs.sample = clamp(0.0, 5.0, normalized * self.scale * 5.0);
     }
 }

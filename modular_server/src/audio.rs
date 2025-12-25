@@ -9,11 +9,12 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crate::protocol::OutputMessage;
 use modular_core::patch::Patch;
 use modular_core::types::{ROOT_OUTPUT_PORT, ScopeItem};
+use std::time::Instant;
 
 /// Attenuation factor applied to audio output to prevent clipping.
 /// DSP modules output signals in the range [-5, 5] volts (modular synth convention).
@@ -77,6 +78,30 @@ pub struct AudioState {
     pub recording_writer: Arc<tokio::sync::Mutex<Option<WavWriter<BufWriter<File>>>>>,
     pub recording_path: Arc<tokio::sync::Mutex<Option<PathBuf>>>,
     pub sample_rate: f32,
+    audio_thread_health: AudioThreadHealth,
+}
+
+#[derive(Default)]
+struct AudioThreadHealth {
+    /// Number of audio frames skipped because the real-time callback could not acquire
+    /// the patch lock via `try_lock()`.
+    patch_lock_misses: AtomicU64,
+
+    /// Number of output callbacks whose execution time exceeded the duration of the
+    /// buffer they were asked to fill (a strong signal of underrun risk).
+    output_callback_overruns: AtomicU64,
+    /// Max observed overrun (elapsed - expected) in nanoseconds.
+    output_callback_overrun_max_ns: AtomicU64,
+    /// Max observed total callback execution time in nanoseconds.
+    output_callback_duration_max_ns: AtomicU64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AudioThreadHealthSnapshot {
+    pub patch_lock_misses: u64,
+    pub output_callback_overruns: u64,
+    pub output_callback_overrun_max_ns: u64,
+    pub output_callback_duration_max_ns: u64,
 }
 
 pub struct AudioSubscriptionCollection {
@@ -132,6 +157,28 @@ impl AudioState {
             recording_writer: Arc::new(tokio::sync::Mutex::new(None)),
             recording_path: Arc::new(tokio::sync::Mutex::new(None)),
             sample_rate,
+            audio_thread_health: AudioThreadHealth::default(),
+        }
+    }
+
+    pub fn take_audio_thread_health_snapshot_and_reset(&self) -> AudioThreadHealthSnapshot {
+        AudioThreadHealthSnapshot {
+            patch_lock_misses: self
+                .audio_thread_health
+                .patch_lock_misses
+                .swap(0, Ordering::Relaxed),
+            output_callback_overruns: self
+                .audio_thread_health
+                .output_callback_overruns
+                .swap(0, Ordering::Relaxed),
+            output_callback_overrun_max_ns: self
+                .audio_thread_health
+                .output_callback_overrun_max_ns
+                .swap(0, Ordering::Relaxed),
+            output_callback_duration_max_ns: self
+                .audio_thread_health
+                .output_callback_duration_max_ns
+                .swap(0, Ordering::Relaxed),
         }
     }
 
@@ -230,6 +277,7 @@ where
     T: SizedSample + FromSample<f32> + hound::Sample,
 {
     let num_channels = config.channels as usize;
+    let sample_rate_hz = config.sample_rate.0 as f64;
 
     let err_fn = |err| eprintln!("Error building output sound stream: {err}");
 
@@ -239,7 +287,9 @@ where
 
     let stream = device.build_output_stream(
         config,
-        move |output: &mut [T], _: &cpal::OutputCallbackInfo| {
+        move |output: &mut [T], _info: &cpal::OutputCallbackInfo| {
+            let callback_start = Instant::now();
+
             for frame in output.chunks_mut(num_channels) {
                 let sample = process_frame(&audio_state);
                 let muted = audio_state.is_muted();
@@ -260,6 +310,32 @@ where
                     }
                 }
             }
+
+            // Detect when the data callback itself is taking too long.
+            // We compute the expected wall-time budget based on the number of frames
+            // we were asked to generate and the stream sample rate.
+            let elapsed = callback_start.elapsed();
+            let elapsed_ns = elapsed.as_nanos() as u64;
+            audio_state
+                .audio_thread_health
+                .output_callback_duration_max_ns
+                .fetch_max(elapsed_ns, Ordering::Relaxed);
+
+            // `output.len()` is samples across all channels; convert to frames.
+            let frames = (output.len() / num_channels) as f64;
+            let expected_ns = ((frames * 1_000_000_000.0) / sample_rate_hz) as u64;
+
+            if elapsed_ns > expected_ns {
+                let overrun_ns = elapsed_ns - expected_ns;
+                audio_state
+                    .audio_thread_health
+                    .output_callback_overruns
+                    .fetch_add(1, Ordering::Relaxed);
+                audio_state
+                    .audio_thread_health
+                    .output_callback_overrun_max_ns
+                    .fetch_max(overrun_ns, Ordering::Relaxed);
+            }
         },
         err_fn,
         None,
@@ -274,7 +350,13 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
     // Try to acquire patch lock - if we can't, skip this frame to avoid blocking audio
     let patch_guard = match audio_state.patch.try_lock() {
         Ok(guard) => guard,
-        Err(_) => return 0.0, // Skip frame if patch is locked by another thread
+        Err(_) => {
+            audio_state
+                .audio_thread_health
+                .patch_lock_misses
+                .fetch_add(1, Ordering::Relaxed);
+            return 0.0;
+        }
     };
 
     // Update tracks

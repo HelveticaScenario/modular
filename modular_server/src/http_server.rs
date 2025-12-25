@@ -15,11 +15,12 @@ use axum::{
     response::IntoResponse,
     routing::get,
 };
-use modular_core::types::ScopeItem;
 use modular_core::{
     PatchGraph,
-    dsp::{get_constructors, schema},
+    dsp::{core::signal::Signal, get_constructors, schema},
+    types::Connect,
 };
+use modular_core::{patch, types::ScopeItem};
 use tokio::sync::mpsc::{self, Sender};
 use tokio::task::JoinHandle;
 
@@ -406,8 +407,7 @@ async fn apply_patch(
         if let (Some(current_module), Some(desired_module)) =
             (patch_lock.sampleables.get(id), desired_modules.get(id))
         {
-            let current_state = current_module.get_state();
-            if current_state.module_type != desired_module.module_type {
+            if current_module.get_module_type() != desired_module.module_type {
                 to_recreate.push(id.clone());
                 to_delete.push(id.clone());
             }
@@ -450,102 +450,91 @@ async fn apply_patch(
     }
 
     // ===== TRACK LIFECYCLE =====
+    // The track system is mid-refactor. Keep the legacy implementation available
+    // behind a feature flag while core types stabilize.
+    // #[cfg(feature = "legacy-tracks")]
+    {
+        // Build maps for efficient track lookup
+        let desired_tracks: HashMap<String, _> = desired_graph
+            .tracks
+            .iter()
+            .map(|t| (t.id.clone(), t))
+            .collect();
 
-    // Build maps for efficient track lookup
-    let desired_tracks: HashMap<String, _> = desired_graph
-        .tracks
-        .iter()
-        .map(|t| (t.id.clone(), t))
-        .collect();
+        let current_track_ids: HashSet<String> = patch_lock.tracks.keys().cloned().collect();
+        let desired_track_ids: HashSet<String> = desired_tracks.keys().cloned().collect();
 
-    let current_track_ids: HashSet<String> = patch_lock.tracks.keys().cloned().collect();
-    let desired_track_ids: HashSet<String> = desired_tracks.keys().cloned().collect();
+        // Delete removed tracks (in current but not in desired)
+        let tracks_to_delete: Vec<String> = current_track_ids
+            .difference(&desired_track_ids)
+            .cloned()
+            .collect();
 
-    // Delete removed tracks (in current but not in desired)
-    let tracks_to_delete: Vec<String> = current_track_ids
-        .difference(&desired_track_ids)
-        .cloned()
-        .collect();
+        println!("Tracks to delete: {:?}", tracks_to_delete);
 
-    println!("Tracks to delete: {:?}", tracks_to_delete);
+        for track_id in tracks_to_delete {
+            patch_lock.tracks.remove(&track_id);
+        }
 
-    for track_id in tracks_to_delete {
-        patch_lock.tracks.remove(&track_id);
-    }
+        // Two-pass track creation to handle keyframes that reference other tracks
 
-    // Two-pass track creation to handle keyframes that reference other tracks
-
-    // PASS 1: Create/update track shells (without configuration or keyframes)
-    for track in &desired_graph.tracks {
-        match patch_lock.tracks.get(&track.id) {
-            Some(existing_track) => {
-                // Existing track: clear all keyframes (will re-add in pass 2)
-                println!("Updating track: {}", track.id);
-                let current_keyframes = existing_track.to_track().keyframes;
-                for kf in current_keyframes {
-                    existing_track.remove_keyframe(kf.id);
+        // PASS 1: Create/update track shells (without configuration or keyframes)
+        for track in &desired_graph.tracks {
+            match patch_lock.tracks.get(&track.id) {
+                Some(existing_track) => {
+                    // Existing track: clear all keyframes (will re-add in pass 2)
+                    println!("Updating track: {}", track.id);
+                    existing_track.clear_keyframes()
+                }
+                None => {
+                    // Create new track shell with a disconnected playhead param
+                    println!("Creating track: {}", track.id);
+                    let default_playhead_param = modular_core::types::Signal::Disconnected;
+                    let internal_track = Arc::new(modular_core::types::Track::new(
+                        track.id.clone(),
+                        default_playhead_param,
+                        track.interpolation_type,
+                    ));
+                    patch_lock.tracks.insert(track.id.clone(), internal_track);
                 }
             }
-            None => {
-                // Create new track shell with a disconnected playhead param
-                println!("Creating track: {}", track.id);
-                let default_playhead_param =
-                    modular_core::Param::Disconnected.to_internal_param(&patch_lock);
-                let internal_track = Arc::new(modular_core::types::InternalTrack::new(
-                    track.id.clone(),
-                    default_playhead_param,
-                    track.interpolation_type,
-                ));
-                patch_lock.tracks.insert(track.id.clone(), internal_track);
-            }
         }
-    }
 
-    // PASS 2: Configure tracks and add keyframes (all tracks now exist for Track param resolution)
-    for track in &desired_graph.tracks {
-        if let Some(internal_track) = patch_lock.tracks.get(&track.id) {
-            // Configure playhead parameter and interpolation type
-            let playhead_param = track.playhead.to_internal_param(&patch_lock);
-            internal_track.configure(playhead_param, track.interpolation_type);
+        // PASS 2: Configure tracks and add keyframes (all tracks now exist for Track param resolution)
+        for track in &desired_graph.tracks {
+            if let Some(internal_track) = patch_lock.tracks.get(&track.id) {
+                // Configure playhead parameter and interpolation type
+                internal_track.configure(track.playhead.clone(), track.interpolation_type);
 
-            // Add keyframes (params may reference other tracks, which now exist)
-            for kf in &track.keyframes {
-                let internal_kf = kf.to_internal_keyframe(&patch_lock);
-                internal_track.add_keyframe(internal_kf);
+                // Add keyframes (params may reference other tracks, which now exist)
+                for kf in &track.keyframes {
+                    internal_track.add_keyframe(kf.clone());
+                }
             }
         }
     }
 
     // Update parameters for all desired modules (both new and existing)
-    // This happens AFTER tracks are created so Track params can resolve
+    // Note: params are now a single JSON object, deserialized into each module's
+    // strongly-typed Params struct by `Sampleable::try_update_params`.
     for id in desired_ids.iter() {
         if let Some(desired_module) = desired_modules.get(id) {
             if let Some(module) = patch_lock.sampleables.get(id) {
-                for (param_name, param) in &desired_module.signal_params {
-                    let internal_param = param.to_internal_param(&patch_lock);
-                    if let Err(err) = module.update_param(param_name, &internal_param) {
-                        return Err(anyhow::anyhow!(
-                            "Failed to update param {}.{}: {}",
-                            id,
-                            param_name,
-                            err
-                        ));
-                    }
-                }
-
-                for (param_name, param) in &desired_module.data_params {
-                    let internal_param = param.to_internal_data_param();
-                    if let Err(err) = module.update_data_param(param_name, &internal_param) {
-                        return Err(anyhow::anyhow!(
-                            "Failed to update data param {}.{}: {}",
-                            id,
-                            param_name,
-                            err
-                        ));
-                    }
+                if let Err(err) = module.try_update_params(desired_module.params.clone()) {
+                    return Err(anyhow::anyhow!(
+                        "Failed to update params for {}: {}",
+                        id,
+                        err
+                    ));
                 }
             }
         }
+    }
+    for sampleable in patch_lock.sampleables.values() {
+        sampleable.connect(&patch_lock);
+    }
+    for track in patch_lock.tracks.values() {
+        track.connect(&patch_lock);
     }
 
     Ok(())

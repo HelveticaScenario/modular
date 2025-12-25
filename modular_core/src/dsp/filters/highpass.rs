@@ -1,21 +1,30 @@
 use anyhow::{anyhow, Result};
-use crate::types::InternalParam;
+use schemars::JsonSchema;
+use serde::Deserialize;
 
-#[derive(Default, SignalParams)]
+use crate::types::Signal;
+
+#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[serde(default)]
 struct HighpassFilterParams {
-    #[param("input", "signal input")]
-    input: InternalParam,
-    #[param("cutoff", "cutoff frequency in v/oct")]
-    cutoff: InternalParam,
-    #[param("q", "filter resonance (0-5)")]
-    resonance: InternalParam,
+    /// signal input
+    input: Signal,
+    /// cutoff frequency in v/oct
+    cutoff: Signal,
+    /// filter resonance (0-5)
+    resonance: Signal,
+}
+
+#[derive(Outputs, JsonSchema)]
+struct HighpassFilterOutputs {
+    #[output("output", "filtered signal", default)]
+    sample: f32,
 }
 
 #[derive(Default, Module)]
 #[module("hpf", "12dB/octave highpass filter with resonance")]
 pub struct HighpassFilter {
-    #[output("output", "filtered signal", default)]
-    sample: f32,
+    outputs: HighpassFilterOutputs,
     // State variables for 2-pole (12dB/oct) filter
     z1: f32,
     z2: f32,
@@ -60,7 +69,7 @@ impl HighpassFilter {
         
         // Process sample (Direct Form II)
         let w = input - a1_norm * self.z1 - a2_norm * self.z2;
-        self.sample = b0_norm * w + b1_norm * self.z1 + b2_norm * self.z2;
+        self.outputs.sample = b0_norm * w + b1_norm * self.z1 + b2_norm * self.z2;
         self.z2 = self.z1;
         self.z1 = w;
         

@@ -36,6 +36,8 @@ export function executePatchScript(
     rootClock,
   };
 
+  console.log(dslGlobals)
+
   // Build the function body
   const functionBody = `
     'use strict';

@@ -1,26 +1,35 @@
 // Test module to verify that overlapping parameter and output names
 // produce a runtime panic when the schema is created.
 
-use anyhow::{anyhow, Result};
-use crate::types::InternalParam;
+use anyhow::{Result, anyhow};
+use schemars::JsonSchema;
+use serde::Deserialize;
 
-#[derive(Default, SignalParams)]
+use crate::types::Signal;
+
+#[derive(Default, Deserialize, JsonSchema, Connect)]
+#[serde(default)]
 struct TestOverlapParams {
-    #[param("output", "this conflicts with the output name")]
-    output: InternalParam,
+    /// this conflicts with the output name
+    output: Signal,
 }
 
 #[derive(Default, Module)]
 #[module("test-overlap", "Test module with overlapping names")]
 pub struct TestOverlap {
+    outputs: TestOverlapOutputs,
+    params: TestOverlapParams,
+}
+
+#[derive(Outputs, JsonSchema)]
+struct TestOverlapOutputs {
     #[output("output", "this conflicts with the param name", default)]
     output: f32,
-    params: TestOverlapParams,
 }
 
 impl TestOverlap {
     fn update(&mut self, _sample_rate: f32) {
-        self.output = 1.0;
+        self.outputs.output = 1.0;
     }
 }
 
@@ -36,4 +45,3 @@ mod tests {
         let _schema = TestOverlap::get_schema();
     }
 }
-

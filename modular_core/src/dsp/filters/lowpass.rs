@@ -1,21 +1,30 @@
-use crate::types::InternalParam;
 use anyhow::{Result, anyhow};
+use schemars::JsonSchema;
+use serde::Deserialize;
 
-#[derive(Default, SignalParams)]
+use crate::types::Signal;
+
+#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[serde(default)]
 struct LowpassFilterParams {
-    #[param("input", "signal input")]
-    input: InternalParam,
-    #[param("cutoff", "cutoff frequency in v/oct")]
-    cutoff: InternalParam,
-    #[param("q", "filter resonance (0-5)")]
-    resonance: InternalParam,
+    /// signal input
+    input: Signal,
+    /// cutoff frequency in v/oct
+    cutoff: Signal,
+    /// filter resonance (0-5)
+    res: Signal,
+}
+
+#[derive(Outputs, JsonSchema)]
+struct LowpassFilterOutputs {
+    #[output("output", "filtered signal", default)]
+    sample: f32,
 }
 
 #[derive(Default, Module)]
 #[module("lpf", "12dB/octave lowpass filter with resonance")]
 pub struct LowpassFilter {
-    #[output("output", "filtered signal", default)]
-    sample: f32,
+    outputs: LowpassFilterOutputs,
     // State variables for 2-pole (12dB/oct) filter
     z1: f32,
     z2: f32,
@@ -28,7 +37,7 @@ impl LowpassFilter {
     fn update(&mut self, sample_rate: f32) -> () {
         let input = self.params.input.get_value();
         let target_cutoff = self.params.cutoff.get_value_or(4.0);
-        let target_resonance = self.params.resonance.get_value_or(0.0);
+        let target_resonance = self.params.res.get_value_or(0.0);
 
         self.smoothed_cutoff = crate::types::smooth_value(self.smoothed_cutoff, target_cutoff);
         self.smoothed_resonance =
@@ -61,7 +70,7 @@ impl LowpassFilter {
 
         // Process sample (Direct Form II)
         let w = input - a1_norm * self.z1 - a2_norm * self.z2;
-        self.sample = b0_norm * w + b1_norm * self.z1 + b2_norm * self.z2;
+        self.outputs.sample = b0_norm * w + b1_norm * self.z1 + b2_norm * self.z2;
         self.z2 = self.z1;
         self.z1 = w;
 

@@ -74,6 +74,38 @@ pub async fn run_server(config: ServerConfig) -> anyhow::Result<()> {
     // Start audio thread
     let _stream = audio::run_audio_thread(audio_state.clone())?;
 
+    // Monitor audio-thread health and warn when we start skipping frames.
+    // IMPORTANT: Logging happens on the server thread, not the real-time callback.
+    let audio_state_health_clone = audio_state.clone();
+    tokio::spawn(async move {
+        use std::time::{Duration, Instant};
+
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        let mut was_struggling = false;
+        let mut last_log = Instant::now() - Duration::from_secs(10);
+
+        loop {
+            interval.tick().await;
+
+            let snapshot = audio_state_health_clone.take_audio_thread_health_snapshot_and_reset();
+            let struggling = snapshot.patch_lock_misses > 0 || snapshot.output_callback_overruns > 0;
+
+            // Log on transition into struggling, and then at most once every 5s while struggling.
+            if struggling && (!was_struggling || last_log.elapsed() >= Duration::from_secs(5)) {
+                tracing::warn!(
+                    "Audio thread is struggling: skipped {} frames (patch lock contention), callback overruns={} (max overrun={}µs, max callback={}µs) in the last second",
+                    snapshot.patch_lock_misses,
+                    snapshot.output_callback_overruns,
+                    snapshot.output_callback_overrun_max_ns / 1_000,
+                    snapshot.output_callback_duration_max_ns / 1_000
+                );
+                last_log = Instant::now();
+            }
+
+            was_struggling = struggling;
+        }
+    });
+
     // Create app state
     let state = AppState {
         audio_state: audio_state.clone(),
@@ -145,22 +177,21 @@ mod tests {
     #[test]
     #[ignore]
     fn export_types() {
+        println!("Exporting TypeScript types...");
         use crate::protocol::*;
         use modular_core::types::*;
         use ts_rs::TS;
 
         // Core types
-        Param::export_all().expect("Failed to export Param");
-        DataParamType::export_all().expect("Failed to export DataParamType");
-        DataParamValue::export_all().expect("Failed to export DataParamValue");
-        DataParamSchema::export_all().expect("Failed to export DataParamSchema");
-        Keyframe::export_all().expect("Failed to export Keyframe");
+        Signal::export_all().expect("Failed to export Signal");
+        TrackKeyframe::export_all().expect("Failed to export Keyframe");
         InterpolationType::export_all().expect("Failed to export InterpolationType");
-        Track::export_all().expect("Failed to export Track");
-        SignalParamSchema::export_all().expect("Failed to export SignalParamSchema");
+        TrackProxy::export_all().expect("Failed to export TrackProxy");
         ModuleSchema::export_all().expect("Failed to export ModuleSchema");
+        OutputSchema::export_all().expect("Failed to export OutputSchema");
         ModuleState::export_all().expect("Failed to export ModuleState");
         PatchGraph::export_all().expect("Failed to export PatchGraph");
+        ScopeItem::export_all().expect("Failed to export ScopeItem");
 
         // Protocol types
         InputMessage::export_all().expect("Failed to export InputMessage");

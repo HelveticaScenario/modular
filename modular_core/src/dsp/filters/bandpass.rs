@@ -1,21 +1,30 @@
 use anyhow::{anyhow, Result};
-use crate::types::InternalParam;
+use schemars::JsonSchema;
+use serde::Deserialize;
 
-#[derive(Default, SignalParams)]
+use crate::types::Signal;
+
+#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[serde(default)]
 struct BandpassFilterParams {
-    #[param("input", "signal input")]
-    input: InternalParam,
-    #[param("center", "center frequency in v/oct")]
-    center: InternalParam,
-    #[param("q", "filter Q (bandwidth control, 0-5)")]
-    q: InternalParam,
+    /// signal input
+    input: Signal,
+    /// center frequency in v/oct
+    center: Signal,
+    /// filter Q (bandwidth control, 0-5)
+    q: Signal,
+}
+
+#[derive(Outputs, JsonSchema)]
+struct BandpassFilterOutputs {
+    #[output("output", "filtered signal", default)]
+    sample: f32,
 }
 
 #[derive(Default, Module)]
 #[module("bpf", "12dB/octave bandpass filter")]
 pub struct BandpassFilter {
-    #[output("output", "filtered signal", default)]
-    sample: f32,
+    outputs: BandpassFilterOutputs,
     // State variables for 2-pole filter
     z1: f32,
     z2: f32,
@@ -60,7 +69,7 @@ impl BandpassFilter {
         
         // Process sample (Direct Form II)
         let w = input - a1_norm * self.z1 - a2_norm * self.z2;
-        self.sample = b0_norm * w + b1_norm * self.z1 + b2_norm * self.z2;
+        self.outputs.sample = b0_norm * w + b1_norm * self.z1 + b2_norm * self.z2;
         self.z2 = self.z1;
         self.z1 = w;
         

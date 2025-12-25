@@ -1,17 +1,24 @@
 use std::collections::HashMap;
 
-use crate::types::{Module, ModuleSchema, SampleableConstructor};
+use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
 
-pub mod sine;
-pub mod saw;
-pub mod pulse;
 pub mod noise;
+pub mod pulse;
+pub mod saw;
+pub mod sine;
 
 pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     sine::SineOscillator::install_constructor(map);
     saw::SawOscillator::install_constructor(map);
     pulse::PulseOscillator::install_constructor(map);
     noise::Noise::install_constructor(map);
+}
+
+pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
+    sine::SineOscillator::install_params_validator(map);
+    saw::SawOscillator::install_params_validator(map);
+    pulse::PulseOscillator::install_params_validator(map);
+    noise::Noise::install_params_validator(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {

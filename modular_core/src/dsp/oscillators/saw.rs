@@ -1,21 +1,30 @@
 use anyhow::{anyhow, Result};
-use crate::{dsp::utils::clamp, types::InternalParam};
+use schemars::JsonSchema;
+use serde::Deserialize;
 
-#[derive(Default, SignalParams)]
+use crate::{dsp::utils::clamp, types::Signal};
+
+#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[serde(default)]
 struct SawOscillatorParams {
-    #[param("freq", "frequency in v/oct")]
-    freq: InternalParam,
-    #[param("shape", "waveform shape: 0=saw, 2.5=triangle, 5=ramp")]
-    shape: InternalParam,
-    #[param("phase", "the phase of the oscillator, overrides freq if present")]
-    phase: InternalParam,
+    /// frequency in v/oct
+    freq: Signal,
+    /// waveform shape: 0=saw, 2.5=triangle, 5=ramp
+    shape: Signal,
+    /// the phase of the oscillator, overrides freq if present
+    phase: Signal,
+}
+
+#[derive(Outputs, JsonSchema)]
+struct SawOscillatorOutputs {
+    #[output("output", "signal output", default)]
+    sample: f32,
 }
 
 #[derive(Default, Module)]
 #[module("saw", "Sawtooth/Triangle/Ramp oscillator")]
 pub struct SawOscillator {
-    #[output("output", "signal output", default)]
-    sample: f32,
+    outputs: SawOscillatorOutputs,
     phase: f32,
     last_phase: f32,
     smoothed_freq: f32,
@@ -29,7 +38,7 @@ impl SawOscillator {
         self.smoothed_shape = crate::types::smooth_value(self.smoothed_shape, target_shape);
         
         // If phase input is connected, use it directly (for syncing)
-        let (current_phase, phase_increment) = if self.params.phase != InternalParam::Disconnected {
+        let (current_phase, phase_increment) = if self.params.phase != Signal::Disconnected {
             let phase_input = self.params.phase.get_value();
             let wrapped_phase = crate::dsp::utils::wrap(0.0..1.0, phase_input);
             // Calculate phase increment from phase change for PolyBLEP
@@ -77,7 +86,7 @@ impl SawOscillator {
             triangle * (1.0 - blend) + ramp * blend
         };
         
-        self.sample = output * 5.0;
+        self.outputs.sample = output * 5.0;
     }
 }
 

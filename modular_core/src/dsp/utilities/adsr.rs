@@ -1,21 +1,24 @@
 use crate::{
     dsp::utils::clamp,
-    types::{InternalParam, smooth_value},
+    types::{Signal, smooth_value},
 };
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
+use schemars::JsonSchema;
+use serde::Deserialize;
 
-#[derive(Default, SignalParams)]
+#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[serde(default)]
 struct AdsrParams {
-    #[param("gate", "gate input (expects >0V for on)")]
-    gate: InternalParam,
-    #[param("attack", "attack time in seconds")]
-    attack: InternalParam,
-    #[param("decay", "decay time in seconds")]
-    decay: InternalParam,
-    #[param("sustain", "sustain level in volts (0-5)")]
-    sustain: InternalParam,
-    #[param("release", "release time in seconds")]
-    release: InternalParam,
+    /// gate input (expects >0V for on)
+    gate: Signal,
+    /// attack time in seconds
+    attack: Signal,
+    /// decay time in seconds
+    decay: Signal,
+    /// sustain level in volts (0-5)
+    sustain: Signal,
+    /// release time in seconds
+    release: Signal,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -36,8 +39,7 @@ impl Default for EnvelopeStage {
 #[derive(Module)]
 #[module("adsr", "ADSR envelope generator")]
 pub struct Adsr {
-    #[output("output", "envelope output", default)]
-    sample: f32,
+    outputs: AdsrOutputs,
     stage: EnvelopeStage,
     current_level: f32,
     gate_was_high: bool,
@@ -48,10 +50,16 @@ pub struct Adsr {
     params: AdsrParams,
 }
 
+#[derive(Outputs, JsonSchema)]
+struct AdsrOutputs {
+    #[output("output", "envelope output", default)]
+    sample: f32,
+}
+
 impl Default for Adsr {
     fn default() -> Self {
         Self {
-            sample: 0.0,
+            outputs: AdsrOutputs::default(),
             stage: EnvelopeStage::Idle,
             current_level: 0.0,
             gate_was_high: false,
@@ -143,6 +151,6 @@ impl Adsr {
             }
         }
 
-        self.sample = clamp(0.0, 5.0, self.current_level * 5.0);
+        self.outputs.sample = clamp(0.0, 5.0, self.current_level * 5.0);
     }
 }

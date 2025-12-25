@@ -3,34 +3,83 @@ import { executePatchScript } from '../executor';
 import { hz, note } from '../factories';
 import type { ModuleSchema } from '../../types/generated/ModuleSchema';
 
+const SIGNAL_SCHEMA = {
+  oneOf: [
+    {
+      type: 'object',
+      properties: { type: { const: 'volts' }, value: { type: 'number' } },
+      required: ['type', 'value'],
+    },
+    {
+      type: 'object',
+      properties: {
+        type: { const: 'cable' },
+        module: { type: 'string' },
+        port: { type: 'string' },
+      },
+      required: ['type', 'module', 'port'],
+    },
+    {
+      type: 'object',
+      properties: { type: { const: 'track' }, track: { type: 'string' } },
+      required: ['type', 'track'],
+    },
+    {
+      type: 'object',
+      properties: { type: { const: 'disconnected' } },
+      required: ['type'],
+    },
+  ],
+};
+
 const testSchemas: ModuleSchema[] = [
   {
     name: 'sine',
     description: 'Sine oscillator',
-    signalParams: [
-      { name: 'freq', description: 'Frequency in V/oct' },
-      { name: 'phase', description: 'Phase' },
-    ],
-    dataParams: [],
+    paramsSchema: {
+      type: 'object',
+      properties: {
+        freq: SIGNAL_SCHEMA,
+        phase: SIGNAL_SCHEMA,
+      },
+    },
     outputs: [{ name: 'output', description: 'Audio output', default: true }],
   },
   {
     name: 'signal',
     description: 'Signal passthrough',
-    signalParams: [{ name: 'source', description: 'Input signal' }],
-    dataParams: [],
+    paramsSchema: {
+      type: 'object',
+      properties: {
+        source: SIGNAL_SCHEMA,
+      },
+    },
     outputs: [{ name: 'output', description: 'Output signal', default: true }],
   },
   {
     name: 'scaleAndShift',
     description: 'Scale and shift',
-    signalParams: [
-      { name: 'input', description: 'Input' },
-      { name: 'scale', description: 'Scale factor' },
-      { name: 'shift', description: 'Shift amount' },
-    ],
-    dataParams: [],
+    paramsSchema: {
+      type: 'object',
+      properties: {
+        input: SIGNAL_SCHEMA,
+        scale: SIGNAL_SCHEMA,
+        shift: SIGNAL_SCHEMA,
+      },
+    },
     outputs: [{ name: 'output', description: 'Output', default: true }],
+  },
+  {
+    name: 'clock',
+    description: 'Clock',
+    paramsSchema: {
+      type: 'object',
+      properties: {
+        freq: SIGNAL_SCHEMA,
+        run: SIGNAL_SCHEMA,
+      },
+    },
+    outputs: [{ name: 'output', description: 'Clock output', default: true }],
   },
 ];
 
@@ -43,7 +92,7 @@ describe('DSL Executor', () => {
 
     const patch = executePatchScript(script, testSchemas);
     
-    expect(patch.modules).toHaveLength(2); // osc + root
+    expect(patch.modules).toHaveLength(3); // osc + root + root_clock
     expect(patch.modules.find(m => m.id === 'osc1')).toBeDefined();
     expect(patch.modules.find(m => m.id === 'root')).toBeDefined();
     expect(patch.scopes).toEqual([]);
@@ -59,8 +108,8 @@ describe('DSL Executor', () => {
     const sineModule = patch.modules.find(m => m.moduleType === 'sine');
 
     expect(sineModule).toBeDefined();
-    expect(sineModule?.signalParams.freq).toEqual({
-      type: 'value',
+    expect((sineModule?.params as any).freq).toEqual({
+      type: 'volts',
       value: expect.any(Number),
     });
   });
@@ -70,23 +119,40 @@ describe('DSL Executor', () => {
       {
         name: 'sine',
         description: 'Sine oscillator',
-        signalParams: [
-          { name: 'freq', description: 'Frequency in V/oct' },
-          { name: 'phase', description: 'Phase' },
-        ],
-        dataParams: [
-          { name: 'label', description: 'UI label', valueType: 'string' },
-          { name: 'enabled', description: 'Enabled flag', valueType: 'boolean' },
-          { name: 'gain', description: 'Static gain', valueType: 'number' },
-        ],
+        paramsSchema: {
+          type: 'object',
+          properties: {
+            freq: SIGNAL_SCHEMA,
+            phase: SIGNAL_SCHEMA,
+            label: { type: 'string', description: 'UI label' },
+            enabled: { type: 'boolean', description: 'Enabled flag' },
+            gain: { type: 'number', description: 'Static gain' },
+          },
+        },
         outputs: [{ name: 'output', description: 'Audio output', default: true }],
       },
       {
         name: 'signal',
         description: 'Signal passthrough',
-        signalParams: [{ name: 'source', description: 'Input signal' }],
-        dataParams: [],
+        paramsSchema: {
+          type: 'object',
+          properties: {
+            source: SIGNAL_SCHEMA,
+          },
+        },
         outputs: [{ name: 'output', description: 'Output signal', default: true }],
+      },
+      {
+        name: 'clock',
+        description: 'Clock',
+        paramsSchema: {
+          type: 'object',
+          properties: {
+            freq: SIGNAL_SCHEMA,
+            run: SIGNAL_SCHEMA,
+          },
+        },
+        outputs: [{ name: 'output', description: 'Clock output', default: true }],
       },
     ];
 
@@ -98,9 +164,9 @@ describe('DSL Executor', () => {
     const patch = executePatchScript(script, schemasWithDataParams);
     const sineModule = patch.modules.find(m => m.id === 'osc1');
 
-    expect(sineModule?.dataParams.label).toEqual({ type: 'string', value: 'hello' });
-    expect(sineModule?.dataParams.enabled).toEqual({ type: 'boolean', value: true });
-    expect(sineModule?.dataParams.gain).toEqual({ type: 'number', value: 0.5 });
+    expect((sineModule?.params as any).label).toEqual('hello');
+    expect((sineModule?.params as any).enabled).toEqual(true);
+    expect((sineModule?.params as any).gain).toEqual(0.5);
   });
 
   it('should handle scale and shift', () => {

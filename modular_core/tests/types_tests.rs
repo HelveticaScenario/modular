@@ -1,0 +1,403 @@
+use std::collections::HashMap;
+use std::sync::{Arc, Weak};
+
+use anyhow::Result;
+use serde::Deserialize;
+use serde_json::json;
+
+use modular_core::SampleableMap;
+use modular_core::patch::Patch;
+use modular_core::types::{
+    Connect, InterpolationType, Sampleable, Signal, Track, TrackKeyframe, TrackMap,
+};
+
+#[derive(Default)]
+struct DummySampleable {
+    id: String,
+    module_type: String,
+    outputs: HashMap<String, f32>,
+}
+
+impl DummySampleable {
+    fn new(
+        id: &str,
+        module_type: &str,
+        outputs: impl IntoIterator<Item = (impl Into<String>, f32)>,
+    ) -> Self {
+        Self {
+            id: id.to_string(),
+            module_type: module_type.to_string(),
+            outputs: outputs.into_iter().map(|(k, v)| (k.into(), v)).collect(),
+        }
+    }
+}
+
+impl Sampleable for DummySampleable {
+    fn get_id(&self) -> &String {
+        &self.id
+    }
+
+    fn tick(&self) {}
+
+    fn update(&self) {}
+
+    fn get_sample(&self, port: &String) -> Result<f32> {
+        Ok(*self.outputs.get(port).unwrap_or(&0.0))
+    }
+
+    fn get_module_type(&self) -> String {
+        self.module_type.clone()
+    }
+
+    fn try_update_params(&self, _params: serde_json::Value) -> Result<()> {
+        Ok(())
+    }
+    fn connect(&self, patch: &Patch) {
+        println!("Connecting DummySampleable {}", self.id);
+    }
+}
+
+fn make_empty_patch() -> Patch {
+    Patch::new(HashMap::new(), HashMap::new())
+}
+
+fn make_patch_with_sampleable(sampleable: Arc<Box<dyn Sampleable>>) -> Patch {
+    let mut sampleables: SampleableMap = HashMap::new();
+    let id = sampleable.get_id().clone();
+    sampleables.insert(id, sampleable);
+    Patch::new(sampleables, HashMap::new())
+}
+
+fn make_patch_with_track(track: Arc<Track>) -> Patch {
+    let mut tracks: TrackMap = HashMap::new();
+    tracks.insert(track_id(&track), track);
+    Patch::new(HashMap::new(), tracks)
+}
+
+fn track_id(track: &Track) -> String {
+    // Track's id field is private; use serde proxy conversion to observe it.
+    let proxy = modular_core::types::TrackProxy::try_from(track).unwrap();
+    proxy.id
+}
+
+fn approx_eq(a: f32, b: f32, eps: f32) {
+    assert!(
+        (a - b).abs() <= eps,
+        "expected {a} ~ {b} (eps {eps}), diff {}",
+        (a - b).abs()
+    );
+}
+
+#[test]
+fn signal_volts_get_value() {
+    let s = Signal::Volts { value: -1.23 };
+    approx_eq(s.get_value(), -1.23, 1e-6);
+}
+
+#[test]
+fn signal_disconnected_get_value_or() {
+    let s = Signal::Disconnected;
+    approx_eq(s.get_value_or(42.0), 42.0, 1e-6);
+    approx_eq(s.get_value(), 0.0, 1e-6);
+}
+
+#[test]
+fn signal_deserialize_number_as_volts() {
+    let s: Signal = serde_json::from_value(json!(1.25)).unwrap();
+    match s {
+        Signal::Volts { value } => approx_eq(value, 1.25, 1e-6),
+        other => panic!("expected Signal::Volts, got {other:?}"),
+    }
+}
+
+#[test]
+fn signal_deserialize_tagged_variants_still_work() {
+    let volts: Signal = serde_json::from_value(json!({"type":"volts","value":-2.0})).unwrap();
+    assert!(matches!(volts, Signal::Volts { value } if (value + 2.0).abs() < 1e-6));
+
+    let cable: Signal =
+        serde_json::from_value(json!({"type":"cable","module":"m1","port":"out"})).unwrap();
+    match cable {
+        Signal::Cable {
+            module,
+            port,
+            module_ptr,
+        } => {
+            assert_eq!(module, "m1");
+            assert_eq!(port, "out");
+            assert!(module_ptr.upgrade().is_none());
+        }
+        other => panic!("expected Signal::Cable, got {other:?}"),
+    }
+
+    let track: Signal = serde_json::from_value(json!({"type":"track","track":"t1"})).unwrap();
+    match track {
+        Signal::Track { track, track_ptr } => {
+            assert_eq!(track, "t1");
+            assert!(track_ptr.upgrade().is_none());
+        }
+        other => panic!("expected Signal::Track, got {other:?}"),
+    }
+
+    let disconnected: Signal = serde_json::from_value(json!({"type":"disconnected"})).unwrap();
+    assert!(matches!(disconnected, Signal::Disconnected));
+}
+
+#[test]
+fn signal_cable_connect_and_read() {
+    let sampleable: Arc<Box<dyn Sampleable>> = Arc::new(Box::new(DummySampleable::new(
+        "m1",
+        "dummy",
+        [("out", 3.5)],
+    )));
+    let patch = make_patch_with_sampleable(Arc::clone(&sampleable));
+
+    let mut s = Signal::Cable {
+        module: "m1".to_string(),
+        module_ptr: Weak::new(),
+        port: "out".to_string(),
+    };
+
+    // Before connect, cable should read default (module_ptr doesn't resolve).
+    approx_eq(s.get_value_or(-999.0), -999.0, 1e-6);
+
+    s.connect(&patch);
+    approx_eq(s.get_value_or(-999.0), 3.5, 1e-6);
+}
+
+#[test]
+fn signal_track_connect_and_read() {
+    let track = Arc::new(Track::new(
+        "t1".to_string(),
+        Signal::Volts { value: -5.0 },
+        InterpolationType::Linear,
+    ));
+
+    track.add_keyframe(TrackKeyframe {
+        id: "k1".to_string(),
+        track_id: "t1".to_string(),
+        time: 0.0,
+        signal: Signal::Volts { value: 2.0 },
+    });
+    track.add_keyframe(TrackKeyframe {
+        id: "k2".to_string(),
+        track_id: "t1".to_string(),
+        time: 1.0,
+        signal: Signal::Volts { value: 4.0 },
+    });
+
+    // Produce a sample (t=0 -> first keyframe).
+    track.tick();
+    let patch = make_patch_with_track(Arc::clone(&track));
+
+    let mut s = Signal::Track {
+        track: "t1".to_string(),
+        track_ptr: Weak::new(),
+    };
+    s.connect(&patch);
+
+    approx_eq(s.get_value_or(-999.0), 2.0, 1e-6);
+}
+
+#[test]
+fn track_add_keyframe_sorts_and_updates_time() {
+    let track = Track::new(
+        "t".to_string(),
+        Signal::Volts { value: -5.0 },
+        InterpolationType::Linear,
+    );
+
+    // Insert out of order.
+    track.add_keyframe(TrackKeyframe {
+        id: "k2".to_string(),
+        track_id: "t".to_string(),
+        time: 0.8,
+        signal: Signal::Volts { value: 1.0 },
+    });
+    track.add_keyframe(TrackKeyframe {
+        id: "k1".to_string(),
+        track_id: "t".to_string(),
+        time: 0.2,
+        signal: Signal::Volts { value: 0.0 },
+    });
+
+    let proxy = modular_core::types::TrackProxy::try_from(&track).unwrap();
+    assert_eq!(proxy.keyframes.len(), 2);
+    approx_eq(proxy.keyframes[0].time, 0.2, 1e-6);
+    approx_eq(proxy.keyframes[1].time, 0.8, 1e-6);
+
+    // Update existing keyframe id with a new time; should re-sort.
+    track.add_keyframe(TrackKeyframe {
+        id: "k1".to_string(),
+        track_id: "t".to_string(),
+        time: 0.9,
+        signal: Signal::Volts { value: 0.0 },
+    });
+    let proxy = modular_core::types::TrackProxy::try_from(&track).unwrap();
+    assert_eq!(proxy.keyframes.len(), 2);
+    approx_eq(proxy.keyframes[0].time, 0.8, 1e-6);
+    approx_eq(proxy.keyframes[1].time, 0.9, 1e-6);
+}
+
+#[test]
+fn track_interpolation_linear_step_cubic() {
+    // Use keyframes at 0 and 1 so local_t == normalized t.
+    let track = Track::new(
+        "t".to_string(),
+        Signal::Volts { value: -2.5 }, // t = 0.25
+        InterpolationType::Linear,
+    );
+    track.add_keyframe(TrackKeyframe {
+        id: "a".to_string(),
+        track_id: "t".to_string(),
+        time: 0.0,
+        signal: Signal::Volts { value: 0.0 },
+    });
+    track.add_keyframe(TrackKeyframe {
+        id: "b".to_string(),
+        track_id: "t".to_string(),
+        time: 1.0,
+        signal: Signal::Volts { value: 8.0 },
+    });
+
+    // Linear: 0 + 8*0.25 = 2
+    track.configure(Signal::Volts { value: -2.5 }, InterpolationType::Linear);
+    track.tick();
+    approx_eq(track.get_value_optional().unwrap(), 2.0, 1e-5);
+
+    // Step: always curr
+    track.configure(Signal::Volts { value: -2.5 }, InterpolationType::Step);
+    track.tick();
+    approx_eq(track.get_value_optional().unwrap(), 0.0, 1e-5);
+
+    // Cubic: at t=0.25, easing gives t2=0.125 => 0 + 8*0.125 = 1
+    track.configure(Signal::Volts { value: -2.5 }, InterpolationType::Cubic);
+    track.tick();
+    approx_eq(track.get_value_optional().unwrap(), 1.0, 1e-5);
+}
+
+#[test]
+fn track_interpolation_exponential_positive_values() {
+    let track = Track::new(
+        "t".to_string(),
+        Signal::Volts { value: 0.0 }, // t=0.5
+        InterpolationType::Exponential,
+    );
+    track.add_keyframe(TrackKeyframe {
+        id: "a".to_string(),
+        track_id: "t".to_string(),
+        time: 0.0,
+        signal: Signal::Volts { value: 1.0 },
+    });
+    track.add_keyframe(TrackKeyframe {
+        id: "b".to_string(),
+        track_id: "t".to_string(),
+        time: 1.0,
+        signal: Signal::Volts { value: 4.0 },
+    });
+
+    track.tick();
+    // 1 * (4/1)^0.5 = 2
+    approx_eq(track.get_value_optional().unwrap(), 2.0, 1e-5);
+}
+
+#[test]
+fn track_clamps_to_first_and_last_keyframes() {
+    let track = Track::new(
+        "t".to_string(),
+        Signal::Volts { value: -10.0 },
+        InterpolationType::Linear,
+    );
+    track.add_keyframe(TrackKeyframe {
+        id: "a".to_string(),
+        track_id: "t".to_string(),
+        time: 0.0,
+        signal: Signal::Volts { value: 2.0 },
+    });
+    track.add_keyframe(TrackKeyframe {
+        id: "b".to_string(),
+        track_id: "t".to_string(),
+        time: 1.0,
+        signal: Signal::Volts { value: 4.0 },
+    });
+
+    // Below range => first
+    track.configure(Signal::Volts { value: -6.0 }, InterpolationType::Linear);
+    track.tick();
+    approx_eq(track.get_value_optional().unwrap(), 2.0, 1e-6);
+
+    // Above range => last
+    track.configure(Signal::Volts { value: 6.0 }, InterpolationType::Linear);
+    track.tick();
+    approx_eq(track.get_value_optional().unwrap(), 4.0, 1e-6);
+}
+
+#[test]
+fn signal_serde_skips_ptr_fields() {
+    let s = Signal::Cable {
+        module: "m".to_string(),
+        module_ptr: Weak::new(),
+        port: "out".to_string(),
+    };
+    let v = serde_json::to_value(&s).unwrap();
+    assert_eq!(v["type"], "cable");
+    assert_eq!(v["module"], "m");
+    assert_eq!(v["port"], "out");
+    assert!(v.get("modulePtr").is_none());
+    assert!(v.get("module_ptr").is_none());
+
+    let t = Signal::Track {
+        track: "t".to_string(),
+        track_ptr: Weak::new(),
+    };
+    let v = serde_json::to_value(&t).unwrap();
+    assert_eq!(v["type"], "track");
+    assert_eq!(v["track"], "t");
+    assert!(v.get("trackPtr").is_none());
+    assert!(v.get("track_ptr").is_none());
+}
+
+#[test]
+fn track_proxy_roundtrip_preserves_fields() {
+    let proxy = modular_core::types::TrackProxy {
+        id: "t".to_string(),
+        playhead: Signal::Volts { value: 0.0 },
+        interpolation_type: InterpolationType::Step,
+        keyframes: vec![TrackKeyframe {
+            id: "k".to_string(),
+            track_id: "t".to_string(),
+            time: 0.3,
+            signal: Signal::Volts { value: 9.0 },
+        }],
+    };
+
+    let track: Track = proxy.clone().into();
+    let proxy2 = modular_core::types::TrackProxy::try_from(&track).unwrap();
+
+    assert_eq!(proxy2.id, proxy.id);
+    assert_eq!(proxy2.interpolation_type, proxy.interpolation_type);
+    assert_eq!(proxy2.playhead, proxy.playhead);
+    assert_eq!(proxy2.keyframes, proxy.keyframes);
+}
+
+#[test]
+fn connect_noop_for_non_cable_and_non_track_signals() {
+    let mut s = Signal::Volts { value: 1.0 };
+    let patch = make_empty_patch();
+    s.connect(&patch);
+    approx_eq(s.get_value(), 1.0, 1e-6);
+}
+
+#[test]
+fn foo() {
+    #[derive(Deserialize, Default, Debug)]
+    #[serde(default)]
+    struct A {
+        foo: String,
+        sig: Signal,
+    }
+
+    let a: A = serde_json::from_str(r#"{"foo":"bar"}"#).unwrap();
+
+    println!("{:?}", a);
+}

@@ -1,22 +1,19 @@
 use anyhow::{Result, anyhow};
+use schemars::JsonSchema;
+use serde::Deserialize;
 
-use crate::{InternalDataParam, InternalParam, dsp::utils::clamp};
+use crate::types::Signal;
 
-#[derive(Default, SignalParams)]
+#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[serde(default)]
 struct NoiseParams {
-    #[param("color", "color of the noise: white, pink, brown")]
-    color: InternalParam,
+    /// volume
+    gain: Signal,
+    /// color of the noise: white, pink, brown
+    color: NoiseKind,
 }
 
-// impl Default for NoiseParams {
-//     fn default() -> Self {
-//         Self {
-//             color: "white".to_string(),
-//         }
-//     }
-// }
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Deserialize, JsonSchema, Debug, PartialEq, Eq)]
 enum NoiseKind {
     White,
     Pink,
@@ -26,16 +23,6 @@ enum NoiseKind {
 impl Default for NoiseKind {
     fn default() -> Self {
         NoiseKind::White
-    }
-}
-
-impl NoiseKind {
-    fn from_str(value: &str) -> Self {
-        match value.to_ascii_lowercase().as_str() {
-            "pink" => NoiseKind::Pink,
-            "brown" | "brownian" => NoiseKind::Brown,
-            _ => NoiseKind::White,
-        }
     }
 }
 
@@ -62,7 +49,7 @@ impl PinkFilter {
 
         let pink =
             self.b0 + self.b1 + self.b2 + self.b3 + self.b4 + self.b5 + self.b6 + white * 0.115926;
-        clamp(-1.0, 1.0, pink * 0.11)
+        (pink * 0.11).clamp(-1.0, 1.0)
     }
 
     fn reset(&mut self) {
@@ -87,27 +74,30 @@ impl LcgRng {
 #[derive(Module)]
 #[module("noise", "Noise generator with selectable color")]
 pub struct Noise {
-    #[output("output", "signal output", default)]
-    sample: f32,
+    outputs: NoiseOutputs,
     params: NoiseParams,
     generator: LcgRng,
     pink: PinkFilter,
     brown: f32,
-    kind: NoiseKind,
     last_noise_type: NoiseKind,
+}
+
+#[derive(Outputs, JsonSchema)]
+struct NoiseOutputs {
+    #[output("output", "signal output", default)]
+    sample: f32,
 }
 
 impl Default for Noise {
     fn default() -> Self {
         Self {
-            sample: 0.0,
+            outputs: NoiseOutputs::default(),
             params: NoiseParams::default(),
             generator: LcgRng {
                 state: 0x1234_5678_9abc_def0,
             },
             pink: PinkFilter::default(),
             brown: 0.0,
-            kind: NoiseKind::default(),
             last_noise_type: NoiseKind::default(),
         }
     }
@@ -115,16 +105,15 @@ impl Default for Noise {
 
 impl Noise {
     fn refresh_kind(&mut self) {
-        // if self.last_noise_type != self.params.color {
-        self.kind = NoiseKind::Brown; //NoiseKind::from_str(&self.params.color);
-        self.last_noise_type = self.kind; // self.params.color.clone();
-        self.pink.reset();
-        self.brown = 0.0;
-        // }
+        if self.last_noise_type != self.params.color {
+            self.last_noise_type = self.params.color;
+            self.pink.reset();
+            self.brown = 0.0;
+        }
     }
 
     fn process_brown(&mut self, white: f32) -> f32 {
-        self.brown = clamp(-1.0, 1.0, self.brown + white * 0.02);
+        self.brown = (self.brown + white * 0.02).clamp(-1.0, 1.0);
         self.brown
     }
 
@@ -132,12 +121,12 @@ impl Noise {
         // self.params
         self.refresh_kind();
         let white = self.generator.next();
-        let colored = match self.kind {
+        let colored = match self.params.color {
             NoiseKind::White => white,
             NoiseKind::Pink => self.pink.process(white),
             NoiseKind::Brown => self.process_brown(white),
         };
 
-        self.sample = clamp(-1.0, 1.0, colored) * 5.0;
+        self.outputs.sample = colored.clamp(-1.0, 1.0) * 5.0;
     }
 }

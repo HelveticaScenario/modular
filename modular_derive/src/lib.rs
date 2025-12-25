@@ -7,11 +7,8 @@ use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote, quote_spanned};
-use syn::{
-    Attribute, Field, FieldsNamed, LitStr, Token, parse::Parser, punctuated::Punctuated,
-    spanned::Spanned,
-};
-use syn::{Data, DeriveInput, Fields};
+use syn::{Attribute, LitStr, Token, parse::Parser, punctuated::Punctuated, spanned::Spanned};
+use syn::{Data, DeriveInput, Fields, GenericArgument, PathArguments, Type};
 
 /// Parsed output attribute data
 struct OutputAttr {
@@ -20,14 +17,10 @@ struct OutputAttr {
     is_default: bool,
 }
 
-#[proc_macro_derive(SignalParams, attributes(name, description, param))]
-pub fn signal_params_macro_derive(input: TokenStream) -> TokenStream {
-    // Construct a representation of Rust code as a syntax tree
-    // that we can manipulate
+#[proc_macro_derive(Outputs, attributes(output))]
+pub fn outputs_macro_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
-
-    // // Build the trait implementation
-    impl_signal_params_macro(&ast)
+    impl_outputs_macro(&ast)
 }
 
 fn unwrap_attr(attrs: &Vec<Attribute>, ident: &str) -> Option<TokenStream2> {
@@ -128,315 +121,6 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
     }
 }
 
-fn map_name_description<F, B>(fields: &FieldsNamed, ident: &str, mut closure: F) -> Vec<B>
-where
-    F: FnMut(&Field, Option<Ident>, Option<LitStr>, Option<LitStr>) -> B,
-{
-    fields
-        .named
-        .iter()
-        .filter(|f| {
-            f.attrs
-                .iter()
-                .filter(|attr| attr.path().is_ident(ident))
-                .count()
-                > 0
-        })
-        .map(|f| {
-            let f_name = &f.ident;
-            let (name, description) = unwrap_name_description(&f.attrs, ident);
-            closure(f, f_name.clone(), name, description)
-        })
-        .collect()
-    // .map(|f| {
-    //     let f_name = &f.ident;
-    //     let (name, description) = unwrap_name_description(&f.attrs, "param");
-    //     (
-    //         quote_spanned! {f.span()=>
-    //             state.insert(#name.to_owned(), self.#f_name.to_param());
-    //         },
-    //         quote_spanned! {f.span()=>
-    //             #name => {
-    //                 self.#f_name = new_param;
-    //                 Ok(())
-    //             }
-    //         },
-    //         quote_spanned! {f.span()=>
-    //             crate::types::PortSchema {
-    //                 name: #name,
-    //                 description: #description,
-    //             },
-    //         },
-    //     )
-    // })
-}
-
-fn impl_signal_params_macro(ast: &DeriveInput) -> TokenStream {
-    let name = &ast.ident;
-    let (signal_inserts, signal_updates, signal_schemas, data_inserts, data_updates, data_schemas) =
-        match ast.data {
-            Data::Struct(ref data) => match data.fields {
-                Fields::Named(ref fields) => {
-                    let signal =
-                        map_name_description(fields, "param", |f, f_name, name, description| {
-                            (
-                                quote_spanned! {f.span()=>
-                                    state.insert(#name.to_owned(), self.#f_name.to_param());
-                                },
-                                quote_spanned! {f.span()=>
-                                    #name => {
-                                        if self.#f_name != *new_param {
-                                            self.#f_name = new_param.clone();
-                                        }
-                                        Ok(())
-                                    }
-                                },
-                                quote_spanned! {f.span()=>
-                                    crate::types::SignalParamSchema {
-                                        name: #name.to_string(),
-                                        description: #description.to_string(),
-                                    },
-                                },
-                            )
-                        });
-                    let signal_insert_iter = signal.iter().map(|(insert, _, _)| insert);
-                    let signal_update_iter = signal.iter().map(|(_, update, _)| update);
-                    let signal_schema_iter = signal.iter().map(|(_, _, schema)| schema);
-
-                    let data = map_name_description(
-                        fields,
-                        "data_param",
-                        |f, f_name, name, description| {
-                            let value_type = match &f.ty {
-                                syn::Type::Path(type_path) => type_path
-                                    .path
-                                    .segments
-                                    .last()
-                                    .map(|s| s.ident.to_string())
-                                    .unwrap_or_default(),
-                                _ => String::new(),
-                            };
-
-                            let is_string = value_type == "String";
-                            let is_bool = value_type == "bool";
-                            let is_number = matches!(
-                                value_type.as_str(),
-                                "f32"
-                                    | "f64"
-                                    | "i8"
-                                    | "i16"
-                                    | "i32"
-                                    | "i64"
-                                    | "i128"
-                                    | "isize"
-                                    | "u8"
-                                    | "u16"
-                                    | "u32"
-                                    | "u64"
-                                    | "u128"
-                                    | "usize"
-                            );
-
-                            if !(is_string || is_bool || is_number) {
-                                let field_name = f_name
-                                    .as_ref()
-                                    .map(|i| i.to_string())
-                                    .unwrap_or_else(|| "<unnamed>".to_owned());
-                                let msg = format!(
-                                    "#[data_param] field '{}' must be String, bool, or a numeric primitive (got '{}')",
-                                    field_name, value_type
-                                );
-                                return (
-                                    syn::Error::new(f.span(), msg).to_compile_error(),
-                                    quote! {},
-                                    quote! {},
-                                );
-                            }
-
-                            let (insert, update, schema) = if is_string {
-                                (
-                                    quote_spanned! {f.span()=>
-                                        data_state.insert(
-                                            #name.to_owned(),
-                                            crate::types::DataParamValue::String { value: self.#f_name.clone() },
-                                        );
-                                    },
-                                    quote_spanned! {f.span()=>
-                                        #name => match new_param {
-                                            crate::types::InternalDataParam::String { value } => {
-                                                if self.#f_name != *value {
-                                                    self.#f_name = value.clone();
-                                                }
-                                                Ok(())
-                                            }
-                                            _ => Err(anyhow!(
-                                                "{} expects a string data param for {}",
-                                                param_name,
-                                                module_name
-                                            )),
-                                        },
-                                    },
-                                    quote_spanned! {f.span()=>
-                                        crate::types::DataParamSchema {
-                                            name: #name.to_string(),
-                                            description: #description.to_string(),
-                                            value_type: crate::types::DataParamType::String,
-                                        },
-                                    },
-                                )
-                            } else if is_bool {
-                                (
-                                    quote_spanned! {f.span()=>
-                                        data_state.insert(
-                                            #name.to_owned(),
-                                            crate::types::DataParamValue::Boolean { value: self.#f_name },
-                                        );
-                                    },
-                                    quote_spanned! {f.span()=>
-                                        #name => match new_param {
-                                            crate::types::InternalDataParam::Boolean { value } => {
-                                                if self.#f_name != *value {
-                                                    self.#f_name = *value;
-                                                }
-                                                Ok(())
-                                            }
-                                            _ => Err(anyhow!(
-                                                "{} expects a boolean data param for {}",
-                                                param_name,
-                                                module_name
-                                            )),
-                                        },
-                                    },
-                                    quote_spanned! {f.span()=>
-                                        crate::types::DataParamSchema {
-                                            name: #name.to_string(),
-                                            description: #description.to_string(),
-                                            value_type: crate::types::DataParamType::Boolean,
-                                        },
-                                    },
-                                )
-                            } else {
-                                let field_ty = &f.ty;
-                                (
-                                    quote_spanned! {f.span()=>
-                                        data_state.insert(
-                                            #name.to_owned(),
-                                            crate::types::DataParamValue::Number { value: self.#f_name as f64 },
-                                        );
-                                    },
-                                    quote_spanned! {f.span()=>
-                                        #name => match new_param {
-                                            crate::types::InternalDataParam::Number { value } => {
-                                                let v: #field_ty = *value as #field_ty;
-                                                if self.#f_name != v {
-                                                    self.#f_name = v;
-                                                }
-                                                Ok(())
-                                            }
-                                            _ => Err(anyhow!(
-                                                "{} expects a number data param for {}",
-                                                param_name,
-                                                module_name
-                                            )),
-                                        },
-                                    },
-                                    quote_spanned! {f.span()=>
-                                        crate::types::DataParamSchema {
-                                            name: #name.to_string(),
-                                            description: #description.to_string(),
-                                            value_type: crate::types::DataParamType::Number,
-                                        },
-                                    },
-                                )
-                            };
-
-                            (insert, update, schema)
-                        },
-                    );
-
-                    let data_insert_iter = data.iter().map(|(insert, _, _)| insert);
-                    let data_update_iter = data.iter().map(|(_, update, _)| update);
-                    let data_schema_iter = data.iter().map(|(_, _, schema)| schema);
-                    (
-                        quote! {
-                            #(#signal_insert_iter)*
-                        },
-                        quote! {
-                            #(#signal_update_iter)*
-                        },
-                        quote! {
-                            #(#signal_schema_iter)*
-                        },
-                        quote! {
-                            #(#data_insert_iter)*
-                        },
-                        quote! {
-                            #(#data_update_iter)*
-                        },
-                        quote! {
-                            #(#data_schema_iter)*
-                        },
-                    )
-                }
-                Fields::Unnamed(_) | Fields::Unit => {
-                    unimplemented!()
-                }
-            },
-            Data::Enum(_) | Data::Union(_) => unimplemented!(),
-        };
-
-    let generated = quote! {
-        impl crate::types::Params for #name {
-            fn get_params_state(&self) -> std::collections::HashMap<String, crate::types::Param>{
-                let mut state = std::collections::HashMap::new();
-                #signal_inserts
-                state
-            }
-
-            fn get_data_params_state(&self) -> std::collections::HashMap<String, crate::types::DataParamValue>{
-                let mut data_state = std::collections::HashMap::new();
-                #data_inserts
-                data_state
-            }
-
-            fn update_param(&mut self, param_name: &String, new_param: &crate::types::InternalParam, module_name: &str) -> Result<()> {
-                match param_name.as_str() {
-                    #signal_updates
-                    _ => Err(anyhow!(
-                        "{} is not a valid param name for {}",
-                        param_name,
-                        module_name
-                    )),
-                }
-            }
-
-            fn update_data_param(&mut self, param_name: &String, new_param: &crate::types::InternalDataParam, module_name: &str) -> Result<()> {
-                match param_name.as_str() {
-                    #data_updates
-                    _ => Err(anyhow!(
-                        "{} is not a valid data param name for {}",
-                        param_name,
-                        module_name
-                    )),
-                }
-            }
-
-            fn get_schema() -> Vec<crate::types::SignalParamSchema> {
-                vec![
-                    #signal_schemas
-                ]
-            }
-
-            fn get_data_schema() -> Vec<crate::types::DataParamSchema> {
-                vec![
-                    #data_schemas
-                ]
-            }
-        }
-    };
-    generated.into()
-}
-
 #[proc_macro_derive(Module, attributes(output, module))]
 pub fn module_macro_derive(input: TokenStream) -> TokenStream {
     // Construct a representation of Rust code as a syntax tree
@@ -447,94 +131,456 @@ pub fn module_macro_derive(input: TokenStream) -> TokenStream {
     impl_module_macro(&ast)
 }
 
-fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
+fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
     let name = &ast.ident;
-    let (module_name, module_description) = unwrap_name_description(&ast.attrs, "module");
 
-    let outputs: Vec<_> = match ast.data {
+    let outputs: Vec<(
+        Ident,
+        bool,
+        LitStr,
+        TokenStream2,
+        TokenStream2,
+        TokenStream2,
+    )> = match ast.data {
         Data::Struct(ref data) => match data.fields {
-            Fields::Named(ref fields) => fields
-                .named
-                .iter()
-                .filter(|f| unwrap_attr(&f.attrs, "output").is_some())
-                .map(|f| {
-                    let field_name = f.ident.clone();
-                    let output_attr = unwrap_attr(&f.attrs, "output")
-                        .map(|tokens| parse_output_attr(tokens))
-                        .expect("Failed to parse output attribute");
+            Fields::Named(ref fields) => {
+                let mut out = Vec::new();
+                for f in fields.named.iter() {
+                    let field_name = f
+                        .ident
+                        .clone()
+                        .expect("Expected named field in Outputs struct");
 
-                    let output_name = &output_attr.name;
-                    let output_name_string = output_name.value();
-                    let description = output_attr.description.as_ref()
+                    let output_attr_tokens = match unwrap_attr(&f.attrs, "output") {
+                        Some(t) => t,
+                        None => {
+                            return syn::Error::new(
+                                f.span(),
+                                "Every field in an Outputs struct must be annotated with #[output(...)]",
+                            )
+                            .to_compile_error()
+                            .into();
+                        }
+                    };
+
+                    // Enforce f32 outputs (engine expects f32 samples).
+                    let is_f32 = match &f.ty {
+                        Type::Path(tp) => tp
+                            .path
+                            .segments
+                            .last()
+                            .map(|seg| seg.ident == "f32")
+                            .unwrap_or(false),
+                        _ => false,
+                    };
+                    if !is_f32 {
+                        return syn::Error::new(f.ty.span(), "Output fields must have type f32")
+                            .to_compile_error()
+                            .into();
+                    }
+
+                    let output_attr = parse_output_attr(output_attr_tokens);
+                    let output_name = output_attr.name;
+                    let description = output_attr
+                        .description
+                        .as_ref()
                         .map(|d| quote!(#d.to_string()))
                         .unwrap_or(quote!("".to_string()));
                     let is_default = output_attr.is_default;
 
-                    (
-                        field_name.clone().unwrap(),
+                    out.push((
+                        field_name.clone(),
                         is_default,
-                        output_name_string,
+                        output_name.clone(),
                         quote! {
-                            outputs.#field_name = module.#field_name;
-                        },
-                        quote! {
-                            #output_name => Ok(self.outputs.try_read_for(core::time::Duration::from_millis(10)).unwrap().#field_name),
+                            #output_name => Some(self.#field_name),
                         },
                         quote! {
                             crate::types::OutputSchema {
                                 name: #output_name.to_string(),
                                 description: #description,
                                 default: #is_default,
-                            },
+                            }
                         },
-                    )
-                })
-                .collect(),
-            Fields::Unnamed(_) | Fields::Unit => unimplemented!(),
+                        quote! {
+                            self.#field_name = other.#field_name;
+                        },
+                    ));
+                }
+                out
+            }
+            Fields::Unnamed(_) | Fields::Unit => {
+                return syn::Error::new(
+                    Span::call_site(),
+                    "Outputs can only be derived for structs with named fields",
+                )
+                .to_compile_error()
+                .into();
+            }
         },
-        Data::Enum(_) | Data::Union(_) => unimplemented!(),
+        Data::Enum(_) | Data::Union(_) => {
+            return syn::Error::new(Span::call_site(), "Outputs can only be derived for structs")
+                .to_compile_error()
+                .into();
+        }
     };
-    // Validate that at most one output is marked as default
+
+    // Validate that at most one output is marked as default.
     let default_count = outputs
         .iter()
         .filter(|(_, is_default, _, _, _, _)| *is_default)
         .count();
     if default_count > 1 {
         let error_msg = format!(
-            "Module '{}' has {} outputs marked as default, but only one is allowed",
-            module_name
-                .as_ref()
-                .map(|n| n.value())
-                .unwrap_or_else(|| "unknown".to_string()),
-            default_count
+            "Outputs struct '{}' has {} outputs marked as default, but only one is allowed",
+            name, default_count
         );
         return syn::Error::new(Span::call_site(), error_msg)
             .to_compile_error()
             .into();
     }
 
-    let output_names = outputs.iter().map(|(idents, _, _, _, _, _)| idents);
-    let output_assignments = outputs.iter().map(|(_, _, _, assignment, _, _)| assignment);
-    let output_retrievals = outputs.iter().map(|(_, _, _, _, retrieval, _)| retrieval);
-    let output_schemas = outputs.iter().map(|(_, _, _, _, _, schema)| schema);
+    let field_idents = outputs.iter().map(|(field, _, _, _, _, _)| field);
+    let sample_match_arms = outputs.iter().map(|(_, _, _, arm, _, _)| arm);
+    let schema_exprs = outputs.iter().map(|(_, _, _, _, schema, _)| schema);
+    let copy_stmts = outputs.iter().map(|(_, _, _, _, _, copy)| copy);
+
+    let generated = quote! {
+        impl Default for #name {
+            fn default() -> Self {
+                Self {
+                    #(#field_idents: 0.0,)*
+                }
+            }
+        }
+
+        impl crate::types::OutputStruct for #name {
+            fn copy_from(&mut self, other: &Self) {
+                #(#copy_stmts)*
+            }
+
+            fn get_sample(&self, port: &str) -> Option<f32> {
+                match port {
+                    #(#sample_match_arms)*
+                    _ => None,
+                }
+            }
+
+            fn schemas() -> Vec<crate::types::OutputSchema> {
+                vec![
+                    #(#schema_exprs,)*
+                ]
+            }
+        }
+    };
+
+    generated.into()
+}
+
+#[proc_macro_derive(Connect)]
+pub fn connect_macro_derive(input: TokenStream) -> TokenStream {
+    let ast: DeriveInput = syn::parse(input).unwrap();
+    impl_connect_macro(&ast)
+}
+
+fn contains_signal(ty: &Type) -> bool {
+    match ty {
+        Type::Paren(p) => contains_signal(&p.elem),
+        Type::Group(g) => contains_signal(&g.elem),
+        Type::Reference(r) => contains_signal(&r.elem),
+        Type::Array(a) => contains_signal(&a.elem),
+        Type::Slice(s) => contains_signal(&s.elem),
+        Type::Path(tp) => {
+            let last = match tp.path.segments.last() {
+                Some(seg) => seg,
+                None => return false,
+            };
+
+            if last.ident == "Signal" {
+                return true;
+            }
+
+            if let PathArguments::AngleBracketed(args) = &last.arguments {
+                return args.args.iter().any(|arg| match arg {
+                    GenericArgument::Type(inner_ty) => contains_signal(inner_ty),
+                    _ => false,
+                });
+            }
+
+            false
+        }
+        Type::Tuple(tt) => tt.elems.iter().any(contains_signal),
+        _ => false,
+    }
+}
+
+fn first_type_arg(_span: Span, last: &syn::PathSegment) -> Option<&Type> {
+    match &last.arguments {
+        PathArguments::AngleBracketed(args) => args.args.iter().find_map(|arg| match arg {
+            GenericArgument::Type(ty) => Some(ty),
+            _ => None,
+        }),
+        _ => None,
+    }
+}
+
+fn nth_type_arg(_span: Span, last: &syn::PathSegment, idx: usize) -> Option<&Type> {
+    match &last.arguments {
+        PathArguments::AngleBracketed(args) => args
+            .args
+            .iter()
+            .filter_map(|arg| match arg {
+                GenericArgument::Type(ty) => Some(ty),
+                _ => None,
+            })
+            .nth(idx),
+        _ => None,
+    }
+}
+
+fn gen_connect_stmts(
+    ty: &Type,
+    place_expr: TokenStream2,
+    depth: usize,
+    span: Span,
+) -> TokenStream2 {
+    match ty {
+        Type::Paren(p) => gen_connect_stmts(&p.elem, place_expr, depth, span),
+        Type::Group(g) => gen_connect_stmts(&g.elem, place_expr, depth, span),
+        Type::Reference(r) => gen_connect_stmts(&r.elem, quote! { *#place_expr }, depth, span),
+        Type::Array(a) => {
+            if !contains_signal(&a.elem) {
+                return quote! {};
+            }
+            let item_ident = format_ident!("__connect_item{}", depth);
+            let inner_place = quote! { *#item_ident };
+            let inner_body = gen_connect_stmts(&a.elem, inner_place, depth + 1, span);
+            quote_spanned! {span=>
+                for #item_ident in (#place_expr).iter_mut() {
+                    #inner_body
+                }
+            }
+        }
+        Type::Slice(s) => {
+            if !contains_signal(&s.elem) {
+                return quote! {};
+            }
+            let item_ident = format_ident!("__connect_item{}", depth);
+            let inner_place = quote! { *#item_ident };
+            let inner_body = gen_connect_stmts(&s.elem, inner_place, depth + 1, span);
+            quote_spanned! {span=>
+                for #item_ident in (#place_expr).iter_mut() {
+                    #inner_body
+                }
+            }
+        }
+        Type::Path(tp) => {
+            let last = match tp.path.segments.last() {
+                Some(seg) => seg,
+                None => return quote! {},
+            };
+
+            if last.ident == "Signal" {
+                return quote_spanned! {span=>
+                    crate::types::Connect::connect(&mut #place_expr, patch);
+                };
+            }
+
+            if last.ident == "Vec" {
+                let Some(inner_ty) = first_type_arg(span, last) else {
+                    return quote! {};
+                };
+                if !contains_signal(inner_ty) {
+                    return quote! {};
+                }
+                let item_ident = format_ident!("__connect_item{}", depth);
+                let inner_place = quote! { *#item_ident };
+                let inner_body = gen_connect_stmts(inner_ty, inner_place, depth + 1, span);
+                return quote_spanned! {span=>
+                    for #item_ident in (#place_expr).iter_mut() {
+                        #inner_body
+                    }
+                };
+            }
+
+            if last.ident == "Option" {
+                let Some(inner_ty) = first_type_arg(span, last) else {
+                    return quote! {};
+                };
+                if !contains_signal(inner_ty) {
+                    return quote! {};
+                }
+                let item_ident = format_ident!("__connect_item{}", depth);
+                let inner_place = quote! { *#item_ident };
+                let inner_body = gen_connect_stmts(inner_ty, inner_place, depth + 1, span);
+                return quote_spanned! {span=>
+                    if let Some(#item_ident) = (#place_expr).as_mut() {
+                        #inner_body
+                    }
+                };
+            }
+
+            if last.ident == "Box" {
+                let Some(inner_ty) = first_type_arg(span, last) else {
+                    return quote! {};
+                };
+                if !contains_signal(inner_ty) {
+                    return quote! {};
+                }
+                let inner_place = quote! { **(#place_expr) };
+                return gen_connect_stmts(inner_ty, inner_place, depth + 1, span);
+            }
+
+            if last.ident == "HashMap" || last.ident == "BTreeMap" {
+                let Some(value_ty) = nth_type_arg(span, last, 1) else {
+                    return quote! {};
+                };
+                if !contains_signal(value_ty) {
+                    return quote! {};
+                }
+                let key_ident = format_ident!("__connect_key{}", depth);
+                let val_ident = format_ident!("__connect_val{}", depth);
+                let inner_place = quote! { *#val_ident };
+                let inner_body = gen_connect_stmts(value_ty, inner_place, depth + 1, span);
+                return quote_spanned! {span=>
+                    for (#key_ident, #val_ident) in (#place_expr).iter_mut() {
+                        let _ = #key_ident;
+                        #inner_body
+                    }
+                };
+            }
+
+            quote! {}
+        }
+        Type::Tuple(tt) => {
+            let mut out = TokenStream2::new();
+            for (idx, elem_ty) in tt.elems.iter().enumerate() {
+                if !contains_signal(elem_ty) {
+                    continue;
+                }
+                let index = syn::Index::from(idx);
+                let elem_place = quote! { (#place_expr).#index };
+                out.extend(gen_connect_stmts(elem_ty, elem_place, depth + 1, span));
+            }
+            out
+        }
+        _ => quote! {},
+    }
+}
+
+fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
+    let name = &ast.ident;
+
+    let connect_body = match &ast.data {
+        Data::Struct(data) => match &data.fields {
+            Fields::Named(fields) => {
+                let mut stmts = TokenStream2::new();
+                for field in fields.named.iter() {
+                    let Some(field_ident) = &field.ident else {
+                        continue;
+                    };
+                    if !contains_signal(&field.ty) {
+                        continue;
+                    }
+                    let place_expr = quote! { self.#field_ident };
+                    stmts.extend(gen_connect_stmts(&field.ty, place_expr, 0, field.span()));
+                }
+                stmts
+            }
+            Fields::Unnamed(_) | Fields::Unit => {
+                return syn::Error::new(
+                    ast.span(),
+                    "#[derive(Connect)] only supports structs with named fields",
+                )
+                .to_compile_error()
+                .into();
+            }
+        },
+        Data::Enum(_) | Data::Union(_) => {
+            return syn::Error::new(ast.span(), "#[derive(Connect)] only supports structs")
+                .to_compile_error()
+                .into();
+        }
+    };
+
+    let generated = quote! {
+        impl crate::types::Connect for #name {
+            fn connect(&mut self, patch: &crate::Patch) {
+                #connect_body
+            }
+        }
+    };
+
+    generated.into()
+}
+
+fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
+    let name = &ast.ident;
+    let (module_name, module_description) = unwrap_name_description(&ast.attrs, "module");
+
+    // New convention: the module struct contains a single `outputs` field.
+    // The outputs type itself must `#[derive(Outputs)]` which implements `crate::types::OutputStruct`.
+    let outputs_ty: Type = match ast.data {
+        Data::Struct(ref data) => match data.fields {
+            Fields::Named(ref fields) => {
+                // Disallow legacy per-field #[output] annotations on the module struct.
+                if fields
+                    .named
+                    .iter()
+                    .any(|f| unwrap_attr(&f.attrs, "output").is_some())
+                {
+                    return syn::Error::new(
+                        Span::call_site(),
+                        "#[derive(Module)] now expects an `outputs` field (a struct that derives Outputs); do not annotate module fields with #[output(...)]",
+                    )
+                    .to_compile_error()
+                    .into();
+                }
+
+                let outputs_field = fields
+                    .named
+                    .iter()
+                    .find(|f| f.ident.as_ref().map(|i| i == "outputs").unwrap_or(false));
+
+                match outputs_field {
+                    Some(f) => f.ty.clone(),
+                    None => {
+                        return syn::Error::new(
+                            Span::call_site(),
+                            "#[derive(Module)] requires a field named `outputs` whose type derives Outputs",
+                        )
+                        .to_compile_error()
+                        .into();
+                    }
+                }
+            }
+            Fields::Unnamed(_) | Fields::Unit => {
+                return syn::Error::new(
+                    Span::call_site(),
+                    "Module can only be derived for structs with named fields",
+                )
+                .to_compile_error()
+                .into();
+            }
+        },
+        Data::Enum(_) | Data::Union(_) => {
+            return syn::Error::new(Span::call_site(), "Module can only be derived for structs")
+                .to_compile_error()
+                .into();
+        }
+    };
+
     let struct_name = format_ident!("{}Sampleable", name);
-    let output_struct_name = format_ident!("{}Outputs", name);
     let constructor_name = format_ident!("{}Constructor", name)
         .to_string()
         .to_case(Case::Snake);
     let constructor_name = Ident::new(&constructor_name, Span::call_site());
     let params_struct_name = format_ident!("{}Params", name);
     let generated = quote! {
-
-        #[derive(Default)]
-        struct #output_struct_name {
-            #(#output_names: f32,)*
-        }
-
         #[derive(Default)]
         struct #struct_name {
             id: String,
-            outputs: parking_lot::RwLock<#output_struct_name>,
+            outputs: parking_lot::RwLock<#outputs_ty>,
             module: parking_lot::Mutex<#name>,
             processed: core::sync::atomic::AtomicBool,
             sample_rate: f32
@@ -555,49 +601,40 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                     let mut module = self.module.lock();
                     module.update(self.sample_rate);
                     let mut outputs = self.outputs.try_write_for(core::time::Duration::from_millis(10)).unwrap();
-                    #(#output_assignments)*
+                    crate::types::OutputStruct::copy_from(&mut *outputs, &module.outputs);
                 }
             }
 
             fn get_sample(&self, port: &String) -> Result<f32> {
                 self.update();
-                match port.as_str() {
-                    #(#output_retrievals)*
-                    _ => Err(anyhow!(
+                let outputs = self.outputs.try_read_for(core::time::Duration::from_millis(10)).unwrap();
+                crate::types::OutputStruct::get_sample(&*outputs, port.as_str()).ok_or_else(|| {
+                    anyhow!(
                         "{} with id {} does not have port {}",
                         #module_name,
                         &self.id,
                         port
-                    ))
-                }
+                    )
+                })
             }
 
-            fn get_state(&self) -> crate::types::ModuleState {
-                use crate::types::Params;
-                use std::collections::HashMap;
-                {
-                    let module = self.module.try_lock().unwrap();
-                    crate::types::ModuleState {
-                        module_type: #module_name.to_owned(),
-                        id: self.id.clone(),
-                        signal_params: module.params.get_params_state(),
-                        data_params: module.params.get_data_params_state(),
-                    }
-                }
+            fn get_module_type(&self) -> String {
+                #module_name.to_owned()
             }
 
-            fn update_param(&self, param_name: &String, new_param: &crate::types::InternalParam) -> Result<()> {
-                use crate::types::Params;
-                self.module.lock().params.update_param(param_name, new_param, #module_name)
-            }
-
-            fn update_data_param(&self, param_name: &String, new_param: &crate::types::InternalDataParam) -> Result<()> {
-                use crate::types::Params;
-                self.module.lock().params.update_data_param(param_name, new_param, #module_name)
+            fn try_update_params(&self, params: serde_json::Value) -> Result<()> {
+                let mut module = self.module.lock();
+                module.params = serde_json::from_value(params)?;
+                Ok(())
             }
 
             fn get_id(&self) -> &String {
                 &self.id
+            }
+
+            fn connect(&self, patch: &crate::Patch) {
+                let mut module = self.module.lock();
+                crate::types::Connect::connect(&mut module.params, patch);
             }
         }
 
@@ -613,58 +650,56 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             fn install_constructor(map: &mut std::collections::HashMap<String, crate::types::SampleableConstructor>) {
                 map.insert(#module_name.into(), Box::new(#constructor_name));
             }
+
+            fn install_params_validator(map: &mut std::collections::HashMap<String, crate::types::ParamsValidator>) {
+                map.insert(#module_name.into(), Self::validate_params_json as crate::types::ParamsValidator);
+            }
+
+            fn validate_params_json(params: &serde_json::Value) -> anyhow::Result<()> {
+                // Attempt to deserialize the JSON params object into the module's concrete
+                // `*Params` struct. If this fails, the patch's params shape is incompatible
+                // with what the DSP module expects.
+                let _parsed: #params_struct_name = serde_json::from_value(params.clone())?;
+                Ok(())
+            }
+
             fn get_schema() -> crate::types::ModuleSchema {
-                use crate::types::Params;
 
-                // Validate that parameter names and output names don't overlap
-                let signal_param_schemas = #params_struct_name::get_schema();
-                let data_param_schemas = #params_struct_name::get_data_schema();
-                let output_schemas = vec![
-                    #(#output_schemas)*
-                ];
+                // Derive JSON Schemas directly from the Rust param/output types.
+                // These are forwarded to the frontend for schema-driven editing/validation.
+                let params_schema = schemars::schema_for!(#params_struct_name);
 
-                // Check for name collisions
-                for param in &signal_param_schemas {
-                    for output in &output_schemas {
-                        if param.name == output.name {
-                            panic!(
-                                "Module '{}' has parameter and output with the same name '{}'. Parameters and outputs must have unique names.",
-                                #module_name,
-                                param.name
-                            );
+                // Validate that parameter names and output names don't overlap.
+                // (This is a runtime panic to keep schema generation deterministic and testable.)
+                let mut param_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+                if let Some(obj) = params_schema.as_object() {
+                    // schemars has produced both "properties" (direct schema) and
+                    // {"schema": {"properties": ...}} shapes across versions; tolerate both.
+                    let props = obj
+                        .get("properties")
+                        .and_then(|v| v.as_object())
+                        .or_else(|| {
+                            obj.get("schema")
+                                .and_then(|s| s.as_object())
+                                .and_then(|s| s.get("properties"))
+                                .and_then(|v| v.as_object())
+                        });
+                    if let Some(props) = props {
+                        for key in props.keys() {
+                            param_names.insert(key.clone());
                         }
                     }
                 }
 
-                for param in &data_param_schemas {
-                    for output in &output_schemas {
-                        if param.name == output.name {
-                            panic!(
-                                "Module '{}' has data parameter and output with the same name '{}'. Data parameters and outputs must have unique names.",
-                                #module_name,
-                                param.name
-                            );
-                        }
-                    }
-                }
-
-                for s in &signal_param_schemas {
-                    for d in &data_param_schemas {
-                        if s.name == d.name {
-                            panic!(
-                                "Module '{}' has a signal parameter and data parameter with the same name '{}'. Parameters must have unique names.",
-                                #module_name,
-                                s.name
-                            );
-                        }
-                    }
+                let output_schemas = <#outputs_ty as crate::types::OutputStruct>::schemas();
+                if output_schemas.iter().any(|o| param_names.contains(&o.name)) {
+                    panic!("Parameters and outputs must have unique names");
                 }
 
                 crate::types::ModuleSchema {
                     name: #module_name.to_string(),
                     description: #module_description.to_string(),
-                    signal_params: signal_param_schemas,
-                    data_params: data_param_schemas,
+                    params_schema,
                     outputs: output_schemas,
                 }
             }

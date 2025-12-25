@@ -1,29 +1,27 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
+use schemars::JsonSchema;
+use serde::Deserialize;
 
 use crate::{
     dsp::utils::clamp,
-    types::{InternalParam, smooth_value},
+    types::{Signal, smooth_value},
 };
 
-#[derive(Default, SignalParams)]
+#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[serde(default)]
 struct ClockParams {
-    #[param("freq", "frequency in v/oct (tempo)")]
-    freq: InternalParam,
-    #[param("reset", "trigger to reset clock phase")]
-    reset: InternalParam,
-    #[param("run", "run gate (>2.5V = running, defaults to 5V)")]
-    run: InternalParam,
+    /// frequency in v/oct (tempo)
+    freq: Signal,
+    /// trigger to reset clock phase
+    reset: Signal,
+    /// run gate (>2.5V = running, defaults to 5V)
+    run: Signal,
 }
 
 #[derive(Module)]
 #[module("clock", "A tempo clock with multiple outputs")]
 pub struct Clock {
-    #[output("barTrigger", "trigger output every bar", default)]
-    bar_trigger: f32,
-    #[output("ramp", "ramp from 0 to 5V every bar")]
-    ramp: f32,
-    #[output("ppqTrigger", "trigger output at 48 PPQ")]
-    ppq_trigger: f32,
+    outputs: ClockOutputs,
     
     phase: f32,
     smoothed_freq: f32,
@@ -34,12 +32,20 @@ pub struct Clock {
     params: ClockParams,
 }
 
+#[derive(Outputs, JsonSchema)]
+struct ClockOutputs {
+    #[output("barTrigger", "trigger output every bar", default)]
+    bar_trigger: f32,
+    #[output("ramp", "ramp from 0 to 5V every bar")]
+    ramp: f32,
+    #[output("ppqTrigger", "trigger output at 48 PPQ")]
+    ppq_trigger: f32,
+}
+
 impl Default for Clock {
     fn default() -> Self {
         Self {
-            bar_trigger: 0.0,
-            ramp: 0.0,
-            ppq_trigger: 0.0,
+            outputs: ClockOutputs::default(),
             phase: 0.0,
             smoothed_freq: 4.0,
             last_reset: 0.0,
@@ -98,23 +104,23 @@ impl Clock {
         }
         
         // Generate ramp output (0 to 5V over one bar)
-        self.ramp = self.phase * 5.0;
+        self.outputs.ramp = self.phase * 5.0;
         
         // Generate bar trigger (trigger at start of bar)
         let should_bar_trigger = self.phase < phase_increment && is_running;
         if should_bar_trigger && !self.last_bar_trigger {
-            self.bar_trigger = 5.0;
+            self.outputs.bar_trigger = 5.0;
         } else {
-            self.bar_trigger = 0.0;
+            self.outputs.bar_trigger = 0.0;
         }
         self.last_bar_trigger = should_bar_trigger;
         
         // Generate PPQ trigger (48 times per bar)
         let should_ppq_trigger = self.ppq_phase < phase_increment && is_running;
         if should_ppq_trigger && !self.last_ppq_trigger {
-            self.ppq_trigger = 5.0;
+            self.outputs.ppq_trigger = 5.0;
         } else {
-            self.ppq_trigger = 0.0;
+            self.outputs.ppq_trigger = 0.0;
         }
         self.last_ppq_trigger = should_ppq_trigger;
     }

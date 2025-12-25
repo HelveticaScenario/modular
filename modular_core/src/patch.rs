@@ -21,14 +21,6 @@ impl Patch {
         }
     }
 
-    /// Get the current state of all modules in the patch
-    pub fn get_state(&self) -> Vec<crate::types::ModuleState> {
-        self.sampleables
-            .iter()
-            .map(|(_, module)| module.get_state())
-            .collect()
-    }
-
     /// Get the output sample from the root module
     pub fn get_output(&self) -> f32 {
         if let Some(root) = self.sampleables.get(&*ROOT_ID) {
@@ -49,13 +41,6 @@ mod tests {
         let patch = Patch::new(HashMap::new(), HashMap::new());
         assert!(patch.sampleables.is_empty());
         assert!(patch.tracks.is_empty());
-    }
-
-    #[test]
-    fn test_patch_get_state_empty() {
-        let patch = Patch::new(HashMap::new(), HashMap::new());
-        let state = patch.get_state();
-        assert!(state.is_empty());
     }
 
     #[test]

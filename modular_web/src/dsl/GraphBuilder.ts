@@ -1,12 +1,13 @@
 import type { ModuleSchema } from "../types/generated/ModuleSchema";
 import type { ModuleState } from "../types/generated/ModuleState";
-import type { Param } from "../types/generated/Param";
-import type { DataParamValue } from "../types/generated/DataParamValue";
+import type { Signal } from "../types/generated/Signal";
 import type { PatchGraph } from "../types/generated/PatchGraph";
 import type { InterpolationType } from "../types/generated/InterpolationType";
 import type { Track } from "../types/generated/Track";
 import type { TrackKeyframe } from "../types/generated/TrackKeyframe";
 import type { ScopeItem } from "../types/generated/ScopeItem";
+import type { ProcessedModuleSchema } from "./paramsSchema";
+import { processSchemas } from "./paramsSchema";
 
 /**
  * GraphBuilder manages the construction of a PatchGraph from DSL code.
@@ -17,12 +18,14 @@ export class GraphBuilder {
   private modules: Map<string, ModuleState> = new Map();
   private tracks: Map<string, Track> = new Map();
   private counters: Map<string, number> = new Map();
-  private schemas: ModuleSchema[] = [];
+  private schemas: ProcessedModuleSchema[] = [];
+  private schemaByName: Map<string, ProcessedModuleSchema> = new Map();
   private scopes: ScopeItem[] = [];
 
 
   constructor(schemas: ModuleSchema[]) {
-    this.schemas = schemas;
+    this.schemas = processSchemas(schemas);
+    this.schemaByName = new Map(this.schemas.map((s) => [s.name, s]));
   }
 
   /**
@@ -45,22 +48,27 @@ export class GraphBuilder {
     const id = this.generateId(moduleType, explicitId);
 
     // Check if module type exists in schemas
-    const schema = this.schemas.find(s => s.name === moduleType);
+    const schema = this.schemaByName.get(moduleType);
     if (!schema) {
       throw new Error(`Unknown module type: ${moduleType}`);
     }
 
-    // Initialize module with disconnected params
-    const params: Record<string, Param> = {};
-    for (const param of schema.signalParams) {
-      params[param.name] = { type: 'disconnected' };
+    // Initialize module params: default all signal params to disconnected.
+    // Other params are left unset unless the DSL sets them explicitly.
+    const params: Record<string, unknown> = {};
+    for (const param of schema.params) {
+      if (param.kind === 'signal') {
+        params[param.name] = { type: 'disconnected' } satisfies Signal;
+      } else if (param.kind === 'signalArray') {
+        // Required arrays (e.g. sum.signals) should be valid by default.
+        params[param.name] = [];
+      }
     }
 
     const moduleState: ModuleState = {
       id,
       moduleType,
-      signalParams: params,
-      dataParams: {},
+      params,
     };
 
     this.modules.set(id, moduleState);
@@ -77,24 +85,15 @@ export class GraphBuilder {
   /**
    * Set a parameter value for a module
    */
-  setParam(moduleId: string, paramName: string, value: Param): void {
+  setParam(moduleId: string, paramName: string, value: unknown): void {
     const module = this.modules.get(moduleId);
     if (!module) {
       throw new Error(`Module not found: ${moduleId}`);
     }
-    module.signalParams[paramName] = value;
+    module.params[paramName] = value;
   }
 
-  /**
-   * Set a data parameter value for a module
-   */
-  setDataParam(moduleId: string, paramName: string, value: DataParamValue): void {
-    const module = this.modules.get(moduleId);
-    if (!module) {
-      throw new Error(`Module not found: ${moduleId}`);
-    }
-    module.dataParams[paramName] = value;
-  }
+
 
   addTrackKeyframe(trackId: string, keyframe: TrackKeyframe) {
     const track = this.tracks.get(trackId);
@@ -112,7 +111,7 @@ export class GraphBuilder {
     track.interpolationType = interpolation;
   }
 
-  setTrackPlayheadParam(trackId: string, playhead: Param) {
+  setTrackPlayheadParam(trackId: string, playhead: Signal) {
     const track = this.tracks.get(trackId);
     if (!track) {
       throw new Error(`Track not found: ${trackId}`);
@@ -146,7 +145,7 @@ export class GraphBuilder {
     const track = new TrackNode(this, this.generateId("track", explicitId));
     this.tracks.set(track.id, {
       id: track.id,
-      playhead: { type: 'value', value: 0 },
+      playhead: 0,
       interpolationType: 'linear',
       keyframes: [],
     })
@@ -170,7 +169,6 @@ export class GraphBuilder {
 }
 
 type Value = number | ModuleOutput | ModuleNode | TrackNode;
-type DataValue = string | number | boolean;
 
 /**
  * ModuleNode represents a module instance in the DSL with fluent API
@@ -183,13 +181,13 @@ export class ModuleNode {
   readonly builder: GraphBuilder;
   readonly id: string;
   readonly moduleType: string;
-  readonly schema: ModuleSchema;
+  readonly schema: ProcessedModuleSchema;
 
   constructor(
     builder: GraphBuilder,
     id: string,
     moduleType: string,
-    schema: ModuleSchema
+    schema: ProcessedModuleSchema
   ) {
     this.builder = builder;
     this.id = id;
@@ -198,22 +196,11 @@ export class ModuleNode {
     // Create a proxy to intercept parameter method calls
     const proxy = new Proxy(this, {
       get(target, prop: string) {
-
-        // Check if it's a parameter name
-        const paramSchema = target.schema.signalParams.find(p => p.name === prop);
-        if (paramSchema) {
-          // Return a function that sets the parameter
-          return (value: Value) => {
+        // Check if it's a param name (derived from schemars JSON schema)
+        const param = target.schema.paramsByName[prop];
+        if (param) {
+          return (value: unknown) => {
             target._setParam(prop, value);
-            return proxy;
-          };
-        }
-
-        // Check if it's a data param name
-        const dataParamSchema = target.schema.dataParams.find(p => p.name === prop);
-        if (dataParamSchema) {
-          return (value: DataValue) => {
-            target._setDataParam(prop, value);
             return proxy;
           };
         }
@@ -256,46 +243,12 @@ export class ModuleNode {
     return this.o.shift(value);
   }
 
-  /**
-   * Set a parameter to a constant value
-   */
-  _setParam(paramName: string, value: Value): this {
-    if (value instanceof ModuleNode) {
-      value = value.o
-    }
 
-    if (value instanceof ModuleOutput) {
-      this.builder.setParam(this.id, paramName, {
-        type: 'cable',
-        module: value.moduleId,
-        port: value.portName,
-      });
-    } else if (value instanceof TrackNode) {
-      this.builder.setParam(this.id, paramName, {
-        type: 'track',
-        track: value.id,
-      });
-    } else {
-      this.builder.setParam(this.id, paramName, {
-        type: 'value',
-        value: value,
-      });
-    }
-
-    return this;
+  _setParam(paramName: string, value: unknown): this {
+    this.builder.setParam(this.id, paramName, replaceSignals(value));
+    return this
   }
 
-  _setDataParam(paramName: string, value: DataValue): this {
-    if (typeof value === 'string') {
-      this.builder.setDataParam(this.id, paramName, { type: 'string', value });
-    } else if (typeof value === 'boolean') {
-      this.builder.setDataParam(this.id, paramName, { type: 'boolean', value });
-    } else {
-      this.builder.setDataParam(this.id, paramName, { type: 'number', value });
-    }
-
-    return this;
-  }
 
 
   /**
@@ -377,64 +330,16 @@ export class TrackNode {
    * The value range [-5.0, 5.0] maps linearly to normalized time [0.0, 1.0].
    */
   playhead(value: Value) {
-    if (value instanceof ModuleNode) {
-      value = value.o;
-    }
-
-    let param: Param;
-
-    if (value instanceof ModuleOutput) {
-      param = {
-        type: 'cable',
-        module: value.moduleId,
-        port: value.portName,
-      };
-    } else if (value instanceof TrackNode) {
-      param = {
-        type: 'track',
-        track: value.id,
-      };
-    } else {
-      param = {
-        type: 'value',
-        value,
-      };
-    }
-
-    this.builder.setTrackPlayheadParam(this.id, param);
+    this.builder.setTrackPlayheadParam(this.id, valueToSignal(value));
     return this;
   }
 
   addKeyframe(time: number, value: Value) {
-    if (value instanceof ModuleNode) {
-      value = value.o
-    }
-
-    let param: Param;
-
-    if (value instanceof ModuleOutput) {
-      param = {
-        type: 'cable',
-        module: value.moduleId,
-        port: value.portName,
-      }
-    } else if (value instanceof TrackNode) {
-      param = {
-        type: 'track',
-        track: value.id,
-      }
-    } else {
-      param = {
-        type: 'value',
-        value: value,
-      }
-    }
-
     this.builder.addTrackKeyframe(this.id, {
       id: `keyframe-${this.counter++}`,
       trackId: this.id,
       time,
-      param,
+      signal: valueToSignal(value),
     });
 
     return this;
@@ -459,4 +364,74 @@ export class TrackNode {
     shiftNode._setParam('shift', offset);
     return shiftNode;
   }
+}
+
+type Replacer = (key: string, value: unknown) => unknown;
+
+export function replaceValues(input: unknown, replacer: Replacer): unknown {
+  function walk(key: string, value: unknown): unknown {
+    const replaced = replacer(key, value);
+
+    // Match JSON.stringify behavior
+    if (replaced === undefined) {
+      return undefined;
+    }
+
+    if (typeof replaced !== "object" || replaced === null) {
+      return replaced;
+    }
+
+    if (Array.isArray(replaced)) {
+      return replaced
+        .map((v, i) => walk(String(i), v))
+        .filter(v => v !== undefined);
+    }
+
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(replaced)) {
+      const v = walk(key, value);
+      if (v !== undefined) {
+        out[key] = v;
+      }
+    }
+    return out;
+  }
+
+  // JSON.stringify starts with key ""
+  return walk("", input);
+}
+
+
+function replaceSignals(input: unknown): unknown {
+  return replaceValues(input, (_key, value) => {
+    // Replace Signal instances with their JSON representation
+    if (value instanceof ModuleNode || value instanceof ModuleOutput || value instanceof TrackNode) {
+      return valueToSignal(value);
+    } else {
+      return value
+    }
+  })
+}
+
+function valueToSignal(value: Value): Signal {
+  if (value instanceof ModuleNode) {
+    value = value.o;
+  }
+  let signal: Signal;
+  if (value instanceof ModuleOutput) {
+    signal = {
+      type: 'cable',
+      module: value.moduleId,
+      port: value.portName,
+    };
+  } else if (value instanceof TrackNode) {
+    signal = {
+      type: 'track',
+      track: value.id,
+    };
+  } else {
+    signal = value
+  }
+
+  return signal
 }
