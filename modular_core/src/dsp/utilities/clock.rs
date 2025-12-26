@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::{
     dsp::utils::clamp,
-    types::{Signal, smooth_value},
+    types::{ClockMessages, Signal, smooth_value},
 };
 
 #[derive(Deserialize, Default, JsonSchema, Connect)]
@@ -12,10 +12,6 @@ use crate::{
 struct ClockParams {
     /// frequency in v/oct (tempo)
     freq: Signal,
-    /// trigger to reset clock phase
-    reset: Signal,
-    /// run gate (>2.5V = running, defaults to 5V)
-    run: Signal,
 }
 
 #[derive(Module)]
@@ -25,10 +21,10 @@ pub struct Clock {
     
     phase: f32,
     smoothed_freq: f32,
-    last_reset: f32,
     ppq_phase: f32,
     last_bar_trigger: bool,
     last_ppq_trigger: bool,
+    running: bool,
     params: ClockParams,
 }
 
@@ -48,31 +44,43 @@ impl Default for Clock {
             outputs: ClockOutputs::default(),
             phase: 0.0,
             smoothed_freq: 4.0,
-            last_reset: 0.0,
             ppq_phase: 0.0,
             last_bar_trigger: false,
             last_ppq_trigger: false,
+            running: true,
             params: ClockParams::default(),
         }
     }
 }
 
 impl Clock {
-    fn update(&mut self, sample_rate: f32) {
-        // Check if running (defaults to high if disconnected)
-        let run_gate = self.params.run.get_value_or(5.0);
-        let is_running = run_gate > 2.5;
-        
-        // Check for reset trigger (rising edge)
-        let reset_value = self.params.reset.get_value_or(0.0);
-        let reset_triggered = reset_value > 2.5 && self.last_reset <= 2.5;
-        self.last_reset = reset_value;
-        
-        if reset_triggered {
-            self.phase = 0.0;
-            self.ppq_phase = 0.0;
+    fn on_clock_message(&mut self, m: &ClockMessages) -> Result<()> {
+        match m {
+            ClockMessages::Start => {
+                self.running = true;
+                // Start implies a transport reset.
+                self.phase = 0.0;
+                self.ppq_phase = 0.0;
+                self.last_bar_trigger = false;
+                self.last_ppq_trigger = false;
+            }
+            ClockMessages::Stop => {
+                self.running = false;
+                // Ensure triggers are low while stopped.
+                self.outputs.bar_trigger = 0.0;
+                self.outputs.ppq_trigger = 0.0;
+            }
         }
-        
+        Ok(())
+    }
+}
+
+message_handlers!(impl Clock {
+    Clock(m) => Clock::on_clock_message,
+});
+
+impl Clock {
+    fn update(&mut self, sample_rate: f32) {
         // Smooth frequency parameter to avoid clicks
         let target_freq = clamp(-10.0, 10.0, self.params.freq.get_value_or(4.0));
         self.smoothed_freq = smooth_value(self.smoothed_freq, target_freq);
@@ -88,7 +96,7 @@ impl Clock {
         let phase_increment = bar_frequency / sample_rate;
         
         // Update phase if running
-        if is_running {
+        if self.running {
             self.phase += phase_increment;
             self.ppq_phase += phase_increment;
             
@@ -107,7 +115,7 @@ impl Clock {
         self.outputs.ramp = self.phase * 5.0;
         
         // Generate bar trigger (trigger at start of bar)
-        let should_bar_trigger = self.phase < phase_increment && is_running;
+        let should_bar_trigger = self.phase < phase_increment && self.running;
         if should_bar_trigger && !self.last_bar_trigger {
             self.outputs.bar_trigger = 5.0;
         } else {
@@ -116,12 +124,38 @@ impl Clock {
         self.last_bar_trigger = should_bar_trigger;
         
         // Generate PPQ trigger (48 times per bar)
-        let should_ppq_trigger = self.ppq_phase < phase_increment && is_running;
+        let should_ppq_trigger = self.ppq_phase < phase_increment && self.running;
         if should_ppq_trigger && !self.last_ppq_trigger {
             self.outputs.ppq_trigger = 5.0;
         } else {
             self.outputs.ppq_trigger = 0.0;
         }
         self.last_ppq_trigger = should_ppq_trigger;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clock_start_stop_via_message() {
+        let mut c = Clock::default();
+        let sr = 48_000.0;
+
+        // Stop should freeze phase.
+        let _ = c.on_clock_message(&ClockMessages::Stop);
+        let phase_before = c.phase;
+        for _ in 0..128 {
+            c.update(sr);
+        }
+        assert!((c.phase - phase_before).abs() < 1e-9);
+
+        // Start should reset and run.
+        let _ = c.on_clock_message(&ClockMessages::Start);
+        assert!((c.phase - 0.0).abs() < 1e-9);
+
+        c.update(sr);
+        assert!(c.phase > 0.0);
     }
 }

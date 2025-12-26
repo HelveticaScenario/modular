@@ -33,3 +33,5 @@ impl Sum {
             .fold(0.0, |acc, x| acc + x.get_value())
     }
 }
+
+message_handlers!(impl Sum {});

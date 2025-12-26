@@ -73,7 +73,7 @@ impl RingBuffer {
 pub struct AudioState {
     pub patch: Arc<tokio::sync::Mutex<Patch>>,
     pub patch_code: String,
-    pub muted: Arc<AtomicBool>,
+    pub stopped: Arc<AtomicBool>,
     pub subscription_collection: Arc<tokio::sync::Mutex<AudioSubscriptionCollection>>,
     pub recording_writer: Arc<tokio::sync::Mutex<Option<WavWriter<BufWriter<File>>>>>,
     pub recording_path: Arc<tokio::sync::Mutex<Option<PathBuf>>>,
@@ -150,7 +150,7 @@ impl AudioState {
         Self {
             patch,
             patch_code,
-            muted: Arc::new(AtomicBool::new(false)),
+            stopped: Arc::new(AtomicBool::new(true)),
             subscription_collection: Arc::new(tokio::sync::Mutex::new(
                 AudioSubscriptionCollection::new(),
             )),
@@ -182,12 +182,12 @@ impl AudioState {
         }
     }
 
-    pub fn set_muted(&self, muted: bool) {
-        self.muted.store(muted, Ordering::SeqCst);
+    pub fn set_stopped(&self, stopped: bool) {
+        self.stopped.store(stopped, Ordering::SeqCst);
     }
 
-    pub fn is_muted(&self) -> bool {
-        self.muted.load(Ordering::SeqCst)
+    pub fn is_stopped(&self) -> bool {
+        self.stopped.load(Ordering::SeqCst)
     }
 
     pub async fn add_subscription(
@@ -291,12 +291,12 @@ where
             let callback_start = Instant::now();
 
             for frame in output.chunks_mut(num_channels) {
-                let sample = process_frame(&audio_state);
-                let muted = audio_state.is_muted();
-                let output_sample = T::from_sample(if muted {
+                let stopped = audio_state.is_stopped();
+
+                let output_sample = T::from_sample(if stopped {
                     0.0
                 } else {
-                    sample / AUDIO_OUTPUT_ATTENUATION
+                    process_frame(&audio_state) / AUDIO_OUTPUT_ATTENUATION
                 });
 
                 for s in frame.iter_mut() {
@@ -410,8 +410,8 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
 }
 
 pub fn send_audio_buffers(audio_state: &Arc<AudioState>) {
-    // Skip emitting audio buffers entirely when muted
-    if audio_state.is_muted() {
+    // Skip emitting audio buffers entirely when stopped
+    if audio_state.is_stopped() {
         return;
     }
 
@@ -491,22 +491,22 @@ mod tests {
     }
 
     #[test]
-    fn test_mute_state() {
+    fn test_stopped_state() {
         let patch = Arc::new(tokio::sync::Mutex::new(Patch::new(
             HashMap::new(),
             HashMap::new(),
         )));
         let state = AudioState::new(patch, "".into(), 48000.0);
 
-        assert!(!state.is_muted());
-        state.set_muted(true);
-        assert!(state.is_muted());
-        state.set_muted(false);
-        assert!(!state.is_muted());
+        assert!(!state.is_stopped());
+        state.set_stopped(true);
+        assert!(state.is_stopped());
+        state.set_stopped(false);
+        assert!(!state.is_stopped());
     }
 
     #[tokio::test]
-    async fn test_send_audio_buffers_respects_mute() {
+    async fn test_send_audio_buffers_respects_stopped() {
         let patch = Arc::new(tokio::sync::Mutex::new(Patch::new(
             HashMap::new(),
             HashMap::new(),
@@ -533,7 +533,7 @@ mod tests {
         send_audio_buffers(&state);
         assert!(rx.try_recv().is_ok());
 
-        state.set_muted(true);
+        state.set_stopped(true);
         send_audio_buffers(&state);
         assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
     }

@@ -19,7 +19,6 @@ export function executePatchScript(
   const rootClock = context.factories.clock('root_clock');
   console.log('Created clock module:', rootClock);
   rootClock.freq(bpm(120));
-  rootClock.run(5); // Always running
 
   // Create the execution environment with all DSL functions
   const dslGlobals = {

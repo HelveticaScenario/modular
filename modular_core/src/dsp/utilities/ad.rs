@@ -109,3 +109,5 @@ impl Ad {
         self.outputs.sample = clamp(0.0, 5.0, normalized * self.scale * 5.0);
     }
 }
+
+message_handlers!(impl Ad {});

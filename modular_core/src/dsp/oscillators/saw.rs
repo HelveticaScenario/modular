@@ -151,3 +151,5 @@ fn poly_blep_integrated(phase: f32, phase_increment: f32) -> f32 {
     }
     0.0
 }
+
+message_handlers!(impl SawOscillator {});

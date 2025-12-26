@@ -154,3 +154,5 @@ impl Adsr {
         self.outputs.sample = clamp(0.0, 5.0, self.current_level * 5.0);
     }
 }
+
+message_handlers!(impl Adsr {});

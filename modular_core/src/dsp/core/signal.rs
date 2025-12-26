@@ -27,3 +27,5 @@ impl Signal {
         self.outputs.sample = self.params.source.get_value();
     }
 }
+
+message_handlers!(impl Signal {});

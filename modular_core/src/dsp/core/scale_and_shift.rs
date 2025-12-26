@@ -40,3 +40,5 @@ impl ScaleAndShift {
         self.outputs.sample = input * (self.smoothed_scale / 5.0) + self.smoothed_shift
     }
 }
+
+message_handlers!(impl ScaleAndShift {});

@@ -1,5 +1,5 @@
 use modular_core::dsp::get_param_validators;
-use modular_core::types::{ModuleSchema, PatchGraph, ScopeItem, Signal};
+use modular_core::types::{ModuleSchema, ModuleState, PatchGraph, ScopeItem, Signal};
 use schemars::Schema;
 use std::collections::{HashMap, HashSet};
 
@@ -71,9 +71,147 @@ fn schema_refers_to_signal(schema_node: &Schema) -> bool {
                 }
             }
         }
+
+        // Object schemas can nest Signal references inside `properties`.
+        // This is common for complex params (struct-like objects).
+        for key in ["properties", "additionalProperties"] {
+            if let Some(props) = obj.get(key) {
+                // `properties` is a map; `additionalProperties` can be a schema.
+                if let Some(map) = props.as_object() {
+                    if map.iter().any(|(_, v)| {
+                        let schema: Result<Schema, _> = v.clone().try_into();
+                        schema.ok().is_some_and(|s| schema_refers_to_signal(&s))
+                    }) {
+                        return true;
+                    }
+                } else {
+                    let schema: Result<Schema, _> = props.clone().try_into();
+                    if schema.ok().is_some_and(|s| schema_refers_to_signal(&s)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Tolerate older shapes where properties appear under `schema`.
+        if let Some(schema_obj) = obj.get("schema").and_then(|v| v.as_object()) {
+            if let Some(props) = schema_obj.get("properties").and_then(|v| v.as_object()) {
+                if props.iter().any(|(_, v)| {
+                    let schema: Result<Schema, _> = v.clone().try_into();
+                    schema.ok().is_some_and(|s| schema_refers_to_signal(&s))
+                }) {
+                    return true;
+                }
+            }
+        }
     }
 
     false
+}
+
+fn validate_signal_reference(
+    signal: &Signal,
+    field: &str,
+    location: &str,
+    module_by_id: &HashMap<&str, &ModuleState>,
+    schema_map: &HashMap<&str, &ModuleSchema>,
+    track_ids: &HashSet<&str>,
+    errors: &mut Vec<ValidationError>,
+) {
+    match signal {
+        Signal::Cable {
+            module: src_module,
+            port: src_port,
+            ..
+        } => {
+            let Some(src_state) = module_by_id.get(src_module.as_str()).copied() else {
+                errors.push(ValidationError {
+                    field: field.to_string(),
+                    message: format!("Module '{}' not found for cable source", src_module),
+                    location: Some(location.to_string()),
+                });
+                return;
+            };
+
+            let Some(src_schema) = schema_map.get(src_state.module_type.as_str()).copied() else {
+                errors.push(ValidationError {
+                    field: field.to_string(),
+                    message: format!(
+                        "Unknown module type '{}' for cable source module '{}'",
+                        src_state.module_type, src_module
+                    ),
+                    location: Some(location.to_string()),
+                });
+                return;
+            };
+
+            if !src_schema.outputs.iter().any(|o| o.name == *src_port) {
+                errors.push(ValidationError {
+                    field: field.to_string(),
+                    message: format!(
+                        "Output port '{}' not found on module '{}'",
+                        src_port, src_module
+                    ),
+                    location: Some(location.to_string()),
+                });
+            }
+        }
+        Signal::Track { track, .. } => {
+            if !track_ids.contains(track.as_str()) {
+                errors.push(ValidationError {
+                    field: field.to_string(),
+                    message: format!("Track '{}' not found for track source", track),
+                    location: Some(location.to_string()),
+                });
+            }
+        }
+        Signal::Volts { .. } | Signal::Disconnected => {}
+    }
+}
+
+fn validate_signals_in_json_value(
+    value: &serde_json::Value,
+    field: &str,
+    location: &str,
+    module_by_id: &HashMap<&str, &ModuleState>,
+    schema_map: &HashMap<&str, &ModuleSchema>,
+    track_ids: &HashSet<&str>,
+    errors: &mut Vec<ValidationError>,
+) {
+    // Only attempt to parse as a Signal when the tagged discriminator looks right.
+    // This avoids false positives and reduces cloning.
+    if let Some(obj) = value.as_object() {
+        if let Some(tag) = obj.get("type").and_then(|v| v.as_str()) {
+            if matches!(tag, "cable" | "track" | "volts" | "disconnected") {
+                if let Ok(signal) = serde_json::from_value::<Signal>(value.clone()) {
+                    validate_signal_reference(
+                        &signal,
+                        field,
+                        location,
+                        module_by_id,
+                        schema_map,
+                        track_ids,
+                        errors,
+                    );
+                    return;
+                }
+            }
+        }
+    }
+
+    match value {
+        serde_json::Value::Array(arr) => {
+            for v in arr {
+                validate_signals_in_json_value(v, field, location, module_by_id, schema_map, track_ids, errors);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for (_, v) in map {
+                validate_signals_in_json_value(v, field, location, module_by_id, schema_map, track_ids, errors);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Validate a patch against the module schemas.
@@ -118,7 +256,7 @@ pub fn validate_patch(
     let param_validators = get_param_validators();
 
     // Build a map from module id -> module instance (state) from the patch.
-    let module_by_id: HashMap<&str, _> = patch
+    let module_by_id: HashMap<&str, &ModuleState> = patch
         .modules
         .iter()
         .map(|m| (m.id.as_str(), m))
@@ -181,94 +319,41 @@ pub fn validate_patch(
         }
 
         // 4) Validate each param key/value pair.
-        // for (param_name, param_value) in param_obj {
-        //     // 4a) Unknown param names are always an error.
-        //     let Some(param_schema_node) = param_schemas.get(param_name) else {
-        //         errors.push(ValidationError {
-        //             field: format!("params.{}", param_name),
-        //             message: format!(
-        //                 "Param '{}' not found on module type '{}'",
-        //                 param_name, module.module_type
-        //             ),
-        //             location: Some(module.id.clone()),
-        //         });
-        //         continue;
-        //     };
+        //
+        // Notes:
+        // - The generated typed validators (step 3b) ensure params have the correct shape/type.
+        // - Here we *only* validate that any referenced targets (Cable/Track) actually exist.
+        // - Params may contain Signals nested inside arbitrary serializable structures.
+        for (param_name, param_value) in param_obj {
+            // 4a) Unknown param names are always an error.
+            let Some(param_schema_node) = param_schemas.get(param_name) else {
+                errors.push(ValidationError {
+                    field: format!("params.{}", param_name),
+                    message: format!(
+                        "Param '{}' not found on module type '{}'",
+                        param_name, module.module_type
+                    ),
+                    location: Some(module.id.clone()),
+                });
+                continue;
+            };
 
-        //     // 4b) Only `Signal`-typed params can reference other entities.
-        //     //     If it's not a `Signal`, we're done for this param.
-        //     if !schema_refers_to_signal(param_schema_node) {
-        //         continue;
-        //     }
+            // 4b) Only params whose schema indicates they *contain* Signals can reference entities.
+            if !schema_refers_to_signal(param_schema_node) {
+                continue;
+            }
 
-        //     // 4c) Parse the JSON value into a typed `Signal`.
-        //     //     If this fails, the client provided the wrong shape.
-        //     let Ok(signal) = serde_json::from_value::<Signal>(param_value.clone()) else {
-        //         errors.push(ValidationError {
-        //             field: format!("params.{}", param_name),
-        //             message: "Signal param value is invalid".to_string(),
-        //             location: Some(module.id.clone()),
-        //         });
-        //         continue;
-        //     };
-
-        //     // 4d) For references, validate that targets exist.
-        //     match signal {
-        //         Signal::Cable {
-        //             module: src_module,
-        //             port: src_port,
-        //             ..
-        //         } => {
-        //             // Cable requires a valid source module id.
-        //             // We also need the source module's type to validate the port.
-        //             let Some(src_state) = module_by_id.get(src_module.as_str()).copied() else {
-        //                 errors.push(ValidationError {
-        //                     field: format!("params.{}", param_name),
-        //                     message: format!("Module '{}' not found for cable source", src_module),
-        //                     location: Some(module.id.clone()),
-        //                 });
-        //                 continue;
-        //             };
-
-        //             // The source module's type must also be known.
-        //             let Some(src_schema) = schema_map.get(src_state.module_type.as_str()).copied()
-        //             else {
-        //                 errors.push(ValidationError {
-        //                     field: format!("params.{}", param_name),
-        //                     message: format!(
-        //                         "Unknown module type '{}' for cable source module '{}'",
-        //                         src_state.module_type, src_module
-        //                     ),
-        //                     location: Some(module.id.clone()),
-        //                 });
-        //                 continue;
-        //             };
-
-        //             // Cable requires a valid output port on the source module type.
-        //             if !src_schema.outputs.iter().any(|o| o.name == src_port) {
-        //                 errors.push(ValidationError {
-        //                     field: format!("params.{}", param_name),
-        //                     message: format!(
-        //                         "Output port '{}' not found on module '{}'",
-        //                         src_port, src_module
-        //                     ),
-        //                     location: Some(module.id.clone()),
-        //                 });
-        //             }
-        //         }
-        //         Signal::Track { track, .. } => {
-        //             // Track reference requires a valid track id.
-        //             if !track_ids.contains(track.as_str()) {
-        //                 errors.push(ValidationError {
-        //                     field: format!("params.{}", param_name),
-        //                     message: format!("Track '{}' not found for track source", track),
-        //                     location: Some(module.id.clone()),
-        //                 });
-        //             }
-        //         }
-        //         Signal::Volts { .. } | Signal::Disconnected => {}
-        //     }
-        // }
+            let field = format!("params.{}", param_name);
+            validate_signals_in_json_value(
+                param_value,
+                &field,
+                &module.id,
+                &module_by_id,
+                &schema_map,
+                &track_ids,
+                &mut errors,
+            );
+        }
     }
 
     // === Scope validation ===
@@ -377,6 +462,26 @@ mod tests {
                     default: false,
                 }],
             },
+            ModuleSchema {
+                name: "nested-signal".to_string(),
+                description: "A module with nested Signal params".to_string(),
+                params_schema: json_schema!({
+                    "type": "object",
+                    "properties": {
+                        "settings": {
+                            "type": "object",
+                            "properties": {
+                                "source": {"$ref": "#/definitions/Signal"}
+                            }
+                        }
+                    }
+                }),
+                outputs: vec![OutputSchema {
+                    name: "output".to_string(),
+                    description: "signal output".to_string(),
+                    default: false,
+                }],
+            },
         ]
     }
 
@@ -388,7 +493,7 @@ mod tests {
                 id: "sine-1".to_string(),
                 module_type: "sine-oscillator".to_string(),
                 params: json!({
-                    "freq": {"Volts": {"value": 4.0}}
+                    "freq": {"type": "volts", "value": 4.0}
                 }),
             }],
             tracks: vec![],
@@ -428,7 +533,7 @@ mod tests {
                 id: "sine-1".to_string(),
                 module_type: "sine-oscillator".to_string(),
                 params: json!({
-                    "unknown_param": {"Volts": {"value": 1.0}}
+                    "unknown_param": {"type": "volts", "value": 1.0}
                 }),
             }],
             tracks: vec![],
@@ -451,7 +556,7 @@ mod tests {
                 id: "root".to_string(),
                 module_type: "signal".to_string(),
                 params: json!({
-                    "source": {"Cable": {"module": "nonexistent", "port": "output"}}
+                    "source": {"type": "cable", "module": "nonexistent", "port": "output"}
                 }),
             }],
             tracks: vec![],
@@ -475,14 +580,14 @@ mod tests {
                     id: "sine-1".to_string(),
                     module_type: "sine-oscillator".to_string(),
                     params: json!({
-                        "freq": {"Volts": {"value": 4.0}}
+                        "freq": {"type": "volts", "value": 4.0}
                     }),
                 },
                 ModuleState {
                     id: "root".to_string(),
                     module_type: "signal".to_string(),
                     params: json!({
-                        "source": {"Cable": {"module": "sine-1", "port": "invalid_port"}}
+                        "source": {"type": "cable", "module": "sine-1", "port": "invalid_port"}
                     }),
                 },
             ],
@@ -501,6 +606,64 @@ mod tests {
     }
 
     #[test]
+    fn test_nested_signal_cable_to_nonexistent_module() {
+        let schemas = create_test_schemas();
+        let patch = PatchGraph {
+            modules: vec![ModuleState {
+                id: "nested-1".to_string(),
+                module_type: "nested-signal".to_string(),
+                params: json!({
+                    "settings": {
+                        "source": {"type": "cable", "module": "nonexistent", "port": "output"}
+                    }
+                }),
+            }],
+            tracks: vec![],
+            scopes: vec![],
+            factories: vec![],
+        };
+
+        let result = validate_patch(&patch, &schemas);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| {
+            e.location.as_deref() == Some("nested-1")
+                && e.field == "params.settings"
+                && e.message.contains("not found for cable source")
+        }));
+    }
+
+    #[test]
+    fn test_nested_signal_valid_cable_connection() {
+        let schemas = create_test_schemas();
+        let patch = PatchGraph {
+            modules: vec![
+                ModuleState {
+                    id: "sine-1".to_string(),
+                    module_type: "sine-oscillator".to_string(),
+                    params: json!({
+                        "freq": {"type": "volts", "value": 4.0}
+                    }),
+                },
+                ModuleState {
+                    id: "nested-1".to_string(),
+                    module_type: "nested-signal".to_string(),
+                    params: json!({
+                        "settings": {
+                            "source": {"type": "cable", "module": "sine-1", "port": "output"}
+                        }
+                    }),
+                },
+            ],
+            tracks: vec![],
+            scopes: vec![],
+            factories: vec![],
+        };
+
+        assert!(validate_patch(&patch, &schemas).is_ok());
+    }
+
+    #[test]
     fn test_valid_cable_connection() {
         let schemas = create_test_schemas();
         let patch = PatchGraph {
@@ -509,14 +672,14 @@ mod tests {
                     id: "sine-1".to_string(),
                     module_type: "sine-oscillator".to_string(),
                     params: json!({
-                        "freq": {"Volts": {"value": 4.0}}
+                        "freq": {"type": "volts", "value": 4.0}
                     }),
                 },
                 ModuleState {
                     id: "signal-1".to_string(),
                     module_type: "signal".to_string(),
                     params: json!({
-                        "source": {"Cable": {"module": "sine-1", "port": "output"}}
+                        "source": {"type": "cable", "module": "sine-1", "port": "output"}
                     }),
                 },
             ],
@@ -536,8 +699,8 @@ mod tests {
                 id: "sine-1".to_string(),
                 module_type: "sine-oscillator".to_string(),
                 params: json!({
-                    "unknown1": {"Volts": {"value": 1.0}},
-                    "unknown2": {"Volts": {"value": 2.0}}
+                    "unknown1": {"type": "volts", "value": 1.0},
+                    "unknown2": {"type": "volts", "value": 2.0}
                 }),
             }],
             tracks: vec![],
@@ -569,14 +732,15 @@ mod tests {
         // Use the real schemas (and real typed validators) from modular_core.
         let schemas = modular_core::dsp::schema();
 
-        // NoiseParams requires both `gain: Signal` and `color: NoiseKind`.
-        // Provide only `color` so deserialization fails.
+        // Ensure typed params validation fails by providing an invalid `Signal`.
+        // `gain` expects a valid Signal; this Cable omits `port`.
         let patch = PatchGraph {
             modules: vec![ModuleState {
                 id: "noise-1".to_string(),
                 module_type: "noise".to_string(),
                 params: json!({
-                    "color": "White"
+                    "color": "White",
+                    "gain": {"type": "cable", "module": "m1"}
                 }),
             }],
             tracks: vec![],

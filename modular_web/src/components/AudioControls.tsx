@@ -2,10 +2,10 @@ import type { ConnectionState } from '../hooks/useWebSocket'
 
 interface AudioControlsProps {
   connectionState: ConnectionState
-  isPlaying: boolean
+  isRunning: boolean
   isRecording: boolean
-  onStartAudio: () => void
-  onStopAudio: () => void
+  onStart: () => void
+  onStop: () => void
   onStartRecording: () => void
   onStopRecording: () => void
   onUpdatePatch: () => void
@@ -13,10 +13,10 @@ interface AudioControlsProps {
 
 export function AudioControls({
   connectionState,
-  isPlaying,
+  isRunning,
   isRecording,
-  onStartAudio,
-  onStopAudio,
+  onStart,
+  onStop,
   onStartRecording,
   onStopRecording,
   onUpdatePatch,
@@ -46,22 +46,22 @@ export function AudioControls({
           ▶ Update Patch
         </button>
 
-        {isPlaying ? (
+        {isRunning ? (
           <button
-            onClick={onStopAudio}
+            onClick={onStop}
             disabled={!isConnected}
             className="btn btn-danger"
             title="Ctrl+. / Cmd+."
           >
-            ⏹ Stop Audio
+            ⏹ Stop
           </button>
         ) : (
           <button
-            onClick={onStartAudio}
+            onClick={onStart}
             disabled={!isConnected}
             className="btn btn-success"
           >
-            🔊 Start Audio
+            ▶ Start
           </button>
         )}
 
@@ -76,7 +76,7 @@ export function AudioControls({
         ) : (
           <button
             onClick={onStartRecording}
-            disabled={!isConnected || !isPlaying}
+            disabled={!isConnected}
             className="btn btn-secondary"
             title="Ctrl+R / Cmd+R"
           >

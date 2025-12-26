@@ -45,3 +45,5 @@ impl Mix {
         }
     }
 }
+
+message_handlers!(impl Mix {});

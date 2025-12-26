@@ -242,7 +242,7 @@ function App() {
         () => buildInitialFileBuffers(unsavedSnapshots),
     );
 
-    const [isMuted, setIsMuted] = useState(true);
+    const [isClockRunning, setIsClockRunning] = useState(true);
     const [isRecording, setIsRecording] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [validationErrors, setValidationErrors] = useState<
@@ -285,8 +285,8 @@ function App() {
                     setError(msg.message);
                     setValidationErrors(msg.errors ?? null);
                     break;
-                case 'muteState':
-                    setIsMuted(msg.muted);
+                case 'runState':
+                    setIsClockRunning(!msg.stopped);
                     break;
                 case 'audioBuffer': {
                     const scopeKey = scopeKeyFromSubscription(msg.subscription);
@@ -344,8 +344,8 @@ function App() {
         connectionState,
         getSchemas,
         setPatch,
-        mute,
-        unmute,
+        start,
+        stop,
         startRecording,
         stopRecording,
         listFiles,
@@ -694,9 +694,10 @@ function App() {
     const handleStopRef = useRef(() => {});
     useEffect(() => {
         handleStopRef.current = () => {
-            mute();
+            setIsClockRunning(false);
+            stop();
         };
-    }, [mute]);
+    }, [stop]);
 
     const dismissError = useCallback(() => {
         setError(null);
@@ -737,15 +738,15 @@ function App() {
                     <h1>Jeff</h1>
                     <AudioControls
                         connectionState={connectionState}
-                        isPlaying={!isMuted}
+                        isRunning={isClockRunning}
                         isRecording={isRecording}
-                        onStartAudio={() => {
-                            setIsMuted(false);
-                            unmute();
+                        onStart={() => {
+                            setIsClockRunning(true);
+                            start();
                         }}
-                        onStopAudio={() => {
-                            setIsMuted(true);
-                            mute();
+                        onStop={() => {
+                            setIsClockRunning(false);
+                            stop();
                         }}
                         onStartRecording={() => {
                             setIsRecording(true);

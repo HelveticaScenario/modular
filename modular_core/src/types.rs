@@ -18,7 +18,17 @@ lazy_static! {
     pub static ref ROOT_CLOCK_ID: String = "root_clock".into();
 }
 
-pub trait Sampleable: Send + Sync {
+pub trait MessageHandler {
+    fn handled_message_tags(&self) -> &'static [MessageTag] {
+        &[]
+    }
+
+    fn handle_message(&self, _message: &Message) -> Result<()> {
+        Ok(())
+    }
+}
+
+pub trait Sampleable: MessageHandler + Send + Sync {
     fn get_id(&self) -> &String;
     fn tick(&self) -> ();
     fn update(&self) -> ();
@@ -74,7 +84,6 @@ pub trait Connect {
 #[derive(Clone, Debug, Default, Serialize, TS, JsonSchema)]
 #[serde(
     tag = "type",
-    content = "data",
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
@@ -707,3 +716,20 @@ pub struct PatchGraph {
 }
 
 pub type SampleableConstructor = Box<dyn Fn(&String, f32) -> Result<Arc<Box<dyn Sampleable>>>>;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../modular_web/src/types/generated/", rename_all = "camelCase")]
+pub enum ClockMessages {
+    Start,
+    Stop,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumTag, Serialize, Deserialize, TS)]
+#[serde(tag = "type", content = "data", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[ts(export, export_to = "../../modular_web/src/types/generated/", rename_all = "camelCase", tag = "type")]
+pub enum Message {
+    Clock(ClockMessages),
+    MidiNote(u8, bool), // (note number, on/off)
+    MidiCC(u8, u8),     // (cc number, value)
+}

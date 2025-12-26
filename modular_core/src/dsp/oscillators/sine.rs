@@ -59,3 +59,5 @@ impl SineOscillator {
         self.outputs.phase_out = self.phase;
     }
 }
+
+message_handlers!(impl SineOscillator {});

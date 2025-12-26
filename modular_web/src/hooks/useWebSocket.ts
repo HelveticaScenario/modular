@@ -221,12 +221,13 @@ export function useModularWebSocket(options: UseModularWebSocketOptions = {}) {
     const renameFile = useCallback((from: string, to: string) => {
         send({ type: 'renameFile', from, to })
     }, [send])
-    const mute = useCallback(() => {
-        send({ type: 'mute' })
+
+    const start = useCallback(() => {
+        send({ type: 'start' })
     }, [send])
 
-    const unmute = useCallback(() => {
-        send({ type: 'unmute' })
+    const stop = useCallback(() => {
+        send({ type: 'stop' })
     }, [send])
     const startRecording = useCallback((filename?: string) => {
         send({ type: 'startRecording', filename: filename ?? null })
@@ -241,8 +242,8 @@ export function useModularWebSocket(options: UseModularWebSocketOptions = {}) {
         getPatch,
         getSchemas,
         setPatch,
-        mute,
-        unmute,
+        start,
+        stop,
         startRecording,
         stopRecording,
         listFiles,

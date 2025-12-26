@@ -77,3 +77,5 @@ impl BandpassFilter {
         // self.sample = self.sample.clamp(-5.0, 5.0);
     }
 }
+
+message_handlers!(impl BandpassFilter {});

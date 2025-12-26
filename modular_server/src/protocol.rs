@@ -1,4 +1,4 @@
-use modular_core::types::{ModuleSchema, PatchGraph, ScopeItem};
+use modular_core::types::{Message, ModuleSchema, PatchGraph, ScopeItem};
 use serde::{Deserialize, Serialize};
 
 use ts_rs::TS;
@@ -15,36 +15,24 @@ pub enum InputMessage {
     GetSchemas,
     GetPatch,
 
-    SetPatch {
-        patch: PatchGraph,
-    },
+    SetPatch { patch: PatchGraph },
 
-    // Audio control
-    Mute,
-    Unmute,
+    // Transport control (wired to Clock)
+    Start,
+    Stop,
 
     // Recording
-    StartRecording {
-        filename: Option<String>,
-    },
+    StartRecording { filename: Option<String> },
     StopRecording,
 
     // File operations
     ListFiles,
-    ReadFile {
-        path: String,
-    },
-    WriteFile {
-        path: String,
-        content: String,
-    },
-    RenameFile {
-        from: String,
-        to: String,
-    },
-    DeleteFile {
-        path: String,
-    },
+    ReadFile { path: String },
+    WriteFile { path: String, content: String },
+    RenameFile { from: String, to: String },
+    DeleteFile { path: String },
+
+    SendMessage { message: Message },
 }
 
 /// Output messages to clients
@@ -65,8 +53,8 @@ pub enum OutputMessage {
     },
 
     /// Current mute state of the audio engine
-    MuteState {
-        muted: bool,
+    RunState {
+        stopped: bool,
     },
 
     // Audio streaming

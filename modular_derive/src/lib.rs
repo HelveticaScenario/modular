@@ -10,6 +10,130 @@ use quote::{format_ident, quote, quote_spanned};
 use syn::{Attribute, LitStr, Token, parse::Parser, punctuated::Punctuated, spanned::Spanned};
 use syn::{Data, DeriveInput, Fields, GenericArgument, PathArguments, Type};
 
+#[proc_macro]
+pub fn message_handlers(input: TokenStream) -> TokenStream {
+    struct Arm {
+        variant: Ident,
+        bindings: Vec<Ident>,
+        handler: syn::Path,
+    }
+
+    struct Input {
+        ty: Ident,
+        arms: Vec<Arm>,
+    }
+
+    impl syn::parse::Parse for Arm {
+        fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+            let variant: Ident = input.parse()?;
+
+            let bindings = if input.peek(syn::token::Paren) {
+                let content;
+                syn::parenthesized!(content in input);
+                let parsed: Punctuated<Ident, Token![,]> =
+                    content.parse_terminated(Ident::parse, Token![,])?;
+                parsed.into_iter().collect()
+            } else {
+                Vec::new()
+            };
+
+            input.parse::<Token![=>]>()?;
+            let handler: syn::Path = input.parse()?;
+
+            Ok(Self {
+                variant,
+                bindings,
+                handler,
+            })
+        }
+    }
+
+    impl syn::parse::Parse for Input {
+        fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+            input.parse::<Token![impl]>()?;
+            let ty: Ident = input.parse()?;
+
+            let content;
+            syn::braced!(content in input);
+
+            let mut arms = Vec::new();
+            while !content.is_empty() {
+                let arm: Arm = content.parse()?;
+                arms.push(arm);
+                let _ = content.parse::<Token![,]>();
+            }
+
+            Ok(Self { ty, arms })
+        }
+    }
+
+    let parsed: Input = match syn::parse(input) {
+        Ok(v) => v,
+        Err(e) => return e.to_compile_error().into(),
+    };
+
+    let ty = parsed.ty;
+    let wrapper = format_ident!("{}Sampleable", ty);
+
+    if parsed.arms.is_empty() {
+        return quote! {
+            impl crate::types::MessageHandler for #wrapper {}
+        }
+        .into();
+    }
+
+    // Deduplicate tags while preserving order.
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut tag_variants: Vec<Ident> = Vec::new();
+    for arm in &parsed.arms {
+        if seen.insert(arm.variant.to_string()) {
+            tag_variants.push(arm.variant.clone());
+        }
+    }
+
+    let tag_exprs: Vec<TokenStream2> = tag_variants
+        .iter()
+        .map(|v| quote!(crate::types::MessageTag::#v))
+        .collect();
+
+    let mut match_arms: Vec<TokenStream2> = Vec::new();
+    for arm in &parsed.arms {
+        let variant = &arm.variant;
+        let handler = &arm.handler;
+        if arm.bindings.is_empty() {
+            return syn::Error::new(
+                variant.span(),
+                "message_handlers arms must bind the message fields: use `Variant(x) => handler` or `Variant(x, y) => handler`",
+            )
+            .to_compile_error()
+            .into();
+        }
+
+        let bindings = &arm.bindings;
+
+        match_arms.push(quote! {
+            crate::types::Message::#variant( #( #bindings ),* ) => #handler(&mut *module, #( #bindings ),* )
+        });
+    }
+
+    quote! {
+        impl crate::types::MessageHandler for #wrapper {
+            fn handled_message_tags(&self) -> &'static [crate::types::MessageTag] {
+                &[ #( #tag_exprs ),* ]
+            }
+
+            fn handle_message(&self, message: &crate::types::Message) -> anyhow::Result<()> {
+                let mut module = self.module.lock();
+                match message {
+                    #( #match_arms, )*
+                    _ => Ok(()),
+                }
+            }
+        }
+    }
+    .into()
+}
+
 /// Parsed output attribute data
 struct OutputAttr {
     name: LitStr,
@@ -21,6 +145,86 @@ struct OutputAttr {
 pub fn outputs_macro_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
     impl_outputs_macro(&ast)
+}
+
+#[proc_macro_derive(EnumTag, attributes(enum_tag))]
+pub fn enum_tag_macro_derive(input: TokenStream) -> TokenStream {
+    let ast: DeriveInput = syn::parse(input).unwrap();
+    impl_enum_tag_macro(&ast)
+}
+
+fn parse_enum_tag_name(attrs: &Vec<Attribute>, default_ident: Ident) -> syn::Result<Ident> {
+    let mut found: Option<Ident> = None;
+
+    for attr in attrs.iter().filter(|a| a.path().is_ident("enum_tag")) {
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("name") {
+                let value: LitStr = meta.value()?.parse()?;
+                let name_str = value.value();
+                let ident = syn::parse_str::<Ident>(&name_str)
+                    .map_err(|_| syn::Error::new(value.span(), "enum_tag name must be a valid Rust identifier"))?;
+                found = Some(ident);
+                Ok(())
+            } else {
+                Err(meta.error("unsupported enum_tag attribute; expected `name = \"...\"`"))
+            }
+        })?;
+    }
+
+    Ok(found.unwrap_or(default_ident))
+}
+
+fn impl_enum_tag_macro(ast: &DeriveInput) -> TokenStream {
+    let name = &ast.ident;
+    let vis = &ast.vis;
+
+    let default_tag_name = format_ident!("{}Tag", name);
+    let tag_name = match parse_enum_tag_name(&ast.attrs, default_tag_name) {
+        Ok(v) => v,
+        Err(e) => return e.to_compile_error().into(),
+    };
+
+    let data_enum = match &ast.data {
+        Data::Enum(e) => e,
+        Data::Struct(_) | Data::Union(_) => {
+            return syn::Error::new(Span::call_site(), "EnumTag can only be derived for enums")
+                .to_compile_error()
+                .into();
+        }
+    };
+
+    let mut tag_variants: Vec<TokenStream2> = Vec::new();
+    let mut match_arms: Vec<TokenStream2> = Vec::new();
+    for v in &data_enum.variants {
+        let v_ident = &v.ident;
+        tag_variants.push(quote!(#v_ident));
+
+        let pat = match &v.fields {
+            Fields::Unit => quote!(Self::#v_ident),
+            Fields::Unnamed(_) => quote!(Self::#v_ident(..)),
+            Fields::Named(_) => quote!(Self::#v_ident { .. }),
+        };
+        match_arms.push(quote!(#pat => #tag_name::#v_ident));
+    }
+
+    let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
+
+    let generated = quote! {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        #vis enum #tag_name {
+            #( #tag_variants, )*
+        }
+
+        impl #impl_generics #name #ty_generics #where_clause {
+            #vis fn tag(&self) -> #tag_name {
+                match self {
+                    #( #match_arms, )*
+                }
+            }
+        }
+    };
+
+    generated.into()
 }
 
 fn unwrap_attr(attrs: &Vec<Attribute>, ident: &str) -> Option<TokenStream2> {
@@ -576,6 +780,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         .to_case(Case::Snake);
     let constructor_name = Ident::new(&constructor_name, Span::call_site());
     let params_struct_name = format_ident!("{}Params", name);
+
     let generated = quote! {
         #[derive(Default)]
         struct #struct_name {

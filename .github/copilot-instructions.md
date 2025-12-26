@@ -122,7 +122,7 @@ Tracks are fully serialized in `PatchGraph.tracks` and applied in `SetPatch`:
 **TypeScript types are auto-generated** from Rust types via `ts-rs`:
 ```bash
 cargo test export_types -- --ignored
-# Or from frontend: pnpm run codegen
+# Or from frontend: npm run codegen
 ```
 
 Exports go to `modular_web/src/types/generated/`. Any type annotated with `#[derive(TS)]` and `#[ts(export, export_to = "...")]` gets generated.
@@ -140,8 +140,8 @@ cargo run
 
 # Frontend dev server
 cd modular_web
-pnpm install
-pnpm dev
+npm install
+npm run dev
 
 # Build optimized release
 cargo build --release

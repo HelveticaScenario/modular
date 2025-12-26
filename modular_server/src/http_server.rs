@@ -18,7 +18,7 @@ use axum::{
 use modular_core::{
     PatchGraph,
     dsp::{core::signal::Signal, get_constructors, schema},
-    types::Connect,
+    types::{ClockMessages, Connect, Message as CoreMessage},
 };
 use modular_core::{patch, types::ScopeItem};
 use tokio::sync::mpsc::{self, Sender};
@@ -118,7 +118,7 @@ async fn handle_subscription(
     // Implementation for handling subscriptions
 }
 
-async fn send_message(socket_tx: Sender<Message>, message: OutputMessage) -> anyhow::Result<()> {
+async fn send_message(socket_tx: &Sender<Message>, message: OutputMessage) -> anyhow::Result<()> {
     let json = serde_json::to_string(&message)?;
     socket_tx.send(Message::Text(json)).await?;
     Ok(())
@@ -128,7 +128,7 @@ async fn handle_set_patch(
     patch: &PatchGraph,
     audio_state: &Arc<AudioState>,
     sample_rate: f32,
-    socket_tx: Sender<Message>,
+    socket_tx: &Sender<Message>,
 ) -> bool {
     // Validate patch
     let schemas = schema();
@@ -158,8 +158,8 @@ async fn handle_set_patch(
     }
 
     // Auto-unmute on SetPatch to match prior imperative flow
-    audio_state.set_muted(false);
-    let _ = send_message(socket_tx, OutputMessage::MuteState { muted: false }).await;
+    audio_state.set_stopped(false);
+    let _ = send_message(socket_tx, OutputMessage::RunState { stopped: false }).await;
 
     true
 }
@@ -199,7 +199,7 @@ async fn handle_message(
     message: InputMessage,
     audio_state: &Arc<AudioState>,
     sample_rate: f32,
-    socket_tx: Sender<Message>,
+    socket_tx: &Sender<Message>,
 ) {
     match message {
         InputMessage::GetSchemas => {
@@ -310,13 +310,39 @@ async fn handle_message(
                 }
             }
         }
-        InputMessage::Mute => {
-            audio_state.set_muted(true);
-            let _ = send_message(socket_tx, OutputMessage::MuteState { muted: true }).await;
+
+        InputMessage::Start => {
+            audio_state.set_stopped(false);
+            let mut patch_lock = audio_state.patch.lock().await;
+            let message = CoreMessage::Clock(ClockMessages::Start);
+            if let Err(e) = patch_lock.dispatch_message(&message) {
+                let _ = send_message(
+                    socket_tx,
+                    OutputMessage::Error {
+                        message: format!("Failed to dispatch start: {}", e),
+                        errors: None,
+                    },
+                )
+                .await;
+            }
+            let _ = send_message(socket_tx, OutputMessage::RunState { stopped: false }).await;
         }
-        InputMessage::Unmute => {
-            audio_state.set_muted(false);
-            let _ = send_message(socket_tx, OutputMessage::MuteState { muted: false }).await;
+
+        InputMessage::Stop => {
+            audio_state.set_stopped(true);
+            let mut patch_lock = audio_state.patch.lock().await;
+            let message = CoreMessage::Clock(ClockMessages::Stop);
+            if let Err(e) = patch_lock.dispatch_message(&message) {
+                let _ = send_message(
+                    socket_tx,
+                    OutputMessage::Error {
+                        message: format!("Failed to dispatch stop: {}", e),
+                        errors: None,
+                    },
+                )
+                .await;
+            }
+            let _ = send_message(socket_tx, OutputMessage::RunState { stopped: true }).await;
         }
         InputMessage::StartRecording { filename } => {
             match audio_state.start_recording(filename).await {
@@ -367,6 +393,20 @@ async fn handle_message(
                 }
             }
         },
+
+        InputMessage::SendMessage { message } => {
+            let mut patch_lock = audio_state.patch.lock().await;
+            if let Err(e) = patch_lock.dispatch_message(&message) {
+                let _ = send_message(
+                    socket_tx,
+                    OutputMessage::Error {
+                        message: format!("Failed to dispatch message: {}", e),
+                        errors: None,
+                    },
+                )
+                .await;
+            }
+        }
     }
 }
 
@@ -448,6 +488,9 @@ async fn apply_patch(
             }
         }
     }
+
+    // Keep message routing in sync with current modules.
+    patch_lock.rebuild_message_listeners();
 
     // ===== TRACK LIFECYCLE =====
     // The track system is mid-refactor. Keep the legacy implementation available
@@ -556,9 +599,9 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
     // Send initial mute state to the client on connect
     let _ = send_message(
-        fan_tx.clone(),
-        OutputMessage::MuteState {
-            muted: state.audio_state.is_muted(),
+        &fan_tx,
+        OutputMessage::RunState {
+            stopped: state.audio_state.is_stopped(),
         },
     )
     .await;
@@ -610,7 +653,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     &patch,
                                     &audio_state,
                                     sample_rate,
-                                    socket_tx.clone(),
+                                    &socket_tx,
                                 )
                                 .await
                                 {
@@ -631,7 +674,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             let socket_tx = fan_tx.clone();
                             handles.lock().await.push(tokio::spawn({
                                 async move {
-                                    handle_message(input_msg, &audio_state, sample_rate, socket_tx)
+                                    handle_message(input_msg, &audio_state, sample_rate, &socket_tx)
                                         .await;
                                 }
                             }));

@@ -33,6 +33,8 @@ impl TestOverlap {
     }
 }
 
+message_handlers!(impl TestOverlap {});
+
 #[cfg(test)]
 mod tests {
     use super::*;

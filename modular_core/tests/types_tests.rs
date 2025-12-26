@@ -8,8 +8,14 @@ use serde_json::json;
 use modular_core::SampleableMap;
 use modular_core::patch::Patch;
 use modular_core::types::{
-    Connect, InterpolationType, Sampleable, Signal, Track, TrackKeyframe, TrackMap,
+    ClockMessages, Connect, InterpolationType, Message, MessageHandler, MessageTag, Sampleable,
+    Signal, Track, TrackKeyframe, TrackMap,
 };
+
+// The proc-macro expands to `crate::types::...`; provide that module in this integration test crate.
+mod types {
+    pub use modular_core::types::*;
+}
 
 #[derive(Default)]
 struct DummySampleable {
@@ -56,6 +62,8 @@ impl Sampleable for DummySampleable {
         println!("Connecting DummySampleable {}", self.id);
     }
 }
+
+impl MessageHandler for DummySampleable {}
 
 fn make_empty_patch() -> Patch {
     Patch::new(HashMap::new(), HashMap::new())
@@ -197,6 +205,69 @@ fn signal_track_connect_and_read() {
     s.connect(&patch);
 
     approx_eq(s.get_value_or(-999.0), 2.0, 1e-6);
+}
+
+#[test]
+fn enum_tag_derive_generates_payload_free_enum() {
+    #[derive(modular_derive::EnumTag)]
+    enum E<'a, T> {
+        A,
+        B(u32),
+        C { x: i32, y: &'a T },
+    }
+
+    let t = 123u8;
+
+    let a: E<'_, u8> = E::A;
+    assert_eq!(a.tag(), ETag::A);
+
+    let b: E<'_, u8> = E::B(42);
+    assert_eq!(b.tag(), ETag::B);
+
+    let c: E<'_, u8> = E::C { x: -7, y: &t };
+    assert_eq!(c.tag(), ETag::C);
+}
+
+#[test]
+fn message_listener_macro_infers_tags_from_match() {
+    struct L;
+
+    impl L {
+        fn on_clock(&mut self, _m: &ClockMessages) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn on_midi_note(&mut self, _note: &u8, _on: &bool) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn on_midi_cc(&mut self, _cc: &u8, _value: &u8) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct LSampleable {
+        module: parking_lot::Mutex<L>,
+    }
+
+    modular_derive::message_handlers!(impl L {
+        Clock(m) => L::on_clock,
+        MidiNote(note, on) => L::on_midi_note,
+        MidiCC(cc, value) => L::on_midi_cc,
+    });
+
+    let s = LSampleable {
+        module: parking_lot::Mutex::new(L),
+    };
+
+    assert_eq!(s.handled_message_tags(), &[
+        MessageTag::Clock,
+        MessageTag::MidiNote,
+        MessageTag::MidiCC,
+    ]);
+
+    // Dispatch should call the appropriate handler and return Ok.
+    s.handle_message(&Message::Clock(ClockMessages::Stop)).unwrap();
 }
 
 #[test]
