@@ -16,7 +16,7 @@ A real-time modular synthesizer with a JavaScript DSL for live-coding audio patc
 ### Prerequisites
 
 - Rust (latest stable)
-- Node.js 20.19+ or 22.12+
+- Node.js 24.12+
 - pnpm
 
 ### Running the Server
