@@ -149,12 +149,12 @@ interface TrackNode {
     /**
      * Set the interpolation type for this track.
      */
-    interpolation(interpolation: "linear" | "step" | "cubic" | "exponential"): TrackNode;
+    interpolation(interpolation: "linear" | "step" | "cubic" | "expo"): TrackNode;
 
     /**
      * Set the playhead control value for this track.
      *
-     * The value range [-5.0, 5.0] maps linearly to the normalized time range [0.0, 1.0].
+     * The value maps linearly to the normalized time range [0.0, 1.0].
      */
     playhead(value: Signal): TrackNode;
 
@@ -187,6 +187,7 @@ type JSONSchema = any;
 
 type ClassSpec = {
     description?: string;
+    outputs: Array<{ name: string; description?: string }>;
     properties: Array<{
         name: string;
         schema: JSONSchema;
@@ -215,6 +216,10 @@ function isValidIdentifier(name: string): boolean {
 
 function renderPropertyKey(name: string): string {
     return isValidIdentifier(name) ? name : JSON.stringify(name);
+}
+
+function renderReadonlyPropertyKey(name: string): string {
+    return isValidIdentifier(name) ? name : `[${JSON.stringify(name)}]`;
 }
 
 function renderDocComment(description?: string, indent: string = ""): string[] {
@@ -367,12 +372,12 @@ function buildTreeFromSchemas(schemas: ModuleSchema[]): NamespaceNode {
     const root = makeNamespaceNode();
 
     for (const moduleSchema of schemas) {
-        const fullName = String((moduleSchema as any)?.name ?? "").trim();
+        const fullName = String(moduleSchema.name).trim();
         if (!fullName) {
             throw new Error("ModuleSchema is missing a non-empty name");
         }
 
-        const paramsSchema: JSONSchema = (moduleSchema as any)?.paramsSchema;
+        const paramsSchema = moduleSchema.paramsSchema;
         if (!paramsSchema || typeof paramsSchema !== "object") {
             throw new Error(`ModuleSchema ${fullName} is missing paramsSchema`);
         }
@@ -399,8 +404,10 @@ function buildTreeFromSchemas(schemas: ModuleSchema[]): NamespaceNode {
         if (node.classes.has(className)) {
             throw new Error(`Duplicate class name detected: ${fullName}`);
         }
-
-        const propsObj = (paramsSchema as any)?.properties;
+        if ('properties' in paramsSchema === false) {
+            throw new Error(`ModuleSchema ${fullName} paramsSchema is missing properties`);
+        }
+        const propsObj = paramsSchema.properties;
         const propsEntries =
             propsObj && typeof propsObj === "object"
                 ? Object.entries(propsObj as Record<string, JSONSchema>)
@@ -412,8 +419,14 @@ function buildTreeFromSchemas(schemas: ModuleSchema[]): NamespaceNode {
             description: propSchema?.description,
         }));
 
+        const outputs = (Array.isArray(moduleSchema.outputs) ? moduleSchema.outputs : []).map((o) => ({
+            name: String(o?.name ?? "").trim(),
+            description: o?.description,
+        })).filter((o) => o.name.length > 0);
+
         node.classes.set(className, {
-            description: (moduleSchema as any)?.description,
+            description: moduleSchema.description,
+            outputs,
             properties,
             rootSchema: paramsSchema,
         });
@@ -458,6 +471,18 @@ function renderInterface(baseName: string, classSpec: ClassSpec, indent: string)
     lines.push(...renderDocComment(classSpec.description, indent));
     const interfaceName = renderNodeInterfaceName(capitalizeName(baseName));
     lines.push(`${indent}export interface ${interfaceName} extends ModuleNode {`);
+
+    const seenOutputNames = new Set<string>();
+    for (const output of classSpec.outputs) {
+        if (!output.name) continue;
+        if (output.name === "o") continue; // already exists on ModuleNode
+        if (seenOutputNames.has(output.name)) continue;
+        seenOutputNames.add(output.name);
+
+        lines.push("");
+        lines.push(...renderDocComment(output.description, indent + "  "));
+        lines.push(`${indent}  readonly ${renderReadonlyPropertyKey(output.name)}: ModuleOutput;`);
+    }
 
     for (const prop of classSpec.properties) {
         lines.push("");
@@ -512,12 +537,12 @@ export function generateDSL(schemas: ModuleSchema[]): string {
     const tree = buildTreeFromSchemas(schemas);
     const lines = renderTree(tree, 0);
 
-    const signalSchema = schemas.find((s) => (s as any)?.name === "signal");
+    const signalSchema = schemas.find((s) => s.name === "signal");
     if (signalSchema) {
         lines.push("");
         lines.push("/** Root output helper bound to the 'signal' module. */");
         lines.push(
-            `export declare const out: ${getQualifiedNodeInterfaceType((signalSchema as any).name)};`
+            `export declare const out: ${getQualifiedNodeInterfaceType(signalSchema.name)};`
         );
     } else {
         lines.push("");
@@ -525,12 +550,12 @@ export function generateDSL(schemas: ModuleSchema[]): string {
         lines.push("export declare const out: ModuleNode;");
     }
 
-    const clockSchema = schemas.find((s) => (s as any)?.name === "clock");
+    const clockSchema = schemas.find((s) => s.name === "clock");
     if (clockSchema) {
         lines.push("");
         lines.push("/** Default clock module running at 120 BPM. */");
         lines.push(
-            `export declare const rootClock: ${getQualifiedNodeInterfaceType((clockSchema as any).name)};`
+            `export declare const rootClock: ${getQualifiedNodeInterfaceType(clockSchema.name)};`
         );
     }
 

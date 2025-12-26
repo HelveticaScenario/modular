@@ -3,11 +3,13 @@ use parking_lot::Mutex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::ops::{Add, Deref, Div, Mul, Sub};
 use std::time::Duration;
 use std::{
     collections::HashMap,
     sync::{self, Arc},
 };
+
 use ts_rs::TS;
 
 use crate::patch::Patch;
@@ -75,6 +77,93 @@ const SMOOTHING_COEFF: f32 = 0.99;
 
 pub fn smooth_value(current: f32, target: f32) -> f32 {
     current * SMOOTHING_COEFF + target * (1.0 - SMOOTHING_COEFF)
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Clickless {
+    value: f32,
+}
+impl Clickless {
+    pub fn update(&mut self, input: f32) -> f32 {
+        self.value = smooth_value(self.value, input);
+        self.value
+    }
+}
+
+impl From<Clickless> for f32 {
+    fn from(clickless: Clickless) -> Self {
+        clickless.value
+    }
+}
+
+impl From<f32> for Clickless {
+    fn from(value: f32) -> Self {
+        Clickless { value }
+    }
+}
+
+impl Deref for Clickless {
+    type Target = f32;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl Add<f32> for Clickless {
+    type Output = f32;
+    fn add(self, rhs: f32) -> Self::Output {
+        self.value + rhs
+    }
+}
+
+impl Add for Clickless {
+    type Output = f32;
+    fn add(self, rhs: Self) -> Self::Output {
+        self.value + rhs.value
+    }
+}
+
+impl Sub<f32> for Clickless {
+    type Output = f32;
+    fn sub(self, rhs: f32) -> Self::Output {
+        self.value - rhs
+    }
+}
+
+impl Sub for Clickless {
+    type Output = f32;
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.value - rhs.value
+    }
+}
+
+impl Mul<f32> for Clickless {
+    type Output = f32;
+    fn mul(self, rhs: f32) -> Self::Output {
+        self.value * rhs
+    }
+}
+
+impl Mul for Clickless {
+    type Output = f32;
+    fn mul(self, rhs: Self) -> Self::Output {
+        self.value * rhs.value
+    }
+}
+
+impl Div<f32> for Clickless {
+    type Output = f32;
+    fn div(self, rhs: f32) -> Self::Output {
+        self.value / rhs
+    }
+}
+
+impl Div for Clickless {
+    type Output = f32;
+    fn div(self, rhs: Self) -> Self::Output {
+        self.value / rhs.value
+    }
 }
 
 pub trait Connect {
@@ -349,8 +438,8 @@ impl InnerTrack {
 
     /// Tick the track for the current playhead value and return the interpolated sample.
     ///
-    /// `playhead_value` is expected to be in the range [-5.0, 5.0]. It will be
-    /// mapped linearly to a normalized time in [0.0, 1.0].
+    /// `playhead_value` is expected to be a positive f32. It will be
+    /// wrapped to a normalized time in [0.0, 1.0].
     pub fn tick(&mut self, playhead_value: Option<f32>) -> Option<f32> {
         let playhead_value = playhead_value?;
         if self.keyframes.is_empty() {
@@ -397,22 +486,81 @@ impl InnerTrack {
         local_t = local_t.clamp(0.0, 1.0);
 
         let interpolated = match self.interpolation_type {
-            InterpolationType::Linear => curr_value + (next_value - curr_value) * local_t,
-            InterpolationType::Step => curr_value,
-            InterpolationType::Cubic => {
-                let t2 = if local_t < 0.5 {
-                    2.0 * local_t * local_t
-                } else {
-                    1.0 - (-2.0 * local_t + 2.0).powi(2) / 2.0
-                };
-                curr_value + (next_value - curr_value) * t2
+            InterpolationType::Linear => {
+                curr_value + (next_value - curr_value) * simple_easing::linear(local_t)
             }
-            InterpolationType::Exponential => {
-                if curr_value > 0.0 && next_value > 0.0 {
-                    curr_value * (next_value / curr_value).powf(local_t)
-                } else {
-                    curr_value + (next_value - curr_value) * local_t
-                }
+            InterpolationType::Step => curr_value,
+            InterpolationType::Sine(InterpolationCategory::In) => {
+                curr_value + (next_value - curr_value) * simple_easing::sine_in(local_t)
+            }
+            InterpolationType::Sine(InterpolationCategory::Out) => {
+                curr_value + (next_value - curr_value) * simple_easing::sine_out(local_t)
+            }
+            InterpolationType::Sine(InterpolationCategory::InOut) => {
+                curr_value + (next_value - curr_value) * simple_easing::sine_in_out(local_t)
+            }
+            InterpolationType::Quad(InterpolationCategory::In) => {
+                curr_value + (next_value - curr_value) * simple_easing::quad_in(local_t)
+            }
+            InterpolationType::Quad(InterpolationCategory::Out) => {
+                curr_value + (next_value - curr_value) * simple_easing::quad_out(local_t)
+            }
+            InterpolationType::Quad(InterpolationCategory::InOut) => {
+                curr_value + (next_value - curr_value) * simple_easing::quad_in_out(local_t)
+            }
+            InterpolationType::Cubic(InterpolationCategory::In) => {
+                curr_value + (next_value - curr_value) * simple_easing::cubic_in(local_t)
+            }
+            InterpolationType::Cubic(InterpolationCategory::Out) => {
+                curr_value + (next_value - curr_value) * simple_easing::cubic_out(local_t)
+            }
+            InterpolationType::Cubic(InterpolationCategory::InOut) => {
+                curr_value + (next_value - curr_value) * simple_easing::cubic_in_out(local_t)
+            }
+            InterpolationType::Quart(InterpolationCategory::In) => {
+                curr_value + (next_value - curr_value) * simple_easing::quart_in(local_t)
+            }
+            InterpolationType::Quart(InterpolationCategory::Out) => {
+                curr_value + (next_value - curr_value) * simple_easing::quart_out(local_t)
+            }
+            InterpolationType::Quart(InterpolationCategory::InOut) => {
+                curr_value + (next_value - curr_value) * simple_easing::quart_in_out(local_t)
+            }
+            InterpolationType::Quint(InterpolationCategory::In) => {
+                curr_value + (next_value - curr_value) * simple_easing::quint_in(local_t)
+            }
+            InterpolationType::Quint(InterpolationCategory::Out) => {
+                curr_value + (next_value - curr_value) * simple_easing::quint_out(local_t)
+            }
+            InterpolationType::Quint(InterpolationCategory::InOut) => {
+                curr_value + (next_value - curr_value) * simple_easing::quint_in_out(local_t)
+            }
+            InterpolationType::Expo(InterpolationCategory::In) => {
+                curr_value + (next_value - curr_value) * simple_easing::expo_in(local_t)
+            }
+            InterpolationType::Expo(InterpolationCategory::Out) => {
+                curr_value + (next_value - curr_value) * simple_easing::expo_out(local_t)
+            }
+            InterpolationType::Expo(InterpolationCategory::InOut) => {
+                curr_value + (next_value - curr_value) * simple_easing::expo_in_out(local_t)
+            }
+            InterpolationType::Circ(InterpolationCategory::In) => {
+                curr_value + (next_value - curr_value) * simple_easing::circ_in(local_t)
+            }
+            InterpolationType::Circ(InterpolationCategory::Out) => {
+                curr_value + (next_value - curr_value) * simple_easing::circ_out(local_t)
+            }
+            InterpolationType::Circ(InterpolationCategory::InOut) => {
+                curr_value + (next_value - curr_value) * simple_easing::circ_in_out(local_t)
+            }
+            InterpolationType::Bounce(InterpolationCategory::In) => {
+                curr_value + (next_value - curr_value) * simple_easing::bounce_in(local_t)
+            }
+            InterpolationType::Bounce(InterpolationCategory::Out) => {
+                curr_value + (next_value - curr_value) * simple_easing::bounce_out(local_t)
+            }
+            InterpolationType::Bounce(InterpolationCategory::InOut) => {
+                curr_value + (next_value - curr_value) * simple_easing::bounce_in_out(local_t)
             }
         };
 
@@ -451,7 +599,7 @@ impl TryFrom<&TrackProxy> for Track {
         let track = Self::new(
             proxy.id.clone(),
             proxy.playhead.clone(),
-            proxy.interpolation_type.clone(),
+            proxy.interpolation_type,
         );
         track.inner_track.lock().keyframes = proxy.keyframes.clone();
         Ok(track)
@@ -475,7 +623,7 @@ impl TryFrom<&Track> for TrackProxy {
         let track_proxy = TrackProxy {
             id: track.id.clone(),
             playhead: track.playhead.lock().clone(),
-            interpolation_type: inner_track.interpolation_type.clone(),
+            interpolation_type: inner_track.interpolation_type,
             keyframes: inner_track.keyframes.clone(),
         };
         Ok(track_proxy)
@@ -619,17 +767,40 @@ pub type TrackMap = HashMap<String, Arc<Track>>;
 )]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
+pub enum InterpolationCategory {
+    #[default]
+    In,
+    Out,
+    InOut,
+}
+
+#[derive(
+    Debug, Default, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize, TS,
+)]
+#[serde(
+    tag = "type",
+    content = "category",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+#[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub enum InterpolationType {
     #[default]
     Linear,
     Step,
-    Cubic,
-    Exponential,
+    Sine(InterpolationCategory),
+    Quad(InterpolationCategory),
+    Cubic(InterpolationCategory),
+    Quart(InterpolationCategory),
+    Quint(InterpolationCategory),
+    Expo(InterpolationCategory),
+    Circ(InterpolationCategory),
+    Bounce(InterpolationCategory),
 }
 
 fn normalize_playhead_value_to_t(value: f32) -> f32 {
-    // Map [-5.0, 5.0] linearly to [0.0, 1.0]
-    ((value + 5.0) / 10.0).clamp(0.0, 1.0)
+    // Wrap value to a normalized time in [0.0, 1.0]
+    value.fract().abs()
 }
 
 pub enum Seq {
@@ -719,15 +890,29 @@ pub type SampleableConstructor = Box<dyn Fn(&String, f32) -> Result<Arc<Box<dyn 
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../modular_web/src/types/generated/", rename_all = "camelCase")]
+#[ts(
+    export,
+    export_to = "../../modular_web/src/types/generated/",
+    rename_all = "camelCase"
+)]
 pub enum ClockMessages {
     Start,
     Stop,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumTag, Serialize, Deserialize, TS)]
-#[serde(tag = "type", content = "data", rename_all = "camelCase", rename_all_fields = "camelCase")]
-#[ts(export, export_to = "../../modular_web/src/types/generated/", rename_all = "camelCase", tag = "type")]
+#[serde(
+    tag = "type",
+    content = "data",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+#[ts(
+    export,
+    export_to = "../../modular_web/src/types/generated/",
+    rename_all = "camelCase",
+    tag = "type"
+)]
 pub enum Message {
     Clock(ClockMessages),
     MidiNote(u8, bool), // (note number, on/off)

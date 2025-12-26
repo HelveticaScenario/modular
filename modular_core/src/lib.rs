@@ -15,6 +15,7 @@ extern crate mi_plaits_dsp;
 extern crate parking_lot;
 extern crate serde;
 extern crate serde_json;
+extern crate simple_easing;
 
 pub mod dsp;
 pub mod patch;

@@ -1,8 +1,5 @@
-const phead = saw(
-  'track-phead',
-).freq(hz(0.5))
 
-scope(rootClock.ramp)
+scope(rootClock)
 
 const t = track('t')
   .addKeyframe(
@@ -14,7 +11,7 @@ const t = track('t')
     saw('k1').freq(hz(3)),
   )
   .interpolation('linear')
-  .playhead(phead)
+  .playhead(clock().tempo(bpm(120)))
 
 scope(t)
 
@@ -53,11 +50,31 @@ const seq = makeSeq('seq', [
   'bb4',
   'f4',
   'g4',
+  'f4',
+  'g4',
+  'bb4',
+  'f4',
+  'g4',
+  'f4',
+  'g4',
+  'bb4',
+  'f4',
+  'g4',
+  'f4',
+  'g4',
+  'bb4',
+  'f4',
+  'g4',
+  'f4',
+  'g4',
   'bb4',
   'f4',
   'g4',
   'bb4',
-]).playhead(phead)
+  'f4',
+  'g4',
+  'bb4',
+]).playhead(rootClock)
 
 // Simple 440 Hz sine wave
 const osc =

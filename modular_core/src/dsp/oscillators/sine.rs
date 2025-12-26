@@ -1,14 +1,10 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    dsp::utils::wrap,
-    dsp::{
-        consts::{LUT_SINE, LUT_SINE_SIZE},
-        utils::{clamp, interpolate},
-    },
-    types::Signal,
+    dsp::{consts::{LUT_SINE, LUT_SINE_SIZE}, utils::{interpolate, wrap}},
+    types::{Clickless, Signal},
 };
 
 #[derive(Deserialize, Default, JsonSchema, Connect)]
@@ -35,7 +31,7 @@ struct SineOscillatorOutputs {
 pub struct SineOscillator {
     outputs: SineOscillatorOutputs,
     phase: f32,
-    smoothed_freq: f32,
+    freq: Clickless,
     params: SineOscillatorParams,
 }
 
@@ -45,10 +41,8 @@ impl SineOscillator {
             self.phase = wrap(0.0..1.0, self.params.phase.get_value());
             self.outputs.sample = self.phase;
         } else {
-            let target_freq = clamp(-10.0, 10.0, self.params.freq.get_value_or(4.0));
-            self.smoothed_freq = crate::types::smooth_value(self.smoothed_freq, target_freq);
-            let voltage = self.smoothed_freq;
-            let frequency = 27.5f32 * 2.0f32.powf(voltage) / sample_rate;
+            self.freq.update(self.params.freq.get_value_or(4.0).clamp(-10.0, 10.0));
+            let frequency = 27.5f32 * 2.0f32.powf(*self.freq) / sample_rate;
             self.phase += frequency;
             while self.phase >= 1.0 {
                 self.phase -= 1.0;

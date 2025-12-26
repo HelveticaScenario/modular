@@ -15,12 +15,12 @@ use axum::{
     response::IntoResponse,
     routing::get,
 };
+use modular_core::types::ScopeItem;
 use modular_core::{
     PatchGraph,
-    dsp::{core::signal::Signal, get_constructors, schema},
-    types::{ClockMessages, Connect, Message as CoreMessage},
+    dsp::{get_constructors, schema},
+    types::{ClockMessages, Message as CoreMessage},
 };
-use modular_core::{patch, types::ScopeItem};
 use tokio::sync::mpsc::{self, Sender};
 use tokio::task::JoinHandle;
 
@@ -158,9 +158,21 @@ async fn handle_set_patch(
     }
 
     // Auto-unmute on SetPatch to match prior imperative flow
-    audio_state.set_stopped(false);
-    let _ = send_message(socket_tx, OutputMessage::RunState { stopped: false }).await;
-
+    if audio_state.is_stopped() {
+        audio_state.set_stopped(false);
+        let message = CoreMessage::Clock(ClockMessages::Start);
+        if let Err(e) = audio_state.patch.lock().await.dispatch_message(&message) {
+            let _ = send_message(
+                socket_tx,
+                OutputMessage::Error {
+                    message: format!("Failed to dispatch start: {}", e),
+                    errors: None,
+                },
+            )
+            .await;
+        }
+        let _ = send_message(socket_tx, OutputMessage::RunState { stopped: false }).await;
+    }
     true
 }
 
@@ -311,24 +323,11 @@ async fn handle_message(
             }
         }
 
-        InputMessage::Start => {
-            audio_state.set_stopped(false);
-            let mut patch_lock = audio_state.patch.lock().await;
-            let message = CoreMessage::Clock(ClockMessages::Start);
-            if let Err(e) = patch_lock.dispatch_message(&message) {
-                let _ = send_message(
-                    socket_tx,
-                    OutputMessage::Error {
-                        message: format!("Failed to dispatch start: {}", e),
-                        errors: None,
-                    },
-                )
-                .await;
-            }
-            let _ = send_message(socket_tx, OutputMessage::RunState { stopped: false }).await;
-        }
-
         InputMessage::Stop => {
+            if audio_state.is_stopped() {
+                // Already stopped, ignore.
+                return;
+            }
             audio_state.set_stopped(true);
             let mut patch_lock = audio_state.patch.lock().await;
             let message = CoreMessage::Clock(ClockMessages::Stop);
@@ -649,13 +648,8 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             let socket_tx = fan_tx.clone();
                             let subscriptions = subscriptions.clone();
                             handles.lock().await.push(tokio::spawn(async move {
-                                if handle_set_patch(
-                                    &patch,
-                                    &audio_state,
-                                    sample_rate,
-                                    &socket_tx,
-                                )
-                                .await
+                                if handle_set_patch(&patch, &audio_state, sample_rate, &socket_tx)
+                                    .await
                                 {
                                     sync_scopes_for_connection(
                                         &patch.scopes,
@@ -674,8 +668,13 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             let socket_tx = fan_tx.clone();
                             handles.lock().await.push(tokio::spawn({
                                 async move {
-                                    handle_message(input_msg, &audio_state, sample_rate, &socket_tx)
-                                        .await;
+                                    handle_message(
+                                        input_msg,
+                                        &audio_state,
+                                        sample_rate,
+                                        &socket_tx,
+                                    )
+                                    .await;
                                 }
                             }));
                         }

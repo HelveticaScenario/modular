@@ -7,7 +7,7 @@ scope(phead)
 const t = track('t')
   .addKeyframe(0, sine('k1').freq(hz(4)))
   .addKeyframe(1, 0)
-  .interpolation('exponential')
+  .interpolation('expo')
   .playhead(phead)
 
 scope(t)

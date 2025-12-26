@@ -1,8 +1,8 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{dsp::utils::clamp, types::Signal};
+use crate::types::{Clickless, Signal};
 
 #[derive(Deserialize, Default, JsonSchema, Connect)]
 #[serde(default)]
@@ -26,41 +26,38 @@ struct PulseOscillatorOutputs {
 pub struct PulseOscillator {
     outputs: PulseOscillatorOutputs,
     phase: f32,
-    smoothed_freq: f32,
-    smoothed_width: f32,
+    freq: Clickless,
+    width: Clickless,
     params: PulseOscillatorParams,
 }
 
 impl PulseOscillator {
     fn update(&mut self, sample_rate: f32) -> () {
-        let target_freq = clamp(-10.0, 10.0, self.params.freq.get_value_or(4.0));
+        self.freq
+            .update(self.params.freq.get_value_or(4.0).clamp(-10.0, 10.0));
         let base_width = self.params.width.get_value_or(2.5);
         let pwm = self.params.pwm.get_value_or(0.0);
-        let target_width = (base_width + pwm).clamp(0.0, 5.0);
-        
-        self.smoothed_freq = crate::types::smooth_value(self.smoothed_freq, target_freq);
-        self.smoothed_width = crate::types::smooth_value(self.smoothed_width, target_width);
-        
-        let voltage = self.smoothed_freq;
-        let frequency = 27.5f32 * 2.0f32.powf(voltage);
+        self.width.update(base_width + pwm).clamp(0.0, 5.0);
+
+        let frequency = 27.5f32 * 2.0f32.powf(*self.freq);
         let phase_increment = frequency / sample_rate;
-        
+
         // Pulse width (0.0 to 1.0, 0.5 is square wave)
-        let pulse_width = (self.smoothed_width / 5.0).clamp(0.01, 0.99);
-        
+        let pulse_width = (self.width / 5.0).clamp(0.01, 0.99);
+
         self.phase += phase_increment;
-        
+
         // Wrap phase
         if self.phase >= 1.0 {
             self.phase -= 1.0;
         }
-        
+
         // Naive pulse wave
         let mut naive_pulse = if self.phase < pulse_width { 1.0 } else { -1.0 };
-        
+
         // Apply PolyBLEP at the rising edge (phase = 0)
         naive_pulse += poly_blep_pulse(self.phase, phase_increment);
-        
+
         // Apply PolyBLEP at the falling edge (phase = pulse_width)
         naive_pulse -= poly_blep_pulse(
             if self.phase >= pulse_width {
@@ -70,7 +67,7 @@ impl PulseOscillator {
             },
             phase_increment,
         );
-        
+
         self.outputs.sample = naive_pulse * 5.0;
     }
 }

@@ -3,11 +3,26 @@ import type { ModuleState } from "../types/generated/ModuleState";
 import type { Signal } from "../types/generated/Signal";
 import type { PatchGraph } from "../types/generated/PatchGraph";
 import type { InterpolationType } from "../types/generated/InterpolationType";
+import type { InterpolationCategory } from "../types/generated/InterpolationCategory";
 import type { Track } from "../types/generated/Track";
 import type { TrackKeyframe } from "../types/generated/TrackKeyframe";
 import type { ScopeItem } from "../types/generated/ScopeItem";
 import type { ProcessedModuleSchema } from "./paramsSchema";
 import { processSchemas } from "./paramsSchema";
+
+type MakeInterpolationArgs<T> = T extends { type: infer U; category: InterpolationCategory } ? [type: U, category?: InterpolationCategory] : T extends { type: infer U } ? [type: U] : never;
+
+type InterpolationArgs = MakeInterpolationArgs<InterpolationType>;
+
+const def = (category: InterpolationCategory | undefined): InterpolationCategory => category ?? 'in';
+
+function interpArgsToType(args: InterpolationArgs): InterpolationType {
+  if (args[0] === 'step' || args[0] === 'linear') {
+    return { type: args[0] };
+  } else {
+    return { type: args[0], category: def(args[1]) };
+  }
+}
 
 /**
  * GraphBuilder manages the construction of a PatchGraph from DSL code.
@@ -103,12 +118,12 @@ export class GraphBuilder {
     track.keyframes.push(keyframe);
   }
 
-  setTrackInterpolation(trackId: string, interpolation: InterpolationType) {
+  setTrackInterpolation(trackId: string, interpolation: InterpolationArgs) {
     const track = this.tracks.get(trackId);
     if (!track) {
       throw new Error(`Track not found: ${trackId}`);
     }
-    track.interpolationType = interpolation;
+    track.interpolationType = interpArgsToType(interpolation);
   }
 
   setTrackPlayheadParam(trackId: string, playhead: Signal) {
@@ -146,7 +161,7 @@ export class GraphBuilder {
     this.tracks.set(track.id, {
       id: track.id,
       playhead: 0,
-      interpolationType: 'linear',
+      interpolationType: interpArgsToType(['linear']),
       keyframes: [],
     })
 
@@ -319,15 +334,15 @@ export class TrackNode {
   /**
    * Set the interpolation type for this track.
    */
-  interpolation(interpolation: InterpolationType) {
-    this.builder.setTrackInterpolation(this.id, interpolation);
+  interpolation(...args: InterpolationArgs) {
+    this.builder.setTrackInterpolation(this.id, args);
     return this;
   }
 
   /**
    * Set the playhead parameter for this track.
    *
-   * The value range [-5.0, 5.0] maps linearly to normalized time [0.0, 1.0].
+   * The value maps linearly to normalized time [0.0, 1.0].
    */
   playhead(value: Value) {
     this.builder.setTrackPlayheadParam(this.id, valueToSignal(value));

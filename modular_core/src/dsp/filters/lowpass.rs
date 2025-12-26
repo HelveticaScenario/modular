@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::types::Signal;
+use crate::types::{Clickless, Signal};
 
 #[derive(Deserialize, Default, JsonSchema, Connect)]
 #[serde(default)]
@@ -28,30 +28,27 @@ pub struct LowpassFilter {
     // State variables for 2-pole (12dB/oct) filter
     z1: f32,
     z2: f32,
-    smoothed_cutoff: f32,
-    smoothed_resonance: f32,
+    cutoff: Clickless,
+    resonance: Clickless,
     params: LowpassFilterParams,
 }
 
 impl LowpassFilter {
     fn update(&mut self, sample_rate: f32) -> () {
         let input = self.params.input.get_value();
-        let target_cutoff = self.params.cutoff.get_value_or(4.0);
-        let target_resonance = self.params.res.get_value_or(0.0);
 
-        self.smoothed_cutoff = crate::types::smooth_value(self.smoothed_cutoff, target_cutoff);
-        self.smoothed_resonance =
-            crate::types::smooth_value(self.smoothed_resonance, target_resonance);
+        self.cutoff.update(self.params.cutoff.get_value_or(4.0));
+        self.resonance.update(self.params.res.get_value_or(0.0));
 
         // Convert v/oct to frequency
-        let freq = 27.5f32 * 2.0f32.powf(self.smoothed_cutoff);
+        let freq = 27.5f32 * 2.0f32.powf(*self.cutoff);
         let freq_clamped = freq.min(sample_rate * 0.45).max(20.0);
 
         // Calculate filter coefficients
         let omega = 2.0 * std::f32::consts::PI * freq_clamped / sample_rate;
         let sin_omega = omega.sin();
         let cos_omega = omega.cos();
-        let q = (self.smoothed_resonance / 5.0 * 9.0 + 0.5).max(0.5);
+        let q = (*self.resonance / 5.0 * 9.0 + 0.5).max(0.5);
         let alpha = sin_omega / (2.0 * q);
 
         let b0 = (1.0 - cos_omega) / 2.0;

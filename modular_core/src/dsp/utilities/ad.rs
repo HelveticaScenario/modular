@@ -1,9 +1,6 @@
-use crate::{
-    dsp::utils::clamp,
-    types::{Signal, smooth_value},
-};
+use crate::types::{Clickless, Signal};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -40,8 +37,8 @@ pub struct Ad {
     rate: f32,
     scale: f32,
     gate_was_high: bool,
-    smoothed_attack: f32,
-    smoothed_decay: f32,
+    attack: Clickless,
+    decay: Clickless,
     params: AdParams,
 }
 
@@ -61,8 +58,8 @@ impl Default for Ad {
             rate: 0.0,
             scale: 0.0,
             gate_was_high: false,
-            smoothed_attack: 0.01,
-            smoothed_decay: 0.1,
+            attack: 0.01.into(),
+            decay: 0.1.into(),
             params: AdParams::default(),
         }
     }
@@ -70,24 +67,23 @@ impl Default for Ad {
 
 impl Ad {
     fn update(&mut self, sample_rate: f32) -> () {
-        let target_attack = clamp(0.0, 10.0, self.params.attack.get_value_or(0.01));
-        let target_decay = clamp(0.0, 10.0, self.params.decay.get_value_or(0.1));
-
-        self.smoothed_attack = smooth_value(self.smoothed_attack, target_attack);
-        self.smoothed_decay = smooth_value(self.smoothed_decay, target_decay);
+        self.attack
+            .update(self.params.attack.get_value_or(0.01).clamp(0.0, 10.0));
+        self.decay
+            .update(self.params.decay.get_value_or(0.1).clamp(0.0, 10.0));
 
         let gate = self.params.gate.get_value_or(0.0);
         let gate_high = gate > 2.5;
         let rising_edge = gate_high && !self.gate_was_high;
         self.gate_was_high = gate_high;
 
-        let attack_rate = 1.0 / (100.0 * self.smoothed_attack + 0.01);
-        let decay_rate = 1.0 / (100.0 * self.smoothed_decay + 0.01);
+        let attack_rate = 1.0 / (100.0 * *self.attack + 0.01);
+        let decay_rate = 1.0 / (100.0 * *self.decay + 0.01);
 
         if self.stage == EnvelopeStage::Idle {
             if rising_edge {
                 self.stage = EnvelopeStage::Attack;
-                self.scale = clamp(0.0, 1.0, gate / 5.0);
+                self.scale = (gate / 5.0).clamp(0.0, 1.0);
             }
             self.rate = decay_rate;
             self.target = 0.0;
@@ -105,8 +101,8 @@ impl Ad {
         let step = (self.target - self.current_value) * self.rate * 0.004 * rate_scale;
         self.current_value += step;
 
-        let normalized = clamp(0.0, 1.0, self.current_value / 1024.0);
-        self.outputs.sample = clamp(0.0, 5.0, normalized * self.scale * 5.0);
+        let normalized = (self.current_value / 1024.0).clamp(0.0, 1.0);
+        self.outputs.sample = (normalized * self.scale * 5.0).clamp(0.0, 5.0);
     }
 }
 

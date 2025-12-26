@@ -222,10 +222,6 @@ export function useModularWebSocket(options: UseModularWebSocketOptions = {}) {
         send({ type: 'renameFile', from, to })
     }, [send])
 
-    const start = useCallback(() => {
-        send({ type: 'start' })
-    }, [send])
-
     const stop = useCallback(() => {
         send({ type: 'stop' })
     }, [send])
@@ -242,7 +238,6 @@ export function useModularWebSocket(options: UseModularWebSocketOptions = {}) {
         getPatch,
         getSchemas,
         setPatch,
-        start,
         stop,
         startRecording,
         stopRecording,

@@ -1,8 +1,8 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{dsp::utils::clamp, types::Signal};
+use crate::types::{Clickless, Signal};
 
 #[derive(Deserialize, Default, JsonSchema, Connect)]
 #[serde(default)]
@@ -27,16 +27,16 @@ pub struct SawOscillator {
     outputs: SawOscillatorOutputs,
     phase: f32,
     last_phase: f32,
-    smoothed_freq: f32,
-    smoothed_shape: f32,
+    freq: Clickless,
+    shape: Clickless,
     params: SawOscillatorParams,
 }
 
 impl SawOscillator {
     fn update(&mut self, sample_rate: f32) -> () {
-        let target_shape = self.params.shape.get_value_or(0.0).clamp(0.0, 5.0);
-        self.smoothed_shape = crate::types::smooth_value(self.smoothed_shape, target_shape);
-        
+        self.shape
+            .update(self.params.shape.get_value_or(0.0).clamp(0.0, 5.0));
+
         // If phase input is connected, use it directly (for syncing)
         let (current_phase, phase_increment) = if self.params.phase != Signal::Disconnected {
             let phase_input = self.params.phase.get_value();
@@ -50,28 +50,27 @@ impl SawOscillator {
             (wrapped_phase, phase_inc)
         } else {
             // Normal frequency-driven oscillation
-            let target_freq = clamp(-10.0, 10.0, self.params.freq.get_value_or(4.0));
-            self.smoothed_freq = crate::types::smooth_value(self.smoothed_freq, target_freq);
-            
-            let voltage = self.smoothed_freq;
-            let frequency = 27.5f32 * 2.0f32.powf(voltage);
+            self.freq
+                .update(self.params.freq.get_value_or(4.0).clamp(-10.0, 10.0));
+
+            let frequency = 27.5f32 * 2.0f32.powf(*self.freq);
             let phase_increment = frequency / sample_rate;
-            
+
             self.phase += phase_increment;
-            
+
             // Wrap phase
             while self.phase >= 1.0 {
                 self.phase -= 1.0;
             }
-            
+
             (self.phase, phase_increment)
         };
-        
+
         self.last_phase = current_phase;
-        
+
         // Shape parameter: 0 = saw, 2.5 = triangle, 5 = ramp (reversed saw)
-        let shape_norm = self.smoothed_shape / 5.0; // 0.0 to 1.0
-        
+        let shape_norm = *self.shape / 5.0; // 0.0 to 1.0
+
         let output = if shape_norm < 0.5 {
             // Blend from saw (0.0) to triangle (0.5)
             let blend = shape_norm * 2.0;
@@ -85,7 +84,7 @@ impl SawOscillator {
             let ramp = generate_ramp(current_phase, phase_increment);
             triangle * (1.0 - blend) + ramp * blend
         };
-        
+
         self.outputs.sample = output * 5.0;
     }
 }
@@ -129,14 +128,18 @@ fn generate_triangle(phase: f32, phase_increment: f32) -> f32 {
     } else {
         3.0 - 4.0 * phase
     };
-    
+
     // Apply PolyBLEP correction at the peak (phase = 0.5)
     triangle += poly_blep_integrated(phase, phase_increment);
     triangle -= poly_blep_integrated(
-        if phase >= 0.5 { phase - 0.5 } else { phase + 0.5 },
+        if phase >= 0.5 {
+            phase - 0.5
+        } else {
+            phase + 0.5
+        },
         phase_increment,
     );
-    
+
     triangle
 }
 

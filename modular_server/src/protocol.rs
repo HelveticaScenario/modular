@@ -18,7 +18,6 @@ pub enum InputMessage {
     SetPatch { patch: PatchGraph },
 
     // Transport control (wired to Clock)
-    Start,
     Stop,
 
     // Recording

@@ -8,8 +8,7 @@ use serde_json::json;
 use modular_core::SampleableMap;
 use modular_core::patch::Patch;
 use modular_core::types::{
-    ClockMessages, Connect, InterpolationType, Message, MessageHandler, MessageTag, Sampleable,
-    Signal, Track, TrackKeyframe, TrackMap,
+    ClockMessages, Connect, InterpolationCategory, InterpolationType, Message, MessageHandler, MessageTag, Sampleable, Signal, Track, TrackKeyframe, TrackMap
 };
 
 // The proc-macro expands to `crate::types::...`; provide that module in this integration test crate.
@@ -260,14 +259,14 @@ fn message_listener_macro_infers_tags_from_match() {
         module: parking_lot::Mutex::new(L),
     };
 
-    assert_eq!(s.handled_message_tags(), &[
-        MessageTag::Clock,
-        MessageTag::MidiNote,
-        MessageTag::MidiCC,
-    ]);
+    assert_eq!(
+        s.handled_message_tags(),
+        &[MessageTag::Clock, MessageTag::MidiNote, MessageTag::MidiCC,]
+    );
 
     // Dispatch should call the appropriate handler and return Ok.
-    s.handle_message(&Message::Clock(ClockMessages::Stop)).unwrap();
+    s.handle_message(&Message::Clock(ClockMessages::Stop))
+        .unwrap();
 }
 
 #[test]
@@ -342,7 +341,10 @@ fn track_interpolation_linear_step_cubic() {
     approx_eq(track.get_value_optional().unwrap(), 0.0, 1e-5);
 
     // Cubic: at t=0.25, easing gives t2=0.125 => 0 + 8*0.125 = 1
-    track.configure(Signal::Volts { value: -2.5 }, InterpolationType::Cubic);
+    track.configure(
+        Signal::Volts { value: -2.5 },
+        InterpolationType::Cubic(InterpolationCategory::In),
+    );
     track.tick();
     approx_eq(track.get_value_optional().unwrap(), 1.0, 1e-5);
 }
@@ -352,7 +354,7 @@ fn track_interpolation_exponential_positive_values() {
     let track = Track::new(
         "t".to_string(),
         Signal::Volts { value: 0.0 }, // t=0.5
-        InterpolationType::Exponential,
+        InterpolationType::Expo(InterpolationCategory::In),
     );
     track.add_keyframe(TrackKeyframe {
         id: "a".to_string(),

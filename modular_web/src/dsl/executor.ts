@@ -18,7 +18,7 @@ export function executePatchScript(
   // Create default clock module that runs at 120 BPM
   const rootClock = context.factories.clock('root_clock');
   console.log('Created clock module:', rootClock);
-  rootClock.freq(bpm(120));
+  rootClock.tempo(bpm(120));
 
   // Create the execution environment with all DSL functions
   const dslGlobals = {

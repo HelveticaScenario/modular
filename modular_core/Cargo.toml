@@ -18,3 +18,4 @@ parking_lot = "0.12"
 ts-rs = { version = "11", features = ["serde-compat"] }
 mi-plaits-dsp = { version = "0.1", path = "../mi-plaits-dsp-rs" }
 schemars = "1.1.0"
+simple-easing = "1.0.1"

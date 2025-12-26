@@ -344,7 +344,6 @@ function App() {
         connectionState,
         getSchemas,
         setPatch,
-        start,
         stop,
         startRecording,
         stopRecording,
@@ -655,6 +654,7 @@ function App() {
                 const patchCodeValue = patchCodeRef.current;
                 const patch = executePatchScript(patchCodeValue, schemasValue);
                 setPatch(patch);
+                setIsClockRunning(true);
                 setRunningFile(currentFile || SCRATCH_FILE);
                 setError(null);
                 setValidationErrors(null);
@@ -740,10 +740,6 @@ function App() {
                         connectionState={connectionState}
                         isRunning={isClockRunning}
                         isRecording={isRecording}
-                        onStart={() => {
-                            setIsClockRunning(true);
-                            start();
-                        }}
                         onStop={() => {
                             setIsClockRunning(false);
                             stop();
