@@ -41,13 +41,11 @@ pub struct AppState {
 }
 
 // Build the Axum router
-pub fn create_router(state: AppState) -> Router {
+pub fn create_router(state: AppState, serve_dir: String) -> Router {
     // Serve static files from the static directory
     // Falls back to index.html for SPA routing
     // let static_dir = std::env::current_dir().unwrap_or_default().join("static");
 
-    let serve_dir =
-        ServeDir::new("./static").not_found_service(ServeFile::new("./static/index.html"));
 
     Router::new()
         // WebSocket endpoint
@@ -55,7 +53,7 @@ pub fn create_router(state: AppState) -> Router {
         // Health check
         .route("/health", get(health_check))
         // Static files (must be last as it's a fallback)
-        .fallback_service(serve_dir)
+        .fallback_service(ServeDir::new(&serve_dir).not_found_service(ServeFile::new(serve_dir + "index.html")))
         .layer(CorsLayer::permissive())
         .with_state(state)
 }

@@ -1,8 +1,8 @@
 {
     "$schema": "https://schema.tauri.app/config/2",
-    "productName": "menubar-example",
+    "productName": "modular",
     "version": "0.1.0",
-    "identifier": "com.menubar-example.app",
+    "identifier": "com.modular.app",
 
     "app": {
         "withGlobalTauri": true,
@@ -12,14 +12,16 @@
         }
     },
     "build": {
-        "frontendDist": "../modular_server/static",
-        "beforeBuildCommand": "cd ../modular_web && npm install && npm run build",
-        "beforeDevCommand": "cd ../modular_web && npm install && npm run dev"
+        "frontendDist": "../dist",
+        "beforeBuildCommand": "npm run build",
+        "beforeDevCommand": "npm run dev"
     },
     "bundle": {
         "macOS": {
             "minimumSystemVersion": "10.13",
             "entitlements": null
-        }
+        },
+        "resources": ["../dist/"],
+        "targets": ["app", "dmg"]
     }
 }

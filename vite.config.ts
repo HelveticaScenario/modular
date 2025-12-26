@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import path from 'path'
+// import path from 'path'
 // import monacoEditorEsmPlugin from 'vite-plugin-monaco-editor-esm'
 
 const prefix = `monaco-editor/esm/vs`;
@@ -15,10 +15,6 @@ export default defineConfig({
     }),
     // monacoEditorEsmPlugin(),
   ],
-  build: {
-    outDir: path.resolve(__dirname, '../modular_server/static'),
-    emptyOutDir: true,
-  },
   server: {
     proxy: {
       '/ws': {

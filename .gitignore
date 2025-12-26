@@ -3,7 +3,32 @@
 .DS_Store
 
 # Generated TypeScript types (run `cargo test export_types -- --ignored` to regenerate)
-modular_web/src/types/generated/
+src/types/generated/
 
 # Built web UI (run `cd modular_web && pnpm run build` to regenerate)
 modular_server/static/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

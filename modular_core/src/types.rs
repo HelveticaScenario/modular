@@ -177,7 +177,7 @@ pub trait Connect {
 )]
 #[ts(
     export,
-    export_to = "../../modular_web/src/types/generated/",
+    export_to = "../../src/types/generated/",
     rename_all = "camelCase",
     tag = "type"
 )]
@@ -355,7 +355,7 @@ impl PartialEq for Signal {
 #[serde(rename_all = "camelCase")]
 #[ts(
     export,
-    export_to = "../../modular_web/src/types/generated/",
+    export_to = "../../src/types/generated/",
     rename_all = "camelCase"
 )]
 pub struct TrackKeyframe {
@@ -579,7 +579,7 @@ impl Connect for InnerTrack {
 #[serde(rename_all = "camelCase")]
 #[ts(
     export,
-    export_to = "../../modular_web/src/types/generated/",
+    export_to = "../../src/types/generated/",
     rename_all = "camelCase",
     rename = "Track"
 )]
@@ -765,7 +765,7 @@ pub type TrackMap = HashMap<String, Arc<Track>>;
     Debug, Default, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize, TS,
 )]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub enum InterpolationCategory {
     #[default]
     In,
@@ -782,7 +782,7 @@ pub enum InterpolationCategory {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub enum InterpolationType {
     #[default]
     Linear,
@@ -809,7 +809,7 @@ pub enum Seq {
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub struct SignalParamSchema {
     pub name: String,
     pub description: String,
@@ -817,7 +817,7 @@ pub struct SignalParamSchema {
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub struct OutputSchema {
     pub name: String,
     pub description: String,
@@ -835,7 +835,7 @@ pub trait OutputStruct: Default + Send + Sync + 'static {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub struct ModuleSchema {
     pub name: String,
     pub description: String,
@@ -846,7 +846,7 @@ pub struct ModuleSchema {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub struct ModuleState {
     pub id: String,
     pub module_type: String,
@@ -861,7 +861,7 @@ pub struct ModuleState {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub enum ScopeItem {
     ModuleOutput {
         module_id: String,
@@ -874,7 +874,7 @@ pub enum ScopeItem {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub struct PatchGraph {
     pub modules: Vec<ModuleState>,
     #[serde(default)]
@@ -891,7 +891,7 @@ pub type SampleableConstructor = Box<dyn Fn(&String, f32) -> Result<Arc<Box<dyn 
 #[serde(rename_all = "camelCase")]
 #[ts(
     export,
-    export_to = "../../modular_web/src/types/generated/",
+    export_to = "../../src/types/generated/",
     rename_all = "camelCase"
 )]
 pub enum ClockMessages {
@@ -908,7 +908,7 @@ pub enum ClockMessages {
 )]
 #[ts(
     export,
-    export_to = "../../modular_web/src/types/generated/",
+    export_to = "../../src/types/generated/",
     rename_all = "camelCase",
     tag = "type"
 )]

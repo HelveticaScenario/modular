@@ -10,7 +10,7 @@ use ts_rs::TS;
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub enum InputMessage {
     GetSchemas,
     GetPatch,
@@ -41,7 +41,7 @@ pub enum InputMessage {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub enum OutputMessage {
     Schemas {
         schemas: Vec<ModuleSchema>,
@@ -76,7 +76,7 @@ pub enum OutputMessage {
 /// Detailed validation error for patch validation
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+#[ts(export, export_to = "../../src/types/generated/")]
 pub struct ValidationError {
     pub field: String,
     pub message: String,

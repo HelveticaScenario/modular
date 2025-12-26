@@ -9,10 +9,12 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "preview": "vite preview",
-    "codegen": "cd .. && cargo test --package modular_server --lib -- tests::export_types --exact --nocapture --ignored"
+    "codegen": "cd .. && cargo test --package modular_server --lib -- tests::export_types --exact --nocapture --ignored",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
+    "@tauri-apps/cli": "^2.9.6",
     "events": "^3.3.0",
     "monaco-editor": "^0.55.1",
     "prettier": "^3.4.2",

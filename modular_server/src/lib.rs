@@ -24,6 +24,7 @@ use crate::audio::send_audio_buffers;
 pub struct ServerConfig {
     pub port: u16,
     pub patch_file: Option<PathBuf>,
+    pub serve_dir: String
 }
 
 impl Default for ServerConfig {
@@ -31,6 +32,7 @@ impl Default for ServerConfig {
         Self {
             port: 7812,
             patch_file: None,
+            serve_dir: "../dist".into()
         }
     }
 }
@@ -121,7 +123,7 @@ pub async fn run_server(config: ServerConfig) -> anyhow::Result<()> {
     });
 
     // Create router
-    let app = create_router(state);
+    let app = create_router(state, config.serve_dir.clone());
 
     // Advertise the HTTP/WebSocket service over mDNS/Bonjour
     let mut mdns_service = start_mdns_service(config.port).await?;

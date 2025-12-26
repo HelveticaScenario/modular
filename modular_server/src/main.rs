@@ -23,8 +23,8 @@ async fn main() -> anyhow::Result<()> {
     let config = ServerConfig {
         port,
         patch_file: None,
+        serve_dir: "../dist".into(),
     };
-
-    // task::spawn(async { run_server(config).await }).await??;
+    run_server(config).await?;
     Ok(())
 }
