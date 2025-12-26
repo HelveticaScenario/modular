@@ -17,6 +17,7 @@ uuid = { version = "1.11", features = ["v4", "serde"] }
 parking_lot = "0.12"
 modular_core = { version = "*", path = "../modular_core" }
 
+
 # HTTP server
 axum = { version = "0.7", features = ["ws"] }
 tokio = { version = "1", features = ["full"] }

@@ -1,5 +1,6 @@
 use clap::{Arg, Command};
 use modular_server::{ServerConfig, run_server};
+use tokio::task;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -24,5 +25,6 @@ async fn main() -> anyhow::Result<()> {
         patch_file: None,
     };
 
-    run_server(config).await
+    // task::spawn(async { run_server(config).await }).await??;
+    Ok(())
 }
