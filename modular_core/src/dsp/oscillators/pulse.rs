@@ -37,7 +37,7 @@ impl PulseOscillator {
             .update(self.params.freq.get_value_or(4.0).clamp(-10.0, 10.0));
         let base_width = self.params.width.get_value_or(2.5);
         let pwm = self.params.pwm.get_value_or(0.0);
-        self.width.update(base_width + pwm).clamp(0.0, 5.0);
+        self.width.update((base_width + pwm).clamp(0.0, 5.0));
 
         let frequency = 27.5f32 * 2.0f32.powf(*self.freq);
         let phase_increment = frequency / sample_rate;

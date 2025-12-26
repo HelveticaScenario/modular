@@ -84,9 +84,8 @@ pub struct Clickless {
     value: f32,
 }
 impl Clickless {
-    pub fn update(&mut self, input: f32) -> f32 {
+    pub fn update(&mut self, input: f32) {
         self.value = smooth_value(self.value, input);
-        self.value
     }
 }
 

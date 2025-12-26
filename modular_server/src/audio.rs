@@ -19,7 +19,7 @@ use std::time::Instant;
 /// Attenuation factor applied to audio output to prevent clipping.
 /// DSP modules output signals in the range [-5, 5] volts (modular synth convention).
 /// This factor brings the output into a reasonable range for audio output.
-const AUDIO_OUTPUT_ATTENUATION: f32 = 5.0;
+const AUDIO_OUTPUT_ATTENUATION: f32 = 0.2;
 
 /// Audio subscription for streaming samples to clients
 #[derive(Clone)]
@@ -285,19 +285,16 @@ where
     println!("Time at start: {time_at_start:?}");
     let audio_state = audio_state.clone();
 
+    let mut final_state_processor = FinalStateProcessor::new();
+
     let stream = device.build_output_stream(
         config,
         move |output: &mut [T], _info: &cpal::OutputCallbackInfo| {
             let callback_start = Instant::now();
 
             for frame in output.chunks_mut(num_channels) {
-                let stopped = audio_state.is_stopped();
-
-                let output_sample = T::from_sample(if stopped {
-                    0.0
-                } else {
-                    process_frame(&audio_state) / AUDIO_OUTPUT_ATTENUATION
-                });
+                let output_sample =
+                    T::from_sample(final_state_processor.process_frame(&audio_state));
 
                 for s in frame.iter_mut() {
                     *s = output_sample;
@@ -448,6 +445,78 @@ pub fn get_sample_rate() -> Result<f32> {
         .ok_or_else(|| anyhow::anyhow!("No audio output device found"))?;
     let config = device.default_output_config()?;
     Ok(config.sample_rate().0 as f32)
+}
+
+enum VolumeChange {
+    Increase,
+    Decrease,
+    None,
+}
+struct FinalStateProcessor {
+    attenuation_factor: f32,
+    volume_change: VolumeChange,
+    prev_is_stopped: bool,
+}
+
+impl FinalStateProcessor {
+    fn new() -> Self {
+        Self {
+            attenuation_factor: 0.0,
+            volume_change: VolumeChange::None,
+            prev_is_stopped: true,
+        }
+    }
+
+    fn process_frame(&mut self, audio_state: &Arc<AudioState>) -> f32 {
+        let is_stopped = audio_state.is_stopped();
+        match (self.prev_is_stopped, is_stopped) {
+            (true, false) => {
+                self.volume_change = VolumeChange::Increase;
+                if self.attenuation_factor < f32::EPSILON {
+                    self.attenuation_factor = 0.01;
+                }
+            }
+            (false, true) => {
+                self.volume_change = VolumeChange::Decrease;
+            }
+            _ => {}
+        }
+        self.prev_is_stopped = is_stopped;
+
+        match self.volume_change {
+            VolumeChange::Decrease => {
+                self.attenuation_factor *= 0.9;
+                if self.attenuation_factor < 0.01 {
+                    self.attenuation_factor = 0.0;
+                    self.volume_change = VolumeChange::None;
+                }
+            }
+            VolumeChange::Increase => {
+                self.attenuation_factor *= 1.1;
+                if self.attenuation_factor > 1.0 {
+                    self.attenuation_factor = 1.0;
+                    self.volume_change = VolumeChange::None;
+                }
+            }
+            VolumeChange::None => {}
+        }
+
+        if self.attenuation_factor < f32::EPSILON {
+            0.0
+        } else {
+            let sample =
+                (process_frame(audio_state) * AUDIO_OUTPUT_ATTENUATION * self.attenuation_factor)
+                    .tanh();
+
+            if is_stopped && sample.abs() < f32::EPSILON {
+                self.attenuation_factor = 0.0;
+                self.volume_change = VolumeChange::None;
+                0.0
+            } else {
+                sample
+            }
+        }
+    }
 }
 
 #[cfg(test)]

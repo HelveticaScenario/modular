@@ -3,25 +3,26 @@
 
 // The default clock runs at 120 BPM
 // You can change its tempo
-clock.freq = bpm(128);
+rootClock.tempo(bpm(120));
 
 // Create a kick drum sound triggered on each bar
 const kick = sine();
-kick.freq(note("c1"));
+kick.freq(note("c2"));
 
 const kickEnv = ad();
 kickEnv.gate(rootClock.barTrigger);
 kickEnv.attack(0.001);
 kickEnv.decay(0.3);
 
-const kickVca = kick.scale(kickEnv);
+const kickVca = kick.scale(kickEnv.scale(80));
 
 
 // Create a hi-hat sound triggered at 48 PPQ (fast pulses)
 const hat = noise();
+hat.color("White")
 
 const hatEnv = ad();
-hatEnv.gate(rootClock.ppqTrigger);
+// hatEnv.gate(rootClock.ppqTrigger);
 hatEnv.attack(0.001);
 hatEnv.decay(0.05);
 

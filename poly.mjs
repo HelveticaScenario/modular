@@ -58,10 +58,10 @@ const sm = seq(
     ['g4', 0.2, 0.5],
     ['a4', 0.3, 0.5],
   ],
-  saw().freq(hz(.1)),
+  rootClock,
   (pitch, gate, i) => {
     console.log(pitch, gate)
-    return sine(`seq-sine-${i}`).freq(note(pitch)).scale(gate)
+    return saw(`seq-sine-${i}`).freq(note(pitch)).scale(gate)
   },
 )
 
