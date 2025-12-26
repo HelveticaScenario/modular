@@ -735,7 +735,7 @@ function App() {
         <SchemasContext.Provider value={schemas}>
             <div className="app">
                 <header className="app-header">
-                    <h1>Jeff</h1>
+                    <h1></h1>
                     <AudioControls
                         connectionState={connectionState}
                         isRunning={isClockRunning}
