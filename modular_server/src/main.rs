@@ -25,6 +25,5 @@ async fn main() -> anyhow::Result<()> {
         patch_file: None,
     };
 
-    // task::spawn(async { run_server(config).await }).await??;
-    Ok(())
+    run_server(config).await
 }
