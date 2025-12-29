@@ -35,9 +35,8 @@ const root = document.getElementById('root');
 if (!root) {
     throw new Error('Failed to find the root element');
 }
+window.electronAPI.getSchemas().then((schemas) => {
+    console.log('Schemas from main process:', schemas);
+});
 
-createRoot(root).render(
-    <StrictMode>
-        <App />,
-    </StrictMode>,
-);
+createRoot(root).render(<StrictMode></StrictMode>);

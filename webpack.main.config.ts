@@ -11,7 +11,19 @@ export const mainConfig: Configuration = {
   entry: './src/main.ts',
   // Put your normal webpack config below here
   module: {
-    rules,
+    rules: [
+      ...rules,
+      {
+        test: /\.(m?js|node)$/,
+        parser: { amd: false },
+        use: {
+          loader: '@vercel/webpack-asset-relocator-loader',
+          options: {
+            outputAssetBase: 'native_modules',
+          },
+        },
+      },
+    ],
   },
   plugins,
   resolve: {
