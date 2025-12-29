@@ -1,0 +1,10 @@
+{
+    "name": "modular",
+    "workspaces": [
+        "modular",
+        "modular_app",
+        "modular/npm/*",
+        "modular_test"
+    ],
+    "packageManager": "yarn@4.12.0"
+}

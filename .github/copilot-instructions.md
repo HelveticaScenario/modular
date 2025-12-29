@@ -30,9 +30,9 @@ Key crates/apps:
 ## Developer workflows
 - Run server (from repo root so file ops see `*.mjs` patches in CWD): `cargo run -p modular_server`
 - Frontend dev:
-  - `cd modular_web && pnpm install && pnpm dev`
+  - `cd modular_web && yarn install && yarn dev`
 - Regenerate Rust→TS types (ts-rs):
-  - `cd modular_web && pnpm run codegen`
+  - `cd modular_web && yarn run codegen`
   - This runs ignored test `tests::export_types` in `modular_server/src/lib.rs` and writes to `modular_web/src/types/generated/`.
 
 ## Repo-specific conventions to follow
@@ -40,6 +40,6 @@ Key crates/apps:
 - When adding/changing module params:
   - Update the Rust param struct/module implementation in `modular_core/src/dsp/**`.
   - Ensure schema/validator registration is wired through `install_constructors` / `install_param_validators` (see `modular_core/src/dsp/mod.rs`).
-  - Regenerate TS types (`pnpm run codegen`) and update DSL builders if needed.
+  - Regenerate TS types (`yarn run codegen`) and update DSL builders if needed.
 - For real-time safety: avoid allocations, logging, blocking locks in the audio callback; do “heavy” work on the async server thread.
 - Voltage convention: signals/params are generally clamped to `-10.0..10.0`; audio outputs target ~±5V (see `InternalParam` + DSP modules).

@@ -1,0 +1,45 @@
+
+[package]
+authors = ["Dan Lewis"]
+edition = "2024"
+name = "modular"
+version = "0.1.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi-derive = "3.4.1"
+anyhow = "1.0"
+hound = "3.5"
+tracing = "0.1"
+parking_lot = "0.12.5"
+schemars = "1.1.0"
+serde_json = "1.0.147"
+
+[dependencies.napi]
+version = "3.7.1"
+features = ["serde", "serde-json"]
+
+[dependencies.chrono]
+version = "0.4"
+default-features = true
+
+[dependencies.cpal]
+version = "0.17.0"
+features = ["asio"]
+
+[dependencies.modular_core]
+version = "*"
+path = "../modular_core"
+
+[dependencies.serde]
+version = "1.0"
+features = ["derive"]
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+lto = true
+strip = "symbols"

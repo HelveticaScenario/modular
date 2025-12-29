@@ -17,7 +17,7 @@ A real-time modular synthesizer with a JavaScript DSL for live-coding audio patc
 
 - Rust (latest stable)
 - Node.js 24.12+
-- pnpm
+- Yarn (latest)
 
 ### Running the Server
 
@@ -32,8 +32,8 @@ The server will start on `http://localhost:3000`
 
 ```bash
 cd modular_web
-pnpm install
-pnpm dev
+yarn install
+yarn dev
 ```
 
 The frontend will be available at `http://localhost:5173`
@@ -105,7 +105,7 @@ After modifying Rust types:
 
 ```bash
 cd modular_web
-pnpm run codegen
+yarn run codegen
 ```
 
 ### Building
@@ -116,7 +116,7 @@ cargo build
 
 # Frontend
 cd modular_web
-pnpm run build
+yarn run build
 ```
 
 ### Testing
@@ -127,7 +127,7 @@ cargo test
 
 # Frontend tests
 cd modular_web
-pnpm test
+yarn test
 ```
 
 ## License
