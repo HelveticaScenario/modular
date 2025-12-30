@@ -33,6 +33,8 @@ export const IPC_CHANNELS = {
     SYNTH_STOP_RECORDING: 'modular:synth:stop-recording',
     SYNTH_IS_RECORDING: 'modular:synth:is-recording',
     SYNTH_GET_HEALTH: 'modular:synth:get-health',
+    SYNTH_STOP: 'modular:synth:stop',
+    SYNTH_IS_STOPPED: 'modular:synth:is-stopped',
 } as const;
 
 /**
@@ -62,6 +64,10 @@ export interface IPCHandlers {
     [IPC_CHANNELS.SYNTH_IS_RECORDING]: typeof Synthesizer.prototype.isRecording;
 
     [IPC_CHANNELS.SYNTH_GET_HEALTH]: typeof Synthesizer.prototype.getHealth;
+
+    [IPC_CHANNELS.SYNTH_STOP]: typeof Synthesizer.prototype.stop;
+
+    [IPC_CHANNELS.SYNTH_IS_STOPPED]: typeof Synthesizer.prototype.isStopped;
 }
 
 /**

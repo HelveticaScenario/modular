@@ -7,7 +7,7 @@ type MakeInterpolationArgs<T> = T extends { type: infer U; category: Interpolati
 
 type InterpolationArgs = MakeInterpolationArgs<InterpolationType>;
 
-const def = (category: InterpolationCategory | undefined): InterpolationCategory => category ?? InterpolationCategory.In;
+const def = (category: InterpolationCategory | undefined): InterpolationCategory => category ?? 'In';
 
 function interpArgsToType(args: InterpolationArgs): InterpolationType {
   if (args[0] === 'Step' || args[0] === 'Linear') {

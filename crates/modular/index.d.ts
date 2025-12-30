@@ -3,6 +3,8 @@
 export declare class Synthesizer {
   /** Run the audio thread with cpal */
   constructor()
+  stop(): void
+  isStopped(): boolean
   sampleRate(): number
   channels(): number
   getScopes(): Array<[ScopeItem, Float32Array]>
@@ -35,11 +37,9 @@ export interface ValidationError {
   message: string
   location?: string
 }
-export declare const enum InterpolationCategory {
-  In = 'In',
-  Out = 'Out',
-  InOut = 'InOut'
-}
+export type InterpolationCategory =  'In'|
+'Out'|
+'InOut';
 
 export type InterpolationType =
   | { type: 'Linear' }

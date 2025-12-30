@@ -79,6 +79,17 @@ registerIPCHandler('SYNTH_GET_HEALTH', () => {
   return synth.getHealth();
 });
 
+registerIPCHandler('SYNTH_STOP', () => {
+  synth.stop();
+});
+
+registerIPCHandler('SYNTH_IS_STOPPED', () => {
+  return synth.isStopped();
+});
+
+/**
+ * Create the main application window
+ */
 
 const createWindow = (): void => {
   // Create the browser window.

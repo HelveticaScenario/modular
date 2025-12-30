@@ -75,6 +75,16 @@ impl Synthesizer {
   }
 
   #[napi]
+  pub fn stop(&mut self) {
+    self.state.set_stopped(true);
+  }
+
+  #[napi]
+  pub fn is_stopped(&self) -> bool {
+    self.state.is_stopped()
+  }
+
+  #[napi]
   pub fn sample_rate(&self) -> f32 {
     self.sample_rate
   }

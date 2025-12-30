@@ -631,11 +631,11 @@ function App() {
 
     const handleStopRef = useRef(() => {});
     useEffect(() => {
-        handleStopRef.current = () => {
+        handleStopRef.current = async () => {
+            await electronAPI.synthesizer.stop();
             setIsClockRunning(false);
-            stop();
         };
-    }, [stop]);
+    }, []);
 
     const dismissError = useCallback(() => {
         setError(null);
@@ -677,17 +677,14 @@ function App() {
                     <AudioControls
                         isRunning={isClockRunning}
                         isRecording={isRecording}
-                        onStop={() => {
-                            setIsClockRunning(false);
-                            stop();
-                        }}
+                        onStop={handleStopRef.current}
                         onStartRecording={async () => {
-                            setIsRecording(true);
                             await electronAPI.synthesizer.startRecording();
+                            setIsRecording(true);
                         }}
                         onStopRecording={async () => {
-                            setIsRecording(false);
                             await electronAPI.synthesizer.stopRecording();
+                            setIsRecording(false);
                         }}
                         onUpdatePatch={handleSubmitRef.current}
                     />
