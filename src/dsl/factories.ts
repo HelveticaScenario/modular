@@ -1,5 +1,5 @@
 
-import type { ModuleSchema } from '../types/generated/ModuleSchema';
+import { ModuleSchema } from '@modular/core';
 import { GraphBuilder, ModuleNode, ModuleOutput, TrackNode } from './GraphBuilder';
 
 type FactoryFunction = (id?: string) => ModuleNode;

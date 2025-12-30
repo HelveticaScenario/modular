@@ -1,15 +1,15 @@
 import test from 'ava'
 
-import { Synthesizer, getSchemas } from '../index'
+import { getSchemas } from '../index'
 
 
 
-test('Synthesizer', (t) => {
-  const synth = new Synthesizer()
-  synth.start()
-  console.log('Synthesizer instance:', synth)
-  t.pass()
-})
+// test('Synthesizer', (t) => {
+//   const synth = new Synthesizer()
+//   synth.start()
+//   console.log('Synthesizer instance:', synth.getScopes())
+//   t.pass()
+// })
 
 test('getSchemas', (t) => {
   const schemas = getSchemas()

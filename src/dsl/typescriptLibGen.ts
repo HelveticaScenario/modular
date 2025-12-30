@@ -1,4 +1,4 @@
-import type { ModuleSchema } from "../types/generated/ModuleSchema";
+import { ModuleSchema } from "@modular/core";
 
 const BASE_LIB_SOURCE = `
 /** The **\`console\`** object provides access to the debugging console (e.g., the Web console in Firefox). */

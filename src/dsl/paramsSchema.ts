@@ -1,4 +1,4 @@
-import type { ModuleSchema } from "../types/generated/ModuleSchema";
+import { ModuleSchema } from "@modular/core";
 
 /**
  * A small, pragmatic subset of JSON Schema (as emitted by `schemars`).
@@ -11,13 +11,13 @@ export type JsonSchema = {
   description?: string;
 
   type?:
-    | "object"
-    | "string"
-    | "number"
-    | "integer"
-    | "boolean"
-    | "array"
-    | "null";
+  | "object"
+  | "string"
+  | "number"
+  | "integer"
+  | "boolean"
+  | "array"
+  | "null";
 
   properties?: Record<string, JsonSchema>;
   required?: string[];

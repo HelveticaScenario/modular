@@ -13,7 +13,7 @@
 - [ ] buffer type
 - [ ] sample loading into buffer
 - [ ] live recording into buffer
-- [ ] arbitrary param types (like enum) (not modulatable)
+- [x] arbitrary param types (like enum) (not modulatable)
 - [ ] polyphony?
 - [ ] some sort of "make module" composition system
 - [ ] midi in (notes would pretend to be seq, cc would be signal)

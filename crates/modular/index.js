@@ -79,8 +79,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('modular-core-android-arm64')
-        const bindingPackageVersion = require('modular-core-android-arm64/package.json').version
+        const binding = require('@modular/core-android-arm64')
+        const bindingPackageVersion = require('@modular/core-android-arm64/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -95,8 +95,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('modular-core-android-arm-eabi')
-        const bindingPackageVersion = require('modular-core-android-arm-eabi/package.json').version
+        const binding = require('@modular/core-android-arm-eabi')
+        const bindingPackageVersion = require('@modular/core-android-arm-eabi/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -116,8 +116,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('modular-core-win32-x64-gnu')
-        const bindingPackageVersion = require('modular-core-win32-x64-gnu/package.json').version
+        const binding = require('@modular/core-win32-x64-gnu')
+        const bindingPackageVersion = require('@modular/core-win32-x64-gnu/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -132,8 +132,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('modular-core-win32-x64-msvc')
-        const bindingPackageVersion = require('modular-core-win32-x64-msvc/package.json').version
+        const binding = require('@modular/core-win32-x64-msvc')
+        const bindingPackageVersion = require('@modular/core-win32-x64-msvc/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -149,8 +149,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('modular-core-win32-ia32-msvc')
-        const bindingPackageVersion = require('modular-core-win32-ia32-msvc/package.json').version
+        const binding = require('@modular/core-win32-ia32-msvc')
+        const bindingPackageVersion = require('@modular/core-win32-ia32-msvc/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -165,8 +165,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('modular-core-win32-arm64-msvc')
-        const bindingPackageVersion = require('modular-core-win32-arm64-msvc/package.json').version
+        const binding = require('@modular/core-win32-arm64-msvc')
+        const bindingPackageVersion = require('@modular/core-win32-arm64-msvc/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -184,8 +184,8 @@ function requireNative() {
       loadErrors.push(e)
     }
     try {
-      const binding = require('modular-core-darwin-universal')
-      const bindingPackageVersion = require('modular-core-darwin-universal/package.json').version
+      const binding = require('@modular/core-darwin-universal')
+      const bindingPackageVersion = require('@modular/core-darwin-universal/package.json').version
       if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
         throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
       }
@@ -200,8 +200,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('modular-core-darwin-x64')
-        const bindingPackageVersion = require('modular-core-darwin-x64/package.json').version
+        const binding = require('@modular/core-darwin-x64')
+        const bindingPackageVersion = require('@modular/core-darwin-x64/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -216,8 +216,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('modular-core-darwin-arm64')
-        const bindingPackageVersion = require('modular-core-darwin-arm64/package.json').version
+        const binding = require('@modular/core-darwin-arm64')
+        const bindingPackageVersion = require('@modular/core-darwin-arm64/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -236,8 +236,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('modular-core-freebsd-x64')
-        const bindingPackageVersion = require('modular-core-freebsd-x64/package.json').version
+        const binding = require('@modular/core-freebsd-x64')
+        const bindingPackageVersion = require('@modular/core-freebsd-x64/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -252,8 +252,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('modular-core-freebsd-arm64')
-        const bindingPackageVersion = require('modular-core-freebsd-arm64/package.json').version
+        const binding = require('@modular/core-freebsd-arm64')
+        const bindingPackageVersion = require('@modular/core-freebsd-arm64/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -273,8 +273,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('modular-core-linux-x64-musl')
-          const bindingPackageVersion = require('modular-core-linux-x64-musl/package.json').version
+          const binding = require('@modular/core-linux-x64-musl')
+          const bindingPackageVersion = require('@modular/core-linux-x64-musl/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -289,8 +289,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('modular-core-linux-x64-gnu')
-          const bindingPackageVersion = require('modular-core-linux-x64-gnu/package.json').version
+          const binding = require('@modular/core-linux-x64-gnu')
+          const bindingPackageVersion = require('@modular/core-linux-x64-gnu/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -307,8 +307,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('modular-core-linux-arm64-musl')
-          const bindingPackageVersion = require('modular-core-linux-arm64-musl/package.json').version
+          const binding = require('@modular/core-linux-arm64-musl')
+          const bindingPackageVersion = require('@modular/core-linux-arm64-musl/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -323,8 +323,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('modular-core-linux-arm64-gnu')
-          const bindingPackageVersion = require('modular-core-linux-arm64-gnu/package.json').version
+          const binding = require('@modular/core-linux-arm64-gnu')
+          const bindingPackageVersion = require('@modular/core-linux-arm64-gnu/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -341,8 +341,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('modular-core-linux-arm-musleabihf')
-          const bindingPackageVersion = require('modular-core-linux-arm-musleabihf/package.json').version
+          const binding = require('@modular/core-linux-arm-musleabihf')
+          const bindingPackageVersion = require('@modular/core-linux-arm-musleabihf/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -357,8 +357,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('modular-core-linux-arm-gnueabihf')
-          const bindingPackageVersion = require('modular-core-linux-arm-gnueabihf/package.json').version
+          const binding = require('@modular/core-linux-arm-gnueabihf')
+          const bindingPackageVersion = require('@modular/core-linux-arm-gnueabihf/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -375,8 +375,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('modular-core-linux-loong64-musl')
-          const bindingPackageVersion = require('modular-core-linux-loong64-musl/package.json').version
+          const binding = require('@modular/core-linux-loong64-musl')
+          const bindingPackageVersion = require('@modular/core-linux-loong64-musl/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -391,8 +391,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('modular-core-linux-loong64-gnu')
-          const bindingPackageVersion = require('modular-core-linux-loong64-gnu/package.json').version
+          const binding = require('@modular/core-linux-loong64-gnu')
+          const bindingPackageVersion = require('@modular/core-linux-loong64-gnu/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -409,8 +409,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('modular-core-linux-riscv64-musl')
-          const bindingPackageVersion = require('modular-core-linux-riscv64-musl/package.json').version
+          const binding = require('@modular/core-linux-riscv64-musl')
+          const bindingPackageVersion = require('@modular/core-linux-riscv64-musl/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -425,8 +425,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('modular-core-linux-riscv64-gnu')
-          const bindingPackageVersion = require('modular-core-linux-riscv64-gnu/package.json').version
+          const binding = require('@modular/core-linux-riscv64-gnu')
+          const bindingPackageVersion = require('@modular/core-linux-riscv64-gnu/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -442,8 +442,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('modular-core-linux-ppc64-gnu')
-        const bindingPackageVersion = require('modular-core-linux-ppc64-gnu/package.json').version
+        const binding = require('@modular/core-linux-ppc64-gnu')
+        const bindingPackageVersion = require('@modular/core-linux-ppc64-gnu/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -458,8 +458,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('modular-core-linux-s390x-gnu')
-        const bindingPackageVersion = require('modular-core-linux-s390x-gnu/package.json').version
+        const binding = require('@modular/core-linux-s390x-gnu')
+        const bindingPackageVersion = require('@modular/core-linux-s390x-gnu/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -478,8 +478,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('modular-core-openharmony-arm64')
-        const bindingPackageVersion = require('modular-core-openharmony-arm64/package.json').version
+        const binding = require('@modular/core-openharmony-arm64')
+        const bindingPackageVersion = require('@modular/core-openharmony-arm64/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -494,8 +494,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('modular-core-openharmony-x64')
-        const bindingPackageVersion = require('modular-core-openharmony-x64/package.json').version
+        const binding = require('@modular/core-openharmony-x64')
+        const bindingPackageVersion = require('@modular/core-openharmony-x64/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -510,8 +510,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('modular-core-openharmony-arm')
-        const bindingPackageVersion = require('modular-core-openharmony-arm/package.json').version
+        const binding = require('@modular/core-openharmony-arm')
+        const bindingPackageVersion = require('@modular/core-openharmony-arm/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -542,7 +542,7 @@ if (!nativeBinding || process.env.NAPI_RS_FORCE_WASI) {
   }
   if (!nativeBinding) {
     try {
-      wasiBinding = require('modular-core-wasm32-wasi')
+      wasiBinding = require('@modular/core-wasm32-wasi')
       nativeBinding = wasiBinding
     } catch (err) {
       if (process.env.NAPI_RS_FORCE_WASI) {
@@ -575,6 +575,7 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { Synthesizer, getSchemas } = nativeBinding
+const { Synthesizer, getSchemas, InterpolationCategory } = nativeBinding
 export { Synthesizer }
 export { getSchemas }
+export { InterpolationCategory }

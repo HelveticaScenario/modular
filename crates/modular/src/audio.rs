@@ -1,15 +1,15 @@
-use anyhow::Result;
 use cpal::FromSample;
 use cpal::SizedSample;
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, HostTrait};
 
 use hound::{WavSpec, WavWriter};
-use modular_core::ModuleSchema;
 use modular_core::PatchGraph;
 use modular_core::dsp::get_constructors;
 use modular_core::dsp::schema;
 use modular_core::types::ClockMessages;
 use modular_core::types::Message;
+use napi::Result;
+use napi::bindgen_prelude::Float32Array;
 use napi_derive::napi;
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -20,34 +20,17 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU32;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use modular_core::patch::Patch;
 use modular_core::types::{ROOT_OUTPUT_PORT, ScopeItem};
 use std::time::Instant;
 
-/// Output messages to clients
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(
-  tag = "type",
-  rename_all = "camelCase",
-  rename_all_fields = "camelCase"
-)]
-#[napi]
-pub enum OutputMessage {
-  Error {
-    message: String,
-    errors: Option<Vec<ValidationError>>,
-  },
-
-  /// Current mute state of the audio engine
-  RunState { stopped: bool },
-
-  // Audio streaming
-  AudioBuffer {
-    subscription: ScopeItem,
-    samples: Vec<f64>,
-  },
+#[napi(object)]
+pub struct ApplyPatchError {
+  pub message: String,
+  pub errors: Option<Vec<ValidationError>>,
 }
 
 use crate::validation::ValidationError;
@@ -59,7 +42,7 @@ use crate::validation::validate_patch;
 const AUDIO_OUTPUT_ATTENUATION: f32 = 0.2;
 
 /// Audio subscription for streaming samples to clients
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RingBuffer {
   pub buffer: Vec<f32>,
   capacity: usize,
@@ -114,6 +97,7 @@ pub struct AudioState {
   recording_writer: Arc<Mutex<Option<WavWriter<BufWriter<File>>>>>,
   recording_path: Arc<Mutex<Option<PathBuf>>>,
   sample_rate: f32,
+  _channels: u16,
   audio_thread_health: AudioThreadHealth,
 }
 
@@ -121,27 +105,28 @@ pub struct AudioState {
 struct AudioThreadHealth {
   /// Number of audio frames skipped because the real-time callback could not acquire
   /// the patch lock via `try_lock()`.
-  patch_lock_misses: AtomicU64,
+  patch_lock_misses: AtomicU32,
 
   /// Number of output callbacks whose execution time exceeded the duration of the
   /// buffer they were asked to fill (a strong signal of underrun risk).
-  output_callback_overruns: AtomicU64,
+  output_callback_overruns: AtomicU32,
   /// Max observed overrun (elapsed - expected) in nanoseconds.
-  output_callback_overrun_max_ns: AtomicU64,
+  output_callback_overrun_max_ns: AtomicU32,
   /// Max observed total callback execution time in nanoseconds.
-  output_callback_duration_max_ns: AtomicU64,
+  output_callback_duration_max_ns: AtomicU32,
 }
 
 #[derive(Debug, Clone, Copy)]
+#[napi(object)]
 pub struct AudioThreadHealthSnapshot {
-  pub patch_lock_misses: u64,
-  pub output_callback_overruns: u64,
-  pub output_callback_overrun_max_ns: u64,
-  pub output_callback_duration_max_ns: u64,
+  pub patch_lock_misses: u32,
+  pub output_callback_overruns: u32,
+  pub output_callback_overrun_max_ns: u32,
+  pub output_callback_duration_max_ns: u32,
 }
 
 impl AudioState {
-  pub fn new(patch: Arc<Mutex<Patch>>, sample_rate: f32) -> Self {
+  pub fn new(patch: Arc<Mutex<Patch>>, sample_rate: f32, channels: u16) -> Self {
     Self {
       patch,
       stopped: Arc::new(AtomicBool::new(true)),
@@ -149,6 +134,7 @@ impl AudioState {
       recording_writer: Arc::new(Mutex::new(None)),
       recording_path: Arc::new(Mutex::new(None)),
       sample_rate,
+      _channels: channels,
       audio_thread_health: AudioThreadHealth::default(),
     }
   }
@@ -187,11 +173,12 @@ impl AudioState {
     let _ = scope_collection
       .entry(scope_item)
       .or_insert(RingBuffer::new(512));
+    println!("Current scopes: {:?}", scope_collection);
   }
 
-  pub fn remove_scope(&self, scope_item: &ScopeItem) {
+  pub fn remove_scope(&self, scope_item: &ScopeItem) -> Option<()> {
     let mut scope_collection = self.scope_collection.lock();
-    scope_collection.remove(scope_item);
+    scope_collection.remove(scope_item).map(|_| {})
   }
 
   pub fn start_recording(&self, filename: Option<String>) -> Result<String> {
@@ -206,7 +193,8 @@ impl AudioState {
       sample_format: hound::SampleFormat::Float,
     };
 
-    let writer = WavWriter::create(&path, spec)?;
+    let writer = WavWriter::create(&path, spec)
+      .map_err(|e| napi::Error::from_reason(format!("Failed to start file write: {}", e)))?;
     *self.recording_writer.lock() = Some(writer);
     *self.recording_path.lock() = Some(path);
 
@@ -218,12 +206,13 @@ impl AudioState {
     let path = self.recording_path.lock().take();
 
     if let Some(w) = writer {
-      w.finalize()?;
+      w.finalize()
+        .map_err(|e| napi::Error::from_reason(format!("Failed to finalize file writer: {}", e)))?;
     }
 
     Ok(path.map(|p| p.to_string_lossy().to_string()))
   }
-  pub fn get_audio_buffers(&self) -> Vec<(ScopeItem, Vec<f32>)> {
+  pub fn get_audio_buffers(&self) -> Vec<(ScopeItem, Float32Array)> {
     // Skip emitting audio buffers entirely when stopped
     if self.is_stopped() {
       return Vec::new();
@@ -236,21 +225,20 @@ impl AudioState {
     scope_collection
       .iter()
       .filter(|(_, buffer)| buffer.buffer.len() >= buffer.capacity)
-      .map(|(scope_item, buffer)| {
-        let samples: Vec<f32> = buffer.to_vec();
-        (scope_item.clone(), samples.clone())
-      })
+      .map(|(scope_item, buffer)| (scope_item.clone(), Float32Array::new(buffer.to_vec())))
       .collect()
   }
 
-  fn apply_patch(&self, desired_graph: &PatchGraph, sample_rate: f32) -> anyhow::Result<()> {
+  pub fn apply_patch(&self, desired_graph: PatchGraph, sample_rate: f32) -> Result<()> {
+    let PatchGraph {
+      modules,
+      scopes,
+      tracks,
+    } = desired_graph;
+
     let mut patch_lock = self.patch.lock();
     // Build maps for efficient lookup
-    let desired_modules: HashMap<String, _> = desired_graph
-      .modules
-      .iter()
-      .map(|m| (m.id.clone(), m))
-      .collect();
+    let desired_modules: HashMap<String, _> = modules.iter().map(|m| (m.id.clone(), m)).collect();
 
     let current_ids: HashSet<String> = patch_lock.sampleables.keys().cloned().collect();
     let desired_ids: HashSet<String> = desired_modules.keys().cloned().collect();
@@ -305,14 +293,17 @@ impl AudioState {
               patch_lock.sampleables.insert(id.clone(), module);
             }
             Err(err) => {
-              return Err(anyhow::anyhow!("Failed to create module {}: {}", id, err));
+              return Err(napi::Error::from_reason(format!(
+                "Failed to create module {}: {}",
+                id, err
+              )));
             }
           }
         } else {
-          return Err(anyhow::anyhow!(
+          return Err(napi::Error::from_reason(format!(
             "{} is not a valid module type",
             desired_module.module_type
-          ));
+          )));
         }
       }
     }
@@ -326,11 +317,7 @@ impl AudioState {
     // #[cfg(feature = "legacy-tracks")]
     {
       // Build maps for efficient track lookup
-      let desired_tracks: HashMap<String, _> = desired_graph
-        .tracks
-        .iter()
-        .map(|t| (t.id.clone(), t))
-        .collect();
+      let desired_tracks: HashMap<String, _> = tracks.iter().map(|t| (t.id.clone(), t)).collect();
 
       let current_track_ids: HashSet<String> = patch_lock.tracks.keys().cloned().collect();
       let desired_track_ids: HashSet<String> = desired_tracks.keys().cloned().collect();
@@ -350,7 +337,7 @@ impl AudioState {
       // Two-pass track creation to handle keyframes that reference other tracks
 
       // PASS 1: Create/update track shells (without configuration or keyframes)
-      for track in &desired_graph.tracks {
+      for track in &tracks {
         match patch_lock.tracks.get(&track.id) {
           Some(existing_track) => {
             // Existing track: clear all keyframes (will re-add in pass 2)
@@ -372,17 +359,53 @@ impl AudioState {
       }
 
       // PASS 2: Configure tracks and add keyframes (all tracks now exist for Track param resolution)
-      for track in &desired_graph.tracks {
+      for track in tracks {
         if let Some(internal_track) = patch_lock.tracks.get(&track.id) {
           // Configure playhead parameter and interpolation type
-          internal_track.configure(track.playhead.clone(), track.interpolation_type);
+          internal_track.configure(
+            serde_json::from_value(track.playhead)?,
+            track.interpolation_type,
+          );
 
           // Add keyframes (params may reference other tracks, which now exist)
-          for kf in &track.keyframes {
-            internal_track.add_keyframe(kf.clone());
+          for kf in track.keyframes {
+            internal_track.add_keyframe(TryFrom::try_from(kf)?);
           }
         }
       }
+    }
+
+    // ===== SCOPE LIFECYCLE =====
+    {
+      let mut scope_collection = self.scope_collection.lock();
+      let current_scope_items: HashSet<ScopeItem> = scope_collection.keys().cloned().collect();
+      let desired_scope_items: HashSet<ScopeItem> = scopes.into_iter().collect();
+
+      // Remove scopes that are in current but not in desired
+      let scopes_to_remove: Vec<ScopeItem> = current_scope_items
+        .difference(&desired_scope_items)
+        .cloned()
+        .collect();
+
+      println!("Scopes to remove: {:?}", scopes_to_remove);
+
+      for scope_item in scopes_to_remove {
+        scope_collection.remove(&scope_item);
+      }
+
+      // Add scopes that are in desired but not in current
+      let scopes_to_add: Vec<ScopeItem> = desired_scope_items
+        .difference(&current_scope_items)
+        .cloned()
+        .collect();
+
+      println!("Scopes to add: {:?}", scopes_to_add);
+
+      for scope_item in scopes_to_add {
+        scope_collection.insert(scope_item, RingBuffer::new(512));
+      }
+
+      println!("Current scopes after update: {:?}", scope_collection.keys().collect::<Vec<_>>());
     }
 
     // Update parameters for all desired modules (both new and existing)
@@ -392,11 +415,10 @@ impl AudioState {
       if let Some(desired_module) = desired_modules.get(id) {
         if let Some(module) = patch_lock.sampleables.get(id) {
           if let Err(err) = module.try_update_params(desired_module.params.clone()) {
-            return Err(anyhow::anyhow!(
+            return Err(napi::Error::from_reason(format!(
               "Failed to update params for {}: {}",
-              id,
-              err
-            ));
+              id, err
+            )));
           }
         }
       }
@@ -411,11 +433,11 @@ impl AudioState {
     Ok(())
   }
 
-  fn handle_set_patch(&self, patch: &PatchGraph, sample_rate: f32) -> Vec<OutputMessage> {
+  pub fn handle_set_patch(&self, patch: PatchGraph, sample_rate: f32) -> Vec<ApplyPatchError> {
     // Validate patch
     let schemas = schema();
     if let Err(errors) = validate_patch(&patch, &schemas) {
-      return vec![OutputMessage::Error {
+      return vec![ApplyPatchError {
         message: "Validation failed".to_string(),
         errors: Some(errors),
       }];
@@ -423,23 +445,22 @@ impl AudioState {
 
     // Apply patch
     if let Err(e) = self.apply_patch(patch, sample_rate) {
-      return vec![OutputMessage::Error {
+      return vec![ApplyPatchError {
         message: format!("Failed to apply patch: {}", e),
         errors: None,
       }];
     }
-    let mut responses: Vec<OutputMessage> = vec![];
+    let mut responses: Vec<ApplyPatchError> = vec![];
     // Auto-unmute on SetPatch to match prior imperative flow
     if self.is_stopped() {
       self.set_stopped(false);
       let message = Message::Clock(ClockMessages::Start);
       if let Err(e) = self.patch.lock().dispatch_message(&message) {
-        responses.push(OutputMessage::Error {
+        responses.push(ApplyPatchError {
           message: format!("Failed to dispatch start: {}", e),
           errors: None,
         })
       }
-      responses.push(OutputMessage::RunState { stopped: false });
     }
     return responses;
   }
@@ -455,7 +476,7 @@ pub fn make_stream<T>(
   device: &cpal::Device,
   config: &cpal::StreamConfig,
   audio_state: &Arc<AudioState>,
-) -> Result<cpal::Stream, anyhow::Error>
+) -> Result<cpal::Stream>
 where
   T: SizedSample + FromSample<f32> + hound::Sample,
 {
@@ -470,55 +491,57 @@ where
 
   let mut final_state_processor = FinalStateProcessor::new();
 
-  let stream = device.build_output_stream(
-    config,
-    move |output: &mut [T], _info: &cpal::OutputCallbackInfo| {
-      let callback_start = Instant::now();
+  let stream = device
+    .build_output_stream(
+      config,
+      move |output: &mut [T], _info: &cpal::OutputCallbackInfo| {
+        let callback_start = Instant::now();
 
-      for frame in output.chunks_mut(num_channels) {
-        let output_sample = T::from_sample(final_state_processor.process_frame(&audio_state));
+        for frame in output.chunks_mut(num_channels) {
+          let output_sample = T::from_sample(final_state_processor.process_frame(&audio_state));
 
-        for s in frame.iter_mut() {
-          *s = output_sample;
-        }
+          for s in frame.iter_mut() {
+            *s = output_sample;
+          }
 
-        // Record if enabled (use try_lock to avoid blocking audio)
-        if let Some(mut writer_guard) = audio_state.recording_writer.try_lock() {
-          if let Some(ref mut writer) = *writer_guard {
-            let _ = writer.write_sample(output_sample);
+          // Record if enabled (use try_lock to avoid blocking audio)
+          if let Some(mut writer_guard) = audio_state.recording_writer.try_lock() {
+            if let Some(ref mut writer) = *writer_guard {
+              let _ = writer.write_sample(output_sample);
+            }
           }
         }
-      }
 
-      // Detect when the data callback itself is taking too long.
-      // We compute the expected wall-time budget based on the number of frames
-      // we were asked to generate and the stream sample rate.
-      let elapsed = callback_start.elapsed();
-      let elapsed_ns = elapsed.as_nanos() as u64;
-      audio_state
-        .audio_thread_health
-        .output_callback_duration_max_ns
-        .fetch_max(elapsed_ns, Ordering::Relaxed);
-
-      // `output.len()` is samples across all channels; convert to frames.
-      let frames = (output.len() / num_channels) as f64;
-      let expected_ns = ((frames * 1_000_000_000.0) / sample_rate_hz) as u64;
-
-      if elapsed_ns > expected_ns {
-        let overrun_ns = elapsed_ns - expected_ns;
+        // Detect when the data callback itself is taking too long.
+        // We compute the expected wall-time budget based on the number of frames
+        // we were asked to generate and the stream sample rate.
+        let elapsed = callback_start.elapsed();
+        let elapsed_ns = elapsed.as_nanos() as u64;
         audio_state
           .audio_thread_health
-          .output_callback_overruns
-          .fetch_add(1, Ordering::Relaxed);
-        audio_state
-          .audio_thread_health
-          .output_callback_overrun_max_ns
-          .fetch_max(overrun_ns, Ordering::Relaxed);
-      }
-    },
-    err_fn,
-    None,
-  )?;
+          .output_callback_duration_max_ns
+          .fetch_max(elapsed_ns as u32, Ordering::Relaxed);
+
+        // `output.len()` is samples across all channels; convert to frames.
+        let frames = (output.len() / num_channels) as f64;
+        let expected_ns = ((frames * 1_000_000_000.0) / sample_rate_hz) as u64;
+
+        if elapsed_ns > expected_ns {
+          let overrun_ns = elapsed_ns - expected_ns;
+          audio_state
+            .audio_thread_health
+            .output_callback_overruns
+            .fetch_add(1, Ordering::Relaxed);
+          audio_state
+            .audio_thread_health
+            .output_callback_overrun_max_ns
+            .fetch_max(overrun_ns as u32, Ordering::Relaxed);
+        }
+      },
+      err_fn,
+      None,
+    )
+    .map_err(|e| napi::Error::from_reason(format!("Failed to build output stream: {}", e)))?;
 
   Ok(stream)
 }
@@ -553,23 +576,23 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
     module.tick();
   }
 
-  // Capture audio for subscriptions
-  for (subscription, mut subscription_buffer) in audio_state.get_audio_buffers().into_iter() {
-    match subscription {
+  // Capture audio for scopes
+  for (scope, buffer) in audio_state.scope_collection.try_lock().unwrap().iter_mut() {
+    match scope {
       ScopeItem::ModuleOutput {
         module_id,
         port_name,
       } => {
-        if let Some(module) = patch_guard.sampleables.get(&module_id) {
+        if let Some(module) = patch_guard.sampleables.get(module_id) {
           if let Ok(sample) = module.get_sample(&port_name) {
-            subscription_buffer.push(sample);
+            buffer.push(sample);
           }
         }
       }
       ScopeItem::Track { track_id } => {
-        if let Some(track) = patch_guard.tracks.get(&track_id) {
+        if let Some(track) = patch_guard.tracks.get(track_id) {
           if let Some(sample) = track.get_value_optional() {
-            subscription_buffer.push(sample);
+            buffer.push(sample);
           }
         }
       }
@@ -591,8 +614,10 @@ pub fn get_sample_rate() -> Result<f32> {
   let host = cpal::default_host();
   let device = host
     .default_output_device()
-    .ok_or_else(|| anyhow::anyhow!("No audio output device found"))?;
-  let config = device.default_output_config()?;
+    .ok_or_else(|| napi::Error::from_reason("No audio output device found".to_string()))?;
+  let config = device
+    .default_output_config()
+    .map_err(|e| napi::Error::from_reason(format!("Failed to get default output config: {}", e)))?;
   Ok(config.sample_rate() as f32)
 }
 
@@ -675,7 +700,7 @@ mod tests {
   #[test]
   fn test_audio_subscription() {
     let patch = Arc::new(Mutex::new(Patch::new(HashMap::new(), HashMap::new())));
-    let state = AudioState::new(patch, 48000.0);
+    let state = AudioState::new(patch, 48000.0, 2);
     let sub = ScopeItem::ModuleOutput {
       module_id: "sine-1".to_string(),
       port_name: "output".to_string(),
@@ -703,7 +728,7 @@ mod tests {
   #[test]
   fn test_stopped_state() {
     let patch = Arc::new(Mutex::new(Patch::new(HashMap::new(), HashMap::new())));
-    let state = AudioState::new(patch, 48000.0);
+    let state = AudioState::new(patch, 48000.0, 2);
 
     assert!(!state.is_stopped());
     state.set_stopped(true);

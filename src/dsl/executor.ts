@@ -1,5 +1,5 @@
-import type { ModuleSchema } from '../types/generated/ModuleSchema';
-import type { PatchGraph } from '../types/generated/PatchGraph';
+
+import { ModuleSchema, PatchGraph } from '@modular/core';
 import { DSLContext, hz, note, bpm } from './factories';
 
 

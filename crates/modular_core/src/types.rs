@@ -6,6 +6,7 @@ use parking_lot::Mutex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fmt::Debug;
 use std::ops::{Add, Deref, Div, Mul, Sub};
 use std::time::Duration;
 use std::{
@@ -172,33 +173,26 @@ pub trait Connect {
     fn connect(&mut self, patch: &Patch);
 }
 
-#[derive(Clone, Debug, Default, Serialize, TS, JsonSchema)]
+#[derive(Clone, Debug, Default, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-#[ts(
-    export,
-    export_to = "../../modular_web/src/types/generated/",
-    rename_all = "camelCase",
-    tag = "type"
-)]
 pub enum Signal {
-    #[ts(as = "f32")]
-    Volts { value: f32 },
+    Volts {
+        value: f32,
+    },
     Cable {
         module: String,
-        #[ts(skip)]
         #[serde(skip)]
-        module_ptr: sync::Weak<Box<dyn Sampleable>>,
+        module_ptr: std::sync::Weak<Box<dyn Sampleable>>,
         port: String,
     },
     Track {
         track: String,
-        #[ts(skip)]
         #[serde(skip)]
-        track_ptr: sync::Weak<Track>,
+        track_ptr: std::sync::Weak<Track>,
     },
     #[default]
     Disconnected,
@@ -354,19 +348,38 @@ impl PartialEq for Signal {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, TS)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
-#[ts(
-    export,
-    export_to = "../../modular_web/src/types/generated/",
-    rename_all = "camelCase"
-)]
+#[napi(object)]
+pub struct TrackKeyframeProxy {
+    pub id: String,
+    pub track_id: String,
+    /// Normalized time in the range [0.0, 1.0]
+    pub time: f64,
+    pub signal: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize, Clone, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct TrackKeyframe {
     pub id: String,
     pub track_id: String,
     /// Normalized time in the range [0.0, 1.0]
     pub time: f32,
     pub signal: Signal,
+}
+
+impl TryFrom<TrackKeyframeProxy> for TrackKeyframe {
+    fn try_from(proxy: TrackKeyframeProxy) -> Result<Self, serde_json::Error> {
+        Ok(TrackKeyframe {
+            id: proxy.id,
+            track_id: proxy.track_id,
+            time: proxy.time as f32,
+            signal: serde_json::from_value(proxy.signal)?,
+        })
+    }
+
+    type Error = serde_json::Error;
 }
 
 impl Connect for TrackKeyframe {
@@ -492,78 +505,78 @@ impl InnerTrack {
                 curr_value + (next_value - curr_value) * simple_easing::linear(local_t)
             }
             InterpolationType::Step => curr_value,
-            InterpolationType::Sine(InterpolationCategory::In) => {
-                curr_value + (next_value - curr_value) * simple_easing::sine_in(local_t)
-            }
-            InterpolationType::Sine(InterpolationCategory::Out) => {
-                curr_value + (next_value - curr_value) * simple_easing::sine_out(local_t)
-            }
-            InterpolationType::Sine(InterpolationCategory::InOut) => {
-                curr_value + (next_value - curr_value) * simple_easing::sine_in_out(local_t)
-            }
-            InterpolationType::Quad(InterpolationCategory::In) => {
-                curr_value + (next_value - curr_value) * simple_easing::quad_in(local_t)
-            }
-            InterpolationType::Quad(InterpolationCategory::Out) => {
-                curr_value + (next_value - curr_value) * simple_easing::quad_out(local_t)
-            }
-            InterpolationType::Quad(InterpolationCategory::InOut) => {
-                curr_value + (next_value - curr_value) * simple_easing::quad_in_out(local_t)
-            }
-            InterpolationType::Cubic(InterpolationCategory::In) => {
-                curr_value + (next_value - curr_value) * simple_easing::cubic_in(local_t)
-            }
-            InterpolationType::Cubic(InterpolationCategory::Out) => {
-                curr_value + (next_value - curr_value) * simple_easing::cubic_out(local_t)
-            }
-            InterpolationType::Cubic(InterpolationCategory::InOut) => {
-                curr_value + (next_value - curr_value) * simple_easing::cubic_in_out(local_t)
-            }
-            InterpolationType::Quart(InterpolationCategory::In) => {
-                curr_value + (next_value - curr_value) * simple_easing::quart_in(local_t)
-            }
-            InterpolationType::Quart(InterpolationCategory::Out) => {
-                curr_value + (next_value - curr_value) * simple_easing::quart_out(local_t)
-            }
-            InterpolationType::Quart(InterpolationCategory::InOut) => {
-                curr_value + (next_value - curr_value) * simple_easing::quart_in_out(local_t)
-            }
-            InterpolationType::Quint(InterpolationCategory::In) => {
-                curr_value + (next_value - curr_value) * simple_easing::quint_in(local_t)
-            }
-            InterpolationType::Quint(InterpolationCategory::Out) => {
-                curr_value + (next_value - curr_value) * simple_easing::quint_out(local_t)
-            }
-            InterpolationType::Quint(InterpolationCategory::InOut) => {
-                curr_value + (next_value - curr_value) * simple_easing::quint_in_out(local_t)
-            }
-            InterpolationType::Expo(InterpolationCategory::In) => {
-                curr_value + (next_value - curr_value) * simple_easing::expo_in(local_t)
-            }
-            InterpolationType::Expo(InterpolationCategory::Out) => {
-                curr_value + (next_value - curr_value) * simple_easing::expo_out(local_t)
-            }
-            InterpolationType::Expo(InterpolationCategory::InOut) => {
-                curr_value + (next_value - curr_value) * simple_easing::expo_in_out(local_t)
-            }
-            InterpolationType::Circ(InterpolationCategory::In) => {
-                curr_value + (next_value - curr_value) * simple_easing::circ_in(local_t)
-            }
-            InterpolationType::Circ(InterpolationCategory::Out) => {
-                curr_value + (next_value - curr_value) * simple_easing::circ_out(local_t)
-            }
-            InterpolationType::Circ(InterpolationCategory::InOut) => {
-                curr_value + (next_value - curr_value) * simple_easing::circ_in_out(local_t)
-            }
-            InterpolationType::Bounce(InterpolationCategory::In) => {
-                curr_value + (next_value - curr_value) * simple_easing::bounce_in(local_t)
-            }
-            InterpolationType::Bounce(InterpolationCategory::Out) => {
-                curr_value + (next_value - curr_value) * simple_easing::bounce_out(local_t)
-            }
-            InterpolationType::Bounce(InterpolationCategory::InOut) => {
-                curr_value + (next_value - curr_value) * simple_easing::bounce_in_out(local_t)
-            }
+            InterpolationType::Sine {
+                category: InterpolationCategory::In,
+            } => curr_value + (next_value - curr_value) * simple_easing::sine_in(local_t),
+            InterpolationType::Sine {
+                category: InterpolationCategory::Out,
+            } => curr_value + (next_value - curr_value) * simple_easing::sine_out(local_t),
+            InterpolationType::Sine {
+                category: InterpolationCategory::InOut,
+            } => curr_value + (next_value - curr_value) * simple_easing::sine_in_out(local_t),
+            InterpolationType::Quad {
+                category: InterpolationCategory::In,
+            } => curr_value + (next_value - curr_value) * simple_easing::quad_in(local_t),
+            InterpolationType::Quad {
+                category: InterpolationCategory::Out,
+            } => curr_value + (next_value - curr_value) * simple_easing::quad_out(local_t),
+            InterpolationType::Quad {
+                category: InterpolationCategory::InOut,
+            } => curr_value + (next_value - curr_value) * simple_easing::quad_in_out(local_t),
+            InterpolationType::Cubic {
+                category: InterpolationCategory::In,
+            } => curr_value + (next_value - curr_value) * simple_easing::cubic_in(local_t),
+            InterpolationType::Cubic {
+                category: InterpolationCategory::Out,
+            } => curr_value + (next_value - curr_value) * simple_easing::cubic_out(local_t),
+            InterpolationType::Cubic {
+                category: InterpolationCategory::InOut,
+            } => curr_value + (next_value - curr_value) * simple_easing::cubic_in_out(local_t),
+            InterpolationType::Quart {
+                category: InterpolationCategory::In,
+            } => curr_value + (next_value - curr_value) * simple_easing::quart_in(local_t),
+            InterpolationType::Quart {
+                category: InterpolationCategory::Out,
+            } => curr_value + (next_value - curr_value) * simple_easing::quart_out(local_t),
+            InterpolationType::Quart {
+                category: InterpolationCategory::InOut,
+            } => curr_value + (next_value - curr_value) * simple_easing::quart_in_out(local_t),
+            InterpolationType::Quint {
+                category: InterpolationCategory::In,
+            } => curr_value + (next_value - curr_value) * simple_easing::quint_in(local_t),
+            InterpolationType::Quint {
+                category: InterpolationCategory::Out,
+            } => curr_value + (next_value - curr_value) * simple_easing::quint_out(local_t),
+            InterpolationType::Quint {
+                category: InterpolationCategory::InOut,
+            } => curr_value + (next_value - curr_value) * simple_easing::quint_in_out(local_t),
+            InterpolationType::Expo {
+                category: InterpolationCategory::In,
+            } => curr_value + (next_value - curr_value) * simple_easing::expo_in(local_t),
+            InterpolationType::Expo {
+                category: InterpolationCategory::Out,
+            } => curr_value + (next_value - curr_value) * simple_easing::expo_out(local_t),
+            InterpolationType::Expo {
+                category: InterpolationCategory::InOut,
+            } => curr_value + (next_value - curr_value) * simple_easing::expo_in_out(local_t),
+            InterpolationType::Circ {
+                category: InterpolationCategory::In,
+            } => curr_value + (next_value - curr_value) * simple_easing::circ_in(local_t),
+            InterpolationType::Circ {
+                category: InterpolationCategory::Out,
+            } => curr_value + (next_value - curr_value) * simple_easing::circ_out(local_t),
+            InterpolationType::Circ {
+                category: InterpolationCategory::InOut,
+            } => curr_value + (next_value - curr_value) * simple_easing::circ_in_out(local_t),
+            InterpolationType::Bounce {
+                category: InterpolationCategory::In,
+            } => curr_value + (next_value - curr_value) * simple_easing::bounce_in(local_t),
+            InterpolationType::Bounce {
+                category: InterpolationCategory::Out,
+            } => curr_value + (next_value - curr_value) * simple_easing::bounce_out(local_t),
+            InterpolationType::Bounce {
+                category: InterpolationCategory::InOut,
+            } => curr_value + (next_value - curr_value) * simple_easing::bounce_in_out(local_t),
         };
 
         Some(interpolated)
@@ -578,85 +591,40 @@ impl Connect for InnerTrack {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, TS)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
-#[ts(
-    export,
-    export_to = "../../modular_web/src/types/generated/",
-    rename_all = "camelCase",
-    rename = "Track"
-)]
+#[napi(object)]
 pub struct TrackProxy {
     pub id: String,
     /// Parameter controlling the playhead position in the range [-5.0, 5.0]
-    pub playhead: Signal,
+    pub playhead: serde_json::Value,
     /// Interpolation type applied to all keyframes in this track
     pub interpolation_type: InterpolationType,
-    pub keyframes: Vec<TrackKeyframe>,
+    pub keyframes: Vec<TrackKeyframeProxy>,
 }
 
-impl TryFrom<&TrackProxy> for Track {
-    type Error = &'static str;
-    fn try_from(proxy: &TrackProxy) -> Result<Self, Self::Error> {
-        let track = Self::new(
-            proxy.id.clone(),
-            proxy.playhead.clone(),
-            proxy.interpolation_type,
-        );
-        track.inner_track.lock().keyframes = proxy.keyframes.clone();
-        Ok(track)
-    }
-}
-
-// Required for `#[serde(from = "TrackProxy", into = "TrackProxy")]`
 impl From<TrackProxy> for Track {
     fn from(proxy: TrackProxy) -> Self {
-        // Currently infallible; keep a `From` impl for serde ergonomics.
-        // NOTE: call the explicit `TryFrom<&TrackProxy>` impl to avoid the blanket
-        // `TryFrom<U> for T where U: Into<T>` which would recurse back into this `From`.
-        Self::try_from(&proxy).expect("TrackProxy -> Track conversion should be infallible")
-    }
-}
+        let track = Track::new(
+            proxy.id.clone(),
+            serde_json::from_value(proxy.playhead).unwrap_or_default(),
+            proxy.interpolation_type,
+        );
 
-impl TryFrom<&Track> for TrackProxy {
-    type Error = std::convert::Infallible;
-    fn try_from(track: &Track) -> Result<Self, Self::Error> {
-        let inner_track = track.inner_track.lock();
-        let track_proxy = TrackProxy {
-            id: track.id.clone(),
-            playhead: track.playhead.lock().clone(),
-            interpolation_type: inner_track.interpolation_type,
-            keyframes: inner_track.keyframes.clone(),
-        };
-        Ok(track_proxy)
-    }
-}
-
-// Required so `Track: Into<TrackProxy>` is satisfied (used by serde `into = "TrackProxy"`).
-impl From<Track> for TrackProxy {
-    fn from(track: Track) -> Self {
-        // Avoid locking by consuming the mutexes.
-        let Track {
-            id,
-            inner_track,
-            playhead,
-            sample: _,
-        } = track;
-
-        let inner_track = inner_track.into_inner();
-        TrackProxy {
-            id,
-            playhead: playhead.into_inner(),
-            interpolation_type: inner_track.interpolation_type,
-            keyframes: inner_track.keyframes,
+        for kf_proxy in proxy.keyframes {
+            if let Ok(kf) = TrackKeyframe::try_from(kf_proxy) {
+                track.add_keyframe(kf);
+            }
         }
+
+        track
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(from = "TrackProxy", into = "TrackProxy")]
+#[derive(Debug, Deserialize)]
+#[serde(from = "TrackProxy")]
 pub struct Track {
-    id: String,
+    pub id: String,
     inner_track: Mutex<InnerTrack>,
     playhead: Mutex<Signal>,
     sample: Mutex<Option<f32>>,
@@ -769,6 +737,7 @@ pub type TrackMap = HashMap<String, Arc<Track>>;
 )]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
+#[napi(string_enum)]
 pub enum InterpolationCategory {
     #[default]
     In,
@@ -786,18 +755,35 @@ pub enum InterpolationCategory {
     rename_all_fields = "camelCase"
 )]
 #[ts(export, export_to = "../../modular_web/src/types/generated/")]
+#[napi]
 pub enum InterpolationType {
     #[default]
     Linear,
     Step,
-    Sine(InterpolationCategory),
-    Quad(InterpolationCategory),
-    Cubic(InterpolationCategory),
-    Quart(InterpolationCategory),
-    Quint(InterpolationCategory),
-    Expo(InterpolationCategory),
-    Circ(InterpolationCategory),
-    Bounce(InterpolationCategory),
+    Sine {
+        category: InterpolationCategory,
+    },
+    Quad {
+        category: InterpolationCategory,
+    },
+    Cubic {
+        category: InterpolationCategory,
+    },
+    Quart {
+        category: InterpolationCategory,
+    },
+    Quint {
+        category: InterpolationCategory,
+    },
+    Expo {
+        category: InterpolationCategory,
+    },
+    Circ {
+        category: InterpolationCategory,
+    },
+    Bounce {
+        category: InterpolationCategory,
+    },
 }
 
 fn normalize_playhead_value_to_t(value: f32) -> f32 {
@@ -881,29 +867,27 @@ impl FromNapiValue for SchemaContainer {
 pub struct ModuleSchema {
     pub name: String,
     pub description: String,
-    #[napi(ts_type = "{ params: Record<string, unknown> }")]
+    #[napi(ts_type = "Record<string, unknown>")]
     pub params_schema: SchemaContainer,
     pub outputs: Vec<OutputSchema>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+#[napi(object)]
 pub struct ModuleState {
     pub id: String,
     pub module_type: String,
-    #[serde(default)]
-    #[ts(type = "Record<string, unknown>")]
+    // #[serde(default)]
     pub params: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(
     tag = "type",
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
 #[napi]
 pub enum ScopeItem {
     ModuleOutput {
@@ -915,17 +899,15 @@ pub enum ScopeItem {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
+#[derive(Debug, Clone, PartialEq)]
+// #[serde(rename_all = "camelCase")]
+#[napi(object)]
 pub struct PatchGraph {
     pub modules: Vec<ModuleState>,
-    #[serde(default)]
+    // #[serde(default)]
     pub tracks: Vec<TrackProxy>,
-    #[serde(default)]
+    // #[serde(default)]
     pub scopes: Vec<ScopeItem>,
-    #[serde(default)]
-    pub factories: Vec<ModuleState>,
 }
 
 pub type SampleableConstructor = Box<dyn Fn(&String, f32) -> Result<Arc<Box<dyn Sampleable>>>>;

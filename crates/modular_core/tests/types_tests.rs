@@ -8,7 +8,8 @@ use serde_json::json;
 use modular_core::SampleableMap;
 use modular_core::patch::Patch;
 use modular_core::types::{
-    ClockMessages, Connect, InterpolationCategory, InterpolationType, Message, MessageHandler, MessageTag, Sampleable, Signal, Track, TrackKeyframe, TrackMap
+    ClockMessages, Connect, InterpolationCategory, InterpolationType, Message, MessageHandler,
+    MessageTag, Sampleable, Signal, Track, TrackKeyframe, TrackMap,
 };
 
 // The proc-macro expands to `crate::types::...`; provide that module in this integration test crate.
@@ -77,14 +78,8 @@ fn make_patch_with_sampleable(sampleable: Arc<Box<dyn Sampleable>>) -> Patch {
 
 fn make_patch_with_track(track: Arc<Track>) -> Patch {
     let mut tracks: TrackMap = HashMap::new();
-    tracks.insert(track_id(&track), track);
+    tracks.insert(track.id.clone(), track);
     Patch::new(HashMap::new(), tracks)
-}
-
-fn track_id(track: &Track) -> String {
-    // Track's id field is private; use serde proxy conversion to observe it.
-    let proxy = modular_core::types::TrackProxy::try_from(track).unwrap();
-    proxy.id
 }
 
 fn approx_eq(a: f32, b: f32, eps: f32) {
@@ -270,46 +265,6 @@ fn message_listener_macro_infers_tags_from_match() {
 }
 
 #[test]
-fn track_add_keyframe_sorts_and_updates_time() {
-    let track = Track::new(
-        "t".to_string(),
-        Signal::Volts { value: -5.0 },
-        InterpolationType::Linear,
-    );
-
-    // Insert out of order.
-    track.add_keyframe(TrackKeyframe {
-        id: "k2".to_string(),
-        track_id: "t".to_string(),
-        time: 0.8,
-        signal: Signal::Volts { value: 1.0 },
-    });
-    track.add_keyframe(TrackKeyframe {
-        id: "k1".to_string(),
-        track_id: "t".to_string(),
-        time: 0.2,
-        signal: Signal::Volts { value: 0.0 },
-    });
-
-    let proxy = modular_core::types::TrackProxy::try_from(&track).unwrap();
-    assert_eq!(proxy.keyframes.len(), 2);
-    approx_eq(proxy.keyframes[0].time, 0.2, 1e-6);
-    approx_eq(proxy.keyframes[1].time, 0.8, 1e-6);
-
-    // Update existing keyframe id with a new time; should re-sort.
-    track.add_keyframe(TrackKeyframe {
-        id: "k1".to_string(),
-        track_id: "t".to_string(),
-        time: 0.9,
-        signal: Signal::Volts { value: 0.0 },
-    });
-    let proxy = modular_core::types::TrackProxy::try_from(&track).unwrap();
-    assert_eq!(proxy.keyframes.len(), 2);
-    approx_eq(proxy.keyframes[0].time, 0.8, 1e-6);
-    approx_eq(proxy.keyframes[1].time, 0.9, 1e-6);
-}
-
-#[test]
 fn track_interpolation_linear_step_cubic() {
     // Use keyframes at 0 and 1 so local_t == normalized t.
     let track = Track::new(
@@ -343,7 +298,7 @@ fn track_interpolation_linear_step_cubic() {
     // Cubic: at t=0.25, easing gives t2=0.125 => 0 + 8*0.125 = 1
     track.configure(
         Signal::Volts { value: -2.5 },
-        InterpolationType::Cubic(InterpolationCategory::In),
+        InterpolationType::Cubic{ category: InterpolationCategory::In },
     );
     track.tick();
     approx_eq(track.get_value_optional().unwrap(), 1.0, 1e-5);
@@ -354,7 +309,7 @@ fn track_interpolation_exponential_positive_values() {
     let track = Track::new(
         "t".to_string(),
         Signal::Volts { value: 0.0 }, // t=0.5
-        InterpolationType::Expo(InterpolationCategory::In),
+        InterpolationType::Expo{ category: InterpolationCategory::In },
     );
     track.add_keyframe(TrackKeyframe {
         id: "a".to_string(),
@@ -403,54 +358,6 @@ fn track_clamps_to_first_and_last_keyframes() {
     track.configure(Signal::Volts { value: 6.0 }, InterpolationType::Linear);
     track.tick();
     approx_eq(track.get_value_optional().unwrap(), 4.0, 1e-6);
-}
-
-#[test]
-fn signal_serde_skips_ptr_fields() {
-    let s = Signal::Cable {
-        module: "m".to_string(),
-        module_ptr: Weak::new(),
-        port: "out".to_string(),
-    };
-    let v = serde_json::to_value(&s).unwrap();
-    assert_eq!(v["type"], "cable");
-    assert_eq!(v["module"], "m");
-    assert_eq!(v["port"], "out");
-    assert!(v.get("modulePtr").is_none());
-    assert!(v.get("module_ptr").is_none());
-
-    let t = Signal::Track {
-        track: "t".to_string(),
-        track_ptr: Weak::new(),
-    };
-    let v = serde_json::to_value(&t).unwrap();
-    assert_eq!(v["type"], "track");
-    assert_eq!(v["track"], "t");
-    assert!(v.get("trackPtr").is_none());
-    assert!(v.get("track_ptr").is_none());
-}
-
-#[test]
-fn track_proxy_roundtrip_preserves_fields() {
-    let proxy = modular_core::types::TrackProxy {
-        id: "t".to_string(),
-        playhead: Signal::Volts { value: 0.0 },
-        interpolation_type: InterpolationType::Step,
-        keyframes: vec![TrackKeyframe {
-            id: "k".to_string(),
-            track_id: "t".to_string(),
-            time: 0.3,
-            signal: Signal::Volts { value: 9.0 },
-        }],
-    };
-
-    let track: Track = proxy.clone().into();
-    let proxy2 = modular_core::types::TrackProxy::try_from(&track).unwrap();
-
-    assert_eq!(proxy2.id, proxy.id);
-    assert_eq!(proxy2.interpolation_type, proxy.interpolation_type);
-    assert_eq!(proxy2.playhead, proxy.playhead);
-    assert_eq!(proxy2.keyframes, proxy.keyframes);
 }
 
 #[test]

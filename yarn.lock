@@ -1183,6 +1183,70 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@modular/app@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "@modular/app@workspace:."
+  dependencies:
+    "@electron-forge/cli": "npm:^7.10.2"
+    "@electron-forge/maker-deb": "npm:^7.10.2"
+    "@electron-forge/maker-rpm": "npm:^7.10.2"
+    "@electron-forge/maker-squirrel": "npm:^7.10.2"
+    "@electron-forge/maker-zip": "npm:^7.10.2"
+    "@electron-forge/plugin-auto-unpack-natives": "npm:^7.10.2"
+    "@electron-forge/plugin-fuses": "npm:^7.10.2"
+    "@electron-forge/plugin-webpack": "npm:^7.10.2"
+    "@electron/fuses": "npm:^1.8.0"
+    "@monaco-editor/react": "npm:^4.7.0"
+    "@types/electron-squirrel-startup": "npm:^1.0.2"
+    "@types/react": "npm:^19.2.7"
+    "@types/react-dom": "npm:^19.2.3"
+    "@typescript-eslint/eslint-plugin": "npm:^5.62.0"
+    "@typescript-eslint/parser": "npm:^5.62.0"
+    "@vercel/webpack-asset-relocator-loader": "npm:^1.10.0"
+    css-loader: "npm:^6.11.0"
+    electron: "npm:39.2.7"
+    electron-squirrel-startup: "npm:^1.0.1"
+    eslint: "npm:^8.57.1"
+    eslint-plugin-import: "npm:^2.32.0"
+    events: "npm:^3.3.0"
+    fork-ts-checker-webpack-plugin: "npm:^9.1.0"
+    globals: "npm:^16.5.0"
+    monaco-editor: "npm:^0.55.1"
+    monaco-editor-webpack-plugin: "npm:^7.1.1"
+    node-loader: "npm:^2.1.0"
+    prettier: "npm:^3.4.2"
+    react: "npm:^19.2.3"
+    react-dom: "npm:^19.2.3"
+    react-use-websocket: "npm:^4.13.0"
+    style-loader: "npm:^3.3.4"
+    ts-loader: "npm:^9.5.4"
+    typescript: "npm:~5.9.3"
+    typescript-eslint: "npm:^8.46.4"
+  languageName: unknown
+  linkType: soft
+
+"@modular/core@workspace:crates/modular":
+  version: 0.0.0-use.local
+  resolution: "@modular/core@workspace:crates/modular"
+  dependencies:
+    "@emnapi/core": "npm:^1.5.0"
+    "@emnapi/runtime": "npm:^1.5.0"
+    "@napi-rs/cli": "npm:^3.2.0"
+    "@oxc-node/core": "npm:^0.0.35"
+    "@taplo/cli": "npm:^0.7.0"
+    "@tybys/wasm-util": "npm:^0.10.0"
+    ava: "npm:^6.4.1"
+    chalk: "npm:^5.6.2"
+    husky: "npm:^9.1.7"
+    lint-staged: "npm:^16.1.6"
+    npm-run-all2: "npm:^8.0.4"
+    oxlint: "npm:^1.14.0"
+    prettier: "npm:^3.6.2"
+    tinybench: "npm:^6.0.0"
+    typescript: "npm:^5.9.2"
+  languageName: unknown
+  linkType: soft
+
 "@monaco-editor/loader@npm:^1.5.0":
   version: 1.7.0
   resolution: "@monaco-editor/loader@npm:1.7.0"
@@ -7591,7 +7655,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"loader-utils@npm:^2.0.3":
+"loader-utils@npm:^2.0.2, loader-utils@npm:^2.0.3":
   version: 2.0.4
   resolution: "loader-utils@npm:2.0.4"
   dependencies:
@@ -8147,68 +8211,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"modular-app@workspace:.":
-  version: 0.0.0-use.local
-  resolution: "modular-app@workspace:."
+"monaco-editor-webpack-plugin@npm:^7.1.1":
+  version: 7.1.1
+  resolution: "monaco-editor-webpack-plugin@npm:7.1.1"
   dependencies:
-    "@electron-forge/cli": "npm:^7.10.2"
-    "@electron-forge/maker-deb": "npm:^7.10.2"
-    "@electron-forge/maker-rpm": "npm:^7.10.2"
-    "@electron-forge/maker-squirrel": "npm:^7.10.2"
-    "@electron-forge/maker-zip": "npm:^7.10.2"
-    "@electron-forge/plugin-auto-unpack-natives": "npm:^7.10.2"
-    "@electron-forge/plugin-fuses": "npm:^7.10.2"
-    "@electron-forge/plugin-webpack": "npm:^7.10.2"
-    "@electron/fuses": "npm:^1.8.0"
-    "@monaco-editor/react": "npm:^4.7.0"
-    "@types/electron-squirrel-startup": "npm:^1.0.2"
-    "@types/react": "npm:^19.2.7"
-    "@types/react-dom": "npm:^19.2.3"
-    "@typescript-eslint/eslint-plugin": "npm:^5.62.0"
-    "@typescript-eslint/parser": "npm:^5.62.0"
-    "@vercel/webpack-asset-relocator-loader": "npm:^1.10.0"
-    css-loader: "npm:^6.11.0"
-    electron: "npm:39.2.7"
-    electron-squirrel-startup: "npm:^1.0.1"
-    eslint: "npm:^8.57.1"
-    eslint-plugin-import: "npm:^2.32.0"
-    events: "npm:^3.3.0"
-    fork-ts-checker-webpack-plugin: "npm:^9.1.0"
-    globals: "npm:^16.5.0"
-    monaco-editor: "npm:^0.55.1"
-    node-loader: "npm:^2.1.0"
-    prettier: "npm:^3.4.2"
-    react: "npm:^19.2.3"
-    react-dom: "npm:^19.2.3"
-    react-use-websocket: "npm:^4.13.0"
-    style-loader: "npm:^3.3.4"
-    ts-loader: "npm:^9.5.4"
-    typescript: "npm:~5.9.3"
-    typescript-eslint: "npm:^8.46.4"
-  languageName: unknown
-  linkType: soft
-
-"modular-core@workspace:crates/modular":
-  version: 0.0.0-use.local
-  resolution: "modular-core@workspace:crates/modular"
-  dependencies:
-    "@emnapi/core": "npm:^1.5.0"
-    "@emnapi/runtime": "npm:^1.5.0"
-    "@napi-rs/cli": "npm:^3.2.0"
-    "@oxc-node/core": "npm:^0.0.35"
-    "@taplo/cli": "npm:^0.7.0"
-    "@tybys/wasm-util": "npm:^0.10.0"
-    ava: "npm:^6.4.1"
-    chalk: "npm:^5.6.2"
-    husky: "npm:^9.1.7"
-    lint-staged: "npm:^16.1.6"
-    npm-run-all2: "npm:^8.0.4"
-    oxlint: "npm:^1.14.0"
-    prettier: "npm:^3.6.2"
-    tinybench: "npm:^6.0.0"
-    typescript: "npm:^5.9.2"
-  languageName: unknown
-  linkType: soft
+    loader-utils: "npm:^2.0.2"
+  peerDependencies:
+    monaco-editor: ">= 0.31.0"
+    webpack: ^4.5.0 || 5.x
+  checksum: 10c0/fe75611813617277330524e502d5413abf03cb0fc0ca92a9f79cd88bb8ed689dd2868676950132decb15765a05ca9c96b31830c8ad70cc3f164d70d543b79461
+  languageName: node
+  linkType: hard
 
 "monaco-editor@npm:^0.55.1":
   version: 0.55.1

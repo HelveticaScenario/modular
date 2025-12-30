@@ -1,29 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useModularWebSocket } from './hooks/useWebSocket';
 import { MonacoPatchEditor as PatchEditor } from './components/MonacoPatchEditor';
 import { AudioControls } from './components/AudioControls';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { executePatchScript } from './dsl';
 import { SchemasContext } from './SchemaContext';
 import './App.css';
-import type { ModuleSchema } from './types/generated/ModuleSchema';
-import type { ScopeItem } from './types/generated/ScopeItem';
-import type { ValidationError } from './types/generated/ValidationError';
 import type { editor } from 'monaco-editor';
 import { findScopeCallEndLines } from './utils/findScopeCallEndLines';
 import { FileExplorer, SCRATCH_FILE } from './components/FileExplorer';
-import type { OutputMessage } from './types/generated/OutputMessage';
-import { exhaustiveSwitch } from './utils/exhaustingSwitch';
+import electronAPI from './electronAPI';
+import { ModuleSchema, ScopeItem, ValidationError } from '@modular/core';
 
 // window.electronAPI.getSchemas().then((schemas: ModuleSchema[]) => {
 //     console.log('Preload fetched schemas:', schemas);
 // });
-
-declare global {
-    interface Window {
-        __APP_SCHEMAS__?: ModuleSchema[];
-    }
-}
 
 const DEFAULT_PATCH = `// Simple 440 Hz sine wave
 const osc = sine('osc1').freq(hz(440));
@@ -52,7 +42,7 @@ type ScopeView = {
 };
 
 const scopeKeyFromSubscription = (subscription: ScopeItem) => {
-    if (subscription.type === 'moduleOutput') {
+    if (subscription.type === 'ModuleOutput') {
         const { moduleId, portName } = subscription;
         return `:module:${moduleId}:${portName}`;
     }
@@ -247,6 +237,7 @@ function App() {
     );
 
     const [isClockRunning, setIsClockRunning] = useState(true);
+
     const [isRecording, setIsRecording] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [validationErrors, setValidationErrors] = useState<
@@ -275,91 +266,36 @@ function App() {
         scopeCanvasMapRef.current.delete(key);
     }, []);
 
-    const handleMessage = useCallback(
-        (msg: OutputMessage) => {
-            switch (msg.type) {
-                case 'schemas': {
-                    setSchemas(msg.schemas);
-                    if (typeof window !== 'undefined') {
-                        window.__APP_SCHEMAS__ = msg.schemas;
-                    }
-                    break;
-                }
-                case 'error':
-                    setError(msg.message);
-                    setValidationErrors(msg.errors ?? null);
-                    break;
-                case 'runState':
-                    setIsClockRunning(!msg.stopped);
-                    break;
-                case 'audioBuffer': {
-                    const scopeKey = scopeKeyFromSubscription(msg.subscription);
-                    const scopedCanvas =
-                        scopeCanvasMapRef.current.get(scopeKey);
-                    if (scopedCanvas) {
-                        drawOscilloscope(msg.samples, scopedCanvas);
-                        break;
-                    }
-                    break;
-                }
-                case 'fileList':
-                    setFiles(msg.files);
-                    break;
-                case 'fileContent': {
-                    setFileBuffers((prev) => {
-                        const existing = prev[msg.path];
-
-                        if (
-                            existing &&
-                            existing.dirty &&
-                            existing.content !== msg.content
-                        ) {
-                            return prev;
-                        }
-
-                        return {
-                            ...prev,
-                            [msg.path]: {
-                                content: msg.content,
-                                dirty: false,
-                                isNew: false,
-                                loaded: true,
-                            },
-                        };
-                    });
-
-                    setOpenFiles((prev) =>
-                        prev.includes(msg.path) ? prev : [...prev, msg.path],
-                    );
-
-                    if (msg.path === currentFile) {
-                        setPatchCode(msg.content);
-                    }
-                    break;
-                }
-                default:
-                    exhaustiveSwitch(msg);
-            }
-        },
-        [currentFile],
-    );
-
-    const {
-        connectionState,
-        getSchemas,
-        setPatch,
-        stop,
-        startRecording,
-        stopRecording,
-        listFiles,
-        readFile,
-        writeFile,
-        renameFile,
-    } = useModularWebSocket({ onMessage: handleMessage });
+    useEffect(() => {
+        electronAPI.getSchemas().then((fetchedSchemas) => {
+            setSchemas(fetchedSchemas);
+        });
+    }, []);
 
     useEffect(() => {
-        listFiles();
-    }, [listFiles]);
+        if (isClockRunningRef.current) {
+            const tick = () => {
+                electronAPI.synthesizer.getScopes().then((scopes) => {
+                    for (const [scopeItem, samples] of scopes) {
+                        const scopeKey = scopeKeyFromSubscription(scopeItem);
+                        const scopedCanvas =
+                            scopeCanvasMapRef.current.get(scopeKey);
+                        if (scopedCanvas) {
+                            drawOscilloscope(samples, scopedCanvas);
+                        }
+                    }
+                    if (isClockRunningRef.current) {
+                        requestAnimationFrame(tick);
+                    }
+                });
+            };
+            requestAnimationFrame(tick);
+        }
+    }, [isClockRunning]);
+
+    // useEffect(() => {
+    //     listFiles();
+    // }, [listFiles]);
 
     useEffect(() => {
         if (typeof window === 'undefined') {
@@ -388,11 +324,11 @@ function App() {
     }, [fileBuffers]);
 
     // Request initial state when connected
-    useEffect(() => {
-        if (connectionState === 'connected') {
-            getSchemas();
-        }
-    }, [connectionState, getSchemas]);
+    // useEffect(() => {
+    //     if (connectionState === 'connected') {
+    //         getSchemasOld();
+    //     }
+    // }, [connectionState, getSchemasOld]);
 
     const schemaRef = useRef<ModuleSchema[]>([]);
     useEffect(() => {
@@ -403,6 +339,11 @@ function App() {
     useEffect(() => {
         patchCodeRef.current = patchCode;
     }, [patchCode]);
+
+    const isClockRunningRef = useRef(isClockRunning);
+    useEffect(() => {
+        isClockRunningRef.current = isClockRunning;
+    }, [isClockRunning]);
 
     useEffect(() => {
         const active = currentFile || SCRATCH_FILE;
@@ -468,7 +409,7 @@ function App() {
                     },
                 }));
                 if (target !== SCRATCH_FILE) {
-                    readFile(target);
+                    // readFile(target);
                 }
                 setPatchCode(buffer?.content ?? '');
                 return;
@@ -478,7 +419,7 @@ function App() {
                 setPatchCode(buffer.content);
             }
         },
-        [fileBuffers, patchCode, readFile],
+        [fileBuffers, patchCode],
     );
 
     const handleCreateFile = useCallback(() => {
@@ -496,7 +437,7 @@ function App() {
         const initialContent = DEFAULT_PATCH;
 
         // Persist immediately so it shows up in the server-backed file list.
-        writeFile(normalized, initialContent);
+        // writeFile(normalized, initialContent);
 
         setFileBuffers((prev) => ({
             ...prev,
@@ -515,8 +456,8 @@ function App() {
 
         // If the server doesn't proactively push a list update for some reason,
         // explicitly request it.
-        listFiles();
-    }, [fileBuffers, files, listFiles, normalizeFileName, writeFile]);
+        // listFiles();
+    }, [fileBuffers, files, normalizeFileName]);
 
     const handleRenameFile = useCallback(() => {
         const active = currentFile || SCRATCH_FILE;
@@ -536,7 +477,7 @@ function App() {
         }
 
         if (active !== SCRATCH_FILE && !buffer?.isNew) {
-            renameFile(active, normalized);
+            // renameFile(active, normalized);
         }
 
         setFileBuffers((prev) => {
@@ -560,15 +501,8 @@ function App() {
         );
         setCurrentFile(normalized);
         setRunningFile((prev) => (prev === active ? normalized : prev));
-        listFiles();
-    }, [
-        currentFile,
-        fileBuffers,
-        files,
-        listFiles,
-        normalizeFileName,
-        renameFile,
-    ]);
+        // listFiles();
+    }, [currentFile, fileBuffers, files, normalizeFileName]);
 
     const handleSaveFileRef = useRef(() => {});
     useEffect(() => {
@@ -623,7 +557,7 @@ function App() {
                 setCurrentFile(normalized);
             }
 
-            writeFile(target, patchCodeRef.current);
+            // writeFile(target, patchCodeRef.current);
             setFileBuffers((prev) => ({
                 ...prev,
                 [target]: {
@@ -638,26 +572,26 @@ function App() {
                 },
             }));
             setRunningFile((prev) => (prev === active ? target : prev));
-            listFiles();
+            // listFiles();
         };
-    }, [
-        currentFile,
-        fileBuffers,
-        files,
-        listFiles,
-        normalizeFileName,
-        runningFile,
-        writeFile,
-    ]);
+    }, [currentFile, fileBuffers, files, normalizeFileName, runningFile]);
 
     const handleSubmitRef = useRef(() => {});
     useEffect(() => {
-        handleSubmitRef.current = () => {
+        handleSubmitRef.current = async () => {
             try {
                 const schemasValue = schemaRef.current;
                 const patchCodeValue = patchCodeRef.current;
                 const patch = executePatchScript(patchCodeValue, schemasValue);
-                setPatch(patch);
+                const errors = await electronAPI.synthesizer.updatePatch(patch);
+                if (errors.length > 0) {
+                    setValidationErrors(errors.flatMap((e) => e.errors || []));
+                    setError(
+                        errors.map((e) => e.message).join('\n') ||
+                            'Failed to apply patch.',
+                    );
+                    return;
+                }
                 setIsClockRunning(true);
                 setRunningFile(currentFile || SCRATCH_FILE);
                 setError(null);
@@ -668,7 +602,7 @@ function App() {
                     .map((scope, idx) => {
                         const call = scopeCalls[idx];
                         if (!call) return null;
-                        if (scope.type === 'moduleOutput') {
+                        if (scope.type === 'ModuleOutput') {
                             const { moduleId, portName } = scope;
                             return {
                                 key: `:module:${moduleId}:${portName}`,
@@ -693,7 +627,7 @@ function App() {
                 setValidationErrors(null);
             }
         };
-    }, [currentFile, setPatch]);
+    }, [currentFile]);
 
     const handleStopRef = useRef(() => {});
     useEffect(() => {
@@ -709,7 +643,7 @@ function App() {
     }, []);
 
     useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
+        const handleKeyDown = async (e: KeyboardEvent) => {
             if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
                 e.preventDefault();
                 handleSaveFileRef.current();
@@ -721,9 +655,9 @@ function App() {
                     e.preventDefault();
                 }
                 if (isRecording) {
-                    stopRecording();
+                    await electronAPI.synthesizer.stopRecording();
                 } else {
-                    startRecording();
+                    await electronAPI.synthesizer.startRecording();
                 }
             }
         };
@@ -733,7 +667,7 @@ function App() {
             window.removeEventListener('keydown', handleKeyDown, {
                 capture: true,
             });
-    }, [isRecording, startRecording, stopRecording]);
+    }, [isRecording]);
 
     return (
         <SchemasContext.Provider value={schemas}>
@@ -741,20 +675,19 @@ function App() {
                 <header className="app-header">
                     <h1></h1>
                     <AudioControls
-                        connectionState={connectionState}
                         isRunning={isClockRunning}
                         isRecording={isRecording}
                         onStop={() => {
                             setIsClockRunning(false);
                             stop();
                         }}
-                        onStartRecording={() => {
+                        onStartRecording={async () => {
                             setIsRecording(true);
-                            startRecording();
+                            await electronAPI.synthesizer.startRecording();
                         }}
-                        onStopRecording={() => {
+                        onStopRecording={async () => {
                             setIsRecording(false);
-                            stopRecording();
+                            await electronAPI.synthesizer.stopRecording();
                         }}
                         onUpdatePatch={handleSubmitRef.current}
                     />

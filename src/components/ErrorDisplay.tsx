@@ -1,4 +1,4 @@
-import type { ValidationError } from '../types/generated/ValidationError';
+import { ValidationError } from '@modular/core';
 
 interface ErrorDisplayProps {
     error: string | null;

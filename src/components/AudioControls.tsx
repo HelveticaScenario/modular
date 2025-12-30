@@ -1,7 +1,4 @@
-import type { ConnectionState } from '../hooks/useWebSocket';
-
 interface AudioControlsProps {
-    connectionState: ConnectionState;
     isRunning: boolean;
     isRecording: boolean;
     onStop: () => void;
@@ -11,7 +8,6 @@ interface AudioControlsProps {
 }
 
 export function AudioControls({
-    connectionState,
     isRunning,
     isRecording,
     onStop,
@@ -19,25 +15,11 @@ export function AudioControls({
     onStopRecording,
     onUpdatePatch,
 }: AudioControlsProps) {
-    const isConnected = connectionState === 'connected';
-
     return (
         <div className="audio-controls">
-            <div className="connection-status">
-                <span className={`status-indicator ${connectionState}`} />
-                <span className="status-text">
-                    {connectionState === 'connected' && 'Connected'}
-                    {connectionState === 'connecting' && 'Connecting...'}
-                    {connectionState === 'disconnected' && 'Disconnected'}
-                    {connectionState === 'reconnecting' && 'Reconnecting...'}
-                    {connectionState === 'error' && 'Connection Error'}
-                </span>
-            </div>
-
             <div className="control-buttons">
                 <button
                     onClick={onUpdatePatch}
-                    disabled={!isConnected}
                     className="btn btn-primary"
                     title="Ctrl+Enter / Cmd+Enter"
                 >
@@ -46,7 +28,7 @@ export function AudioControls({
 
                 <button
                     onClick={onStop}
-                    disabled={!isConnected || !isRunning}
+                    disabled={!isRunning}
                     className="btn btn-danger"
                     title="Ctrl+. / Cmd+."
                 >
@@ -56,7 +38,6 @@ export function AudioControls({
                 {isRecording ? (
                     <button
                         onClick={onStopRecording}
-                        disabled={!isConnected}
                         className="btn btn-danger recording"
                     >
                         ⏺ Stop Recording
@@ -64,7 +45,6 @@ export function AudioControls({
                 ) : (
                     <button
                         onClick={onStartRecording}
-                        disabled={!isConnected}
                         className="btn btn-secondary"
                         title="Ctrl+R / Cmd+R"
                     >

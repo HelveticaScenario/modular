@@ -537,7 +537,6 @@ mod tests {
       }],
       tracks: vec![],
       scopes: vec![],
-      factories: vec![],
     };
 
     assert!(validate_patch(&patch, &schemas).is_ok());
@@ -554,7 +553,6 @@ mod tests {
       }],
       tracks: vec![],
       scopes: vec![],
-      factories: vec![],
     };
 
     let result = validate_patch(&patch, &schemas);
@@ -577,7 +575,6 @@ mod tests {
       }],
       tracks: vec![],
       scopes: vec![],
-      factories: vec![],
     };
 
     let result = validate_patch(&patch, &schemas);
@@ -600,7 +597,6 @@ mod tests {
       }],
       tracks: vec![],
       scopes: vec![],
-      factories: vec![],
     };
 
     let result = validate_patch(&patch, &schemas);
@@ -632,7 +628,6 @@ mod tests {
       ],
       tracks: vec![],
       scopes: vec![],
-      factories: vec![],
     };
 
     let result = validate_patch(&patch, &schemas);
@@ -661,7 +656,6 @@ mod tests {
       }],
       tracks: vec![],
       scopes: vec![],
-      factories: vec![],
     };
 
     let result = validate_patch(&patch, &schemas);
@@ -698,7 +692,6 @@ mod tests {
       ],
       tracks: vec![],
       scopes: vec![],
-      factories: vec![],
     };
 
     assert!(validate_patch(&patch, &schemas).is_ok());
@@ -726,7 +719,6 @@ mod tests {
       ],
       tracks: vec![],
       scopes: vec![],
-      factories: vec![],
     };
 
     assert!(validate_patch(&patch, &schemas).is_ok());
@@ -746,7 +738,6 @@ mod tests {
       }],
       tracks: vec![],
       scopes: vec![],
-      factories: vec![],
     };
 
     let result = validate_patch(&patch, &schemas);
@@ -762,7 +753,6 @@ mod tests {
       modules: Vec::new(),
       tracks: vec![],
       scopes: vec![],
-      factories: vec![],
     };
 
     assert!(validate_patch(&patch, &schemas).is_ok());
@@ -786,7 +776,6 @@ mod tests {
       }],
       tracks: vec![],
       scopes: vec![],
-      factories: vec![],
     };
 
     let result = validate_patch(&patch, &schemas);
@@ -814,7 +803,6 @@ mod tests {
       }],
       tracks: vec![],
       scopes: vec![],
-      factories: vec![],
     };
 
     assert!(validate_patch(&patch, &schemas).is_ok());

@@ -1,12 +1,5 @@
-import type { ModuleSchema } from "../types/generated/ModuleSchema";
-import type { ModuleState } from "../types/generated/ModuleState";
-import type { Signal } from "../types/generated/Signal";
-import type { PatchGraph } from "../types/generated/PatchGraph";
-import type { InterpolationType } from "../types/generated/InterpolationType";
-import type { InterpolationCategory } from "../types/generated/InterpolationCategory";
-import type { Track } from "../types/generated/Track";
-import type { TrackKeyframe } from "../types/generated/TrackKeyframe";
-import type { ScopeItem } from "../types/generated/ScopeItem";
+
+import type { InterpolationCategory, InterpolationType, ModuleSchema, ModuleState, PatchGraph, ScopeItem, TrackKeyframeProxy, TrackProxy } from "@modular/core";
 import type { ProcessedModuleSchema } from "./paramsSchema";
 import { processSchemas } from "./paramsSchema";
 
@@ -14,10 +7,10 @@ type MakeInterpolationArgs<T> = T extends { type: infer U; category: Interpolati
 
 type InterpolationArgs = MakeInterpolationArgs<InterpolationType>;
 
-const def = (category: InterpolationCategory | undefined): InterpolationCategory => category ?? 'in';
+const def = (category: InterpolationCategory | undefined): InterpolationCategory => category ?? InterpolationCategory.In;
 
 function interpArgsToType(args: InterpolationArgs): InterpolationType {
-  if (args[0] === 'step' || args[0] === 'linear') {
+  if (args[0] === 'Step' || args[0] === 'Linear') {
     return { type: args[0] };
   } else {
     return { type: args[0], category: def(args[1]) };
@@ -31,7 +24,7 @@ function interpArgsToType(args: InterpolationArgs): InterpolationType {
 export class GraphBuilder {
 
   private modules: Map<string, ModuleState> = new Map();
-  private tracks: Map<string, Track> = new Map();
+  private tracks: Map<string, TrackProxy> = new Map();
   private counters: Map<string, number> = new Map();
   private schemas: ProcessedModuleSchema[] = [];
   private schemaByName: Map<string, ProcessedModuleSchema> = new Map();
@@ -73,7 +66,7 @@ export class GraphBuilder {
     const params: Record<string, unknown> = {};
     for (const param of schema.params) {
       if (param.kind === 'signal') {
-        params[param.name] = { type: 'disconnected' } satisfies Signal;
+        params[param.name] = { type: 'disconnected' };
       } else if (param.kind === 'signalArray') {
         // Required arrays (e.g. sum.signals) should be valid by default.
         params[param.name] = [];
@@ -110,7 +103,7 @@ export class GraphBuilder {
 
 
 
-  addTrackKeyframe(trackId: string, keyframe: TrackKeyframe) {
+  addTrackKeyframe(trackId: string, keyframe: TrackKeyframeProxy) {
     const track = this.tracks.get(trackId);
     if (!track) {
       throw new Error(`Track not found: ${trackId}`);
@@ -126,7 +119,7 @@ export class GraphBuilder {
     track.interpolationType = interpArgsToType(interpolation);
   }
 
-  setTrackPlayheadParam(trackId: string, playhead: Signal) {
+  setTrackPlayheadParam(trackId: string, playhead: unknown) {
     const track = this.tracks.get(trackId);
     if (!track) {
       throw new Error(`Track not found: ${trackId}`);
@@ -142,7 +135,6 @@ export class GraphBuilder {
       modules: Array.from(this.modules.values()),
       tracks: Array.from(this.tracks.values()),
       scopes: Array.from(this.scopes),
-      factories: []
     };
   }
 
@@ -161,7 +153,7 @@ export class GraphBuilder {
     this.tracks.set(track.id, {
       id: track.id,
       playhead: 0,
-      interpolationType: interpArgsToType(['linear']),
+      interpolationType: interpArgsToType(['Linear']),
       keyframes: [],
     })
 
@@ -170,13 +162,13 @@ export class GraphBuilder {
 
   addScope(value: ModuleOutput | ModuleNode | TrackNode) {
     if (value instanceof TrackNode) {
-      this.scopes.push({ type: 'track', trackId: value.id });
+      this.scopes.push({ type: 'Track', trackId: value.id });
       return;
     }
 
     const output = value instanceof ModuleNode ? value.o : value;
     this.scopes.push({
-      type: 'moduleOutput',
+      type: 'ModuleOutput',
       moduleId: output.moduleId,
       portName: output.portName,
     });
@@ -428,11 +420,11 @@ function replaceSignals(input: unknown): unknown {
   })
 }
 
-function valueToSignal(value: Value): Signal {
+function valueToSignal(value: Value): unknown {
   if (value instanceof ModuleNode) {
     value = value.o;
   }
-  let signal: Signal;
+  let signal: unknown;
   if (value instanceof ModuleOutput) {
     signal = {
       type: 'cable',

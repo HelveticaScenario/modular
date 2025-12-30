@@ -6,8 +6,8 @@ import prettierBabel from 'prettier/plugins/babel';
 import prettierEstree from 'prettier/plugins/estree';
 import { useSchemas } from '../SchemaContext';
 import { buildLibSource } from '../dsl/typescriptLibGen';
-import type { ModuleSchema } from '../types/generated/ModuleSchema';
 import { findScopeCallEndLines } from '../utils/findScopeCallEndLines';
+import { ModuleSchema } from '@modular/core';
 
 type Monaco = ReturnType<typeof useMonaco>;
 
@@ -171,6 +171,7 @@ export function MonacoPatchEditor({
     useEffect(() => {
         if (!monaco) return;
         const ts = monaco.typescript;
+        console.log('Monaco TS version:', ts);
         const jsDefaults = ts.javascriptDefaults;
 
         jsDefaults.setCompilerOptions({

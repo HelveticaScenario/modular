@@ -1,5 +1,5 @@
+import { ModuleSchema } from '@modular/core';
 import { createContext, useContext } from 'react';
-import type { ModuleSchema } from './types/generated/ModuleSchema';
 
 // Global context exposing the latest ModuleSchema[] from the backend.
 // Monaco can consume this for schema-driven IntelliSense.
