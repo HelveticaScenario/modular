@@ -577,7 +577,7 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
   }
 
   // Capture audio for scopes
-  for (scope, buffer) in audio_state.scope_collection.try_lock().unwrap().iter_mut() {
+  for (scope, buffer) in audio_state.scope_collection.lock().iter_mut() {
     match scope {
       ScopeItem::ModuleOutput {
         module_id,
