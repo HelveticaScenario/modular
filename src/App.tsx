@@ -10,29 +10,25 @@ import { findScopeCallEndLines } from './utils/findScopeCallEndLines';
 import { FileExplorer, SCRATCH_FILE } from './components/FileExplorer';
 import electronAPI from './electronAPI';
 import { ModuleSchema, ScopeItem, ValidationError } from '@modular/core';
-
-// window.electronAPI.getSchemas().then((schemas: ModuleSchema[]) => {
-//     console.log('Preload fetched schemas:', schemas);
-// });
+import type { FileTreeEntry } from './ipcTypes';
 
 const DEFAULT_PATCH = `// Simple 440 Hz sine wave
 const osc = sine('osc1').freq(hz(440));
 out.source(osc);
 `;
 
-const PATCH_STORAGE_KEY = 'modular_patch_dsl';
 const UNSAVED_STORAGE_KEY = 'modular_unsaved_buffers';
 
-type UnsavedBufferSnapshot = {
-    content: string;
-    isNew?: boolean;
-};
+// New buffer model: distinguish between file-backed and untitled buffers
+type EditorBuffer = 
+    | { kind: 'file'; relPath: string; content: string; dirty: boolean }
+    | { kind: 'untitled'; id: string; content: string; dirty: boolean };
 
-type FileBuffer = {
+type UnsavedBufferSnapshot = {
+    kind: 'file' | 'untitled';
+    id: string;
+    relPath?: string;
     content: string;
-    dirty: boolean;
-    isNew?: boolean;
-    loaded?: boolean;
 };
 
 type ScopeView = {
@@ -133,111 +129,102 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
     ctx.stroke();
 };
 
-const readUnsavedBuffers = (): Record<string, UnsavedBufferSnapshot> => {
+const readUnsavedBuffers = (): EditorBuffer[] => {
     if (typeof window === 'undefined') {
-        return {};
+        return [];
     }
 
     try {
         const raw = window.localStorage.getItem(UNSAVED_STORAGE_KEY);
-        const parsed = raw ? JSON.parse(raw) : {};
-        const buffers: Record<string, UnsavedBufferSnapshot> = {};
-
-        if (parsed && typeof parsed === 'object') {
-            Object.entries(parsed).forEach(([path, value]) => {
-                if (
-                    value &&
-                    typeof value === 'object' &&
-                    typeof (value as { content?: unknown }).content === 'string'
-                ) {
-                    const snapshot = value as UnsavedBufferSnapshot;
-                    buffers[path] = {
-                        content: snapshot.content,
-                        isNew: snapshot.isNew,
-                    };
-                }
-            });
-        }
-
-        const legacyScratch = window.localStorage.getItem(PATCH_STORAGE_KEY);
-        if (legacyScratch && !buffers[SCRATCH_FILE]) {
-            buffers[SCRATCH_FILE] = { content: legacyScratch, isNew: true };
-        }
-
-        return buffers;
-    } catch {
-        return {};
+        if (!raw) return [];
+        
+        const parsed = JSON.parse(raw) as UnsavedBufferSnapshot[];
+        return parsed.map((snapshot): EditorBuffer => {
+            if (snapshot.kind === 'file' && snapshot.relPath) {
+                return {
+                    kind: 'file',
+                    relPath: snapshot.relPath,
+                    content: snapshot.content,
+                    dirty: true,
+                };
+            }
+            return {
+                kind: 'untitled',
+                id: snapshot.id,
+                content: snapshot.content,
+                dirty: true,
+            };
+        });
+    } catch (error) {
+        console.error('Failed to read unsaved buffers:', error);
+        return [];
     }
 };
 
-const getInitialPatch = (
-    unsavedBuffers: Record<string, UnsavedBufferSnapshot>,
-) => {
-    const cachedScratch = unsavedBuffers[SCRATCH_FILE]?.content;
-    if (cachedScratch) {
-        return cachedScratch;
-    }
+const saveUnsavedBuffers = (buffers: EditorBuffer[]) => {
+    if (typeof window === 'undefined') return;
 
-    if (typeof window === 'undefined') {
-        return DEFAULT_PATCH;
-    }
+    try {
+        const dirtyBuffers = buffers.filter((b) => b.dirty);
+        const snapshots: UnsavedBufferSnapshot[] = dirtyBuffers.map((buffer) => {
+            if (buffer.kind === 'file') {
+                return {
+                    kind: 'file',
+                    id: buffer.relPath,
+                    relPath: buffer.relPath,
+                    content: buffer.content,
+                };
+            }
+            return {
+                kind: 'untitled',
+                id: buffer.id,
+                content: buffer.content,
+            };
+        });
 
-    const storedPatch = window.localStorage.getItem(PATCH_STORAGE_KEY);
-    return storedPatch ?? DEFAULT_PATCH;
+        window.localStorage.setItem(
+            UNSAVED_STORAGE_KEY,
+            JSON.stringify(snapshots),
+        );
+    } catch (error) {
+        console.error('Failed to save unsaved buffers:', error);
+    }
 };
 
-const buildInitialFileBuffers = (
-    unsavedBuffers: Record<string, UnsavedBufferSnapshot>,
-): Record<string, FileBuffer> => {
-    const scratchSnapshot = unsavedBuffers[SCRATCH_FILE];
-    const scratchContent = getInitialPatch(unsavedBuffers);
-
-    const initialBuffers: Record<string, FileBuffer> = {
-        [SCRATCH_FILE]: {
-            content: scratchContent,
-            dirty: Boolean(scratchSnapshot),
-            isNew: scratchSnapshot?.isNew ?? true,
-            loaded: true,
-        },
-    };
-
-    Object.entries(unsavedBuffers).forEach(([path, snapshot]) => {
-        if (path === SCRATCH_FILE) return;
-
-        initialBuffers[path] = {
-            content: snapshot.content,
-            dirty: true,
-            isNew: snapshot.isNew ?? false,
-            loaded: false,
-        };
-    });
-
-    return initialBuffers;
-};
-
-const buildInitialOpenFiles = (
-    unsavedBuffers: Record<string, UnsavedBufferSnapshot>,
-) => {
-    const unsavedFiles = Object.keys(unsavedBuffers).filter(
-        (file) => file !== SCRATCH_FILE,
-    );
-    return [SCRATCH_FILE, ...unsavedFiles];
+const getBufferId = (buffer: EditorBuffer): string => {
+    return buffer.kind === 'file' ? buffer.relPath : buffer.id;
 };
 
 function App() {
-    const [unsavedSnapshots] = useState<Record<string, UnsavedBufferSnapshot>>(
-        () => readUnsavedBuffers(),
-    );
+    // Editor buffers: file-backed + untitled
+    const [buffers, setBuffers] = useState<EditorBuffer[]>(() => {
+        const saved = readUnsavedBuffers();
+        // Always start with one untitled buffer if none exist
+        if (saved.length === 0) {
+            return [{
+                kind: 'untitled',
+                id: 'untitled-1',
+                content: DEFAULT_PATCH,
+                dirty: false,
+            }];
+        }
+        return saved;
+    });
 
-    const [patchCode, setPatchCode] = useState<string>(() =>
-        getInitialPatch(unsavedSnapshots),
-    );
-    const [fileBuffers, setFileBuffers] = useState<Record<string, FileBuffer>>(
-        () => buildInitialFileBuffers(unsavedSnapshots),
-    );
+    const [activeBufferId, setActiveBufferId] = useState<string>(() => {
+        const saved = readUnsavedBuffers();
+        return saved.length > 0 ? getBufferId(saved[0]) : 'untitled-1';
+    });
 
+    const activeBuffer = buffers.find((b) => getBufferId(b) === activeBufferId);
+    const patchCode = activeBuffer?.content ?? DEFAULT_PATCH;
+
+    // Workspace & filesystem
+    const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null);
+    const [fileTree, setFileTree] = useState<FileTreeEntry[]>([]);
+
+    // Audio state
     const [isClockRunning, setIsClockRunning] = useState(true);
-
     const [isRecording, setIsRecording] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [validationErrors, setValidationErrors] = useState<
@@ -245,16 +232,79 @@ function App() {
     >(null);
     const [schemas, setSchemas] = useState<ModuleSchema[]>([]);
     const [scopeViews, setScopeViews] = useState<ScopeView[]>([]);
+    const [runningBufferId, setRunningBufferId] = useState<string | null>(null);
 
     const editorRef = useRef<editor.IStandaloneCodeEditor>(null);
     const scopeCanvasMapRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
-    const [files, setFiles] = useState<string[]>([]);
-    const [openFiles, setOpenFiles] = useState<string[]>(() =>
-        buildInitialOpenFiles(unsavedSnapshots),
-    );
-    const [currentFile, setCurrentFile] = useState<string>(SCRATCH_FILE);
-    const [runningFile, setRunningFile] = useState<string | null>(null);
-    console.log('Current file in App:', currentFile);
+
+    // Load workspace and file tree on mount
+    useEffect(() => {
+        electronAPI.filesystem.getWorkspace().then((workspace) => {
+            if (workspace) {
+                setWorkspaceRoot(workspace.path);
+                refreshFileTree();
+            }
+        });
+    }, []);
+
+    const refreshFileTree = useCallback(async () => {
+        const tree = await electronAPI.filesystem.listFiles();
+        setFileTree(tree);
+    }, []);
+
+    const selectWorkspaceFolder = useCallback(async () => {
+        // Check for dirty file-backed buffers before switching
+        const dirtyFileBuffers = buffers.filter(
+            (b) => b.kind === 'file' && b.dirty,
+        );
+
+        if (dirtyFileBuffers.length > 0) {
+            const fileList = dirtyFileBuffers.map((b) => 
+                b.kind === 'file' ? b.relPath : ''
+            ).filter(Boolean).join(', ');
+            
+            const shouldSave = window.confirm(
+                `You have unsaved changes in: ${fileList}. Save changes before switching workspace?`,
+            );
+
+            if (shouldSave) {
+                // Save all dirty file buffers
+                for (const buffer of dirtyFileBuffers) {
+                    if (buffer.kind === 'file') {
+                        await electronAPI.filesystem.writeFile(
+                            buffer.relPath,
+                            buffer.content,
+                        );
+                    }
+                }
+                // Mark them clean
+                setBuffers((prev) =>
+                    prev.map((b) =>
+                        b.kind === 'file' && b.dirty
+                            ? { ...b, dirty: false }
+                            : b,
+                    ),
+                );
+            } else {
+                // Discard changes: remove dirty file buffers from the list
+                setBuffers((prev) =>
+                    prev.filter((b) => !(b.kind === 'file' && b.dirty)),
+                );
+            }
+        }
+
+        const workspace = await electronAPI.filesystem.selectWorkspace();
+        if (workspace) {
+            setWorkspaceRoot(workspace.path);
+            await refreshFileTree();
+        }
+    }, [buffers, refreshFileTree]);
+
+    // Save dirty buffers to localStorage
+    useEffect(() => {
+        saveUnsavedBuffers(buffers);
+    }, [buffers]);
+
     const registerScopeCanvas = useCallback(
         (key: string, canvas: HTMLCanvasElement) => {
             scopeCanvasMapRef.current.set(key, canvas);
@@ -271,6 +321,21 @@ function App() {
             setSchemas(fetchedSchemas);
         });
     }, []);
+
+    const schemaRef = useRef<ModuleSchema[]>([]);
+    useEffect(() => {
+        schemaRef.current = schemas;
+    }, [schemas]);
+
+    const patchCodeRef = useRef<string>(patchCode);
+    useEffect(() => {
+        patchCodeRef.current = patchCode;
+    }, [patchCode]);
+
+    const isClockRunningRef = useRef(isClockRunning);
+    useEffect(() => {
+        isClockRunningRef.current = isClockRunning;
+    }, [isClockRunning]);
 
     useEffect(() => {
         if (isClockRunningRef.current) {
@@ -293,288 +358,245 @@ function App() {
         }
     }, [isClockRunning]);
 
-    // useEffect(() => {
-    //     listFiles();
-    // }, [listFiles]);
-
-    useEffect(() => {
-        if (typeof window === 'undefined') {
-            return;
+    const formatFileLabel = useCallback((buffer: EditorBuffer) => {
+        if (buffer.kind === 'untitled') {
+            return `Untitled-${buffer.id}`;
         }
-
-        const unsavedEntries: Record<string, UnsavedBufferSnapshot> = {};
-        Object.entries(fileBuffers).forEach(([path, buffer]) => {
-            if (buffer?.dirty) {
-                unsavedEntries[path] = {
-                    content: buffer.content,
-                    isNew: buffer.isNew,
-                };
-            }
-        });
-
-        try {
-            window.localStorage.setItem(
-                UNSAVED_STORAGE_KEY,
-                JSON.stringify(unsavedEntries),
-            );
-            window.localStorage.removeItem(PATCH_STORAGE_KEY);
-        } catch {
-            // Ignore storage quota/access issues to avoid breaking editing flow
-        }
-    }, [fileBuffers]);
-
-    // Request initial state when connected
-    // useEffect(() => {
-    //     if (connectionState === 'connected') {
-    //         getSchemasOld();
-    //     }
-    // }, [connectionState, getSchemasOld]);
-
-    const schemaRef = useRef<ModuleSchema[]>([]);
-    useEffect(() => {
-        schemaRef.current = schemas;
-    }, [schemas]);
-
-    const patchCodeRef = useRef<string>(patchCode);
-    useEffect(() => {
-        patchCodeRef.current = patchCode;
-    }, [patchCode]);
-
-    const isClockRunningRef = useRef(isClockRunning);
-    useEffect(() => {
-        isClockRunningRef.current = isClockRunning;
-    }, [isClockRunning]);
-
-    useEffect(() => {
-        const active = currentFile || SCRATCH_FILE;
-        const buffer = fileBuffers[active];
-
-        if (buffer && buffer.content !== patchCode) {
-            setPatchCode(buffer.content);
-        }
-    }, [currentFile, fileBuffers, patchCode]);
-
-    const formatFileLabel = useCallback(
-        (file: string) => (file === SCRATCH_FILE ? 'Scratch Pad' : file),
-        [],
-    );
+        return buffer.relPath;
+    }, []);
 
     const normalizeFileName = useCallback((name: string) => {
         const trimmed = name.trim();
         if (!trimmed) {
             return trimmed;
         }
-        return trimmed.endsWith('.mjs') ? trimmed : `${trimmed}.mjs`;
+        return trimmed.endsWith('.js') || trimmed.endsWith('.mjs')
+            ? trimmed
+            : `${trimmed}.mjs`;
     }, []);
 
     const handlePatchChange = useCallback(
         (value: string) => {
-            setPatchCode(value);
-            const active = currentFile || SCRATCH_FILE;
-            setFileBuffers((prev) => {
-                const existing = prev[active] ?? { content: '', dirty: false };
-                return {
-                    ...prev,
-                    [active]: {
-                        ...existing,
-                        content: value,
-                        dirty: true,
-                        loaded: true,
-                    },
-                };
-            });
+            setBuffers((prev) =>
+                prev.map((b) =>
+                    getBufferId(b) === activeBufferId
+                        ? { ...b, content: value, dirty: true }
+                        : b,
+                ),
+            );
         },
-        [currentFile],
+        [activeBufferId],
     );
 
-    const selectFile = useCallback(
-        (filename: string) => {
-            const target = filename || SCRATCH_FILE;
-
-            setOpenFiles((prev) =>
-                prev.includes(target) ? prev : [...prev, target],
+    const openFile = useCallback(
+        async (relPath: string) => {
+            // Check if already open
+            const existing = buffers.find(
+                (b) => b.kind === 'file' && b.relPath === relPath,
             );
-            console.log('Selecting file:', target);
-            setCurrentFile(target);
-
-            const buffer = fileBuffers[target];
-
-            if (!buffer || buffer.loaded === false) {
-                setFileBuffers((prev) => ({
-                    ...prev,
-                    [target]: buffer ?? {
-                        content: '',
-                        dirty: false,
-                        loaded: false,
-                    },
-                }));
-                if (target !== SCRATCH_FILE) {
-                    // readFile(target);
-                }
-                setPatchCode(buffer?.content ?? '');
+            if (existing) {
+                setActiveBufferId(getBufferId(existing));
                 return;
             }
 
-            if (buffer.content !== patchCode) {
-                setPatchCode(buffer.content);
+            // Load from filesystem
+            try {
+                const content = await electronAPI.filesystem.readFile(relPath);
+                const newBuffer: EditorBuffer = {
+                    kind: 'file',
+                    relPath,
+                    content,
+                    dirty: false,
+                };
+                setBuffers((prev) => [...prev, newBuffer]);
+                setActiveBufferId(getBufferId(newBuffer));
+            } catch (error) {
+                setError(`Failed to open file: ${relPath}`);
             }
         },
-        [fileBuffers, patchCode],
+        [buffers],
     );
 
-    const handleCreateFile = useCallback(() => {
-        const input = window.prompt('Create new patch file (.js)');
+    const createUntitledFile = useCallback(() => {
+        const nextId = `untitled-${Date.now()}`;
+        const newBuffer: EditorBuffer = {
+            kind: 'untitled',
+            id: nextId,
+            content: DEFAULT_PATCH,
+            dirty: false,
+        };
+        setBuffers((prev) => [...prev, newBuffer]);
+        setActiveBufferId(nextId);
+    }, []);
+
+    const saveFile = useCallback(async () => {
+        const buffer = buffers.find((b) => getBufferId(b) === activeBufferId);
+        if (!buffer) return;
+
+        if (buffer.kind === 'untitled') {
+            // Save as...
+            const input = await electronAPI.filesystem.showSaveDialog('untitled.mjs');
+            if (!input) return;
+
+            const normalized = normalizeFileName(input);
+            if (!normalized) return;
+
+            const result = await electronAPI.filesystem.writeFile(
+                normalized,
+                buffer.content,
+            );
+
+            if (result.success) {
+                // Replace untitled buffer with file buffer
+                setBuffers((prev) =>
+                    prev.map((b) =>
+                        getBufferId(b) === activeBufferId
+                            ? {
+                                  kind: 'file' as const,
+                                  relPath: normalized,
+                                  content: buffer.content,
+                                  dirty: false,
+                              }
+                            : b,
+                    ),
+                );
+                setActiveBufferId(normalized);
+                await refreshFileTree();
+            } else {
+                setError(result.error || 'Failed to save file');
+            }
+        } else {
+            // Save existing file
+            const result = await electronAPI.filesystem.writeFile(
+                buffer.relPath,
+                buffer.content,
+            );
+
+            if (result.success) {
+                setBuffers((prev) =>
+                    prev.map((b) =>
+                        getBufferId(b) === activeBufferId
+                            ? { ...b, dirty: false }
+                            : b,
+                    ),
+                );
+            } else {
+                setError(result.error || 'Failed to save file');
+            }
+        }
+    }, [activeBufferId, buffers, normalizeFileName, refreshFileTree]);
+
+    const renameFile = useCallback(async () => {
+        const buffer = buffers.find((b) => getBufferId(b) === activeBufferId);
+        if (!buffer || buffer.kind !== 'file') return;
+
+        const input = await electronAPI.filesystem.showInputDialog('Rename file', buffer.relPath);
         if (!input) return;
 
         const normalized = normalizeFileName(input);
-        if (!normalized) return;
+        if (!normalized || normalized === buffer.relPath) return;
 
-        if (files.includes(normalized) || fileBuffers[normalized]) {
-            setError(`A file named ${normalized} already exists.`);
-            return;
-        }
-
-        const initialContent = DEFAULT_PATCH;
-
-        // Persist immediately so it shows up in the server-backed file list.
-        // writeFile(normalized, initialContent);
-
-        setFileBuffers((prev) => ({
-            ...prev,
-            [normalized]: {
-                content: initialContent,
-                dirty: false,
-                isNew: false,
-                loaded: true,
-            },
-        }));
-        setOpenFiles((prev) =>
-            prev.includes(normalized) ? prev : [...prev, normalized],
+        const result = await electronAPI.filesystem.renameFile(
+            buffer.relPath,
+            normalized,
         );
-        setCurrentFile(normalized);
-        setPatchCode(initialContent);
 
-        // If the server doesn't proactively push a list update for some reason,
-        // explicitly request it.
-        // listFiles();
-    }, [fileBuffers, files, normalizeFileName]);
-
-    const handleRenameFile = useCallback(() => {
-        const active = currentFile || SCRATCH_FILE;
-        const buffer = fileBuffers[active];
-        const suggestion = active === SCRATCH_FILE ? 'untitled.mjs' : active;
-        const nextName = window.prompt('Rename file', suggestion);
-        if (!nextName) return;
-
-        const normalized = normalizeFileName(nextName);
-        if (!normalized || normalized === active) {
-            return;
+        if (result.success) {
+            setBuffers((prev) =>
+                prev.map((b) =>
+                    getBufferId(b) === activeBufferId
+                        ? { ...b, relPath: normalized }
+                        : b,
+                ),
+            );
+            setActiveBufferId(normalized);
+            await refreshFileTree();
+        } else {
+            setError(result.error || 'Failed to rename file');
         }
+    }, [activeBufferId, buffers, normalizeFileName, refreshFileTree]);
 
-        if (files.includes(normalized) || fileBuffers[normalized]) {
-            setError(`A file named ${normalized} already exists.`);
-            return;
+    const deleteFile = useCallback(async () => {
+        const buffer = buffers.find((b) => getBufferId(b) === activeBufferId);
+        if (!buffer || buffer.kind !== 'file') return;
+
+        if (!window.confirm(`Delete ${buffer.relPath}?`)) return;
+
+        const result = await electronAPI.filesystem.deleteFile(buffer.relPath);
+
+        if (result.success) {
+            // Remove buffer and switch to another
+            setBuffers((prev) => {
+                const filtered = prev.filter(
+                    (b) => getBufferId(b) !== activeBufferId,
+                );
+                if (filtered.length === 0) {
+                    // Create a new untitled buffer if this was the last one
+                    return [
+                        {
+                            kind: 'untitled',
+                            id: `untitled-${Date.now()}`,
+                            content: DEFAULT_PATCH,
+                            dirty: false,
+                        },
+                    ];
+                }
+                return filtered;
+            });
+            setActiveBufferId(getBufferId(buffers[0]));
+            await refreshFileTree();
+        } else {
+            setError(result.error || 'Failed to delete file');
         }
+    }, [activeBufferId, buffers, refreshFileTree]);
 
-        if (active !== SCRATCH_FILE && !buffer?.isNew) {
-            // renameFile(active, normalized);
-        }
+    const closeBuffer = useCallback(
+        (bufferId: string) => {
+            const buffer = buffers.find((b) => getBufferId(b) === bufferId);
+            if (!buffer) return;
 
-        setFileBuffers((prev) => {
-            const { [active]: currentBuffer, ...rest } = prev;
-            const nextBuffer = currentBuffer ?? {
-                content: patchCodeRef.current,
-                dirty: true,
-            };
-            return {
-                ...rest,
-                [normalized]: {
-                    ...nextBuffer,
-                    dirty: nextBuffer.dirty,
-                    isNew: currentBuffer?.isNew,
-                    loaded: true,
-                },
-            };
-        });
-        setOpenFiles((prev) =>
-            prev.map((file) => (file === active ? normalized : file)),
-        );
-        setCurrentFile(normalized);
-        setRunningFile((prev) => (prev === active ? normalized : prev));
-        // listFiles();
-    }, [currentFile, fileBuffers, files, normalizeFileName]);
+            if (buffer.dirty) {
+                const shouldSave = window.confirm(
+                    `${formatFileLabel(buffer)} has unsaved changes. Save before closing?`,
+                );
+                if (shouldSave) {
+                    // TODO: Save before closing
+                    return;
+                }
+            }
+
+            setBuffers((prev) => {
+                const filtered = prev.filter((b) => getBufferId(b) !== bufferId);
+                if (filtered.length === 0) {
+                    // Always keep at least one untitled buffer
+                    return [
+                        {
+                            kind: 'untitled',
+                            id: `untitled-${Date.now()}`,
+                            content: DEFAULT_PATCH,
+                            dirty: false,
+                        },
+                    ];
+                }
+                return filtered;
+            });
+
+            if (activeBufferId === bufferId) {
+                const remaining = buffers.filter(
+                    (b) => getBufferId(b) !== bufferId,
+                );
+                if (remaining.length > 0) {
+                    setActiveBufferId(getBufferId(remaining[0]));
+                }
+            }
+        },
+        [activeBufferId, buffers, formatFileLabel],
+    );
 
     const handleSaveFileRef = useRef(() => {});
     useEffect(() => {
-        handleSaveFileRef.current = () => {
-            console.log('Handle save file');
-            const active = currentFile || SCRATCH_FILE;
-            console.log('Current file:', currentFile);
-            console.log('Active file:', active);
-            console.log('File buffers:', fileBuffers);
-            const buffer = fileBuffers[active];
-            let target = active;
-            console.log('Buffer:', buffer);
-
-            if (active === SCRATCH_FILE || buffer?.isNew) {
-                const nextName = window.prompt(
-                    'Save file as (.mjs)',
-                    active === SCRATCH_FILE ? 'patch.mjs' : active,
-                );
-                if (!nextName) return;
-
-                const normalized = normalizeFileName(nextName);
-                if (!normalized) return;
-
-                if (files.includes(normalized) && normalized !== active) {
-                    setError(`A file named ${normalized} already exists.`);
-                    return;
-                }
-
-                target = normalized;
-
-                setFileBuffers((prev) => {
-                    const { [active]: currentBuffer, ...rest } = prev;
-                    const nextBuffer = currentBuffer ?? {
-                        content: patchCodeRef.current,
-                        dirty: true,
-                    };
-                    return {
-                        ...rest,
-                        [normalized]: {
-                            ...nextBuffer,
-                            content: patchCodeRef.current,
-                            dirty: true,
-                            isNew: false,
-                            loaded: true,
-                        },
-                    };
-                });
-
-                setOpenFiles((prev) =>
-                    prev.includes(normalized) ? prev : [...prev, normalized],
-                );
-                setCurrentFile(normalized);
-            }
-
-            // writeFile(target, patchCodeRef.current);
-            setFileBuffers((prev) => ({
-                ...prev,
-                [target]: {
-                    ...(prev[target] ?? {
-                        content: patchCodeRef.current,
-                        dirty: false,
-                    }),
-                    content: patchCodeRef.current,
-                    dirty: false,
-                    isNew: false,
-                    loaded: true,
-                },
-            }));
-            setRunningFile((prev) => (prev === active ? target : prev));
-            // listFiles();
-        };
-    }, [currentFile, fileBuffers, files, normalizeFileName, runningFile]);
+        handleSaveFileRef.current = saveFile;
+    }, [saveFile]);
 
     const handleSubmitRef = useRef(() => {});
     useEffect(() => {
@@ -593,7 +615,7 @@ function App() {
                     return;
                 }
                 setIsClockRunning(true);
-                setRunningFile(currentFile || SCRATCH_FILE);
+                setRunningBufferId(activeBufferId);
                 setError(null);
                 setValidationErrors(null);
 
@@ -607,14 +629,14 @@ function App() {
                             return {
                                 key: `:module:${moduleId}:${portName}`,
                                 lineNumber: call.endLine,
-                                file: currentFile,
+                                file: activeBufferId,
                             };
                         }
                         const { trackId } = scope;
                         return {
                             key: `:track:${trackId}`,
                             lineNumber: call.endLine,
-                            file: currentFile,
+                            file: activeBufferId,
                         };
                     })
                     .filter((v): v is ScopeView => v !== null);
@@ -627,7 +649,7 @@ function App() {
                 setValidationErrors(null);
             }
         };
-    }, [currentFile]);
+    }, [activeBufferId]);
 
     const handleStopRef = useRef(() => {});
     useEffect(() => {
@@ -656,8 +678,10 @@ function App() {
                 }
                 if (isRecording) {
                     await electronAPI.synthesizer.stopRecording();
+                    setIsRecording(false);
                 } else {
                     await electronAPI.synthesizer.startRecording();
+                    setIsRecording(true);
                 }
             }
         };
@@ -700,7 +724,7 @@ function App() {
                     <div className="editor-panel">
                         <PatchEditor
                             value={patchCode}
-                            currentFile={currentFile}
+                            currentFile={formatFileLabel(activeBuffer!)}
                             onChange={handlePatchChange}
                             onSubmit={handleSubmitRef}
                             onStop={handleStopRef}
@@ -714,16 +738,21 @@ function App() {
                     </div>
 
                     <FileExplorer
-                        files={files}
-                        openFiles={openFiles}
-                        currentFile={currentFile}
-                        runningFile={runningFile}
-                        fileStates={fileBuffers}
+                        workspaceRoot={workspaceRoot}
+                        fileTree={fileTree}
+                        buffers={buffers}
+                        activeBufferId={activeBufferId}
+                        runningBufferId={runningBufferId}
                         formatLabel={formatFileLabel}
-                        onFileSelect={selectFile}
-                        onCreateFile={handleCreateFile}
+                        onSelectBuffer={setActiveBufferId}
+                        onOpenFile={openFile}
+                        onCreateFile={createUntitledFile}
                         onSaveFile={handleSaveFileRef.current}
-                        onRenameFile={handleRenameFile}
+                        onRenameFile={renameFile}
+                        onDeleteFile={deleteFile}
+                        onCloseBuffer={closeBuffer}
+                        onSelectWorkspace={selectWorkspaceFolder}
+                        onRefreshTree={refreshFileTree}
                     />
                 </main>
             </div>

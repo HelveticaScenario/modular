@@ -16,6 +16,25 @@ import type {
 } from '@modular/core';
 
 /**
+ * File system types
+ */
+export interface FileTreeEntry {
+    name: string;
+    path: string; // relative to workspace root
+    type: 'file' | 'directory';
+    children?: FileTreeEntry[];
+}
+
+export interface FSOperationResult {
+    success: boolean;
+    error?: string;
+}
+
+export interface WorkspaceFolder {
+    path: string;
+}
+
+/**
  * IPC Channel names - centralized to avoid typos
  */
 export const IPC_CHANNELS = {
@@ -35,6 +54,19 @@ export const IPC_CHANNELS = {
     SYNTH_GET_HEALTH: 'modular:synth:get-health',
     SYNTH_STOP: 'modular:synth:stop',
     SYNTH_IS_STOPPED: 'modular:synth:is-stopped',
+
+    // Filesystem operations
+    FS_SELECT_WORKSPACE: 'modular:fs:select-workspace',
+    FS_GET_WORKSPACE: 'modular:fs:get-workspace',
+    FS_LIST_FILES: 'modular:fs:list-files',
+    FS_READ_FILE: 'modular:fs:read-file',
+    FS_WRITE_FILE: 'modular:fs:write-file',
+    FS_RENAME_FILE: 'modular:fs:rename-file',
+    FS_DELETE_FILE: 'modular:fs:delete-file',
+    FS_MOVE_FILE: 'modular:fs:move-file',
+    FS_CREATE_FOLDER: 'modular:fs:create-folder',
+    FS_SHOW_SAVE_DIALOG: 'modular:fs:show-save-dialog',
+    FS_SHOW_INPUT_DIALOG: 'modular:fs:show-input-dialog',
 } as const;
 
 /**
@@ -68,6 +100,19 @@ export interface IPCHandlers {
     [IPC_CHANNELS.SYNTH_STOP]: typeof Synthesizer.prototype.stop;
 
     [IPC_CHANNELS.SYNTH_IS_STOPPED]: typeof Synthesizer.prototype.isStopped;
+
+    // Filesystem operations (IPC automatically promisifies all handlers)
+    [IPC_CHANNELS.FS_SELECT_WORKSPACE]: () => WorkspaceFolder | null;
+    [IPC_CHANNELS.FS_GET_WORKSPACE]: () => WorkspaceFolder | null;
+    [IPC_CHANNELS.FS_LIST_FILES]: () => FileTreeEntry[];
+    [IPC_CHANNELS.FS_READ_FILE]: (relativePath: string) => string;
+    [IPC_CHANNELS.FS_WRITE_FILE]: (relativePath: string, content: string) => FSOperationResult;
+    [IPC_CHANNELS.FS_RENAME_FILE]: (oldPath: string, newPath: string) => FSOperationResult;
+    [IPC_CHANNELS.FS_DELETE_FILE]: (relativePath: string) => FSOperationResult;
+    [IPC_CHANNELS.FS_MOVE_FILE]: (sourcePath: string, destPath: string) => FSOperationResult;
+    [IPC_CHANNELS.FS_CREATE_FOLDER]: (relativePath: string) => FSOperationResult;
+    [IPC_CHANNELS.FS_SHOW_SAVE_DIALOG]: (defaultPath?: string) => string | null;
+    [IPC_CHANNELS.FS_SHOW_INPUT_DIALOG]: (title: string, defaultValue?: string) => string | null;
 }
 
 /**

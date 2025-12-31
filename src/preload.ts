@@ -46,6 +46,20 @@ export interface ElectronAPI {
         stop: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_STOP]>;
         isStopped: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_IS_STOPPED]>;
     };
+    // Filesystem operations
+    filesystem: {
+        selectWorkspace: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_SELECT_WORKSPACE]>;
+        getWorkspace: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_GET_WORKSPACE]>;
+        listFiles: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_LIST_FILES]>;
+        readFile: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_READ_FILE]>;
+        writeFile: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_WRITE_FILE]>;
+        renameFile: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_RENAME_FILE]>;
+        deleteFile: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_DELETE_FILE]>;
+        moveFile: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_MOVE_FILE]>;
+        createFolder: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_CREATE_FOLDER]>;
+        showSaveDialog: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_SHOW_SAVE_DIALOG]>;
+        showInputDialog: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_SHOW_INPUT_DIALOG]>;
+    };
 }
 
 const electronAPI: ElectronAPI = {
@@ -90,6 +104,42 @@ const electronAPI: ElectronAPI = {
 
         isStopped: (...args) =>
             invokeIPC('SYNTH_IS_STOPPED', ...args),
+    },
+
+    // Filesystem operations
+    filesystem: {
+        selectWorkspace: (...args) =>
+            invokeIPC('FS_SELECT_WORKSPACE', ...args),
+
+        getWorkspace: (...args) =>
+            invokeIPC('FS_GET_WORKSPACE', ...args),
+
+        listFiles: (...args) =>
+            invokeIPC('FS_LIST_FILES', ...args),
+
+        readFile: (...args) =>
+            invokeIPC('FS_READ_FILE', ...args),
+
+        writeFile: (...args) =>
+            invokeIPC('FS_WRITE_FILE', ...args),
+
+        renameFile: (...args) =>
+            invokeIPC('FS_RENAME_FILE', ...args),
+
+        deleteFile: (...args) =>
+            invokeIPC('FS_DELETE_FILE', ...args),
+
+        moveFile: (...args) =>
+            invokeIPC('FS_MOVE_FILE', ...args),
+
+        createFolder: (...args) =>
+            invokeIPC('FS_CREATE_FOLDER', ...args),
+
+        showSaveDialog: (...args) =>
+            invokeIPC('FS_SHOW_SAVE_DIALOG', ...args),
+
+        showInputDialog: (...args) =>
+            invokeIPC('FS_SHOW_INPUT_DIALOG', ...args),
     }
 };
 

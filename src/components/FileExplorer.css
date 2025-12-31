@@ -88,7 +88,9 @@
 .file-sections {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0;
+  flex: 1;
+  overflow-y: auto;
 }
 
 .section {
@@ -96,11 +98,65 @@
 }
 
 .section-header {
-  padding: 0.25rem 1rem;
+  padding: 0.4rem 1rem;
   color: #aaa;
   font-size: 0.75rem;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #252525;
+}
+
+.section-action {
+  background: transparent;
+  border: none;
+  color: #888;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  transition: background 0.2s, color 0.2s;
+}
+
+.section-action:hover {
+  background: #3a3a3a;
+  color: #ccc;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  flex-wrap: wrap;
+}
+
+.action-button.danger {
+  background: #4a1f1f;
+  border-color: #6a2f2f;
+  color: #ff6b6b;
+}
+
+.action-button.danger:hover {
+  background: #6a2f2f;
+  border-color: #8a3f3f;
+}
+
+.action-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.action-button:disabled:hover {
+  background: #2d2d2d;
+  border-color: #3a3a3a;
+  color: #ddd;
 }
 
 .file-list ul {
@@ -110,7 +166,7 @@
 }
 
 .file-list li {
-  padding: 0.5rem 1rem;
+  padding: 0.4rem 1rem;
   cursor: pointer;
   color: #ccc;
   font-size: 0.85rem;
@@ -121,6 +177,36 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
+}
+
+.file-list li.buffer-item {
+  position: relative;
+}
+
+.close-button {
+  background: transparent;
+  border: none;
+  color: #666;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0;
+  width: 18px;
+  height: 18px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  transition: background 0.2s, color 0.2s;
+  margin-left: auto;
+}
+
+.file-list li:hover .close-button {
+  display: flex;
+}
+
+.close-button:hover {
+  background: #4a4a4a;
+  color: #fff;
 }
 
 .file-list li:hover {
@@ -181,3 +267,62 @@
   font-style: italic;
 }
 
+/* File Tree Styles */
+.file-tree {
+  padding: 0.5rem 0;
+}
+
+.tree-root,
+.tree-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tree-children {
+  padding-left: 1rem;
+}
+
+.tree-file,
+.tree-folder {
+  cursor: pointer;
+  color: #ccc;
+  font-size: 0.85rem;
+}
+
+.tree-file {
+  padding: 0.3rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: background 0.2s;
+}
+
+.tree-file:hover {
+  background: #2a2a2a;
+}
+
+.folder-header {
+  padding: 0.3rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: background 0.2s;
+}
+
+.folder-header:hover {
+  background: #2a2a2a;
+}
+
+.file-icon,
+.folder-icon {
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.file-name,
+.folder-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
