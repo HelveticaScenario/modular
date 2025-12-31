@@ -11,8 +11,7 @@
         "publish": "electron-forge publish",
         "typecheck": "tsc --noEmit",
         "rebuild": "electron-rebuild -f -w modular-core",
-        "lint": "eslint .",
-        "codegen": "cd .. && cargo test --package modular_server --lib -- tests::export_types --exact --nocapture --ignored"
+        "lint": "eslint ."
     },
     "keywords": [],
     "author": {

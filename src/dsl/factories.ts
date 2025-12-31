@@ -46,8 +46,8 @@ export class DSLContext {
     return this.builder;
   }
 
-  scope(target: ModuleNode | ModuleOutput | TrackNode) {
-    this.builder.addScope(target);
+  scope(target: ModuleNode | ModuleOutput | TrackNode, speed: number = 0) {
+    this.builder.addScope(target, speed);
     return target
   }
 

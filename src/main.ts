@@ -148,14 +148,6 @@ registerIPCHandler('SYNTH_GET_SCOPES', () => {
   return synth.getScopes();
 });
 
-registerIPCHandler('SYNTH_ADD_SCOPE', (scope) => {
-  synth.addScope(scope);
-});
-
-registerIPCHandler('SYNTH_REMOVE_SCOPE', (scope) => {
-  return synth.removeScope(scope);
-});
-
 registerIPCHandler('SYNTH_UPDATE_PATCH', (patch) => {
   return synth.updatePatch(patch);
 });

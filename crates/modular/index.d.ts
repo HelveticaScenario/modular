@@ -8,8 +8,6 @@ export declare class Synthesizer {
   sampleRate(): number
   channels(): number
   getScopes(): Array<[ScopeItem, Float32Array]>
-  addScope(scope: ScopeItem): void
-  removeScope(scope: ScopeItem): undefined | null
   updatePatch(patch: PatchGraph): Array<ApplyPatchError>
   startRecording(path?: string | undefined | null): string
   stopRecording(): string | null
@@ -79,8 +77,8 @@ export interface PatchGraph {
 }
 
 export type ScopeItem =
-  | { type: 'ModuleOutput', moduleId: string, portName: string }
-  | { type: 'Track', trackId: string }
+  | { type: 'ModuleOutput', moduleId: string, portName: string, speed: number }
+  | { type: 'Track', trackId: string, speed: number }
 
 export interface TrackKeyframeProxy {
   id: string

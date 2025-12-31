@@ -100,17 +100,6 @@ impl Synthesizer {
   }
 
   #[napi]
-  pub fn add_scope(&self, scope: ScopeItem) {
-    println!("Adding scope: {:?}", scope);
-    self.state.add_scope(scope);
-  }
-
-  #[napi]
-  pub fn remove_scope(&self, scope: ScopeItem) -> Option<()> {
-    self.state.remove_scope(&scope)
-  }
-
-  #[napi]
   pub fn update_patch(&self, patch: PatchGraph) -> Vec<ApplyPatchError> {
     self.state.handle_set_patch(patch, self.sample_rate)
   }

@@ -1,6 +1,6 @@
 use anyhow::Result;
+use napi::Env;
 use napi::bindgen_prelude::{FromNapiValue, Object, ToNapiValue};
-use napi::{Env, JsValue};
 use napi_derive::napi;
 use parking_lot::Mutex;
 use schemars::JsonSchema;
@@ -13,8 +13,6 @@ use std::{
     collections::HashMap,
     sync::{self, Arc},
 };
-
-use ts_rs::TS;
 
 use crate::patch::Patch;
 
@@ -733,10 +731,9 @@ impl PartialEq for Track {
 pub type TrackMap = HashMap<String, Arc<Track>>;
 
 #[derive(
-    Debug, Default, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize, TS,
+    Debug, Default, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize,
 )]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
 #[napi(string_enum)]
 pub enum InterpolationCategory {
     #[default]
@@ -746,7 +743,7 @@ pub enum InterpolationCategory {
 }
 
 #[derive(
-    Debug, Default, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize, TS,
+    Debug, Default, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize,
 )]
 #[serde(
     tag = "type",
@@ -754,7 +751,6 @@ pub enum InterpolationCategory {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
 #[napi]
 pub enum InterpolationType {
     #[default]
@@ -796,17 +792,15 @@ pub enum Seq {
     Slow,
 }
 
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
 pub struct SignalParamSchema {
     pub name: String,
     pub description: String,
 }
 
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../modular_web/src/types/generated/")]
 #[napi(object)]
 pub struct OutputSchema {
     pub name: String,
@@ -893,9 +887,13 @@ pub enum ScopeItem {
     ModuleOutput {
         module_id: String,
         port_name: String,
+        #[serde(default)]
+        speed: u32,
     },
     Track {
         track_id: String,
+        #[serde(default)]
+        speed: u32,
     },
 }
 
@@ -912,30 +910,19 @@ pub struct PatchGraph {
 
 pub type SampleableConstructor = Box<dyn Fn(&String, f32) -> Result<Arc<Box<dyn Sampleable>>>>;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[ts(
-    export,
-    export_to = "../../modular_web/src/types/generated/",
-    rename_all = "camelCase"
-)]
 pub enum ClockMessages {
     Start,
     Stop,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumTag, Serialize, Deserialize, TS)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumTag, Serialize, Deserialize)]
 #[serde(
     tag = "type",
     content = "data",
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
-)]
-#[ts(
-    export,
-    export_to = "../../modular_web/src/types/generated/",
-    rename_all = "camelCase",
-    tag = "type"
 )]
 pub enum Message {
     Clock(ClockMessages),

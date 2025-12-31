@@ -36,8 +36,6 @@ export interface ElectronAPI {
         getSampleRate: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_SAMPLE_RATE]>;
         getChannels: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_CHANNELS]>;
         getScopes: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_SCOPES]>;
-        addScope: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_ADD_SCOPE]>;
-        removeScope: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_REMOVE_SCOPE]>;
         updatePatch: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_UPDATE_PATCH]>;
         startRecording: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_START_RECORDING]>;
         stopRecording: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_STOP_RECORDING]>;
@@ -77,12 +75,6 @@ const electronAPI: ElectronAPI = {
 
         getScopes: (...args) =>
             invokeIPC('SYNTH_GET_SCOPES', ...args),
-
-        addScope: (...args) =>
-            invokeIPC('SYNTH_ADD_SCOPE', ...args),
-
-        removeScope: (...args) =>
-            invokeIPC('SYNTH_REMOVE_SCOPE', ...args),
 
         updatePatch: (...args) =>
             invokeIPC('SYNTH_UPDATE_PATCH', ...args),

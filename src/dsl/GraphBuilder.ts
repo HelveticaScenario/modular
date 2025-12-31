@@ -160,9 +160,9 @@ export class GraphBuilder {
     return track;
   }
 
-  addScope(value: ModuleOutput | ModuleNode | TrackNode) {
+  addScope(value: ModuleOutput | ModuleNode | TrackNode, speed: number = 0) {
     if (value instanceof TrackNode) {
-      this.scopes.push({ type: 'Track', trackId: value.id });
+      this.scopes.push({ type: 'Track', trackId: value.id, speed });
       return;
     }
 
@@ -171,6 +171,7 @@ export class GraphBuilder {
       type: 'ModuleOutput',
       moduleId: output.moduleId,
       portName: output.portName,
+      speed,
     });
   }
 }

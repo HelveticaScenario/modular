@@ -398,6 +398,7 @@ pub fn validate_patch(
       ScopeItem::ModuleOutput {
         module_id,
         port_name,
+        ..
       } => {
         // Scope target module must exist.
         let Some(module) = module_by_id.get(module_id.as_str()).copied() else {
@@ -434,7 +435,7 @@ pub fn validate_patch(
           });
         }
       }
-      ScopeItem::Track { track_id } => {
+      ScopeItem::Track { track_id, .. } => {
         // Scope target track must exist.
         if !track_ids.contains(track_id.as_str()) {
           errors.push(ValidationError {
