@@ -3,43 +3,64 @@ Activate the serena project modular
 # Copilot instructions (modular)
 
 ## Big picture
-- This repo is a Rust workspace + a Vite/React frontend for a real-time modular synth.
-- The browser runs a **JavaScript DSL** that builds a `PatchGraph` (JSON) and sends it to the server.
-- The Rust server hosts `/ws` (WebSocket) and streams control as JSON and audio buffers as **binary** frames.
+- This repo is an **Electron app** with a Rust DSP engine exposed via **NAPI bindings**.
+- The frontend (React/TypeScript) runs a **JavaScript DSL** that builds a `PatchGraph` (JSON) and sends it to the Rust audio engine via IPC.
+- Audio runs in-process via cpal; Rust exposes `Synthesizer` class to Node.js/Electron main process.
 
 Key crates/apps:
-- `modular_core/`: DSP engine + patch graph types + module schemas (`modular_core/src/types.rs`, `modular_core/src/dsp/`).
-- `modular_server/`: Axum HTTP/WS server + cpal audio thread (`modular_server/src/http_server.rs`, `modular_server/src/audio.rs`).
-- `modular_derive/`: proc-macros used for schema/message plumbing (module registration patterns live in `modular_core/src/dsp/*`).
-- `mi-plaits-dsp-rs/`: vendored DSP algorithms used by `modular_core`.
-- `modular_web/`: React UI + DSL runtime (`modular_web/src/dsl/*`) + generated Rust→TS types (`modular_web/src/types/generated/`).
+- `crates/modular_core/`: DSP engine + patch graph types + module schemas (`types.rs`, `dsp/`, `patch.rs`).
+- `crates/modular/`: NAPI bindings (`lib.rs`, `audio.rs`) that expose `Synthesizer` to Node.js + handle cpal audio thread.
+- `crates/modular_derive/`: proc-macros for schema/message plumbing (used in `modular_core/src/dsp/*` modules).
+- `crates/mi-plaits-dsp-rs/`: vendored Mutable Instruments DSP algorithms.
+- `src/`: Electron app (main process: `main.ts` `preload.ts`; renderer: `renderer.ts`, `App.tsx`, `dsl/`, `components/`).
 
 ## Critical data flow
-- Frontend executes DSL via `new Function(...)` and uses `GraphBuilder` to create a `PatchGraph` (`modular_web/src/dsl/executor.ts`, `modular_web/src/dsl/GraphBuilder.ts`).
-- Server validates patches against schema + typed param validators before applying (`modular_server/src/validation.rs`, `modular_core/src/dsp/mod.rs`).
-- Audio thread is real-time: it uses `try_lock()` and skips work on contention; do not add blocking/alloc-heavy work to the callback (`modular_server/src/audio.rs`).
+1. Frontend executes DSL via `new Function(...)` in `src/dsl/executor.ts` → produces `PatchGraph` JSON.
+2. `PatchGraph` sent to main process via Electron IPC (`src/ipcTypes.ts` defines channels).
+3. Main process calls `synthesizer.updatePatch(graph)` → Rust validates (`crates/modular/src/validation.rs`) → applies to audio thread.
+4. Audio thread (cpal callback in `crates/modular/src/audio.rs`): uses `try_lock()` for real-time safety; processes graph + streams scope buffers back via `RingBuffer`.
+5. Renderer polls scope data via IPC → draws oscilloscopes in Monaco decorations.
 
-## WebSocket protocol (practical notes)
-- WS endpoint: `ws://localhost:7812/ws` (server default port is **7812**, see `modular_server/src/main.rs`).
-- Control messages: JSON `InputMessage`/`OutputMessage` (`modular_server/src/protocol.rs`).
-- Audio buffers: binary frames with a null-terminated header:
-  - `[moduleId UTF-8][0x00][portName UTF-8 ("" for track)][0x00][f32 LE samples...]`
-  - Client parses this in `modular_web/src/hooks/useWebSocket.ts`.
-- Scopes drive streaming: `patch.scopes` becomes server-side subscriptions (`sync_scopes_for_connection` in `modular_server/src/http_server.rs`).
+## Architecture evolution
+- Originally WebSocket-based (server/client split).
+- Now unified Electron app: audio runs in-process; types shared via NAPI (`@modular/core` package built from `crates/modular`).
+- IPC replaces WebSocket; scope streaming uses `RingBuffer` → `getScopes()` polling instead of binary WS frames.
+
 
 ## Developer workflows
-- Run server (from repo root so file ops see `*.mjs` patches in CWD): `cargo run -p modular_server`
-- Frontend dev:
-  - `cd modular_web && yarn install && yarn dev`
-- Regenerate Rust→TS types (ts-rs):
-  - `cd modular_web && yarn run codegen`
-  - This runs ignored test `tests::export_types` in `modular_server/src/lib.rs` and writes to `modular_web/src/types/generated/`.
+**Run Electron app (from repo root):**
+```bash
+yarn start  # Runs electron-forge; auto-rebuilds Rust on changes
+```
 
-## Repo-specific conventions to follow
-- Patch graphs are the contract: prefer changing `modular_core::types` + exporting via ts-rs rather than hand-editing TS “schema” types.
-- When adding/changing module params:
-  - Update the Rust param struct/module implementation in `modular_core/src/dsp/**`.
-  - Ensure schema/validator registration is wired through `install_constructors` / `install_param_validators` (see `modular_core/src/dsp/mod.rs`).
-  - Regenerate TS types (`yarn run codegen`) and update DSL builders if needed.
-- For real-time safety: avoid allocations, logging, blocking locks in the audio callback; do “heavy” work on the async server thread.
-- Voltage convention: signals/params are generally clamped to `-10.0..10.0`; audio outputs target ~±5V (see `InternalParam` + DSP modules).
+**Rebuild Rust NAPI module only:**
+```bash
+cd crates/modular && yarn build  # or yarn build:debug
+```
+
+**Type generation (Rust → TypeScript via napi-rs):**
+- Rust types with `#[napi]` macros automatically generate TypeScript definitions during build.
+- **Manual step:** After changing Rust types, rebuild `crates/modular` (`yarn build`).
+- Generated types appear in `crates/modular/index.d.ts` and are imported as `@modular/core`.
+
+**Lint/typecheck:**
+```bash
+yarn lint
+yarn typecheck  # tsc --noEmit for renderer
+```
+
+## Repo-specific conventions
+- **Patch graphs are the contract:** prefer changing `modular_core::types` with `#[napi]` attributes over hand-editing TS types.
+- **Adding/changing module params:**
+  1. Update Rust param struct + DSP implementation in `modular_core/src/dsp/**/*.rs`.
+  2. Wire schema/validator in category modules (e.g., `oscillators/mod.rs`) → `install_constructors` / `install_param_validators`.
+  3. Rebuild NAPI (`cd crates/modular && yarn build`) to update TS types.
+  4. Update DSL factories in `src/dsl/factories.ts` if needed.
+- **Real-time safety (audio callback):** avoid allocations, logging, blocking locks. Use `try_lock()` + skip work on contention. Do heavy work on main thread (e.g., patch validation).
+- **Voltage convention:** signals/params clamped to `-10.0..10.0`; audio outputs attenuated by `AUDIO_OUTPUT_ATTENUATION` (0.2) in `crates/modular/src/audio.rs`.
+- **Workspace structure:** Cargo workspace at root; Electron app also at root; `crates/modular` is a yarn workspace package (`@modular/core`).
+
+## File operations & patches
+- Electron main process handles file I/O (`src/main.ts`): workspace folder selection, reading/writing `.mjs` patches.
+- Patches execute in `src/dsl/executor.ts` → DSL globals injected (`sine`, `saw`, `track`, `scope`, `hz`, `note`, etc.).
+- Root-level `.mjs` files are example patches; users can open any folder as workspace and edit/run patches with Alt+Enter.
