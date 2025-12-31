@@ -398,18 +398,22 @@ impl AudioState {
               continue;
             }
             
-            // Get params of the old module by trying to serialize them
-            // Since we can't directly get params from Sampleable, we skip this for now
-            // and just match the first available module of the same type
+            // NOTE: Current implementation uses a simple greedy matching approach
+            // that reuses any module of the same type, regardless of parameter similarity.
+            // This is acceptable for the initial implementation as:
+            // 1. Parameters will be updated in a later step via try_update_params
+            // 2. Reusing the instance still preserves internal DSP state
+            // 3. It avoids audio glitches from module recreation
+            // TODO: Consider implementing parameter similarity scoring for better matching
             for new_id in new_ids {
               if id_remapping.values().any(|v| v == new_id) {
                 continue; // Already mapped
               }
               
-              // Check if params are similar enough
+              // Match first available new module of same type to this old module
               if let Some(_desired_module) = desired_modules.get(new_id) {
-                // For now, we'll reuse modules of the same type without checking params
-                // A more sophisticated approach would compare params for similarity
+                // TODO: Could compare _desired_module.params with old module params
+                // for smarter matching when multiple candidates exist
                 id_remapping.insert(old_id.clone(), new_id.clone());
                 reused_modules.insert(old_id.clone());
                 break;
