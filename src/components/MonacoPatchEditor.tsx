@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { type OnMount, useMonaco } from '@monaco-editor/react';
 import { editor, type IDisposable } from 'monaco-editor';
-import prettier from 'prettier/standalone';
-import prettierBabel from 'prettier/plugins/babel';
-import prettierEstree from 'prettier/plugins/estree';
+import * as prettier from 'prettier/standalone';
+import * as prettierBabel from 'prettier/plugins/babel';
+import * as prettierEstree from 'prettier/plugins/estree';
 import { useSchemas } from '../SchemaContext';
 import { buildLibSource } from '../dsl/typescriptLibGen';
 import { findScopeCallEndLines } from '../utils/findScopeCallEndLines';
