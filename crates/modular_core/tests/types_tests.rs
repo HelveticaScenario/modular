@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
-use anyhow::Result;
+use napi::Result;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -227,15 +227,15 @@ fn message_listener_macro_infers_tags_from_match() {
     struct L;
 
     impl L {
-        fn on_clock(&mut self, _m: &ClockMessages) -> anyhow::Result<()> {
+        fn on_clock(&mut self, _m: &ClockMessages) -> napi::Result<()> {
             Ok(())
         }
 
-        fn on_midi_note(&mut self, _note: &u8, _on: &bool) -> anyhow::Result<()> {
+        fn on_midi_note(&mut self, _note: &u8, _on: &bool) -> napi::Result<()> {
             Ok(())
         }
 
-        fn on_midi_cc(&mut self, _cc: &u8, _value: &u8) -> anyhow::Result<()> {
+        fn on_midi_cc(&mut self, _cc: &u8, _value: &u8) -> napi::Result<()> {
             Ok(())
         }
     }

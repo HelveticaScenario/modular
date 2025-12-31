@@ -46,8 +46,8 @@ export class DSLContext {
     return this.builder;
   }
 
-  scope(target: ModuleNode | ModuleOutput | TrackNode, speed: number = 0) {
-    this.builder.addScope(target, speed);
+  scope(target: ModuleNode | ModuleOutput | TrackNode, msPerFrame: number = 500, triggerThreshold?: number) {
+    this.builder.addScope(target, msPerFrame, triggerThreshold);
     return target
   }
 

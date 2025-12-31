@@ -73,7 +73,7 @@ impl Patch {
             .collect()
     }
 
-    pub fn dispatch_message(&mut self, message: &Message) -> anyhow::Result<()> {
+    pub fn dispatch_message(&mut self, message: &Message) -> napi::Result<()> {
         let listeners = self.message_listeners_for(message.tag());
         for s in listeners {
             s.handle_message(message)?;
@@ -96,7 +96,7 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    use anyhow::Result;
+    use napi::Result;
     use crate::types::MessageHandler;
 
     #[test]

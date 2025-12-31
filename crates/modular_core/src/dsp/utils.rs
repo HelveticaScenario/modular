@@ -182,3 +182,86 @@ mod tests {
         assert_eq!(map_range(1.0, 1.0, 1.0, 2.0, 4.0), 2.0);
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SchmittState {
+    Low,
+    High,
+    Uninitialized,
+}
+
+/// Reusable Schmitt trigger with hysteresis
+#[derive(Debug, Clone, Copy)]
+pub struct SchmittTrigger {
+    state: SchmittState,
+    low_threshold: f32,
+    high_threshold: f32,
+}
+
+impl SchmittTrigger {
+    /// Create a new Schmitt trigger with the given thresholds
+    pub fn new(low_threshold: f32, high_threshold: f32) -> Self {
+        Self {
+            state: SchmittState::Uninitialized,
+            low_threshold,
+            high_threshold,
+        }
+    }
+
+    /// Process a sample through the Schmitt trigger
+    /// Returns true if output is high, false if low
+    pub fn process(&mut self, input: f32) -> SchmittState {
+        // Ensure high threshold is above low threshold
+        let (low, high) = if self.high_threshold > self.low_threshold {
+            (self.low_threshold, self.high_threshold)
+        } else {
+            (self.high_threshold, self.low_threshold)
+        };
+        match self.state {
+            SchmittState::Uninitialized => {
+                // Initialize state based on input
+                if input >= high {
+                    self.state = SchmittState::High;
+                } else {
+                    self.state = SchmittState::Low;
+                }
+            }
+            SchmittState::High => {
+                // Currently high - check if we should go low
+                if input < low {
+                    self.state = SchmittState::Low;
+                }
+            }
+            SchmittState::Low => {
+                // Currently low - check if we should go high
+                if input > high {
+                    self.state = SchmittState::High;
+                }
+            }
+        }
+
+        self.state
+    }
+
+    /// Update thresholds
+    pub fn set_thresholds(&mut self, low_threshold: f32, high_threshold: f32) {
+        self.low_threshold = low_threshold;
+        self.high_threshold = high_threshold;
+    }
+
+    /// Get current state
+    pub fn state(&self) -> SchmittState {
+        self.state
+    }
+
+    /// Reset state to Uninitialized
+    pub fn reset(&mut self) {
+        self.state = SchmittState::Uninitialized;
+    }
+}
+
+impl Default for SchmittTrigger {
+    fn default() -> Self {
+        Self::new(-1.0, 1.0)
+    }
+}

@@ -73,12 +73,18 @@ export interface OutputSchema {
 export interface PatchGraph {
   modules: Array<ModuleState>
   tracks: Array<TrackProxy>
-  scopes: Array<ScopeItem>
+  scopes: Array<Scope>
+}
+
+export interface Scope {
+  item: ScopeItem
+  msPerFrame: number
+  triggerThreshold?: number
 }
 
 export type ScopeItem =
-  | { type: 'ModuleOutput', moduleId: string, portName: string, speed: number }
-  | { type: 'Track', trackId: string, speed: number }
+  | { type: 'ModuleOutput', moduleId: string, portName: string }
+  | { type: 'Track', trackId: string }
 
 export interface TrackKeyframeProxy {
   id: string

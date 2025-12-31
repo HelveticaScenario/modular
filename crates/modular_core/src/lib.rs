@@ -10,7 +10,6 @@ extern crate lazy_static;
 #[macro_use]
 extern crate modular_derive;
 
-extern crate anyhow;
 extern crate mi_plaits_dsp;
 extern crate parking_lot;
 extern crate serde;

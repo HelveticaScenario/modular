@@ -6,8 +6,11 @@ use hound::{WavSpec, WavWriter};
 use modular_core::PatchGraph;
 use modular_core::dsp::get_constructors;
 use modular_core::dsp::schema;
+use modular_core::dsp::utils::SchmittState;
+use modular_core::dsp::utils::SchmittTrigger;
 use modular_core::types::ClockMessages;
 use modular_core::types::Message;
+use modular_core::types::Scope;
 use napi::Result;
 use napi::bindgen_prelude::Float32Array;
 use napi_derive::napi;
@@ -90,15 +93,82 @@ impl RingBuffer {
 /// Wrapper for a scope's ring buffer with sample rate control
 pub struct ScopeBuffer {
   pub buffer: RingBuffer,
-  pub sample_counter: u32,
+  sample_counter: u32,
+  skip_rate: u32,
+  trigger_threshold: Option<f32>,
+  trigger: SchmittTrigger,
+  holding: bool,
+}
+
+const SCOPE_CAPACITY: u32 = 256;
+
+fn ms_to_samples(ms: u32, sample_rate: f32) -> u32 {
+  ((ms as f32 / 1000.0) * sample_rate) as u32
+}
+
+// A function that calculates the skip rate needed to capture target samples over total samples
+fn calculate_skip_rate(total_samples: u32) -> u32 {
+  total_samples / SCOPE_CAPACITY
 }
 
 impl ScopeBuffer {
-  pub fn new(capacity: usize) -> Self {
-    Self {
-      buffer: RingBuffer::new(capacity),
+  pub fn new(scope: &Scope, sample_rate: f32) -> Self {
+    let mut sb = Self {
+      buffer: RingBuffer::new(SCOPE_CAPACITY as usize),
       sample_counter: 0,
+      skip_rate: 0,
+      trigger_threshold: None,
+      trigger: SchmittTrigger::new(0.0, 0.0),
+      holding: false,
+    };
+
+    sb.update(scope, sample_rate);
+    sb.trigger = SchmittTrigger::new(
+      sb.trigger_threshold.unwrap_or(0.0),
+      sb.trigger_threshold.unwrap_or(0.0) + 0.01,
+    );
+
+    sb
+  }
+
+  fn update_trigger_threshold(&mut self, threshold: Option<i32>) {
+    let threshold = threshold.map(|t| (t as f32) / 1000.0);
+    self.trigger_threshold = threshold;
+    if let Some(thresh) = threshold {
+      self.trigger.set_thresholds(thresh, thresh + 0.01);
+      self.trigger.reset();
+      self.holding = false;
     }
+  }
+
+  fn update_skip_rate(&mut self, ms_per_frame: u32, sample_rate: f32) {
+    self.skip_rate = calculate_skip_rate(ms_to_samples(ms_per_frame, sample_rate));
+  }
+
+  pub fn push(&mut self, value: f32) {
+    if self.holding {
+      return;
+    }
+    if let Some(t) = self.trigger_threshold {
+      let state = self.trigger.process(value);
+      if state == SchmittState::High {
+        self.holding = true;
+        return;
+      }
+    }
+
+    self.buffer.push(value);
+  }
+
+  pub fn update(&mut self, scope: &Scope, sample_rate: f32) {
+    self.update_trigger_threshold(scope.trigger_threshold);
+    self.update_skip_rate(scope.ms_per_frame, sample_rate);
+  }
+}
+
+impl From<ScopeBuffer> for Float32Array {
+  fn from(scope_buffer: ScopeBuffer) -> Self {
+    Float32Array::new(scope_buffer.buffer.to_vec())
   }
 }
 
@@ -225,7 +295,12 @@ impl AudioState {
     scope_collection
       .iter()
       .filter(|(_, scope_buffer)| scope_buffer.buffer.buffer.len() >= scope_buffer.buffer.capacity)
-      .map(|(scope_item, scope_buffer)| (scope_item.clone(), Float32Array::new(scope_buffer.buffer.to_vec())))
+      .map(|(scope_item, scope_buffer)| {
+        (
+          scope_item.clone(),
+          Float32Array::new(scope_buffer.buffer.to_vec()),
+        )
+      })
       .collect()
   }
 
@@ -379,8 +454,9 @@ impl AudioState {
     {
       let mut scope_collection = self.scope_collection.lock();
       let current_scope_items: HashSet<ScopeItem> = scope_collection.keys().cloned().collect();
-      let desired_scope_items: HashSet<ScopeItem> = scopes.into_iter().collect();
-
+      let desired_scopes: HashMap<ScopeItem, Scope> =
+        scopes.into_iter().map(|s| (s.item.clone(), s)).collect();
+      let desired_scope_items: HashSet<ScopeItem> = desired_scopes.keys().cloned().collect();
       // Remove scopes that are in current but not in desired
       let scopes_to_remove: Vec<ScopeItem> = current_scope_items
         .difference(&desired_scope_items)
@@ -394,15 +470,29 @@ impl AudioState {
       }
 
       // Add scopes that are in desired but not in current
-      let scopes_to_add: Vec<ScopeItem> = desired_scope_items
+      let scopes_to_add: Vec<Scope> = desired_scope_items
         .difference(&current_scope_items)
+        .filter_map(|item| desired_scopes.get(item))
         .cloned()
         .collect();
 
       println!("Scopes to add: {:?}", scopes_to_add);
+      const SCOPE_SIZE: u32 = 256;
+      for scope in scopes_to_add {
+        scope_collection.insert(scope.item.clone(), ScopeBuffer::new(&scope, sample_rate));
+      }
 
-      for scope_item in scopes_to_add {
-        scope_collection.insert(scope_item, ScopeBuffer::new(512));
+      let scopes_to_update: Vec<Scope> = desired_scope_items
+        .intersection(&current_scope_items)
+        .filter_map(|item| desired_scopes.get(item))
+        .cloned()
+        .collect();
+
+      // Update existing scopes' parameters
+      for scope in scopes_to_update {
+        if let Some(existing_scope) = scope_collection.get_mut(&scope.item) {
+          existing_scope.update(&scope, sample_rate);
+        }
       }
 
       println!(
@@ -582,10 +672,7 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
   // Capture audio for scopes
   for (scope, scope_buffer) in audio_state.scope_collection.lock().iter_mut() {
     // Get the speed from the scope
-    let speed = match scope {
-      ScopeItem::ModuleOutput { speed, .. } => *speed,
-      ScopeItem::Track { speed, .. } => *speed,
-    };
+    let speed = scope_buffer.skip_rate;
 
     // Check if we should record this sample based on the counter
     if scope_buffer.sample_counter == 0 {
@@ -597,14 +684,14 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
         } => {
           if let Some(module) = patch_guard.sampleables.get(module_id) {
             if let Ok(sample) = module.get_sample(&port_name) {
-              scope_buffer.buffer.push(sample);
+              scope_buffer.push(sample);
             }
           }
         }
         ScopeItem::Track { track_id, .. } => {
           if let Some(track) = patch_guard.tracks.get(track_id) {
             if let Some(sample) = track.get_value_optional() {
-              scope_buffer.buffer.push(sample);
+              scope_buffer.push(sample);
             }
           }
         }

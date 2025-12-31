@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 

@@ -122,7 +122,7 @@ pub fn message_handlers(input: TokenStream) -> TokenStream {
                 &[ #( #tag_exprs ),* ]
             }
 
-            fn handle_message(&self, message: &crate::types::Message) -> anyhow::Result<()> {
+            fn handle_message(&self, message: &crate::types::Message) -> napi::Result<()> {
                 let mut module = self.module.lock();
                 match message {
                     #( #match_arms, )*
@@ -818,11 +818,13 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 self.update();
                 let outputs = self.outputs.try_read_for(core::time::Duration::from_millis(10)).unwrap();
                 crate::types::OutputStruct::get_sample(&*outputs, port.as_str()).ok_or_else(|| {
-                    anyhow!(
-                        "{} with id {} does not have port {}",
-                        #module_name,
-                        &self.id,
-                        port
+                    napi::Error::from_reason(
+                        format!(
+                            "{} with id {} does not have port {}",
+                            #module_name,
+                            &self.id,
+                            port
+                        )
                     )
                 })
             }
@@ -864,7 +866,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 map.insert(#module_name.into(), Self::validate_params_json as crate::types::ParamsValidator);
             }
 
-            fn validate_params_json(params: &serde_json::Value) -> anyhow::Result<()> {
+            fn validate_params_json(params: &serde_json::Value) -> napi::Result<()> {
                 // Attempt to deserialize the JSON params object into the module's concrete
                 // `*Params` struct. If this fails, the patch's params shape is incompatible
                 // with what the DSP module expects.

@@ -1,7 +1,7 @@
 // Test module to verify that overlapping parameter and output names
 // produce a runtime panic when the schema is created.
 
-use anyhow::{Result, anyhow};
+use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 

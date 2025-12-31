@@ -12,6 +12,7 @@
     "repr",
     "Sampleable",
     "sampleables",
+    "Schmitt",
     "Unmute"
   ]
 }

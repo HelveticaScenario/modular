@@ -20,7 +20,7 @@ out.source(osc);
 const UNSAVED_STORAGE_KEY = 'modular_unsaved_buffers';
 
 // New buffer model: distinguish between file-backed and untitled buffers
-type EditorBuffer = 
+type EditorBuffer =
     | { kind: 'file'; relPath: string; content: string; dirty: boolean }
     | { kind: 'untitled'; id: string; content: string; dirty: boolean };
 
@@ -76,29 +76,9 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
         return;
     }
 
-    const totalSamples = data.length;
     const windowSize = 256;
-
-    let startIndex = -1;
-    for (let i = 1; i < totalSamples; i++) {
-        const prev = data[i - 1];
-        const curr = data[i];
-        const crossedZero = prev <= 0 && curr > 0;
-        if (crossedZero) {
-            startIndex = i;
-            break;
-        }
-    }
-
-    if (startIndex === -1) {
-        startIndex = Math.floor(totalSamples / 2);
-    }
-
-    let endExclusive = startIndex + windowSize;
-    if (endExclusive > totalSamples) {
-        endExclusive = totalSamples;
-    }
-    const sampleCount = Math.max(0, endExclusive - startIndex);
+    const startIndex = 0;
+    const sampleCount = Math.min(windowSize, data.length);
 
     if (sampleCount < 2) {
         return;
@@ -137,7 +117,7 @@ const readUnsavedBuffers = (): EditorBuffer[] => {
     try {
         const raw = window.localStorage.getItem(UNSAVED_STORAGE_KEY);
         if (!raw) return [];
-        
+
         const parsed = JSON.parse(raw) as UnsavedBufferSnapshot[];
         return parsed.map((snapshot): EditorBuffer => {
             if (snapshot.kind === 'file' && snapshot.relPath) {
@@ -166,21 +146,23 @@ const saveUnsavedBuffers = (buffers: EditorBuffer[]) => {
 
     try {
         const dirtyBuffers = buffers.filter((b) => b.dirty);
-        const snapshots: UnsavedBufferSnapshot[] = dirtyBuffers.map((buffer) => {
-            if (buffer.kind === 'file') {
+        const snapshots: UnsavedBufferSnapshot[] = dirtyBuffers.map(
+            (buffer) => {
+                if (buffer.kind === 'file') {
+                    return {
+                        kind: 'file',
+                        id: buffer.relPath,
+                        relPath: buffer.relPath,
+                        content: buffer.content,
+                    };
+                }
                 return {
-                    kind: 'file',
-                    id: buffer.relPath,
-                    relPath: buffer.relPath,
+                    kind: 'untitled',
+                    id: buffer.id,
                     content: buffer.content,
                 };
-            }
-            return {
-                kind: 'untitled',
-                id: buffer.id,
-                content: buffer.content,
-            };
-        });
+            },
+        );
 
         window.localStorage.setItem(
             UNSAVED_STORAGE_KEY,
@@ -201,12 +183,14 @@ function App() {
         const saved = readUnsavedBuffers();
         // Always start with one untitled buffer if none exist
         if (saved.length === 0) {
-            return [{
-                kind: 'untitled',
-                id: 'untitled-1',
-                content: DEFAULT_PATCH,
-                dirty: false,
-            }];
+            return [
+                {
+                    kind: 'untitled',
+                    id: 'untitled-1',
+                    content: DEFAULT_PATCH,
+                    dirty: false,
+                },
+            ];
         }
         return saved;
     });
@@ -259,10 +243,11 @@ function App() {
         );
 
         if (dirtyFileBuffers.length > 0) {
-            const fileList = dirtyFileBuffers.map((b) => 
-                b.kind === 'file' ? b.relPath : ''
-            ).filter(Boolean).join(', ');
-            
+            const fileList = dirtyFileBuffers
+                .map((b) => (b.kind === 'file' ? b.relPath : ''))
+                .filter(Boolean)
+                .join(', ');
+
             const shouldSave = window.confirm(
                 `You have unsaved changes in: ${fileList}. Save changes before switching workspace?`,
             );
@@ -435,7 +420,8 @@ function App() {
 
         if (buffer.kind === 'untitled') {
             // Save as...
-            const input = await electronAPI.filesystem.showSaveDialog('untitled.mjs');
+            const input =
+                await electronAPI.filesystem.showSaveDialog('untitled.mjs');
             if (!input) return;
 
             const normalized = normalizeFileName(input);
@@ -490,7 +476,10 @@ function App() {
         const buffer = buffers.find((b) => getBufferId(b) === activeBufferId);
         if (!buffer || buffer.kind !== 'file') return;
 
-        const input = await electronAPI.filesystem.showInputDialog('Rename file', buffer.relPath);
+        const input = await electronAPI.filesystem.showInputDialog(
+            'Rename file',
+            buffer.relPath,
+        );
         if (!input) return;
 
         const normalized = normalizeFileName(input);
@@ -566,7 +555,9 @@ function App() {
             }
 
             setBuffers((prev) => {
-                const filtered = prev.filter((b) => getBufferId(b) !== bufferId);
+                const filtered = prev.filter(
+                    (b) => getBufferId(b) !== bufferId,
+                );
                 if (filtered.length === 0) {
                     // Always keep at least one untitled buffer
                     return [
@@ -624,15 +615,15 @@ function App() {
                     .map((scope, idx) => {
                         const call = scopeCalls[idx];
                         if (!call) return null;
-                        if (scope.type === 'ModuleOutput') {
-                            const { moduleId, portName } = scope;
+                        if (scope.item.type === 'ModuleOutput') {
+                            const { moduleId, portName } = scope.item;
                             return {
                                 key: `:module:${moduleId}:${portName}`,
                                 lineNumber: call.endLine,
                                 file: activeBufferId,
                             };
                         }
-                        const { trackId } = scope;
+                        const { trackId } = scope.item;
                         return {
                             key: `:track:${trackId}`,
                             lineNumber: call.endLine,

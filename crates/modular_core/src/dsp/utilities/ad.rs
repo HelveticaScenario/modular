@@ -1,6 +1,6 @@
 use crate::types::{Clickless, Signal};
 
-use anyhow::{Result, anyhow};
+use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 

@@ -1,5 +1,5 @@
 
-import type { InterpolationCategory, InterpolationType, ModuleSchema, ModuleState, PatchGraph, ScopeItem, TrackKeyframeProxy, TrackProxy } from "@modular/core";
+import type { InterpolationCategory, InterpolationType, ModuleSchema, ModuleState, PatchGraph, Scope, ScopeItem, TrackKeyframeProxy, TrackProxy } from "@modular/core";
 import type { ProcessedModuleSchema } from "./paramsSchema";
 import { processSchemas } from "./paramsSchema";
 
@@ -28,7 +28,7 @@ export class GraphBuilder {
   private counters: Map<string, number> = new Map();
   private schemas: ProcessedModuleSchema[] = [];
   private schemaByName: Map<string, ProcessedModuleSchema> = new Map();
-  private scopes: ScopeItem[] = [];
+  private scopes: Scope[] = [];
 
 
   constructor(schemas: ModuleSchema[]) {
@@ -160,18 +160,23 @@ export class GraphBuilder {
     return track;
   }
 
-  addScope(value: ModuleOutput | ModuleNode | TrackNode, speed: number = 0) {
+  addScope(value: ModuleOutput | ModuleNode | TrackNode, msPerFrame: number = 500, triggerThreshold?: number) {
+    let realTriggerThreshold: number | undefined = triggerThreshold ? (triggerThreshold * 1000) : undefined
+
     if (value instanceof TrackNode) {
-      this.scopes.push({ type: 'Track', trackId: value.id, speed });
+      this.scopes.push({ item: { type: 'Track', trackId: value.id }, msPerFrame, triggerThreshold: realTriggerThreshold });
       return;
     }
 
     const output = value instanceof ModuleNode ? value.o : value;
     this.scopes.push({
-      type: 'ModuleOutput',
-      moduleId: output.moduleId,
-      portName: output.portName,
-      speed,
+      item: {
+        type: 'ModuleOutput',
+        moduleId: output.moduleId,
+        portName: output.portName,
+      },
+      msPerFrame,
+      triggerThreshold: realTriggerThreshold
     });
   }
 }

@@ -393,7 +393,7 @@ pub fn validate_patch(
   // === Scope validation ===
   // Scopes drive audio streaming: they refer either to a module output port
   // or to a track. They must reference existing entities.
-  for scope in &patch.scopes {
+  for scope in patch.scopes.iter().map(|scope| scope.item.clone()) {
     match scope {
       ScopeItem::ModuleOutput {
         module_id,
@@ -435,7 +435,7 @@ pub fn validate_patch(
           });
         }
       }
-      ScopeItem::Track { track_id, .. } => {
+      ScopeItem::Track { track_id } => {
         // Scope target track must exist.
         if !track_ids.contains(track_id.as_str()) {
           errors.push(ValidationError {

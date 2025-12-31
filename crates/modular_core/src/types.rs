@@ -1,5 +1,5 @@
-use anyhow::Result;
 use napi::Env;
+use napi::Result;
 use napi::bindgen_prelude::{FromNapiValue, Object, ToNapiValue};
 use napi_derive::napi;
 use parking_lot::Mutex;
@@ -57,13 +57,13 @@ pub trait Module {
     /// params type.
     ///
     /// This is intended for server-side patch validation before applying the patch.
-    fn validate_params_json(params: &serde_json::Value) -> anyhow::Result<()>;
+    fn validate_params_json(params: &serde_json::Value) -> napi::Result<()>;
 }
 
 /// Function pointer type used to validate a module's `ModuleState.params`.
 ///
 /// The validator should return Ok if deserialization into the module's concrete params type succeeds.
-pub type ParamsValidator = fn(&serde_json::Value) -> anyhow::Result<()>;
+pub type ParamsValidator = fn(&serde_json::Value) -> napi::Result<()>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
@@ -368,7 +368,7 @@ pub struct TrackKeyframe {
 }
 
 impl TryFrom<TrackKeyframeProxy> for TrackKeyframe {
-    fn try_from(proxy: TrackKeyframeProxy) -> Result<Self, serde_json::Error> {
+    fn try_from(proxy: TrackKeyframeProxy) -> std::result::Result<Self, serde_json::Error> {
         Ok(TrackKeyframe {
             id: proxy.id,
             track_id: proxy.track_id,
@@ -887,14 +887,18 @@ pub enum ScopeItem {
     ModuleOutput {
         module_id: String,
         port_name: String,
-        #[serde(default)]
-        speed: u32,
     },
     Track {
         track_id: String,
-        #[serde(default)]
-        speed: u32,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[napi(object)]
+pub struct Scope {
+    pub item: ScopeItem,
+    pub ms_per_frame: u32,
+    pub trigger_threshold: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -905,7 +909,7 @@ pub struct PatchGraph {
     // #[serde(default)]
     pub tracks: Vec<TrackProxy>,
     // #[serde(default)]
-    pub scopes: Vec<ScopeItem>,
+    pub scopes: Vec<Scope>,
 }
 
 pub type SampleableConstructor = Box<dyn Fn(&String, f32) -> Result<Arc<Box<dyn Sampleable>>>>;
