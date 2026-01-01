@@ -17,6 +17,7 @@ use napi_derive::napi;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::OnceLock;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
@@ -27,6 +28,52 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use modular_core::patch::Patch;
 use modular_core::types::{ROOT_OUTPUT_PORT, ScopeItem};
 use std::time::Instant;
+
+fn apply_patch_debug_enabled() -> bool {
+  static ENABLED: OnceLock<bool> = OnceLock::new();
+  *ENABLED.get_or_init(|| {
+    match std::env::var("MODULAR_DEBUG_LOG") {
+      Ok(v) => {
+        let v = v.trim().to_ascii_lowercase();
+        v == "1" || v == "true" || v == "yes" || v == "on"
+      }
+      Err(_) => false,
+    }
+  })
+}
+
+fn format_id_set_sample(set: &HashSet<String>, max: usize) -> String {
+  if set.is_empty() {
+    return "(empty)".to_string();
+  }
+
+  let mut ids: Vec<&String> = set.iter().collect();
+  ids.sort();
+
+  let shown: Vec<&str> = ids
+    .iter()
+    .take(max)
+    .map(|s| s.as_str())
+    .collect();
+
+  if set.len() <= max {
+    format!("{}", shown.join(", "))
+  } else {
+    format!(
+      "{} …(+{})",
+      shown.join(", "),
+      set.len().saturating_sub(max)
+    )
+  }
+}
+
+macro_rules! patch_dbg {
+  ($($arg:tt)*) => {
+    if apply_patch_debug_enabled() {
+      eprintln!($($arg)*);
+    }
+  };
+}
 
 #[napi(object)]
 pub struct ApplyPatchError {
@@ -321,6 +368,11 @@ impl AudioState {
     let module_id_remaps = module_id_remaps.unwrap_or_default();
     if !module_id_remaps.is_empty() {
 
+      patch_dbg!(
+        "[apply_patch] module_id_remaps count={} (current->desired)",
+        module_id_remaps.len()
+      );
+
       // Two-phase rename to support chained remaps in one update.
       // Example: sine-1 -> sine-2 and sine-2 -> sine-3.
       // If we rename sequentially with a naive "collision" check, the first rename would see
@@ -328,21 +380,37 @@ impl AudioState {
       let mut moved: HashMap<String, Arc<Box<dyn modular_core::types::Sampleable>>> =
         HashMap::new();
 
+      let mut remap_skipped_reserved = 0usize;
+      let mut remap_skipped_identity = 0usize;
+      let mut remap_missing_source = 0usize;
+      let mut remap_overwrites = 0usize;
+
       // Phase 1: remove all sources (`from`) we plan to rename.
       for remap in &module_id_remaps {
         // Never touch reserved ids.
         if remap.from == "root" || remap.from == "root_clock" {
+          remap_skipped_reserved += 1;
           continue;
         }
         if remap.to == "root" || remap.to == "root_clock" {
+          remap_skipped_reserved += 1;
           continue;
         }
         if remap.from == remap.to {
+          remap_skipped_identity += 1;
           continue;
         }
 
         if let Some(existing) = patch_lock.sampleables.remove(&remap.from) {
+          patch_dbg!("[apply_patch] remap move {} -> {}", remap.from, remap.to);
           moved.insert(remap.to.clone(), existing);
+        } else {
+          remap_missing_source += 1;
+          patch_dbg!(
+            "[apply_patch] remap source missing (no-op) {} -> {}",
+            remap.from,
+            remap.to
+          );
         }
       }
 
@@ -356,7 +424,10 @@ impl AudioState {
           if to_id == "root" || to_id == "root_clock" {
             continue;
           }
-          patch_lock.sampleables.remove(to_id);
+          if patch_lock.sampleables.remove(to_id).is_some() {
+            remap_overwrites += 1;
+            patch_dbg!("[apply_patch] remap overwrote existing destination id={}", to_id);
+          }
         }
 
         for (to_id, module) in moved {
@@ -365,6 +436,15 @@ impl AudioState {
 
         // Keep message routing in sync with any renames.
         patch_lock.rebuild_message_listeners();
+
+        patch_dbg!(
+          "[apply_patch] remap applied moved={} overwrites={} skipped_reserved={} skipped_identity={} missing_source={}",
+          module_id_remaps.len() - remap_skipped_reserved - remap_skipped_identity,
+          remap_overwrites,
+          remap_skipped_reserved,
+          remap_skipped_identity,
+          remap_missing_source
+        );
       }
     }
     // Build maps for efficient lookup
@@ -372,8 +452,13 @@ impl AudioState {
 
     let current_ids: HashSet<String> = patch_lock.sampleables.keys().cloned().collect();
     let desired_ids: HashSet<String> = desired_modules.keys().cloned().collect();
-    println!("Current IDs: {:?}", current_ids);
-    println!("Desired IDs: {:?}", desired_ids);
+    patch_dbg!(
+      "[apply_patch] modules current={} desired={} current_sample=[{}] desired_sample=[{}]",
+      current_ids.len(),
+      desired_ids.len(),
+      format_id_set_sample(&current_ids, 12),
+      format_id_set_sample(&desired_ids, 12)
+    );
 
     // Find modules to delete (in current but not in desired), excluding root
     let mut to_delete: Vec<String> = current_ids
@@ -381,7 +466,12 @@ impl AudioState {
       .filter(|id| *id != "root" && *id != "root_clock")
       .cloned()
       .collect();
-    println!("Initial to delete: {:?}", to_delete);
+    if apply_patch_debug_enabled() {
+      let mut sample = to_delete.clone();
+      sample.sort();
+      sample.truncate(12);
+      patch_dbg!("[apply_patch] delete candidates={} sample=[{}]", to_delete.len(), sample.join(", "));
+    }
 
     // Find modules where type changed (same ID but different module_type)
     // These need to be deleted and recreated
@@ -400,13 +490,21 @@ impl AudioState {
       }
     }
 
-    println!("To delete: {:?}", to_delete);
+    patch_dbg!("[apply_patch] delete final={} recreate={} ", to_delete.len(), to_recreate.len());
 
     // Find modules to create (in desired but not in current, plus recreated modules)
     let mut to_create: Vec<String> = desired_ids.difference(&current_ids).cloned().collect();
     to_create.extend(to_recreate);
 
-    println!("To create: {:?}", to_create);
+    if apply_patch_debug_enabled() {
+      let mut create_sample = to_create.clone();
+      create_sample.sort();
+      create_sample.truncate(12);
+      patch_dbg!("[apply_patch] create count={} sample=[{}]", to_create.len(), create_sample.join(", "));
+    } else {
+      // Keep a minimal signal for normal operation.
+      // (No stdout spam; only visible when explicitly enabled.)
+    }
 
     // Delete modules
     for id in to_delete {
@@ -458,7 +556,12 @@ impl AudioState {
         .cloned()
         .collect();
 
-      println!("Tracks to delete: {:?}", tracks_to_delete);
+      if apply_patch_debug_enabled() {
+        let mut s = tracks_to_delete.clone();
+        s.sort();
+        s.truncate(12);
+        patch_dbg!("[apply_patch] tracks delete count={} sample=[{}]", tracks_to_delete.len(), s.join(", "));
+      }
 
       for track_id in tracks_to_delete {
         patch_lock.tracks.remove(&track_id);
@@ -471,12 +574,12 @@ impl AudioState {
         match patch_lock.tracks.get(&track.id) {
           Some(existing_track) => {
             // Existing track: clear all keyframes (will re-add in pass 2)
-            println!("Updating track: {}", track.id);
+            patch_dbg!("[apply_patch] tracks update id={}", track.id);
             existing_track.clear_keyframes()
           }
           None => {
             // Create new track shell with a disconnected playhead param
-            println!("Creating track: {}", track.id);
+            patch_dbg!("[apply_patch] tracks create id={}", track.id);
             let default_playhead_param = modular_core::types::Signal::Disconnected;
             let internal_track = Arc::new(modular_core::types::Track::new(
               track.id.clone(),
@@ -518,7 +621,7 @@ impl AudioState {
         .cloned()
         .collect();
 
-      println!("Scopes to remove: {:?}", scopes_to_remove);
+      patch_dbg!("[apply_patch] scopes remove count={}", scopes_to_remove.len());
 
       for scope_item in scopes_to_remove {
         scope_collection.remove(&scope_item);
@@ -531,7 +634,7 @@ impl AudioState {
         .cloned()
         .collect();
 
-      println!("Scopes to add: {:?}", scopes_to_add);
+      patch_dbg!("[apply_patch] scopes add count={}", scopes_to_add.len());
       const SCOPE_SIZE: u32 = 256;
       for scope in scopes_to_add {
         scope_collection.insert(scope.item.clone(), ScopeBuffer::new(&scope, sample_rate));
@@ -550,10 +653,7 @@ impl AudioState {
         }
       }
 
-      println!(
-        "Current scopes after update: {:?}",
-        scope_collection.keys().collect::<Vec<_>>()
-      );
+      patch_dbg!("[apply_patch] scopes active={}", scope_collection.len());
     }
 
     // Update parameters for all desired modules (both new and existing)

@@ -5,14 +5,15 @@
     "description": "My Electron application description",
     "main": ".webpack/main",
     "scripts": {
-        "start": "electron-forge start",
-        "package": "electron-forge package",
-        "make": "electron-forge make",
-        "publish": "electron-forge publish",
-        "test": "ava",
-        "typecheck": "tsc --noEmit",
-        "rebuild": "electron-rebuild -f -w modular-core",
-        "lint": "eslint ."
+        "start": "yarn build-native && electron-forge start",
+        "package": "yarn build-native && electron-forge package",
+        "make": "yarn build-native && electron-forge make",
+        "publish": "yarn build-native && electron-forge publish",
+        "test": "yarn build-native && ava",
+        "typecheck": "yarn build-native && tsc --noEmit",
+        "rebuild": "yarn build-native && electron-rebuild -f -w modular-core",
+        "lint": "eslint .",
+        "build-native": "cd crates/modular && yarn build"
     },
     "keywords": [],
     "author": {

@@ -43,9 +43,9 @@ let currentWorkspaceRoot: string | null = null;
 let lastAppliedPatchGraph: PatchGraph | null = null;
 let lastAppliedSourceId: string | null = null;
 
-const PATCH_REMAP_DEBUG =
-  process.env.MODULAR_PATCH_REMAP_DEBUG === '1' ||
-  process.env.MODULAR_PATCH_REMAP_DEBUG === 'true';
+const DEBUG_LOG =
+  process.env.MODULAR_DEBUG_LOG === '1' ||
+  process.env.MODULAR_DEBUG_LOG === 'true';
 
 const PATCH_REMAP_THRESHOLD = process.env.MODULAR_PATCH_REMAP_THRESHOLD
   ? Number(process.env.MODULAR_PATCH_REMAP_THRESHOLD)
@@ -54,7 +54,7 @@ const PATCH_REMAP_MARGIN = process.env.MODULAR_PATCH_REMAP_MARGIN
   ? Number(process.env.MODULAR_PATCH_REMAP_MARGIN)
   : undefined;
 
-console.log('Patch remap debug mode:', PATCH_REMAP_DEBUG);
+console.log('Patch remap debug mode:', DEBUG_LOG);
 
 /**
  * Validate that a path is within the workspace root
@@ -170,7 +170,7 @@ registerIPCHandler('SYNTH_UPDATE_PATCH', (patch, sourceId) => {
   // Requirement: assume a full change when a different file/buffer is evaluated.
   const shouldReconcile = !!sourceId && lastAppliedSourceId === sourceId;
 
-  if (PATCH_REMAP_DEBUG) {
+  if (DEBUG_LOG) {
     if (!sourceId) {
       console.log('[patch-remap] no sourceId; reconciliation disabled');
     } else if (!shouldReconcile) {
@@ -188,11 +188,11 @@ registerIPCHandler('SYNTH_UPDATE_PATCH', (patch, sourceId) => {
     {
       matchThreshold: PATCH_REMAP_THRESHOLD,
       ambiguityMargin: PATCH_REMAP_MARGIN,
-      debugLog: PATCH_REMAP_DEBUG ? (message) => console.log(message) : undefined,
+      debugLog: DEBUG_LOG ? (message) => console.log(message) : undefined,
     },
   );
 
-  if (PATCH_REMAP_DEBUG) {
+  if (DEBUG_LOG) {
     const remapCount = Object.keys(moduleIdRemap).length;
     const thresholdInfo =
       PATCH_REMAP_THRESHOLD !== undefined
