@@ -920,14 +920,14 @@ impl FinalStateProcessor {
 
     match self.volume_change {
       VolumeChange::Decrease => {
-        self.attenuation_factor *= 0.9;
-        if self.attenuation_factor < 0.01 {
+        self.attenuation_factor *= 0.999;
+        if self.attenuation_factor < 0.0001 {
           self.attenuation_factor = 0.0;
           self.volume_change = VolumeChange::None;
         }
       }
       VolumeChange::Increase => {
-        self.attenuation_factor *= 1.1;
+        self.attenuation_factor *= 1.001;
         if self.attenuation_factor > 1.0 {
           self.attenuation_factor = 1.0;
           self.volume_change = VolumeChange::None;
