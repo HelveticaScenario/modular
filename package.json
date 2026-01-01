@@ -9,6 +9,7 @@
         "package": "electron-forge package",
         "make": "electron-forge make",
         "publish": "electron-forge publish",
+        "test": "ava",
         "typecheck": "tsc --noEmit",
         "rebuild": "electron-rebuild -f -w modular-core",
         "lint": "eslint ."
@@ -29,12 +30,14 @@
         "@electron-forge/plugin-fuses": "^7.10.2",
         "@electron-forge/plugin-webpack": "^7.10.2",
         "@electron/fuses": "^1.8.0",
+        "@oxc-node/core": "^0.0.35",
         "@types/electron-squirrel-startup": "^1.0.2",
         "@types/react": "^19.2.7",
         "@types/react-dom": "^19.2.3",
         "@typescript-eslint/eslint-plugin": "^5.62.0",
         "@typescript-eslint/parser": "^5.62.0",
         "@vercel/webpack-asset-relocator-loader": "^1.10.0",
+        "ava": "^6.4.1",
         "css-loader": "^6.11.0",
         "electron": "39.2.7",
         "eslint": "^8.57.1",
@@ -60,5 +63,22 @@
     },
     "workspaces": [
         "crates/*"
-    ]
+    ],
+    "ava": {
+        "files": [
+            "src/__tests__/**/*.spec.ts"
+        ],
+        "extensions": {
+            "ts": "commonjs"
+        },
+        "timeout": "2m",
+        "workerThreads": false,
+        "environmentVariables": {
+            "OXC_TSCONFIG_PATH": "./tsconfig.json"
+        },
+        "nodeArguments": [
+            "--import",
+            "@oxc-node/core/register"
+        ]
+    }
 }

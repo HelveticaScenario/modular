@@ -51,6 +51,11 @@ export type InterpolationType =
   | { type: 'Circ', category: InterpolationCategory }
   | { type: 'Bounce', category: InterpolationCategory }
 
+export interface ModuleIdRemap {
+  from: string
+  to: string
+}
+
 export interface ModuleSchema {
   name: string
   description: string
@@ -61,6 +66,7 @@ export interface ModuleSchema {
 export interface ModuleState {
   id: string
   moduleType: string
+  idIsExplicit?: boolean
   params: any
 }
 
@@ -72,6 +78,7 @@ export interface OutputSchema {
 
 export interface PatchGraph {
   modules: Array<ModuleState>
+  moduleIdRemaps?: Array<ModuleIdRemap>
   tracks: Array<TrackProxy>
   scopes: Array<Scope>
 }

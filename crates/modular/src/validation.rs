@@ -532,10 +532,12 @@ mod tests {
       modules: vec![ModuleState {
         id: "sine-1".to_string(),
         module_type: "sine-oscillator".to_string(),
+        id_is_explicit: None,
         params: json!({
             "freq": {"type": "volts", "value": 4.0}
         }),
       }],
+      module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
     };
@@ -550,8 +552,10 @@ mod tests {
       modules: vec![ModuleState {
         id: "foo-1".to_string(),
         module_type: "unknown-module".to_string(),
+        id_is_explicit: None,
         params: json!({}),
       }],
+      module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
     };
@@ -570,10 +574,12 @@ mod tests {
       modules: vec![ModuleState {
         id: "sine-1".to_string(),
         module_type: "sine-oscillator".to_string(),
+        id_is_explicit: None,
         params: json!({
             "unknown_param": {"type": "volts", "value": 1.0}
         }),
       }],
+      module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
     };
@@ -592,10 +598,12 @@ mod tests {
       modules: vec![ModuleState {
         id: "root".to_string(),
         module_type: "signal".to_string(),
+        id_is_explicit: None,
         params: json!({
             "source": {"type": "cable", "module": "nonexistent", "port": "output"}
         }),
       }],
+      module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
     };
@@ -615,6 +623,7 @@ mod tests {
         ModuleState {
           id: "sine-1".to_string(),
           module_type: "sine-oscillator".to_string(),
+          id_is_explicit: None,
           params: json!({
               "freq": {"type": "volts", "value": 4.0}
           }),
@@ -622,11 +631,13 @@ mod tests {
         ModuleState {
           id: "root".to_string(),
           module_type: "signal".to_string(),
+          id_is_explicit: None,
           params: json!({
               "source": {"type": "cable", "module": "sine-1", "port": "invalid_port"}
           }),
         },
       ],
+      module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
     };
@@ -649,12 +660,14 @@ mod tests {
       modules: vec![ModuleState {
         id: "nested-1".to_string(),
         module_type: "nested-signal".to_string(),
+        id_is_explicit: None,
         params: json!({
             "settings": {
                 "source": {"type": "cable", "module": "nonexistent", "port": "output"}
             }
         }),
       }],
+      module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
     };
@@ -677,6 +690,7 @@ mod tests {
         ModuleState {
           id: "sine-1".to_string(),
           module_type: "sine-oscillator".to_string(),
+          id_is_explicit: None,
           params: json!({
               "freq": {"type": "volts", "value": 4.0}
           }),
@@ -684,6 +698,7 @@ mod tests {
         ModuleState {
           id: "nested-1".to_string(),
           module_type: "nested-signal".to_string(),
+          id_is_explicit: None,
           params: json!({
               "settings": {
                   "source": {"type": "cable", "module": "sine-1", "port": "output"}
@@ -691,6 +706,7 @@ mod tests {
           }),
         },
       ],
+      module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
     };
@@ -706,6 +722,7 @@ mod tests {
         ModuleState {
           id: "sine-1".to_string(),
           module_type: "sine-oscillator".to_string(),
+          id_is_explicit: None,
           params: json!({
               "freq": {"type": "volts", "value": 4.0}
           }),
@@ -713,11 +730,13 @@ mod tests {
         ModuleState {
           id: "signal-1".to_string(),
           module_type: "signal".to_string(),
+          id_is_explicit: None,
           params: json!({
               "source": {"type": "cable", "module": "sine-1", "port": "output"}
           }),
         },
       ],
+      module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
     };
@@ -732,11 +751,13 @@ mod tests {
       modules: vec![ModuleState {
         id: "sine-1".to_string(),
         module_type: "sine-oscillator".to_string(),
+        id_is_explicit: None,
         params: json!({
             "unknown1": {"type": "volts", "value": 1.0},
             "unknown2": {"type": "volts", "value": 2.0}
         }),
       }],
+      module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
     };
@@ -752,6 +773,7 @@ mod tests {
     let schemas = create_test_schemas();
     let patch = PatchGraph {
       modules: Vec::new(),
+      module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
     };
@@ -770,11 +792,13 @@ mod tests {
       modules: vec![ModuleState {
         id: "noise-1".to_string(),
         module_type: "noise".to_string(),
+        id_is_explicit: None,
         params: json!({
             "color": "White",
             "gain": {"type": "cable", "module": "m1"}
         }),
       }],
+      module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
     };
@@ -800,8 +824,10 @@ mod tests {
       modules: vec![ModuleState {
         id: "noise-1".to_string(),
         module_type: "noise".to_string(),
+        id_is_explicit: None,
         params: serde_json::Value::Null,
       }],
+      module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
     };

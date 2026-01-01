@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron';
-import { getSchemas, Synthesizer } from '@modular/core';
+import { getSchemas, PatchGraph, Synthesizer } from '@modular/core';
 import { IPC_CHANNELS, IPCHandlers, IPCRequest, IPCResponse, Promisify, FileTreeEntry, FSOperationResult, WorkspaceFolder } from './ipcTypes';
+import { reconcilePatchBySimilarity } from './patchSimilarityRemap';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -37,6 +38,23 @@ const synth = new Synthesizer();
 
 // Workspace root state
 let currentWorkspaceRoot: string | null = null;
+
+// Patch reconciliation state (reset when a different file/buffer is evaluated)
+let lastAppliedPatchGraph: PatchGraph | null = null;
+let lastAppliedSourceId: string | null = null;
+
+const PATCH_REMAP_DEBUG =
+  process.env.MODULAR_PATCH_REMAP_DEBUG === '1' ||
+  process.env.MODULAR_PATCH_REMAP_DEBUG === 'true';
+
+const PATCH_REMAP_THRESHOLD = process.env.MODULAR_PATCH_REMAP_THRESHOLD
+  ? Number(process.env.MODULAR_PATCH_REMAP_THRESHOLD)
+  : undefined;
+const PATCH_REMAP_MARGIN = process.env.MODULAR_PATCH_REMAP_MARGIN
+  ? Number(process.env.MODULAR_PATCH_REMAP_MARGIN)
+  : undefined;
+
+console.log('Patch remap debug mode:', PATCH_REMAP_DEBUG);
 
 /**
  * Validate that a path is within the workspace root
@@ -148,8 +166,57 @@ registerIPCHandler('SYNTH_GET_SCOPES', () => {
   return synth.getScopes();
 });
 
-registerIPCHandler('SYNTH_UPDATE_PATCH', (patch) => {
-  return synth.updatePatch(patch);
+registerIPCHandler('SYNTH_UPDATE_PATCH', (patch, sourceId) => {
+  // Requirement: assume a full change when a different file/buffer is evaluated.
+  const shouldReconcile = !!sourceId && lastAppliedSourceId === sourceId;
+
+  if (PATCH_REMAP_DEBUG) {
+    if (!sourceId) {
+      console.log('[patch-remap] no sourceId; reconciliation disabled');
+    } else if (!shouldReconcile) {
+      console.log(
+        `[patch-remap] source changed (${lastAppliedSourceId ?? 'none'} -> ${sourceId}); reconciliation disabled`,
+      );
+    } else {
+      console.log(`[patch-remap] reconciling for sourceId=${sourceId}`);
+    }
+  }
+
+  const { moduleIdRemap } = reconcilePatchBySimilarity(
+    patch,
+    shouldReconcile ? lastAppliedPatchGraph : null,
+    {
+      matchThreshold: PATCH_REMAP_THRESHOLD,
+      ambiguityMargin: PATCH_REMAP_MARGIN,
+      debugLog: PATCH_REMAP_DEBUG ? (message) => console.log(message) : undefined,
+    },
+  );
+
+  if (PATCH_REMAP_DEBUG) {
+    const remapCount = Object.keys(moduleIdRemap).length;
+    const thresholdInfo =
+      PATCH_REMAP_THRESHOLD !== undefined
+        ? PATCH_REMAP_THRESHOLD.toFixed(4)
+        : 'default';
+    const marginInfo =
+      PATCH_REMAP_MARGIN !== undefined ? PATCH_REMAP_MARGIN.toFixed(4) : 'default';
+    console.log(
+      `[patch-remap] summary shouldReconcile=${shouldReconcile} remaps=${remapCount} threshold=${thresholdInfo} margin=${marginInfo}`,
+    );
+  }
+
+  // Send remap hints along with the desired patch; Rust will use them to
+  // preserve module instances while keeping the desired ids.
+  patch.moduleIdRemaps = Object.entries(moduleIdRemap).map(([from, to]) => ({ from, to }));
+
+  const errors = synth.updatePatch(patch);
+
+  if (errors.length === 0) {
+    lastAppliedPatchGraph = patch;
+    lastAppliedSourceId = sourceId ?? null;
+  }
+
+  return { errors, appliedPatch: patch, moduleIdRemap };
 });
 
 registerIPCHandler('SYNTH_START_RECORDING', (path) => {

@@ -596,7 +596,12 @@ function App() {
                 const schemasValue = schemaRef.current;
                 const patchCodeValue = patchCodeRef.current;
                 const patch = executePatchScript(patchCodeValue, schemasValue);
-                const errors = await electronAPI.synthesizer.updatePatch(patch);
+                patch.moduleIdRemaps = [];
+                const { errors, appliedPatch } =
+                    await electronAPI.synthesizer.updatePatch(
+                        patch,
+                        activeBufferId,
+                    );
                 if (errors.length > 0) {
                     setValidationErrors(errors.flatMap((e) => e.errors || []));
                     setError(

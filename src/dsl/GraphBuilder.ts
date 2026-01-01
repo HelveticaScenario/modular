@@ -55,6 +55,10 @@ export class GraphBuilder {
   addModule(moduleType: string, explicitId?: string): ModuleNode {
     const id = this.generateId(moduleType, explicitId);
 
+    if (this.modules.has(id)) {
+      throw new Error(`Duplicate module id: ${id}`);
+    }
+
     // Check if module type exists in schemas
     const schema = this.schemaByName.get(moduleType);
     if (!schema) {
@@ -76,6 +80,7 @@ export class GraphBuilder {
     const moduleState: ModuleState = {
       id,
       moduleType,
+      idIsExplicit: Boolean(explicitId),
       params,
     };
 
@@ -149,7 +154,13 @@ export class GraphBuilder {
   }
 
   addTrack(explicitId?: string) {
-    const track = new TrackNode(this, this.generateId("track", explicitId));
+    const id = this.generateId("track", explicitId);
+
+    if (this.tracks.has(id)) {
+      throw new Error(`Duplicate track id: ${id}`);
+    }
+
+    const track = new TrackNode(this, id);
     this.tracks.set(track.id, {
       id: track.id,
       playhead: 0,

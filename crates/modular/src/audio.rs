@@ -307,11 +307,66 @@ impl AudioState {
   pub fn apply_patch(&self, desired_graph: PatchGraph, sample_rate: f32) -> Result<()> {
     let PatchGraph {
       modules,
+      module_id_remaps,
       scopes,
       tracks,
     } = desired_graph;
 
     let mut patch_lock = self.patch.lock();
+
+    // If the JS main process provided remap hints, rename existing module ids
+    // (current id `from` -> desired id `to`) before computing the patch diff.
+    // This preserves module instances while keeping the patch state aligned
+    // with the desired patch's ids.
+    let module_id_remaps = module_id_remaps.unwrap_or_default();
+    if !module_id_remaps.is_empty() {
+
+      // Two-phase rename to support chained remaps in one update.
+      // Example: sine-1 -> sine-2 and sine-2 -> sine-3.
+      // If we rename sequentially with a naive "collision" check, the first rename would see
+      // sine-2 already exists and incorrectly skip.
+      let mut moved: HashMap<String, Arc<Box<dyn modular_core::types::Sampleable>>> =
+        HashMap::new();
+
+      // Phase 1: remove all sources (`from`) we plan to rename.
+      for remap in &module_id_remaps {
+        // Never touch reserved ids.
+        if remap.from == "root" || remap.from == "root_clock" {
+          continue;
+        }
+        if remap.to == "root" || remap.to == "root_clock" {
+          continue;
+        }
+        if remap.from == remap.to {
+          continue;
+        }
+
+        if let Some(existing) = patch_lock.sampleables.remove(&remap.from) {
+          moved.insert(remap.to.clone(), existing);
+        }
+      }
+
+      // Phase 2: insert under destination (`to`) ids.
+      // IMPORTANT: a remap is authoritative about which instance should live at `to`.
+      // This must support "shift down" cases like:
+      //   sine-2 -> sine-1, sine-3 -> sine-2 (old sine-1 is intentionally dropped)
+      // So we *remove any existing `to`* first (unless reserved), then insert.
+      if moved.len() != 0 {
+        for to_id in moved.keys() {
+          if to_id == "root" || to_id == "root_clock" {
+            continue;
+          }
+          patch_lock.sampleables.remove(to_id);
+        }
+
+        for (to_id, module) in moved {
+          patch_lock.sampleables.insert(to_id, module);
+        }
+
+        // Keep message routing in sync with any renames.
+        patch_lock.rebuild_message_listeners();
+      }
+    }
     // Build maps for efficient lookup
     let desired_modules: HashMap<String, _> = modules.iter().map(|m| (m.id.clone(), m)).collect();
 
@@ -801,7 +856,9 @@ impl FinalStateProcessor {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use modular_core::types::{ModuleIdRemap, ModuleState};
   use parking_lot::Mutex;
+  use serde_json::json;
 
   // #[test]
   // fn test_audio_subscription() {
@@ -837,10 +894,264 @@ mod tests {
     let patch = Arc::new(Mutex::new(Patch::new(HashMap::new(), HashMap::new())));
     let state = AudioState::new(patch, 48000.0, 2);
 
-    assert!(!state.is_stopped());
-    state.set_stopped(true);
+    // Initially stopped
     assert!(state.is_stopped());
     state.set_stopped(false);
     assert!(!state.is_stopped());
+    state.set_stopped(true);
+    assert!(state.is_stopped());
+  }
+
+  #[test]
+  fn test_apply_patch_module_id_remaps_reuse_instance() {
+    let patch = Arc::new(Mutex::new(Patch::new(HashMap::new(), HashMap::new())));
+    let state = AudioState::new(patch.clone(), 48000.0, 2);
+
+    state
+      .apply_patch(
+        PatchGraph {
+          modules: vec![ModuleState {
+            id: "sine-1".to_string(),
+            module_type: "sine".to_string(),
+            id_is_explicit: None,
+            params: json!({}),
+          }],
+          module_id_remaps: None,
+          tracks: vec![],
+          scopes: vec![],
+        },
+        48000.0,
+      )
+      .unwrap();
+
+    let ptr_before = {
+      let patch_lock = patch.lock();
+      let module = patch_lock.sampleables.get("sine-1").unwrap();
+      Arc::as_ptr(module) as usize
+    };
+
+    state
+      .apply_patch(
+        PatchGraph {
+          modules: vec![ModuleState {
+            id: "sine-2".to_string(),
+            module_type: "sine".to_string(),
+            id_is_explicit: None,
+            params: json!({}),
+          }],
+          module_id_remaps: Some(vec![ModuleIdRemap {
+            from: "sine-1".to_string(),
+            to: "sine-2".to_string(),
+          }]),
+          tracks: vec![],
+          scopes: vec![],
+        },
+        48000.0,
+      )
+      .unwrap();
+
+    let (ptr_after, has_old, has_new) = {
+      let patch_lock = patch.lock();
+      let has_old = patch_lock.sampleables.contains_key("sine-1");
+      let has_new = patch_lock.sampleables.contains_key("sine-2");
+      let module = patch_lock.sampleables.get("sine-2").unwrap();
+      (Arc::as_ptr(module) as usize, has_old, has_new)
+    };
+
+    assert!(!has_old);
+    assert!(has_new);
+    assert_eq!(ptr_before, ptr_after);
+  }
+
+  #[test]
+  fn test_apply_patch_module_id_remaps_chain_reuse_instances() {
+    let patch = Arc::new(Mutex::new(Patch::new(HashMap::new(), HashMap::new())));
+    let state = AudioState::new(patch.clone(), 48000.0, 2);
+
+    state
+      .apply_patch(
+        PatchGraph {
+          modules: vec![
+            ModuleState {
+              id: "sine-1".to_string(),
+              module_type: "sine".to_string(),
+              id_is_explicit: None,
+              params: json!({}),
+            },
+            ModuleState {
+              id: "sine-2".to_string(),
+              module_type: "sine".to_string(),
+              id_is_explicit: None,
+              params: json!({}),
+            },
+          ],
+          module_id_remaps: None,
+          tracks: vec![],
+          scopes: vec![],
+        },
+        48000.0,
+      )
+      .unwrap();
+
+    let (ptr_1_before, ptr_2_before) = {
+      let patch_lock = patch.lock();
+      let m1 = patch_lock.sampleables.get("sine-1").unwrap();
+      let m2 = patch_lock.sampleables.get("sine-2").unwrap();
+      (Arc::as_ptr(m1) as usize, Arc::as_ptr(m2) as usize)
+    };
+
+    // Desired ids shift up: sine-2 should reuse old sine-1, sine-3 should reuse old sine-2.
+    state
+      .apply_patch(
+        PatchGraph {
+          modules: vec![
+            ModuleState {
+              id: "sine-2".to_string(),
+              module_type: "sine".to_string(),
+              id_is_explicit: None,
+              params: json!({}),
+            },
+            ModuleState {
+              id: "sine-3".to_string(),
+              module_type: "sine".to_string(),
+              id_is_explicit: None,
+              params: json!({}),
+            },
+          ],
+          module_id_remaps: Some(vec![
+            ModuleIdRemap {
+              from: "sine-1".to_string(),
+              to: "sine-2".to_string(),
+            },
+            ModuleIdRemap {
+              from: "sine-2".to_string(),
+              to: "sine-3".to_string(),
+            },
+          ]),
+          tracks: vec![],
+          scopes: vec![],
+        },
+        48000.0,
+      )
+      .unwrap();
+
+    let (ptr_2_after, ptr_3_after, has_1, has_2, has_3) = {
+      let patch_lock = patch.lock();
+      let has_1 = patch_lock.sampleables.contains_key("sine-1");
+      let has_2 = patch_lock.sampleables.contains_key("sine-2");
+      let has_3 = patch_lock.sampleables.contains_key("sine-3");
+      let m2 = patch_lock.sampleables.get("sine-2").unwrap();
+      let m3 = patch_lock.sampleables.get("sine-3").unwrap();
+      (Arc::as_ptr(m2) as usize, Arc::as_ptr(m3) as usize, has_1, has_2, has_3)
+    };
+
+    assert!(!has_1);
+    assert!(has_2);
+    assert!(has_3);
+    assert_eq!(ptr_1_before, ptr_2_after);
+    assert_eq!(ptr_2_before, ptr_3_after);
+  }
+
+  #[test]
+  fn test_apply_patch_module_id_remaps_shift_down_drops_destination_instance() {
+    let patch = Arc::new(Mutex::new(Patch::new(HashMap::new(), HashMap::new())));
+    let state = AudioState::new(patch.clone(), 48000.0, 2);
+
+    state
+      .apply_patch(
+        PatchGraph {
+          modules: vec![
+            ModuleState {
+              id: "sine-1".to_string(),
+              module_type: "sine".to_string(),
+              id_is_explicit: None,
+              params: json!({}),
+            },
+            ModuleState {
+              id: "sine-2".to_string(),
+              module_type: "sine".to_string(),
+              id_is_explicit: None,
+              params: json!({}),
+            },
+            ModuleState {
+              id: "sine-3".to_string(),
+              module_type: "sine".to_string(),
+              id_is_explicit: None,
+              params: json!({}),
+            },
+          ],
+          module_id_remaps: None,
+          tracks: vec![],
+          scopes: vec![],
+        },
+        48000.0,
+      )
+      .unwrap();
+
+    let (ptr_1_before, ptr_2_before, ptr_3_before) = {
+      let patch_lock = patch.lock();
+      let m1 = patch_lock.sampleables.get("sine-1").unwrap();
+      let m2 = patch_lock.sampleables.get("sine-2").unwrap();
+      let m3 = patch_lock.sampleables.get("sine-3").unwrap();
+      (
+        Arc::as_ptr(m1) as usize,
+        Arc::as_ptr(m2) as usize,
+        Arc::as_ptr(m3) as usize,
+      )
+    };
+
+    // Desired ids shift down: sine-1 should reuse old sine-2, sine-2 should reuse old sine-3.
+    // Old sine-1 is intentionally dropped.
+    state
+      .apply_patch(
+        PatchGraph {
+          modules: vec![
+            ModuleState {
+              id: "sine-1".to_string(),
+              module_type: "sine".to_string(),
+              id_is_explicit: None,
+              params: json!({}),
+            },
+            ModuleState {
+              id: "sine-2".to_string(),
+              module_type: "sine".to_string(),
+              id_is_explicit: None,
+              params: json!({}),
+            },
+          ],
+          module_id_remaps: Some(vec![
+            ModuleIdRemap {
+              from: "sine-2".to_string(),
+              to: "sine-1".to_string(),
+            },
+            ModuleIdRemap {
+              from: "sine-3".to_string(),
+              to: "sine-2".to_string(),
+            },
+          ]),
+          tracks: vec![],
+          scopes: vec![],
+        },
+        48000.0,
+      )
+      .unwrap();
+
+    let (ptr_1_after, ptr_2_after, has_1, has_2, has_3) = {
+      let patch_lock = patch.lock();
+      let has_1 = patch_lock.sampleables.contains_key("sine-1");
+      let has_2 = patch_lock.sampleables.contains_key("sine-2");
+      let has_3 = patch_lock.sampleables.contains_key("sine-3");
+      let m1 = patch_lock.sampleables.get("sine-1").unwrap();
+      let m2 = patch_lock.sampleables.get("sine-2").unwrap();
+      (Arc::as_ptr(m1) as usize, Arc::as_ptr(m2) as usize, has_1, has_2, has_3)
+    };
+
+    assert!(has_1);
+    assert!(has_2);
+    assert!(!has_3);
+    assert_eq!(ptr_2_before, ptr_1_after);
+    assert_eq!(ptr_3_before, ptr_2_after);
+    // And importantly, old sine-1 instance did NOT survive at sine-1.
+    assert_ne!(ptr_1_before, ptr_1_after);
   }
 }

@@ -589,7 +589,7 @@ impl Connect for InnerTrack {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[napi(object)]
 pub struct TrackProxy {
@@ -866,12 +866,13 @@ pub struct ModuleSchema {
     pub outputs: Vec<OutputSchema>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[napi(object)]
 pub struct ModuleState {
     pub id: String,
     pub module_type: String,
+    pub id_is_explicit: Option<bool>,
     // #[serde(default)]
     pub params: serde_json::Value,
 }
@@ -906,10 +907,19 @@ pub struct Scope {
 #[napi(object)]
 pub struct PatchGraph {
     pub modules: Vec<ModuleState>,
+    pub module_id_remaps: Option<Vec<ModuleIdRemap>>,
     // #[serde(default)]
     pub tracks: Vec<TrackProxy>,
     // #[serde(default)]
     pub scopes: Vec<Scope>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[napi(object)]
+pub struct ModuleIdRemap {
+    pub from: String,
+    pub to: String,
 }
 
 pub type SampleableConstructor = Box<dyn Fn(&String, f32) -> Result<Arc<Box<dyn Sampleable>>>>;

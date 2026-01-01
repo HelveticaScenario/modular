@@ -15,6 +15,14 @@ import type {
     Synthesizer
 } from '@modular/core';
 
+export type { PatchGraph, ApplyPatchError };
+
+export interface UpdatePatchResult {
+    errors: ApplyPatchError[];
+    appliedPatch: PatchGraph;
+    moduleIdRemap: Record<string, string>;
+}
+
 /**
  * File system types
  */
@@ -81,7 +89,7 @@ export interface IPCHandlers {
 
     [IPC_CHANNELS.SYNTH_GET_SCOPES]: typeof Synthesizer.prototype.getScopes;
 
-    [IPC_CHANNELS.SYNTH_UPDATE_PATCH]: typeof Synthesizer.prototype.updatePatch;
+    [IPC_CHANNELS.SYNTH_UPDATE_PATCH]: (patch: PatchGraph, sourceId?: string) => UpdatePatchResult;
 
     [IPC_CHANNELS.SYNTH_START_RECORDING]: typeof Synthesizer.prototype.startRecording;
 
