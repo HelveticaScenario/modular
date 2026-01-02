@@ -193,7 +193,7 @@ pub enum SchmittState {
 /// Reusable Schmitt trigger with hysteresis
 #[derive(Debug, Clone, Copy)]
 pub struct SchmittTrigger {
-    state: SchmittState,
+    pub state: SchmittState,
     low_threshold: f32,
     high_threshold: f32,
 }
@@ -209,18 +209,12 @@ impl SchmittTrigger {
     }
 
     /// Process a sample through the Schmitt trigger
-    /// Returns true if output is high, false if low
-    pub fn process(&mut self, input: f32) -> SchmittState {
-        // Ensure high threshold is above low threshold
-        let (low, high) = if self.high_threshold > self.low_threshold {
-            (self.low_threshold, self.high_threshold)
-        } else {
-            (self.high_threshold, self.low_threshold)
-        };
+    /// Returns true if it toggled from low to high
+    pub fn process(&mut self, input: f32) -> bool {
         match self.state {
             SchmittState::Uninitialized => {
                 // Initialize state based on input
-                if input >= high {
+                if input >= self.high_threshold {
                     self.state = SchmittState::High;
                 } else {
                     self.state = SchmittState::Low;
@@ -228,19 +222,20 @@ impl SchmittTrigger {
             }
             SchmittState::High => {
                 // Currently high - check if we should go low
-                if input < low {
+                if input < self.low_threshold {
                     self.state = SchmittState::Low;
                 }
             }
             SchmittState::Low => {
                 // Currently low - check if we should go high
-                if input > high {
+                if input > self.high_threshold {
                     self.state = SchmittState::High;
+                    return true;
                 }
             }
         }
 
-        self.state
+        false
     }
 
     /// Update thresholds

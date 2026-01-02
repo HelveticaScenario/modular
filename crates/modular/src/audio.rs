@@ -17,11 +17,11 @@ use napi_derive::napi;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::sync::OnceLock;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -31,14 +31,12 @@ use std::time::Instant;
 
 fn apply_patch_debug_enabled() -> bool {
   static ENABLED: OnceLock<bool> = OnceLock::new();
-  *ENABLED.get_or_init(|| {
-    match std::env::var("MODULAR_DEBUG_LOG") {
-      Ok(v) => {
-        let v = v.trim().to_ascii_lowercase();
-        v == "1" || v == "true" || v == "yes" || v == "on"
-      }
-      Err(_) => false,
+  *ENABLED.get_or_init(|| match std::env::var("MODULAR_DEBUG_LOG") {
+    Ok(v) => {
+      let v = v.trim().to_ascii_lowercase();
+      v == "1" || v == "true" || v == "yes" || v == "on"
     }
+    Err(_) => false,
   })
 }
 
@@ -50,20 +48,12 @@ fn format_id_set_sample(set: &HashSet<String>, max: usize) -> String {
   let mut ids: Vec<&String> = set.iter().collect();
   ids.sort();
 
-  let shown: Vec<&str> = ids
-    .iter()
-    .take(max)
-    .map(|s| s.as_str())
-    .collect();
+  let shown: Vec<&str> = ids.iter().take(max).map(|s| s.as_str()).collect();
 
   if set.len() <= max {
     format!("{}", shown.join(", "))
   } else {
-    format!(
-      "{} …(+{})",
-      shown.join(", "),
-      set.len().saturating_sub(max)
-    )
+    format!("{} …(+{})", shown.join(", "), set.len().saturating_sub(max))
   }
 }
 
@@ -89,65 +79,17 @@ use crate::validation::validate_patch;
 /// This factor brings the output into a reasonable range for audio output.
 const AUDIO_OUTPUT_ATTENUATION: f32 = 0.2;
 
-/// Audio subscription for streaming samples to clients
-#[derive(Clone, Debug)]
-pub struct RingBuffer {
-  pub buffer: Vec<f32>,
-  capacity: usize,
-  index: usize,
-}
+const SCOPE_CAPACITY: u32 = 1024;
 
-impl RingBuffer {
-  pub fn new(capacity: usize) -> Self {
-    Self {
-      buffer: Vec::with_capacity(capacity),
-      capacity,
-      index: 0,
-    }
-  }
-
-  pub fn push(&mut self, value: f32) {
-    if self.buffer.len() < self.capacity {
-      self.buffer.push(value);
-    } else {
-      self.buffer[self.index] = value;
-    }
-    self.index = (self.index + 1) % self.capacity;
-  }
-
-  pub fn to_vec(&self) -> Vec<f32> {
-    if self.buffer.is_empty() {
-      return Vec::new();
-    }
-
-    let len = self.buffer.len();
-    let mut vec = Vec::with_capacity(len);
-
-    // Optimize by splitting into two slices to avoid modulo on every iteration
-    if len == self.capacity {
-      // Buffer is full and has wrapped - copy from index to end, then start to index
-      vec.extend_from_slice(&self.buffer[self.index..]);
-      vec.extend_from_slice(&self.buffer[..self.index]);
-    } else {
-      // Buffer not yet full - copy everything in order
-      vec.extend_from_slice(&self.buffer);
-    }
-
-    vec
-  }
-}
-
-/// Wrapper for a scope's ring buffer with sample rate control
+// Adapted from https://github.com/VCVRack/Fundamental/blob/e819498fd388755efcb876b37d1e33fddf4a29ac/src/Scope.cpp
 pub struct ScopeBuffer {
-  pub buffer: RingBuffer,
   sample_counter: u32,
   skip_rate: u32,
   trigger_threshold: Option<f32>,
   trigger: SchmittTrigger,
-  holding: bool,
+  buffer: [f32; SCOPE_CAPACITY as usize],
+  buffer_idx: usize,
 }
-
-const SCOPE_CAPACITY: u32 = 256;
 
 fn ms_to_samples(ms: u32, sample_rate: f32) -> u32 {
   ((ms as f32 / 1000.0) * sample_rate) as u32
@@ -161,18 +103,18 @@ fn calculate_skip_rate(total_samples: u32) -> u32 {
 impl ScopeBuffer {
   pub fn new(scope: &Scope, sample_rate: f32) -> Self {
     let mut sb = Self {
-      buffer: RingBuffer::new(SCOPE_CAPACITY as usize),
+      buffer: [0.0; SCOPE_CAPACITY as usize],
       sample_counter: 0,
       skip_rate: 0,
       trigger_threshold: None,
       trigger: SchmittTrigger::new(0.0, 0.0),
-      holding: false,
+      buffer_idx: 0,
     };
 
     sb.update(scope, sample_rate);
     sb.trigger = SchmittTrigger::new(
       sb.trigger_threshold.unwrap_or(0.0),
-      sb.trigger_threshold.unwrap_or(0.0) + 0.01,
+      sb.trigger_threshold.unwrap_or(0.0) + 0.001,
     );
 
     sb
@@ -182,9 +124,8 @@ impl ScopeBuffer {
     let threshold = threshold.map(|t| (t as f32) / 1000.0);
     self.trigger_threshold = threshold;
     if let Some(thresh) = threshold {
-      self.trigger.set_thresholds(thresh, thresh + 0.01);
+      self.trigger.set_thresholds(thresh, thresh + 0.001);
       self.trigger.reset();
-      self.holding = false;
     }
   }
 
@@ -193,18 +134,36 @@ impl ScopeBuffer {
   }
 
   pub fn push(&mut self, value: f32) {
-    if self.holding {
-      return;
-    }
-    if let Some(t) = self.trigger_threshold {
-      let state = self.trigger.process(value);
-      if state == SchmittState::High {
-        self.holding = true;
-        return;
+    if self.buffer_idx >= SCOPE_CAPACITY as usize {
+      let mut triggered = false;
+
+      if self.trigger_threshold.is_none() {
+        triggered = true;
+      } else {
+        if self.trigger.process(value) {
+          triggered = true;
+          println!("Scope triggered at value {}", value);
+        }
+      }
+
+      if triggered {
+        self.trigger.reset();
+        self.buffer_idx = 0;
       }
     }
 
-    self.buffer.push(value);
+    if self.buffer_idx < SCOPE_CAPACITY as usize {
+      if self.sample_counter == 0 {
+        self.buffer[self.buffer_idx] = value;
+        if (self.buffer_idx + 1) <= SCOPE_CAPACITY as usize {
+          self.buffer_idx += 1;
+        }
+      }
+      self.sample_counter += 1;
+      if self.sample_counter > self.skip_rate {
+        self.sample_counter = 0;
+      }
+    }
   }
 
   pub fn update(&mut self, scope: &Scope, sample_rate: f32) {
@@ -213,8 +172,8 @@ impl ScopeBuffer {
   }
 }
 
-impl From<ScopeBuffer> for Float32Array {
-  fn from(scope_buffer: ScopeBuffer) -> Self {
+impl From<&ScopeBuffer> for Float32Array {
+  fn from(scope_buffer: &ScopeBuffer) -> Self {
     Float32Array::new(scope_buffer.buffer.to_vec())
   }
 }
@@ -341,13 +300,7 @@ impl AudioState {
     };
     scope_collection
       .iter()
-      .filter(|(_, scope_buffer)| scope_buffer.buffer.buffer.len() >= scope_buffer.buffer.capacity)
-      .map(|(scope_item, scope_buffer)| {
-        (
-          scope_item.clone(),
-          Float32Array::new(scope_buffer.buffer.to_vec()),
-        )
-      })
+      .map(|(scope_item, scope_buffer)| (scope_item.clone(), Float32Array::from(scope_buffer)))
       .collect()
   }
 
@@ -367,7 +320,6 @@ impl AudioState {
     // with the desired patch's ids.
     let module_id_remaps = module_id_remaps.unwrap_or_default();
     if !module_id_remaps.is_empty() {
-
       patch_dbg!(
         "[apply_patch] module_id_remaps count={} (current->desired)",
         module_id_remaps.len()
@@ -426,7 +378,10 @@ impl AudioState {
           }
           if patch_lock.sampleables.remove(to_id).is_some() {
             remap_overwrites += 1;
-            patch_dbg!("[apply_patch] remap overwrote existing destination id={}", to_id);
+            patch_dbg!(
+              "[apply_patch] remap overwrote existing destination id={}",
+              to_id
+            );
           }
         }
 
@@ -470,7 +425,11 @@ impl AudioState {
       let mut sample = to_delete.clone();
       sample.sort();
       sample.truncate(12);
-      patch_dbg!("[apply_patch] delete candidates={} sample=[{}]", to_delete.len(), sample.join(", "));
+      patch_dbg!(
+        "[apply_patch] delete candidates={} sample=[{}]",
+        to_delete.len(),
+        sample.join(", ")
+      );
     }
 
     // Find modules where type changed (same ID but different module_type)
@@ -490,7 +449,11 @@ impl AudioState {
       }
     }
 
-    patch_dbg!("[apply_patch] delete final={} recreate={} ", to_delete.len(), to_recreate.len());
+    patch_dbg!(
+      "[apply_patch] delete final={} recreate={} ",
+      to_delete.len(),
+      to_recreate.len()
+    );
 
     // Find modules to create (in desired but not in current, plus recreated modules)
     let mut to_create: Vec<String> = desired_ids.difference(&current_ids).cloned().collect();
@@ -500,7 +463,11 @@ impl AudioState {
       let mut create_sample = to_create.clone();
       create_sample.sort();
       create_sample.truncate(12);
-      patch_dbg!("[apply_patch] create count={} sample=[{}]", to_create.len(), create_sample.join(", "));
+      patch_dbg!(
+        "[apply_patch] create count={} sample=[{}]",
+        to_create.len(),
+        create_sample.join(", ")
+      );
     } else {
       // Keep a minimal signal for normal operation.
       // (No stdout spam; only visible when explicitly enabled.)
@@ -560,7 +527,11 @@ impl AudioState {
         let mut s = tracks_to_delete.clone();
         s.sort();
         s.truncate(12);
-        patch_dbg!("[apply_patch] tracks delete count={} sample=[{}]", tracks_to_delete.len(), s.join(", "));
+        patch_dbg!(
+          "[apply_patch] tracks delete count={} sample=[{}]",
+          tracks_to_delete.len(),
+          s.join(", ")
+        );
       }
 
       for track_id in tracks_to_delete {
@@ -621,7 +592,10 @@ impl AudioState {
         .cloned()
         .collect();
 
-      patch_dbg!("[apply_patch] scopes remove count={}", scopes_to_remove.len());
+      patch_dbg!(
+        "[apply_patch] scopes remove count={}",
+        scopes_to_remove.len()
+      );
 
       for scope_item in scopes_to_remove {
         scope_collection.remove(&scope_item);
@@ -826,37 +800,25 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
 
   // Capture audio for scopes
   for (scope, scope_buffer) in audio_state.scope_collection.lock().iter_mut() {
-    // Get the speed from the scope
-    let speed = scope_buffer.skip_rate;
-
-    // Check if we should record this sample based on the counter
-    if scope_buffer.sample_counter == 0 {
-      match scope {
-        ScopeItem::ModuleOutput {
-          module_id,
-          port_name,
-          ..
-        } => {
-          if let Some(module) = patch_guard.sampleables.get(module_id) {
-            if let Ok(sample) = module.get_sample(&port_name) {
-              scope_buffer.push(sample);
-            }
-          }
-        }
-        ScopeItem::Track { track_id, .. } => {
-          if let Some(track) = patch_guard.tracks.get(track_id) {
-            if let Some(sample) = track.get_value_optional() {
-              scope_buffer.push(sample);
-            }
+    match scope {
+      ScopeItem::ModuleOutput {
+        module_id,
+        port_name,
+        ..
+      } => {
+        if let Some(module) = patch_guard.sampleables.get(module_id) {
+          if let Ok(sample) = module.get_sample(&port_name) {
+            scope_buffer.push(sample);
           }
         }
       }
-    }
-
-    // Increment counter and wrap based on speed
-    scope_buffer.sample_counter += 1;
-    if scope_buffer.sample_counter > speed {
-      scope_buffer.sample_counter = 0;
+      ScopeItem::Track { track_id, .. } => {
+        if let Some(track) = patch_guard.tracks.get(track_id) {
+          if let Some(sample) = track.get_value_optional() {
+            scope_buffer.push(sample);
+          }
+        }
+      }
     }
   }
 
@@ -942,7 +904,7 @@ impl FinalStateProcessor {
       let sample =
         (process_frame(audio_state) * AUDIO_OUTPUT_ATTENUATION * self.attenuation_factor).tanh();
 
-      if is_stopped && sample.abs() < f32::EPSILON {
+      if is_stopped && sample.abs() < 0.001{
         self.attenuation_factor = 0.0;
         self.volume_change = VolumeChange::None;
         0.0
@@ -1142,7 +1104,13 @@ mod tests {
       let has_3 = patch_lock.sampleables.contains_key("sine-3");
       let m2 = patch_lock.sampleables.get("sine-2").unwrap();
       let m3 = patch_lock.sampleables.get("sine-3").unwrap();
-      (Arc::as_ptr(m2) as usize, Arc::as_ptr(m3) as usize, has_1, has_2, has_3)
+      (
+        Arc::as_ptr(m2) as usize,
+        Arc::as_ptr(m3) as usize,
+        has_1,
+        has_2,
+        has_3,
+      )
     };
 
     assert!(!has_1);
@@ -1243,7 +1211,13 @@ mod tests {
       let has_3 = patch_lock.sampleables.contains_key("sine-3");
       let m1 = patch_lock.sampleables.get("sine-1").unwrap();
       let m2 = patch_lock.sampleables.get("sine-2").unwrap();
-      (Arc::as_ptr(m1) as usize, Arc::as_ptr(m2) as usize, has_1, has_2, has_3)
+      (
+        Arc::as_ptr(m1) as usize,
+        Arc::as_ptr(m2) as usize,
+        has_1,
+        has_2,
+        has_3,
+      )
     };
 
     assert!(has_1);

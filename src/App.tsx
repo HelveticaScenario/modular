@@ -76,7 +76,7 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
         return;
     }
 
-    const windowSize = 256;
+    const windowSize = 1024;
     const startIndex = 0;
     const sampleCount = Math.min(windowSize, data.length);
 
@@ -88,7 +88,7 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
     ctx.lineWidth = 2;
     ctx.beginPath();
 
-    const stepX = w / (sampleCount - 1);
+    const stepX = w / (windowSize - 1);
 
     for (let i = 0; i < sampleCount; i++) {
         const x = stepX * i;
