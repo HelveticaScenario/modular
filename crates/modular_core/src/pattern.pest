@@ -1,0 +1,33 @@
+// Pest grammar for the Musical DSL pattern language.
+// Mirrors `src/dsl/mini.ohm`.
+
+Program = { SOI ~ Element* ~ EOI }
+
+Element = { RandomChoice | NonRandomElement }
+
+NonRandomElement = { FastSubsequence | SlowSubsequence | Value }
+
+FastSubsequence = { "[" ~ Element* ~ "]" }
+SlowSubsequence = { "<" ~ Element* ~ ">" }
+
+RandomChoice = { NonRandomElement ~ ("|" ~ NonRandomElement)+ }
+
+Value = { Rest | HzValue | NumericLiteral | NoteName | MidiValue }
+
+Rest = { "~" }
+
+HzValue = { SignedDecimal ~ HzSuffix }
+HzSuffix = @{ (("h" | "H") ~ ("z" | "Z")) | (("k" | "K") ~ ("h" | "H") ~ ("z" | "Z")) }
+
+NumericLiteral = { SignedDecimal }
+SignedDecimal = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+
+NoteName = { NoteLetter ~ Accidental? ~ Octave }
+NoteLetter = { "a" | "b" | "c" | "d" | "e" | "f" | "g" | "A" | "B" | "C" | "D" | "E" | "F" | "G" }
+Accidental = { "#" | "b" }
+Octave = @{ ASCII_DIGIT+ }
+
+MidiValue = { "m" ~ MidiNumber }
+MidiNumber = @{ ASCII_DIGIT+ }
+
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }

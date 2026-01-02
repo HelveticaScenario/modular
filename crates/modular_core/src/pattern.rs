@@ -2,15 +2,12 @@ use napi_derive::napi;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use nom::{
-    branch::alt,
-    bytes::complete::tag_no_case,
-    character::complete::{char, digit1, multispace0, one_of},
-    combinator::{all_consuming, map, map_opt, opt, recognize},
-    multi::{many0, many1, separated_list1},
-    sequence::{delimited, pair, preceded, terminated, tuple},
-    IResult,
-};
+use pest::iterators::Pair;
+use pest::Parser;
+
+#[derive(pest_derive::Parser)]
+#[grammar = "pattern.pest"]
+struct PatternDslParser;
 
 /// Main AST node enum representing all possible elements in the Musical DSL
 #[derive(Debug, Clone, PartialEq, Deserialize, JsonSchema)]
@@ -55,87 +52,149 @@ impl PatternProgram {
     }
 }
 
-fn ws<'a, F, O>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O>
-where
-    F: FnMut(&'a str) -> IResult<&'a str, O>,
-{
-    delimited(multispace0, inner, multispace0)
-}
+fn parse_ast(pair: Pair<Rule>) -> Result<ASTNode, PatternParseError> {
+    match pair.as_rule() {
+        Rule::Element | Rule::NonRandomElement | Rule::Value => {
+            let inner = pair
+                .into_inner()
+                .next()
+                .ok_or_else(|| PatternParseError {
+                    message: "Parse error: empty node".to_string(),
+                })?;
+            parse_ast(inner)
+        }
 
-fn parse_program(input: &str) -> IResult<&str, Vec<ASTNode>> {
-    many0(ws(parse_element))(input)
-}
+        Rule::FastSubsequence => {
+            let mut elements = Vec::new();
+            for child in pair.into_inner() {
+                if child.as_rule() == Rule::Element {
+                    elements.push(parse_ast(child)?);
+                }
+            }
+            Ok(ASTNode::FastSubsequence { elements })
+        }
 
-fn parse_element(input: &str) -> IResult<&str, ASTNode> {
-    // Match RandomChoice first, so something like "1|2" doesn't get consumed as just "1".
-    alt((parse_random_choice, parse_non_random_element))(input)
-}
+        Rule::SlowSubsequence => {
+            let mut elements = Vec::new();
+            for child in pair.into_inner() {
+                if child.as_rule() == Rule::Element {
+                    elements.push(parse_ast(child)?);
+                }
+            }
+            Ok(ASTNode::SlowSubsequence { elements })
+        }
 
-fn parse_non_random_element(input: &str) -> IResult<&str, ASTNode> {
-    alt((parse_fast_subsequence, parse_slow_subsequence, parse_value))(input)
-}
+        Rule::RandomChoice => {
+            let mut choices = Vec::new();
+            for child in pair.into_inner() {
+                if child.as_rule() == Rule::NonRandomElement {
+                    choices.push(parse_ast(child)?);
+                }
+            }
+            Ok(ASTNode::RandomChoice { choices })
+        }
 
-fn parse_fast_subsequence(input: &str) -> IResult<&str, ASTNode> {
-    map(
-        delimited(ws(char('[')), parse_program, ws(char(']'))),
-        |elements| ASTNode::FastSubsequence { elements },
-    )(input)
-}
+        Rule::Rest => Ok(ASTNode::Rest),
 
-fn parse_slow_subsequence(input: &str) -> IResult<&str, ASTNode> {
-    map(
-        delimited(ws(char('<')), parse_program, ws(char('>'))),
-        |elements| ASTNode::SlowSubsequence { elements },
-    )(input)
-}
+        Rule::NumericLiteral => {
+            let num_str = pair
+                .into_inner()
+                .next()
+                .ok_or_else(|| PatternParseError {
+                    message: "Parse error: missing numeric literal".to_string(),
+                })?
+                .as_str();
+            let value = num_str.parse::<f64>().unwrap_or(0.0);
+            Ok(ASTNode::NumericLiteral { value })
+        }
 
-fn parse_random_choice(input: &str) -> IResult<&str, ASTNode> {
-    // RandomChoice = NonRandomElement ("|" NonRandomElement)+
-    let (input, first) = parse_non_random_element(input)?;
-    let (input, rest) = many1(preceded(ws(char('|')), parse_non_random_element))(input)?;
-    let mut choices = Vec::with_capacity(1 + rest.len());
-    choices.push(first);
-    choices.extend(rest);
-    Ok((input, ASTNode::RandomChoice { choices }))
-}
+        Rule::HzValue => {
+            let mut inner = pair.into_inner();
+            let num_str = inner
+                .next()
+                .ok_or_else(|| PatternParseError {
+                    message: "Parse error: missing hz number".to_string(),
+                })?
+                .as_str();
+            let suffix = inner
+                .next()
+                .ok_or_else(|| PatternParseError {
+                    message: "Parse error: missing hz suffix".to_string(),
+                })?
+                .as_str();
 
-fn parse_value(input: &str) -> IResult<&str, ASTNode> {
-    alt((parse_rest, parse_hz_value, parse_numeric_literal, parse_note_name, parse_midi_value))(input)
-}
+            let mut value = num_str.parse::<f64>().unwrap_or(0.0);
+            if suffix.eq_ignore_ascii_case("khz") {
+                value *= 1000.0;
+            }
 
-fn parse_rest(input: &str) -> IResult<&str, ASTNode> {
-    map(ws(char('~')), |_| ASTNode::Rest)(input)
-}
+            // TS version rejects non-positive frequencies; here we just map <=0 to 0.0.
+            let voct = if value > 0.0 { hz_to_voct(value) } else { 0.0 };
+            Ok(ASTNode::NumericLiteral { value: voct })
+        }
 
-fn recognize_signed_decimal(input: &str) -> IResult<&str, &str> {
-    recognize(tuple((opt(char('-')), digit1, opt(pair(char('.'), digit1)))))(input)
-}
+        Rule::NoteName => {
+            let mut inner = pair.into_inner();
+            let letter_pair = inner
+                .next()
+                .ok_or_else(|| PatternParseError {
+                    message: "Parse error: missing note letter".to_string(),
+                })?;
+            let letter = letter_pair
+                .as_str()
+                .chars()
+                .next()
+                .ok_or_else(|| PatternParseError {
+                    message: "Parse error: invalid note letter".to_string(),
+                })?;
 
-fn parse_numeric_literal(input: &str) -> IResult<&str, ASTNode> {
-    map(ws(recognize_signed_decimal), |num_str: &str| {
-        let value = num_str.parse::<f64>().unwrap_or(0.0);
-        ASTNode::NumericLiteral { value }
-    })(input)
+            let next = inner.next().ok_or_else(|| PatternParseError {
+                message: "Parse error: missing octave".to_string(),
+            })?;
+
+            let (accidental, octave_pair) = if next.as_rule() == Rule::Accidental {
+                let acc = next
+                    .as_str()
+                    .chars()
+                    .next()
+                    .ok_or_else(|| PatternParseError {
+                        message: "Parse error: invalid accidental".to_string(),
+                    })?;
+                let octave_pair = inner.next().ok_or_else(|| PatternParseError {
+                    message: "Parse error: missing octave".to_string(),
+                })?;
+                (Some(acc), octave_pair)
+            } else {
+                (None, next)
+            };
+
+            let octave = octave_pair.as_str().parse::<i32>().unwrap_or(0);
+            let voct = note_name_to_voct(letter, accidental, octave);
+            Ok(ASTNode::NumericLiteral { value: voct })
+        }
+
+        Rule::MidiValue => {
+            let midi_pair = pair
+                .into_inner()
+                .next()
+                .ok_or_else(|| PatternParseError {
+                    message: "Parse error: missing midi number".to_string(),
+                })?;
+            let midi_note = midi_pair.as_str().parse::<i32>().unwrap_or(0);
+            // Matches src/dsl/parser.ts: (midi - 69) / 12
+            let voct = (midi_note as f64 - 69.0) / 12.0;
+            Ok(ASTNode::NumericLiteral { value: voct })
+        }
+
+        other => Err(PatternParseError {
+            message: format!("Parse error: unexpected rule {other:?}"),
+        }),
+    }
 }
 
 fn hz_to_voct(frequency_hz: f64) -> f64 {
     // Matches src/dsl/factories.ts hz(): log2(f / 27.5)
     (frequency_hz / 27.5).log2()
-}
-
-fn parse_hz_value(input: &str) -> IResult<&str, ASTNode> {
-    // HzValue = "-"? digit+ ("." digit+)? ("hz" | "khz")
-    let (input, num_str) = ws(recognize_signed_decimal)(input)?;
-    let (input, suffix) = ws(alt((tag_no_case("hz"), tag_no_case("khz"))))(input)?;
-
-    let mut value = num_str.parse::<f64>().unwrap_or(0.0);
-    if suffix.eq_ignore_ascii_case("khz") {
-        value *= 1000.0;
-    }
-
-    // TS version rejects non-positive frequencies; here we just map <=0 to 0.0.
-    let voct = if value > 0.0 { hz_to_voct(value) } else { 0.0 };
-    Ok((input, ASTNode::NumericLiteral { value: voct }))
 }
 
 fn note_name_to_voct(letter: char, accidental: Option<char>, octave: i32) -> f64 {
@@ -163,49 +222,29 @@ fn note_name_to_voct(letter: char, accidental: Option<char>, octave: i32) -> f64
     hz_to_voct(frequency)
 }
 
-fn parse_note_name(input: &str) -> IResult<&str, ASTNode> {
-    // NoteName = letter accidental? digit+
-    let (input, letter) = ws(one_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"))(input)?;
-    let letter = letter;
-    // Only allow a-g like the TS regex.
-    let (input, letter) = map_opt(nom::combinator::success(letter), |c| {
-        let lc = c.to_ascii_lowercase();
-        if matches!(lc, 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g') {
-            Some(lc)
-        } else {
-            None
-        }
-    })(input)?;
-
-    let (input, accidental) = opt(ws(one_of("#b")))(input)?;
-    let (input, octave_str) = ws(digit1)(input)?;
-    let octave = octave_str.parse::<i32>().unwrap_or(0);
-
-    let voct = note_name_to_voct(letter, accidental, octave);
-    Ok((input, ASTNode::NumericLiteral { value: voct }))
-}
-
-fn parse_midi_value(input: &str) -> IResult<&str, ASTNode> {
-    // MidiValue = "m" digit+
-    let (input, _) = ws(char('m'))(input)?;
-    let (input, digits) = ws(digit1)(input)?;
-    let midi_note = digits.parse::<i32>().unwrap_or(0);
-    // Matches src/dsl/parser.ts: (midi - 69) / 12
-    let voct = (midi_note as f64 - 69.0) / 12.0;
-    Ok((input, ASTNode::NumericLiteral { value: voct }))
-}
-
 /// Parse the Musical DSL pattern source into AST nodes.
 ///
 /// This mirrors the existing Ohm grammar in `src/dsl/mini.ohm` and the conversions
 /// done in the TS parser (`hz()`/`note()`/MIDI mapping).
 pub fn parse_pattern_elements(source: &str) -> Result<Vec<ASTNode>, PatternParseError> {
-    match all_consuming(ws(parse_program))(source) {
-        Ok((_rest, ast)) => Ok(ast),
-        Err(err) => Err(PatternParseError {
+    let mut pairs = PatternDslParser::parse(Rule::Program, source).map_err(|err| {
+        PatternParseError {
             message: format!("Parse error: {err}"),
-        }),
+        }
+    })?;
+
+    let program = pairs.next().ok_or_else(|| PatternParseError {
+        message: "Parse error: missing program".to_string(),
+    })?;
+
+    let mut elements = Vec::new();
+    for pair in program.into_inner() {
+        if pair.as_rule() == Rule::Element {
+            elements.push(parse_ast(pair)?);
+        }
     }
+
+    Ok(elements)
 }
 
 /// Represents the output value from the runner
