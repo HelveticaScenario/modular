@@ -18,6 +18,7 @@ mi-plaits-dsp = { version = "0.1", path = "../mi-plaits-dsp-rs" }
 schemars = "1.1.0"
 simple-easing = "1.0.1"
 napi-derive = "3.4.1"
+nom = "7.1.3"
 
 [dependencies.napi]
 version = "3.7.1"

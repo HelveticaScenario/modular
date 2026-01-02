@@ -16,6 +16,7 @@ pub struct ValidationError {
 
 impl std::fmt::Display for ValidationError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    println!("{:?}", self);
     if let Some(ref location) = self.location {
       write!(f, "{}: {} (at {})", self.field, self.message, location)
     } else {
@@ -341,6 +342,8 @@ pub fn validate_patch(
     // tolerate `null` elsewhere, and we don't want a redundant parse failure in that case.
     if let Some(validate) = param_validators.get(module.module_type.as_str()) {
       if let Err(err) = validate(&module.params) {
+        println!("{:?}", err);
+        println!("{:?}", module.params);
         errors.push(ValidationError {
           field: "params".to_string(),
           message: format!(

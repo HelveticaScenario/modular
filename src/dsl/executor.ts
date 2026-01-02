@@ -1,6 +1,7 @@
 
-import { ModuleSchema, PatchGraph } from '@modular/core';
+import { ModuleSchema, PatchGraph, PatternProgram } from '@modular/core';
 import { DSLContext, hz, note, bpm } from './factories';
+import { parsePattern } from './parser';
 
 
 /**
@@ -20,12 +21,21 @@ export function executePatchScript(
   console.log('Created clock module:', rootClock);
   rootClock.tempo(bpm(120));
 
+
   // Create the execution environment with all DSL functions
   const dslGlobals = {
     ...context.factories,
     track: context.createTrack.bind(context),
     scope: context.scope.bind(context),
-    seq: context.addPattern.bind(context),
+    pat: (str: string): PatternProgram => {
+      const id = `pattern_${Math.floor(Math.random() * 1000000)}`;
+      const patternObj: PatternProgram = {
+        id,
+        elements: parsePattern(id, str),
+        seed: Math.floor(Math.random() * 1000000),
+      };
+      return patternObj
+    },
     // Helper functions
     hz,
     note,

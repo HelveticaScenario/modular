@@ -1,7 +1,19 @@
 use napi_derive::napi;
+use schemars::JsonSchema;
+use serde::Deserialize;
+
+use nom::{
+    branch::alt,
+    bytes::complete::tag_no_case,
+    character::complete::{char, digit1, multispace0, one_of},
+    combinator::{all_consuming, map, map_opt, opt, recognize},
+    multi::{many0, many1, separated_list1},
+    sequence::{delimited, pair, preceded, terminated, tuple},
+    IResult,
+};
 
 /// Main AST node enum representing all possible elements in the Musical DSL
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, JsonSchema)]
 #[napi]
 pub enum ASTNode {
     FastSubsequence { elements: Vec<ASTNode> },
@@ -11,8 +23,21 @@ pub enum ASTNode {
     Rest,
 }
 
-/// Root pattern node containing all top-level elements
 #[derive(Debug, Clone, PartialEq)]
+pub struct PatternParseError {
+    pub message: String,
+}
+
+impl std::fmt::Display for PatternParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for PatternParseError {}
+
+/// Root pattern node containing all top-level elements
+#[derive(Debug, Default, Clone, PartialEq, Deserialize, JsonSchema)]
 #[napi(object)]
 pub struct PatternProgram {
     pub id: String,
@@ -30,8 +55,161 @@ impl PatternProgram {
     }
 }
 
+fn ws<'a, F, O>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O>
+where
+    F: FnMut(&'a str) -> IResult<&'a str, O>,
+{
+    delimited(multispace0, inner, multispace0)
+}
+
+fn parse_program(input: &str) -> IResult<&str, Vec<ASTNode>> {
+    many0(ws(parse_element))(input)
+}
+
+fn parse_element(input: &str) -> IResult<&str, ASTNode> {
+    // Match RandomChoice first, so something like "1|2" doesn't get consumed as just "1".
+    alt((parse_random_choice, parse_non_random_element))(input)
+}
+
+fn parse_non_random_element(input: &str) -> IResult<&str, ASTNode> {
+    alt((parse_fast_subsequence, parse_slow_subsequence, parse_value))(input)
+}
+
+fn parse_fast_subsequence(input: &str) -> IResult<&str, ASTNode> {
+    map(
+        delimited(ws(char('[')), parse_program, ws(char(']'))),
+        |elements| ASTNode::FastSubsequence { elements },
+    )(input)
+}
+
+fn parse_slow_subsequence(input: &str) -> IResult<&str, ASTNode> {
+    map(
+        delimited(ws(char('<')), parse_program, ws(char('>'))),
+        |elements| ASTNode::SlowSubsequence { elements },
+    )(input)
+}
+
+fn parse_random_choice(input: &str) -> IResult<&str, ASTNode> {
+    // RandomChoice = NonRandomElement ("|" NonRandomElement)+
+    let (input, first) = parse_non_random_element(input)?;
+    let (input, rest) = many1(preceded(ws(char('|')), parse_non_random_element))(input)?;
+    let mut choices = Vec::with_capacity(1 + rest.len());
+    choices.push(first);
+    choices.extend(rest);
+    Ok((input, ASTNode::RandomChoice { choices }))
+}
+
+fn parse_value(input: &str) -> IResult<&str, ASTNode> {
+    alt((parse_rest, parse_hz_value, parse_numeric_literal, parse_note_name, parse_midi_value))(input)
+}
+
+fn parse_rest(input: &str) -> IResult<&str, ASTNode> {
+    map(ws(char('~')), |_| ASTNode::Rest)(input)
+}
+
+fn recognize_signed_decimal(input: &str) -> IResult<&str, &str> {
+    recognize(tuple((opt(char('-')), digit1, opt(pair(char('.'), digit1)))))(input)
+}
+
+fn parse_numeric_literal(input: &str) -> IResult<&str, ASTNode> {
+    map(ws(recognize_signed_decimal), |num_str: &str| {
+        let value = num_str.parse::<f64>().unwrap_or(0.0);
+        ASTNode::NumericLiteral { value }
+    })(input)
+}
+
+fn hz_to_voct(frequency_hz: f64) -> f64 {
+    // Matches src/dsl/factories.ts hz(): log2(f / 27.5)
+    (frequency_hz / 27.5).log2()
+}
+
+fn parse_hz_value(input: &str) -> IResult<&str, ASTNode> {
+    // HzValue = "-"? digit+ ("." digit+)? ("hz" | "khz")
+    let (input, num_str) = ws(recognize_signed_decimal)(input)?;
+    let (input, suffix) = ws(alt((tag_no_case("hz"), tag_no_case("khz"))))(input)?;
+
+    let mut value = num_str.parse::<f64>().unwrap_or(0.0);
+    if suffix.eq_ignore_ascii_case("khz") {
+        value *= 1000.0;
+    }
+
+    // TS version rejects non-positive frequencies; here we just map <=0 to 0.0.
+    let voct = if value > 0.0 { hz_to_voct(value) } else { 0.0 };
+    Ok((input, ASTNode::NumericLiteral { value: voct }))
+}
+
+fn note_name_to_voct(letter: char, accidental: Option<char>, octave: i32) -> f64 {
+    // Matches src/dsl/factories.ts note() implementation.
+    let base = match letter.to_ascii_lowercase() {
+        'c' => 0,
+        'd' => 2,
+        'e' => 4,
+        'f' => 5,
+        'g' => 7,
+        'a' => 9,
+        'b' => 11,
+        _ => 0,
+    };
+
+    let mut semitone = base;
+    if accidental == Some('#') {
+        semitone += 1;
+    } else if accidental == Some('b') {
+        semitone -= 1;
+    }
+
+    let semitones_from_c4 = (octave - 4) * 12 + semitone;
+    let frequency = 440.0 * 2.0_f64.powf((semitones_from_c4 as f64 - 9.0) / 12.0);
+    hz_to_voct(frequency)
+}
+
+fn parse_note_name(input: &str) -> IResult<&str, ASTNode> {
+    // NoteName = letter accidental? digit+
+    let (input, letter) = ws(one_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"))(input)?;
+    let letter = letter;
+    // Only allow a-g like the TS regex.
+    let (input, letter) = map_opt(nom::combinator::success(letter), |c| {
+        let lc = c.to_ascii_lowercase();
+        if matches!(lc, 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g') {
+            Some(lc)
+        } else {
+            None
+        }
+    })(input)?;
+
+    let (input, accidental) = opt(ws(one_of("#b")))(input)?;
+    let (input, octave_str) = ws(digit1)(input)?;
+    let octave = octave_str.parse::<i32>().unwrap_or(0);
+
+    let voct = note_name_to_voct(letter, accidental, octave);
+    Ok((input, ASTNode::NumericLiteral { value: voct }))
+}
+
+fn parse_midi_value(input: &str) -> IResult<&str, ASTNode> {
+    // MidiValue = "m" digit+
+    let (input, _) = ws(char('m'))(input)?;
+    let (input, digits) = ws(digit1)(input)?;
+    let midi_note = digits.parse::<i32>().unwrap_or(0);
+    // Matches src/dsl/parser.ts: (midi - 69) / 12
+    let voct = (midi_note as f64 - 69.0) / 12.0;
+    Ok((input, ASTNode::NumericLiteral { value: voct }))
+}
+
+/// Parse the Musical DSL pattern source into AST nodes.
+///
+/// This mirrors the existing Ohm grammar in `src/dsl/mini.ohm` and the conversions
+/// done in the TS parser (`hz()`/`note()`/MIDI mapping).
+pub fn parse_pattern_elements(source: &str) -> Result<Vec<ASTNode>, PatternParseError> {
+    match all_consuming(ws(parse_program))(source) {
+        Ok((_rest, ast)) => Ok(ast),
+        Err(err) => Err(PatternParseError {
+            message: format!("Parse error: {err}"),
+        }),
+    }
+}
+
 /// Represents the output value from the runner
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, JsonSchema, Deserialize)]
 #[napi]
 pub enum Value {
     Numeric(f64),
@@ -39,8 +217,8 @@ pub enum Value {
 }
 
 /// Compiled node with precomputed information for efficient lookup
-#[derive(Debug, Clone)]
-enum CompiledNode {
+#[derive(Debug, Clone, PartialEq, JsonSchema, Deserialize)]
+pub enum CompiledNode {
     /// A leaf value
     Value(Value),
     /// Fast subsequence with child nodes
@@ -56,17 +234,17 @@ enum CompiledNode {
 
 /// Simple PCG-based random number generator for deterministic randomness
 #[derive(Debug, Clone, Copy)]
-struct Rng {
+pub struct Rng {
     state: u64,
 }
 
 impl Rng {
-    fn new(seed: u64) -> Self {
+    pub fn new(seed: u64) -> Self {
         Self { state: seed }
     }
 
     /// Generate next random number and return a value in [0, 1)
-    fn next(&mut self) -> f64 {
+    pub fn next(&mut self) -> f64 {
         // PCG algorithm
         const MULTIPLIER: u64 = 6364136223846793005;
         const INCREMENT: u64 = 1442695040888963407;
@@ -81,7 +259,7 @@ impl Rng {
 }
 
 /// Hash multiple components together with proper mixing to decorrelate inputs
-fn hash_components(seed: u64, time_bits: u64, choice_id: u64) -> u64 {
+pub fn hash_components(seed: u64, time_bits: u64, choice_id: u64) -> u64 {
     // Use different mixing constants for each component to ensure decorrelation
     // These are large primes chosen to have good bit distribution
     const SEED_MIX: u64 = 0x517cc1b727220a95;
@@ -105,12 +283,20 @@ fn hash_components(seed: u64, time_bits: u64, choice_id: u64) -> u64 {
 }
 
 /// Compiled pattern optimized for stateless lookup
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default, PartialEq, JsonSchema, Deserialize)]
+#[serde(from = "PatternProgram")]
 pub struct CompiledPattern {
-    id: String,
-    root: Vec<CompiledNode>,
-    seed: u64,
+    pub id: String,
+    pub root: Vec<CompiledNode>,
+    pub seed: u64,
 }
+
+impl From<PatternProgram> for CompiledPattern {
+    fn from(program: PatternProgram) -> Self {
+        Self::compile(&program)
+    }
+}
+
 
 impl CompiledPattern {
     /// Compile a pattern into an optimized form for stateless execution
@@ -477,7 +663,52 @@ impl Runner {
 mod tests {
     use std::collections::HashMap;
 
+    use serde_json::json;
+
     use super::*;
+
+    #[test]
+    fn test_parse_pattern_elements_basic() {
+        let ast = parse_pattern_elements("1 2 3").unwrap();
+        assert_eq!(
+            ast,
+            vec![
+                ASTNode::NumericLiteral { value: 1.0 },
+                ASTNode::NumericLiteral { value: 2.0 },
+                ASTNode::NumericLiteral { value: 3.0 },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_pattern_elements_subsequences_and_random() {
+        let ast = parse_pattern_elements("[1 2] <3 4> 5|6|7 ~").unwrap();
+        assert_eq!(
+            ast,
+            vec![
+                ASTNode::FastSubsequence {
+                    elements: vec![
+                        ASTNode::NumericLiteral { value: 1.0 },
+                        ASTNode::NumericLiteral { value: 2.0 },
+                    ]
+                },
+                ASTNode::SlowSubsequence {
+                    elements: vec![
+                        ASTNode::NumericLiteral { value: 3.0 },
+                        ASTNode::NumericLiteral { value: 4.0 },
+                    ]
+                },
+                ASTNode::RandomChoice {
+                    choices: vec![
+                        ASTNode::NumericLiteral { value: 5.0 },
+                        ASTNode::NumericLiteral { value: 6.0 },
+                        ASTNode::NumericLiteral { value: 7.0 },
+                    ]
+                },
+                ASTNode::Rest,
+            ]
+        );
+    }
 
     fn num(value: f64) -> ASTNode {
         ASTNode::NumericLiteral { value }
@@ -485,6 +716,18 @@ mod tests {
 
     fn random(choices: Vec<ASTNode>) -> ASTNode {
         ASTNode::RandomChoice { choices }
+    }
+
+    #[test]
+    fn test_deserialize_compiled_pattern_from_program() {
+        let compiled: CompiledPattern = serde_json::from_value(json!({
+            "id": "test_deserialize" ,
+            "elements": [{ "NumericLiteral": { "value": 42.0 } }],
+            "seed": 0
+        }))
+        .unwrap();
+
+        assert_eq!(compiled.run(0.1), Some(Value::Numeric(42.0)));
     }
 
     #[test]

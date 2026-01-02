@@ -185,8 +185,7 @@ export class GraphBuilder {
       elements: parsePattern(id, pattern),
       seed: Math.floor(Math.random() * 1000000),
     };
-    console.log(patternObj);
-    this.patterns.push(patternObj);
+    
   }
 
   addScope(value: ModuleOutput | ModuleNode | TrackNode, msPerFrame: number = 500, triggerThreshold?: number) {

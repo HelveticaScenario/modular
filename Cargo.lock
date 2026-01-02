@@ -854,6 +854,7 @@ dependencies = [
  "modular_derive",
  "napi",
  "napi-derive",
+ "nom",
  "parking_lot",
  "schemars",
  "serde",
