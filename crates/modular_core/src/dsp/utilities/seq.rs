@@ -102,7 +102,7 @@ impl Seq {
                 self.outputs.trig = 1.0;
             }
             Some(Value::Rest) | None => {
-                self.outputs.cv = 0.0;
+                // self.outputs.cv = 0.0;
                 self.outputs.gate = 0.0;
                 self.outputs.trig = 0.0;
             }
