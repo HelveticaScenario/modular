@@ -7,14 +7,8 @@ use crate::types::Signal;
 #[derive(Deserialize, Default, JsonSchema, Connect)]
 #[serde(default)]
 struct MixParams {
-    /// a signal input
-    in1: Signal,
-    /// a signal input
-    in2: Signal,
-    /// a signal input
-    in3: Signal,
-    /// a signal input
-    in4: Signal,
+    /// signals to mix
+    signals: Vec<Signal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -32,17 +26,18 @@ pub struct Mix {
 
 impl Mix {
     fn update(&mut self, _sample_rate: f32) -> () {
-        let inputs = [&self.params.in1, &self.params.in2, &self.params.in3, &self.params.in4];
-        let count = inputs
+        let inputs: Vec<_> = self
+            .params
+            .signals
             .iter()
-            .filter(|input| ***input != Signal::Disconnected)
-            .count();
-
+            .filter(|input| **input != Signal::Disconnected)
+            .collect();
+        let count = inputs.len();
         self.outputs.sample = if count > 0 {
-            inputs.iter().fold(0.0, |acc, x| acc + x.get_value()) / count as f32
+            inputs.into_iter().fold(0.0, |acc, x| acc + x.get_value()) / count as f32
         } else {
             0.0
-        }
+        };
     }
 }
 
