@@ -23,10 +23,7 @@ pub mod types;
 
 // Re-export commonly used items
 pub use patch::Patch;
-pub use pattern::{
-    Condition, MiniError, Pattern, PatternExpr, PatternState, PatternTransform, PatternValue, Span,
-    TickResult, ValueOp, parse_mini,
-};
+
 pub use types::{
     Module, ModuleSchema, ModuleState, PatchGraph, ROOT_ID, ROOT_OUTPUT_PORT, Sampleable,
     SampleableConstructor, SampleableMap, SignalParamSchema,

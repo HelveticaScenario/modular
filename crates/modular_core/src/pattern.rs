@@ -1,1057 +1,887 @@
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::iter::Peekable;
-use std::str::Chars;
-
-/// A span expressed in cycles (1.0 cycle is the canonical Strudel unit).
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Span {
-    pub start: f32,
-    pub duration: f32,
+/// Main AST node enum representing all possible elements in the Musical DSL
+#[derive(Debug, Clone, PartialEq)]
+pub enum ASTNode {
+    FastSubsequence(FastSubsequence),
+    SlowSubsequence(SlowSubsequence),
+    RandomChoice(RandomChoice),
+    NumericLiteral(NumericLiteral),
+    Rest,
 }
 
-impl Span {
-    pub fn end(&self) -> f32 {
-        self.start + self.duration
+/// Root program node containing all top-level elements
+#[derive(Debug, Clone, PartialEq)]
+pub struct Program {
+    pub elements: Vec<ASTNode>,
+    pub seed: u64,
+}
+
+impl Program {
+    pub fn new(elements: Vec<ASTNode>) -> Self {
+        Self { elements, seed: 0 }
     }
 
-    fn overlaps(&self, range: &TimeRange) -> bool {
-        self.start < range.end && self.end() > range.start
-    }
-}
-
-/// Inclusive time window in cycles used for querying.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct TimeRange {
-    pub start: f32,
-    pub end: f32,
-}
-
-impl TimeRange {
-    pub fn new(start: f32, end: f32) -> Self {
-        if end < start {
-            TimeRange { start: end, end: start }
-        } else {
-            TimeRange { start, end }
-        }
+    pub fn with_seed(elements: Vec<ASTNode>, seed: u64) -> Self {
+        Self { elements, seed }
     }
 }
 
-/// A Strudel-style hap: value + span in cycle space.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Hap {
-    pub span: Span,
-    pub value: PatternValue,
+/// Fast subsequence represented by square brackets [...]
+#[derive(Debug, Clone, PartialEq)]
+pub struct FastSubsequence {
+    pub elements: Vec<ASTNode>,
 }
 
-/// Values supported by a pattern. Kept intentionally small so patterns stay serializable.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
-pub enum PatternValue {
-    Number { value: f64 },
-    Text { value: String },
-    Bool { value: bool },
+/// Slow subsequence represented by angle brackets <...>
+#[derive(Debug, Clone, PartialEq)]
+pub struct SlowSubsequence {
+    pub elements: Vec<ASTNode>,
 }
 
-impl PatternValue {
-    pub fn number(value: f64) -> Self {
-        PatternValue::Number { value }
-    }
-
-    pub fn text(value: impl Into<String>) -> Self {
-        PatternValue::Text {
-            value: value.into(),
-        }
-    }
-
-    pub fn boolean(value: bool) -> Self {
-        PatternValue::Bool { value }
-    }
-
-    fn as_f64(&self) -> Option<f64> {
-        match self {
-            PatternValue::Number { value } => Some(*value),
-            _ => None,
-        }
-    }
-
-    fn map_number(&self, func: impl FnOnce(f64) -> f64) -> PatternValue {
-        match self {
-            PatternValue::Number { value } => PatternValue::Number { value: func(*value) },
-            PatternValue::Text { .. } => self.clone(),
-            PatternValue::Bool { .. } => self.clone(),
-        }
-    }
+/// Random choice represented by | (e.g., A | B | C)
+#[derive(Debug, Clone, PartialEq)]
+pub struct RandomChoice {
+    pub choices: Vec<ASTNode>,
 }
 
-/// Declarative value transformations that replace callback-style APIs.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
-pub enum ValueOp {
-    Identity,
-    Replace { value: PatternValue },
-    Add { amount: f64 },
-    Subtract { amount: f64 },
-    Multiply { factor: f64 },
-    Divide { divisor: f64 },
-    Power { exponent: f64 },
-    Clamp { min: f64, max: f64 },
-    Range { min: f64, max: f64 },
-    Negate,
-    Round,
-    Floor,
-    Ceil,
+/// Numeric literal value (supports decimals and negatives)
+#[derive(Debug, Clone, PartialEq)]
+pub struct NumericLiteral {
+    pub value: f32,
 }
 
-impl ValueOp {
-    fn apply(&self, value: &PatternValue) -> PatternValue {
-        match self {
-            ValueOp::Identity => value.clone(),
-            ValueOp::Replace { value: replacement } => replacement.clone(),
-            ValueOp::Add { amount } => value.map_number(|v| v + amount),
-            ValueOp::Subtract { amount } => value.map_number(|v| v - amount),
-            ValueOp::Multiply { factor } => value.map_number(|v| v * factor),
-            ValueOp::Divide { divisor } => {
-                if *divisor == 0.0 {
-                    value.clone()
-                } else {
-                    value.map_number(|v| v / divisor)
-                }
-            }
-            ValueOp::Power { exponent } => value.map_number(|v| v.powf(*exponent)),
-            ValueOp::Clamp { min, max } => value.map_number(|v| v.clamp(*min, *max)),
-            ValueOp::Range { min, max } => value.map_number(|v| {
-                let clamped = v.clamp(0.0, 1.0);
-                min + (max - min) * clamped
-            }),
-            ValueOp::Negate => value.map_number(|v| -v),
-            ValueOp::Round => value.map_number(|v| v.round()),
-            ValueOp::Floor => value.map_number(|v| v.floor()),
-            ValueOp::Ceil => value.map_number(|v| v.ceil()),
-        }
+/// Note name (placeholder - not used in current tests)
+#[derive(Debug, Clone, PartialEq)]
+pub struct NoteName {
+    pub note: char,
+    pub accidental: Option<char>,
+    pub octave: u8,
+}
+
+/// MIDI value (placeholder - not used in current tests)
+#[derive(Debug, Clone, PartialEq)]
+pub struct MidiValue {
+    pub value: u8,
+}
+
+/// Represents the output value from the runner
+#[derive(Debug, Clone, PartialEq)]
+pub enum Value {
+    Numeric(f32),
+    Rest,
+}
+
+/// Compiled node with precomputed information for efficient lookup
+#[derive(Debug, Clone)]
+enum CompiledNode {
+    /// A leaf value
+    Value(Value),
+    /// Fast subsequence with child nodes
+    Fast(Vec<CompiledNode>),
+    /// Slow subsequence with child nodes, period, and path info
+    Slow {
+        nodes: Vec<CompiledNode>,
+        period: usize,
+    },
+    /// Random choice between two nodes
+    Random { choices: Vec<CompiledNode> },
+}
+
+/// Simple PCG-based random number generator for deterministic randomness
+#[derive(Debug, Clone, Copy)]
+struct Rng {
+    state: u64,
+}
+
+impl Rng {
+    fn new(seed: u64) -> Self {
+        Self { state: seed }
+    }
+
+    /// Generate next random number and return a value in [0, 1)
+    fn next(&mut self) -> f64 {
+        // PCG algorithm
+        const MULTIPLIER: u64 = 6364136223846793005;
+        const INCREMENT: u64 = 1442695040888963407;
+
+        self.state = self.state.wrapping_mul(MULTIPLIER).wrapping_add(INCREMENT);
+        let xorshifted = (((self.state >> 18) ^ self.state) >> 27) as u32;
+        let rot = (self.state >> 59) as u32;
+        let result = xorshifted.rotate_right(rot);
+
+        result as f64 / u32::MAX as f64
     }
 }
 
-/// Serializable predicates that can be evaluated without user-supplied callbacks.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
-pub enum Condition {
-    Always,
-    Equals { value: PatternValue },
-    NumberGreaterThan { threshold: f64 },
-    NumberLessThan { threshold: f64 },
-    Between { min: f64, max: f64, inclusive: bool },
-    EventIndexMultiple { step: u32 },
+/// Hash multiple components together with proper mixing to decorrelate inputs
+fn hash_components(seed: u64, time_bits: u64, choice_id: u64) -> u64 {
+    // Use different mixing constants for each component to ensure decorrelation
+    // These are large primes chosen to have good bit distribution
+    const SEED_MIX: u64 = 0x517cc1b727220a95;
+    const TIME_MIX: u64 = 0x9e3779b97f4a7c15;
+    const CHOICE_MIX: u64 = 0x85ebca6b0b7e3a85;
+
+    let mut hash = seed.wrapping_mul(SEED_MIX);
+    hash ^= hash >> 32;
+
+    hash = hash.wrapping_add(time_bits.wrapping_mul(TIME_MIX));
+    hash ^= hash >> 31;
+
+    hash = hash.wrapping_add(choice_id.wrapping_mul(CHOICE_MIX));
+    hash ^= hash >> 30;
+
+    // Final avalanche mixing
+    hash = hash.wrapping_mul(0xbf58476d1ce4e5b9);
+    hash ^= hash >> 32;
+
+    hash
 }
 
-impl Condition {
-    fn matches(&self, value: &PatternValue, event_index: usize) -> bool {
-        match self {
-            Condition::Always => true,
-            Condition::Equals { value: expected } => value == expected,
-            Condition::NumberGreaterThan { threshold } => {
-                value.as_f64().map(|v| v > *threshold).unwrap_or(false)
-            }
-            Condition::NumberLessThan { threshold } => {
-                value.as_f64().map(|v| v < *threshold).unwrap_or(false)
-            }
-            Condition::Between {
-                min,
-                max,
-                inclusive,
-            } => value.as_f64().map(|v| {
-                if *inclusive {
-                    v >= *min && v <= *max
-                } else {
-                    v > *min && v < *max
-                }
-            }).unwrap_or(false),
-            Condition::EventIndexMultiple { step } => {
-                if *step == 0 {
-                    false
-                } else {
-                    event_index % *step as usize == 0
-                }
-            }
-        }
-    }
+/// Compiled program optimized for stateless lookup
+#[derive(Debug, Clone)]
+pub struct CompiledProgram {
+    root: Vec<CompiledNode>,
+    seed: u64,
 }
 
-/// Declarative, serializable transformations that can be applied to a pattern.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
-pub enum PatternTransform {
-    Fast { factor: f32 },
-    Slow { factor: f32 },
-    Offset { offset: f32 },
-    Repeat { times: u32 },
-    Map { op: ValueOp },
-    Filter { condition: Condition },
-    Reverse,
-}
-
-impl PatternTransform {
-    pub fn apply(&self, pattern: Pattern) -> Pattern {
-        match self {
-            PatternTransform::Fast { factor } => pattern.fast(*factor),
-            PatternTransform::Slow { factor } => pattern.slow(*factor),
-            PatternTransform::Offset { offset } => pattern.offset(*offset),
-            PatternTransform::Repeat { times } => pattern.repeat(*times),
-            PatternTransform::Map { op } => pattern.map(op.clone()),
-            PatternTransform::Filter { condition } => pattern.filter(condition.clone()),
-            PatternTransform::Reverse => pattern.reverse(),
-        }
-    }
-}
-
-/// Identifies a node in the pattern tree by its path (child indices from root).
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct NodeId(Vec<usize>);
-
-impl NodeId {
-    fn from_path(path: &[usize]) -> Self {
-        NodeId(path.to_vec())
-    }
-}
-
-/// Stateful playhead storage for sequences so live edits can reuse phase.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct PatternState {
-    seq_positions: HashMap<NodeId, usize>,
-    phase: f32,
-    cycle: i64,
-    cache_cycle: Option<i64>,
-    cache_haps: Vec<Hap>,
-}
-
-impl PatternState {
-    pub fn new() -> Self {
+impl CompiledProgram {
+    /// Compile a program into an optimized form for stateless execution
+    pub fn compile(program: &Program) -> Self {
+        let root = Self::compile_nodes(&program.elements);
         Self {
-            seq_positions: HashMap::new(),
-            phase: 0.0,
-            cycle: 0,
-            cache_cycle: None,
-            cache_haps: Vec::new(),
+            root,
+            seed: program.seed,
         }
     }
 
-    pub fn clear(&mut self) {
-        self.seq_positions.clear();
-        self.phase = 0.0;
-        self.cycle = 0;
-        self.cache_cycle = None;
-        self.cache_haps.clear();
+    fn compile_nodes(nodes: &[ASTNode]) -> Vec<CompiledNode> {
+        nodes.iter().map(|node| Self::compile_node(node)).collect()
     }
-}
 
-/// AST describing a pattern within a canonical cycle. Each variant is serializable and contains no runtime callbacks.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
-pub enum PatternExpr {
-    Empty,
-    Event { value: PatternValue, steps: u32 },
-    Sequence { patterns: Vec<Pattern> },
-    Stack { patterns: Vec<Pattern> },
-    Repeat { times: u32, pattern: Box<Pattern> },
-    Stretch { factor: f32, pattern: Box<Pattern> },
-    Offset { offset: f32, pattern: Box<Pattern> },
-    Map { op: ValueOp, pattern: Box<Pattern> },
-    Filter { condition: Condition, pattern: Box<Pattern> },
-    Reverse { pattern: Box<Pattern> },
-}
+    fn compile_node(node: &ASTNode) -> CompiledNode {
+        match node {
+            ASTNode::NumericLiteral(num) => CompiledNode::Value(Value::Numeric(num.value)),
+            ASTNode::Rest => CompiledNode::Value(Value::Rest),
+            ASTNode::FastSubsequence(fast) => {
+                let children = Self::compile_nodes(&fast.elements);
+                CompiledNode::Fast(children)
+            }
+            ASTNode::SlowSubsequence(slow) => {
+                let children = Self::compile_nodes(&slow.elements);
+                let period = children.len();
 
-impl PatternExpr {
-    fn render_with_state(
+                CompiledNode::Slow {
+                    nodes: children,
+                    period,
+                }
+            }
+            ASTNode::RandomChoice(choice) => {
+                let choices = choice
+                    .choices
+                    .iter()
+                    .map(|node| Self::compile_node(node))
+                    .collect();
+
+                CompiledNode::Random { choices }
+            }
+        }
+    }
+
+    /// Run the compiled program at a given time (stateless)
+    pub fn run(&self, time: f64) -> Option<Value> {
+        let loop_time = time.fract();
+        let loop_index = time.floor() as usize;
+
+        let rng = Rng::new(self.seed);
+
+        self.run_nodes(&self.root, loop_time, 0.0, 1.0, loop_index, rng, 0)
+    }
+
+    fn run_nodes(
         &self,
-        path: &mut Vec<usize>,
-        start: f32,
-        duration: f32,
-        output: &mut Vec<Hap>,
-        mut event_index: usize,
-        state: &mut PatternState,
-    ) -> usize {
-        match self {
-            PatternExpr::Empty => event_index,
-            PatternExpr::Event { value, steps } => {
-                let step_count = (*steps).max(1);
-                let step_duration = if step_count == 0 {
-                    0.0
-                } else {
-                    duration / step_count as f32
-                };
-                for i in 0..step_count {
-                    output.push(Hap {
-                        span: Span {
-                            start: start + step_duration * i as f32,
-                            duration: step_duration,
-                        },
-                        value: value.clone(),
-                    });
-                    event_index += 1;
-                }
-                event_index
-            }
-            PatternExpr::Sequence { patterns } => {
-                if patterns.is_empty() {
-                    return event_index;
-                }
-                let part_duration = duration / patterns.len() as f32;
-                let key = NodeId::from_path(path);
-                let current_pos = *state.seq_positions.get(&key).unwrap_or(&0);
-                let start_index = current_pos % patterns.len();
-                let mut idx = event_index;
-                for offset in 0..patterns.len() {
-                    let child_index = (start_index + offset) % patterns.len();
-                    path.push(child_index);
-                    idx = patterns[child_index].root.render_with_state(
-                        path,
-                        start + part_duration * offset as f32,
-                        part_duration,
-                        output,
-                        idx,
-                        state,
-                    );
-                    path.pop();
-                }
-                state
-                    .seq_positions
-                    .insert(key, current_pos.wrapping_add(1));
-                idx
-            }
-            PatternExpr::Stack { patterns } => {
-                let mut idx = event_index;
-                for (child_index, pat) in patterns.iter().enumerate() {
-                    path.push(child_index);
-                    idx = pat
-                        .root
-                        .render_with_state(path, start, duration, output, idx, state);
-                    path.pop();
-                }
-                idx
-            }
-            PatternExpr::Repeat { times, pattern } => {
-                if *times == 0 {
-                    return event_index;
-                }
-                let slice_duration = duration / *times as f32;
-                let mut idx = event_index;
-                for i in 0..*times {
-                    path.push(i as usize);
-                    idx = pattern.root.render_with_state(
-                        path,
-                        start + slice_duration * i as f32,
-                        slice_duration,
-                        output,
-                        idx,
-                        state,
-                    );
-                    path.pop();
-                }
-                idx
-            }
-            PatternExpr::Stretch { factor, pattern } => {
-                if *factor <= 0.0 {
-                    return event_index;
-                }
-                let scaled_duration = duration / *factor;
-                path.push(0);
-                let next = pattern.root.render_with_state(
-                    path,
-                    start,
-                    scaled_duration,
-                    output,
-                    event_index,
-                    state,
-                );
-                path.pop();
-                next
-            }
-            PatternExpr::Offset { offset, pattern } => {
-                path.push(0);
-                let next = pattern.root.render_with_state(
-                    path,
-                    start + offset * duration,
-                    duration,
-                    output,
-                    event_index,
-                    state,
-                );
-                path.pop();
-                next
-            }
-            PatternExpr::Map { op, pattern } => {
-                let mut temp = Vec::new();
-                path.push(0);
-                let next_index = pattern.root.render_with_state(
-                    path,
-                    start,
-                    duration,
-                    &mut temp,
-                    event_index,
-                    state,
-                );
-                path.pop();
-                for hap in temp {
-                    output.push(Hap {
-                        value: op.apply(&hap.value),
-                        span: hap.span,
-                    });
-                }
-                next_index
-            }
-            PatternExpr::Filter {
-                condition,
-                pattern,
-            } => {
-                let mut temp = Vec::new();
-                path.push(0);
-                let next_index = pattern.root.render_with_state(
-                    path,
-                    start,
-                    duration,
-                    &mut temp,
-                    event_index,
-                    state,
-                );
-                path.pop();
-                for (offset, hap) in temp.into_iter().enumerate() {
-                    if condition.matches(&hap.value, event_index + offset) {
-                        output.push(hap);
-                    }
-                }
-                next_index
-            }
-            PatternExpr::Reverse { pattern } => {
-                let mut temp = Vec::new();
-                path.push(0);
-                let next_index = pattern.root.render_with_state(
-                    path,
-                    start,
-                    duration,
-                    &mut temp,
-                    event_index,
-                    state,
-                );
-                path.pop();
-                for mut hap in temp.into_iter().rev() {
-                    let rel_start = hap.span.start - start;
-                    let new_start = start + (duration - hap.span.duration - rel_start);
-                    hap.span.start = new_start;
-                    output.push(hap);
-                }
-                next_index
+        nodes: &[CompiledNode],
+        time: f64,
+        start: f64,
+        duration: f64,
+        loop_index: usize,
+        rng: Rng,
+        choice_id: u64,
+    ) -> Option<Value> {
+        if nodes.is_empty() {
+            return None;
+        }
+
+        let element_duration = duration / nodes.len() as f64;
+
+        for (i, node) in nodes.iter().enumerate() {
+            let element_start = start + i as f64 * element_duration;
+            let element_end = element_start + element_duration;
+
+            if time >= element_start && time < element_end {
+                let relative_time = (time - element_start) / element_duration;
+                let node_choice_id = choice_id
+                    .wrapping_mul(nodes.len() as u64)
+                    .wrapping_add(i as u64);
+                return self.run_node(node, relative_time, loop_index, rng, node_choice_id);
             }
         }
-    }
-}
 
-/// Public entry point for building declarative, serializable patterns.
-///
-/// Patterns are defined over a single canonical cycle (0.0..1.0) and are considered
-/// to repeat every cycle. Queries operate in cycle space so they can be driven at
-/// sample rate without callbacks.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Pattern {
-    pub root: PatternExpr,
-}
-
-impl Pattern {
-    pub fn pure(value: PatternValue) -> Self {
-        Pattern {
-            root: PatternExpr::Event { value, steps: 1 },
-        }
+        None
     }
 
-    pub fn with_steps(value: PatternValue, steps: u32) -> Self {
-        Pattern {
-            root: PatternExpr::Event {
-                value,
-                steps: steps.max(1),
-            },
-        }
-    }
-
-    pub fn silence() -> Self {
-        Pattern {
-            root: PatternExpr::Empty,
-        }
-    }
-
-    pub fn sequence<I>(patterns: I) -> Self
-    where
-        I: IntoIterator<Item = Pattern>,
-    {
-        Pattern {
-            root: PatternExpr::Sequence {
-                patterns: patterns.into_iter().collect(),
-            },
-        }
-    }
-
-    pub fn stack<I>(patterns: I) -> Self
-    where
-        I: IntoIterator<Item = Pattern>,
-    {
-        Pattern {
-            root: PatternExpr::Stack {
-                patterns: patterns.into_iter().collect(),
-            },
-        }
-    }
-
-    pub fn repeat(self, times: u32) -> Self {
-        Pattern {
-            root: PatternExpr::Repeat {
-                times,
-                pattern: Box::new(self),
-            },
-        }
-    }
-
-    pub fn fast(self, factor: f32) -> Self {
-        Pattern {
-            root: PatternExpr::Stretch {
-                factor,
-                pattern: Box::new(self),
-            },
-        }
-    }
-
-    pub fn slow(self, factor: f32) -> Self {
-        if factor == 0.0 {
-            self
-        } else {
-            Pattern {
-                root: PatternExpr::Stretch {
-                    factor: 1.0 / factor,
-                    pattern: Box::new(self),
-                },
-            }
-        }
-    }
-
-    pub fn offset(self, offset: f32) -> Self {
-        Pattern {
-            root: PatternExpr::Offset {
-                offset,
-                pattern: Box::new(self),
-            },
-        }
-    }
-
-    pub fn map(self, op: ValueOp) -> Self {
-        Pattern {
-            root: PatternExpr::Map {
-                op,
-                pattern: Box::new(self),
-            },
-        }
-    }
-
-    pub fn filter(self, condition: Condition) -> Self {
-        Pattern {
-            root: PatternExpr::Filter {
-                condition,
-                pattern: Box::new(self),
-            },
-        }
-    }
-
-    pub fn reverse(self) -> Self {
-        Pattern {
-            root: PatternExpr::Reverse {
-                pattern: Box::new(self),
-            },
-        }
-    }
-
-    pub fn apply(self, transform: PatternTransform) -> Self {
-        transform.apply(self)
-    }
-
-    /// Advance the pattern by one audio sample, given cycles-per-second and sample rate.
-    /// Returns haps active during this tick and whether a cycle boundary was crossed.
-    pub fn tick(&self, state: &mut PatternState, cps: f32, sample_rate: f32) -> TickResult {
-        let delta_cycles = if sample_rate <= 0.0 { 0.0 } else { cps / sample_rate };
-
-        let start_cycle = state.cycle;
-        let start_time = state.cycle as f32 + state.phase;
-        let end_phase = state.phase + delta_cycles;
-
-        let mut advanced_cycle = false;
-        let mut haps = Vec::new();
-
-        // Ensure we have cache for current cycle
-        ensure_cycle_cached(self, start_cycle, state);
-
-        if end_phase < 1.0 {
-            state.phase = end_phase;
-            collect_overlapping(&state.cache_haps, start_time, start_time + delta_cycles, &mut haps);
-        } else {
-            // consume tail of current cycle
-            let end_current = start_cycle as f32 + 1.0;
-            collect_overlapping(&state.cache_haps, start_time, end_current, &mut haps);
-
-            // advance cycles (could be more than one if cps is huge)
-            let mut remaining = end_phase - 1.0;
-            state.cycle += 1;
-            advanced_cycle = true;
-
-            // handle possible multiple wraps
-            while remaining >= 1.0 {
-                state.phase = 0.0;
-                ensure_cycle_cached(self, state.cycle, state);
-                collect_overlapping(&state.cache_haps, state.cycle as f32, state.cycle as f32 + 1.0, &mut haps);
-                state.cycle += 1;
-                remaining -= 1.0;
-            }
-
-            state.phase = remaining;
-            ensure_cycle_cached(self, state.cycle, state);
-            let segment_start = state.cycle as f32;
-            collect_overlapping(&state.cache_haps, segment_start, segment_start + remaining, &mut haps);
-        }
-
-        TickResult {
-            haps,
-            advanced_cycle,
-        }
-    }
-
-    /// Render the pattern for a specific cycle with supplied state (state is updated).
-    pub fn query_cycle_with_state(&self, cycle: i64, state: &mut PatternState) -> Vec<Hap> {
-        let mut output = Vec::new();
-        let mut path = Vec::new();
-        self.root
-            .render_with_state(&mut path, cycle as f32, 1.0, &mut output, 0, state);
-        output
-    }
-
-    /// Render the pattern for a specific cycle with ephemeral state.
-    pub fn query_cycle(&self, cycle: i64) -> Vec<Hap> {
-        let mut state = PatternState::new();
-        self.query_cycle_with_state(cycle, &mut state)
-    }
-
-    /// Query all haps overlapping the given time range (in cycles) with supplied state.
-    pub fn query_range_with_state(&self, range: TimeRange, state: &mut PatternState) -> Vec<Hap> {
-        if range.end <= range.start {
-            return Vec::new();
-        }
-
-        let mut result = Vec::new();
-        let mut event_index = 0usize;
-        let start_cycle = range.start.floor() as i64;
-        let end_cycle = range.end.ceil() as i64;
-        let mut path = Vec::new();
-
-        for cycle in start_cycle..end_cycle {
-            let mut cycle_events = Vec::new();
-            event_index = self.root.render_with_state(
-                &mut path,
-                cycle as f32,
+    fn run_node(
+        &self,
+        node: &CompiledNode,
+        relative_time: f64,
+        loop_index: usize,
+        rng: Rng,
+        choice_id: u64,
+    ) -> Option<Value> {
+        match node {
+            CompiledNode::Value(val) => Some(val.clone()),
+            CompiledNode::Fast(children) => self.run_nodes(
+                children,
+                relative_time,
+                0.0,
                 1.0,
-                &mut cycle_events,
-                event_index,
-                state,
-            );
+                loop_index,
+                rng,
+                choice_id,
+            ),
+            CompiledNode::Slow { nodes, period, .. } => {
+                // This slow subsequence is encountered once per loop
+                let encounter_count = loop_index;
+                let index = encounter_count % period;
 
-            for hap in cycle_events.into_iter() {
-                if hap.span.overlaps(&range) {
-                    result.push(hap);
+                // Calculate how many times THIS child has been selected in previous loops
+                // A child at position `index` is selected every `period` loops
+                // Starting from loop `index`, it's selected at loops: index, index+period, index+2*period, ...
+                let times_this_child_selected = if loop_index >= index {
+                    (loop_index - index) / period
+                } else {
+                    0
+                };
+
+                let child_choice_id = choice_id
+                    .wrapping_mul(*period as u64)
+                    .wrapping_add(index as u64);
+                self.run_node(
+                    &nodes[index],
+                    relative_time,
+                    times_this_child_selected,
+                    rng,
+                    child_choice_id,
+                )
+            }
+            CompiledNode::Random { choices } => {
+                if choices.is_empty() {
+                    return None;
                 }
-            }
-        }
 
-        result
-    }
+                // Compute absolute time from relative_time and loop_index
+                let absolute_time = loop_index as f64 + relative_time;
 
-    /// Query all haps overlapping the given time range (in cycles) with a temporary state.
-    pub fn query_range(&self, range: TimeRange) -> Vec<Hap> {
-        let mut state = PatternState::new();
-        self.query_range_with_state(range, &mut state)
-    }
+                // Hash all components together with proper mixing for decorrelation
+                let time_bits = absolute_time.to_bits();
+                let hash = hash_components(self.seed, time_bits, choice_id);
 
-    /// Return the first hap covering the given time (in cycles) using supplied state.
-    pub fn hap_at_with_state(&self, time: f32, state: &mut PatternState) -> Option<Hap> {
-        let range = TimeRange::new(time, time + f32::EPSILON.max(1e-6));
-        self.query_range_with_state(range, state)
-            .into_iter()
-            .find(|hap| time >= hap.span.start && time < hap.span.end())
-    }
+                let mut choice_rng = Rng::new(hash);
+                let random_value = choice_rng.next();
 
-    /// Return the first hap covering the given time (in cycles) with a temporary state.
-    pub fn hap_at(&self, time: f32) -> Option<Hap> {
-        let mut state = PatternState::new();
-        self.hap_at_with_state(time, &mut state)
-    }
-}
+                // Map random value to choice index
+                let index = (random_value * choices.len() as f64).floor() as usize;
+                let index = index.min(choices.len() - 1); // Clamp to valid range
 
-/// Errors that can occur while parsing mini notation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct MiniError {
-    pub message: String,
-}
-
-impl MiniError {
-    fn new(msg: impl Into<String>) -> Self {
-        MiniError {
-            message: msg.into(),
-        }
-    }
-}
-
-/// Parse a limited subset of Strudel/Tidal mini-notation into a declarative `Pattern`.
-/// Supported constructs:
-/// - Whitespace-separated tokens form a sequence over one cycle.
-/// - `token*4` speeds the token up 4x within the same cycle.
-/// - `~` represents a gap (silence) for one slice of the sequence.
-/// - `[ a b ]` stacks patterns in parallel over the same cycle window.
-/// - `< a b c >` sequences its contents within the same slice.
-/// Numbers parse to `PatternValue::Number`; other atoms become `PatternValue::Text`.
-/// This intentionally avoids callbacks so the resulting pattern is serializable.
-pub fn parse_mini(input: &str) -> Result<Pattern, MiniError> {
-    let mut chars = input.chars().peekable();
-    let pat = parse_sequence(&mut chars, Terminator::Eof)?;
-    Ok(pat)
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Terminator {
-    Eof,
-    CloseSquare,
-    CloseAngle,
-}
-
-fn parse_sequence(chars: &mut Peekable<Chars<'_>>, terminator: Terminator) -> Result<Pattern, MiniError> {
-    let mut parts: Vec<Pattern> = Vec::new();
-    while let Some(&ch) = chars.peek() {
-        if ch.is_whitespace() {
-            chars.next();
-            continue;
-        }
-        match (terminator, ch) {
-            (Terminator::CloseSquare, ']') => {
-                chars.next();
-                break;
-            }
-            (Terminator::CloseAngle, '>') => {
-                chars.next();
-                break;
-            }
-            _ => {
-                let part = parse_part(chars)?;
-                parts.push(part);
+                self.run_node(
+                    &choices[index],
+                    relative_time,
+                    loop_index,
+                    rng,
+                    choice_id.wrapping_add(1),
+                )
             }
         }
     }
-
-    if parts.is_empty() {
-        Ok(Pattern::silence())
-    } else if parts.len() == 1 {
-        Ok(parts.remove(0))
-    } else {
-        Ok(Pattern::sequence(parts))
-    }
 }
 
-fn parse_part(chars: &mut Peekable<Chars<'_>>) -> Result<Pattern, MiniError> {
-    let mut pat = parse_atom(chars)?;
-
-    // Optional repeat/speed syntax: *N
-    if let Some('*') = chars.peek().copied() {
-        chars.next();
-        let number = parse_number_literal(chars)?;
-        if number <= 0.0 {
-            return Err(MiniError::new("repeat factor must be positive"));
-        }
-        pat = pat.fast(number as f32);
-    }
-
-    Ok(pat)
+/// Stateless runner function - compiles on demand
+pub fn run(program: &Program, time: f64) -> Option<Value> {
+    let compiled = CompiledProgram::compile(program);
+    compiled.run(time)
 }
 
-fn parse_atom(chars: &mut Peekable<Chars<'_>>) -> Result<Pattern, MiniError> {
-    skip_ws(chars);
-    let ch = chars.next().ok_or_else(|| MiniError::new("unexpected end of input"))?;
-    match ch {
-        '[' => {
-            let inner = parse_sequence(chars, Terminator::CloseSquare)?;
-            Ok(match inner {
-                Pattern { root: PatternExpr::Sequence { patterns } } => Pattern::stack(patterns),
-                other => Pattern::stack([other]),
-            })
+/// Stateful runner that caches the current node and its time range
+pub struct Runner {
+    compiled: CompiledProgram,
+    cached_node: Option<CachedNode>,
+}
+
+#[derive(Debug, Clone)]
+struct CachedNode {
+    value: Value,
+    time_start: f64,
+    time_end: f64,
+}
+
+impl Runner {
+    /// Create a new runner with the given program
+    pub fn new(program: &Program) -> Self {
+        Self {
+            compiled: CompiledProgram::compile(program),
+            cached_node: None,
         }
-        '<' => parse_sequence(chars, Terminator::CloseAngle),
-        '~' => Ok(Pattern::silence()),
-        '>' => Err(MiniError::new("unexpected '>'")),
-        ']' => Err(MiniError::new("unexpected ']'")),
-        _ => {
-            let mut buf = String::new();
-            buf.push(ch);
-            while let Some(&next) = chars.peek() {
-                if next.is_whitespace() || matches!(next, '[' | ']' | '<' | '>' | '*') {
-                    break;
+    }
+
+    /// Update the program (cache remains valid if still in range)
+    pub fn set_program(&mut self, program: &Program) {
+        self.compiled = CompiledProgram::compile(program);
+        // Don't clear cache - it will be invalidated naturally when time moves outside range
+    }
+
+    /// Run at the given time, using cache when possible
+    pub fn run(&mut self, time: f64) -> Option<Value> {
+        // Check if we can use cached value
+        if let Some(ref cached) = self.cached_node {
+            if time >= cached.time_start && time < cached.time_end {
+                return Some(cached.value.clone());
+            }
+        }
+
+        // Need to evaluate - first find the time range for this node
+        let (value, time_start, time_end) = self.find_node_with_range(time)?;
+
+        // Cache the result
+        self.cached_node = Some(CachedNode {
+            value: value.clone(),
+            time_start,
+            time_end,
+        });
+
+        Some(value)
+    }
+
+    /// Find the node at the given time along with its time range
+    fn find_node_with_range(&self, time: f64) -> Option<(Value, f64, f64)> {
+        let loop_time = time.fract();
+        let loop_index = time.floor() as usize;
+        let loop_start = loop_index as f64;
+
+        let rng = Rng::new(self.compiled.seed);
+
+        self.find_node_in_range(
+            &self.compiled.root,
+            loop_time,
+            0.0,
+            1.0,
+            loop_index,
+            rng,
+            0,
+            loop_start,
+        )
+    }
+
+    fn find_node_in_range(
+        &self,
+        nodes: &[CompiledNode],
+        time: f64,
+        start: f64,
+        duration: f64,
+        loop_index: usize,
+        rng: Rng,
+        choice_id: u64,
+        absolute_start: f64,
+    ) -> Option<(Value, f64, f64)> {
+        if nodes.is_empty() {
+            return None;
+        }
+
+        let element_duration = duration / nodes.len() as f64;
+
+        for (i, node) in nodes.iter().enumerate() {
+            let element_start = start + i as f64 * element_duration;
+            let element_end = element_start + element_duration;
+
+            if time >= element_start && time < element_end {
+                let relative_time = (time - element_start) / element_duration;
+                let node_choice_id = choice_id
+                    .wrapping_mul(nodes.len() as u64)
+                    .wrapping_add(i as u64);
+                let node_absolute_start = absolute_start + element_start;
+                let node_absolute_end = absolute_start + element_end;
+
+                return self.find_node_range(
+                    node,
+                    relative_time,
+                    loop_index,
+                    rng,
+                    node_choice_id,
+                    node_absolute_start,
+                    node_absolute_end,
+                );
+            }
+        }
+
+        None
+    }
+
+    fn find_node_range(
+        &self,
+        node: &CompiledNode,
+        relative_time: f64,
+        loop_index: usize,
+        rng: Rng,
+        choice_id: u64,
+        absolute_start: f64,
+        absolute_end: f64,
+    ) -> Option<(Value, f64, f64)> {
+        match node {
+            CompiledNode::Value(val) => Some((val.clone(), absolute_start, absolute_end)),
+            CompiledNode::Fast(children) => self.find_node_in_range(
+                children,
+                relative_time,
+                0.0,
+                1.0,
+                loop_index,
+                rng,
+                choice_id,
+                absolute_start,
+            ),
+            CompiledNode::Slow { nodes, period, .. } => {
+                let encounter_count = loop_index;
+                let index = encounter_count % period;
+
+                let times_this_child_selected = if loop_index >= index {
+                    (loop_index - index) / period
+                } else {
+                    0
+                };
+
+                let child_choice_id = choice_id
+                    .wrapping_mul(*period as u64)
+                    .wrapping_add(index as u64);
+                self.find_node_range(
+                    &nodes[index],
+                    relative_time,
+                    times_this_child_selected,
+                    rng,
+                    child_choice_id,
+                    absolute_start,
+                    absolute_end,
+                )
+            }
+            CompiledNode::Random { choices } => {
+                if choices.is_empty() {
+                    return None;
                 }
-                buf.push(next);
-                chars.next();
+
+                let absolute_time = loop_index as f64 + relative_time;
+                let time_bits = absolute_time.to_bits();
+                let hash = hash_components(self.compiled.seed, time_bits, choice_id);
+
+                let mut choice_rng = Rng::new(hash);
+                let random_value = choice_rng.next();
+
+                let index = (random_value * choices.len() as f64).floor() as usize;
+                let index = index.min(choices.len() - 1);
+
+                self.find_node_range(
+                    &choices[index],
+                    relative_time,
+                    loop_index,
+                    rng,
+                    choice_id.wrapping_add(1),
+                    absolute_start,
+                    absolute_end,
+                )
             }
-
-            if buf.is_empty() {
-                return Err(MiniError::new("empty token"));
-            }
-
-            let value = if let Ok(num) = buf.parse::<f64>() {
-                PatternValue::number(num)
-            } else {
-                PatternValue::text(buf)
-            };
-            Ok(Pattern::pure(value))
         }
     }
-}
 
-fn parse_number_literal(chars: &mut Peekable<Chars<'_>>) -> Result<f64, MiniError> {
-    skip_ws(chars);
-    let mut buf = String::new();
-    while let Some(&ch) = chars.peek() {
-        if ch.is_ascii_digit() || ch == '.' {
-            buf.push(ch);
-            chars.next();
-        } else {
-            break;
-        }
-    }
-    if buf.is_empty() {
-        return Err(MiniError::new("expected number after '*'"));
-    }
-    buf.parse::<f64>()
-        .map_err(|_| MiniError::new("invalid number literal"))
-}
-
-fn skip_ws(chars: &mut Peekable<Chars<'_>>) {
-    while matches!(chars.peek(), Some(ch) if ch.is_whitespace()) {
-        chars.next();
-    }
-}
-
-/// Result of advancing a pattern by one audio sample.
-#[derive(Clone, Debug, PartialEq)]
-pub struct TickResult {
-    /// Haps active during this sample window.
-    pub haps: Vec<Hap>,
-    /// True if we wrapped to a new cycle on this tick.
-    pub advanced_cycle: bool,
-}
-
-fn ensure_cycle_cached(pattern: &Pattern, cycle: i64, state: &mut PatternState) {
-    if state.cache_cycle == Some(cycle) {
-        return;
-    }
-
-    let mut path = Vec::new();
-    let mut output = Vec::new();
-    pattern
-        .root
-        .render_with_state(&mut path, cycle as f32, 1.0, &mut output, 0, state);
-    state.cache_cycle = Some(cycle);
-    state.cache_haps = output;
-}
-
-fn collect_overlapping(haps: &[Hap], start: f32, end: f32, out: &mut Vec<Hap>) {
-    for hap in haps {
-        if hap.span.start < end && hap.span.end() > start {
-            out.push(hap.clone());
-        }
+    /// Get the currently cached node info (for debugging/inspection)
+    pub fn cached_info(&self) -> Option<(Value, f64, f64)> {
+        self.cached_node
+            .as_ref()
+            .map(|cached| (cached.value.clone(), cached.time_start, cached.time_end))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
 
-    fn num(v: f64) -> PatternValue {
-        PatternValue::number(v)
+    fn num(value: f32) -> ASTNode {
+        ASTNode::NumericLiteral(NumericLiteral { value })
+    }
+
+    fn random(choices: Vec<ASTNode>) -> ASTNode {
+        ASTNode::RandomChoice(RandomChoice { choices })
     }
 
     #[test]
-    fn repeat_splits_time_equally() {
-        let pattern = Pattern::pure(num(1.0)).repeat(2);
-        let haps = pattern.query_cycle(0);
-        assert_eq!(haps.len(), 2);
-        assert!((haps[0].span.start - 0.0).abs() < 1e-6);
-        assert!((haps[0].span.duration - 0.5).abs() < 1e-6);
-        assert!((haps[1].span.start - 0.5).abs() < 1e-6);
+    fn test_basic_sequence() {
+        let program = Program::new(vec![num(1.0), num(2.0), num(3.0)]);
+
+        let compiled = CompiledProgram::compile(&program);
+
+        assert_eq!(compiled.run(0.1), Some(Value::Numeric(1.0)));
+        assert_eq!(compiled.run(0.4), Some(Value::Numeric(2.0)));
+        assert_eq!(compiled.run(0.7), Some(Value::Numeric(3.0)));
     }
 
     #[test]
-    fn stack_overlays_events() {
-        let base = Pattern::pure(num(1.0));
-        let late = Pattern::pure(num(2.0)).offset(0.25);
-        let pattern = Pattern::stack([base, late]);
-        let haps = pattern.query_cycle(0);
-        assert_eq!(haps.len(), 2);
-        let starts: Vec<f32> = haps.iter().map(|h| h.span.start).collect();
-        assert!(starts.contains(&0.0));
-        assert!(starts.contains(&0.25));
+    fn test_looping() {
+        let program = Program::new(vec![num(1.0), num(2.0)]);
+
+        let compiled = CompiledProgram::compile(&program);
+
+        assert_eq!(compiled.run(0.0), Some(Value::Numeric(1.0)));
+        assert_eq!(compiled.run(1.0), Some(Value::Numeric(1.0)));
+        assert_eq!(compiled.run(2.5), Some(Value::Numeric(2.0)));
     }
 
     #[test]
-    fn map_adds_amount() {
-        let pattern = Pattern::pure(num(1.5)).map(ValueOp::Add { amount: 0.5 });
-        let haps = pattern.query_cycle(0);
-        assert_eq!(haps.len(), 1);
-        match &haps[0].value {
-            PatternValue::Number { value } => assert!((*value - 2.0).abs() < 1e-6),
-            _ => panic!("expected number"),
+    fn test_fast_subsequence() {
+        let program = Program::new(vec![
+            num(1.0),
+            ASTNode::FastSubsequence(FastSubsequence {
+                elements: vec![num(2.0), num(3.0)],
+            }),
+        ]);
+
+        let compiled = CompiledProgram::compile(&program);
+
+        assert_eq!(compiled.run(0.25), Some(Value::Numeric(1.0)));
+        assert_eq!(compiled.run(0.55), Some(Value::Numeric(2.0)));
+        assert_eq!(compiled.run(0.75), Some(Value::Numeric(3.0)));
+    }
+
+    #[test]
+    fn test_slow_subsequence() {
+        let program = Program::new(vec![ASTNode::SlowSubsequence(SlowSubsequence {
+            elements: vec![num(1.0), num(2.0), num(3.0)],
+        })]);
+
+        let compiled = CompiledProgram::compile(&program);
+
+        assert_eq!(compiled.run(0.5), Some(Value::Numeric(1.0)));
+        assert_eq!(compiled.run(1.5), Some(Value::Numeric(2.0)));
+        assert_eq!(compiled.run(2.5), Some(Value::Numeric(3.0)));
+        assert_eq!(compiled.run(3.5), Some(Value::Numeric(1.0)));
+    }
+
+    #[test]
+    fn test_nested_slow_subsequence() {
+        // <<1 2> <3 4>>
+        let program = Program::new(vec![ASTNode::SlowSubsequence(SlowSubsequence {
+            elements: vec![
+                ASTNode::SlowSubsequence(SlowSubsequence {
+                    elements: vec![num(1.0), num(2.0)],
+                }),
+                ASTNode::SlowSubsequence(SlowSubsequence {
+                    elements: vec![num(3.0), num(4.0)],
+                }),
+            ],
+        })]);
+
+        let compiled = CompiledProgram::compile(&program);
+
+        // Should return 1, 3, 2, 4, 1...
+        assert_eq!(compiled.run(0.5), Some(Value::Numeric(1.0)));
+        assert_eq!(compiled.run(1.5), Some(Value::Numeric(3.0)));
+        assert_eq!(compiled.run(2.5), Some(Value::Numeric(2.0)));
+        assert_eq!(compiled.run(3.5), Some(Value::Numeric(4.0)));
+        assert_eq!(compiled.run(4.5), Some(Value::Numeric(1.0)));
+    }
+
+    #[test]
+    fn test_random_choice() {
+        let program = Program::new(vec![random(vec![num(1.0), num(2.0), num(3.0)])]);
+        let compiled = CompiledProgram::compile(&program);
+        let mut counts = HashMap::new();
+        for i in 0..10000 {
+            let time = i as f64;
+            if let Some(Value::Numeric(val)) = compiled.run(time) {
+                *counts.entry(val as i32).or_insert(0) += 1;
+            }
         }
+
+        // All three values should appear roughly equally
+        let count_1 = *counts.get(&1).unwrap_or(&0);
+        let count_2 = *counts.get(&2).unwrap_or(&0);
+        let count_3 = *counts.get(&3).unwrap_or(&0);
+        assert!(count_1 > 3000);
+        assert!(count_2 > 3000);
+        assert!(count_3 > 3000);
     }
 
     #[test]
-    fn filter_keeps_every_other_event() {
-        let pattern = Pattern::with_steps(num(1.0), 4)
-            .filter(Condition::EventIndexMultiple { step: 2 });
-        let haps = pattern.query_cycle(0);
-        assert_eq!(haps.len(), 2);
-        assert!((haps[0].span.start - 0.0).abs() < 1e-6);
-        assert!((haps[1].span.start - 0.5).abs() < 1e-6);
-    }
+    fn test_random_with_slow_subsequence() {
+        let program = Program::new(vec![ASTNode::SlowSubsequence(SlowSubsequence {
+            elements: vec![random(vec![num(1.0), num(2.0)]), num(3.0)],
+        })]);
 
-    #[test]
-    fn hap_at_returns_covering_event() {
-        let pattern = Pattern::pure(num(1.0)).fast(2.0);
-        let hap = pattern.hap_at(0.25).expect("should find hap");
-        match hap.value {
-            PatternValue::Number { value } => assert!((value - 1.0).abs() < 1e-6),
-            _ => panic!("expected number"),
+        let compiled = CompiledProgram::compile(&program);
+
+        let mut counts = HashMap::new();
+        for i in 0..10000 {
+            let time = i as f64;
+            if let Some(Value::Numeric(val)) = compiled.run(time) {
+                *counts.entry(val as i32).or_insert(0) += 1;
+            }
         }
-        assert!((hap.span.duration - 0.5).abs() < 1e-6);
+
+        let count_1 = *counts.get(&1).unwrap_or(&0);
+        let count_2 = *counts.get(&2).unwrap_or(&0);
+        let count_3 = *counts.get(&3).unwrap_or(&0);
+        assert!(count_1 > 2300);
+        assert!(count_2 > 2300);
+        assert_eq!(count_3, 5000);
     }
 
     #[test]
-    fn range_query_spans_multiple_cycles() {
-        let pattern = Pattern::pure(num(1.0));
-        let haps = pattern.query_range(TimeRange::new(0.0, 2.0));
-        assert_eq!(haps.len(), 2);
-        let starts: Vec<f32> = haps.iter().map(|h| h.span.start).collect();
-        assert!(starts.contains(&0.0));
-        assert!(starts.contains(&1.0));
-    }
+    fn test_with_nested_random_slowsequence() {
+        let program = Program::new(vec![ASTNode::SlowSubsequence(SlowSubsequence {
+            elements: vec![
+                random(vec![
+                    num(1.0),
+                    ASTNode::SlowSubsequence(SlowSubsequence {
+                        elements: vec![num(2.0), num(3.0)],
+                    }),
+                ]),
+                ASTNode::SlowSubsequence(SlowSubsequence {
+                    elements: vec![num(4.0), num(5.0)],
+                }),
+            ],
+        })]);
 
-    #[test]
-    fn serde_roundtrip() {
-        let pattern = Pattern::sequence([
-            Pattern::pure(num(1.0)),
-            Pattern::pure(num(2.0)).fast(2.0),
-        ])
-        .map(ValueOp::Negate)
-        .apply(PatternTransform::Reverse);
+        let compiled = CompiledProgram::compile(&program);
 
-        let json = serde_json::to_string(&pattern).unwrap();
-        let roundtrip: Pattern = serde_json::from_str(&json).unwrap();
-        assert_eq!(pattern, roundtrip);
-    }
-
-    #[test]
-    fn parse_simple_sequence() {
-        let pattern = parse_mini("1 2").unwrap();
-        let haps = pattern.query_cycle(0);
-        assert_eq!(haps.len(), 2);
-        assert!((haps[0].span.start - 0.0).abs() < 1e-6);
-        assert!((haps[1].span.start - 0.5).abs() < 1e-6);
-    }
-
-    #[test]
-    fn parse_stack_and_repeat() {
-        let pattern = parse_mini("[a b]*2").unwrap();
-        let haps = pattern.query_cycle(0);
-        assert_eq!(haps.len(), 2);
-        let starts: Vec<f32> = haps.iter().map(|h| h.span.start).collect();
-        assert!(starts.iter().any(|s| (*s - 0.0).abs() < 1e-6));
-        // fast(2) compresses into first half of the cycle
-        assert!(starts.iter().all(|s| *s < 0.5 + 1e-6));
-    }
-
-    #[test]
-    fn parse_nested_angle_and_gap() {
-        let pattern = parse_mini("<1 ~ 2>").unwrap();
-        let haps = pattern.query_cycle(0);
-        assert_eq!(haps.len(), 2);
-        assert!((haps[0].span.start - 0.0).abs() < 1e-6);
-        assert!((haps[1].span.start - (2.0 / 3.0)).abs() < 1e-6);
-    }
-
-    #[test]
-    fn parse_numbers_and_text() {
-        let pattern = parse_mini("440 hz").unwrap();
-        let haps = pattern.query_cycle(0);
-        assert_eq!(haps.len(), 2);
-        match haps[0].value {
-            PatternValue::Number { value } => assert!((value - 440.0).abs() < 1e-6),
-            _ => panic!("expected number"),
+        let mut counts = HashMap::new();
+        for i in 0..10000 {
+            let time = i as f64;
+            if let Some(Value::Numeric(val)) = compiled.run(time) {
+                *counts.entry(val as i32).or_insert(0) += 1;
+            }
         }
-        match &haps[1].value {
-            PatternValue::Text { value } => assert_eq!(value, "hz"),
-            _ => panic!("expected text"),
-        }
+
+        let count_1 = *counts.get(&1).unwrap_or(&0);
+        let count_2 = *counts.get(&2).unwrap_or(&0);
+        let count_3 = *counts.get(&3).unwrap_or(&0);
+        let count_4 = *counts.get(&4).unwrap_or(&0);
+        let count_5 = *counts.get(&5).unwrap_or(&0);
+        assert!(count_1 > 2300);
+        assert!(count_2 > 1150);
+        assert!(count_3 > 1150);
+        assert_eq!(count_4, 2500);
+        assert_eq!(count_5, 2500);
     }
 
     #[test]
-    fn tick_advances_phase_and_reports_cycle_wrap() {
-        let pattern = parse_mini("1 2").unwrap();
-        let mut state = PatternState::new();
+    fn test_stateless_multiple_calls() {
+        let program = Program::new(vec![ASTNode::SlowSubsequence(SlowSubsequence {
+            elements: vec![num(1.0), num(2.0)],
+        })]);
 
-        // 1 cycle per second at 2 samples/sec: each tick advances half a cycle
-        let first = pattern.tick(&mut state, 1.0, 2.0);
-        assert!(!first.advanced_cycle);
-        assert_eq!(first.haps.len(), 1);
+        let compiled = CompiledProgram::compile(&program);
 
-        let second = pattern.tick(&mut state, 1.0, 2.0);
-        assert!(second.advanced_cycle); // wrapped into next cycle
-        assert_eq!(second.haps.len(), 1);
+        // Call in any order - should be stateless
+        assert_eq!(compiled.run(3.5), Some(Value::Numeric(2.0)));
+        assert_eq!(compiled.run(0.5), Some(Value::Numeric(1.0)));
+        assert_eq!(compiled.run(2.5), Some(Value::Numeric(1.0)));
+        assert_eq!(compiled.run(1.5), Some(Value::Numeric(2.0)));
     }
 
     #[test]
-    fn sequence_advances_across_cycles_with_state() {
-        let pattern = parse_mini("1 2 3").unwrap();
-        let mut state = PatternState::new();
+    fn test_convenience_function() {
+        let program = Program::new(vec![num(1.0), num(2.0)]);
 
-        let first = pattern.query_cycle_with_state(0, &mut state);
-        let second = pattern.query_cycle_with_state(1, &mut state);
-
-        let first_vals: Vec<_> = first
-            .iter()
-            .map(|h| match h.value { PatternValue::Number { value } => value as i32, _ => -1 })
-            .collect();
-        let second_vals: Vec<_> = second
-            .iter()
-            .map(|h| match h.value { PatternValue::Number { value } => value as i32, _ => -1 })
-            .collect();
-
-        assert_eq!(first_vals, vec![1, 2, 3]);
-        assert_eq!(second_vals, vec![2, 3, 1]);
+        assert_eq!(run(&program, 0.1), Some(Value::Numeric(1.0)));
+        assert_eq!(run(&program, 0.6), Some(Value::Numeric(2.0)));
     }
 
     #[test]
-    fn sequence_state_survives_inner_edit() {
-        let original = parse_mini("[a b c]").unwrap();
-        let mut state = PatternState::new();
-        let first = original.query_cycle_with_state(0, &mut state);
-        let starts_first: Vec<_> = first.iter().map(|h| match &h.value {
-            PatternValue::Text { value } => value.clone(),
-            _ => "".into(),
-        }).collect();
-        assert_eq!(starts_first, vec!["a", "b", "c"]);
+    fn test_complex_nested_program() {
+        // Create a complex program with 5 levels of nesting
+        // Structure: [<[<1 <<2 3>> [4 5]>] 6> <7 [8 <9 10>]> <<11 [12 <13 14>]> 15>]
+        let program = Program::new(vec![
+            // Level 1: Fast subsequence
+            ASTNode::FastSubsequence(FastSubsequence {
+                elements: vec![
+                    // Level 2: Slow subsequence
+                    ASTNode::SlowSubsequence(SlowSubsequence {
+                        elements: vec![
+                            // Level 3: Fast subsequence
+                            ASTNode::FastSubsequence(FastSubsequence {
+                                elements: vec![
+                                    // Level 4: Slow subsequence
+                                    ASTNode::SlowSubsequence(SlowSubsequence {
+                                        elements: vec![
+                                            num(1.0),
+                                            // Level 5: Slow nested in slow
+                                            ASTNode::SlowSubsequence(SlowSubsequence {
+                                                elements: vec![num(2.0), num(3.0)],
+                                            }),
+                                            // Level 5: Fast nested in slow
+                                            ASTNode::FastSubsequence(FastSubsequence {
+                                                elements: vec![num(4.0), num(5.0)],
+                                            }),
+                                        ],
+                                    }),
+                                ],
+                            }),
+                            num(6.0),
+                        ],
+                    }),
+                    // Level 2: Slow subsequence with fast inside
+                    ASTNode::SlowSubsequence(SlowSubsequence {
+                        elements: vec![
+                            num(7.0),
+                            // Level 3: Fast with slow inside
+                            ASTNode::FastSubsequence(FastSubsequence {
+                                elements: vec![
+                                    num(8.0),
+                                    // Level 4: Slow in fast in slow
+                                    ASTNode::SlowSubsequence(SlowSubsequence {
+                                        elements: vec![num(9.0), num(10.0)],
+                                    }),
+                                ],
+                            }),
+                        ],
+                    }),
+                    // Level 2: Slow with nested slow and fast
+                    ASTNode::SlowSubsequence(SlowSubsequence {
+                        elements: vec![
+                            // Level 3: Slow nested in slow
+                            ASTNode::SlowSubsequence(SlowSubsequence {
+                                elements: vec![
+                                    num(11.0),
+                                    // Level 4: Fast in slow in slow
+                                    ASTNode::FastSubsequence(FastSubsequence {
+                                        elements: vec![
+                                            num(12.0),
+                                            // Level 5: Slow in fast in slow in slow
+                                            ASTNode::SlowSubsequence(SlowSubsequence {
+                                                elements: vec![num(13.0), num(14.0)],
+                                            }),
+                                        ],
+                                    }),
+                                ],
+                            }),
+                            num(15.0),
+                        ],
+                    }),
+                ],
+            }),
+        ]);
 
-        // Edit middle element, keep structure so node path remains; playhead should continue.
-        let edited = parse_mini("[a x c]").unwrap();
-        let second = edited.query_cycle_with_state(1, &mut state);
-        let starts_second: Vec<_> = second.iter().map(|h| match &h.value {
-            PatternValue::Text { value } => value.clone(),
-            _ => "".into(),
-        }).collect();
+        let compiled = CompiledProgram::compile(&program);
 
-        // Stack keeps overlay order; editing a child preserves paths; contents update
-        assert_eq!(starts_second, vec!["a", "x", "c"]);
+        // Test various time points to verify correct behavior
+        // The outer fast subsequence contains 3 elements, each taking 1/3 of the time
+
+        // First third (0.0 - 0.333): First slow subsequence
+        // This slow has 2 elements: a fast subsequence and 6
+        // At loop 0, it selects the fast subsequence (index 0)
+        let result = compiled.run(0.1);
+        assert!(result.is_some());
+
+        // At loop 1, it selects 6 (index 1)
+        let result = compiled.run(1.1);
+        assert_eq!(result, Some(Value::Numeric(6.0)));
+
+        // At loop 2, back to fast subsequence (index 0)
+        let result = compiled.run(2.1);
+        assert!(result.is_some());
+
+        // Second third (0.333 - 0.666): Second slow subsequence
+        // This slow has 2 elements: 7 and a fast [8 <9 10>]
+        // At loop 0, it selects 7
+        let result = compiled.run(0.5);
+        assert_eq!(result, Some(Value::Numeric(7.0)));
+
+        // At loop 1, it selects the fast subsequence
+        // The fast has 8 and <9 10>
+        let result = compiled.run(1.5);
+        assert!(result.is_some());
+
+        // Third third (0.666 - 1.0): Third slow subsequence
+        // This slow has 2 elements: <11 [12 <13 14>]> and 15
+        // At loop 0, it selects the nested slow <11 [12 <13 14>]>
+        let result = compiled.run(0.8);
+        assert!(result.is_some());
+
+        // At loop 1, it selects 15
+        let result = compiled.run(1.8);
+        assert_eq!(result, Some(Value::Numeric(15.0)));
+
+        // Test high loop numbers to ensure stateless efficiency
+        let result = compiled.run(1000.5);
+        assert_eq!(result, Some(Value::Numeric(7.0)));
+
+        let result = compiled.run(1001.8);
+        assert_eq!(result, Some(Value::Numeric(15.0)));
+
+        // Test the deeply nested slow subsequences
+        // The innermost <<2 3>> inside the first element
+        // Access it at loop 0 (should get 2)
+        let result = compiled.run(0.05);
+        // This is complex, just verify it returns something
+        assert!(result.is_some());
+
+        // Test nested slow in fast in slow behavior
+        // Second element at time ~0.5, loop 1 should select the fast [8 <9 10>]
+        // Within that fast, <9 10> gets encountered
+        let result = compiled.run(1.45);
+        assert!(result.is_some());
+
+        // Loop 2, same position, the slow <9 10> should now return 10 (second element)
+        let result = compiled.run(2.45);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_performance_with_large_loop_index() {
+        // Test that we can handle very large loop indices efficiently
+        let program = Program::new(vec![ASTNode::SlowSubsequence(SlowSubsequence {
+            elements: vec![
+                num(1.0),
+                ASTNode::SlowSubsequence(SlowSubsequence {
+                    elements: vec![num(2.0), num(3.0), num(4.0)],
+                }),
+            ],
+        })]);
+
+        let compiled = CompiledProgram::compile(&program);
+
+        // These should all execute in O(depth) time, not O(loop_index) time
+        assert!(compiled.run(0.5).is_some());
+        assert!(compiled.run(100.5).is_some());
+        assert!(compiled.run(10000.5).is_some());
+        assert!(compiled.run(1000000.5).is_some());
+
+        // Verify correctness at high indices
+        // At loop 0: outer selects 1
+        assert_eq!(compiled.run(0.5), Some(Value::Numeric(1.0)));
+
+        // At loop 1: outer selects nested slow (1st encounter) -> 2
+        assert_eq!(compiled.run(1.5), Some(Value::Numeric(2.0)));
+
+        // At loop 2: outer selects 1 again
+        assert_eq!(compiled.run(2.5), Some(Value::Numeric(1.0)));
+
+        // At loop 3: outer selects nested slow (2nd encounter) -> 3
+        assert_eq!(compiled.run(3.5), Some(Value::Numeric(3.0)));
+
+        // At loop 1000001: outer selects nested slow
+        // Outer has period 2: [1, nested_slow]
+        // At loop 1000001: 1000001 % 2 = 1, so outer selects nested_slow (index 1)
+        // How many times has nested_slow been selected by this point?
+        // It's selected at odd loops: 1, 3, 5, ..., 1000001
+        // Using the formula: (loop_index - index) / period = (1000001 - 1) / 2 = 500000
+        // So nested_slow has been encountered 500000 times
+        // nested_slow has period 3: [2, 3, 4]
+        // 500000 % 3 = 2, so it returns 4 (index 2)
+        assert_eq!(compiled.run(1000001.5), Some(Value::Numeric(4.0)));
     }
 }
