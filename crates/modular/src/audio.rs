@@ -142,7 +142,6 @@ impl ScopeBuffer {
       } else {
         if self.trigger.process(value) {
           triggered = true;
-          println!("Scope triggered at value {}", value);
         }
       }
 
@@ -310,6 +309,7 @@ impl AudioState {
       module_id_remaps,
       scopes,
       tracks,
+      ..
     } = desired_graph;
 
     let mut patch_lock = self.patch.lock();
@@ -904,7 +904,7 @@ impl FinalStateProcessor {
       let sample =
         (process_frame(audio_state) * AUDIO_OUTPUT_ATTENUATION * self.attenuation_factor).tanh();
 
-      if is_stopped && sample.abs() < 0.001{
+      if is_stopped && sample.abs() < 0.001 {
         self.attenuation_factor = 0.0;
         self.volume_change = VolumeChange::None;
         0.0
@@ -981,6 +981,7 @@ mod tests {
           module_id_remaps: None,
           tracks: vec![],
           scopes: vec![],
+          patterns: vec![],
         },
         48000.0,
       )
@@ -1007,6 +1008,7 @@ mod tests {
           }]),
           tracks: vec![],
           scopes: vec![],
+          patterns: vec![],
         },
         48000.0,
       )
@@ -1050,6 +1052,7 @@ mod tests {
           module_id_remaps: None,
           tracks: vec![],
           scopes: vec![],
+          patterns: vec![],
         },
         48000.0,
       )
@@ -1092,6 +1095,7 @@ mod tests {
           ]),
           tracks: vec![],
           scopes: vec![],
+          patterns: vec![],
         },
         48000.0,
       )
@@ -1151,6 +1155,7 @@ mod tests {
           module_id_remaps: None,
           tracks: vec![],
           scopes: vec![],
+          patterns: vec![],
         },
         48000.0,
       )
@@ -1199,6 +1204,7 @@ mod tests {
           ]),
           tracks: vec![],
           scopes: vec![],
+          patterns: vec![],
         },
         48000.0,
       )

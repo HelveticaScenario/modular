@@ -173,6 +173,7 @@ declare function note(noteName: string): number;
 declare function bpm(beatsPerMinute: number): number;
 declare function track(id?: string): TrackNode;
 declare function scope(target: ModuleOutput | ModuleNode | TrackNode, msPerFrame?: number, triggerThreshold?: number):  ModuleOutput | ModuleNode | TrackNode;
+declare function seq(pattern: string): void;
 `;
 
 

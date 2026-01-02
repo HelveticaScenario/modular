@@ -1197,6 +1197,7 @@ __metadata:
     "@electron-forge/plugin-webpack": "npm:^7.10.2"
     "@electron/fuses": "npm:^1.8.0"
     "@monaco-editor/react": "npm:^4.7.0"
+    "@ohm-js/cli": "npm:^2.0.1"
     "@oxc-node/core": "npm:^0.0.35"
     "@types/electron-squirrel-startup": "npm:^1.0.2"
     "@types/react": "npm:^19.2.7"
@@ -1216,6 +1217,7 @@ __metadata:
     monaco-editor: "npm:^0.55.1"
     monaco-editor-webpack-plugin: "npm:^7.1.1"
     node-loader: "npm:^2.1.0"
+    ohm-js: "npm:^17.3.0"
     prettier: "npm:^3.4.2"
     react: "npm:^19.2.3"
     react-dom: "npm:^19.2.3"
@@ -2036,6 +2038,20 @@ __metadata:
   dependencies:
     "@octokit/openapi-types": "npm:^27.0.0"
   checksum: 10c0/b8d41098ba6fc194d13d641f9441347e3a3b96c0efabac0e14f57319340a2d4d1c8676e4cb37ab3062c5c323c617e790b0126916e9bf7b201b0cced0826f8ae2
+  languageName: node
+  linkType: hard
+
+"@ohm-js/cli@npm:^2.0.1":
+  version: 2.0.1
+  resolution: "@ohm-js/cli@npm:2.0.1"
+  dependencies:
+    commander: "npm:^8.1.0"
+    fast-glob: "npm:^3.2.7"
+  peerDependencies:
+    ohm-js: ^17.0.0
+  bin:
+    ohm: index.js
+  checksum: 10c0/05098032e67ef4bb8cc19ec032cf36b3008e51e3a6895d28f0c4cbc1634481046cd57f966542baa148b4a878bf80c9fcb32b38501ecd2e92a5b0ce9e8831f4dc
   languageName: node
   linkType: hard
 
@@ -4380,7 +4396,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"commander@npm:^8.3.0":
+"commander@npm:^8.1.0, commander@npm:^8.3.0":
   version: 8.3.0
   resolution: "commander@npm:8.3.0"
   checksum: 10c0/8b043bb8322ea1c39664a1598a95e0495bfe4ca2fad0d84a92d7d1d8d213e2a155b441d2470c8e08de7c4a28cf2bc6e169211c49e1b21d9f7edc6ae4d9356060
@@ -8640,6 +8656,13 @@ __metadata:
   version: 2.1.1
   resolution: "obug@npm:2.1.1"
   checksum: 10c0/59dccd7de72a047e08f8649e94c1015ec72f94eefb6ddb57fb4812c4b425a813bc7e7cd30c9aca20db3c59abc3c85cc7a62bb656a968741d770f4e8e02bc2e78
+  languageName: node
+  linkType: hard
+
+"ohm-js@npm:^17.3.0":
+  version: 17.3.0
+  resolution: "ohm-js@npm:17.3.0"
+  checksum: 10c0/96fc0318752a60cb86a7748447ed184d98c8d2e07999c1d8a53ca61b3deea0ea8da192151193d565afad09f70715082ef5b135e98bd437b75f23f6cc012d1f01
   languageName: node
   linkType: hard
 

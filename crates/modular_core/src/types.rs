@@ -15,6 +15,7 @@ use std::{
 };
 
 use crate::patch::Patch;
+use crate::pattern::PatternProgram;
 
 lazy_static! {
     pub static ref ROOT_ID: String = "root".into();
@@ -910,6 +911,7 @@ pub struct PatchGraph {
     pub module_id_remaps: Option<Vec<ModuleIdRemap>>,
     // #[serde(default)]
     pub tracks: Vec<TrackProxy>,
+    pub patterns: Vec<PatternProgram>,
     // #[serde(default)]
     pub scopes: Vec<Scope>,
 }

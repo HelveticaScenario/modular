@@ -25,6 +25,7 @@ export function executePatchScript(
     ...context.factories,
     track: context.createTrack.bind(context),
     scope: context.scope.bind(context),
+    seq: context.addPattern.bind(context),
     // Helper functions
     hz,
     note,

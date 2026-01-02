@@ -1,6 +1,7 @@
 
 import { ModuleSchema } from '@modular/core';
 import { GraphBuilder, ModuleNode, ModuleOutput, TrackNode } from './GraphBuilder';
+import type { PatternProgram } from '@modular/core';
 
 type FactoryFunction = (id?: string) => ModuleNode;
 
@@ -53,6 +54,13 @@ export class DSLContext {
 
   createTrack(id?: string) {
     return this.builder.addTrack(id);
+  }
+
+  /**
+   * Add a pattern to the graph
+   */
+  addPattern(pattern: string) {
+    this.builder.addPattern(pattern);
   }
 }
 

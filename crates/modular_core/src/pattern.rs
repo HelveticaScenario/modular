@@ -1,72 +1,40 @@
+use napi_derive::napi;
+
 /// Main AST node enum representing all possible elements in the Musical DSL
 #[derive(Debug, Clone, PartialEq)]
+#[napi]
 pub enum ASTNode {
-    FastSubsequence(FastSubsequence),
-    SlowSubsequence(SlowSubsequence),
-    RandomChoice(RandomChoice),
-    NumericLiteral(NumericLiteral),
+    FastSubsequence { elements: Vec<ASTNode> },
+    SlowSubsequence { elements: Vec<ASTNode> },
+    RandomChoice { choices: Vec<ASTNode> },
+    NumericLiteral { value: f64 },
     Rest,
 }
 
-/// Root program node containing all top-level elements
+/// Root pattern node containing all top-level elements
 #[derive(Debug, Clone, PartialEq)]
-pub struct Program {
+#[napi(object)]
+pub struct PatternProgram {
+    pub id: String,
     pub elements: Vec<ASTNode>,
-    pub seed: u64,
+    pub seed: u32,
 }
 
-impl Program {
-    pub fn new(elements: Vec<ASTNode>) -> Self {
-        Self { elements, seed: 0 }
+impl PatternProgram {
+    pub fn new(id: String, elements: Vec<ASTNode>) -> Self {
+        Self {
+            id,
+            elements,
+            seed: 0,
+        }
     }
-
-    pub fn with_seed(elements: Vec<ASTNode>, seed: u64) -> Self {
-        Self { elements, seed }
-    }
-}
-
-/// Fast subsequence represented by square brackets [...]
-#[derive(Debug, Clone, PartialEq)]
-pub struct FastSubsequence {
-    pub elements: Vec<ASTNode>,
-}
-
-/// Slow subsequence represented by angle brackets <...>
-#[derive(Debug, Clone, PartialEq)]
-pub struct SlowSubsequence {
-    pub elements: Vec<ASTNode>,
-}
-
-/// Random choice represented by | (e.g., A | B | C)
-#[derive(Debug, Clone, PartialEq)]
-pub struct RandomChoice {
-    pub choices: Vec<ASTNode>,
-}
-
-/// Numeric literal value (supports decimals and negatives)
-#[derive(Debug, Clone, PartialEq)]
-pub struct NumericLiteral {
-    pub value: f32,
-}
-
-/// Note name (placeholder - not used in current tests)
-#[derive(Debug, Clone, PartialEq)]
-pub struct NoteName {
-    pub note: char,
-    pub accidental: Option<char>,
-    pub octave: u8,
-}
-
-/// MIDI value (placeholder - not used in current tests)
-#[derive(Debug, Clone, PartialEq)]
-pub struct MidiValue {
-    pub value: u8,
 }
 
 /// Represents the output value from the runner
 #[derive(Debug, Clone, PartialEq)]
+#[napi]
 pub enum Value {
-    Numeric(f32),
+    Numeric(f64),
     Rest,
 }
 
@@ -136,20 +104,22 @@ fn hash_components(seed: u64, time_bits: u64, choice_id: u64) -> u64 {
     hash
 }
 
-/// Compiled program optimized for stateless lookup
+/// Compiled pattern optimized for stateless lookup
 #[derive(Debug, Clone)]
-pub struct CompiledProgram {
+pub struct CompiledPattern {
+    id: String,
     root: Vec<CompiledNode>,
     seed: u64,
 }
 
-impl CompiledProgram {
-    /// Compile a program into an optimized form for stateless execution
-    pub fn compile(program: &Program) -> Self {
-        let root = Self::compile_nodes(&program.elements);
+impl CompiledPattern {
+    /// Compile a pattern into an optimized form for stateless execution
+    pub fn compile(pattern: &PatternProgram) -> Self {
+        let root = Self::compile_nodes(&pattern.elements);
         Self {
+            id: pattern.id.clone(),
             root,
-            seed: program.seed,
+            seed: pattern.seed as u64,
         }
     }
 
@@ -159,14 +129,14 @@ impl CompiledProgram {
 
     fn compile_node(node: &ASTNode) -> CompiledNode {
         match node {
-            ASTNode::NumericLiteral(num) => CompiledNode::Value(Value::Numeric(num.value)),
+            ASTNode::NumericLiteral { value } => CompiledNode::Value(Value::Numeric(*value)),
             ASTNode::Rest => CompiledNode::Value(Value::Rest),
-            ASTNode::FastSubsequence(fast) => {
-                let children = Self::compile_nodes(&fast.elements);
+            ASTNode::FastSubsequence { elements } => {
+                let children = Self::compile_nodes(elements);
                 CompiledNode::Fast(children)
             }
-            ASTNode::SlowSubsequence(slow) => {
-                let children = Self::compile_nodes(&slow.elements);
+            ASTNode::SlowSubsequence { elements } => {
+                let children = Self::compile_nodes(elements);
                 let period = children.len();
 
                 CompiledNode::Slow {
@@ -174,9 +144,8 @@ impl CompiledProgram {
                     period,
                 }
             }
-            ASTNode::RandomChoice(choice) => {
-                let choices = choice
-                    .choices
+            ASTNode::RandomChoice { choices } => {
+                let choices = choices
                     .iter()
                     .map(|node| Self::compile_node(node))
                     .collect();
@@ -186,12 +155,12 @@ impl CompiledProgram {
         }
     }
 
-    /// Run the compiled program at a given time (stateless)
+    /// Run the compiled pattern at a given time (stateless)
     pub fn run(&self, time: f64) -> Option<Value> {
         let loop_time = time.fract();
         let loop_index = time.floor() as usize;
 
-        let rng = Rng::new(self.seed);
+        let rng = Rng::new(self.seed as u64);
 
         self.run_nodes(&self.root, loop_time, 0.0, 1.0, loop_index, rng, 0)
     }
@@ -282,7 +251,7 @@ impl CompiledProgram {
 
                 // Hash all components together with proper mixing for decorrelation
                 let time_bits = absolute_time.to_bits();
-                let hash = hash_components(self.seed, time_bits, choice_id);
+                let hash = hash_components(self.seed as u64, time_bits, choice_id);
 
                 let mut choice_rng = Rng::new(hash);
                 let random_value = choice_rng.next();
@@ -304,14 +273,14 @@ impl CompiledProgram {
 }
 
 /// Stateless runner function - compiles on demand
-pub fn run(program: &Program, time: f64) -> Option<Value> {
-    let compiled = CompiledProgram::compile(program);
+pub fn run(pattern: &PatternProgram, time: f64) -> Option<Value> {
+    let compiled = CompiledPattern::compile(pattern);
     compiled.run(time)
 }
 
 /// Stateful runner that caches the current node and its time range
 pub struct Runner {
-    compiled: CompiledProgram,
+    compiled: CompiledPattern,
     cached_node: Option<CachedNode>,
 }
 
@@ -323,17 +292,17 @@ struct CachedNode {
 }
 
 impl Runner {
-    /// Create a new runner with the given program
-    pub fn new(program: &Program) -> Self {
+    /// Create a new runner with the given pattern
+    pub fn new(pattern: &PatternProgram) -> Self {
         Self {
-            compiled: CompiledProgram::compile(program),
+            compiled: CompiledPattern::compile(pattern),
             cached_node: None,
         }
     }
 
-    /// Update the program (cache remains valid if still in range)
-    pub fn set_program(&mut self, program: &Program) {
-        self.compiled = CompiledProgram::compile(program);
+    /// Update the pattern (cache remains valid if still in range)
+    pub fn set_pattern(&mut self, pattern: &PatternProgram) {
+        self.compiled = CompiledPattern::compile(pattern);
         // Don't clear cache - it will be invalidated naturally when time moves outside range
     }
 
@@ -510,19 +479,22 @@ mod tests {
 
     use super::*;
 
-    fn num(value: f32) -> ASTNode {
-        ASTNode::NumericLiteral(NumericLiteral { value })
+    fn num(value: f64) -> ASTNode {
+        ASTNode::NumericLiteral { value }
     }
 
     fn random(choices: Vec<ASTNode>) -> ASTNode {
-        ASTNode::RandomChoice(RandomChoice { choices })
+        ASTNode::RandomChoice { choices }
     }
 
     #[test]
     fn test_basic_sequence() {
-        let program = Program::new(vec![num(1.0), num(2.0), num(3.0)]);
+        let pattern = PatternProgram::new(
+            "test_basic_sequence".to_string(),
+            vec![num(1.0), num(2.0), num(3.0)],
+        );
 
-        let compiled = CompiledProgram::compile(&program);
+        let compiled = CompiledPattern::compile(&pattern);
 
         assert_eq!(compiled.run(0.1), Some(Value::Numeric(1.0)));
         assert_eq!(compiled.run(0.4), Some(Value::Numeric(2.0)));
@@ -531,9 +503,9 @@ mod tests {
 
     #[test]
     fn test_looping() {
-        let program = Program::new(vec![num(1.0), num(2.0)]);
+        let pattern = PatternProgram::new("test_looping".to_string(), vec![num(1.0), num(2.0)]);
 
-        let compiled = CompiledProgram::compile(&program);
+        let compiled = CompiledPattern::compile(&pattern);
 
         assert_eq!(compiled.run(0.0), Some(Value::Numeric(1.0)));
         assert_eq!(compiled.run(1.0), Some(Value::Numeric(1.0)));
@@ -542,14 +514,17 @@ mod tests {
 
     #[test]
     fn test_fast_subsequence() {
-        let program = Program::new(vec![
-            num(1.0),
-            ASTNode::FastSubsequence(FastSubsequence {
-                elements: vec![num(2.0), num(3.0)],
-            }),
-        ]);
+        let pattern = PatternProgram::new(
+            "test_fast_subsequence".to_string(),
+            vec![
+                num(1.0),
+                ASTNode::FastSubsequence {
+                    elements: vec![num(2.0), num(3.0)],
+                },
+            ],
+        );
 
-        let compiled = CompiledProgram::compile(&program);
+        let compiled = CompiledPattern::compile(&pattern);
 
         assert_eq!(compiled.run(0.25), Some(Value::Numeric(1.0)));
         assert_eq!(compiled.run(0.55), Some(Value::Numeric(2.0)));
@@ -558,11 +533,14 @@ mod tests {
 
     #[test]
     fn test_slow_subsequence() {
-        let program = Program::new(vec![ASTNode::SlowSubsequence(SlowSubsequence {
-            elements: vec![num(1.0), num(2.0), num(3.0)],
-        })]);
+        let pattern = PatternProgram::new(
+            "test_slow_subsequence".to_string(),
+            vec![ASTNode::SlowSubsequence {
+                elements: vec![num(1.0), num(2.0), num(3.0)],
+            }],
+        );
 
-        let compiled = CompiledProgram::compile(&program);
+        let compiled = CompiledPattern::compile(&pattern);
 
         assert_eq!(compiled.run(0.5), Some(Value::Numeric(1.0)));
         assert_eq!(compiled.run(1.5), Some(Value::Numeric(2.0)));
@@ -573,18 +551,21 @@ mod tests {
     #[test]
     fn test_nested_slow_subsequence() {
         // <<1 2> <3 4>>
-        let program = Program::new(vec![ASTNode::SlowSubsequence(SlowSubsequence {
-            elements: vec![
-                ASTNode::SlowSubsequence(SlowSubsequence {
-                    elements: vec![num(1.0), num(2.0)],
-                }),
-                ASTNode::SlowSubsequence(SlowSubsequence {
-                    elements: vec![num(3.0), num(4.0)],
-                }),
-            ],
-        })]);
+        let pattern = PatternProgram::new(
+            "test_nested_slow_subsequence".to_string(),
+            vec![ASTNode::SlowSubsequence {
+                elements: vec![
+                    ASTNode::SlowSubsequence {
+                        elements: vec![num(1.0), num(2.0)],
+                    },
+                    ASTNode::SlowSubsequence {
+                        elements: vec![num(3.0), num(4.0)],
+                    },
+                ],
+            }],
+        );
 
-        let compiled = CompiledProgram::compile(&program);
+        let compiled = CompiledPattern::compile(&pattern);
 
         // Should return 1, 3, 2, 4, 1...
         assert_eq!(compiled.run(0.5), Some(Value::Numeric(1.0)));
@@ -596,8 +577,11 @@ mod tests {
 
     #[test]
     fn test_random_choice() {
-        let program = Program::new(vec![random(vec![num(1.0), num(2.0), num(3.0)])]);
-        let compiled = CompiledProgram::compile(&program);
+        let pattern = PatternProgram::new(
+            "test_random_choice".to_string(),
+            vec![random(vec![num(1.0), num(2.0), num(3.0)])],
+        );
+        let compiled = CompiledPattern::compile(&pattern);
         let mut counts = HashMap::new();
         for i in 0..10000 {
             let time = i as f64;
@@ -617,11 +601,14 @@ mod tests {
 
     #[test]
     fn test_random_with_slow_subsequence() {
-        let program = Program::new(vec![ASTNode::SlowSubsequence(SlowSubsequence {
-            elements: vec![random(vec![num(1.0), num(2.0)]), num(3.0)],
-        })]);
+        let pattern = PatternProgram::new(
+            "test_random_with_slow_subsequence".to_string(),
+            vec![ASTNode::SlowSubsequence {
+                elements: vec![random(vec![num(1.0), num(2.0)]), num(3.0)],
+            }],
+        );
 
-        let compiled = CompiledProgram::compile(&program);
+        let compiled = CompiledPattern::compile(&pattern);
 
         let mut counts = HashMap::new();
         for i in 0..10000 {
@@ -641,21 +628,24 @@ mod tests {
 
     #[test]
     fn test_with_nested_random_slowsequence() {
-        let program = Program::new(vec![ASTNode::SlowSubsequence(SlowSubsequence {
-            elements: vec![
-                random(vec![
-                    num(1.0),
-                    ASTNode::SlowSubsequence(SlowSubsequence {
-                        elements: vec![num(2.0), num(3.0)],
-                    }),
-                ]),
-                ASTNode::SlowSubsequence(SlowSubsequence {
-                    elements: vec![num(4.0), num(5.0)],
-                }),
-            ],
-        })]);
+        let pattern = PatternProgram::new(
+            "test_with_nested_random_slowsequence".to_string(),
+            vec![ASTNode::SlowSubsequence {
+                elements: vec![
+                    random(vec![
+                        num(1.0),
+                        ASTNode::SlowSubsequence {
+                            elements: vec![num(2.0), num(3.0)],
+                        },
+                    ]),
+                    ASTNode::SlowSubsequence {
+                        elements: vec![num(4.0), num(5.0)],
+                    },
+                ],
+            }],
+        );
 
-        let compiled = CompiledProgram::compile(&program);
+        let compiled = CompiledPattern::compile(&pattern);
 
         let mut counts = HashMap::new();
         for i in 0..10000 {
@@ -679,11 +669,14 @@ mod tests {
 
     #[test]
     fn test_stateless_multiple_calls() {
-        let program = Program::new(vec![ASTNode::SlowSubsequence(SlowSubsequence {
-            elements: vec![num(1.0), num(2.0)],
-        })]);
+        let pattern = PatternProgram::new(
+            "test_stateless_multiple_calls".to_string(),
+            vec![ASTNode::SlowSubsequence {
+                elements: vec![num(1.0), num(2.0)],
+            }],
+        );
 
-        let compiled = CompiledProgram::compile(&program);
+        let compiled = CompiledPattern::compile(&pattern);
 
         // Call in any order - should be stateless
         assert_eq!(compiled.run(3.5), Some(Value::Numeric(2.0)));
@@ -694,88 +687,94 @@ mod tests {
 
     #[test]
     fn test_convenience_function() {
-        let program = Program::new(vec![num(1.0), num(2.0)]);
+        let pattern = PatternProgram::new(
+            "test_convenience_function".to_string(),
+            vec![num(1.0), num(2.0)],
+        );
 
-        assert_eq!(run(&program, 0.1), Some(Value::Numeric(1.0)));
-        assert_eq!(run(&program, 0.6), Some(Value::Numeric(2.0)));
+        assert_eq!(run(&pattern, 0.1), Some(Value::Numeric(1.0)));
+        assert_eq!(run(&pattern, 0.6), Some(Value::Numeric(2.0)));
     }
 
     #[test]
-    fn test_complex_nested_program() {
-        // Create a complex program with 5 levels of nesting
+    fn test_complex_nested_pattern() {
+        // Create a complex pattern with 5 levels of nesting
         // Structure: [<[<1 <<2 3>> [4 5]>] 6> <7 [8 <9 10>]> <<11 [12 <13 14>]> 15>]
-        let program = Program::new(vec![
-            // Level 1: Fast subsequence
-            ASTNode::FastSubsequence(FastSubsequence {
-                elements: vec![
-                    // Level 2: Slow subsequence
-                    ASTNode::SlowSubsequence(SlowSubsequence {
-                        elements: vec![
-                            // Level 3: Fast subsequence
-                            ASTNode::FastSubsequence(FastSubsequence {
-                                elements: vec![
-                                    // Level 4: Slow subsequence
-                                    ASTNode::SlowSubsequence(SlowSubsequence {
-                                        elements: vec![
-                                            num(1.0),
-                                            // Level 5: Slow nested in slow
-                                            ASTNode::SlowSubsequence(SlowSubsequence {
-                                                elements: vec![num(2.0), num(3.0)],
-                                            }),
-                                            // Level 5: Fast nested in slow
-                                            ASTNode::FastSubsequence(FastSubsequence {
-                                                elements: vec![num(4.0), num(5.0)],
-                                            }),
-                                        ],
-                                    }),
-                                ],
-                            }),
-                            num(6.0),
-                        ],
-                    }),
-                    // Level 2: Slow subsequence with fast inside
-                    ASTNode::SlowSubsequence(SlowSubsequence {
-                        elements: vec![
-                            num(7.0),
-                            // Level 3: Fast with slow inside
-                            ASTNode::FastSubsequence(FastSubsequence {
-                                elements: vec![
-                                    num(8.0),
-                                    // Level 4: Slow in fast in slow
-                                    ASTNode::SlowSubsequence(SlowSubsequence {
-                                        elements: vec![num(9.0), num(10.0)],
-                                    }),
-                                ],
-                            }),
-                        ],
-                    }),
-                    // Level 2: Slow with nested slow and fast
-                    ASTNode::SlowSubsequence(SlowSubsequence {
-                        elements: vec![
-                            // Level 3: Slow nested in slow
-                            ASTNode::SlowSubsequence(SlowSubsequence {
-                                elements: vec![
-                                    num(11.0),
-                                    // Level 4: Fast in slow in slow
-                                    ASTNode::FastSubsequence(FastSubsequence {
-                                        elements: vec![
-                                            num(12.0),
-                                            // Level 5: Slow in fast in slow in slow
-                                            ASTNode::SlowSubsequence(SlowSubsequence {
-                                                elements: vec![num(13.0), num(14.0)],
-                                            }),
-                                        ],
-                                    }),
-                                ],
-                            }),
-                            num(15.0),
-                        ],
-                    }),
-                ],
-            }),
-        ]);
+        let pattern = PatternProgram::new(
+            "test_complex_nested_pattern".to_string(),
+            vec![
+                // Level 1: Fast subsequence
+                ASTNode::FastSubsequence {
+                    elements: vec![
+                        // Level 2: Slow subsequence
+                        ASTNode::SlowSubsequence {
+                            elements: vec![
+                                // Level 3: Fast subsequence
+                                ASTNode::FastSubsequence {
+                                    elements: vec![
+                                        // Level 4: Slow subsequence
+                                        ASTNode::SlowSubsequence {
+                                            elements: vec![
+                                                num(1.0),
+                                                // Level 5: Slow nested in slow
+                                                ASTNode::SlowSubsequence {
+                                                    elements: vec![num(2.0), num(3.0)],
+                                                },
+                                                // Level 5: Fast nested in slow
+                                                ASTNode::FastSubsequence {
+                                                    elements: vec![num(4.0), num(5.0)],
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                                num(6.0),
+                            ],
+                        },
+                        // Level 2: Slow subsequence with fast inside
+                        ASTNode::SlowSubsequence {
+                            elements: vec![
+                                num(7.0),
+                                // Level 3: Fast with slow inside
+                                ASTNode::FastSubsequence {
+                                    elements: vec![
+                                        num(8.0),
+                                        // Level 4: Slow in fast in slow
+                                        ASTNode::SlowSubsequence {
+                                            elements: vec![num(9.0), num(10.0)],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                        // Level 2: Slow with nested slow and fast
+                        ASTNode::SlowSubsequence {
+                            elements: vec![
+                                // Level 3: Slow nested in slow
+                                ASTNode::SlowSubsequence {
+                                    elements: vec![
+                                        num(11.0),
+                                        // Level 4: Fast in slow in slow
+                                        ASTNode::FastSubsequence {
+                                            elements: vec![
+                                                num(12.0),
+                                                // Level 5: Slow in fast in slow in slow
+                                                ASTNode::SlowSubsequence {
+                                                    elements: vec![num(13.0), num(14.0)],
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                                num(15.0),
+                            ],
+                        },
+                    ],
+                },
+            ],
+        );
 
-        let compiled = CompiledProgram::compile(&program);
+        let compiled = CompiledPattern::compile(&pattern);
 
         // Test various time points to verify correct behavior
         // The outer fast subsequence contains 3 elements, each taking 1/3 of the time
@@ -843,16 +842,19 @@ mod tests {
     #[test]
     fn test_performance_with_large_loop_index() {
         // Test that we can handle very large loop indices efficiently
-        let program = Program::new(vec![ASTNode::SlowSubsequence(SlowSubsequence {
-            elements: vec![
-                num(1.0),
-                ASTNode::SlowSubsequence(SlowSubsequence {
-                    elements: vec![num(2.0), num(3.0), num(4.0)],
-                }),
-            ],
-        })]);
+        let pattern = PatternProgram::new(
+            "test_performance_with_large_loop_index".to_string(),
+            vec![ASTNode::SlowSubsequence {
+                elements: vec![
+                    num(1.0),
+                    ASTNode::SlowSubsequence {
+                        elements: vec![num(2.0), num(3.0), num(4.0)],
+                    },
+                ],
+            }],
+        );
 
-        let compiled = CompiledProgram::compile(&program);
+        let compiled = CompiledPattern::compile(&pattern);
 
         // These should all execute in O(depth) time, not O(loop_index) time
         assert!(compiled.run(0.5).is_some());
