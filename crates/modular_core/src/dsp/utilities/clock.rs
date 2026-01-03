@@ -122,6 +122,7 @@ impl Clock {
                 self.phase = 0.0;
                 self.ppq_phase = 0.0;
                 self.outputs.playhead = 0.0;
+                self.loop_index = 0;
                 self.last_bar_trigger = false;
                 self.last_ppq_trigger = false;
             }
@@ -132,6 +133,7 @@ impl Clock {
                 self.outputs.bar_trigger = 0.0;
                 self.outputs.ppq_trigger = 0.0;
                 self.outputs.playhead = 0.0;
+                self.loop_index = 0;
             }
         }
         Ok(())
