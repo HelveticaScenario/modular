@@ -51,10 +51,7 @@ function isCableRef(
     );
 }
 
-function isTrackRef(value: unknown): value is { type: 'track'; track: string } {
-    if (!isPlainObject(value)) return false;
-    return value.type === 'track' && typeof value.track === 'string';
-}
+
 
 function walkValues(
     value: unknown,
@@ -85,7 +82,6 @@ type FeatureKind =
     | 'string'
     | 'null'
     | 'cableRef'
-    | 'trackRef'
     | 'unknown';
 
 interface Feature {
@@ -105,8 +101,7 @@ function kindWeight(kind: FeatureKind): number {
         case 'string':
         case 'null':
             return 1.0;
-        case 'trackRef':
-            return 1.25;
+
         default:
             return 0.75;
     }
@@ -122,7 +117,6 @@ function moduleTypeById(graph: PatchGraph): Map<string, string> {
 
 interface GraphContext {
     typeById: Map<string, string>;
-    trackFingerprintById: Map<string, string>;
     featuresByModuleId: Map<string, Map<string, Feature>>;
 }
 
@@ -134,10 +128,7 @@ function canonicalizeForFingerprint(
         const upstreamType = ctx.typeById.get(value.module) ?? 'unknown';
         return { type: 'cable', upstreamType, port: value.port };
     }
-    if (isTrackRef(value)) {
-        // Avoid recursion; track fingerprinting handles track structure separately.
-        return { type: 'track', track: value.track };
-    }
+
     if (Array.isArray(value)) {
         return value.map((v) => canonicalizeForFingerprint(v, ctx));
     }
@@ -151,35 +142,10 @@ function canonicalizeForFingerprint(
     return value;
 }
 
-function computeTrackFingerprints(
-    graph: PatchGraph,
-    typeById: Map<string, string>,
-): Map<string, string> {
-    const ctx = { typeById };
-    const result = new Map<string, string>();
 
-    for (const track of graph.tracks) {
-        const keyframes = track.keyframes
-            .map((kf) => ({
-                time: kf.time,
-                signal: canonicalizeForFingerprint(kf.signal, ctx),
-            }))
-            .sort((a, b) => a.time - b.time);
-
-        const canonical = {
-            interpolationType: track.interpolationType,
-            playhead: canonicalizeForFingerprint(track.playhead, ctx),
-            keyframes,
-        };
-
-        result.set(track.id, JSON.stringify(canonical));
-    }
-
-    return result;
-}
 
 function extractFeatures(
-    ctx: Pick<GraphContext, 'typeById' | 'trackFingerprintById'>,
+    ctx: Pick<GraphContext, 'typeById'>,
     module: ModuleState,
 ): Map<string, Feature> {
     const features = new Map<string, Feature>();
@@ -199,16 +165,7 @@ function extractFeatures(
             return; // treat as leaf
         }
 
-        if (isTrackRef(v)) {
-            const fingerprint = ctx.trackFingerprintById.get(v.track);
-            features.set(key, {
-                key,
-                kind: 'trackRef',
-                value: fingerprint ?? v.track,
-                weight: kindWeight('trackRef'),
-            });
-            return; // treat as leaf
-        }
+
 
         if (typeof v === 'number') {
             features.set(key, {
@@ -269,8 +226,7 @@ function extractFeatures(
 
 function buildGraphContext(graph: PatchGraph): GraphContext {
     const typeById = moduleTypeById(graph);
-    const trackFingerprintById = computeTrackFingerprints(graph, typeById);
-    const ctxForFeatures = { typeById, trackFingerprintById };
+    const ctxForFeatures = { typeById };
 
     const featuresByModuleId = new Map<string, Map<string, Feature>>();
     for (const module of graph.modules) {
@@ -280,7 +236,7 @@ function buildGraphContext(graph: PatchGraph): GraphContext {
         );
     }
 
-    return { typeById, trackFingerprintById, featuresByModuleId };
+    return { typeById, featuresByModuleId };
 }
 
 function multisetAdd(map: Map<string, number>, key: string): void {
@@ -310,22 +266,7 @@ function computeDownstreamUsage(
         });
     }
 
-    for (const track of graph.tracks) {
-        // playhead
-        walkValues(track.playhead, (v, path) => {
-            if (!isCableRef(v)) return;
-            const token = `TrackPlayhead:${path}:${v.port}`;
-            record(v.module, token);
-        });
 
-        for (const kf of track.keyframes) {
-            walkValues(kf.signal, (v, path) => {
-                if (!isCableRef(v)) return;
-                const token = `TrackKeyframe:${path}:${v.port}`;
-                record(v.module, token);
-            });
-        }
-    }
 
     return usage;
 }
@@ -361,7 +302,6 @@ function featureSimilarity(
         case 'string':
         case 'null':
         case 'cableRef':
-        case 'trackRef':
             return { score: a.value === b.value ? 1 : 0, weight: w };
         default:
             return {
@@ -561,12 +501,7 @@ function remapGraph(
         module.params = remapModuleIdsInValue(module.params, idMap);
     }
 
-    for (const track of applied.tracks) {
-        track.playhead = remapModuleIdsInValue(track.playhead, idMap);
-        for (const kf of track.keyframes) {
-            kf.signal = remapModuleIdsInValue(kf.signal, idMap);
-        }
-    }
+
 
     for (const scope of applied.scopes) {
         if (scope.item.type === 'ModuleOutput') {

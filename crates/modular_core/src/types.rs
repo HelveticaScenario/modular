@@ -188,11 +188,6 @@ pub enum Signal {
         module_ptr: std::sync::Weak<Box<dyn Sampleable>>,
         port: String,
     },
-    Track {
-        track: String,
-        #[serde(skip)]
-        track_ptr: std::sync::Weak<Track>,
-    },
     #[default]
     Disconnected,
 }
@@ -240,9 +235,10 @@ impl<'de> Deserialize<'de> for Signal {
                     module_ptr: sync::Weak::new(),
                     port,
                 },
-                SignalTagged::Track { track } => Signal::Track {
-                    track,
-                    track_ptr: sync::Weak::new(),
+                SignalTagged::Track { track } => Signal::Cable {
+                    module: track,
+                    module_ptr: sync::Weak::new(),
+                    port: "output".to_string(),
                 },
                 SignalTagged::Disconnected => Signal::Disconnected,
             }),
@@ -257,7 +253,7 @@ impl Signal {
     pub fn get_value_or(&self, default: f32) -> f32 {
         self.get_value_optional().unwrap_or(default)
     }
-    fn get_value_optional(&self) -> Option<f32> {
+    pub fn get_value_optional(&self) -> Option<f32> {
         match self {
             Signal::Volts { value } => Some(*value),
             Signal::Cable {
@@ -266,13 +262,6 @@ impl Signal {
                 Some(module_ptr) => match module_ptr.get_sample(port) {
                     Ok(sample) => Some(sample),
                     Err(_) => None,
-                },
-                None => None,
-            },
-            Signal::Track { track_ptr, .. } => match track_ptr.upgrade() {
-                Some(track_ptr) => match track_ptr.get_value_optional() {
-                    Some(sample) => Some(sample),
-                    None => None,
                 },
                 None => None,
             },
@@ -291,11 +280,6 @@ impl Connect for Signal {
             } => {
                 if let Some(sampleable) = patch.sampleables.get(module) {
                     *module_ptr = Arc::downgrade(sampleable);
-                }
-            }
-            Signal::Track { track, track_ptr } => {
-                if let Some(track_obj) = patch.tracks.get(track) {
-                    *track_ptr = Arc::downgrade(track_obj);
                 }
             }
             _ => {}
@@ -331,461 +315,55 @@ impl PartialEq for Signal {
                     && port_1 == port_2
                     && module_1 == module_2
             }
-            (
-                Signal::Track {
-                    track: track_1,
-                    track_ptr: track_ptr_1,
-                },
-                Signal::Track {
-                    track: track_2,
-                    track_ptr: track_ptr_2,
-                },
-            ) => track_ptr_1.upgrade() == track_ptr_2.upgrade() && track_1 == track_2,
             (Signal::Disconnected, Signal::Disconnected) => true,
             _ => false,
         }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq)]
-#[serde(rename_all = "camelCase")]
-#[napi(object)]
-pub struct TrackKeyframeProxy {
-    pub id: String,
-    pub track_id: String,
-    /// Normalized time in the range [0.0, 1.0]
-    pub time: f64,
-    pub signal: serde_json::Value,
-}
-
-#[derive(Debug, Deserialize, Clone, Default, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct TrackKeyframe {
-    pub id: String,
-    pub track_id: String,
-    /// Normalized time in the range [0.0, 1.0]
-    pub time: f32,
-    pub signal: Signal,
-}
-
-impl TryFrom<TrackKeyframeProxy> for TrackKeyframe {
-    fn try_from(proxy: TrackKeyframeProxy) -> std::result::Result<Self, serde_json::Error> {
-        Ok(TrackKeyframe {
-            id: proxy.id,
-            track_id: proxy.track_id,
-            time: proxy.time as f32,
-            signal: serde_json::from_value(proxy.signal)?,
-        })
-    }
-
-    type Error = serde_json::Error;
-}
-
-impl Connect for TrackKeyframe {
-    fn connect(&mut self, patch: &Patch) {
-        self.signal.connect(patch);
-    }
-}
-
-impl PartialOrd for TrackKeyframe {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.time.partial_cmp(&other.time)
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq)]
-struct InnerTrack {
-    interpolation_type: InterpolationType,
-    keyframes: Vec<TrackKeyframe>,
-}
-
-impl InnerTrack {
-    fn new(interpolation_type: InterpolationType) -> Self {
-        InnerTrack {
-            interpolation_type,
-            keyframes: Vec::new(),
-        }
-    }
-
-    fn set_interpolation_type(&mut self, interpolation_type: InterpolationType) {
-        self.interpolation_type = interpolation_type;
-    }
-
-    // Keyframe should already be connected at this point
-    pub fn add_keyframe(&mut self, keyframe: TrackKeyframe) {
-        match self.keyframes.iter().position(|k| k.id == keyframe.id) {
-            Some(idx) => {
-                // Updating existing keyframe - check if time changed
-                let old_time = self.keyframes[idx].time;
-                self.keyframes[idx] = keyframe;
-
-                // Only re-sort if the time changed and might affect ordering
-                if old_time != self.keyframes[idx].time {
-                    self.keyframes.sort_by(|a, b| {
-                        a.time
-                            .partial_cmp(&b.time)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    });
-                }
-            }
-            None => {
-                // New keyframe - insert in sorted position using binary search
-                let insert_pos = self
-                    .keyframes
-                    .binary_search_by(|k| {
-                        k.time
-                            .partial_cmp(&keyframe.time)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                    .unwrap_or_else(|pos| pos);
-                self.keyframes.insert(insert_pos, keyframe);
-            }
-        }
-    }
-
-    pub fn remove_keyframe(&mut self, id: String) -> Option<TrackKeyframe> {
-        match self.keyframes.iter().position(|k| k.id == id) {
-            Some(idx) => Some(self.keyframes.remove(idx)),
-            None => None,
-        }
-    }
-
-    /// Tick the track for the current playhead value and return the interpolated sample.
-    ///
-    /// `playhead_value` is expected to be a positive f32. It will be
-    /// wrapped to a normalized time in [0.0, 1.0].
-    pub fn tick(&mut self, playhead_value: Option<f32>) -> Option<f32> {
-        let playhead_value = playhead_value?;
-        if self.keyframes.is_empty() {
-            return None;
-        }
-
-        let t = normalize_playhead_value_to_t(playhead_value);
-
-        // Single keyframe: always return its value
-        if self.keyframes.len() == 1 {
-            return self.keyframes[0].signal.get_value_optional();
-        }
-
-        // Clamp to first/last keyframe times
-        let first = &self.keyframes[0];
-        if t <= first.time {
-            return first.signal.get_value_optional();
-        }
-        let last = self.keyframes.last().unwrap();
-        if t >= last.time {
-            return last.signal.get_value_optional();
-        }
-
-        // Find the segment [curr, next] such that curr.time <= t <= next.time
-        // Use partition_point to find the first keyframe with time > t
-        // Then back up one to get the last keyframe with time <= t
-        let idx = self.keyframes.partition_point(|kf| kf.time <= t);
-
-        // partition_point returns the index of the first element > t
-        // So idx-1 is the last element <= t, which is the start of our interpolation segment
-        let idx = if idx > 0 { idx - 1 } else { 0 };
-
-        // Ensure idx is valid for the segment [idx, idx+1]
-        let idx = idx.min(self.keyframes.len() - 2);
-
-        let curr = &self.keyframes[idx];
-        let next = &self.keyframes[idx + 1];
-
-        let curr_value = curr.signal.get_value_optional()?;
-        let next_value = next.signal.get_value_optional()?;
-
-        let time_range = (next.time - curr.time).max(f32::EPSILON);
-        let mut local_t = (t - curr.time) / time_range;
-        local_t = local_t.clamp(0.0, 1.0);
-
-        let interpolated = match self.interpolation_type {
-            InterpolationType::Linear => {
-                curr_value + (next_value - curr_value) * simple_easing::linear(local_t)
-            }
-            InterpolationType::Step => curr_value,
-            InterpolationType::Sine {
-                category: InterpolationCategory::In,
-            } => curr_value + (next_value - curr_value) * simple_easing::sine_in(local_t),
-            InterpolationType::Sine {
-                category: InterpolationCategory::Out,
-            } => curr_value + (next_value - curr_value) * simple_easing::sine_out(local_t),
-            InterpolationType::Sine {
-                category: InterpolationCategory::InOut,
-            } => curr_value + (next_value - curr_value) * simple_easing::sine_in_out(local_t),
-            InterpolationType::Quad {
-                category: InterpolationCategory::In,
-            } => curr_value + (next_value - curr_value) * simple_easing::quad_in(local_t),
-            InterpolationType::Quad {
-                category: InterpolationCategory::Out,
-            } => curr_value + (next_value - curr_value) * simple_easing::quad_out(local_t),
-            InterpolationType::Quad {
-                category: InterpolationCategory::InOut,
-            } => curr_value + (next_value - curr_value) * simple_easing::quad_in_out(local_t),
-            InterpolationType::Cubic {
-                category: InterpolationCategory::In,
-            } => curr_value + (next_value - curr_value) * simple_easing::cubic_in(local_t),
-            InterpolationType::Cubic {
-                category: InterpolationCategory::Out,
-            } => curr_value + (next_value - curr_value) * simple_easing::cubic_out(local_t),
-            InterpolationType::Cubic {
-                category: InterpolationCategory::InOut,
-            } => curr_value + (next_value - curr_value) * simple_easing::cubic_in_out(local_t),
-            InterpolationType::Quart {
-                category: InterpolationCategory::In,
-            } => curr_value + (next_value - curr_value) * simple_easing::quart_in(local_t),
-            InterpolationType::Quart {
-                category: InterpolationCategory::Out,
-            } => curr_value + (next_value - curr_value) * simple_easing::quart_out(local_t),
-            InterpolationType::Quart {
-                category: InterpolationCategory::InOut,
-            } => curr_value + (next_value - curr_value) * simple_easing::quart_in_out(local_t),
-            InterpolationType::Quint {
-                category: InterpolationCategory::In,
-            } => curr_value + (next_value - curr_value) * simple_easing::quint_in(local_t),
-            InterpolationType::Quint {
-                category: InterpolationCategory::Out,
-            } => curr_value + (next_value - curr_value) * simple_easing::quint_out(local_t),
-            InterpolationType::Quint {
-                category: InterpolationCategory::InOut,
-            } => curr_value + (next_value - curr_value) * simple_easing::quint_in_out(local_t),
-            InterpolationType::Expo {
-                category: InterpolationCategory::In,
-            } => curr_value + (next_value - curr_value) * simple_easing::expo_in(local_t),
-            InterpolationType::Expo {
-                category: InterpolationCategory::Out,
-            } => curr_value + (next_value - curr_value) * simple_easing::expo_out(local_t),
-            InterpolationType::Expo {
-                category: InterpolationCategory::InOut,
-            } => curr_value + (next_value - curr_value) * simple_easing::expo_in_out(local_t),
-            InterpolationType::Circ {
-                category: InterpolationCategory::In,
-            } => curr_value + (next_value - curr_value) * simple_easing::circ_in(local_t),
-            InterpolationType::Circ {
-                category: InterpolationCategory::Out,
-            } => curr_value + (next_value - curr_value) * simple_easing::circ_out(local_t),
-            InterpolationType::Circ {
-                category: InterpolationCategory::InOut,
-            } => curr_value + (next_value - curr_value) * simple_easing::circ_in_out(local_t),
-            InterpolationType::Bounce {
-                category: InterpolationCategory::In,
-            } => curr_value + (next_value - curr_value) * simple_easing::bounce_in(local_t),
-            InterpolationType::Bounce {
-                category: InterpolationCategory::Out,
-            } => curr_value + (next_value - curr_value) * simple_easing::bounce_out(local_t),
-            InterpolationType::Bounce {
-                category: InterpolationCategory::InOut,
-            } => curr_value + (next_value - curr_value) * simple_easing::bounce_in_out(local_t),
-        };
-
-        Some(interpolated)
-    }
-}
-
-impl Connect for InnerTrack {
-    fn connect(&mut self, patch: &Patch) {
-        for keyframe in &mut self.keyframes {
-            keyframe.connect(patch);
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-#[serde(rename_all = "camelCase")]
-#[napi(object)]
-pub struct TrackProxy {
-    pub id: String,
-    /// Parameter controlling the playhead position in the range [-5.0, 5.0]
-    pub playhead: serde_json::Value,
-    /// Interpolation type applied to all keyframes in this track
-    pub interpolation_type: InterpolationType,
-    pub keyframes: Vec<TrackKeyframeProxy>,
-}
-
-impl From<TrackProxy> for Track {
-    fn from(proxy: TrackProxy) -> Self {
-        let track = Track::new(
-            proxy.id.clone(),
-            serde_json::from_value(proxy.playhead).unwrap_or_default(),
-            proxy.interpolation_type,
-        );
-
-        for kf_proxy in proxy.keyframes {
-            if let Ok(kf) = TrackKeyframe::try_from(kf_proxy) {
-                track.add_keyframe(kf);
-            }
-        }
-
-        track
-    }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(from = "TrackProxy")]
-pub struct Track {
-    pub id: String,
-    inner_track: Mutex<InnerTrack>,
-    playhead: Mutex<Signal>,
-    sample: Mutex<Option<f32>>,
-}
-
-impl Clone for Track {
-    fn clone(&self) -> Self {
-        Track {
-            id: self.id.clone(),
-            inner_track: Mutex::new(self.inner_track.try_lock().unwrap().clone()),
-            playhead: Mutex::new(self.playhead.try_lock().unwrap().clone()),
-            sample: Mutex::new(*self.sample.try_lock().unwrap()),
-        }
-    }
-}
-
-impl Track {
-    pub fn new(id: String, playhead_param: Signal, interpolation_type: InterpolationType) -> Self {
-        Track {
-            id,
-            inner_track: Mutex::new(InnerTrack::new(interpolation_type)),
-            playhead: Mutex::new(playhead_param),
-            sample: Mutex::new(None),
-        }
-    }
-
-    pub fn configure(&self, playhead: Signal, interpolation_type: InterpolationType) {
-        {
-            let mut inner = self
-                .inner_track
-                .try_lock_for(Duration::from_millis(10))
-                .unwrap();
-            inner.set_interpolation_type(interpolation_type);
-        }
-        *self
-            .playhead
-            .try_lock_for(Duration::from_millis(10))
-            .unwrap() = playhead;
-    }
-
-    pub fn add_keyframe(&self, keyframe: TrackKeyframe) {
-        self.inner_track
-            .try_lock_for(Duration::from_millis(10))
-            .unwrap()
-            .add_keyframe(keyframe)
-    }
-
-    pub fn remove_keyframe(&self, id: String) -> Option<TrackKeyframe> {
-        self.inner_track
-            .try_lock_for(Duration::from_millis(10))
-            .unwrap()
-            .remove_keyframe(id)
-    }
-
-    pub fn clear_keyframes(&self) {
-        self.inner_track
-            .try_lock_for(Duration::from_millis(10))
-            .unwrap()
-            .keyframes
-            .clear();
-    }
-
-    pub fn tick(&self) {
-        // Use try_lock in audio hot path to avoid timeout overhead
-        // If we can't acquire locks, keep the previous sample value
-        let playhead_value = match self.playhead.try_lock() {
-            Some(guard) => guard.get_value_optional(),
-            None => return, // Keep previous sample if locked
-        };
-
-        let sample = match self.inner_track.try_lock() {
-            Some(mut guard) => guard.tick(playhead_value),
-            None => return, // Keep previous sample if locked
-        };
-
-        if let Some(mut sample_guard) = self.sample.try_lock() {
-            *sample_guard = sample;
-        }
-        // If sample lock fails, keep previous value (graceful degradation)
-    }
-
-    pub fn get_value_optional(&self) -> Option<f32> {
-        // Use try_lock in audio hot path - return None if locked
-        // sample is Mutex<Option<f32>>, so *guard is Option<f32>
-        self.sample.try_lock().and_then(|guard| *guard)
-    }
-
-    pub fn connect(&self, patch: &Patch) {
-        self.playhead
-            .try_lock_for(Duration::from_millis(10))
-            .unwrap()
-            .connect(patch);
-        self.inner_track
-            .try_lock_for(Duration::from_millis(10))
-            .unwrap()
-            .connect(patch);
-    }
-}
-
-impl PartialEq for Track {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-pub type TrackMap = HashMap<String, Arc<Track>>;
-
 #[derive(
-    Debug, Default, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize,
+    Debug,
+    Default,
+    Clone,
+    Copy,
+    PartialOrd,
+    PartialEq,
+    Ord,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    JsonSchema,
 )]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
-#[napi(string_enum)]
-pub enum InterpolationCategory {
-    #[default]
-    In,
-    Out,
-    InOut,
-}
-
-#[derive(
-    Debug, Default, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize,
-)]
-#[serde(
-    tag = "type",
-    content = "category",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
-#[napi]
+#[serde(rename_all = "camelCase")]
 pub enum InterpolationType {
     #[default]
     Linear,
     Step,
-    Sine {
-        category: InterpolationCategory,
-    },
-    Quad {
-        category: InterpolationCategory,
-    },
-    Cubic {
-        category: InterpolationCategory,
-    },
-    Quart {
-        category: InterpolationCategory,
-    },
-    Quint {
-        category: InterpolationCategory,
-    },
-    Expo {
-        category: InterpolationCategory,
-    },
-    Circ {
-        category: InterpolationCategory,
-    },
-    Bounce {
-        category: InterpolationCategory,
-    },
-}
-
-fn normalize_playhead_value_to_t(value: f32) -> f32 {
-    // Wrap value to a normalized time in [0.0, 1.0]
-    value.fract().abs()
+    SineIn,
+    SineOut,
+    SineInOut,
+    QuadIn,
+    QuadOut,
+    QuadInOut,
+    CubicIn,
+    CubicOut,
+    CubicInOut,
+    QuartIn,
+    QuartOut,
+    QuartInOut,
+    QuintIn,
+    QuintOut,
+    QuintInOut,
+    ExpoIn,
+    ExpoOut,
+    ExpoInOut,
+    CircIn,
+    CircOut,
+    CircInOut,
+    BounceIn,
+    BounceOut,
+    BounceInOut,
 }
 
 pub enum Seq {
@@ -909,8 +487,6 @@ pub struct Scope {
 pub struct PatchGraph {
     pub modules: Vec<ModuleState>,
     pub module_id_remaps: Option<Vec<ModuleIdRemap>>,
-    // #[serde(default)]
-    pub tracks: Vec<TrackProxy>,
     // #[serde(default)]
     pub scopes: Vec<Scope>,
 }

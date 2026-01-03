@@ -4,7 +4,7 @@
 //! connected audio modules. The patch contains sampleable modules and tracks
 //! that can be processed to generate audio.
 
-use crate::types::{Message, MessageTag, ROOT_ID, ROOT_OUTPUT_PORT, Sampleable, SampleableMap, TrackMap};
+use crate::types::{Message, MessageTag, ROOT_ID, ROOT_OUTPUT_PORT, Sampleable, SampleableMap};
 
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
@@ -18,16 +18,14 @@ struct MessageListenerRef {
 /// The core patch structure containing the DSP graph
 pub struct Patch {
     pub sampleables: SampleableMap,
-    pub tracks: TrackMap,
     message_listeners: HashMap<MessageTag, Vec<MessageListenerRef>>,
 }
 
 impl Patch {
     /// Create a new empty patch
-    pub fn new(sampleables: SampleableMap, tracks: TrackMap) -> Self {
+    pub fn new(sampleables: SampleableMap) -> Self {
         let mut patch = Patch {
             sampleables,
-            tracks,
             message_listeners: HashMap::new(),
         };
         patch.rebuild_message_listeners();
@@ -101,14 +99,13 @@ mod tests {
 
     #[test]
     fn test_patch_new_empty() {
-        let patch = Patch::new(HashMap::new(), HashMap::new());
+        let patch = Patch::new(HashMap::new());
         assert!(patch.sampleables.is_empty());
-        assert!(patch.tracks.is_empty());
     }
 
     #[test]
     fn test_patch_get_output_no_root() {
-        let patch = Patch::new(HashMap::new(), HashMap::new());
+        let patch = Patch::new(HashMap::new());
         let output = patch.get_output();
         assert!(
             (output - 0.0).abs() < 0.0001,
@@ -162,7 +159,7 @@ mod tests {
 
         let mut sampleables: SampleableMap = HashMap::new();
         sampleables.insert("m1".to_string(), Arc::clone(&s));
-        let mut patch = Patch::new(sampleables, HashMap::new());
+        let mut patch = Patch::new(sampleables);
 
         // Index should include it.
         assert_eq!(patch.message_listeners_for(MessageTag::MidiNote).len(), 1);

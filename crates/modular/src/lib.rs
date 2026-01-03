@@ -41,7 +41,7 @@ impl Synthesizer {
     let channels = config.channels();
 
     let state = Arc::new(AudioState::new(
-      Arc::new(Mutex::new(Patch::new(HashMap::new(), HashMap::new()))),
+      Arc::new(Mutex::new(Patch::new(HashMap::new()))),
       sample_rate,
       channels,
     ));

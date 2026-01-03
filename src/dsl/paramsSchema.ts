@@ -145,8 +145,8 @@ function isSignalParamSchema(root: JsonSchema, schema: JsonSchema): boolean {
     if (tag) tags.add(tag);
   }
 
-  // Current Signal variants in generated TS: volts/cable/track/disconnected
-  const required = ["volts", "cable", "track", "disconnected"];
+  // Current Signal variants in generated TS: volts/cable/disconnected
+  const required = ["volts", "cable", "disconnected"];
   return required.every((t) => tags.has(t));
 }
 

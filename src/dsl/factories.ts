@@ -1,6 +1,6 @@
 
 import { ModuleSchema } from '@modular/core';
-import { GraphBuilder, ModuleNode, ModuleOutput, TrackNode } from './GraphBuilder';
+import { GraphBuilder, ModuleNode, ModuleOutput } from './GraphBuilder';
 
 type FactoryFunction = (id?: string) => ModuleNode;
 
@@ -46,13 +46,9 @@ export class DSLContext {
     return this.builder;
   }
 
-  scope(target: ModuleNode | ModuleOutput | TrackNode, msPerFrame: number = 500, triggerThreshold?: number) {
+  scope(target: ModuleNode | ModuleOutput, msPerFrame: number = 500, triggerThreshold?: number) {
     this.builder.addScope(target, msPerFrame, triggerThreshold);
     return target
-  }
-
-  createTrack(id?: string) {
-    return this.builder.addTrack(id);
   }
 }
 

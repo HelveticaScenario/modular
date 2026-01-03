@@ -128,7 +128,7 @@ interface Console {
 declare var console: Console;
 
 // Core DSL types used by the generated declarations
-type Signal = number | ModuleOutput | ModuleNode | TrackNode;
+type Signal = number | ModuleOutput | ModuleNode;
 
 interface ModuleOutput {
   readonly moduleId: string;
@@ -145,34 +145,11 @@ interface ModuleNode {
   shift(value: Signal): ModuleNode;
 }
 
-interface TrackNode {
-    /**
-     * Set the interpolation type for this track.
-     */
-    interpolation(interpolation: "linear" | "step" | "cubic" | "expo"): TrackNode;
-
-    /**
-     * Set the playhead control value for this track.
-     *
-     * The value maps linearly to the normalized time range [0.0, 1.0].
-     */
-    playhead(value: Signal): TrackNode;
-
-    /**
-     * Add a keyframe at the given normalized time in [0.0, 1.0].
-     */
-    addKeyframe(time: number, value: Signal): TrackNode;
-
-    scale(value: Signal): ModuleNode;
-    shift(value: Signal): ModuleNode;
-}
-
 // Helper functions exposed by the DSL runtime
 declare function hz(frequency: number): number;
 declare function note(noteName: string): number;
 declare function bpm(beatsPerMinute: number): number;
-declare function track(id?: string): TrackNode;
-declare function scope(target: ModuleOutput | ModuleNode | TrackNode, msPerFrame?: number, triggerThreshold?: number):  ModuleOutput | ModuleNode | TrackNode;
+declare function scope(target: ModuleOutput | ModuleNode , msPerFrame?: number, triggerThreshold?: number):  ModuleOutput | ModuleNode;
 `;
 
 

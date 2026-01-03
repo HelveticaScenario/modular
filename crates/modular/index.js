@@ -575,7 +575,6 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { Synthesizer, getSchemas, InterpolationCategory } = nativeBinding
+const { Synthesizer, getSchemas } = nativeBinding
 export { Synthesizer }
 export { getSchemas }
-export { InterpolationCategory }

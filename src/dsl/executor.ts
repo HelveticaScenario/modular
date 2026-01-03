@@ -24,7 +24,6 @@ export function executePatchScript(
   // Create the execution environment with all DSL functions
   const dslGlobals = {
     ...context.factories,
-    track: context.createTrack.bind(context),
     scope: context.scope.bind(context),
     // Helper functions
     hz,

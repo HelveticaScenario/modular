@@ -137,7 +137,6 @@ fn validate_signal_reference(
   location: &str,
   module_by_id: &HashMap<&str, &ModuleState>,
   schema_map: &HashMap<&str, &ModuleSchema>,
-  track_ids: &HashSet<&str>,
   errors: &mut Vec<ValidationError>,
 ) {
   match signal {
@@ -178,15 +177,6 @@ fn validate_signal_reference(
         });
       }
     }
-    Signal::Track { track, .. } => {
-      if !track_ids.contains(track.as_str()) {
-        errors.push(ValidationError {
-          field: field.to_string(),
-          message: format!("Track '{}' not found for track source", track),
-          location: Some(location.to_string()),
-        });
-      }
-    }
     Signal::Volts { .. } | Signal::Disconnected => {}
   }
 }
@@ -197,7 +187,6 @@ fn validate_signals_in_json_value(
   location: &str,
   module_by_id: &HashMap<&str, &ModuleState>,
   schema_map: &HashMap<&str, &ModuleSchema>,
-  track_ids: &HashSet<&str>,
   errors: &mut Vec<ValidationError>,
 ) {
   // Only attempt to parse as a Signal when the tagged discriminator looks right.
@@ -212,7 +201,6 @@ fn validate_signals_in_json_value(
             location,
             module_by_id,
             schema_map,
-            track_ids,
             errors,
           );
           return;
@@ -230,7 +218,6 @@ fn validate_signals_in_json_value(
           location,
           module_by_id,
           schema_map,
-          track_ids,
           errors,
         );
       }
@@ -243,7 +230,6 @@ fn validate_signals_in_json_value(
           location,
           module_by_id,
           schema_map,
-          track_ids,
           errors,
         );
       }
@@ -296,9 +282,6 @@ pub fn validate_patch(
   // Build a map from module id -> module instance (state) from the patch.
   let module_by_id: HashMap<&str, &ModuleState> =
     patch.modules.iter().map(|m| (m.id.as_str(), m)).collect();
-
-  // Collect ids for fast membership checks while validating Track references.
-  let track_ids: HashSet<&str> = patch.tracks.iter().map(|t| t.id.as_str()).collect();
 
   // === Schema helpers ===
   // The runtime patch stores parameter values as JSON (`ModuleState.params`), but
@@ -387,7 +370,6 @@ pub fn validate_patch(
         &module.id,
         &module_by_id,
         &schema_map,
-        &track_ids,
         &mut errors,
       );
     }
@@ -440,7 +422,7 @@ pub fn validate_patch(
       }
       ScopeItem::Track { track_id } => {
         // Scope target track must exist.
-        if !track_ids.contains(track_id.as_str()) {
+        if !module_by_id.contains_key(track_id.as_str()) {
           errors.push(ValidationError {
             field: "scopes".to_string(),
             message: format!("Scope references missing track '{}'", track_id),
@@ -541,7 +523,7 @@ mod tests {
         }),
       }],
       module_id_remaps: None,
-      tracks: vec![],
+      
       scopes: vec![],
     };
 
@@ -559,7 +541,7 @@ mod tests {
         params: json!({}),
       }],
       module_id_remaps: None,
-      tracks: vec![],
+      
       scopes: vec![],
     };
 
@@ -583,7 +565,7 @@ mod tests {
         }),
       }],
       module_id_remaps: None,
-      tracks: vec![],
+      
       scopes: vec![],
     };
 
@@ -607,7 +589,7 @@ mod tests {
         }),
       }],
       module_id_remaps: None,
-      tracks: vec![],
+      
       scopes: vec![],
     };
 
@@ -641,7 +623,7 @@ mod tests {
         },
       ],
       module_id_remaps: None,
-      tracks: vec![],
+      
       scopes: vec![],
     };
 
@@ -671,7 +653,7 @@ mod tests {
         }),
       }],
       module_id_remaps: None,
-      tracks: vec![],
+      
       scopes: vec![],
     };
 
@@ -710,7 +692,7 @@ mod tests {
         },
       ],
       module_id_remaps: None,
-      tracks: vec![],
+      
       scopes: vec![],
     };
 
@@ -740,7 +722,7 @@ mod tests {
         },
       ],
       module_id_remaps: None,
-      tracks: vec![],
+      
       scopes: vec![],
     };
 
@@ -761,7 +743,7 @@ mod tests {
         }),
       }],
       module_id_remaps: None,
-      tracks: vec![],
+      
       scopes: vec![],
     };
 
@@ -777,7 +759,7 @@ mod tests {
     let patch = PatchGraph {
       modules: Vec::new(),
       module_id_remaps: None,
-      tracks: vec![],
+      
       scopes: vec![],
     };
 
@@ -802,7 +784,7 @@ mod tests {
         }),
       }],
       module_id_remaps: None,
-      tracks: vec![],
+      
       scopes: vec![],
     };
 
@@ -831,7 +813,7 @@ mod tests {
         params: serde_json::Value::Null,
       }],
       module_id_remaps: None,
-      tracks: vec![],
+      
       scopes: vec![],
     };
 

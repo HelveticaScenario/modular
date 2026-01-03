@@ -35,22 +35,6 @@ export interface ValidationError {
   message: string
   location?: string
 }
-export type InterpolationCategory =  'In'|
-'Out'|
-'InOut';
-
-export type InterpolationType =
-  | { type: 'Linear' }
-  | { type: 'Step' }
-  | { type: 'Sine', category: InterpolationCategory }
-  | { type: 'Quad', category: InterpolationCategory }
-  | { type: 'Cubic', category: InterpolationCategory }
-  | { type: 'Quart', category: InterpolationCategory }
-  | { type: 'Quint', category: InterpolationCategory }
-  | { type: 'Expo', category: InterpolationCategory }
-  | { type: 'Circ', category: InterpolationCategory }
-  | { type: 'Bounce', category: InterpolationCategory }
-
 export interface ModuleIdRemap {
   from: string
   to: string
@@ -79,7 +63,6 @@ export interface OutputSchema {
 export interface PatchGraph {
   modules: Array<ModuleState>
   moduleIdRemaps?: Array<ModuleIdRemap>
-  tracks: Array<TrackProxy>
   scopes: Array<Scope>
 }
 
@@ -92,23 +75,6 @@ export interface Scope {
 export type ScopeItem =
   | { type: 'ModuleOutput', moduleId: string, portName: string }
   | { type: 'Track', trackId: string }
-
-export interface TrackKeyframeProxy {
-  id: string
-  trackId: string
-  /** Normalized time in the range [0.0, 1.0] */
-  time: number
-  signal: any
-}
-
-export interface TrackProxy {
-  id: string
-  /** Parameter controlling the playhead position in the range [-5.0, 5.0] */
-  playhead: any
-  /** Interpolation type applied to all keyframes in this track */
-  interpolationType: InterpolationType
-  keyframes: Array<TrackKeyframeProxy>
-}
 
 /** Represents the output value from the runner */
 export type Value =

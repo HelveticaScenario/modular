@@ -5,7 +5,6 @@ const { reconcilePatchBySimilarity } = require('../patchSimilarityRemap')
 function graph({ modules, tracks = [], scopes = [] }: any): any {
   return {
     modules: modules.map((m: any) => ({ ...m })),
-    tracks,
     scopes,
   }
 }

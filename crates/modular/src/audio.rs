@@ -308,7 +308,6 @@ impl AudioState {
       modules,
       module_id_remaps,
       scopes,
-      tracks,
       ..
     } = desired_graph;
 
@@ -506,78 +505,7 @@ impl AudioState {
     // Keep message routing in sync with current modules.
     patch_lock.rebuild_message_listeners();
 
-    // ===== TRACK LIFECYCLE =====
-    // The track system is mid-refactor. Keep the legacy implementation available
-    // behind a feature flag while core types stabilize.
-    // #[cfg(feature = "legacy-tracks")]
-    {
-      // Build maps for efficient track lookup
-      let desired_tracks: HashMap<String, _> = tracks.iter().map(|t| (t.id.clone(), t)).collect();
 
-      let current_track_ids: HashSet<String> = patch_lock.tracks.keys().cloned().collect();
-      let desired_track_ids: HashSet<String> = desired_tracks.keys().cloned().collect();
-
-      // Delete removed tracks (in current but not in desired)
-      let tracks_to_delete: Vec<String> = current_track_ids
-        .difference(&desired_track_ids)
-        .cloned()
-        .collect();
-
-      if apply_patch_debug_enabled() {
-        let mut s = tracks_to_delete.clone();
-        s.sort();
-        s.truncate(12);
-        patch_dbg!(
-          "[apply_patch] tracks delete count={} sample=[{}]",
-          tracks_to_delete.len(),
-          s.join(", ")
-        );
-      }
-
-      for track_id in tracks_to_delete {
-        patch_lock.tracks.remove(&track_id);
-      }
-
-      // Two-pass track creation to handle keyframes that reference other tracks
-
-      // PASS 1: Create/update track shells (without configuration or keyframes)
-      for track in &tracks {
-        match patch_lock.tracks.get(&track.id) {
-          Some(existing_track) => {
-            // Existing track: clear all keyframes (will re-add in pass 2)
-            patch_dbg!("[apply_patch] tracks update id={}", track.id);
-            existing_track.clear_keyframes()
-          }
-          None => {
-            // Create new track shell with a disconnected playhead param
-            patch_dbg!("[apply_patch] tracks create id={}", track.id);
-            let default_playhead_param = modular_core::types::Signal::Disconnected;
-            let internal_track = Arc::new(modular_core::types::Track::new(
-              track.id.clone(),
-              default_playhead_param,
-              track.interpolation_type,
-            ));
-            patch_lock.tracks.insert(track.id.clone(), internal_track);
-          }
-        }
-      }
-
-      // PASS 2: Configure tracks and add keyframes (all tracks now exist for Track param resolution)
-      for track in tracks {
-        if let Some(internal_track) = patch_lock.tracks.get(&track.id) {
-          // Configure playhead parameter and interpolation type
-          internal_track.configure(
-            serde_json::from_value(track.playhead)?,
-            track.interpolation_type,
-          );
-
-          // Add keyframes (params may reference other tracks, which now exist)
-          for kf in track.keyframes {
-            internal_track.add_keyframe(TryFrom::try_from(kf)?);
-          }
-        }
-      }
-    }
 
     // ===== SCOPE LIFECYCLE =====
     {
@@ -647,9 +575,6 @@ impl AudioState {
     }
     for sampleable in patch_lock.sampleables.values() {
       sampleable.connect(&patch_lock);
-    }
-    for track in patch_lock.tracks.values() {
-      track.connect(&patch_lock);
     }
 
     Ok(())
@@ -783,11 +708,6 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
     }
   };
 
-  // Update tracks
-  for (_, track) in patch_guard.tracks.iter() {
-    track.tick();
-  }
-
   // Update sampleables
   for (_, module) in patch_guard.sampleables.iter() {
     module.update();
@@ -813,8 +733,8 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
         }
       }
       ScopeItem::Track { track_id, .. } => {
-        if let Some(track) = patch_guard.tracks.get(track_id) {
-          if let Some(sample) = track.get_value_optional() {
+        if let Some(module) = patch_guard.sampleables.get(track_id) {
+          if let Ok(sample) = module.get_sample(&"output".to_string()) {
             scope_buffer.push(sample);
           }
         }
@@ -979,7 +899,7 @@ mod tests {
             params: json!({}),
           }],
           module_id_remaps: None,
-          tracks: vec![],
+          
           scopes: vec![],
         },
         48000.0,
@@ -1005,7 +925,7 @@ mod tests {
             from: "sine-1".to_string(),
             to: "sine-2".to_string(),
           }]),
-          tracks: vec![],
+          
           scopes: vec![],
         },
         48000.0,
@@ -1048,7 +968,7 @@ mod tests {
             },
           ],
           module_id_remaps: None,
-          tracks: vec![],
+          
           scopes: vec![],
         },
         48000.0,
@@ -1090,7 +1010,7 @@ mod tests {
               to: "sine-3".to_string(),
             },
           ]),
-          tracks: vec![],
+          
           scopes: vec![],
         },
         48000.0,
@@ -1149,7 +1069,7 @@ mod tests {
             },
           ],
           module_id_remaps: None,
-          tracks: vec![],
+          
           scopes: vec![],
         },
         48000.0,
@@ -1197,7 +1117,7 @@ mod tests {
               to: "sine-2".to_string(),
             },
           ]),
-          tracks: vec![],
+          
           scopes: vec![],
         },
         48000.0,

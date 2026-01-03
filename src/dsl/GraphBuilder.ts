@@ -1,21 +1,7 @@
 
-import type { InterpolationCategory, InterpolationType, ModuleSchema, ModuleState, PatchGraph, Scope, ScopeItem, TrackKeyframeProxy, TrackProxy } from "@modular/core";
+import type { ModuleSchema, ModuleState, PatchGraph, Scope } from "@modular/core";
 import type { ProcessedModuleSchema } from "./paramsSchema";
 import { processSchemas } from "./paramsSchema";
-
-type MakeInterpolationArgs<T> = T extends { type: infer U; category: InterpolationCategory } ? [type: U, category?: InterpolationCategory] : T extends { type: infer U } ? [type: U] : never;
-
-type InterpolationArgs = MakeInterpolationArgs<InterpolationType>;
-
-const def = (category: InterpolationCategory | undefined): InterpolationCategory => category ?? 'In';
-
-function interpArgsToType(args: InterpolationArgs): InterpolationType {
-  if (args[0] === 'Step' || args[0] === 'Linear') {
-    return { type: args[0] };
-  } else {
-    return { type: args[0], category: def(args[1]) };
-  }
-}
 
 /**
  * GraphBuilder manages the construction of a PatchGraph from DSL code.
@@ -24,7 +10,6 @@ function interpArgsToType(args: InterpolationArgs): InterpolationType {
 export class GraphBuilder {
 
   private modules: Map<string, ModuleState> = new Map();
-  private tracks: Map<string, TrackProxy> = new Map();
   private counters: Map<string, number> = new Map();
   private schemas: ProcessedModuleSchema[] = [];
   private schemaByName: Map<string, ProcessedModuleSchema> = new Map();
@@ -108,37 +93,12 @@ export class GraphBuilder {
 
 
 
-  addTrackKeyframe(trackId: string, keyframe: TrackKeyframeProxy) {
-    const track = this.tracks.get(trackId);
-    if (!track) {
-      throw new Error(`Track not found: ${trackId}`);
-    }
-    track.keyframes.push(keyframe);
-  }
-
-  setTrackInterpolation(trackId: string, interpolation: InterpolationArgs) {
-    const track = this.tracks.get(trackId);
-    if (!track) {
-      throw new Error(`Track not found: ${trackId}`);
-    }
-    track.interpolationType = interpArgsToType(interpolation);
-  }
-
-  setTrackPlayheadParam(trackId: string, playhead: unknown) {
-    const track = this.tracks.get(trackId);
-    if (!track) {
-      throw new Error(`Track not found: ${trackId}`);
-    }
-    track.playhead = playhead;
-  }
-
   /**
    * Build the final PatchGraph
    */
   toPatch(): PatchGraph {
     return {
       modules: Array.from(this.modules.values()),
-      tracks: Array.from(this.tracks.values()),
       scopes: Array.from(this.scopes),
     };
   }
@@ -148,37 +108,13 @@ export class GraphBuilder {
    */
   reset(): void {
     this.modules.clear();
-    this.tracks.clear();
     this.scopes = [];
     this.counters.clear();
   }
 
-  addTrack(explicitId?: string) {
-    const id = this.generateId("track", explicitId);
 
-    if (this.tracks.has(id)) {
-      throw new Error(`Duplicate track id: ${id}`);
-    }
-
-    const track = new TrackNode(this, id);
-    this.tracks.set(track.id, {
-      id: track.id,
-      playhead: 0,
-      interpolationType: interpArgsToType(['Linear']),
-      keyframes: [],
-    })
-
-    return track;
-  }
-
-  addScope(value: ModuleOutput | ModuleNode | TrackNode, msPerFrame: number = 500, triggerThreshold?: number) {
+  addScope(value: ModuleOutput | ModuleNode, msPerFrame: number = 500, triggerThreshold?: number) {
     let realTriggerThreshold: number | undefined = triggerThreshold ? (triggerThreshold * 1000) : undefined
-
-    if (value instanceof TrackNode) {
-      this.scopes.push({ item: { type: 'Track', trackId: value.id }, msPerFrame, triggerThreshold: realTriggerThreshold });
-      return;
-    }
-
     const output = value instanceof ModuleNode ? value.o : value;
     this.scopes.push({
       item: {
@@ -192,8 +128,7 @@ export class GraphBuilder {
   }
 }
 
-type Value = number | ModuleOutput | ModuleNode | TrackNode;
-
+type Value = number | ModuleOutput | ModuleNode;
 /**
  * ModuleNode represents a module instance in the DSL with fluent API
  */
@@ -222,7 +157,8 @@ export class ModuleNode {
       get(target, prop: string) {
         // Check if it's a param name (derived from schemars JSON schema)
         const param = target.schema.paramsByName[prop];
-        if (param) {
+        console.log('Accessed prop:', prop, 'param:', param);
+        if (param && Object.hasOwn(target.schema.paramsByName, prop)) {
           return (value: unknown) => {
             target._setParam(prop, value);
             return proxy;
@@ -241,7 +177,11 @@ export class ModuleNode {
 
         if (prop in target) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return (target as any)[prop];
+          const thing = (target as any)[prop];
+          if (typeof thing === 'function') {
+            return thing.bind(target);
+          }
+          return thing;
         }
 
         return undefined;
@@ -286,6 +226,10 @@ export class ModuleNode {
     }
     return new ModuleOutput(this.builder, this.id, portName);
   }
+
+  toString(): string {
+    return this.o.toString();
+  }
 }
 
 /**
@@ -325,68 +269,9 @@ export class ModuleOutput {
     shiftNode._setParam('shift', offset);
     return shiftNode;
   }
-}
 
-export class TrackNode {
-  readonly builder: GraphBuilder;
-  readonly id: string;
-  private counter: number = 0;
-
-  constructor(
-    builder: GraphBuilder,
-    id: string,
-  ) {
-    this.builder = builder;
-    this.id = id;
-  }
-
-  /**
-   * Set the interpolation type for this track.
-   */
-  interpolation(...args: InterpolationArgs) {
-    this.builder.setTrackInterpolation(this.id, args);
-    return this;
-  }
-
-  /**
-   * Set the playhead parameter for this track.
-   *
-   * The value maps linearly to normalized time [0.0, 1.0].
-   */
-  playhead(value: Value) {
-    this.builder.setTrackPlayheadParam(this.id, valueToSignal(value));
-    return this;
-  }
-
-  addKeyframe(time: number, value: Value) {
-    this.builder.addTrackKeyframe(this.id, {
-      id: `keyframe-${this.counter++}`,
-      trackId: this.id,
-      time,
-      signal: valueToSignal(value),
-    });
-
-    return this;
-  }
-
-  /**
- * Scale this output by a factor
- */
-  scale(factor: Value): ModuleNode {
-    const scaleNode = this.builder.addModule('scaleAndShift');
-    scaleNode._setParam('input', this);
-    scaleNode._setParam('scale', factor);
-    return scaleNode;
-  }
-
-  /**
-   * Shift this output by an offset
-   */
-  shift(offset: Value): ModuleNode {
-    const shiftNode = this.builder.addModule('scaleAndShift');
-    shiftNode._setParam('input', this);
-    shiftNode._setParam('shift', offset);
-    return shiftNode;
+  toString(): string {
+    return `module(${this.moduleId}:${this.portName})`;
   }
 }
 
@@ -429,7 +314,7 @@ export function replaceValues(input: unknown, replacer: Replacer): unknown {
 function replaceSignals(input: unknown): unknown {
   return replaceValues(input, (_key, value) => {
     // Replace Signal instances with their JSON representation
-    if (value instanceof ModuleNode || value instanceof ModuleOutput || value instanceof TrackNode) {
+    if (value instanceof ModuleNode || value instanceof ModuleOutput) {
       return valueToSignal(value);
     } else {
       return value
@@ -447,11 +332,6 @@ function valueToSignal(value: Value): unknown {
       type: 'cable',
       module: value.moduleId,
       port: value.portName,
-    };
-  } else if (value instanceof TrackNode) {
-    signal = {
-      type: 'track',
-      track: value.id,
     };
   } else {
     signal = value
