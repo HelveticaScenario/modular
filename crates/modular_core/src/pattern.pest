@@ -12,9 +12,13 @@ SlowSubsequence = { "<" ~ Element* ~ ">" }
 
 RandomChoice = { NonRandomElement ~ ("|" ~ NonRandomElement)+ }
 
-Value = { Rest | HzValue | NumericLiteral | NoteName | MidiValue }
+Value = { Rest | HzValue | NumericLiteral | NoteName | MidiValue | ModuleRef }
 
 Rest = { "~" }
+
+ModuleRef = { "module(" ~ ModuleId ~ ":" ~ PortName ~ ")" }
+ModuleId = @{ (ASCII_ALPHANUMERIC | "-" | "_")+ }
+PortName = @{ (ASCII_ALPHANUMERIC | "-" | "_")+ }
 
 HzValue = { SignedDecimal ~ HzSuffix }
 HzSuffix = @{ (("h" | "H") ~ ("z" | "Z")) | (("k" | "K") ~ ("h" | "H") ~ ("z" | "Z")) }

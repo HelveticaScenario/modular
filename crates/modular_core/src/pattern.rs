@@ -1,9 +1,12 @@
-use napi_derive::napi;
+use std::sync::Weak;
+
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use pest::Parser;
 use pest::iterators::Pair;
+
+use crate::types::{Connect, Signal};
 
 #[derive(pest_derive::Parser)]
 #[grammar = "pattern.pest"]
@@ -40,6 +43,40 @@ pub struct PatternProgram {
 impl PatternProgram {
     pub fn new(elements: Vec<ASTNode>) -> Self {
         Self { elements }
+    }
+}
+
+impl Connect for PatternProgram {
+    fn connect(&mut self, patch: &crate::Patch) {
+        for element in &mut self.elements {
+            Connect::connect(element, patch);
+        }
+    }
+}
+
+impl Connect for ASTNode {
+    fn connect(&mut self, patch: &crate::Patch) {
+        match self {
+            ASTNode::Leaf {
+                value: Value::ModuleRef { signal, .. },
+                ..
+            } => {
+                Connect::connect(signal, patch);
+            }
+            ASTNode::Leaf { .. } => {
+                // No connections needed for leaf nodes
+            }
+            ASTNode::FastSubsequence { elements } | ASTNode::SlowSubsequence { elements } => {
+                for element in elements {
+                    Connect::connect(element, patch);
+                }
+            }
+            ASTNode::RandomChoice { choices } => {
+                for choice in choices {
+                    Connect::connect(choice, patch);
+                }
+            }
+        }
     }
 }
 
@@ -197,6 +234,39 @@ fn parse_ast(pair: Pair<Rule>, idx: &mut usize) -> Result<ASTNode, PatternParseE
             })
         }
 
+        Rule::ModuleRef => {
+            let mut inner = pair.into_inner();
+            let module_id = inner
+                .next()
+                .ok_or_else(|| PatternParseError {
+                    message: "Parse error: missing module id".to_string(),
+                })?
+                .as_str()
+                .to_string();
+
+            let port_name = inner
+                .next()
+                .ok_or_else(|| PatternParseError {
+                    message: "Parse error: missing port name".to_string(),
+                })?
+                .as_str()
+                .to_string();
+
+            let i = *idx;
+            *idx += 1;
+            Ok(ASTNode::Leaf {
+                value: Value::ModuleRef {
+                    signal: Signal::Cable {
+                        module: module_id,
+                        module_ptr: Weak::default(),
+                        port: port_name,
+                    },
+                    sample_and_hold: false,
+                },
+                idx: i,
+            })
+        }
+
         other => Err(PatternParseError {
             message: format!("Parse error: unexpected rule {other:?}"),
         }),
@@ -260,10 +330,13 @@ pub fn parse_pattern_elements(source: &str) -> Result<Vec<ASTNode>, PatternParse
 
 /// Represents the output value from the runner
 #[derive(Debug, Clone, PartialEq, JsonSchema, Deserialize)]
-#[napi]
 pub enum Value {
     Numeric(f64),
     Rest,
+    ModuleRef {
+        signal: Signal,
+        sample_and_hold: bool,
+    },
 }
 
 /// Compiled node with precomputed information for efficient lookup
@@ -481,6 +554,25 @@ mod tests {
                     idx: 2
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn test_parse_module_ref() {
+        let ast = parse_pattern_elements("module(foo:bar)").unwrap();
+        assert_eq!(
+            ast,
+            vec![ASTNode::Leaf {
+                value: Value::ModuleRef {
+                    signal: Signal::Cable {
+                        module: "foo".to_string(),
+                        module_ptr: Weak::default(),
+                        port: "bar".to_string()
+                    },
+                    sample_and_hold: false,
+                },
+                idx: 0
+            }]
         );
     }
 

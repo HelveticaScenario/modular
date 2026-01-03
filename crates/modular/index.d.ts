@@ -75,8 +75,3 @@ export interface Scope {
 export type ScopeItem =
   | { type: 'ModuleOutput', moduleId: string, portName: string }
   | { type: 'Track', trackId: string }
-
-/** Represents the output value from the runner */
-export type Value =
-  | { type: 'Numeric', field0: number }
-  | { type: 'Rest' }

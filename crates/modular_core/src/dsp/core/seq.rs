@@ -5,7 +5,7 @@ use serde::Deserialize;
 use crate::{
     dsp::utils::{TempGate, TempGateState},
     pattern::{PatternProgram, Value, parse_pattern_elements},
-    types::Signal,
+    types::{Connect, Signal},
 };
 
 #[derive(Debug, Clone)]
@@ -47,13 +47,26 @@ impl<'de> Deserialize<'de> for PatternParam {
     }
 }
 
-#[derive(Deserialize, Default, JsonSchema, Connect)]
+impl Connect for PatternParam {
+    fn connect(&mut self, _patch: &crate::Patch) {
+        Connect::connect(&mut self.pattern, _patch);
+    }
+}
+
+#[derive(Deserialize, Default, JsonSchema)]
 #[serde(default)]
 struct SeqParams {
     /// Musical DSL pattern source string (parsed/compiled in Rust)
     pattern: PatternParam,
     /// playhead control signal
     playhead: Signal,
+}
+
+impl Connect for SeqParams {
+    fn connect(&mut self, patch: &crate::Patch) {
+        Connect::connect(&mut self.playhead, patch);
+        Connect::connect(&mut self.pattern, patch);
+    }
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -102,6 +115,11 @@ impl Seq {
                         self.outputs.gate = self.gate.process();
                         self.outputs.trig = self.trigger.process();
                     }
+                    Value::ModuleRef { signal, .. } => {
+                        self.outputs.cv = signal.get_value();
+                        self.outputs.gate = self.gate.process();
+                        self.outputs.trig = self.trigger.process();
+                    }
                     Value::Rest => {
                         self.outputs.gate = self.gate.process();
                         self.outputs.trig = self.trigger.process();
@@ -119,6 +137,15 @@ impl Seq {
                         self.trigger
                             .set_state(TempGateState::High, TempGateState::Low);
                         self.outputs.cv = v as f32;
+                        self.outputs.gate = self.gate.process();
+                        self.outputs.trig = self.trigger.process();
+                    }
+                    Value::ModuleRef { ref signal, .. } => {
+                        // For now, treat module refs as rests
+                        self.gate.set_state(TempGateState::Low, TempGateState::High);
+                        self.trigger
+                            .set_state(TempGateState::High, TempGateState::Low);
+                        self.outputs.cv = signal.get_value();
                         self.outputs.gate = self.gate.process();
                         self.outputs.trig = self.trigger.process();
                     }
