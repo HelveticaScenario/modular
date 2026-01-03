@@ -167,27 +167,12 @@ interface TrackNode {
     shift(value: Signal): ModuleNode;
 }
 
-type ASTNode =
-  | { type: 'FastSubsequence', elements: Array<ASTNode> }
-  | { type: 'SlowSubsequence', elements: Array<ASTNode> }
-  | { type: 'RandomChoice', choices: Array<ASTNode> }
-  | { type: 'NumericLiteral', value: number }
-  | { type: 'Rest' }
-
-
-interface PatternProgram {
-  id: string
-  elements: Array<ASTNode>
-  seed: number
-}
-
 // Helper functions exposed by the DSL runtime
 declare function hz(frequency: number): number;
 declare function note(noteName: string): number;
 declare function bpm(beatsPerMinute: number): number;
 declare function track(id?: string): TrackNode;
 declare function scope(target: ModuleOutput | ModuleNode | TrackNode, msPerFrame?: number, triggerThreshold?: number):  ModuleOutput | ModuleNode | TrackNode;
-declare function pat(str: string): PatternProgram;
 `;
 
 

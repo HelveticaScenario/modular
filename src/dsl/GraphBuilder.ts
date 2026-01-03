@@ -1,8 +1,7 @@
 
-import type { InterpolationCategory, InterpolationType, ModuleSchema, ModuleState, PatchGraph, PatternProgram, Scope, ScopeItem, TrackKeyframeProxy, TrackProxy } from "@modular/core";
+import type { InterpolationCategory, InterpolationType, ModuleSchema, ModuleState, PatchGraph, Scope, ScopeItem, TrackKeyframeProxy, TrackProxy } from "@modular/core";
 import type { ProcessedModuleSchema } from "./paramsSchema";
 import { processSchemas } from "./paramsSchema";
-import { parsePattern } from "./parser";
 
 type MakeInterpolationArgs<T> = T extends { type: infer U; category: InterpolationCategory } ? [type: U, category?: InterpolationCategory] : T extends { type: infer U } ? [type: U] : never;
 
@@ -26,7 +25,6 @@ export class GraphBuilder {
 
   private modules: Map<string, ModuleState> = new Map();
   private tracks: Map<string, TrackProxy> = new Map();
-  private patterns: PatternProgram[] = [];
   private counters: Map<string, number> = new Map();
   private schemas: ProcessedModuleSchema[] = [];
   private schemaByName: Map<string, ProcessedModuleSchema> = new Map();
@@ -141,7 +139,6 @@ export class GraphBuilder {
     return {
       modules: Array.from(this.modules.values()),
       tracks: Array.from(this.tracks.values()),
-      patterns: Array.from(this.patterns),
       scopes: Array.from(this.scopes),
     };
   }
@@ -152,7 +149,6 @@ export class GraphBuilder {
   reset(): void {
     this.modules.clear();
     this.tracks.clear();
-    this.patterns = [];
     this.scopes = [];
     this.counters.clear();
   }
@@ -173,19 +169,6 @@ export class GraphBuilder {
     })
 
     return track;
-  }
-
-  /**
-   * Add a pattern to the graph
-   */
-  addPattern(pattern: string): void {
-    const id = this.generateId("pattern", undefined);
-    const patternObj: PatternProgram = {
-      id,
-      elements: parsePattern(id, pattern),
-      seed: Math.floor(Math.random() * 1000000),
-    };
-    
   }
 
   addScope(value: ModuleOutput | ModuleNode | TrackNode, msPerFrame: number = 500, triggerThreshold?: number) {
