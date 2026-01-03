@@ -22,6 +22,7 @@ pub struct Clock {
     last_ppq_trigger: bool,
     running: bool,
     params: ClockParams,
+    loop_index: usize,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -47,6 +48,7 @@ impl Default for Clock {
             last_ppq_trigger: false,
             running: true,
             params: ClockParams::default(),
+            loop_index: 0,
         }
     }
 }
@@ -75,11 +77,11 @@ impl Clock {
         if self.running {
             self.phase += phase_increment;
             self.ppq_phase += phase_increment;
-            self.outputs.playhead += phase_increment;
 
             // Wrap phase at 1.0
             if self.phase >= 1.0 {
                 self.phase -= 1.0;
+                self.loop_index += 1;
             }
 
             // PPQ phase wraps more frequently (48 times per bar)
@@ -87,6 +89,8 @@ impl Clock {
                 self.ppq_phase -= 1.0 / 48.0;
             }
         }
+
+        self.outputs.playhead = self.loop_index as f32 + self.phase;
 
         // Generate ramp output (0 to 5V over one bar)
         self.outputs.ramp = self.phase * 5.0;
@@ -123,6 +127,7 @@ impl Clock {
             }
             ClockMessages::Stop => {
                 self.running = false;
+                println!("Clock stopped");
                 // Ensure triggers are low while stopped.
                 self.outputs.bar_trigger = 0.0;
                 self.outputs.ppq_trigger = 0.0;
