@@ -260,3 +260,45 @@ impl Default for SchmittTrigger {
         Self::new(-1.0, 1.0)
     }
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum TempGateState {
+    #[default]
+    Low,
+    High,
+}
+
+#[derive(Clone, Copy, Default, PartialEq)]
+pub struct TempGate {
+    target: TempGateState,
+    state: TempGateState,
+    low_val: f32,
+    high_val: f32,
+}
+
+impl TempGate {
+    pub fn new(state: TempGateState, low_val: f32, high_val: f32) -> Self {
+        Self {
+            target: state,
+            state,
+            low_val,
+            high_val,
+        }
+    }
+
+    pub fn set_state(&mut self, state: TempGateState, target: TempGateState) {
+        self.state = state;
+        self.target = target;
+    }
+
+    pub fn process(&mut self) -> f32 {
+        let state = self.state;
+        if self.state != self.target {
+            self.state = self.target;
+        }
+        match state {
+            TempGateState::Low => self.low_val,
+            TempGateState::High => self.high_val,
+        }
+    }
+}

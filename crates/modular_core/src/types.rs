@@ -911,7 +911,6 @@ pub struct PatchGraph {
     pub module_id_remaps: Option<Vec<ModuleIdRemap>>,
     // #[serde(default)]
     pub tracks: Vec<TrackProxy>,
-    pub patterns: Vec<PatternProgram>,
     // #[serde(default)]
     pub scopes: Vec<Scope>,
 }

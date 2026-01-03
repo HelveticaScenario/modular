@@ -543,7 +543,6 @@ mod tests {
       module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
-      patterns: vec![],
     };
 
     assert!(validate_patch(&patch, &schemas).is_ok());
@@ -562,7 +561,6 @@ mod tests {
       module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
-      patterns: vec![],
     };
 
     let result = validate_patch(&patch, &schemas);
@@ -587,7 +585,6 @@ mod tests {
       module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
-      patterns: vec![],
     };
 
     let result = validate_patch(&patch, &schemas);
@@ -612,7 +609,6 @@ mod tests {
       module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
-      patterns: vec![],
     };
 
     let result = validate_patch(&patch, &schemas);
@@ -647,7 +643,6 @@ mod tests {
       module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
-      patterns: vec![],
     };
 
     let result = validate_patch(&patch, &schemas);
@@ -678,7 +673,6 @@ mod tests {
       module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
-      patterns: vec![],
     };
 
     let result = validate_patch(&patch, &schemas);
@@ -718,7 +712,6 @@ mod tests {
       module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
-      patterns: vec![],
     };
 
     assert!(validate_patch(&patch, &schemas).is_ok());
@@ -749,7 +742,6 @@ mod tests {
       module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
-      patterns: vec![],
     };
 
     assert!(validate_patch(&patch, &schemas).is_ok());
@@ -771,7 +763,6 @@ mod tests {
       module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
-      patterns: vec![],
     };
 
     let result = validate_patch(&patch, &schemas);
@@ -788,7 +779,6 @@ mod tests {
       module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
-      patterns: vec![],
     };
 
     assert!(validate_patch(&patch, &schemas).is_ok());
@@ -814,7 +804,6 @@ mod tests {
       module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
-      patterns: vec![],
     };
 
     let result = validate_patch(&patch, &schemas);
@@ -844,7 +833,6 @@ mod tests {
       module_id_remaps: None,
       tracks: vec![],
       scopes: vec![],
-      patterns: vec![],
     };
 
     assert!(validate_patch(&patch, &schemas).is_ok());

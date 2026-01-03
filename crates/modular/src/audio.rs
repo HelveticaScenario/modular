@@ -981,7 +981,6 @@ mod tests {
           module_id_remaps: None,
           tracks: vec![],
           scopes: vec![],
-          patterns: vec![],
         },
         48000.0,
       )
@@ -1008,7 +1007,6 @@ mod tests {
           }]),
           tracks: vec![],
           scopes: vec![],
-          patterns: vec![],
         },
         48000.0,
       )
@@ -1052,7 +1050,6 @@ mod tests {
           module_id_remaps: None,
           tracks: vec![],
           scopes: vec![],
-          patterns: vec![],
         },
         48000.0,
       )
@@ -1095,7 +1092,6 @@ mod tests {
           ]),
           tracks: vec![],
           scopes: vec![],
-          patterns: vec![],
         },
         48000.0,
       )
@@ -1155,7 +1151,6 @@ mod tests {
           module_id_remaps: None,
           tracks: vec![],
           scopes: vec![],
-          patterns: vec![],
         },
         48000.0,
       )
@@ -1204,7 +1199,6 @@ mod tests {
           ]),
           tracks: vec![],
           scopes: vec![],
-          patterns: vec![],
         },
         48000.0,
       )

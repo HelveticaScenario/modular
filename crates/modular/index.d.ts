@@ -35,14 +35,6 @@ export interface ValidationError {
   message: string
   location?: string
 }
-/** Main AST node enum representing all possible elements in the Musical DSL */
-export type ASTNode =
-  | { type: 'FastSubsequence', elements: Array<ASTNode> }
-  | { type: 'SlowSubsequence', elements: Array<ASTNode> }
-  | { type: 'RandomChoice', choices: Array<ASTNode> }
-  | { type: 'NumericLiteral', value: number }
-  | { type: 'Rest' }
-
 export type InterpolationCategory =  'In'|
 'Out'|
 'InOut';
@@ -88,15 +80,7 @@ export interface PatchGraph {
   modules: Array<ModuleState>
   moduleIdRemaps?: Array<ModuleIdRemap>
   tracks: Array<TrackProxy>
-  patterns: Array<PatternProgram>
   scopes: Array<Scope>
-}
-
-/** Root pattern node containing all top-level elements */
-export interface PatternProgram {
-  id: string
-  elements: Array<ASTNode>
-  seed: number
 }
 
 export interface Scope {
