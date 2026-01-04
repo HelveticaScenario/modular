@@ -26,7 +26,7 @@ export type ScopeView = {
 
 export interface PatchEditorProps {
     value: string;
-    currentFile: string;
+    currentFile?: string;
     onChange: (value: string) => void;
     onSubmit: React.RefObject<() => void>;
     onStop: React.RefObject<() => void>;
@@ -409,24 +409,26 @@ export function MonacoPatchEditor({
 
     return (
         <div className="patch-editor" style={{ height: '100%' }}>
-            <Editor
-                height="100%"
-                defaultLanguage="javascript"
-                path={`file:///${currentFile}`}
-                theme="vs-dark"
-                value={value}
-                onChange={(val) => {
-                    onChange(val ?? '');
-                }}
-                onMount={handleMount}
-                options={{
-                    minimap: { enabled: false },
-                    lineNumbers: 'on',
-                    folding: true,
-                    matchBrackets: 'always',
-                    automaticLayout: true,
-                }}
-            />
+            {currentFile && (
+                <Editor
+                    height="100%"
+                    defaultLanguage="javascript"
+                    path={`file:///${currentFile}`}
+                    theme="vs-dark"
+                    value={value}
+                    onChange={(val) => {
+                        onChange(val ?? '');
+                    }}
+                    onMount={handleMount}
+                    options={{
+                        minimap: { enabled: false },
+                        lineNumbers: 'on',
+                        folding: true,
+                        matchBrackets: 'always',
+                        automaticLayout: true,
+                    }}
+                />
+            )}
         </div>
     );
 }

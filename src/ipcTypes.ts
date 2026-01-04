@@ -107,12 +107,12 @@ export interface IPCHandlers {
     [IPC_CHANNELS.FS_SELECT_WORKSPACE]: () => WorkspaceFolder | null;
     [IPC_CHANNELS.FS_GET_WORKSPACE]: () => WorkspaceFolder | null;
     [IPC_CHANNELS.FS_LIST_FILES]: () => FileTreeEntry[];
-    [IPC_CHANNELS.FS_READ_FILE]: (relativePath: string) => string;
-    [IPC_CHANNELS.FS_WRITE_FILE]: (relativePath: string, content: string) => FSOperationResult;
+    [IPC_CHANNELS.FS_READ_FILE]: (filePath: string) => string;
+    [IPC_CHANNELS.FS_WRITE_FILE]: (filePath: string, content: string) => FSOperationResult;
     [IPC_CHANNELS.FS_RENAME_FILE]: (oldPath: string, newPath: string) => FSOperationResult;
-    [IPC_CHANNELS.FS_DELETE_FILE]: (relativePath: string) => FSOperationResult;
+    [IPC_CHANNELS.FS_DELETE_FILE]: (filePath: string) => Promise<FSOperationResult>;
     [IPC_CHANNELS.FS_MOVE_FILE]: (sourcePath: string, destPath: string) => FSOperationResult;
-    [IPC_CHANNELS.FS_CREATE_FOLDER]: (relativePath: string) => FSOperationResult;
+    [IPC_CHANNELS.FS_CREATE_FOLDER]: (filePath: string) => FSOperationResult;
     [IPC_CHANNELS.FS_SHOW_SAVE_DIALOG]: (defaultPath?: string) => string | null;
     [IPC_CHANNELS.FS_SHOW_INPUT_DIALOG]: (title: string, defaultValue?: string) => string | null;
 }
@@ -125,6 +125,6 @@ export type IPCRequest<T extends keyof IPCHandlers> = Parameters<IPCHandlers[T]>
 /**
  * Type helper to extract response type for a channel
  */
-export type IPCResponse<T extends keyof IPCHandlers> = ReturnType<IPCHandlers[T]>;
+export type IPCResponse<T extends keyof IPCHandlers> = ReturnType<Promisify<IPCHandlers[T]>>;
 
-export type Promisify<T extends (...args: any) => any> = (...args: Parameters<T>) => Promise<ReturnType<T>>;
+export type Promisify<T> = T extends (...args: any[]) => Promise<any> ? T : T extends (...args: infer P) => infer R ? (...args: P) => Promise<R> : never;

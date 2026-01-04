@@ -11,6 +11,7 @@ import { FileExplorer, SCRATCH_FILE } from './components/FileExplorer';
 import electronAPI from './electronAPI';
 import { ModuleSchema, ScopeItem, ValidationError } from '@modular/core';
 import type { FileTreeEntry } from './ipcTypes';
+import { v4 } from 'uuid';
 
 const DEFAULT_PATCH = `// Simple 440 Hz sine wave
 const osc = sine('osc1').freq(hz(440));
@@ -20,16 +21,28 @@ out.source(osc);
 const UNSAVED_STORAGE_KEY = 'modular_unsaved_buffers';
 
 // New buffer model: distinguish between file-backed and untitled buffers
-type EditorBuffer =
-    | { kind: 'file'; relPath: string; content: string; dirty: boolean }
+export type EditorBuffer =
+    | {
+          kind: 'file';
+          id: string;
+          filePath: string;
+          content: string;
+          dirty: boolean;
+      }
     | { kind: 'untitled'; id: string; content: string; dirty: boolean };
 
-type UnsavedBufferSnapshot = {
-    kind: 'file' | 'untitled';
-    id: string;
-    relPath?: string;
-    content: string;
-};
+type UnsavedBufferSnapshot =
+    | {
+          kind: 'file';
+          id: string;
+          filePath: string;
+          content: string;
+      }
+    | {
+          kind: 'untitled';
+          id: string;
+          content: string;
+      };
 
 type ScopeView = {
     key: string;
@@ -120,11 +133,12 @@ const readUnsavedBuffers = (): EditorBuffer[] => {
 
         const parsed = JSON.parse(raw) as UnsavedBufferSnapshot[];
         return parsed.map((snapshot): EditorBuffer => {
-            if (snapshot.kind === 'file' && snapshot.relPath) {
+            if (snapshot.kind === 'file') {
                 return {
                     kind: 'file',
-                    relPath: snapshot.relPath,
+                    filePath: snapshot.filePath,
                     content: snapshot.content,
+                    id: snapshot.id,
                     dirty: true,
                 };
             }
@@ -151,8 +165,8 @@ const saveUnsavedBuffers = (buffers: EditorBuffer[]) => {
                 if (buffer.kind === 'file') {
                     return {
                         kind: 'file',
-                        id: buffer.relPath,
-                        relPath: buffer.relPath,
+                        id: buffer.filePath,
+                        filePath: buffer.filePath,
                         content: buffer.content,
                     };
                 }
@@ -174,31 +188,23 @@ const saveUnsavedBuffers = (buffers: EditorBuffer[]) => {
 };
 
 const getBufferId = (buffer: EditorBuffer): string => {
-    return buffer.kind === 'file' ? buffer.relPath : buffer.id;
+    return buffer.kind === 'file' ? buffer.filePath : buffer.id;
 };
 
 function App() {
     // Editor buffers: file-backed + untitled
     const [buffers, setBuffers] = useState<EditorBuffer[]>(() => {
         const saved = readUnsavedBuffers();
-        // Always start with one untitled buffer if none exist
-        if (saved.length === 0) {
-            return [
-                {
-                    kind: 'untitled',
-                    id: 'untitled-1',
-                    content: DEFAULT_PATCH,
-                    dirty: false,
-                },
-            ];
-        }
+
         return saved;
     });
 
-    const [activeBufferId, setActiveBufferId] = useState<string>(() => {
-        const saved = readUnsavedBuffers();
-        return saved.length > 0 ? getBufferId(saved[0]) : 'untitled-1';
-    });
+    const [activeBufferId, setActiveBufferId] = useState<string | undefined>(
+        () => {
+            const saved = readUnsavedBuffers();
+            return saved.length > 0 ? getBufferId(saved[0]) : undefined;
+        },
+    );
 
     const activeBuffer = buffers.find((b) => getBufferId(b) === activeBufferId);
     const patchCode = activeBuffer?.content ?? DEFAULT_PATCH;
@@ -244,7 +250,7 @@ function App() {
 
         if (dirtyFileBuffers.length > 0) {
             const fileList = dirtyFileBuffers
-                .map((b) => (b.kind === 'file' ? b.relPath : ''))
+                .map((b) => (b.kind === 'file' ? b.filePath : ''))
                 .filter(Boolean)
                 .join(', ');
 
@@ -257,7 +263,7 @@ function App() {
                 for (const buffer of dirtyFileBuffers) {
                     if (buffer.kind === 'file') {
                         await electronAPI.filesystem.writeFile(
-                            buffer.relPath,
+                            buffer.filePath,
                             buffer.content,
                         );
                     }
@@ -347,7 +353,9 @@ function App() {
         if (buffer.kind === 'untitled') {
             return `Untitled-${buffer.id}`;
         }
-        return buffer.relPath;
+        // Display filename only for brevity
+        const parts = buffer.filePath.split(/[/\\]/);
+        return parts[parts.length - 1];
     }, []);
 
     const normalizeFileName = useCallback((name: string) => {
@@ -375,9 +383,17 @@ function App() {
 
     const openFile = useCallback(
         async (relPath: string) => {
+            if (!workspaceRoot) {
+                setError('No workspace open');
+                return;
+            }
+
+            // Construct absolute path
+            const absPath = `${workspaceRoot}/${relPath}`;
+
             // Check if already open
             const existing = buffers.find(
-                (b) => b.kind === 'file' && b.relPath === relPath,
+                (b) => b.kind === 'file' && b.filePath === absPath,
             );
             if (existing) {
                 setActiveBufferId(getBufferId(existing));
@@ -386,11 +402,12 @@ function App() {
 
             // Load from filesystem
             try {
-                const content = await electronAPI.filesystem.readFile(relPath);
+                const content = await electronAPI.filesystem.readFile(absPath);
                 const newBuffer: EditorBuffer = {
                     kind: 'file',
-                    relPath,
+                    filePath: absPath,
                     content,
+                    id: v4(),
                     dirty: false,
                 };
                 setBuffers((prev) => [...prev, newBuffer]);
@@ -399,7 +416,7 @@ function App() {
                 setError(`Failed to open file: ${relPath}`);
             }
         },
-        [buffers],
+        [buffers, workspaceRoot],
     );
 
     const createUntitledFile = useCallback(() => {
@@ -439,7 +456,8 @@ function App() {
                         getBufferId(b) === activeBufferId
                             ? {
                                   kind: 'file' as const,
-                                  relPath: normalized,
+                                  filePath: normalized,
+                                  id: b.id,
                                   content: buffer.content,
                                   dirty: false,
                               }
@@ -454,7 +472,7 @@ function App() {
         } else {
             // Save existing file
             const result = await electronAPI.filesystem.writeFile(
-                buffer.relPath,
+                buffer.filePath,
                 buffer.content,
             );
 
@@ -476,29 +494,41 @@ function App() {
         const buffer = buffers.find((b) => getBufferId(b) === activeBufferId);
         if (!buffer || buffer.kind !== 'file') return;
 
+        const currentFileName = buffer.filePath.split(/[/\\]/).pop();
+
         const input = await electronAPI.filesystem.showInputDialog(
             'Rename file',
-            buffer.relPath,
+            currentFileName || buffer.filePath,
         );
         if (!input) return;
 
         const normalized = normalizeFileName(input);
-        if (!normalized || normalized === buffer.relPath) return;
+
+        // Construct new path in same directory
+        const separator = buffer.filePath.includes('\\') ? '\\' : '/';
+        const lastSepIndex = buffer.filePath.lastIndexOf(separator);
+        let newPath = normalized;
+        if (lastSepIndex !== -1) {
+            const dir = buffer.filePath.substring(0, lastSepIndex);
+            newPath = `${dir}${separator}${normalized}`;
+        }
+
+        if (!newPath || newPath === buffer.filePath) return;
 
         const result = await electronAPI.filesystem.renameFile(
-            buffer.relPath,
-            normalized,
+            buffer.filePath,
+            newPath,
         );
 
         if (result.success) {
             setBuffers((prev) =>
                 prev.map((b) =>
                     getBufferId(b) === activeBufferId
-                        ? { ...b, relPath: normalized }
+                        ? { ...b, filePath: newPath }
                         : b,
                 ),
             );
-            setActiveBufferId(normalized);
+            setActiveBufferId(newPath);
             await refreshFileTree();
         } else {
             setError(result.error || 'Failed to rename file');
@@ -509,9 +539,9 @@ function App() {
         const buffer = buffers.find((b) => getBufferId(b) === activeBufferId);
         if (!buffer || buffer.kind !== 'file') return;
 
-        if (!window.confirm(`Delete ${buffer.relPath}?`)) return;
+        if (!window.confirm(`Delete ${buffer.filePath}?`)) return;
 
-        const result = await electronAPI.filesystem.deleteFile(buffer.relPath);
+        const result = await electronAPI.filesystem.deleteFile(buffer.filePath);
 
         if (result.success) {
             // Remove buffer and switch to another
@@ -524,7 +554,7 @@ function App() {
                     return [
                         {
                             kind: 'untitled',
-                            id: `untitled-${Date.now()}`,
+                            id: v4(),
                             content: DEFAULT_PATCH,
                             dirty: false,
                         },
@@ -558,17 +588,6 @@ function App() {
                 const filtered = prev.filter(
                     (b) => getBufferId(b) !== bufferId,
                 );
-                if (filtered.length === 0) {
-                    // Always keep at least one untitled buffer
-                    return [
-                        {
-                            kind: 'untitled',
-                            id: `untitled-${Date.now()}`,
-                            content: DEFAULT_PATCH,
-                            dirty: false,
-                        },
-                    ];
-                }
                 return filtered;
             });
 
@@ -592,6 +611,7 @@ function App() {
     const handleSubmitRef = useRef(() => {});
     useEffect(() => {
         handleSubmitRef.current = async () => {
+            if (!activeBufferId) return;
             try {
                 const schemasValue = schemaRef.current;
                 const patchCodeValue = patchCodeRef.current;
@@ -720,7 +740,11 @@ function App() {
                     <div className="editor-panel">
                         <PatchEditor
                             value={patchCode}
-                            currentFile={formatFileLabel(activeBuffer!)}
+                            currentFile={
+                                activeBuffer
+                                    ? formatFileLabel(activeBuffer)
+                                    : undefined
+                            }
                             onChange={handlePatchChange}
                             onSubmit={handleSubmitRef}
                             onStop={handleStopRef}

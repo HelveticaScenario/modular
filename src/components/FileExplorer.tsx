@@ -1,16 +1,13 @@
 import { useState } from 'react';
 import './FileExplorer.css';
 import type { FileTreeEntry } from '../ipcTypes';
-
-type EditorBuffer = 
-    | { kind: 'file'; relPath: string; content: string; dirty: boolean }
-    | { kind: 'untitled'; id: string; content: string; dirty: boolean };
+import type { EditorBuffer } from '../App';
 
 interface FileExplorerProps {
     workspaceRoot: string | null;
     fileTree: FileTreeEntry[];
     buffers: EditorBuffer[];
-    activeBufferId: string;
+    activeBufferId?: string;
     runningBufferId: string | null;
     formatLabel: (buffer: EditorBuffer) => string;
     onSelectBuffer: (bufferId: string) => void;
@@ -27,7 +24,7 @@ interface FileExplorerProps {
 export const SCRATCH_FILE = '__scratch__.mjs';
 
 const getBufferId = (buffer: EditorBuffer): string => {
-    return buffer.kind === 'file' ? buffer.relPath : buffer.id;
+    return buffer.kind === 'file' ? buffer.filePath : buffer.id;
 };
 
 function TreeNode({
@@ -136,8 +133,10 @@ export function FileExplorer({
                             <ul>
                                 {buffers.map((buffer) => {
                                     const bufferId = getBufferId(buffer);
-                                    const isActive = bufferId === activeBufferId;
-                                    const isRunning = bufferId === runningBufferId;
+                                    const isActive =
+                                        bufferId === activeBufferId;
+                                    const isRunning =
+                                        bufferId === runningBufferId;
                                     return (
                                         <li
                                             key={bufferId}
@@ -149,7 +148,9 @@ export function FileExplorer({
                                             ]
                                                 .filter(Boolean)
                                                 .join(' ')}
-                                            onClick={() => onSelectBuffer(bufferId)}
+                                            onClick={() =>
+                                                onSelectBuffer(bufferId)
+                                            }
                                         >
                                             <span className="file-name">
                                                 {formatLabel(buffer)}
@@ -219,9 +220,7 @@ export function FileExplorer({
                 {/* Workspace Files Tree */}
                 {workspaceRoot && (
                     <div className="section">
-                        <div className="section-header">
-                            Workspace Files
-                        </div>
+                        <div className="section-header">Workspace Files</div>
                         <div className="file-tree">
                             {fileTree.length === 0 ? (
                                 <div className="empty-message">
@@ -245,4 +244,3 @@ export function FileExplorer({
         </div>
     );
 }
-

@@ -1,6 +1,6 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron';
 import { getSchemas, PatchGraph, Synthesizer } from '@modular/core';
-import { IPC_CHANNELS, IPCHandlers, IPCRequest, IPCResponse, Promisify, FileTreeEntry, FSOperationResult, WorkspaceFolder } from './ipcTypes';
+import { IPC_CHANNELS, IPCHandlers, FileTreeEntry } from './ipcTypes';
 import { reconcilePatchBySimilarity } from './patchSimilarityRemap';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -57,22 +57,18 @@ const PATCH_REMAP_MARGIN = process.env.MODULAR_PATCH_REMAP_MARGIN
 console.log('Patch remap debug mode:', DEBUG_LOG);
 
 /**
- * Validate that a path is within the workspace root
+ * Validate that a path is valid (absolute or relative to workspace)
  */
-function validatePathInWorkspace(relativePath: string): string | null {
+function validatePathInWorkspace(filePath: string): string | null {
+  if (path.isAbsolute(filePath)) {
+    return filePath;
+  }
+
   if (!currentWorkspaceRoot) {
     return null;
   }
-  const absolutePath = path.resolve(currentWorkspaceRoot, relativePath);
-  const normalizedRoot = path.resolve(currentWorkspaceRoot);
 
-  // Ensure the resolved path is within the workspace
-  if (!absolutePath.startsWith(normalizedRoot + path.sep) && absolutePath !== normalizedRoot) {
-    console.error('Path traversal attempt detected:', relativePath);
-    return null;
-  }
-
-  return absolutePath;
+  return path.resolve(currentWorkspaceRoot, filePath);
 }
 
 /**
@@ -141,7 +137,11 @@ function registerIPCHandler<T extends keyof typeof IPC_CHANNELS>(
   ipcMain.handle(IPC_CHANNELS[channel], async (_event, ...args) => {
     try {
       // @ts-ignore - TypeScript has trouble with the variadic handler signatures
-      return await handler(...args);
+      const ret = handler(...args);
+      if (ret instanceof Promise) {
+        return await ret;
+      }
+      return ret;
     } catch (error) {
       console.error(`Error in IPC handler ${channel}:`, error);
       throw error;
@@ -338,23 +338,14 @@ registerIPCHandler('FS_RENAME_FILE', (oldPath, newPath) => {
   }
 });
 
-registerIPCHandler('FS_DELETE_FILE', (relativePath) => {
-  const absolutePath = validatePathInWorkspace(relativePath);
-  if (!absolutePath) {
-    return { success: false, error: 'Invalid file path or no workspace selected' };
-  }
+registerIPCHandler('FS_DELETE_FILE', async (absolutePath) => {
 
   try {
-    const stat = fs.statSync(absolutePath);
-    if (stat.isDirectory()) {
-      fs.rmSync(absolutePath, { recursive: true });
-    } else {
-      fs.unlinkSync(absolutePath);
-    }
+    await shell.trashItem(absolutePath);
     return { success: true };
   } catch (error) {
     console.error('Error deleting file:', error);
-    return { success: false, error: `Failed to delete: ${relativePath}` };
+    return { success: false, error: `Failed to delete: ${absolutePath}` };
   }
 });
 
@@ -398,6 +389,7 @@ registerIPCHandler('FS_CREATE_FOLDER', (relativePath) => {
 
 // @ts-ignore - async handler returns Promise
 registerIPCHandler('FS_SHOW_SAVE_DIALOG', async (defaultPath?: string) => {
+  console.log('defaultPath:', defaultPath);
   const result = await dialog.showSaveDialog({
     defaultPath: defaultPath || 'untitled.mjs',
     filters: [

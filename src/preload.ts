@@ -1,13 +1,6 @@
 // See the Electron documentation for details on how to use preload scripts:
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 import { contextBridge, ipcRenderer } from 'electron/renderer';
-import type {
-    ModuleSchema,
-    ScopeItem,
-    PatchGraph,
-    ApplyPatchError,
-    AudioThreadHealthSnapshot
-} from '@modular/core';
 import { IPC_CHANNELS, IPCHandlers, IPCRequest, IPCResponse, Promisify } from './ipcTypes';
 
 
@@ -19,9 +12,11 @@ import { IPC_CHANNELS, IPCHandlers, IPCRequest, IPCResponse, Promisify } from '.
 function invokeIPC<T extends keyof typeof IPC_CHANNELS>(
     channel: T,
     ...args: IPCRequest<typeof IPC_CHANNELS[T]>
-): Promise<IPCResponse<typeof IPC_CHANNELS[T]>> {
+): IPCResponse<typeof IPC_CHANNELS[T]> {
+    // @ts-ignore - TypeScript is having trouble inferring the return type here
     return ipcRenderer.invoke(IPC_CHANNELS[channel], ...args);
 }
+
 /**
  * The public API exposed to the renderer process.
  * All methods are type-safe and match the @modular/core interface.
