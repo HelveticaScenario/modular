@@ -426,6 +426,8 @@ export function MonacoPatchEditor({
                         folding: true,
                         matchBrackets: 'always',
                         automaticLayout: true,
+                        fontFamily: 'Fira Code, monospace',
+                        fontLigatures: true,
                     }}
                 />
             )}

@@ -2,8 +2,11 @@
   box-sizing: border-box;
 }
 
+@import '@fontsource/fira-code/400.css';
+@import '@fontsource/fira-code/600.css';
+
 :root {
-  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Droid Sans Mono', monospace;
+  font-family: 'Fira Code', 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Droid Sans Mono', monospace;
   line-height: 1.5;
   font-weight: 400;
   color-scheme: dark;

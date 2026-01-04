@@ -50,6 +50,7 @@
         "ts-loader": "^9.5.4"
     },
     "dependencies": {
+        "@fontsource/fira-code": "^5.2.7",
         "@monaco-editor/react": "^4.7.0",
         "electron-squirrel-startup": "^1.0.1",
         "events": "^3.3.0",
