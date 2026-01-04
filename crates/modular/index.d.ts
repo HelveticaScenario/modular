@@ -13,6 +13,7 @@ export declare class Synthesizer {
   stopRecording(): string | null
   isRecording(): boolean
   getHealth(): AudioThreadHealthSnapshot
+  getModuleStates(): Record<string, any>
 }
 
 export interface ApplyPatchError {
@@ -28,6 +29,8 @@ export interface AudioThreadHealthSnapshot {
 }
 
 export declare function getSchemas(): Array<ModuleSchema>
+
+export declare function parsePattern(source: string): any
 
 /** Detailed validation error for patch validation */
 export interface ValidationError {

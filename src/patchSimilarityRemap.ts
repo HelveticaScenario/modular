@@ -529,6 +529,12 @@ export function reconcilePatchBySimilarity(
     currentGraph: PatchGraph | null,
     options: ReconcileOptions = {},
 ): ReconcileResult {
+    performance.clearMeasures('patch-similarity');
+    performance.clearMarks('patch-similarity-start');
+    performance.mark('patch-similarity-start');
+
+
+
     if (!currentGraph) {
         return {
             appliedPatch: desiredGraph,
@@ -751,6 +757,12 @@ export function reconcilePatchBySimilarity(
             debugLog(`[patch-remap] remaps ${pairs}`);
         }
     }
-
+    performance.mark('patch-similarity-end');
+    console.log('patch similarity', performance.measure(
+        'patch-similarity',
+        'patch-similarity-start',
+        'patch-similarity-end',
+    ));
+    // performance.
     return { appliedPatch, moduleIdRemap };
 }

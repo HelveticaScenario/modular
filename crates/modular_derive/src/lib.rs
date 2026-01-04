@@ -329,7 +329,7 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
     }
 }
 
-#[proc_macro_derive(Module, attributes(output, module, args))]
+#[proc_macro_derive(Module, attributes(output, module, args, stateful))]
 pub fn module_macro_derive(input: TokenStream) -> TokenStream {
     // Construct a representation of Rust code as a syntax tree
     // that we can manipulate
@@ -823,6 +823,17 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     let constructor_name = Ident::new(&constructor_name, Span::call_site());
     let params_struct_name = format_ident!("{}Params", name);
 
+    let is_stateful = ast.attrs.iter().any(|attr| attr.path().is_ident("stateful"));
+    let get_state_impl = if is_stateful {
+        quote! {
+            use crate::types::StatefulModule;
+            let module = self.module.lock();
+            module.get_state()
+        }
+    } else {
+        quote! { None }
+    };
+
     let generated = quote! {
         #[derive(Default)]
         struct #struct_name {
@@ -884,6 +895,10 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             fn connect(&self, patch: &crate::Patch) {
                 let mut module = self.module.lock();
                 crate::types::Connect::connect(&mut module.params, patch);
+            }
+
+            fn get_state(&self) -> Option<serde_json::Value> {
+                #get_state_impl
             }
         }
 

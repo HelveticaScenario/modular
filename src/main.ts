@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron';
-import { getSchemas, PatchGraph, Synthesizer } from '@modular/core';
+import { getSchemas, PatchGraph, Synthesizer, parsePattern } from '@modular/core';
 import { IPC_CHANNELS, IPCHandlers, FileTreeEntry } from './ipcTypes';
 import { reconcilePatchBySimilarity } from './patchSimilarityRemap';
 import * as fs from 'fs';
@@ -35,6 +35,11 @@ if (!gotTheLock) {
 // Initialize the synthesizer instance
 console.log('Initializing Synthesizer...');
 const synth = new Synthesizer();
+
+setInterval(() => {
+  // Keep the audio thread alive
+  console.log('health:', synth.getHealth());
+}, 10000);
 
 // Workspace root state
 let currentWorkspaceRoot: string | null = null;
@@ -164,6 +169,14 @@ registerIPCHandler('SYNTH_GET_CHANNELS', () => {
 
 registerIPCHandler('SYNTH_GET_SCOPES', () => {
   return synth.getScopes();
+});
+
+registerIPCHandler('SYNTH_GET_MODULE_STATES', () => {
+  return synth.getModuleStates();
+});
+
+registerIPCHandler('PARSE_PATTERN', (source) => {
+  return parsePattern(source);
 });
 
 registerIPCHandler('SYNTH_UPDATE_PATCH', (patch, sourceId) => {

@@ -37,6 +37,7 @@ export interface PatchEditorProps {
     onUnregisterScopeCanvas?: (key: string) => void;
     // Optional explicit schemas prop; if omitted, we fall back to context.
     schemas?: ModuleSchema[];
+    lastSubmittedCode?: string | null;
 }
 
 // Apply the generated DSL .d.ts library to Monaco and expose some
@@ -112,6 +113,7 @@ export function MonacoPatchEditor({
     scopeViews = [],
     onRegisterScopeCanvas,
     onUnregisterScopeCanvas,
+    lastSubmittedCode,
 }: PatchEditorProps) {
     const schemas = useSchemas();
     const extraLibDisposeRef = useRef<IDisposable | null>(null);
@@ -124,6 +126,185 @@ export function MonacoPatchEditor({
     const [editor, setEditor] = useState<editor.IStandaloneCodeEditor | null>(
         null,
     );
+
+    const [seqTrackingIds, setSeqTrackingIds] = useState<Map<string, Map<number, string>>>(new Map());
+    const trackingCollectionRef = useRef<editor.IEditorDecorationsCollection | null>(null);
+    const activeStepCollectionRef = useRef<editor.IEditorDecorationsCollection | null>(null);
+
+    // Setup tracking when submitted code changes
+    useEffect(() => {
+        if (!lastSubmittedCode || !editor || !monaco) return;
+
+        const setupTracking = async () => {
+            // Regex to match seq(...) calls, supporting multiline strings ([\s\S])
+            const regex = /seq\s*\(\s*(['"`])((?:(?!\1)[\s\S])*)\1/g;
+            const matches = [];
+            let match;
+            // Find matches in the submitted code (source of truth for AST)
+            while ((match = regex.exec(lastSubmittedCode)) !== null) {
+                matches.push({
+                    fullMatch: match[0],
+                    quote: match[1],
+                    pattern: match[2],
+                    index: match.index,
+                });
+            }
+
+            // Find matches in the current editor content (target for decorations)
+            const currentCode = editor.getValue();
+            const currentMatches = [];
+            let cm;
+            regex.lastIndex = 0;
+            while ((cm = regex.exec(currentCode)) !== null) {
+                currentMatches.push({
+                    fullMatch: cm[0],
+                    quote: cm[1],
+                    pattern: cm[2],
+                    index: cm.index,
+                });
+            }
+
+            const newTrackingIds = new Map<string, Map<number, string>>();
+            const decorationsToCreate: editor.IModelDeltaDecoration[] = [];
+            const decorationMetadata: { seqId: string; stepIdx: number }[] = [];
+            const model = editor.getModel();
+            if (!model) return;
+
+            // Match submitted sequences to current sequences by index
+            for (let i = 0; i < matches.length; i++) {
+                if (i >= currentMatches.length) break;
+
+                const submittedMatch = matches[i];
+                const currentMatch = currentMatches[i];
+
+                // Only track if the pattern string hasn't changed
+                if (submittedMatch.pattern !== currentMatch.pattern) continue;
+
+                try {
+                    let patternToParse = submittedMatch.pattern;
+                    // If using backticks, mask interpolation ${...} to ensure it parses as a single token
+                    // while preserving the original length for correct span mapping.
+                    if (submittedMatch.quote === '`') {
+                        patternToParse = patternToParse.replace(/\$\{[\s\S]*?\}/g, (m) => '0'.repeat(m.length));
+                    }
+
+                    const ast = await window.electronAPI.parsePattern(patternToParse);
+                    const seqId = `seq-${i + 1}`;
+
+                    const traverse = (nodes: any[]) => {
+                        for (const node of nodes) {
+                            if (node.Leaf) {
+                                const { idx, span } = node.Leaf;
+                                const startOffset =
+                                    currentMatch.index +
+                                    currentMatch.fullMatch.indexOf(currentMatch.quote) +
+                                    1 +
+                                    span[0];
+                                const endOffset =
+                                    currentMatch.index +
+                                    currentMatch.fullMatch.indexOf(currentMatch.quote) +
+                                    1 +
+                                    span[1];
+
+                                const startPos = model.getPositionAt(startOffset);
+                                const endPos = model.getPositionAt(endOffset);
+
+                                decorationsToCreate.push({
+                                    range: new monaco.Range(
+                                        startPos.lineNumber,
+                                        startPos.column,
+                                        endPos.lineNumber,
+                                        endPos.column,
+                                    ),
+                                    options: {
+                                        stickiness:
+                                            monaco.editor.TrackedRangeStickiness
+                                                .NeverGrowsWhenTypingAtEdges,
+                                    },
+                                });
+                                decorationMetadata.push({ seqId, stepIdx: idx });
+                            }
+                            if (node.Container) {
+                                traverse(node.Container.children);
+                            }
+                            if (node.FastSubsequence) traverse(node.FastSubsequence.elements);
+                            if (node.SlowSubsequence) traverse(node.SlowSubsequence.elements);
+                            if (node.RandomChoice) traverse(node.RandomChoice.choices);
+                        }
+                    };
+                    traverse(ast);
+                } catch (e) {
+                    console.error('Failed to parse pattern', e);
+                }
+            }
+
+            // Create tracking decorations
+            if (trackingCollectionRef.current) {
+                trackingCollectionRef.current.clear();
+            }
+            const collection = editor.createDecorationsCollection();
+            const ids = collection.set(decorationsToCreate);
+            trackingCollectionRef.current = collection;
+
+            // Map IDs back to (SeqID, StepIndex)
+            for (let k = 0; k < ids.length; k++) {
+                const { seqId, stepIdx } = decorationMetadata[k];
+                if (!newTrackingIds.has(seqId)) {
+                    newTrackingIds.set(seqId, new Map());
+                }
+                newTrackingIds.get(seqId)!.set(stepIdx, ids[k]);
+            }
+
+            setSeqTrackingIds(newTrackingIds);
+        };
+
+        setupTracking();
+    }, [lastSubmittedCode, editor, monaco]);
+
+    // Poll module states
+    useEffect(() => {
+        if (!editor || !monaco) return;
+        const interval = setInterval(async () => {
+            try {
+                const states = await window.electronAPI.synthesizer.getModuleStates();
+                const newDecorations: editor.IModelDeltaDecoration[] = [];
+                const model = editor.getModel();
+                if (!model) return;
+
+                for (const [id, state] of Object.entries(states)) {
+                    if (id.startsWith('seq-') && 'active_step' in state) {
+                        const activeStep = (state as any).active_step as number;
+                        const stepMap = seqTrackingIds.get(id);
+                        if (stepMap && stepMap.has(activeStep)) {
+                            const decoId = stepMap.get(activeStep)!;
+                            const range = model.getDecorationRange(decoId);
+
+                            if (range && !range.isEmpty()) {
+                                newDecorations.push({
+                                    range: range,
+                                    options: {
+                                        className: 'active-seq-step',
+                                        isWholeLine: false,
+                                    },
+                                });
+                            }
+                        }
+                    }
+                }
+
+                if (activeStepCollectionRef.current) {
+                    activeStepCollectionRef.current.set(newDecorations);
+                } else {
+                    activeStepCollectionRef.current =
+                        editor.createDecorationsCollection(newDecorations);
+                }
+            } catch (e) {
+                // ignore
+            }
+        }, 50);
+
+        return () => clearInterval(interval);
+    }, [editor, monaco, seqTrackingIds]);
 
     const activeScopeViews = useMemo(
         () => scopeViews.filter((view) => view.file === currentFile),

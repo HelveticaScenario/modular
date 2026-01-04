@@ -145,6 +145,18 @@ impl Synthesizer {
   pub fn get_health(&self) -> AudioThreadHealthSnapshot {
     self.state.take_audio_thread_health_snapshot_and_reset()
   }
+
+  #[napi]
+  pub fn get_module_states(&self) -> HashMap<String, serde_json::Value> {
+    self.state.get_module_states()
+  }
+}
+
+#[napi]
+pub fn parse_pattern(source: String) -> Result<serde_json::Value> {
+    use modular_core::pattern::parse_pattern_elements;
+    let elements = parse_pattern_elements(&source).map_err(|e| napi::Error::from_reason(e.to_string()))?;
+    Ok(serde_json::to_value(elements).unwrap())
 }
 
 #[napi]

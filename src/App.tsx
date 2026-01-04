@@ -601,6 +601,8 @@ function App() {
         handleSaveFileRef.current = saveFile;
     }, [saveFile]);
 
+    const [lastSubmittedCode, setLastSubmittedCode] = useState<string | null>(null);
+
     const handleSubmitRef = useRef(() => {});
     useEffect(() => {
         handleSubmitRef.current = async () => {
@@ -625,6 +627,7 @@ function App() {
                 }
                 setIsClockRunning(true);
                 setRunningBufferId(activeBufferId);
+                setLastSubmittedCode(patchCodeValue);
                 setError(null);
                 setValidationErrors(null);
 
@@ -728,6 +731,7 @@ function App() {
                     <div className="editor-panel">
                         <PatchEditor
                             value={patchCode}
+                            lastSubmittedCode={lastSubmittedCode}
                             currentFile={
                                 activeBuffer
                                     ? formatFileLabel(activeBuffer)

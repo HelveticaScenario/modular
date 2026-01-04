@@ -1,7 +1,7 @@
 use std::sync::Weak;
 
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use pest::Parser;
 use pest::iterators::Pair;
@@ -13,12 +13,22 @@ use crate::types::{Connect, Signal};
 struct PatternDslParser;
 
 /// Main AST node enum representing all possible elements in the Musical DSL
-#[derive(Debug, Clone, PartialEq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub enum ASTNode {
-    Leaf { value: Value, idx: usize },
-    FastSubsequence { elements: Vec<ASTNode> },
-    SlowSubsequence { elements: Vec<ASTNode> },
-    RandomChoice { choices: Vec<ASTNode> },
+    Leaf {
+        value: Value,
+        idx: usize,
+        span: (usize, usize),
+    },
+    FastSubsequence {
+        elements: Vec<ASTNode>,
+    },
+    SlowSubsequence {
+        elements: Vec<ASTNode>,
+    },
+    RandomChoice {
+        choices: Vec<ASTNode>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,7 +45,7 @@ impl std::fmt::Display for PatternParseError {
 impl std::error::Error for PatternParseError {}
 
 /// Root pattern node containing all top-level elements
-#[derive(Debug, Default, Clone, PartialEq, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct PatternProgram {
     pub elements: Vec<ASTNode>,
 }
@@ -122,13 +132,16 @@ fn parse_ast(pair: Pair<Rule>, idx: &mut usize) -> Result<ASTNode, PatternParseE
         Rule::Rest => {
             let i = *idx;
             *idx += 1;
+            let span = pair.as_span();
             Ok(ASTNode::Leaf {
                 value: Value::Rest,
                 idx: i,
+                span: (span.start(), span.end()),
             })
         }
 
         Rule::NumericLiteral => {
+            let span = pair.as_span();
             let num_str = pair
                 .into_inner()
                 .next()
@@ -143,10 +156,12 @@ fn parse_ast(pair: Pair<Rule>, idx: &mut usize) -> Result<ASTNode, PatternParseE
             Ok(ASTNode::Leaf {
                 value: Value::Numeric(value),
                 idx: i,
+                span: (span.start(), span.end()),
             })
         }
 
         Rule::HzValue => {
+            let span = pair.as_span();
             let mut inner = pair.into_inner();
             let num_str = inner
                 .next()
@@ -173,10 +188,12 @@ fn parse_ast(pair: Pair<Rule>, idx: &mut usize) -> Result<ASTNode, PatternParseE
             Ok(ASTNode::Leaf {
                 value: Value::Numeric(voct),
                 idx: i,
+                span: (span.start(), span.end()),
             })
         }
 
         Rule::NoteName => {
+            let span = pair.as_span();
             let mut inner = pair.into_inner();
             let letter_pair = inner.next().ok_or_else(|| PatternParseError {
                 message: "Parse error: missing note letter".to_string(),
@@ -216,10 +233,12 @@ fn parse_ast(pair: Pair<Rule>, idx: &mut usize) -> Result<ASTNode, PatternParseE
             Ok(ASTNode::Leaf {
                 value: Value::Numeric(voct),
                 idx: i,
+                span: (span.start(), span.end()),
             })
         }
 
         Rule::MidiValue => {
+            let span = pair.as_span();
             let midi_pair = pair.into_inner().next().ok_or_else(|| PatternParseError {
                 message: "Parse error: missing midi number".to_string(),
             })?;
@@ -231,10 +250,12 @@ fn parse_ast(pair: Pair<Rule>, idx: &mut usize) -> Result<ASTNode, PatternParseE
             Ok(ASTNode::Leaf {
                 value: Value::Numeric(voct),
                 idx: i,
+                span: (span.start(), span.end()),
             })
         }
 
         Rule::ModuleRef => {
+            let span = pair.as_span();
             let mut inner = pair.into_inner();
             let module_id = inner
                 .next()
@@ -264,6 +285,7 @@ fn parse_ast(pair: Pair<Rule>, idx: &mut usize) -> Result<ASTNode, PatternParseE
                     sample_and_hold: false,
                 },
                 idx: i,
+                span: (span.start(), span.end()),
             })
         }
 
@@ -329,11 +351,12 @@ pub fn parse_pattern_elements(source: &str) -> Result<Vec<ASTNode>, PatternParse
 }
 
 /// Represents the output value from the runner
-#[derive(Debug, Clone, PartialEq, JsonSchema, Deserialize)]
+#[derive(Debug, Clone, PartialEq, JsonSchema, Deserialize, Serialize)]
 pub enum Value {
     Numeric(f64),
     Rest,
     ModuleRef {
+        #[serde(skip)]
         signal: Signal,
         sample_and_hold: bool,
     },
@@ -408,7 +431,7 @@ pub fn hash_components(seed: u64, time_bits: u64, choice_id: u64) -> u64 {
 
 impl PatternProgram {
     /// Run the compiled pattern at a given time (stateless)
-    pub fn run(&self, time: f64, seed: u64) -> Option<(Value, f64, f64)> {
+    pub fn run(&self, time: f64, seed: u64) -> Option<(Value, f64, f64, usize)> {
         let loop_time = time.fract();
         let loop_index = time.floor() as usize;
 
@@ -425,7 +448,7 @@ impl PatternProgram {
         depth: usize,
         seed: u64,
         choice_id: u64,
-    ) -> Option<(Value, f64, f64)> {
+    ) -> Option<(Value, f64, f64, usize)> {
         if nodes.is_empty() {
             return None;
         }
@@ -466,10 +489,10 @@ impl PatternProgram {
         depth: usize,
         seed: u64,
         choice_id: u64,
-    ) -> Option<(Value, f64, f64)> {
+    ) -> Option<(Value, f64, f64, usize)> {
         match node {
-            ASTNode::Leaf { value, .. } => {
-                Some((value.clone(), start + loop_index as f64, duration))
+            ASTNode::Leaf { value, idx, .. } => {
+                Some((value.clone(), start + loop_index as f64, duration, *idx))
             }
             ASTNode::FastSubsequence { elements } => self.run_nodes(
                 elements, time, start, duration, loop_index, depth, seed, choice_id,
@@ -688,6 +711,7 @@ mod tests {
         ASTNode::Leaf {
             value: Value::Numeric(value),
             idx,
+            span: (0, 0),
         }
     }
 
@@ -701,15 +725,15 @@ mod tests {
 
         assert_eq!(
             pattern.run(0.1, 0),
-            Some((Value::Numeric(1.0), 0.0, 0.3333333333333333))
+            Some((Value::Numeric(1.0), 0.0, 0.3333333333333333, 0))
         );
         assert_eq!(
             pattern.run(0.4, 0),
-            Some((Value::Numeric(2.0), 0.3333333333333333, 0.3333333333333333))
+            Some((Value::Numeric(2.0), 0.3333333333333333, 0.3333333333333333, 1))
         );
         assert_eq!(
             pattern.run(0.7, 0),
-            Some((Value::Numeric(3.0), 0.6666666666666666, 0.3333333333333333))
+            Some((Value::Numeric(3.0), 0.6666666666666666, 0.3333333333333333, 2))
         );
     }
 
@@ -717,9 +741,9 @@ mod tests {
     fn test_looping() {
         let pattern = PatternProgram::new(vec![num(1.0, 0), num(2.0, 1)]);
 
-        assert_eq!(pattern.run(0.0, 0), Some((Value::Numeric(1.0), 0.0, 0.5)));
-        assert_eq!(pattern.run(1.0, 0), Some((Value::Numeric(1.0), 1.0, 0.5)));
-        assert_eq!(pattern.run(2.5, 0), Some((Value::Numeric(2.0), 2.5, 0.5)));
+        assert_eq!(pattern.run(0.0, 0), Some((Value::Numeric(1.0), 0.0, 0.5, 0)));
+        assert_eq!(pattern.run(1.0, 0), Some((Value::Numeric(1.0), 1.0, 0.5, 0)));
+        assert_eq!(pattern.run(2.5, 0), Some((Value::Numeric(2.0), 2.5, 0.5, 1)));
     }
 
     #[test]
@@ -731,11 +755,11 @@ mod tests {
             },
         ]);
 
-        assert_eq!(pattern.run(0.25, 0), Some((Value::Numeric(1.0), 0.0, 0.5)));
-        assert_eq!(pattern.run(0.55, 0), Some((Value::Numeric(2.0), 0.5, 0.25)));
+        assert_eq!(pattern.run(0.25, 0), Some((Value::Numeric(1.0), 0.0, 0.5, 0)));
+        assert_eq!(pattern.run(0.55, 0), Some((Value::Numeric(2.0), 0.5, 0.25, 1)));
         assert_eq!(
             pattern.run(0.75, 0),
-            Some((Value::Numeric(3.0), 0.75, 0.25))
+            Some((Value::Numeric(3.0), 0.75, 0.25, 2))
         );
     }
 
@@ -745,10 +769,10 @@ mod tests {
             elements: vec![num(1.0, 0), num(2.0, 1), num(3.0, 2)],
         }]);
 
-        assert_eq!(pattern.run(0.5, 0), Some((Value::Numeric(1.0), 0.0, 1.0)));
-        assert_eq!(pattern.run(1.5, 0), Some((Value::Numeric(2.0), 1.0, 1.0)));
-        assert_eq!(pattern.run(2.5, 0), Some((Value::Numeric(3.0), 2.0, 1.0)));
-        assert_eq!(pattern.run(3.5, 0), Some((Value::Numeric(1.0), 3.0, 1.0)));
+        assert_eq!(pattern.run(0.5, 0), Some((Value::Numeric(1.0), 0.0, 1.0, 0)));
+        assert_eq!(pattern.run(1.5, 0), Some((Value::Numeric(2.0), 1.0, 1.0, 1)));
+        assert_eq!(pattern.run(2.5, 0), Some((Value::Numeric(3.0), 2.0, 1.0, 2)));
+        assert_eq!(pattern.run(3.5, 0), Some((Value::Numeric(1.0), 3.0, 1.0, 0)));
     }
 
     #[test]
@@ -766,11 +790,11 @@ mod tests {
         }]);
 
         // Should return 1, 3, 2, 4, 1...
-        assert_eq!(pattern.run(0.5, 0), Some((Value::Numeric(1.0), 0.0, 1.0)));
-        assert_eq!(pattern.run(1.5, 0), Some((Value::Numeric(3.0), 1.0, 1.0)));
-        assert_eq!(pattern.run(2.5, 0), Some((Value::Numeric(2.0), 2.0, 1.0)));
-        assert_eq!(pattern.run(3.5, 0), Some((Value::Numeric(4.0), 3.0, 1.0)));
-        assert_eq!(pattern.run(4.5, 0), Some((Value::Numeric(1.0), 4.0, 1.0)));
+        assert_eq!(pattern.run(0.5, 0), Some((Value::Numeric(1.0), 0.0, 1.0, 0)));
+        assert_eq!(pattern.run(1.5, 0), Some((Value::Numeric(3.0), 1.0, 1.0, 2)));
+        assert_eq!(pattern.run(2.5, 0), Some((Value::Numeric(2.0), 2.0, 1.0, 1)));
+        assert_eq!(pattern.run(3.5, 0), Some((Value::Numeric(4.0), 3.0, 1.0, 3)));
+        assert_eq!(pattern.run(4.5, 0), Some((Value::Numeric(1.0), 4.0, 1.0, 0)));
     }
 
     #[test]
@@ -780,7 +804,7 @@ mod tests {
         let mut counts = HashMap::new();
         for i in 0..10000 {
             let time = i as f64;
-            if let Some((Value::Numeric(val), _, _)) = pattern.run(time, 0) {
+            if let Some((Value::Numeric(val), _, _, _)) = pattern.run(time, 0) {
                 *counts.entry(val as i32).or_insert(0) += 1;
             }
         }
@@ -803,7 +827,7 @@ mod tests {
         let mut counts = HashMap::new();
         for i in 0..10000 {
             let time = i as f64;
-            if let Some((Value::Numeric(val), _, _)) = pattern.run(time, 0) {
+            if let Some((Value::Numeric(val), _, _, _)) = pattern.run(time, 0) {
                 *counts.entry(val as i32).or_insert(0) += 1;
             }
         }
@@ -835,7 +859,7 @@ mod tests {
         let mut counts = HashMap::new();
         for i in 0..10000 {
             let time = i as f64;
-            if let Some((Value::Numeric(val), _, _)) = pattern.run(time, 0) {
+            if let Some((Value::Numeric(val), _, _, _)) = pattern.run(time, 0) {
                 *counts.entry(val as i32).or_insert(0) += 1;
             }
         }

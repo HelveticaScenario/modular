@@ -30,6 +30,12 @@ pub trait MessageHandler {
     }
 }
 
+pub trait StatefulModule {
+    fn get_state(&self) -> Option<serde_json::Value> {
+        None
+    }
+}
+
 pub trait Sampleable: MessageHandler + Send + Sync {
     fn get_id(&self) -> &String;
     fn tick(&self) -> ();
@@ -38,6 +44,9 @@ pub trait Sampleable: MessageHandler + Send + Sync {
     fn get_module_type(&self) -> String;
     fn try_update_params(&self, params: serde_json::Value) -> Result<()>;
     fn connect(&self, patch: &Patch);
+    fn get_state(&self) -> Option<serde_json::Value> {
+        None
+    }
 }
 
 pub trait Module {

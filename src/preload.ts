@@ -26,11 +26,13 @@ function invokeIPC<T extends keyof typeof IPC_CHANNELS>(
 export interface ElectronAPI {
     // Schema operations
     getSchemas: Promisify<IPCHandlers[typeof IPC_CHANNELS.GET_SCHEMAS]>;
+    parsePattern: Promisify<IPCHandlers[typeof IPC_CHANNELS.PARSE_PATTERN]>;
     // Synthesizer operations
     synthesizer: {
         getSampleRate: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_SAMPLE_RATE]>;
         getChannels: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_CHANNELS]>;
         getScopes: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_SCOPES]>;
+        getModuleStates: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_MODULE_STATES]>;
         updatePatch: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_UPDATE_PATCH]>;
         startRecording: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_START_RECORDING]>;
         stopRecording: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_STOP_RECORDING]>;
@@ -59,6 +61,8 @@ const electronAPI: ElectronAPI = {
     // Schema operations
     getSchemas: (...args) =>
         invokeIPC('GET_SCHEMAS', ...args),
+    parsePattern: (...args) =>
+        invokeIPC('PARSE_PATTERN', ...args),
 
     // Synthesizer operations
     synthesizer: {
@@ -70,6 +74,9 @@ const electronAPI: ElectronAPI = {
 
         getScopes: (...args) =>
             invokeIPC('SYNTH_GET_SCOPES', ...args),
+
+        getModuleStates: (...args) =>
+            invokeIPC('SYNTH_GET_MODULE_STATES', ...args),
 
         updatePatch: (...args) =>
             invokeIPC('SYNTH_UPDATE_PATCH', ...args),

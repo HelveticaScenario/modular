@@ -8,6 +8,7 @@ use modular_core::dsp::get_constructors;
 use modular_core::dsp::schema;
 use modular_core::dsp::utils::SchmittState;
 use modular_core::dsp::utils::SchmittTrigger;
+use modular_core::patch;
 use modular_core::types::ClockMessages;
 use modular_core::types::Message;
 use modular_core::types::Scope;
@@ -301,6 +302,17 @@ impl AudioState {
       .iter()
       .map(|(scope_item, scope_buffer)| (scope_item.clone(), Float32Array::from(scope_buffer)))
       .collect()
+  }
+
+  pub fn get_module_states(&self) -> HashMap<String, serde_json::Value> {
+    let patch = self.patch.lock();
+    let mut states = HashMap::new();
+    for (id, module) in patch.sampleables.iter() {
+        if let Some(state) = module.get_state() {
+            states.insert(id.clone(), state);
+        }
+    }
+    states
   }
 
   pub fn apply_patch(&self, desired_graph: PatchGraph, sample_rate: f32) -> Result<()> {
@@ -695,17 +707,19 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
   use modular_core::types::ROOT_ID;
 
   // Try to acquire patch lock - if we can't, skip this frame to avoid blocking audio
-  let patch_guard = match audio_state.patch.try_lock() {
-    Some(guard) => guard,
-    None => {
-      audio_state
-        .audio_thread_health
-        .patch_lock_misses
-        .fetch_add(1, Ordering::Relaxed);
-      return 0.0;
-    }
-  };
+  // let patch_guard = match audio_state.patch.try_lock() {
+  //   Some(guard) => guard,
+  //   None => {
+  //     audio_state
+  //       .audio_thread_health
+  //       .patch_lock_misses
+  //       .fetch_add(1, Ordering::Relaxed);
+  //     return 0.0;
+  //   }
+  // };
 
+  let patch_guard = audio_state.patch.lock();
+  
   // Update sampleables
   for (_, module) in patch_guard.sampleables.iter() {
     module.update();

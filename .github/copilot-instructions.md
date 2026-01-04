@@ -18,7 +18,7 @@ Key crates/apps:
 1. Frontend executes DSL via `new Function(...)` in `src/dsl/executor.ts` → produces `PatchGraph` JSON.
 2. `PatchGraph` sent to main process via Electron IPC (`src/ipcTypes.ts` defines channels).
 3. Main process calls `synthesizer.updatePatch(graph)` → Rust validates (`crates/modular/src/validation.rs`) → applies to audio thread.
-4. Audio thread (cpal callback in `crates/modular/src/audio.rs`): uses `try_lock()` for real-time safety; processes graph + streams scope buffers back via `RingBuffer`.
+4. Audio thread (cpal callback in `crates/modular/src/audio.rs`): uses `lock()` for real-time safety; processes graph + streams scope buffers back via `RingBuffer`.
 5. Renderer polls scope data via IPC → draws oscilloscopes in Monaco decorations.
 
 ## Architecture evolution
@@ -56,7 +56,7 @@ yarn typecheck  # tsc --noEmit for renderer
   2. Wire schema/validator in category modules (e.g., `oscillators/mod.rs`) → `install_constructors` / `install_param_validators`.
   3. Rebuild NAPI (`cd crates/modular && yarn build`) to update TS types.
   4. Update DSL factories in `src/dsl/factories.ts` if needed.
-- **Real-time safety (audio callback):** avoid allocations, logging, blocking locks. Use `try_lock()` + skip work on contention. Do heavy work on main thread (e.g., patch validation).
+- **Real-time safety (audio callback):** avoid allocations, logging. Do heavy work on main thread (e.g., patch validation).
 - **Voltage convention:** signals/params clamped to `-10.0..10.0`; audio outputs attenuated by `AUDIO_OUTPUT_ATTENUATION` (0.2) in `crates/modular/src/audio.rs`.
 - **Workspace structure:** Cargo workspace at root; Electron app also at root; `crates/modular` is a yarn workspace package (`@modular/core`).
 

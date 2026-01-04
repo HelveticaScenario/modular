@@ -13,6 +13,7 @@ struct CachedNode {
     value: Value,
     time_start: f64,
     time_end: f64,
+    idx: usize,
 }
 
 #[derive(Default, JsonSchema)]
@@ -82,6 +83,7 @@ struct SeqOutputs {
 #[derive(Module)]
 #[module("seq", "A 4 channel mixer")]
 #[args(pattern, playhead?)]
+#[stateful]
 pub struct Seq {
     outputs: SeqOutputs,
     params: SeqParams,
@@ -131,7 +133,7 @@ impl Seq {
         }
         let value = self.params.pattern.pattern.run(playhead_value, self.seed);
         match value {
-            Some((value, start, duration)) => {
+            Some((value, start, duration, idx)) => {
                 match value {
                     Value::Numeric(v) => {
                         self.gate.set_state(TempGateState::Low, TempGateState::High);
@@ -162,6 +164,7 @@ impl Seq {
                     value,
                     time_start: start,
                     time_end: start + duration,
+                    idx,
                 });
             }
             None => {
@@ -170,6 +173,16 @@ impl Seq {
                 self.outputs.trig = 0.0;
             }
         }
+    }
+}
+
+impl crate::types::StatefulModule for Seq {
+    fn get_state(&self) -> Option<serde_json::Value> {
+        self.cached_node.as_ref().map(|cached| {
+            serde_json::json!({
+                "active_step": cached.idx
+            })
+        })
     }
 }
 
