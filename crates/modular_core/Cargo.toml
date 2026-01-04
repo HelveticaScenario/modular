@@ -20,6 +20,8 @@ simple-easing = "1.0.1"
 napi-derive = "3.4.1"
 pest = "2.8.0"
 pest_derive = "2.8.0"
+regex = "1.12.2"
+fasteval = "0.2.4"
 
 [dependencies.napi]
 version = "3.7.1"

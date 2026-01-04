@@ -8,6 +8,8 @@
     "cpal",
     "decorrelate",
     "decorrelation",
+    "evaler",
+    "fasteval",
     "heun",
     "playhead",
     "Playmode",
