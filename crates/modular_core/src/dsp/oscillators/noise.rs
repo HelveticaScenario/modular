@@ -2,18 +2,15 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::types::Signal;
-
 #[derive(Deserialize, Default, JsonSchema, Connect)]
 #[serde(default)]
 struct NoiseParams {
-    /// volume
-    gain: Signal,
     /// color of the noise: white, pink, brown
     color: NoiseKind,
 }
 
 #[derive(Clone, Copy, Deserialize, JsonSchema, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 enum NoiseKind {
     White,
     Pink,
@@ -73,6 +70,7 @@ impl LcgRng {
 
 #[derive(Module)]
 #[module("noise", "Noise generator with selectable color")]
+#[args(color)]
 pub struct Noise {
     outputs: NoiseOutputs,
     params: NoiseParams,

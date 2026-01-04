@@ -17,6 +17,7 @@ struct SignalOutputs {
 
 #[derive(Default, Module)]
 #[module("signal", "a signal")]
+#[args(source?)]
 pub struct Signal {
     outputs: SignalOutputs,
     params: SignalParams,

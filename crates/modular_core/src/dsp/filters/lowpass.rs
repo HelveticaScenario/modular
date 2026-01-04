@@ -12,7 +12,7 @@ struct LowpassFilterParams {
     /// cutoff frequency in v/oct
     cutoff: Signal,
     /// filter resonance (0-5)
-    res: Signal,
+    resonance: Signal,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -23,6 +23,7 @@ struct LowpassFilterOutputs {
 
 #[derive(Default, Module)]
 #[module("lpf", "12dB/octave lowpass filter with resonance")]
+#[args(input, cutoff, resonance?)]
 pub struct LowpassFilter {
     outputs: LowpassFilterOutputs,
     // State variables for 2-pole (12dB/oct) filter
@@ -38,7 +39,7 @@ impl LowpassFilter {
         let input = self.params.input.get_value();
 
         self.cutoff.update(self.params.cutoff.get_value_or(4.0));
-        self.resonance.update(self.params.res.get_value_or(0.0));
+        self.resonance.update(self.params.resonance.get_value_or(0.0));
 
         // Convert v/oct to frequency
         let freq = 27.5f32 * 2.0f32.powf(*self.cutoff);

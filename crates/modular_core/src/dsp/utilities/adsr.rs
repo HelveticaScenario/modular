@@ -35,6 +35,7 @@ impl Default for EnvelopeStage {
 
 #[derive(Module)]
 #[module("adsr", "ADSR envelope generator")]
+#[args(gate)]
 pub struct Adsr {
     outputs: AdsrOutputs,
     stage: EnvelopeStage,

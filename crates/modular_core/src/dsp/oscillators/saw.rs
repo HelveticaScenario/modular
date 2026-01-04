@@ -23,6 +23,7 @@ struct SawOscillatorOutputs {
 
 #[derive(Default, Module)]
 #[module("saw", "Sawtooth/Triangle/Ramp oscillator")]
+#[args(freq)]
 pub struct SawOscillator {
     outputs: SawOscillatorOutputs,
     phase: f32,

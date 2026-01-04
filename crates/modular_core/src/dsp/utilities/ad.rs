@@ -29,6 +29,7 @@ impl Default for EnvelopeStage {
 
 #[derive(Module)]
 #[module("ad", "Attack-decay envelope generator")]
+#[args(gate)]
 pub struct Ad {
     outputs: AdOutputs,
     stage: EnvelopeStage,

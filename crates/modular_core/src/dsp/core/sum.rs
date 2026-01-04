@@ -19,6 +19,7 @@ struct SumOutputs {
 
 #[derive(Default, Module)]
 #[module("sum", "A signal adder")]
+#[args(signals)]
 pub struct Sum {
     outputs: SumOutputs,
     params: SumParams,

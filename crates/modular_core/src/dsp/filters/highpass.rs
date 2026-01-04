@@ -23,6 +23,7 @@ struct HighpassFilterOutputs {
 
 #[derive(Default, Module)]
 #[module("hpf", "12dB/octave highpass filter with resonance")]
+#[args(input, cutoff, resonance?)]
 pub struct HighpassFilter {
     outputs: HighpassFilterOutputs,
     // State variables for 2-pole (12dB/oct) filter

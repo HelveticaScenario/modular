@@ -22,6 +22,7 @@ struct ClockDividerOutputs {
     "clockDivider",
     "Divides an incoming clock signal by a specified integer value"
 )]
+#[args(input, division)]
 pub struct ClockDivider {
     params: ClockDividerParams,
     outputs: ClockDividerOutputs,

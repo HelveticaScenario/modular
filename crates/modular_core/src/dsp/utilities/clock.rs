@@ -13,6 +13,7 @@ struct ClockParams {
 
 #[derive(Module)]
 #[module("clock", "A tempo clock with multiple outputs")]
+#[args(tempo?)]
 pub struct Clock {
     outputs: ClockOutputs,
     phase: f32,

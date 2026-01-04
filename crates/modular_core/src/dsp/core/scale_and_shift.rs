@@ -23,6 +23,7 @@ struct ScaleAndShiftOutputs {
 
 #[derive(Default, Module)]
 #[module("scaleAndShift", "attenuate, invert, offset")]
+#[args(input, scale?, shift?)]
 pub struct ScaleAndShift {
     outputs: ScaleAndShiftOutputs,
     scale: Clickless,

@@ -12,7 +12,7 @@ struct BandpassFilterParams {
     /// center frequency in v/oct
     center: Signal,
     /// filter Q (bandwidth control, 0-5)
-    q: Signal,
+    resonance: Signal,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -23,6 +23,7 @@ struct BandpassFilterOutputs {
 
 #[derive(Default, Module)]
 #[module("bpf", "12dB/octave bandpass filter")]
+#[args(input, center, resonance?)]
 pub struct BandpassFilter {
     outputs: BandpassFilterOutputs,
     // State variables for 2-pole filter
@@ -37,7 +38,7 @@ impl BandpassFilter {
     fn update(&mut self, sample_rate: f32) -> () {
         let input = self.params.input.get_value();
         self.center.update(self.params.center.get_value_or(4.0));
-        self.q.update(self.params.q.get_value_or(1.0));
+        self.q.update(self.params.resonance.get_value_or(1.0));
 
         // Convert v/oct to frequency
         let freq = 27.5f32 * 2.0f32.powf(*self.center);

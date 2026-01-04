@@ -28,6 +28,7 @@ struct SineOscillatorOutputs {
 
 #[derive(Default, Module)]
 #[module("sine", "A sine wave oscillator")]
+#[args(freq)]
 pub struct SineOscillator {
     outputs: SineOscillatorOutputs,
     phase: f32,

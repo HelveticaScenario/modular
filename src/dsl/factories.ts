@@ -2,7 +2,7 @@
 import { ModuleSchema } from '@modular/core';
 import { GraphBuilder, ModuleNode, ModuleOutput } from './GraphBuilder';
 
-type FactoryFunction = (id?: string) => ModuleNode;
+type FactoryFunction = (...args: any[]) => ModuleNode;
 
 function sanitizeIdentifier(name: string): string {
   let id = name.replace(
