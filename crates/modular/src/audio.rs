@@ -6,9 +6,7 @@ use hound::{WavSpec, WavWriter};
 use modular_core::PatchGraph;
 use modular_core::dsp::get_constructors;
 use modular_core::dsp::schema;
-use modular_core::dsp::utils::SchmittState;
 use modular_core::dsp::utils::SchmittTrigger;
-use modular_core::patch;
 use modular_core::types::ClockMessages;
 use modular_core::types::Message;
 use modular_core::types::Scope;
@@ -23,7 +21,7 @@ use std::io::BufWriter;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::OnceLock;
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use modular_core::patch::Patch;
@@ -186,32 +184,19 @@ pub struct AudioState {
   recording_writer: Arc<Mutex<Option<WavWriter<BufWriter<File>>>>>,
   recording_path: Arc<Mutex<Option<PathBuf>>>,
   sample_rate: f32,
-  _channels: u16,
-  audio_thread_health: AudioThreadHealth,
+  channels: u16,
+  audio_budget_meter: AudioBudgetMeter,
 }
 
 #[derive(Default)]
 struct AudioThreadHealth {
-  /// Number of audio frames skipped because the real-time callback could not acquire
-  /// the patch lock via `try_lock()`.
-  patch_lock_misses: AtomicU32,
-
-  /// Number of output callbacks whose execution time exceeded the duration of the
-  /// buffer they were asked to fill (a strong signal of underrun risk).
-  output_callback_overruns: AtomicU32,
-  /// Max observed overrun (elapsed - expected) in nanoseconds.
-  output_callback_overrun_max_ns: AtomicU32,
-  /// Max observed total callback execution time in nanoseconds.
-  output_callback_duration_max_ns: AtomicU32,
+  estimated_frame_budget_usage_max: AtomicU64,
 }
 
 #[derive(Debug, Clone, Copy)]
 #[napi(object)]
 pub struct AudioThreadHealthSnapshot {
-  pub patch_lock_misses: u32,
-  pub output_callback_overruns: u32,
-  pub output_callback_overrun_max_ns: u32,
-  pub output_callback_duration_max_ns: u32,
+  pub estimated_frame_budget_usage_max: f64,
 }
 
 impl AudioState {
@@ -223,30 +208,15 @@ impl AudioState {
       recording_writer: Arc::new(Mutex::new(None)),
       recording_path: Arc::new(Mutex::new(None)),
       sample_rate,
-      _channels: channels,
-      audio_thread_health: AudioThreadHealth::default(),
+      channels,
+      audio_budget_meter: AudioBudgetMeter::default(),
     }
   }
 
-  pub fn take_audio_thread_health_snapshot_and_reset(&self) -> AudioThreadHealthSnapshot {
-    AudioThreadHealthSnapshot {
-      patch_lock_misses: self
-        .audio_thread_health
-        .patch_lock_misses
-        .swap(0, Ordering::Relaxed),
-      output_callback_overruns: self
-        .audio_thread_health
-        .output_callback_overruns
-        .swap(0, Ordering::Relaxed),
-      output_callback_overrun_max_ns: self
-        .audio_thread_health
-        .output_callback_overrun_max_ns
-        .swap(0, Ordering::Relaxed),
-      output_callback_duration_max_ns: self
-        .audio_thread_health
-        .output_callback_duration_max_ns
-        .swap(0, Ordering::Relaxed),
-    }
+  pub fn take_audio_thread_budget_snapshot_and_reset(&self) -> AudioBudgetSnapshot {
+    self
+      .audio_budget_meter
+      .take_snapshot(self.sample_rate as f64, self.channels as f64)
   }
 
   pub fn set_stopped(&self, stopped: bool) {
@@ -308,9 +278,9 @@ impl AudioState {
     let patch = self.patch.lock();
     let mut states = HashMap::new();
     for (id, module) in patch.sampleables.iter() {
-        if let Some(state) = module.get_state() {
-            states.insert(id.clone(), state);
-        }
+      if let Some(state) = module.get_state() {
+        states.insert(id.clone(), state);
+      }
     }
     states
   }
@@ -669,31 +639,12 @@ where
           }
         }
 
-        // Detect when the data callback itself is taking too long.
-        // We compute the expected wall-time budget based on the number of frames
-        // we were asked to generate and the stream sample rate.
-        let elapsed = callback_start.elapsed();
-        let elapsed_ns = elapsed.as_nanos() as u64;
+        let elapsed_ns = callback_start.elapsed().as_nanos() as u64;
+
         audio_state
-          .audio_thread_health
-          .output_callback_duration_max_ns
-          .fetch_max(elapsed_ns as u32, Ordering::Relaxed);
-
-        // `output.len()` is samples across all channels; convert to frames.
-        let frames = (output.len() / num_channels) as f64;
-        let expected_ns = ((frames * 1_000_000_000.0) / sample_rate_hz) as u64;
-
-        if elapsed_ns > expected_ns {
-          let overrun_ns = elapsed_ns - expected_ns;
-          audio_state
-            .audio_thread_health
-            .output_callback_overruns
-            .fetch_add(1, Ordering::Relaxed);
-          audio_state
-            .audio_thread_health
-            .output_callback_overrun_max_ns
-            .fetch_max(overrun_ns as u32, Ordering::Relaxed);
-        }
+          .audio_budget_meter
+          .record_chunk(output.len() as u64, elapsed_ns);
+        // meter.record_chunk(samples, elapsed_ns);
       },
       err_fn,
       None,
@@ -719,7 +670,7 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
   // };
 
   let patch_guard = audio_state.patch.lock();
-  
+
   // Update sampleables
   for (_, module) in patch_guard.sampleables.iter() {
     module.update();
@@ -836,6 +787,99 @@ impl FinalStateProcessor {
       } else {
         sample
       }
+    }
+  }
+}
+
+#[derive(Debug, Clone)]
+#[napi(object)]
+pub struct AudioBudgetSnapshot {
+  pub total_samples: napi::bindgen_prelude::BigInt,
+  pub total_time_ns: napi::bindgen_prelude::BigInt,
+
+  /// Average nanoseconds per sample over snapshot window
+  pub avg_ns_per_sample: f64,
+
+  /// Average real-time usage (1.0 == real-time)
+  pub avg_usage: f64,
+
+  /// Worst-case nanoseconds per sample (peak density)
+  pub peak_ns_per_sample: f64,
+
+  /// Worst-case real-time usage (1.0 == real-time)
+  pub peak_usage: f64,
+}
+
+#[derive(Debug, Default)]
+pub struct AudioBudgetMeter {
+  total_samples: AtomicU64,
+  total_time_ns: AtomicU64,
+
+  /// Q32 fixed-point: (ns / sample)
+  max_ns_per_sample_q32: AtomicU64,
+}
+
+impl AudioBudgetMeter {
+  pub const fn new() -> Self {
+    Self {
+      total_samples: AtomicU64::new(0),
+      total_time_ns: AtomicU64::new(0),
+      max_ns_per_sample_q32: AtomicU64::new(0),
+    }
+  }
+
+  /// Call from audio callback
+  #[inline(always)]
+  pub fn record_chunk(&self, samples: u64, time_ns: u64) {
+    if samples == 0 {
+      return;
+    }
+
+    self.total_samples.fetch_add(samples, Ordering::Relaxed);
+    self.total_time_ns.fetch_add(time_ns, Ordering::Relaxed);
+
+    let ns_per_sample_q32 = (time_ns << 32) / samples;
+
+    let mut prev = self.max_ns_per_sample_q32.load(Ordering::Relaxed);
+
+    while ns_per_sample_q32 > prev {
+      match self.max_ns_per_sample_q32.compare_exchange_weak(
+        prev,
+        ns_per_sample_q32,
+        Ordering::Relaxed,
+        Ordering::Relaxed,
+      ) {
+        Ok(_) => break,
+        Err(v) => prev = v,
+      }
+    }
+  }
+
+  /// Call from non-audio thread
+  pub fn take_snapshot(&self, sample_rate: f64, channels: f64) -> AudioBudgetSnapshot {
+    let total_samples = self.total_samples.swap(0, Ordering::Relaxed);
+    let total_time_ns = self.total_time_ns.swap(0, Ordering::Relaxed);
+    let max_q32 = self.max_ns_per_sample_q32.swap(0, Ordering::Relaxed);
+
+    let budget_ns_per_sample = 1e9 / (sample_rate * channels);
+
+    let avg_ns_per_sample = if total_samples > 0 {
+      total_time_ns as f64 / total_samples as f64
+    } else {
+      0.0
+    };
+
+    let peak_ns_per_sample = (max_q32 as f64) / (1u64 << 32) as f64;
+
+    AudioBudgetSnapshot {
+      total_samples: napi::bindgen_prelude::BigInt::from(total_samples),
+      total_time_ns: napi::bindgen_prelude::BigInt::from(total_time_ns),
+
+      avg_ns_per_sample,
+      avg_usage: avg_ns_per_sample / budget_ns_per_sample,
+
+      peak_ns_per_sample,
+      peak_usage: peak_ns_per_sample / budget_ns_per_sample,
     }
   }
 }

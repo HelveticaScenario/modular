@@ -12,7 +12,7 @@ export declare class Synthesizer {
   startRecording(path?: string | undefined | null): string
   stopRecording(): string | null
   isRecording(): boolean
-  getHealth(): AudioThreadHealthSnapshot
+  getHealth(): AudioBudgetSnapshot
   getModuleStates(): Record<string, any>
 }
 
@@ -21,11 +21,21 @@ export interface ApplyPatchError {
   errors?: Array<ValidationError>
 }
 
+export interface AudioBudgetSnapshot {
+  totalSamples: bigint
+  totalTimeNs: bigint
+  /** Average nanoseconds per sample over snapshot window */
+  avgNsPerSample: number
+  /** Average real-time usage (1.0 == real-time) */
+  avgUsage: number
+  /** Worst-case nanoseconds per sample (peak density) */
+  peakNsPerSample: number
+  /** Worst-case real-time usage (1.0 == real-time) */
+  peakUsage: number
+}
+
 export interface AudioThreadHealthSnapshot {
-  patchLockMisses: number
-  outputCallbackOverruns: number
-  outputCallbackOverrunMaxNs: number
-  outputCallbackDurationMaxNs: number
+  estimatedFrameBudgetUsageMax: number
 }
 
 export declare function getSchemas(): Array<ModuleSchema>

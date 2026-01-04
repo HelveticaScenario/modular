@@ -12,8 +12,8 @@ use napi::Result;
 use napi_derive::napi;
 use parking_lot::Mutex;
 
-use crate::audio::{ApplyPatchError, AudioState};
-use crate::audio::{AudioThreadHealthSnapshot, make_stream};
+use crate::audio::{ApplyPatchError, AudioBudgetSnapshot, AudioState};
+use crate::audio::make_stream;
 
 #[napi(js_name = "Synthesizer")]
 pub struct Synthesizer {
@@ -142,8 +142,8 @@ impl Synthesizer {
   }
 
   #[napi]
-  pub fn get_health(&self) -> AudioThreadHealthSnapshot {
-    self.state.take_audio_thread_health_snapshot_and_reset()
+  pub fn get_health(&self) -> AudioBudgetSnapshot {
+    self.state.take_audio_thread_budget_snapshot_and_reset()
   }
 
   #[napi]

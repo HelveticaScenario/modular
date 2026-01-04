@@ -558,35 +558,56 @@ mod tests {
 
     use super::*;
 
+    fn normalize_node_spans(node: ASTNode) -> ASTNode {
+        match node {
+            ASTNode::Leaf { value, idx, .. } => ASTNode::Leaf {
+                value,
+                idx,
+                span: (0, 0),
+            },
+            ASTNode::FastSubsequence { elements } => ASTNode::FastSubsequence {
+                elements: normalize_nodes_spans(elements),
+            },
+            ASTNode::SlowSubsequence { elements } => ASTNode::SlowSubsequence {
+                elements: normalize_nodes_spans(elements),
+            },
+            ASTNode::RandomChoice { choices } => ASTNode::RandomChoice {
+                choices: normalize_nodes_spans(choices),
+            },
+        }
+    }
+
+    fn normalize_nodes_spans(nodes: Vec<ASTNode>) -> Vec<ASTNode> {
+        nodes
+            .into_iter()
+            .map(normalize_node_spans)
+            .collect::<Vec<_>>()
+    }
+
+    fn leaf(value: Value, idx: usize) -> ASTNode {
+        ASTNode::Leaf {
+            value,
+            idx,
+            span: (0, 0),
+        }
+    }
+
     #[test]
     fn test_parse_pattern_elements_basic() {
-        let ast = parse_pattern_elements("1 2 3").unwrap();
+        let ast = normalize_nodes_spans(parse_pattern_elements("1 2 3").unwrap());
         assert_eq!(
             ast,
-            vec![
-                ASTNode::Leaf {
-                    value: Value::Numeric(1.0),
-                    idx: 0
-                },
-                ASTNode::Leaf {
-                    value: Value::Numeric(2.0),
-                    idx: 1
-                },
-                ASTNode::Leaf {
-                    value: Value::Numeric(3.0),
-                    idx: 2
-                },
-            ]
+            vec![num(1.0, 0), num(2.0, 1), num(3.0, 2)]
         );
     }
 
     #[test]
     fn test_parse_module_ref() {
-        let ast = parse_pattern_elements("module(foo:bar)").unwrap();
+        let ast = normalize_nodes_spans(parse_pattern_elements("module(foo:bar)").unwrap());
         assert_eq!(
             ast,
-            vec![ASTNode::Leaf {
-                value: Value::ModuleRef {
+            vec![leaf(
+                Value::ModuleRef {
                     signal: Signal::Cable {
                         module: "foo".to_string(),
                         module_ptr: Weak::default(),
@@ -594,61 +615,37 @@ mod tests {
                     },
                     sample_and_hold: false,
                 },
-                idx: 0
-            }]
+                0
+            )]
         );
     }
 
     #[test]
     fn test_parse_pattern_elements_subsequences_and_random() {
-        let ast = parse_pattern_elements("[1 2] <3 4> 5|6|7 ~").unwrap();
+        let ast = normalize_nodes_spans(parse_pattern_elements("[1 2] <3 4> 5|6|7 ~").unwrap());
         assert_eq!(
             ast,
             vec![
                 ASTNode::FastSubsequence {
                     elements: vec![
-                        ASTNode::Leaf {
-                            value: Value::Numeric(1.0),
-                            idx: 0
-                        },
-                        ASTNode::Leaf {
-                            value: Value::Numeric(2.0),
-                            idx: 1
-                        },
+                        num(1.0, 0),
+                        num(2.0, 1),
                     ]
                 },
                 ASTNode::SlowSubsequence {
                     elements: vec![
-                        ASTNode::Leaf {
-                            value: Value::Numeric(3.0),
-                            idx: 2
-                        },
-                        ASTNode::Leaf {
-                            value: Value::Numeric(4.0),
-                            idx: 3
-                        },
+                        num(3.0, 2),
+                        num(4.0, 3),
                     ]
                 },
                 ASTNode::RandomChoice {
                     choices: vec![
-                        ASTNode::Leaf {
-                            value: Value::Numeric(5.0),
-                            idx: 4
-                        },
-                        ASTNode::Leaf {
-                            value: Value::Numeric(6.0),
-                            idx: 5
-                        },
-                        ASTNode::Leaf {
-                            value: Value::Numeric(7.0),
-                            idx: 6
-                        },
+                        num(5.0, 4),
+                        num(6.0, 5),
+                        num(7.0, 6),
                     ]
                 },
-                ASTNode::Leaf {
-                    value: Value::Rest,
-                    idx: 7
-                },
+                leaf(Value::Rest, 7),
             ]
         );
     }
@@ -663,7 +660,7 @@ mod tests {
         // - `[e4 d4]` is a fast subsequence: it subdivides time within its slot.
 
         let source = "<c4 g4> <g4 [e4 d4]>";
-        let ast = parse_pattern_elements(source).unwrap();
+        let ast = normalize_nodes_spans(parse_pattern_elements(source).unwrap());
 
         let c4 = note_name_to_voct('c', None, 4);
         let d4 = note_name_to_voct('d', None, 4);
@@ -693,18 +690,18 @@ mod tests {
 
         // 2) Runtime behavior: verify each part occurs at the right time.
         // Loop 0: first half => c4, second half => g4
-        assert_eq!(pattern.run(0.10, 0), Some((Value::Numeric(c4), 0.0, 0.5)));
-        assert_eq!(pattern.run(0.60, 0), Some((Value::Numeric(g4), 0.5, 0.5)));
+        assert_eq!(pattern.run(0.10, 0), Some((Value::Numeric(c4), 0.0, 0.5, 0)));
+        assert_eq!(pattern.run(0.60, 0), Some((Value::Numeric(g4), 0.5, 0.5, 2)));
 
         // Loop 1: first half => g4 (slow advances), second half => [e4 d4]
         // Within the second half, the fast subsequence splits time again.
-        assert_eq!(pattern.run(1.10, 0), Some((Value::Numeric(g4), 1.0, 0.5)));
-        assert_eq!(pattern.run(1.60, 0), Some((Value::Numeric(e4), 1.5, 0.25)));
-        assert_eq!(pattern.run(1.90, 0), Some((Value::Numeric(d4), 1.75, 0.25)));
+        assert_eq!(pattern.run(1.10, 0), Some((Value::Numeric(g4), 1.0, 0.5, 1)));
+        assert_eq!(pattern.run(1.60, 0), Some((Value::Numeric(e4), 1.5, 0.25, 3)));
+        assert_eq!(pattern.run(1.90, 0), Some((Value::Numeric(d4), 1.75, 0.25, 4)));
 
         // Loop 2: back to loop-0 selection for both slow subsequences
-        assert_eq!(pattern.run(2.10, 0), Some((Value::Numeric(c4), 2.0, 0.5)));
-        assert_eq!(pattern.run(2.60, 0), Some((Value::Numeric(g4), 2.5, 0.5)));
+        assert_eq!(pattern.run(2.10, 0), Some((Value::Numeric(c4), 2.0, 0.5, 0)));
+        assert_eq!(pattern.run(2.60, 0), Some((Value::Numeric(g4), 2.5, 0.5, 2)));
     }
 
     fn num(value: f64, idx: usize) -> ASTNode {
@@ -883,9 +880,9 @@ mod tests {
         }]);
 
         // Call in any order - should be stateless
-        assert_eq!(pattern.run(3.5, 0), Some((Value::Numeric(2.0), 3.0, 1.0)));
-        assert_eq!(pattern.run(0.5, 0), Some((Value::Numeric(1.0), 0.0, 1.0)));
-        assert_eq!(pattern.run(2.5, 0), Some((Value::Numeric(1.0), 2.0, 1.0)));
-        assert_eq!(pattern.run(1.5, 0), Some((Value::Numeric(2.0), 1.0, 1.0)));
+        assert_eq!(pattern.run(3.5, 0), Some((Value::Numeric(2.0), 3.0, 1.0, 1)));
+        assert_eq!(pattern.run(0.5, 0), Some((Value::Numeric(1.0), 0.0, 1.0, 0)));
+        assert_eq!(pattern.run(2.5, 0), Some((Value::Numeric(1.0), 2.0, 1.0, 0)));
+        assert_eq!(pattern.run(1.5, 0), Some((Value::Numeric(2.0), 1.0, 1.0, 1)));
     }
 }

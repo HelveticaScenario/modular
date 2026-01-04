@@ -3,7 +3,7 @@ use modular_core::types::{ModuleSchema, ModuleState, PatchGraph, ScopeItem, Sign
 use napi_derive::napi;
 use schemars::Schema;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Detailed validation error for patch validation
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -414,78 +414,20 @@ pub fn validate_patch(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use modular_core::types::{ModuleState, OutputSchema, SchemaContainer};
-  use schemars::json_schema;
+  use modular_core::types::ModuleState;
   use serde_json::json;
 
-  fn create_test_schemas() -> Vec<ModuleSchema> {
-    vec![
-      ModuleSchema {
-        name: "sine-oscillator".to_string(),
-        description: "A sine wave oscillator".to_string(),
-        params_schema: SchemaContainer {
-          schema: json_schema!({
-              "type": "object",
-              "properties": {
-                  "freq": {"$ref": "#/definitions/Signal"},
-                  "phase": {"$ref": "#/definitions/Signal"}
-              }
-          }),
-        },
-        outputs: vec![OutputSchema {
-          name: "output".to_string(),
-          description: "signal output".to_string(),
-          default: false,
-        }],
-      },
-      ModuleSchema {
-        name: "signal".to_string(),
-        description: "A signal".to_string(),
-        params_schema: SchemaContainer {
-          schema: json_schema!({
-              "type": "object",
-              "properties": {
-                  "source": {"$ref": "#/definitions/Signal"}
-              }
-          }),
-        },
-        outputs: vec![OutputSchema {
-          name: "output".to_string(),
-          description: "signal output".to_string(),
-          default: false,
-        }],
-      },
-      ModuleSchema {
-        name: "nested-signal".to_string(),
-        description: "A module with nested Signal params".to_string(),
-        params_schema: SchemaContainer {
-          schema: json_schema!({
-            "type": "object",
-            "properties": {
-                "settings": {
-                    "type": "object",
-                    "properties": {
-                      "source": {"$ref": "#/definitions/Signal"}
-                  }
-              }
-          }}),
-        },
-        outputs: vec![OutputSchema {
-          name: "output".to_string(),
-          description: "signal output".to_string(),
-          default: false,
-        }],
-      },
-    ]
+  fn schemas() -> Vec<ModuleSchema> {
+    modular_core::dsp::schema()
   }
 
   #[test]
   fn test_valid_patch() {
-    let schemas = create_test_schemas();
+    let schemas = schemas();
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "sine-1".to_string(),
-        module_type: "sine-oscillator".to_string(),
+        module_type: "sine".to_string(),
         id_is_explicit: None,
         params: json!({
             "freq": {"type": "volts", "value": 4.0}
@@ -501,7 +443,7 @@ mod tests {
 
   #[test]
   fn test_unknown_module_type() {
-    let schemas = create_test_schemas();
+    let schemas = schemas();
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "foo-1".to_string(),
@@ -523,11 +465,11 @@ mod tests {
 
   #[test]
   fn test_unknown_param() {
-    let schemas = create_test_schemas();
+    let schemas = schemas();
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "sine-1".to_string(),
-        module_type: "sine-oscillator".to_string(),
+        module_type: "sine".to_string(),
         id_is_explicit: None,
         params: json!({
             "unknown_param": {"type": "volts", "value": 1.0}
@@ -547,7 +489,7 @@ mod tests {
 
   #[test]
   fn test_cable_to_nonexistent_module() {
-    let schemas = create_test_schemas();
+    let schemas = schemas();
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "root".to_string(),
@@ -571,12 +513,12 @@ mod tests {
 
   #[test]
   fn test_cable_to_invalid_port() {
-    let schemas = create_test_schemas();
+    let schemas = schemas();
     let patch = PatchGraph {
       modules: vec![
         ModuleState {
           id: "sine-1".to_string(),
-          module_type: "sine-oscillator".to_string(),
+          module_type: "sine".to_string(),
           id_is_explicit: None,
           params: json!({
               "freq": {"type": "volts", "value": 4.0}
@@ -609,16 +551,16 @@ mod tests {
 
   #[test]
   fn test_nested_signal_cable_to_nonexistent_module() {
-    let schemas = create_test_schemas();
+    let schemas = schemas();
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "nested-1".to_string(),
-        module_type: "nested-signal".to_string(),
+        module_type: "sum".to_string(),
         id_is_explicit: None,
         params: json!({
-            "settings": {
-                "source": {"type": "cable", "module": "nonexistent", "port": "output"}
-            }
+            "signals": [
+              {"type": "cable", "module": "nonexistent", "port": "output"}
+            ]
         }),
       }],
       module_id_remaps: None,
@@ -631,19 +573,19 @@ mod tests {
     let errors = result.unwrap_err();
     assert!(errors.iter().any(|e| {
       e.location.as_deref() == Some("nested-1")
-        && e.field == "params.settings"
+        && e.field == "params.signals"
         && e.message.contains("not found for cable source")
     }));
   }
 
   #[test]
   fn test_nested_signal_valid_cable_connection() {
-    let schemas = create_test_schemas();
+    let schemas = schemas();
     let patch = PatchGraph {
       modules: vec![
         ModuleState {
           id: "sine-1".to_string(),
-          module_type: "sine-oscillator".to_string(),
+          module_type: "sine".to_string(),
           id_is_explicit: None,
           params: json!({
               "freq": {"type": "volts", "value": 4.0}
@@ -651,12 +593,12 @@ mod tests {
         },
         ModuleState {
           id: "nested-1".to_string(),
-          module_type: "nested-signal".to_string(),
+          module_type: "sum".to_string(),
           id_is_explicit: None,
           params: json!({
-              "settings": {
-                  "source": {"type": "cable", "module": "sine-1", "port": "output"}
-              }
+              "signals": [
+                {"type": "cable", "module": "sine-1", "port": "output"}
+              ]
           }),
         },
       ],
@@ -670,12 +612,12 @@ mod tests {
 
   #[test]
   fn test_valid_cable_connection() {
-    let schemas = create_test_schemas();
+    let schemas = schemas();
     let patch = PatchGraph {
       modules: vec![
         ModuleState {
           id: "sine-1".to_string(),
-          module_type: "sine-oscillator".to_string(),
+          module_type: "sine".to_string(),
           id_is_explicit: None,
           params: json!({
               "freq": {"type": "volts", "value": 4.0}
@@ -700,11 +642,11 @@ mod tests {
 
   #[test]
   fn test_multiple_errors() {
-    let schemas = create_test_schemas();
+    let schemas = schemas();
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "sine-1".to_string(),
-        module_type: "sine-oscillator".to_string(),
+        module_type: "sine".to_string(),
         id_is_explicit: None,
         params: json!({
             "unknown1": {"type": "volts", "value": 1.0},
@@ -724,7 +666,7 @@ mod tests {
 
   #[test]
   fn test_empty_patch_is_valid() {
-    let schemas = create_test_schemas();
+    let schemas = schemas();
     let patch = PatchGraph {
       modules: Vec::new(),
       module_id_remaps: None,
