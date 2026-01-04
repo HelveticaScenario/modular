@@ -81,6 +81,7 @@ struct SeqOutputs {
 
 #[derive(Module)]
 #[module("seq", "A 4 channel mixer")]
+#[args(pattern, playhead?)]
 pub struct Seq {
     outputs: SeqOutputs,
     params: SeqParams,

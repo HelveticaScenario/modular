@@ -434,12 +434,21 @@ impl FromNapiValue for SchemaContainer {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[napi(object)]
+pub struct PositionalArg {
+    pub name: String,
+    pub optional: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[napi(object)]
 pub struct ModuleSchema {
     pub name: String,
     pub description: String,
     #[napi(ts_type = "Record<string, unknown>")]
     pub params_schema: SchemaContainer,
     pub outputs: Vec<OutputSchema>,
+    pub positional_args: Vec<PositionalArg>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

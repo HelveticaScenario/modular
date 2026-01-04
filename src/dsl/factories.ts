@@ -26,16 +26,57 @@ export class DSLContext {
     this.builder = new GraphBuilder(schemas);
     for (const schema of schemas) {
       const factoryName = sanitizeIdentifier(schema.name);
-      this.factories[factoryName] = this.createFactory(schema.name);
+      this.factories[factoryName] = this.createFactory(schema);
     }
   }
 
   /**
    * Create a module factory function
    */
-  private createFactory(moduleType: string) {
-    return (id?: string): ModuleNode => {
-      return this.builder.addModule(moduleType, id);
+  private createFactory(schema: ModuleSchema) {
+    return (...args: any[]): ModuleNode => {
+      // @ts-ignore
+      const positionalArgs = schema.positionalArgs || [];
+      const params: Record<string, any> = {};
+      let config: any = {};
+      let id: string | undefined;
+
+      // Extract positional args
+      for (let i = 0; i < positionalArgs.length; i++) {
+        if (i < args.length) {
+            params[positionalArgs[i].name] = args[i];
+        }
+      }
+      
+      // The remaining arg (if any) is config.
+      if (args.length > positionalArgs.length) {
+          config = args[positionalArgs.length];
+      }
+      
+      if (config) {
+          if (typeof config === 'string') {
+              id = config;
+          } else {
+              id = config.id;
+              // Merge other config params
+              for (const key in config) {
+                  if (key !== 'id') {
+                      params[key] = config[key];
+                  }
+              }
+          }
+      }
+      
+      const node = this.builder.addModule(schema.name, id);
+      
+      // Set params
+      for (const [key, value] of Object.entries(params)) {
+          if (value !== undefined) {
+              node._setParam(key, value);
+          }
+      }
+      
+      return node;
     };
   }
 

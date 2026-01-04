@@ -45,6 +45,7 @@ export interface ModuleSchema {
   description: string
   paramsSchema: Record<string, unknown>
   outputs: Array<OutputSchema>
+  positionalArgs: Array<PositionalArg>
 }
 
 export interface ModuleState {
@@ -64,6 +65,11 @@ export interface PatchGraph {
   modules: Array<ModuleState>
   moduleIdRemaps?: Array<ModuleIdRemap>
   scopes: Array<Scope>
+}
+
+export interface PositionalArg {
+  name: string
+  optional: boolean
 }
 
 export interface Scope {

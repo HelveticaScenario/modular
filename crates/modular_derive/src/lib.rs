@@ -329,7 +329,7 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
     }
 }
 
-#[proc_macro_derive(Module, attributes(output, module))]
+#[proc_macro_derive(Module, attributes(output, module, args))]
 pub fn module_macro_derive(input: TokenStream) -> TokenStream {
     // Construct a representation of Rust code as a syntax tree
     // that we can manipulate
@@ -722,9 +722,47 @@ fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
     generated.into()
 }
 
+struct ArgAttr {
+    name: Ident,
+    optional: bool,
+}
+
+impl syn::parse::Parse for ArgAttr {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let name: Ident = input.parse()?;
+        let optional = if input.peek(Token![?]) {
+            input.parse::<Token![?]>()?;
+            true
+        } else {
+            false
+        };
+        Ok(ArgAttr { name, optional })
+    }
+}
+
 fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     let name = &ast.ident;
     let (module_name, module_description) = unwrap_name_description(&ast.attrs, "module");
+
+    let args_tokens = unwrap_attr(&ast.attrs, "args");
+    let positional_args_exprs = if let Some(tokens) = args_tokens {
+        let args = Punctuated::<ArgAttr, Token![,]>::parse_terminated
+            .parse2(tokens)
+            .expect("Failed to parse args attribute");
+        
+        args.into_iter().map(|arg| {
+            let name = arg.name.to_string();
+            let optional = arg.optional;
+            quote! {
+                crate::types::PositionalArg {
+                    name: #name.to_string(),
+                    optional: #optional,
+                }
+            }
+        }).collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
 
     // New convention: the module struct contains a single `outputs` field.
     // The outputs type itself must `#[derive(Outputs)]` which implements `crate::types::OutputStruct`.
@@ -914,6 +952,9 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                         schema: params_schema,
                     },
                     outputs: output_schemas,
+                    positional_args: vec![
+                        #(#positional_args_exprs),*
+                    ],
                 }
             }
         }

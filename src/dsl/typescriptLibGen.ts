@@ -171,6 +171,7 @@ type ClassSpec = {
         description?: string;
     }>;
     rootSchema: JSONSchema;
+    moduleSchema: ModuleSchema;
 };
 
 type NamespaceNode = {
@@ -408,6 +409,7 @@ function buildTreeFromSchemas(schemas: ModuleSchema[]): NamespaceNode {
             outputs,
             properties,
             rootSchema: paramsSchema,
+            moduleSchema,
         });
         node.order.push({ kind: "class", name: className });
     }
@@ -424,12 +426,66 @@ function capitalizeName(name: string): string {
     return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
+function renderParamsInterface(baseName: string, classSpec: ClassSpec, indent: string): string[] {
+    const lines: string[] = [];
+    const paramsInterfaceName = `${capitalizeName(baseName)}Params`;
+    lines.push(`${indent}export interface ${paramsInterfaceName} {`);
+    
+    for (const prop of classSpec.properties) {
+        lines.push("");
+        lines.push(...renderDocComment(prop.description, indent + "  "));
+        const type = schemaToTypeExpr(prop.schema, classSpec.rootSchema);
+        lines.push(`${indent}  ${renderPropertyKey(prop.name)}?: ${type};`);
+    }
+    lines.push(`${indent}}`);
+    return lines;
+}
+
 function renderFactoryFunction(
-    functionName: string,
+    moduleSchema: ModuleSchema,
     interfaceName: string,
     indent: string
 ): string[] {
-    return [`${indent}export function ${functionName}(id?: string): ${interfaceName};`];
+    const functionName = moduleSchema.name.split('.').pop()!;
+    const paramsInterfaceName = `${capitalizeName(functionName)}Params`;
+    
+    let args: string[] = [];
+    // @ts-ignore
+    const positionalArgs = moduleSchema.positionalArgs || [];
+    
+    for (const arg of positionalArgs) {
+        // @ts-ignore
+        const propSchema = moduleSchema.paramsSchema.properties?.[arg.name];
+        // @ts-ignore
+        const type = propSchema ? schemaToTypeExpr(propSchema, moduleSchema.paramsSchema) : 'any';
+        const optional = arg.optional ? '?' : '';
+        args.push(`${arg.name}${optional}: ${type}`);
+    }
+    
+    // @ts-ignore
+    const allParamKeys = Object.keys(moduleSchema.paramsSchema.properties || {});
+    // @ts-ignore
+    const positionalKeys = new Set(positionalArgs.map((a: any) => a.name));
+    
+    const configProps: string[] = [];
+    
+    for (const key of allParamKeys) {
+        if (!positionalKeys.has(key)) {
+            // @ts-ignore
+            const propSchema = moduleSchema.paramsSchema.properties[key];
+            // @ts-ignore
+            const type = schemaToTypeExpr(propSchema, moduleSchema.paramsSchema);
+            configProps.push(`${key}?: ${type}`);
+        }
+    }
+    
+    configProps.push(`id?: string`);
+    
+    const configType = `{ ${configProps.join('; ')} }`;
+        
+    args.push(`config?: ${configType}`);
+    
+    return [`${indent}export function ${functionName}(${args.join(', ')}): ${interfaceName};`];
 }
 
 function getQualifiedNodeInterfaceType(moduleName: string): string {
@@ -447,6 +503,10 @@ function getQualifiedNodeInterfaceType(moduleName: string): string {
 
 function renderInterface(baseName: string, classSpec: ClassSpec, indent: string): string[] {
     const lines: string[] = [];
+    
+    lines.push(...renderParamsInterface(baseName, classSpec, indent));
+    lines.push("");
+
     lines.push(...renderDocComment(classSpec.description, indent));
     const interfaceName = renderNodeInterfaceName(capitalizeName(baseName));
     lines.push(`${indent}export interface ${interfaceName} extends ModuleNode {`);
@@ -477,7 +537,7 @@ function renderInterface(baseName: string, classSpec: ClassSpec, indent: string)
 
     lines.push(`${indent}}`);
     lines.push("");
-    lines.push(...renderFactoryFunction(baseName, interfaceName, indent));
+    lines.push(...renderFactoryFunction(classSpec.moduleSchema, interfaceName, indent));
     return lines;
 }
 
