@@ -51,13 +51,8 @@ type ScopeView = {
 };
 
 const scopeKeyFromSubscription = (subscription: ScopeItem) => {
-    if (subscription.type === 'ModuleOutput') {
-        const { moduleId, portName } = subscription;
-        return `:module:${moduleId}:${portName}`;
-    }
-
-    const { trackId } = subscription;
-    return `:track:${trackId}`;
+    const { moduleId, portName } = subscription;
+    return `:module:${moduleId}:${portName}`;
 };
 
 const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
@@ -353,9 +348,7 @@ function App() {
         if (buffer.kind === 'untitled') {
             return `Untitled-${buffer.id}`;
         }
-        // Display filename only for brevity
-        const parts = buffer.filePath.split(/[/\\]/);
-        return parts[parts.length - 1];
+        return buffer.filePath;
     }, []);
 
     const normalizeFileName = useCallback((name: string) => {
@@ -636,26 +629,21 @@ function App() {
                 setValidationErrors(null);
 
                 const scopeCalls = findScopeCallEndLines(patchCodeValue);
+                console.log('Found scope calls:', scopeCalls);
+                console.log('Patch scopes:', patch.scopes);
                 const views: ScopeView[] = patch.scopes
                     .map((scope, idx) => {
                         const call = scopeCalls[idx];
                         if (!call) return null;
-                        if (scope.item.type === 'ModuleOutput') {
-                            const { moduleId, portName } = scope.item;
-                            return {
-                                key: `:module:${moduleId}:${portName}`,
-                                lineNumber: call.endLine,
-                                file: activeBufferId,
-                            };
-                        }
-                        const { trackId } = scope.item;
+                        const { moduleId, portName } = scope.item;
                         return {
-                            key: `:track:${trackId}`,
+                            key: `:module:${moduleId}:${portName}`,
                             lineNumber: call.endLine,
                             file: activeBufferId,
                         };
                     })
                     .filter((v): v is ScopeView => v !== null);
+                console.log('Scope views:', views);
 
                 setScopeViews(views);
             } catch (err) {
@@ -763,7 +751,11 @@ function App() {
                         buffers={buffers}
                         activeBufferId={activeBufferId}
                         runningBufferId={runningBufferId}
-                        formatLabel={formatFileLabel}
+                        formatLabel={(buffer) => {
+                            const path = formatFileLabel(buffer);
+                            const parts = path.split(/[/\\]/);
+                            return parts[parts.length - 1];
+                        }}
                         onSelectBuffer={setActiveBufferId}
                         onOpenFile={openFile}
                         onCreateFile={createUntitledFile}

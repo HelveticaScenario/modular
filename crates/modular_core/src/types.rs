@@ -2,20 +2,17 @@ use napi::Env;
 use napi::Result;
 use napi::bindgen_prelude::{FromNapiValue, Object, ToNapiValue};
 use napi_derive::napi;
-use parking_lot::Mutex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt::Debug;
 use std::ops::{Add, Deref, Div, Mul, Sub};
-use std::time::Duration;
 use std::{
     collections::HashMap,
     sync::{self, Arc},
 };
 
 use crate::patch::Patch;
-use crate::pattern::PatternProgram;
 
 lazy_static! {
     pub static ref ROOT_ID: String = "root".into();
@@ -467,9 +464,6 @@ pub enum ScopeItem {
     ModuleOutput {
         module_id: String,
         port_name: String,
-    },
-    Track {
-        track_id: String,
     },
 }
 

@@ -505,8 +505,6 @@ impl AudioState {
     // Keep message routing in sync with current modules.
     patch_lock.rebuild_message_listeners();
 
-
-
     // ===== SCOPE LIFECYCLE =====
     {
       let mut scope_collection = self.scope_collection.lock();
@@ -732,13 +730,6 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
           }
         }
       }
-      ScopeItem::Track { track_id, .. } => {
-        if let Some(module) = patch_guard.sampleables.get(track_id) {
-          if let Ok(sample) = module.get_sample(&"output".to_string()) {
-            scope_buffer.push(sample);
-          }
-        }
-      }
     }
   }
 
@@ -873,7 +864,7 @@ mod tests {
 
   #[test]
   fn test_stopped_state() {
-    let patch = Arc::new(Mutex::new(Patch::new(HashMap::new(), HashMap::new())));
+    let patch = Arc::new(Mutex::new(Patch::new(HashMap::new())));
     let state = AudioState::new(patch, 48000.0, 2);
 
     // Initially stopped
@@ -886,7 +877,7 @@ mod tests {
 
   #[test]
   fn test_apply_patch_module_id_remaps_reuse_instance() {
-    let patch = Arc::new(Mutex::new(Patch::new(HashMap::new(), HashMap::new())));
+    let patch = Arc::new(Mutex::new(Patch::new(HashMap::new())));
     let state = AudioState::new(patch.clone(), 48000.0, 2);
 
     state
@@ -899,7 +890,7 @@ mod tests {
             params: json!({}),
           }],
           module_id_remaps: None,
-          
+
           scopes: vec![],
         },
         48000.0,
@@ -925,7 +916,7 @@ mod tests {
             from: "sine-1".to_string(),
             to: "sine-2".to_string(),
           }]),
-          
+
           scopes: vec![],
         },
         48000.0,
@@ -947,7 +938,7 @@ mod tests {
 
   #[test]
   fn test_apply_patch_module_id_remaps_chain_reuse_instances() {
-    let patch = Arc::new(Mutex::new(Patch::new(HashMap::new(), HashMap::new())));
+    let patch = Arc::new(Mutex::new(Patch::new(HashMap::new())));
     let state = AudioState::new(patch.clone(), 48000.0, 2);
 
     state
@@ -968,7 +959,7 @@ mod tests {
             },
           ],
           module_id_remaps: None,
-          
+
           scopes: vec![],
         },
         48000.0,
@@ -1010,7 +1001,7 @@ mod tests {
               to: "sine-3".to_string(),
             },
           ]),
-          
+
           scopes: vec![],
         },
         48000.0,
@@ -1042,7 +1033,7 @@ mod tests {
 
   #[test]
   fn test_apply_patch_module_id_remaps_shift_down_drops_destination_instance() {
-    let patch = Arc::new(Mutex::new(Patch::new(HashMap::new(), HashMap::new())));
+    let patch = Arc::new(Mutex::new(Patch::new(HashMap::new())));
     let state = AudioState::new(patch.clone(), 48000.0, 2);
 
     state
@@ -1069,7 +1060,7 @@ mod tests {
             },
           ],
           module_id_remaps: None,
-          
+
           scopes: vec![],
         },
         48000.0,
@@ -1117,7 +1108,7 @@ mod tests {
               to: "sine-2".to_string(),
             },
           ]),
-          
+
           scopes: vec![],
         },
         48000.0,

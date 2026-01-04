@@ -74,4 +74,3 @@ export interface Scope {
 
 export type ScopeItem =
   | { type: 'ModuleOutput', moduleId: string, portName: string }
-  | { type: 'Track', trackId: string }

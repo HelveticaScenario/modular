@@ -62,8 +62,8 @@ fn schema_properties(schema: &Schema) -> HashMap<String, Schema> {
 ///
 /// Why we need this:
 /// - Most params are plain numbers/structs and don't reference other patch entities.
-/// - Params typed as `Signal` can contain `Cable { module, port }` or `Track { track }`.
-///   Those require existence checks against `patch.modules` / `patch.tracks`.
+/// - Params typed as `Signal` can contain `Cable { module, port }`.
+///   Those require existence checks against `patch.modules`.
 ///
 /// Implementation strategy:
 /// - Look for `$ref` containing "Signal".
@@ -195,14 +195,7 @@ fn validate_signals_in_json_value(
     if let Some(tag) = obj.get("type").and_then(|v| v.as_str()) {
       if matches!(tag, "cable" | "track" | "volts" | "disconnected") {
         if let Ok(signal) = serde_json::from_value::<Signal>(value.clone()) {
-          validate_signal_reference(
-            &signal,
-            field,
-            location,
-            module_by_id,
-            schema_map,
-            errors,
-          );
+          validate_signal_reference(&signal, field, location, module_by_id, schema_map, errors);
           return;
         }
       }
@@ -212,26 +205,12 @@ fn validate_signals_in_json_value(
   match value {
     serde_json::Value::Array(arr) => {
       for v in arr {
-        validate_signals_in_json_value(
-          v,
-          field,
-          location,
-          module_by_id,
-          schema_map,
-          errors,
-        );
+        validate_signals_in_json_value(v, field, location, module_by_id, schema_map, errors);
       }
     }
     serde_json::Value::Object(map) => {
       for (_, v) in map {
-        validate_signals_in_json_value(
-          v,
-          field,
-          location,
-          module_by_id,
-          schema_map,
-          errors,
-        );
+        validate_signals_in_json_value(v, field, location, module_by_id, schema_map, errors);
       }
     }
     _ => {}
@@ -245,8 +224,8 @@ fn validate_signals_in_json_value(
 /// Validates:
 /// - All module types exist in the schema
 /// - Params in `ModuleState.params` are known for the module type
-/// - Signal params with Cable/Track references point to existing modules/ports/tracks
-/// - Scopes reference existing module outputs / tracks
+/// - Signal params with Cable/Track references point to existing modules/ports
+/// - Scopes reference existing module outputs
 pub fn validate_patch(
   patch: &PatchGraph,
   schemas: &[ModuleSchema],
@@ -420,16 +399,6 @@ pub fn validate_patch(
           });
         }
       }
-      ScopeItem::Track { track_id } => {
-        // Scope target track must exist.
-        if !module_by_id.contains_key(track_id.as_str()) {
-          errors.push(ValidationError {
-            field: "scopes".to_string(),
-            message: format!("Scope references missing track '{}'", track_id),
-            location: None,
-          });
-        }
-      }
     }
   }
 
@@ -523,7 +492,7 @@ mod tests {
         }),
       }],
       module_id_remaps: None,
-      
+
       scopes: vec![],
     };
 
@@ -541,7 +510,7 @@ mod tests {
         params: json!({}),
       }],
       module_id_remaps: None,
-      
+
       scopes: vec![],
     };
 
@@ -565,7 +534,7 @@ mod tests {
         }),
       }],
       module_id_remaps: None,
-      
+
       scopes: vec![],
     };
 
@@ -589,7 +558,7 @@ mod tests {
         }),
       }],
       module_id_remaps: None,
-      
+
       scopes: vec![],
     };
 
@@ -623,7 +592,7 @@ mod tests {
         },
       ],
       module_id_remaps: None,
-      
+
       scopes: vec![],
     };
 
@@ -653,7 +622,7 @@ mod tests {
         }),
       }],
       module_id_remaps: None,
-      
+
       scopes: vec![],
     };
 
@@ -692,7 +661,7 @@ mod tests {
         },
       ],
       module_id_remaps: None,
-      
+
       scopes: vec![],
     };
 
@@ -722,7 +691,7 @@ mod tests {
         },
       ],
       module_id_remaps: None,
-      
+
       scopes: vec![],
     };
 
@@ -743,7 +712,7 @@ mod tests {
         }),
       }],
       module_id_remaps: None,
-      
+
       scopes: vec![],
     };
 
@@ -759,7 +728,7 @@ mod tests {
     let patch = PatchGraph {
       modules: Vec::new(),
       module_id_remaps: None,
-      
+
       scopes: vec![],
     };
 
@@ -784,7 +753,7 @@ mod tests {
         }),
       }],
       module_id_remaps: None,
-      
+
       scopes: vec![],
     };
 
@@ -813,7 +782,7 @@ mod tests {
         params: serde_json::Value::Null,
       }],
       module_id_remaps: None,
-      
+
       scopes: vec![],
     };
 

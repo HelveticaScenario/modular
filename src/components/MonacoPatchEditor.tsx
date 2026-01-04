@@ -413,7 +413,7 @@ export function MonacoPatchEditor({
                 <Editor
                     height="100%"
                     defaultLanguage="javascript"
-                    path={`file:///${currentFile}`}
+                    path={`file://${encodeURI(currentFile)}`}
                     theme="vs-dark"
                     value={value}
                     onChange={(val) => {
