@@ -824,7 +824,7 @@ impl FinalStateProcessor {
       let sample =
         (process_frame(audio_state) * AUDIO_OUTPUT_ATTENUATION * self.attenuation_factor).tanh();
 
-      if is_stopped && sample.abs() < 0.001 {
+      if is_stopped && sample.abs() < 0.0005 {
         self.attenuation_factor = 0.0;
         self.volume_change = VolumeChange::None;
         0.0
