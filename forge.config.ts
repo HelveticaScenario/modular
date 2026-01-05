@@ -12,11 +12,31 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { mainConfig } from './webpack.main.config';
 import { rendererConfig } from './webpack.renderer.config';
 
+// if (process.env.APPLE_ID && process.env.APPLE_PASSWORD && process.env.APPLE_TEAM_ID) {
+
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
     executableName: 'Taxi',
-    osxSign: {}, // Enable code signing (will be ad-hoc without certificates)
+    osxSign: {
+      identity: 'Developer ID Application: Daniel Lewis (HA98TTLCR7)',
+      optionsForFile: () => {
+        return {
+          hardenedRuntime: true,
+          entitlements: 'entitlements.plist',
+          'entitlements-inherit': 'entitlements.plist',
+          signatureFlags: 'library'
+        };
+      }
+    },
+
+    // macOS notarization configuration
+    // Only runs when environment variables are present (i.e., in CI)
+    osxNotarize: process.env.APPLE_ID && process.env.APPLE_PASSWORD && process.env.APPLE_TEAM_ID ? {
+      appleId: process.env.APPLE_ID,
+      appleIdPassword: process.env.APPLE_PASSWORD,
+      teamId: process.env.APPLE_TEAM_ID
+    } : undefined
   },
   rebuildConfig: {},
   makers: [

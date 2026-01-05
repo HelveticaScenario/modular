@@ -446,6 +446,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@electron/notarize@npm:^3.1.1":
+  version: 3.1.1
+  resolution: "@electron/notarize@npm:3.1.1"
+  dependencies:
+    debug: "npm:^4.4.0"
+    promise-retry: "npm:^2.0.1"
+  checksum: 10c0/1e9adc0cafc1c2e79c39a41c97de912d6a899d661de506301310e17c569dc2885c9729c21840ceb70871f2e648ab983d3731149c6dc4ea354a001ad463c83e7e
+  languageName: node
+  linkType: hard
+
 "@electron/osx-sign@npm:^1.0.5":
   version: 1.3.3
   resolution: "@electron/osx-sign@npm:1.3.3"
@@ -460,6 +470,21 @@ __metadata:
     electron-osx-flat: bin/electron-osx-flat.js
     electron-osx-sign: bin/electron-osx-sign.js
   checksum: 10c0/f8156be879b1850465da8135398b9e58aa6db9f3310cd625c471e1080008b628846c3345a171e17509bcd3c1883cbc90f49a914e7486b1f41702cf2499c657d0
+  languageName: node
+  linkType: hard
+
+"@electron/osx-sign@npm:^2.3.0":
+  version: 2.3.0
+  resolution: "@electron/osx-sign@npm:2.3.0"
+  dependencies:
+    debug: "npm:^4.3.4"
+    isbinaryfile: "npm:^4.0.8"
+    plist: "npm:^3.0.5"
+    semver: "npm:^7.7.1"
+  bin:
+    electron-osx-flat: bin/electron-osx-flat.mjs
+    electron-osx-sign: bin/electron-osx-sign.mjs
+  checksum: 10c0/33484b29be2b45493caf9efb779b232bbca243c5e090aa0331421e0348c1902a008ea67998077f3711a4ad6d0bf9c899246e4051ea1950e98fabda157306e5f5
   languageName: node
   linkType: hard
 
@@ -1224,6 +1249,8 @@ __metadata:
     "@electron-forge/plugin-webpack": "npm:^7.10.2"
     "@electron-forge/publisher-github": "npm:^7.10.2"
     "@electron/fuses": "npm:^1.8.0"
+    "@electron/notarize": "npm:^3.1.1"
+    "@electron/osx-sign": "npm:^2.3.0"
     "@fontsource/fira-code": "npm:^5.2.7"
     "@monaco-editor/react": "npm:^4.7.0"
     "@oxc-node/core": "npm:^0.0.35"
@@ -4888,7 +4915,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"debug@npm:4, debug@npm:^4.0.1, debug@npm:^4.1.0, debug@npm:^4.1.1, debug@npm:^4.3.1, debug@npm:^4.3.2, debug@npm:^4.3.3, debug@npm:^4.3.4, debug@npm:^4.4.1":
+"debug@npm:4, debug@npm:^4.0.1, debug@npm:^4.1.0, debug@npm:^4.1.1, debug@npm:^4.3.1, debug@npm:^4.3.2, debug@npm:^4.3.3, debug@npm:^4.3.4, debug@npm:^4.4.0, debug@npm:^4.4.1":
   version: 4.4.3
   resolution: "debug@npm:4.4.3"
   dependencies:
@@ -10124,7 +10151,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"semver@npm:^7.1.1, semver@npm:^7.1.3, semver@npm:^7.2.1, semver@npm:^7.3.2, semver@npm:^7.3.4, semver@npm:^7.3.5, semver@npm:^7.3.7, semver@npm:^7.5.3, semver@npm:^7.5.4, semver@npm:^7.6.0, semver@npm:^7.7.3":
+"semver@npm:^7.1.1, semver@npm:^7.1.3, semver@npm:^7.2.1, semver@npm:^7.3.2, semver@npm:^7.3.4, semver@npm:^7.3.5, semver@npm:^7.3.7, semver@npm:^7.5.3, semver@npm:^7.5.4, semver@npm:^7.6.0, semver@npm:^7.7.1, semver@npm:^7.7.3":
   version: 7.7.3
   resolution: "semver@npm:7.7.3"
   bin:
