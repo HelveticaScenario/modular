@@ -224,17 +224,26 @@ function App() {
 
     // Load workspace and file tree on mount
     useEffect(() => {
-        electronAPI.filesystem.getWorkspace().then((workspace) => {
-            if (workspace) {
-                setWorkspaceRoot(workspace.path);
-                refreshFileTree();
-            }
-        });
+        electronAPI.filesystem
+            .getWorkspace()
+            .then((workspace) => {
+                if (workspace) {
+                    setWorkspaceRoot(workspace.path);
+                    refreshFileTree();
+                }
+            })
+            .catch((err) => {
+                console.error('Failed to load workspace:', err);
+            });
     }, []);
 
     const refreshFileTree = useCallback(async () => {
-        const tree = await electronAPI.filesystem.listFiles();
-        setFileTree(tree);
+        try {
+            const tree = await electronAPI.filesystem.listFiles();
+            setFileTree(tree);
+        } catch (error) {
+            console.error('Failed to refresh file tree:', error);
+        }
     }, []);
 
     const selectWorkspaceFolder = useCallback(async () => {
@@ -303,9 +312,14 @@ function App() {
     }, []);
 
     useEffect(() => {
-        electronAPI.getSchemas().then((fetchedSchemas) => {
-            setSchemas(fetchedSchemas);
-        });
+        electronAPI
+            .getSchemas()
+            .then((fetchedSchemas) => {
+                setSchemas(fetchedSchemas);
+            })
+            .catch((err) => {
+                console.error('Failed to fetch schemas:', err);
+            });
     }, []);
 
     const schemaRef = useRef<ModuleSchema[]>([]);
@@ -326,19 +340,30 @@ function App() {
     useEffect(() => {
         if (isClockRunningRef.current) {
             const tick = () => {
-                electronAPI.synthesizer.getScopes().then((scopes) => {
-                    for (const [scopeItem, samples] of scopes) {
-                        const scopeKey = scopeKeyFromSubscription(scopeItem);
-                        const scopedCanvas =
-                            scopeCanvasMapRef.current.get(scopeKey);
-                        if (scopedCanvas) {
-                            drawOscilloscope(samples, scopedCanvas);
+                electronAPI.synthesizer
+                    .getScopes()
+                    .then((scopes) => {
+                        for (const [scopeItem, samples] of scopes) {
+                            const scopeKey =
+                                scopeKeyFromSubscription(scopeItem);
+                            const scopedCanvas =
+                                scopeCanvasMapRef.current.get(scopeKey);
+                            if (scopedCanvas) {
+                                drawOscilloscope(samples, scopedCanvas);
+                            }
                         }
-                    }
-                    if (isClockRunningRef.current) {
-                        requestAnimationFrame(tick);
-                    }
-                });
+                        if (isClockRunningRef.current) {
+                            requestAnimationFrame(tick);
+                        }
+                    })
+                    .catch((err) => {
+                        console.error('Failed to get scopes:', err);
+                        // Continue loop even if one frame fails, or stop?
+                        // For now, let's try to continue but maybe with a delay or just next frame
+                        if (isClockRunningRef.current) {
+                            requestAnimationFrame(tick);
+                        }
+                    });
             };
             requestAnimationFrame(tick);
         }
@@ -601,7 +626,9 @@ function App() {
         handleSaveFileRef.current = saveFile;
     }, [saveFile]);
 
-    const [lastSubmittedCode, setLastSubmittedCode] = useState<string | null>(null);
+    const [lastSubmittedCode, setLastSubmittedCode] = useState<string | null>(
+        null,
+    );
 
     const handleSubmitRef = useRef(() => {});
     useEffect(() => {
@@ -728,44 +755,59 @@ function App() {
                 />
 
                 <main className="app-main">
-                    <div className="editor-panel">
-                        <PatchEditor
-                            value={patchCode}
-                            lastSubmittedCode={lastSubmittedCode}
-                            currentFile={activeBufferId}
-                            onChange={handlePatchChange}
-                            onSubmit={handleSubmitRef}
-                            onStop={handleStopRef}
-                            onSave={handleSaveFileRef}
-                            editorRef={editorRef}
-                            schemas={schemas}
-                            scopeViews={scopeViews}
-                            onRegisterScopeCanvas={registerScopeCanvas}
-                            onUnregisterScopeCanvas={unregisterScopeCanvas}
-                        />
-                    </div>
+                    {!workspaceRoot ? (
+                        <div className="empty-state">
+                            <button
+                                className="open-folder-button"
+                                onClick={selectWorkspaceFolder}
+                            >
+                                Open Folder
+                            </button>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="editor-panel">
+                                <PatchEditor
+                                    value={patchCode}
+                                    lastSubmittedCode={lastSubmittedCode}
+                                    currentFile={activeBufferId}
+                                    onChange={handlePatchChange}
+                                    onSubmit={handleSubmitRef}
+                                    onStop={handleStopRef}
+                                    onSave={handleSaveFileRef}
+                                    editorRef={editorRef}
+                                    schemas={schemas}
+                                    scopeViews={scopeViews}
+                                    onRegisterScopeCanvas={registerScopeCanvas}
+                                    onUnregisterScopeCanvas={
+                                        unregisterScopeCanvas
+                                    }
+                                />
+                            </div>
 
-                    <FileExplorer
-                        workspaceRoot={workspaceRoot}
-                        fileTree={fileTree}
-                        buffers={buffers}
-                        activeBufferId={activeBufferId}
-                        runningBufferId={runningBufferId}
-                        formatLabel={(buffer) => {
-                            const path = formatFileLabel(buffer);
-                            const parts = path.split(/[/\\]/);
-                            return parts[parts.length - 1];
-                        }}
-                        onSelectBuffer={setActiveBufferId}
-                        onOpenFile={openFile}
-                        onCreateFile={createUntitledFile}
-                        onSaveFile={handleSaveFileRef.current}
-                        onRenameFile={renameFile}
-                        onDeleteFile={deleteFile}
-                        onCloseBuffer={closeBuffer}
-                        onSelectWorkspace={selectWorkspaceFolder}
-                        onRefreshTree={refreshFileTree}
-                    />
+                            <FileExplorer
+                                workspaceRoot={workspaceRoot}
+                                fileTree={fileTree}
+                                buffers={buffers}
+                                activeBufferId={activeBufferId}
+                                runningBufferId={runningBufferId}
+                                formatLabel={(buffer) => {
+                                    const path = formatFileLabel(buffer);
+                                    const parts = path.split(/[/\\]/);
+                                    return parts[parts.length - 1];
+                                }}
+                                onSelectBuffer={setActiveBufferId}
+                                onOpenFile={openFile}
+                                onCreateFile={createUntitledFile}
+                                onSaveFile={handleSaveFileRef.current}
+                                onRenameFile={renameFile}
+                                onDeleteFile={deleteFile}
+                                onCloseBuffer={closeBuffer}
+                                onSelectWorkspace={selectWorkspaceFolder}
+                                onRefreshTree={refreshFileTree}
+                            />
+                        </>
+                    )}
                 </main>
             </div>
         </SchemasContext.Provider>

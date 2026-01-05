@@ -8,8 +8,9 @@ import { useSchemas } from '../SchemaContext';
 import { buildLibSource } from '../dsl/typescriptLibGen';
 import { findScopeCallEndLines } from '../utils/findScopeCallEndLines';
 import { ModuleSchema } from '@modular/core';
+import { useCustomMonaco } from '../hooks/useCustomMonaco';
 
-type Monaco = ReturnType<typeof useMonaco>;
+type Monaco = ReturnType<typeof useCustomMonaco>;
 
 declare global {
     interface Window {
@@ -122,14 +123,18 @@ export function MonacoPatchEditor({
     const viewZoneIdsRef = useRef<string[]>([]);
     const scopeCanvasMapRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
     const layoutListenerRef = useRef<IDisposable | null>(null);
-    const monaco = useMonaco();
+    const monaco = useCustomMonaco();
     const [editor, setEditor] = useState<editor.IStandaloneCodeEditor | null>(
         null,
     );
 
-    const [seqTrackingIds, setSeqTrackingIds] = useState<Map<string, Map<number, string>>>(new Map());
-    const trackingCollectionRef = useRef<editor.IEditorDecorationsCollection | null>(null);
-    const activeStepCollectionRef = useRef<editor.IEditorDecorationsCollection | null>(null);
+    const [seqTrackingIds, setSeqTrackingIds] = useState<
+        Map<string, Map<number, string>>
+    >(new Map());
+    const trackingCollectionRef =
+        useRef<editor.IEditorDecorationsCollection | null>(null);
+    const activeStepCollectionRef =
+        useRef<editor.IEditorDecorationsCollection | null>(null);
 
     // Setup tracking when submitted code changes
     useEffect(() => {
@@ -185,10 +190,14 @@ export function MonacoPatchEditor({
                     // If using backticks, mask interpolation ${...} to ensure it parses as a single token
                     // while preserving the original length for correct span mapping.
                     if (submittedMatch.quote === '`') {
-                        patternToParse = patternToParse.replace(/\$\{[\s\S]*?\}/g, (m) => '0'.repeat(m.length));
+                        patternToParse = patternToParse.replace(
+                            /\$\{[\s\S]*?\}/g,
+                            (m) => '0'.repeat(m.length),
+                        );
                     }
 
-                    const ast = await window.electronAPI.parsePattern(patternToParse);
+                    const ast =
+                        await window.electronAPI.parsePattern(patternToParse);
                     const seqId = `seq-${i + 1}`;
 
                     const traverse = (nodes: any[]) => {
@@ -197,16 +206,21 @@ export function MonacoPatchEditor({
                                 const { idx, span } = node.Leaf;
                                 const startOffset =
                                     currentMatch.index +
-                                    currentMatch.fullMatch.indexOf(currentMatch.quote) +
+                                    currentMatch.fullMatch.indexOf(
+                                        currentMatch.quote,
+                                    ) +
                                     1 +
                                     span[0];
                                 const endOffset =
                                     currentMatch.index +
-                                    currentMatch.fullMatch.indexOf(currentMatch.quote) +
+                                    currentMatch.fullMatch.indexOf(
+                                        currentMatch.quote,
+                                    ) +
                                     1 +
                                     span[1];
 
-                                const startPos = model.getPositionAt(startOffset);
+                                const startPos =
+                                    model.getPositionAt(startOffset);
                                 const endPos = model.getPositionAt(endOffset);
 
                                 decorationsToCreate.push({
@@ -222,14 +236,20 @@ export function MonacoPatchEditor({
                                                 .NeverGrowsWhenTypingAtEdges,
                                     },
                                 });
-                                decorationMetadata.push({ seqId, stepIdx: idx });
+                                decorationMetadata.push({
+                                    seqId,
+                                    stepIdx: idx,
+                                });
                             }
                             if (node.Container) {
                                 traverse(node.Container.children);
                             }
-                            if (node.FastSubsequence) traverse(node.FastSubsequence.elements);
-                            if (node.SlowSubsequence) traverse(node.SlowSubsequence.elements);
-                            if (node.RandomChoice) traverse(node.RandomChoice.choices);
+                            if (node.FastSubsequence)
+                                traverse(node.FastSubsequence.elements);
+                            if (node.SlowSubsequence)
+                                traverse(node.SlowSubsequence.elements);
+                            if (node.RandomChoice)
+                                traverse(node.RandomChoice.choices);
                         }
                     };
                     traverse(ast);
@@ -266,7 +286,8 @@ export function MonacoPatchEditor({
         if (!editor || !monaco) return;
         const interval = setInterval(async () => {
             try {
-                const states = await window.electronAPI.synthesizer.getModuleStates();
+                const states =
+                    await window.electronAPI.synthesizer.getModuleStates();
                 const newDecorations: editor.IModelDeltaDecoration[] = [];
                 const model = editor.getModel();
                 if (!model) return;

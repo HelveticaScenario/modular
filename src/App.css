@@ -274,3 +274,28 @@
 .monaco-editor .suggest-widget {
     z-index: 2000 !important;
 }
+
+/* Empty State */
+.empty-state {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #1a1a1a;
+}
+
+.open-folder-button {
+    padding: 1rem 2rem;
+    font-size: 1.2rem;
+    background-color: #007acc;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.open-folder-button:hover {
+    background-color: #005c99;
+}
+
