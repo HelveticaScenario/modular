@@ -24,7 +24,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: 'yarn'
 
       - name: Setup Rust
@@ -41,20 +41,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev libudev-dev rpm
 
+      - name: Setup ASIO SDK (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          $url = "https://www.steinberg.net/asiosdk"
+          $zip = "$env:TEMP\asiosdk.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath "$env:TEMP\asio_temp"
+          $subFolder = Get-ChildItem -Path "$env:TEMP\asio_temp" -Directory | Select-Object -First 1
+          Move-Item -Path $subFolder.FullName -Destination "$env:TEMP\asio_sdk"
+
       - name: Run tests
         run: yarn test
 
-      - name: Build and Package
-        run: yarn make
-
-      - name: Upload Release Assets
-        uses: softprops/action-gh-release@v1
+      - name: Publish
         if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: |
-            out/make/squirrel.windows/*/*.exe
-            out/make/zip/darwin/*/*.zip
-            out/make/deb/*/*.deb
-            out/make/rpm/*/*.rpm
+        run: yarn forge-publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
