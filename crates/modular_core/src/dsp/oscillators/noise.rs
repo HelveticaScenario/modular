@@ -2,11 +2,17 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+use crate::types::Signal;
+
 #[derive(Deserialize, Default, JsonSchema, Connect)]
 #[serde(default)]
 struct NoiseParams {
     /// color of the noise: white, pink, brown
     color: NoiseKind,
+    /// output range (min, max)
+    /// @param min - minimum output value
+    /// @param max - maximum output value
+    range: (Signal, Signal),
 }
 
 #[derive(Clone, Copy, Deserialize, JsonSchema, Debug, PartialEq, Eq)]
@@ -125,7 +131,10 @@ impl Noise {
             NoiseKind::Brown => self.process_brown(white),
         };
 
-        self.outputs.sample = colored.clamp(-1.0, 1.0) * 5.0;
+        let min = self.params.range.0.get_value_or(-5.0);
+        let max = self.params.range.1.get_value_or(5.0);
+        self.outputs.sample =
+            crate::dsp::utils::map_range(colored.clamp(-1.0, 1.0), -1.0, 1.0, min, max);
     }
 }
 

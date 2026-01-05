@@ -16,6 +16,9 @@ struct SineOscillatorParams {
     phase: Signal,
     /// sync input (expects >0V to trigger)
     sync: Signal,
+    /// @param min - minimum output value
+    /// @param max - maximum output value
+    range: (Signal, Signal),
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -38,9 +41,12 @@ pub struct SineOscillator {
 
 impl SineOscillator {
     fn update(&mut self, sample_rate: f32) -> () {
+        let min = self.params.range.0.get_value_or(-5.0);
+        let max = self.params.range.1.get_value_or(5.0);
+
         if self.params.phase != Signal::Disconnected {
             self.phase = wrap(0.0..1.0, self.params.phase.get_value());
-            self.outputs.sample = self.phase;
+            self.outputs.sample = crate::dsp::utils::map_range(self.phase, 0.0, 1.0, min, max);
         } else {
             self.freq.update(self.params.freq.get_value_or(4.0).clamp(-10.0, 10.0));
             let frequency = 27.5f32 * 2.0f32.powf(*self.freq) / sample_rate;
@@ -48,7 +54,8 @@ impl SineOscillator {
             while self.phase >= 1.0 {
                 self.phase -= 1.0;
             }
-            self.outputs.sample = 5.0 * interpolate(LUT_SINE, self.phase, LUT_SINE_SIZE);
+            let sine = interpolate(LUT_SINE, self.phase, LUT_SINE_SIZE);
+            self.outputs.sample = crate::dsp::utils::map_range(sine, -1.0, 1.0, min, max);
         }
 
         self.outputs.phase_out = self.phase;

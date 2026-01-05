@@ -168,8 +168,12 @@ export class ModuleNode {
         const param = target.schema.paramsByName[prop];
         console.log('Accessed prop:', prop, 'param:', param);
         if (param && Object.hasOwn(target.schema.paramsByName, prop)) {
-          return (value: unknown) => {
-            target._setParam(prop, value);
+          return (...args: unknown[]) => {
+            if (args.length > 1) {
+              target._setParam(prop, args);
+            } else {
+              target._setParam(prop, args[0]);
+            }
             return proxy;
           };
         }

@@ -13,6 +13,9 @@ struct SawOscillatorParams {
     shape: Signal,
     /// the phase of the oscillator, overrides freq if present
     phase: Signal,
+    /// @param min - minimum output value
+    /// @param max - maximum output value
+    range: (Signal, Signal),
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -86,7 +89,9 @@ impl SawOscillator {
             triangle * (1.0 - blend) + ramp * blend
         };
 
-        self.outputs.sample = output * 5.0;
+        let min = self.params.range.0.get_value_or(-5.0);
+        let max = self.params.range.1.get_value_or(5.0);
+        self.outputs.sample = crate::dsp::utils::map_range(output, -1.0, 1.0, min, max);
     }
 }
 

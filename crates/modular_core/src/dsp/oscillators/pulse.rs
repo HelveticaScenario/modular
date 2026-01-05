@@ -13,6 +13,10 @@ struct PulseOscillatorParams {
     width: Signal,
     /// pulse width modulation input
     pwm: Signal,
+    /// output range (min, max)
+    /// @param min - minimum output value
+    /// @param max - maximum output value
+    range: (Signal, Signal),
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -69,7 +73,9 @@ impl PulseOscillator {
             phase_increment,
         );
 
-        self.outputs.sample = naive_pulse * 5.0;
+        let min = self.params.range.0.get_value_or(-5.0);
+        let max = self.params.range.1.get_value_or(5.0);
+        self.outputs.sample = crate::dsp::utils::map_range(naive_pulse, -1.0, 1.0, min, max);
     }
 }
 
