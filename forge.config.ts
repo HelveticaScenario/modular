@@ -59,7 +59,7 @@ const config: ForgeConfig = {
         owner: 'HelveticaScenario',
         name: 'modular',
       },
-      prerelease: true,
+      prerelease: false,
     }),
   ],
   plugins: [
