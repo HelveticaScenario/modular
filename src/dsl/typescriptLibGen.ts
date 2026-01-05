@@ -126,9 +126,85 @@ interface Console {
 }
 
 declare var console: Console;
+type NoteNames = "a" | "A" | "b" | "B" | "c" | "C" | "d" | "D" | "e" | "E" | "f" | "F" | "g" | "G"
+type Accidental = "" | "#" | "b"
+type Note = \`\${NoteNames}\${Accidental}\${number}\`
+
+type HZ = \`\${number}hz\` | \`\${number}Hz\`
+
+type MidiNote = \`\${number}m\`
+
+type CaseVariants<T extends string> = 
+  | Lowercase<T>
+  | Uppercase<T>
+  | Capitalize<T>;
+
+type ModeString =
+  // Ionian (Major)
+  | \`M \${string}\`
+  | "M"
+  | \`\${string}\${CaseVariants<"maj">}\${string}\`
+  | \`\${string}\${CaseVariants<"major">}\${string}\`
+  | \`\${string}\${CaseVariants<"ionian">}\${string}\`
+  
+  // Harmonic Minor
+  | \`\${string}\${CaseVariants<"har">} \${CaseVariants<"minor">}\${string}\`
+  | \`\${string}\${CaseVariants<"harmonic">}\${CaseVariants<"minor">}\${string}\`
+  | \`\${string}\${CaseVariants<"harmonic">} \${CaseVariants<"minor">}\${string}\`
+  
+  // Melodic Minor
+  | \`\${string}\${CaseVariants<"mel">} \${CaseVariants<"minor">}\${string}\`
+  | \`\${string}\${CaseVariants<"melodic">}\${CaseVariants<"minor">}\${string}\`
+  | \`\${string}\${CaseVariants<"melodic">} \${CaseVariants<"minor">}\${string}\`
+  
+  // Pentatonic Major
+  | \`\${string}\${CaseVariants<"pentatonic">} \${CaseVariants<"major">}\${string}\`
+  | \`\${string}\${CaseVariants<"pentatonic">} \${CaseVariants<"maj">}\${string}\`
+  | \`\${string}\${CaseVariants<"pent">} \${CaseVariants<"maj">}\${string}\`
+  | \`\${string}\${CaseVariants<"pent">} \${CaseVariants<"major">}\${string}\`
+  
+  // Pentatonic Minor
+  | \`\${string}\${CaseVariants<"pentatonic">} \${CaseVariants<"minor">}\${string}\`
+  | \`\${string}\${CaseVariants<"pentatonic">} \${CaseVariants<"min">}\${string}\`
+  | \`\${string}\${CaseVariants<"pent">} \${CaseVariants<"min">}\${string}\`
+  | \`\${string}\${CaseVariants<"pent">} \${CaseVariants<"minor">}\${string}\`
+  
+  // Blues
+  | \`\${string}\${CaseVariants<"blues">}\${string}\`
+  
+  // Chromatic
+  | \`\${string}\${CaseVariants<"chromatic">}\${string}\`
+  
+  // Whole Tone
+  | \`\${string}\${CaseVariants<"whole">} \${CaseVariants<"tone">}\${string}\`
+  | \`\${string}\${CaseVariants<"whole">}\${CaseVariants<"tone">}\${string}\`
+  
+  // Aeolian (Minor)
+  | \`m \${string}\`
+  | "m"
+  | \`\${string}\${CaseVariants<"min">}\${string}\`
+  | \`\${string}\${CaseVariants<"minor">}\${string}\`
+  | \`\${string}\${CaseVariants<"aeolian">}\${string}\`
+  
+  // Dorian (start of string)
+  | \`\${CaseVariants<"dorian">}\${string}\`
+  
+  // Locrian (start of string)
+  | \`\${CaseVariants<"locrian">}\${string}\`
+  
+  // Mixolydian (start of string)
+  | \`\${CaseVariants<"mixolydian">}\${string}\`
+  
+  // Phrygian (start of string)
+  | \`\${CaseVariants<"phrygian">}\${string}\`
+  
+  // Lydian (start of string)
+  | \`\${CaseVariants<"lydian">}\${string}\`;
+
+type Scale = \`\${number}s(\${Note}:\${ModeString})\`
 
 // Core DSL types used by the generated declarations
-type Signal = number | ModuleOutput | ModuleNode;
+type Signal = number | Note | HZ | MidiNote | Scale | ModuleOutput | ModuleNode;
 
 interface ModuleOutput {
   readonly moduleId: string;

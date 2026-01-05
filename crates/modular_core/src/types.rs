@@ -2,11 +2,17 @@ use napi::Env;
 use napi::Result;
 use napi::bindgen_prelude::{FromNapiValue, Object, ToNapiValue};
 use napi_derive::napi;
+use regex::Regex;
+use rust_music_theory::note::{Note, Notes, Pitch};
+use rust_music_theory::scale::Scale;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::borrow::Cow;
 use std::fmt::Debug;
 use std::ops::{Add, Deref, Div, Mul, Sub};
+use std::result::Result as StdResult;
+use std::str::FromStr;
 use std::{
     collections::HashMap,
     sync::{self, Arc},
@@ -18,6 +24,10 @@ lazy_static! {
     pub static ref ROOT_ID: String = "root".into();
     pub static ref ROOT_OUTPUT_PORT: String = "output".into();
     pub static ref ROOT_CLOCK_ID: String = "root_clock".into();
+    static ref RE_HZ: Regex = Regex::new(r"^([\d.]+)hz$").unwrap();
+    static ref RE_MIDI: Regex = Regex::new(r"^([\d.]+)m$").unwrap();
+    static ref RE_SCALE: Regex = Regex::new(r"^([\d.]+)s\(([^:]+):([^)]+)\)$").unwrap();
+    static ref RE_NOTE: Regex = Regex::new(r"^([A-Ga-g])([#b]?)(-?\d+)$").unwrap();
 }
 
 pub trait MessageHandler {
@@ -178,19 +188,100 @@ pub trait Connect {
     fn connect(&mut self, patch: &Patch);
 }
 
-#[derive(Clone, Debug, Default, JsonSchema)]
-#[serde(
-    tag = "type",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
+fn parse_note_str(s: &str) -> StdResult<Note, String> {
+    let caps = RE_NOTE
+        .captures(s)
+        .ok_or("Invalid note format".to_string())?;
+    let name = &caps[1];
+    let acc = &caps[2];
+    let oct: i32 = caps[3].parse().map_err(|_| "Invalid octave".to_string())?;
+
+    let pitch_str = format!("{}{}", name, acc);
+    let pitch = Pitch::from_str(&pitch_str).ok_or("Invalid pitch".to_string())?;
+    Ok(Note::new(pitch, oct as u8))
+}
+
+fn parse_signal_string(s: &str) -> StdResult<Signal, String> {
+    if let Some(caps) = RE_HZ.captures(s) {
+        let hz: f32 = caps[1]
+            .parse()
+            .map_err(|_| "Invalid frequency number".to_string())?;
+        if hz <= 0.0 {
+            return Err("Frequency must be positive".to_string());
+        }
+        let volts = (hz / 27.5).log2();
+        return Ok(Signal::Volts { value: volts });
+    }
+
+    if let Some(caps) = RE_MIDI.captures(s) {
+        let midi: f32 = caps[1]
+            .parse()
+            .map_err(|_| "Invalid MIDI number".to_string())?;
+        let volts = (midi - 21.0) / 12.0;
+        return Ok(Signal::Volts { value: volts });
+    }
+
+    if let Some(caps) = RE_SCALE.captures(s) {
+        let val: f32 = caps[1]
+            .parse()
+            .map_err(|_| "Invalid scale interval number".to_string())?;
+        let root_str = &caps[2];
+        let scale_str = &caps[3];
+
+        let root_note = parse_note_str(root_str)?;
+        let scale_def = format!("{} {}", root_note.pitch, scale_str);
+        let scale =
+            Scale::from_regex(&scale_def).map_err(|_| "Invalid scale definition".to_string())?;
+
+        let interval_idx = val.floor() as usize;
+        let cents = (val - val.floor()) * 100.0;
+
+        let target_idx_total = interval_idx - 1;
+
+        let notes = scale.notes();
+        let len = notes.len();
+        if len == 0 {
+            return Err("Scale has no notes".to_string());
+        }
+
+        let scale_root_octave = notes[0].octave as i32;
+
+        let octave_shift = target_idx_total / len;
+        let note_idx = target_idx_total % len;
+
+        let base_note = &notes[note_idx];
+        let relative_octave = (base_note.octave as i32) - scale_root_octave;
+        let target_octave = (root_note.octave as i32) + relative_octave + (octave_shift as i32);
+
+        let mut target_note = base_note.clone();
+        target_note.octave = target_octave as u8;
+
+        let pc_val = target_note.pitch.into_u8();
+
+        let midi = (target_note.octave as f32 + 1.0) * 12.0 + (pc_val as f32);
+        let midi_with_cents = midi + (cents / 100.0);
+
+        let volts = (midi_with_cents - 21.0) / 12.0;
+        return Ok(Signal::Volts { value: volts });
+    }
+
+    if let Ok(note) = parse_note_str(s) {
+        let pc_val = note.pitch.into_u8();
+        let midi = (note.octave as f32 + 1.0) * 12.0 + (pc_val as f32);
+        let volts = (midi - 21.0) / 12.0;
+        return Ok(Signal::Volts { value: volts });
+    }
+
+    Err("Invalid signal format".to_string())
+}
+
+#[derive(Clone, Debug, Default)]
 pub enum Signal {
     Volts {
         value: f32,
     },
     Cable {
         module: String,
-        #[serde(skip)]
         module_ptr: std::sync::Weak<Box<dyn Sampleable>>,
         port: String,
     },
@@ -216,6 +307,7 @@ impl<'de> Deserialize<'de> for Signal {
         #[serde(untagged)]
         enum SignalDe {
             Number(f32),
+            String(String),
             Tagged(SignalTagged),
         }
 
@@ -234,6 +326,7 @@ impl<'de> Deserialize<'de> for Signal {
 
         match SignalDe::deserialize(deserializer)? {
             SignalDe::Number(value) => Ok(Signal::Volts { value }),
+            SignalDe::String(s) => parse_signal_string(&s).map_err(serde::de::Error::custom),
             SignalDe::Tagged(tagged) => Ok(match tagged {
                 SignalTagged::Volts { value } => Signal::Volts { value },
                 SignalTagged::Cable { module, port } => Signal::Cable {
@@ -249,6 +342,39 @@ impl<'de> Deserialize<'de> for Signal {
                 SignalTagged::Disconnected => Signal::Disconnected,
             }),
         }
+    }
+}
+
+#[derive(JsonSchema)]
+#[serde(untagged)]
+#[allow(dead_code)]
+enum SignalSchema {
+    Number(f32),
+    String(String),
+    Tagged(SignalTaggedSchema),
+}
+
+#[derive(JsonSchema)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+#[allow(dead_code)]
+enum SignalTaggedSchema {
+    Volts { value: f32 },
+    Cable { module: String, port: String },
+    Track { track: String },
+    Disconnected,
+}
+
+impl JsonSchema for Signal {
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("Signal")
+    }
+
+    fn json_schema(r#gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        SignalSchema::json_schema(r#gen)
     }
 }
 
@@ -531,4 +657,124 @@ pub enum Message {
     Clock(ClockMessages),
     MidiNote(u8, bool), // (note number, on/off)
     MidiCC(u8, u8),     // (cc number, value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::from_str;
+
+    #[test]
+    fn test_signal_deserialization_volts() {
+        let s: Signal = from_str("0.5").unwrap();
+        match s {
+            Signal::Volts { value } => assert_eq!(value, 0.5),
+            _ => panic!("Expected Volts"),
+        }
+    }
+
+    #[test]
+    fn test_signal_deserialization_hz() {
+        // 27.5Hz is 0V
+        let s: Signal = from_str("\"27.5hz\"").unwrap();
+        match s {
+            Signal::Volts { value } => assert!((value - 0.0).abs() < 1e-6),
+            _ => panic!("Expected Volts"),
+        }
+
+        // 55Hz is 1V (one octave up)
+        let s: Signal = from_str("\"55hz\"").unwrap();
+        match s {
+            Signal::Volts { value } => assert!((value - 1.0).abs() < 1e-6),
+            _ => panic!("Expected Volts"),
+        }
+    }
+
+    #[test]
+    fn test_signal_deserialization_midi() {
+        // MIDI 21 (A0) is 0V
+        let s: Signal = from_str("\"21m\"").unwrap();
+        match s {
+            Signal::Volts { value } => assert!((value - 0.0).abs() < 1e-6),
+            _ => panic!("Expected Volts"),
+        }
+
+        // MIDI 33 (A1) is 1V
+        let s: Signal = from_str("\"33m\"").unwrap();
+        match s {
+            Signal::Volts { value } => assert!((value - 1.0).abs() < 1e-6),
+            _ => panic!("Expected Volts"),
+        }
+    }
+
+    #[test]
+    fn test_signal_deserialization_note() {
+        // A0 is 0V
+        let s: Signal = from_str("\"A0\"").unwrap();
+        match s {
+            Signal::Volts { value } => assert!((value - 0.0).abs() < 1e-6),
+            _ => panic!("Expected Volts"),
+        }
+
+        // A1 is 1V
+        let s: Signal = from_str("\"A1\"").unwrap();
+        match s {
+            Signal::Volts { value } => assert!((value - 1.0).abs() < 1e-6),
+            _ => panic!("Expected Volts"),
+        }
+
+        // C4 (Middle C) -> MIDI 60 -> (60-21)/12 = 3.25V
+        let s: Signal = from_str("\"C4\"").unwrap();
+        match s {
+            Signal::Volts { value } => assert!((value - 3.25).abs() < 1e-6),
+            _ => panic!("Expected Volts"),
+        }
+
+        // Sharps/Flats
+        // A#0 -> MIDI 22 -> 1/12 V
+        let s: Signal = from_str("\"A#0\"").unwrap();
+        match s {
+            Signal::Volts { value } => assert!((value - (1.0 / 12.0)).abs() < 1e-6),
+            _ => panic!("Expected Volts"),
+        }
+    }
+
+    #[test]
+    fn test_signal_deserialization_scale() {
+        // 1s(A0:Major) -> 1st interval (root) -> A0 -> 0V
+        let s: Signal = from_str("\"1s(A0:Major)\"").unwrap();
+        match s {
+            Signal::Volts { value } => assert!((value - 0.0).abs() < 1e-6),
+            _ => panic!("Expected Volts"),
+        }
+
+        // 2s(A0:Major) -> 2nd interval (Major 2nd) -> B0 -> 2 semitones -> 2/12 V
+        let s: Signal = from_str("\"2s(A0:Major)\"").unwrap();
+        match s {
+            Signal::Volts { value } => assert!((value - (2.0 / 12.0)).abs() < 1e-6),
+            _ => panic!("Expected Volts"),
+        }
+
+        // 8s(A0:Major) -> Octave -> A1 -> 1V
+        let s: Signal = from_str("\"8s(A0:Major)\"").unwrap();
+        match s {
+            Signal::Volts { value } => assert!((value - 1.0).abs() < 1e-6),
+            _ => panic!("Expected Volts"),
+        }
+
+        // Cents
+        // 1.5s(A0:Major) -> 1st interval + 50 cents -> 0.5 semitones -> 0.5/12 V
+        let s: Signal = from_str("\"1.5s(a0:maj)\"").unwrap();
+        match s {
+            Signal::Volts { value } => assert!((value - (0.5 / 12.0)).abs() < 1e-6),
+            _ => panic!("Expected Volts"),
+        }
+    }
+
+    #[test]
+    fn test_signal_deserialization_errors() {
+        assert!(from_str::<Signal>("\"invalid\"").is_err());
+        assert!(from_str::<Signal>("\"-10hz\"").is_err());
+        assert!(from_str::<Signal>("\"0s(A0:Major)\"").is_err()); // Interval must be >= 1
+    }
 }
