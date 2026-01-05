@@ -28,13 +28,8 @@ yarn version prerelease
 # Get the new version
 VERSION=$(node -p "require('./package.json').version")
 
-# Update version in crates/modular/package.json
-cd crates/modular
-yarn version prerelease
-cd ../..
-
 # Commit changes
-git add package.json crates/modular/package.json
+git add package.json
 git commit -m "Release v$VERSION"
 
 # Create tag
