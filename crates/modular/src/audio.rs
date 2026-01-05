@@ -1,4 +1,5 @@
 use cpal::FromSample;
+use cpal::Host;
 use cpal::SizedSample;
 use cpal::traits::{DeviceTrait, HostTrait};
 
@@ -708,9 +709,32 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
   output_sample
 }
 
+pub fn get_host_by_preference() -> Host {
+    #[cfg(target_os = "windows")]
+    {
+        // Try ASIO first if compiled with the feature
+        #[cfg(feature = "asio")]
+        {
+            if let Ok(asio_host) = cpal::host_from_id(HostId::Asio) {
+                println!("Using ASIO");
+                return asio_host;
+            }
+        }
+        
+        // Fall back to WASAPI
+        if let Ok(wasapi) = cpal::host_from_id(HostId::Wasapi) {
+            println!("Using WASAPI");
+            return wasapi;
+        }
+    }
+    
+    // Default for other platforms or final fallback
+    cpal::default_host()
+}
+
 /// Get the sample rate from the default audio device
 pub fn get_sample_rate() -> Result<f32> {
-  let host = cpal::default_host();
+  let host = get_host_by_preference();
   let device = host
     .default_output_device()
     .ok_or_else(|| napi::Error::from_reason("No audio output device found".to_string()))?;

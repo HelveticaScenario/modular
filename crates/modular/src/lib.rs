@@ -12,7 +12,7 @@ use napi::Result;
 use napi_derive::napi;
 use parking_lot::Mutex;
 
-use crate::audio::{ApplyPatchError, AudioBudgetSnapshot, AudioState};
+use crate::audio::{ApplyPatchError, AudioBudgetSnapshot, AudioState, get_host_by_preference};
 use crate::audio::make_stream;
 
 #[napi(js_name = "Synthesizer")]
@@ -29,7 +29,7 @@ impl Synthesizer {
   /// Run the audio thread with cpal
   #[napi(constructor)]
   pub fn new() -> Result<Self> {
-    let host = cpal::default_host();
+    let host = get_host_by_preference();
 
     let device = host
       .default_output_device()
