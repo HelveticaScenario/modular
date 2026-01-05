@@ -29,9 +29,18 @@ export class GraphBuilder {
       return explicitId;
     }
 
-    const counter = (this.counters.get(moduleType) || 0) + 1;
+    let counter = (this.counters.get(moduleType) || 0) + 1;
+    let id = `${moduleType}-${counter}`;
+
+    // If the generated ID is already taken (e.g. by an explicit ID),
+    // keep incrementing until we find a free one.
+    while (this.modules.has(id)) {
+      counter++;
+      id = `${moduleType}-${counter}`;
+    }
+
     this.counters.set(moduleType, counter);
-    return `${moduleType}-${counter}`;
+    return id;
   }
 
   /**
