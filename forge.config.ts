@@ -15,23 +15,23 @@ import { rendererConfig } from './webpack.renderer.config';
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
-    icon: './public/taxi',
-    executableName: 'taxi',
+    // icon: './public/taxi',
+    executableName: 'Taxi',
   },
   rebuildConfig: {},
   makers: [
     new MakerSquirrel({
-      setupIcon: './public/taxi.ico',
+      // setupIcon: './public/taxi.ico',
     }),
     new MakerZIP({}, ['darwin']),
     new MakerRpm({
       options: {
-        icon: './public/taxi.png',
+        // icon: './public/taxi.png',
       },
     }),
     new MakerDeb({
       options: {
-        icon: './public/taxi.png',
+        // icon: './public/taxi.png',
       },
     }),
   ],

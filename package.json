@@ -1,6 +1,6 @@
 {
     "name": "@modular/app",
-    "productName": "modular-app",
+    "productName": "Taxi",
     "version": "0.0.0-2",
     "description": "My Electron application description",
     "main": ".webpack/main",
