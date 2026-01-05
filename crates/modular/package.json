@@ -1,6 +1,6 @@
 {
     "name": "@modular/core",
-    "version": "1.0.0",
+    "version": "1.0.1-0",
     "description": "Template project for writing node package with napi-rs",
     "main": "index.js",
     "repository": {
@@ -104,5 +104,6 @@
         "trailingComma": "all",
         "singleQuote": true,
         "arrowParens": "always"
-    }
+    },
+    "stableVersion": "1.0.0"
 }
