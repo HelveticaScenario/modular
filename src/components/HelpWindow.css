@@ -1,0 +1,53 @@
+.help-window {
+    display: flex;
+    height: 100vh;
+    font-family: sans-serif;
+    background: #1e1e1e;
+    color: #d4d4d4;
+}
+
+.sidebar {
+    width: 200px;
+    background: #252526;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    border-right: 1px solid #333;
+}
+
+.sidebar button {
+    background: none;
+    border: none;
+    color: #ccc;
+    text-align: left;
+    padding: 8px;
+    cursor: pointer;
+}
+
+.sidebar button:hover {
+    background: #2a2d2e;
+}
+
+.content {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.module-card {
+    background: #2d2d2d;
+    padding: 15px;
+    margin-bottom: 15px;
+    border-radius: 4px;
+}
+
+h2 {
+    margin-top: 0;
+}
+
+pre {
+    background: #111;
+    padding: 10px;
+    border-radius: 4px;
+}

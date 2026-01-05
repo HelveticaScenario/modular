@@ -115,8 +115,14 @@ export function MonacoPatchEditor({
     onRegisterScopeCanvas,
     onUnregisterScopeCanvas,
     lastSubmittedCode,
+    schemas: propSchemas,
 }: PatchEditorProps) {
-    const schemas = useSchemas();
+    const { schemas: contextSchemasMap } = useSchemas();
+    const schemas = useMemo(() => {
+        if (propSchemas) return propSchemas;
+        return Object.values(contextSchemasMap);
+    }, [propSchemas, contextSchemasMap]);
+
     const extraLibDisposeRef = useRef<IDisposable | null>(null);
     const inlayHintDisposeRef = useRef<IDisposable | null>(null);
     const formattingProviderRef = useRef<IDisposable | null>(null);

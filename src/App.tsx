@@ -3,7 +3,7 @@ import { MonacoPatchEditor as PatchEditor } from './components/MonacoPatchEditor
 import { AudioControls } from './components/AudioControls';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { executePatchScript } from './dsl';
-import { SchemasContext } from './SchemaContext';
+import { useSchemas } from './SchemaContext';
 import './App.css';
 import type { editor } from 'monaco-editor';
 import { findScopeCallEndLines } from './utils/findScopeCallEndLines';
@@ -215,7 +215,8 @@ function App() {
     const [validationErrors, setValidationErrors] = useState<
         ValidationError[] | null
     >(null);
-    const [schemas, setSchemas] = useState<ModuleSchema[]>([]);
+    const { schemas: schemasMap } = useSchemas();
+    const schemas = Object.values(schemasMap);
     const [scopeViews, setScopeViews] = useState<ScopeView[]>([]);
     const [runningBufferId, setRunningBufferId] = useState<string | null>(null);
 
@@ -309,17 +310,6 @@ function App() {
 
     const unregisterScopeCanvas = useCallback((key: string) => {
         scopeCanvasMapRef.current.delete(key);
-    }, []);
-
-    useEffect(() => {
-        electronAPI
-            .getSchemas()
-            .then((fetchedSchemas) => {
-                setSchemas(fetchedSchemas);
-            })
-            .catch((err) => {
-                console.error('Failed to fetch schemas:', err);
-            });
     }, []);
 
     const schemaRef = useRef<ModuleSchema[]>([]);
@@ -749,7 +739,6 @@ function App() {
     }, [isRecording]);
 
     return (
-        <SchemasContext.Provider value={schemas}>
             <div className="app">
                 <header className="app-header">
                     <h1></h1>
@@ -831,7 +820,6 @@ function App() {
                     )}
                 </main>
             </div>
-        </SchemasContext.Provider>
     );
 }
 

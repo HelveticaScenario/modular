@@ -76,6 +76,9 @@ export const IPC_CHANNELS = {
     FS_CREATE_FOLDER: 'modular:fs:create-folder',
     FS_SHOW_SAVE_DIALOG: 'modular:fs:show-save-dialog',
     FS_SHOW_INPUT_DIALOG: 'modular:fs:show-input-dialog',
+
+    // Window operations
+    OPEN_HELP_WINDOW: 'modular:window:open-help',
 } as const;
 
 export const MENU_CHANNELS = {
@@ -129,6 +132,9 @@ export interface IPCHandlers {
     [IPC_CHANNELS.FS_CREATE_FOLDER]: (filePath: string) => FSOperationResult;
     [IPC_CHANNELS.FS_SHOW_SAVE_DIALOG]: (defaultPath?: string) => string | null;
     [IPC_CHANNELS.FS_SHOW_INPUT_DIALOG]: (title: string, defaultValue?: string) => string | null;
+
+    // Window operations
+    [IPC_CHANNELS.OPEN_HELP_WINDOW]: () => void;
 }
 
 /**

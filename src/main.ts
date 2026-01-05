@@ -493,6 +493,35 @@ registerIPCHandler('FS_SHOW_INPUT_DIALOG', async (title: string, defaultValue?: 
   return path.basename(result.filePath);
 });
 
+let helpWindow: BrowserWindow | null = null;
+
+const createHelpWindow = () => {
+  if (helpWindow) {
+    helpWindow.focus();
+    return;
+  }
+
+  helpWindow = new BrowserWindow({
+    width: 800,
+    height: 600,
+    webPreferences: {
+      preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
+    },
+    title: 'Modular Help',
+  });
+
+  // Load the index.html of the app with #help hash
+  helpWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY + '#help');
+
+  helpWindow.on('closed', () => {
+    helpWindow = null;
+  });
+};
+
+registerIPCHandler('OPEN_HELP_WINDOW', async () => {
+  createHelpWindow();
+});
+
 /**
  * Create the main application window
  */

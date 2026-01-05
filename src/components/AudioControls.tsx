@@ -1,3 +1,5 @@
+import electronAPI from '../electronAPI';
+
 interface AudioControlsProps {
     isRunning: boolean;
     isRecording: boolean;
@@ -51,6 +53,13 @@ export function AudioControls({
                         ⏺ Record
                     </button>
                 )}
+
+                <button
+                    onClick={() => electronAPI.openHelpWindow()}
+                    className="btn btn-secondary"
+                >
+                    ? Help
+                </button>
             </div>
         </div>
     );

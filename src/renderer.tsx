@@ -30,6 +30,8 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import { StrictMode } from 'react';
 import App from './App';
+import { HelpWindow } from './components/HelpWindow';
+import { SchemasProvider } from './SchemaContext';
 import monaco from 'monaco-editor/esm/vs/editor/editor.main';
 
 // Make monaco available globally
@@ -40,8 +42,12 @@ if (!root) {
     throw new Error('Failed to find the root element');
 }
 
+const isHelpWindow = window.location.hash === '#help';
+
 createRoot(root).render(
     <StrictMode>
-        <App />
+        <SchemasProvider>
+            {isHelpWindow ? <HelpWindow /> : <App />}
+        </SchemasProvider>
     </StrictMode>,
 );

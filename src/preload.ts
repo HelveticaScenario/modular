@@ -60,6 +60,9 @@ export interface ElectronAPI {
     onMenuStop: (callback: () => void) => () => void;
     onMenuUpdatePatch: (callback: () => void) => () => void;
     onMenuOpenWorkspace: (callback: () => void) => () => void;
+
+    // Window operations
+    openHelpWindow: () => Promise<void>;
 }
 
 const electronAPI: ElectronAPI = {
@@ -68,6 +71,9 @@ const electronAPI: ElectronAPI = {
         invokeIPC('GET_SCHEMAS', ...args),
     parsePattern: (...args) =>
         invokeIPC('PARSE_PATTERN', ...args),
+
+    // Window operations
+    openHelpWindow: () => invokeIPC('OPEN_HELP_WINDOW'),
 
     // Synthesizer operations
     synthesizer: {
