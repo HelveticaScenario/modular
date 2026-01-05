@@ -4,6 +4,10 @@
     "version": "0.0.0-2",
     "description": "My Electron application description",
     "main": ".webpack/main",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/HelveticaScenario/modular"
+    },
     "scripts": {
         "start": "yarn build-native && electron-forge start",
         "package": "yarn build-native && electron-forge package",
