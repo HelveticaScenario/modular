@@ -14,7 +14,7 @@ import type { FileTreeEntry } from './ipcTypes';
 import { v4 } from 'uuid';
 
 const DEFAULT_PATCH = `// Simple 440 Hz sine wave
-const osc = sine('osc1').freq(hz(440));
+const osc = sine(note('A4'));
 out.source(osc);
 `;
 
