@@ -626,6 +626,11 @@ function App() {
         handleSaveFileRef.current = saveFile;
     }, [saveFile]);
 
+    const handleOpenWorkspaceRef = useRef(() => {});
+    useEffect(() => {
+        handleOpenWorkspaceRef.current = selectWorkspaceFolder;
+    }, [selectWorkspaceFolder]);
+
     const [lastSubmittedCode, setLastSubmittedCode] = useState<string | null>(
         null,
     );
@@ -699,13 +704,29 @@ function App() {
     }, []);
 
     useEffect(() => {
-        const handleKeyDown = async (e: KeyboardEvent) => {
-            if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
-                e.preventDefault();
-                handleSaveFileRef.current();
-                return;
-            }
+        const cleanupSave = electronAPI.onMenuSave(() => {
+            handleSaveFileRef.current();
+        });
+        const cleanupStop = electronAPI.onMenuStop(() => {
+            handleStopRef.current();
+        });
+        const cleanupUpdate = electronAPI.onMenuUpdatePatch(() => {
+            handleSubmitRef.current();
+        });
+        const cleanupOpenWorkspace = electronAPI.onMenuOpenWorkspace(() => {
+            handleOpenWorkspaceRef.current();
+        });
 
+        return () => {
+            cleanupSave();
+            cleanupStop();
+            cleanupUpdate();
+            cleanupOpenWorkspace();
+        };
+    }, []);
+
+    useEffect(() => {
+        const handleKeyDown = async (e: KeyboardEvent) => {
             if ((e.ctrlKey || e.altKey) && (e.key === 'r' || e.key === 'R')) {
                 if (e.altKey) {
                     e.preventDefault();

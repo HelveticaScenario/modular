@@ -346,28 +346,6 @@ export function MonacoPatchEditor({
         if (model) {
             model.updateOptions({ tabSize: 2, insertSpaces: true });
         }
-
-        if (isMac) {
-            ed.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.Enter, () => {
-                onSubmit.current();
-            });
-            ed.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.Period, () => {
-                onStop.current();
-            });
-        } else {
-            ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
-                onSubmit.current();
-            });
-            ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period, () => {
-                onStop.current();
-            });
-        }
-
-        ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-            if (onSave) {
-                onSave.current();
-            }
-        });
     };
 
     useEffect(() => {

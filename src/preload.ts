@@ -1,7 +1,7 @@
 // See the Electron documentation for details on how to use preload scripts:
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 import { contextBridge, ipcRenderer } from 'electron/renderer';
-import { IPC_CHANNELS, IPCHandlers, IPCRequest, IPCResponse, Promisify } from './ipcTypes';
+import { IPC_CHANNELS, IPCHandlers, IPCRequest, IPCResponse, Promisify, MENU_CHANNELS } from './ipcTypes';
 
 
 
@@ -55,6 +55,11 @@ export interface ElectronAPI {
         showSaveDialog: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_SHOW_SAVE_DIALOG]>;
         showInputDialog: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_SHOW_INPUT_DIALOG]>;
     };
+    // Menu events
+    onMenuSave: (callback: () => void) => () => void;
+    onMenuStop: (callback: () => void) => () => void;
+    onMenuUpdatePatch: (callback: () => void) => () => void;
+    onMenuOpenWorkspace: (callback: () => void) => () => void;
 }
 
 const electronAPI: ElectronAPI = {
@@ -134,6 +139,28 @@ const electronAPI: ElectronAPI = {
 
         showInputDialog: (...args) =>
             invokeIPC('FS_SHOW_INPUT_DIALOG', ...args),
+    },
+
+    // Menu events
+    onMenuSave: (callback) => {
+        const subscription = (_event: any) => callback();
+        ipcRenderer.on(MENU_CHANNELS.SAVE, subscription);
+        return () => ipcRenderer.removeListener(MENU_CHANNELS.SAVE, subscription);
+    },
+    onMenuStop: (callback) => {
+        const subscription = (_event: any) => callback();
+        ipcRenderer.on(MENU_CHANNELS.STOP, subscription);
+        return () => ipcRenderer.removeListener(MENU_CHANNELS.STOP, subscription);
+    },
+    onMenuUpdatePatch: (callback) => {
+        const subscription = (_event: any) => callback();
+        ipcRenderer.on(MENU_CHANNELS.UPDATE_PATCH, subscription);
+        return () => ipcRenderer.removeListener(MENU_CHANNELS.UPDATE_PATCH, subscription);
+    },
+    onMenuOpenWorkspace: (callback) => {
+        const subscription = (_event: any) => callback();
+        ipcRenderer.on(MENU_CHANNELS.OPEN_WORKSPACE, subscription);
+        return () => ipcRenderer.removeListener(MENU_CHANNELS.OPEN_WORKSPACE, subscription);
     }
 };
 

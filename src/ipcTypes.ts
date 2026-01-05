@@ -78,6 +78,13 @@ export const IPC_CHANNELS = {
     FS_SHOW_INPUT_DIALOG: 'modular:fs:show-input-dialog',
 } as const;
 
+export const MENU_CHANNELS = {
+    SAVE: 'modular:menu:save',
+    STOP: 'modular:menu:stop',
+    UPDATE_PATCH: 'modular:menu:update-patch',
+    OPEN_WORKSPACE: 'modular:menu:open-workspace',
+} as const;
+
 /**
  * Type-safe request/response pairs for each IPC channel
  */

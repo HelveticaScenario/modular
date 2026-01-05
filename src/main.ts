@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron';
 import { getSchemas, PatchGraph, Synthesizer, parsePattern } from '@modular/core';
-import { IPC_CHANNELS, IPCHandlers, FileTreeEntry } from './ipcTypes';
+import { IPC_CHANNELS, IPCHandlers, FileTreeEntry, MENU_CHANNELS } from './ipcTypes';
 import { reconcilePatchBySimilarity } from './patchSimilarityRemap';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -538,6 +538,26 @@ const createMenu = (): void => {
     {
       label: 'File',
       submenu: [
+        {
+          label: 'Open Workspace...',
+          accelerator: 'CmdOrCtrl+O',
+          click: (_item, focusedWindow) => {
+            if (focusedWindow) {
+              BrowserWindow.fromId(focusedWindow.id)?.webContents.send(MENU_CHANNELS.OPEN_WORKSPACE);
+            }
+          }
+        },
+        { type: 'separator' as const },
+        {
+          label: 'Save',
+          accelerator: 'CmdOrCtrl+S',
+          click: (_item, focusedWindow) => {
+            if (focusedWindow) {
+              BrowserWindow.fromId(focusedWindow.id)?.webContents.send(MENU_CHANNELS.SAVE);
+            }
+          }
+        },
+        { type: 'separator' as const },
         isMac ? { role: 'close' as const } : { role: 'quit' as const }
       ]
     },
@@ -583,6 +603,30 @@ const createMenu = (): void => {
         { role: 'zoomOut' as const },
         { type: 'separator' as const },
         { role: 'togglefullscreen' as const }
+      ]
+    },
+    // Run menu
+    {
+      label: 'Run',
+      submenu: [
+        {
+          label: 'Update Patch',
+          accelerator: isMac ? 'Alt+Enter' : 'Ctrl+Enter',
+          click: (_item, focusedWindow) => {
+            if (focusedWindow) {
+              BrowserWindow.fromId(focusedWindow.id)?.webContents.send(MENU_CHANNELS.UPDATE_PATCH);
+            }
+          }
+        },
+        {
+          label: 'Stop Sound',
+          accelerator: isMac ? 'Alt+.' : 'Ctrl+.',
+          click: (_item, focusedWindow) => {
+            if (focusedWindow) {
+              BrowserWindow.fromId(focusedWindow.id)?.webContents.send(MENU_CHANNELS.STOP);
+            }
+          }
+        }
       ]
     },
     // Window menu
