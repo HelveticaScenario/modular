@@ -2,37 +2,51 @@ use std::collections::HashMap;
 
 use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
 
-pub mod ad;
 pub mod adsr;
 pub mod clock;
 pub mod clock_divider;
+pub mod lag;
+pub mod logic;
 pub mod math;
+pub mod sample_and_hold;
 
 // Re-export useful types
 pub use crate::dsp::utils::SchmittTrigger;
 
 pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
-    ad::Ad::install_constructor(map);
     adsr::Adsr::install_constructor(map);
     clock::Clock::install_constructor(map);
     clock_divider::ClockDivider::install_constructor(map);
+    lag::LagProcessor::install_constructor(map);
+    logic::RisingEdgeDetector::install_constructor(map);
+    logic::FallingEdgeDetector::install_constructor(map);
     math::Math::install_constructor(map);
+    sample_and_hold::SampleAndHold::install_constructor(map);
+    sample_and_hold::TrackAndHold::install_constructor(map);
 }
 
 pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
-    ad::Ad::install_params_validator(map);
     adsr::Adsr::install_params_validator(map);
     clock::Clock::install_params_validator(map);
     clock_divider::ClockDivider::install_params_validator(map);
+    lag::LagProcessor::install_params_validator(map);
+    logic::RisingEdgeDetector::install_params_validator(map);
+    logic::FallingEdgeDetector::install_params_validator(map);
     math::Math::install_params_validator(map);
+    sample_and_hold::SampleAndHold::install_params_validator(map);
+    sample_and_hold::TrackAndHold::install_params_validator(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {
     vec![
-        ad::Ad::get_schema(),
         adsr::Adsr::get_schema(),
         clock::Clock::get_schema(),
         clock_divider::ClockDivider::get_schema(),
+        lag::LagProcessor::get_schema(),
+        logic::RisingEdgeDetector::get_schema(),
+        logic::FallingEdgeDetector::get_schema(),
         math::Math::get_schema(),
+        sample_and_hold::SampleAndHold::get_schema(),
+        sample_and_hold::TrackAndHold::get_schema(),
     ]
 }

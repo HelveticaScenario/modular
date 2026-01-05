@@ -74,13 +74,13 @@ impl Adsr {
     fn update(&mut self, sample_rate: f32) -> () {
         // Smooth parameter targets to avoid clicks when values change
         self.attack
-            .update(self.params.attack.get_value_or(0.01).clamp(0.0, 10.0));
+            .update(self.params.attack.get_value_or(0.).clamp(0.0, 10.0));
         self.decay
-            .update(self.params.decay.get_value_or(0.1).clamp(0.0, 10.0));
+            .update(self.params.decay.get_value_or(0.).clamp(0.0, 10.0));
         self.release
-            .update(self.params.release.get_value_or(0.2).clamp(0.0, 10.0));
+            .update(self.params.release.get_value_or(0.).clamp(0.0, 10.0));
         self.sustain
-            .update(self.params.sustain.get_value_or(3.5).clamp(0.0, 5.0));
+            .update(self.params.sustain.get_value_or(5.).clamp(0.0, 5.0));
 
         let gate_on = self.params.gate.get_value() > 2.5;
 
