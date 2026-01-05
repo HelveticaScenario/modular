@@ -1,7 +1,7 @@
 {
     "name": "@modular/app",
     "productName": "modular-app",
-    "version": "1.0.0",
+    "version": "0.0.0-0",
     "description": "My Electron application description",
     "main": ".webpack/main",
     "scripts": {
@@ -9,6 +9,7 @@
         "package": "yarn build-native && electron-forge package",
         "make": "yarn build-native && electron-forge make",
         "publish": "yarn build-native && electron-forge publish",
+        "deploy": "./release.sh",
         "test": "yarn build-native && ava",
         "typecheck": "yarn build-native && tsc --noEmit",
         "rebuild": "yarn build-native && electron-rebuild -f -w modular-core",
@@ -84,5 +85,6 @@
             "--import",
             "@oxc-node/core/register"
         ]
-    }
+    },
+    "stableVersion": "1.0.0"
 }
