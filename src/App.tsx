@@ -732,11 +732,7 @@ function App() {
                         <PatchEditor
                             value={patchCode}
                             lastSubmittedCode={lastSubmittedCode}
-                            currentFile={
-                                activeBuffer
-                                    ? formatFileLabel(activeBuffer)
-                                    : undefined
-                            }
+                            currentFile={activeBufferId}
                             onChange={handlePatchChange}
                             onSubmit={handleSubmitRef}
                             onStop={handleStopRef}
