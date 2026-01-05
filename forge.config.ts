@@ -16,7 +16,7 @@ const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
     icon: './public/taxi',
-    executableName: 'taxi,
+    executableName: 'taxi',
   },
   rebuildConfig: {},
   makers: [
