@@ -23,7 +23,6 @@ export function executePatchScript(
   // Create the execution environment with all DSL functions
   const dslGlobals = {
     ...context.factories,
-    scope: context.scope.bind(context),
     // Helper functions
     hz,
     note,

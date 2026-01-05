@@ -216,6 +216,11 @@ export class ModuleNode {
     return this.o.shift(value);
   }
 
+  scope(msPerFrame: number = 500, triggerThreshold?: number): this {
+    this.builder.addScope(this, msPerFrame, triggerThreshold);
+    return this;
+  }
+
 
   _setParam(paramName: string, value: unknown): this {
     this.builder.setParam(this.id, paramName, replaceSignals(value));
@@ -277,6 +282,11 @@ export class ModuleOutput {
     shiftNode._setParam('input', this);
     shiftNode._setParam('shift', offset);
     return shiftNode;
+  }
+
+  scope(msPerFrame: number = 500, triggerThreshold?: number): this {
+    this.builder.addScope(this, msPerFrame, triggerThreshold);
+    return this;
   }
 
   toString(): string {

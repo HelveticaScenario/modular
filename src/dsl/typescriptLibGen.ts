@@ -135,6 +135,7 @@ interface ModuleOutput {
   readonly portName: string;
   scale(factor: Signal): ModuleNode;
   shift(offset: Signal): ModuleNode;
+  scope(msPerFrame?: number, triggerThreshold?: number): ModuleOutput;
 }
 
 interface ModuleNode {
@@ -143,13 +144,13 @@ interface ModuleNode {
   readonly o: ModuleOutput;
   scale(value: Signal): ModuleNode;
   shift(value: Signal): ModuleNode;
+  scope(msPerFrame?: number, triggerThreshold?: number): ModuleNode;
 }
 
 // Helper functions exposed by the DSL runtime
 declare function hz(frequency: number): number;
 declare function note(noteName: string): number;
 declare function bpm(beatsPerMinute: number): number;
-declare function scope(target: ModuleOutput | ModuleNode , msPerFrame?: number, triggerThreshold?: number):  ModuleOutput | ModuleNode;
 `;
 
 
@@ -430,7 +431,7 @@ function renderParamsInterface(baseName: string, classSpec: ClassSpec, indent: s
     const lines: string[] = [];
     const paramsInterfaceName = `${capitalizeName(baseName)}Params`;
     lines.push(`${indent}export interface ${paramsInterfaceName} {`);
-    
+
     for (const prop of classSpec.properties) {
         lines.push("");
         lines.push(...renderDocComment(prop.description, indent + "  "));
@@ -448,11 +449,11 @@ function renderFactoryFunction(
 ): string[] {
     const functionName = moduleSchema.name.split('.').pop()!;
     const paramsInterfaceName = `${capitalizeName(functionName)}Params`;
-    
+
     let args: string[] = [];
     // @ts-ignore
     const positionalArgs = moduleSchema.positionalArgs || [];
-    
+
     for (const arg of positionalArgs) {
         // @ts-ignore
         const propSchema = moduleSchema.paramsSchema.properties?.[arg.name];
@@ -461,14 +462,14 @@ function renderFactoryFunction(
         const optional = arg.optional ? '?' : '';
         args.push(`${arg.name}${optional}: ${type}`);
     }
-    
+
     // @ts-ignore
     const allParamKeys = Object.keys(moduleSchema.paramsSchema.properties || {});
     // @ts-ignore
     const positionalKeys = new Set(positionalArgs.map((a: any) => a.name));
-    
+
     const configProps: string[] = [];
-    
+
     for (const key of allParamKeys) {
         if (!positionalKeys.has(key)) {
             // @ts-ignore
@@ -478,13 +479,13 @@ function renderFactoryFunction(
             configProps.push(`${key}?: ${type}`);
         }
     }
-    
+
     configProps.push(`id?: string`);
-    
+
     const configType = `{ ${configProps.join('; ')} }`;
-        
+
     args.push(`config?: ${configType}`);
-    
+
     return [`${indent}export function ${functionName}(${args.join(', ')}): ${interfaceName};`];
 }
 
@@ -503,7 +504,7 @@ function getQualifiedNodeInterfaceType(moduleName: string): string {
 
 function renderInterface(baseName: string, classSpec: ClassSpec, indent: string): string[] {
     const lines: string[] = [];
-    
+
     lines.push(...renderParamsInterface(baseName, classSpec, indent));
     lines.push("");
 
