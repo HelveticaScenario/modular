@@ -16,6 +16,7 @@ const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
     executableName: 'Taxi',
+    osxSign: {}, // Enable code signing (will be ad-hoc without certificates)
   },
   rebuildConfig: {},
   makers: [
