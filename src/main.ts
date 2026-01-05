@@ -6,9 +6,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
 import { updateElectronApp } from 'update-electron-app';
-import icon from '../public/taxi.png';
-
-const iconPath = path.join(__dirname, icon);
 
 updateElectronApp();
 
