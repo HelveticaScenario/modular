@@ -31,7 +31,7 @@ NoteLetter = { "a" | "b" | "c" | "d" | "e" | "f" | "g" | "A" | "B" | "C" | "D" |
 Accidental = { "#" | "b" }
 Octave = @{ ASCII_DIGIT+ }
 
-MidiValue = { "m" ~ MidiNumber }
+MidiValue = { MidiNumber ~ "m" }
 MidiNumber = @{ ASCII_DIGIT+ }
 
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
