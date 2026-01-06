@@ -23,7 +23,7 @@ cleanup() {
 trap cleanup EXIT
 
 # Bump version in root package.json
-yarn version prerelease
+yarn version patch
 
 # Get the new version
 VERSION=$(node -p "require('./package.json').version")
