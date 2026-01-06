@@ -59,7 +59,6 @@ const config: ForgeConfig = {
       options: {
         bin: 'Taxi',
         id: 'com.helveticascenario.taxi',
-        files: []
       },
     }),
   ],
