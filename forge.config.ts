@@ -40,7 +40,9 @@ const config: ForgeConfig = {
   },
   rebuildConfig: {},
   makers: [
-    new MakerSquirrel({}),
+    new MakerSquirrel({
+      name: 'Taxi',
+    }),
     new MakerZIP({}, ['darwin']),
     new MakerRpm({
       options: {
