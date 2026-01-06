@@ -1,5 +1,6 @@
 use cpal::FromSample;
 use cpal::Host;
+use cpal::HostId;
 use cpal::SizedSample;
 use cpal::traits::{DeviceTrait, HostTrait};
 
@@ -710,26 +711,51 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
 }
 
 pub fn get_host_by_preference() -> Host {
-    #[cfg(target_os = "windows")]
+  #[cfg(target_os = "windows")]
+  {
+    // Try ASIO first if compiled with the feature
     {
-        // Try ASIO first if compiled with the feature
-        #[cfg(feature = "asio")]
-        {
-            if let Ok(asio_host) = cpal::host_from_id(HostId::Asio) {
-                println!("Using ASIO");
-                return asio_host;
-            }
-        }
-        
-        // Fall back to WASAPI
-        if let Ok(wasapi) = cpal::host_from_id(HostId::Wasapi) {
-            println!("Using WASAPI");
-            return wasapi;
-        }
+      if let Ok(asio_host) = cpal::host_from_id(HostId::Asio) {
+        println!("Using ASIO");
+        return asio_host;
+      }
     }
-    
-    // Default for other platforms or final fallback
-    cpal::default_host()
+
+    // Fall back to WASAPI
+    if let Ok(wasapi) = cpal::host_from_id(HostId::WasapiHost) {
+      println!("Using WASAPI");
+      return wasapi;
+    }
+  }
+
+  #[cfg(target_os = "macos")]
+  {
+    // Try CoreAudio on macOS
+    if let Ok(coreaudio_host) = cpal::host_from_id(HostId::CoreAudio) {
+      println!("Using CoreAudio");
+      return coreaudio_host;
+    }
+  }
+
+  #[cfg(target_os = "linux")]
+  {
+    if let Ok(jack_host) = cpal::host_from_id(HostId::Jack) {
+      println!("Using JACK");
+      return jack_host;
+    }
+
+    // Try ALSA on Linux
+    if let Ok(alsa_host) = cpal::host_from_id(HostId::Alsa) {
+      println!("Using ALSA");
+      return alsa_host;
+    }
+  }
+
+
+  // Fallback to the default host
+  let default_host = cpal::default_host();
+  println!("Using default host: {:?}", default_host.id());
+  default_host
 }
 
 /// Get the sample rate from the default audio device
