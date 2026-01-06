@@ -1,5 +1,3 @@
-Activate the serena project modular
-
 # Copilot instructions (modular)
 
 ## Big picture
