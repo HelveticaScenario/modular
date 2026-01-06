@@ -3,6 +3,7 @@ import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { MakerDeb } from '@electron-forge/maker-deb';
 import { MakerRpm } from '@electron-forge/maker-rpm';
+import { MakerFlatpak } from '@electron-forge/maker-flatpak';
 import { PublisherGithub } from '@electron-forge/publisher-github';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { WebpackPlugin } from '@electron-forge/plugin-webpack';
@@ -52,6 +53,13 @@ const config: ForgeConfig = {
     new MakerDeb({
       options: {
         bin: 'Taxi',
+      },
+    }),
+    new MakerFlatpak({
+      options: {
+        bin: 'Taxi',
+        id: 'com.helveticascenario.taxi',
+        files: []
       },
     }),
   ],
