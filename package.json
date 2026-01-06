@@ -1,7 +1,7 @@
 {
     "name": "@modular/app",
     "productName": "Taxi",
-    "version": "0.0.0-10",
+    "version": "1.0.1",
     "description": "My Electron application description",
     "main": ".webpack/main",
     "repository": {
@@ -93,6 +93,5 @@
             "--import",
             "@oxc-node/core/register"
         ]
-    },
-    "stableVersion": "1.0.0"
+    }
 }
