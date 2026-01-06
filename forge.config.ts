@@ -42,6 +42,9 @@ const config: ForgeConfig = {
   makers: [
     new MakerSquirrel({
       name: 'Taxi',
+      // Convert version format for NuGet compatibility
+      // e.g., '0.0.0-9' -> '0.0.0-alpha.9'
+      version: process.env.npm_package_version?.replace(/^(.+)-(\d+)$/, '$1-alpha.$2') || undefined,
     }),
     new MakerZIP({}, ['darwin']),
     new MakerRpm({
