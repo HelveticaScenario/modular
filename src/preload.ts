@@ -1,7 +1,7 @@
 // See the Electron documentation for details on how to use preload scripts:
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 import { contextBridge, ipcRenderer } from 'electron/renderer';
-import { IPC_CHANNELS, IPCHandlers, IPCRequest, IPCResponse, Promisify, MENU_CHANNELS } from './ipcTypes';
+import { IPC_CHANNELS, IPCHandlers, IPCRequest, IPCResponse, Promisify, MENU_CHANNELS, ContextMenuOptions, ContextMenuAction } from './ipcTypes';
 
 
 
@@ -60,6 +60,9 @@ export interface ElectronAPI {
     onMenuStop: (callback: () => void) => () => void;
     onMenuUpdatePatch: (callback: () => void) => () => void;
     onMenuOpenWorkspace: (callback: () => void) => () => void;
+    // UI operations
+    showContextMenu: (options: ContextMenuOptions) => Promise<void>;
+    onContextMenuCommand: (callback: (action: ContextMenuAction) => void) => () => void;
 
     // Window operations
     openHelpWindow: () => Promise<void>;
@@ -167,6 +170,14 @@ const electronAPI: ElectronAPI = {
         const subscription = (_event: any) => callback();
         ipcRenderer.on(MENU_CHANNELS.OPEN_WORKSPACE, subscription);
         return () => ipcRenderer.removeListener(MENU_CHANNELS.OPEN_WORKSPACE, subscription);
+    },
+
+    // UI operations
+    showContextMenu: (options) => invokeIPC('SHOW_CONTEXT_MENU', options),
+    onContextMenuCommand: (callback) => {
+        const subscription = (_event: any, action: ContextMenuAction) => callback(action);
+        ipcRenderer.on(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, subscription);
+        return () => ipcRenderer.removeListener(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, subscription);
     }
 };
 

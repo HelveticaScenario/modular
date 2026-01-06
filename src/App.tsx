@@ -14,7 +14,7 @@ import type { FileTreeEntry } from './ipcTypes';
 import { v4 } from 'uuid';
 
 const DEFAULT_PATCH = `// Simple 440 Hz sine wave
-const osc = sine(note('A4'));
+const osc = sine('a4');
 out.source(osc);
 `;
 
@@ -28,8 +28,9 @@ export type EditorBuffer =
           filePath: string;
           content: string;
           dirty: boolean;
+          isPreview?: boolean;
       }
-    | { kind: 'untitled'; id: string; content: string; dirty: boolean };
+    | { kind: 'untitled'; id: string; content: string; dirty: boolean; isPreview?: boolean };
 
 type UnsavedBufferSnapshot =
     | {
@@ -201,6 +202,22 @@ function App() {
         },
     );
 
+    // Initialize used untitled numbers from initial buffers
+    useEffect(() => {
+        const used = new Set<number>();
+        buffers.forEach(b => {
+             if (b.kind === 'untitled') {
+                 // Format is "untitled-N"
+                 const match = b.id.match(/^untitled-(\d+)$/);
+                 if (match) {
+                     used.add(parseInt(match[1], 10));
+                 }
+             }
+        });
+        setUsedUntitledNumbers(used);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); 
+
     const activeBuffer = buffers.find((b) => getBufferId(b) === activeBufferId);
     const patchCode = activeBuffer?.content ?? DEFAULT_PATCH;
 
@@ -215,6 +232,10 @@ function App() {
     const [validationErrors, setValidationErrors] = useState<
         ValidationError[] | null
     >(null);
+
+    // Track used untitled numbers
+    const [usedUntitledNumbers, setUsedUntitledNumbers] = useState<Set<number>>(new Set());
+
     const { schemas: schemasMap } = useSchemas();
     const [scopeViews, setScopeViews] = useState<ScopeView[]>([]);
     const [runningBufferId, setRunningBufferId] = useState<string | null>(null);
@@ -360,7 +381,7 @@ function App() {
 
     const formatFileLabel = useCallback((buffer: EditorBuffer) => {
         if (buffer.kind === 'untitled') {
-            return `Untitled-${buffer.id}`;
+            return buffer.id; // id is "untitled-N" now
         }
         return buffer.filePath;
     }, []);
@@ -380,7 +401,7 @@ function App() {
             setBuffers((prev) =>
                 prev.map((b) =>
                     getBufferId(b) === activeBufferId
-                        ? { ...b, content: value, dirty: true }
+                        ? { ...b, content: value, dirty: true, isPreview: false }
                         : b,
                 ),
             );
@@ -389,7 +410,7 @@ function App() {
     );
 
     const openFile = useCallback(
-        async (relPath: string) => {
+        async (relPath: string, options?: { preview?: boolean }) => {
             if (!workspaceRoot) {
                 setError('No workspace open');
                 return;
@@ -402,7 +423,14 @@ function App() {
             const existing = buffers.find(
                 (b) => b.kind === 'file' && b.filePath === absPath,
             );
+            
             if (existing) {
+                // If opening explicitly (double click or non-preview), clear preview status
+                if (options?.preview === false && existing.isPreview) {
+                    setBuffers(prev => prev.map(b => 
+                        getBufferId(b) === getBufferId(existing) ? { ...b, isPreview: false } : b
+                    ));
+                }
                 setActiveBufferId(getBufferId(existing));
                 return;
             }
@@ -410,15 +438,29 @@ function App() {
             // Load from filesystem
             try {
                 const content = await electronAPI.filesystem.readFile(absPath);
-                const newBuffer: EditorBuffer = {
-                    kind: 'file',
-                    filePath: absPath,
-                    content,
-                    id: v4(),
-                    dirty: false,
-                };
-                setBuffers((prev) => [...prev, newBuffer]);
-                setActiveBufferId(getBufferId(newBuffer));
+                
+                 setBuffers((prev) => {
+                    let nextBuffers = [...prev];
+                    const existingPreviewIndex = nextBuffers.findIndex(b => b.isPreview);
+                    
+                    if (options?.preview && existingPreviewIndex !== -1) {
+                        const previewBuffer = nextBuffers[existingPreviewIndex];
+                        if (!previewBuffer.dirty) {
+                             nextBuffers.splice(existingPreviewIndex, 1);
+                        }
+                    }
+
+                    const newBuffer: EditorBuffer = {
+                        kind: 'file',
+                        filePath: absPath,
+                        content,
+                        id: v4(),
+                        dirty: false,
+                        isPreview: options?.preview ?? false
+                    };
+                    return [...nextBuffers, newBuffer];
+                });
+                setActiveBufferId(absPath); // For files, ID is filePath
             } catch (error) {
                 setError(`Failed to open file: ${relPath}`);
             }
@@ -427,19 +469,32 @@ function App() {
     );
 
     const createUntitledFile = useCallback(() => {
-        const nextId = `untitled-${Date.now()}`;
+        let nextIdNum = 1;
+        while (usedUntitledNumbers.has(nextIdNum)) {
+            nextIdNum++;
+        }
+        
+        const nextId = `untitled-${nextIdNum}`;
         const newBuffer: EditorBuffer = {
             kind: 'untitled',
             id: nextId,
             content: DEFAULT_PATCH,
             dirty: false,
         };
+        
+        setUsedUntitledNumbers(prev => {
+            const next = new Set(prev);
+            next.add(nextIdNum);
+            return next;
+        });
+
         setBuffers((prev) => [...prev, newBuffer]);
         setActiveBufferId(nextId);
-    }, []);
+    }, [usedUntitledNumbers]);
 
-    const saveFile = useCallback(async () => {
-        const buffer = buffers.find((b) => getBufferId(b) === activeBufferId);
+    const saveFile = useCallback(async (targetId?: string) => {
+        const idToSave = targetId || activeBufferId;
+        const buffer = buffers.find((b) => getBufferId(b) === idToSave);
         if (!buffer) return;
 
         if (buffer.kind === 'untitled') {
@@ -457,10 +512,21 @@ function App() {
             );
 
             if (result.success) {
+                // If it was untitled, release the number
+                const match = buffer.id.match(/^untitled-(\d+)$/);
+                 if (match) {
+                     const num = parseInt(match[1], 10);
+                     setUsedUntitledNumbers(prev => {
+                         const next = new Set(prev);
+                         next.delete(num);
+                         return next;
+                     });
+                 }
+
                 // Replace untitled buffer with file buffer
                 setBuffers((prev) =>
                     prev.map((b) =>
-                        getBufferId(b) === activeBufferId
+                        getBufferId(b) === idToSave
                             ? {
                                   kind: 'file' as const,
                                   filePath: normalized,
@@ -471,7 +537,10 @@ function App() {
                             : b,
                     ),
                 );
-                setActiveBufferId(normalized);
+                // Only change active buffer if we just saved the active one
+                if (idToSave === activeBufferId) {
+                    setActiveBufferId(normalized);
+                }
                 await refreshFileTree();
             } else {
                 setError(result.error || 'Failed to save file');
@@ -486,7 +555,7 @@ function App() {
             if (result.success) {
                 setBuffers((prev) =>
                     prev.map((b) =>
-                        getBufferId(b) === activeBufferId
+                        getBufferId(b) === idToSave
                             ? { ...b, dirty: false }
                             : b,
                     ),
@@ -497,84 +566,178 @@ function App() {
         }
     }, [activeBufferId, buffers, normalizeFileName, refreshFileTree]);
 
-    const renameFile = useCallback(async () => {
-        const buffer = buffers.find((b) => getBufferId(b) === activeBufferId);
-        if (!buffer || buffer.kind !== 'file') return;
+    const [renamingPath, setRenamingPath] = useState<string | null>(null);
 
-        const currentFileName = buffer.filePath.split(/[/\\]/).pop();
+    const renameFile = useCallback(async (targetIdOrPath?: string) => {
+        // targetIdOrPath can be a buffer ID or a file path
+        let filePath: string | undefined;
 
-        const input = await electronAPI.filesystem.showInputDialog(
-            'Rename file',
-            currentFileName || buffer.filePath,
-        );
-        if (!input) return;
+        // Try to resolve absolute path if it's relative
+        let resolvedPath = targetIdOrPath;
+        if (targetIdOrPath && workspaceRoot && !targetIdOrPath.startsWith('/') && !targetIdOrPath.match(/^[a-zA-Z]:/)) {
+            resolvedPath = `${workspaceRoot}/${targetIdOrPath}`;
+        }
 
-        const normalized = normalizeFileName(input);
+        // Try to find if it corresponds to an open buffer
+        const buffer = buffers.find((b) => getBufferId(b) === targetIdOrPath) 
+            || buffers.find((b) => b.kind === 'file' && b.filePath === resolvedPath);
+        
+        if (buffer && buffer.kind === 'file') {
+            filePath = buffer.filePath;
+        } else if (resolvedPath && typeof resolvedPath === 'string') {
+            // Assume it's a file path if provided
+             filePath = resolvedPath;
+        } else if (activeBufferId) {
+             const active = buffers.find(b => getBufferId(b) === activeBufferId);
+             if (active && active.kind === 'file') {
+                 filePath = active.filePath;
+             }
+        }
+
+        if (!filePath) return;
+        setRenamingPath(filePath);
+    }, [activeBufferId, buffers, workspaceRoot]);
+
+    const handleRenameCommit = useCallback(async (oldPath: string, newName: string) => {
+        setRenamingPath(null);
+        if (!newName) return;
+        
+        const currentFileName = oldPath.split(/[/\\]/).pop();
+        if (newName === currentFileName) return;
+
+        const normalized = normalizeFileName(newName);
 
         // Construct new path in same directory
-        const separator = buffer.filePath.includes('\\') ? '\\' : '/';
-        const lastSepIndex = buffer.filePath.lastIndexOf(separator);
+        const separator = oldPath.includes('\\') ? '\\' : '/';
+        const lastSepIndex = oldPath.lastIndexOf(separator);
         let newPath = normalized;
         if (lastSepIndex !== -1) {
-            const dir = buffer.filePath.substring(0, lastSepIndex);
+            const dir = oldPath.substring(0, lastSepIndex);
             newPath = `${dir}${separator}${normalized}`;
         }
 
-        if (!newPath || newPath === buffer.filePath) return;
+        if (!newPath || newPath === oldPath) return;
 
         const result = await electronAPI.filesystem.renameFile(
-            buffer.filePath,
+            oldPath,
             newPath,
         );
 
         if (result.success) {
+            // Update buffer if it was open
+            // Note: We should traverse all buffers to see if any match the old path
             setBuffers((prev) =>
                 prev.map((b) =>
-                    getBufferId(b) === activeBufferId
+                    (b.kind === 'file' && b.filePath === oldPath)
                         ? { ...b, filePath: newPath }
                         : b,
                 ),
             );
-            setActiveBufferId(newPath);
+            
+            // If the active buffer was the one renamed (via ID or path match)
+            // Note: getBufferId might still refer to old path if we haven't updated state fully, 
+            // but we are updating setBuffers above.
+            // If active buffer is a file and matches oldPath, we should update ID tracking if we rely on it.
+            // But we use activeBufferId === getBufferId(activeBuffer).
+            // If getBufferId uses filePath, it changes.
+            // If we renamed the active buffer...
+            const wasActive = buffers.some(b => getBufferId(b) === activeBufferId && b.kind === 'file' && b.filePath === oldPath);
+            if (wasActive) {
+                setActiveBufferId(newPath); // new ID for file buffer is the file path
+            }
+            
             await refreshFileTree();
         } else {
             setError(result.error || 'Failed to rename file');
         }
+
     }, [activeBufferId, buffers, normalizeFileName, refreshFileTree]);
 
-    const deleteFile = useCallback(async () => {
-        const buffer = buffers.find((b) => getBufferId(b) === activeBufferId);
-        if (!buffer || buffer.kind !== 'file') return;
+    const deleteFile = useCallback(async (targetIdOrPath?: string) => {
+        let filePath: string | undefined;
+        let bufferId: string | undefined;
 
-        if (!window.confirm(`Delete ${buffer.filePath}?`)) return;
+        // Try to resolve absolute path if it's relative
+        let resolvedPath = targetIdOrPath;
+        if (targetIdOrPath && workspaceRoot && !targetIdOrPath.startsWith('/') && !targetIdOrPath.match(/^[a-zA-Z]:/)) {
+            resolvedPath = `${workspaceRoot}/${targetIdOrPath}`;
+        }
 
-        const result = await electronAPI.filesystem.deleteFile(buffer.filePath);
+        // Try to find if it corresponds to an open buffer by absolute path or ID
+        const buffer = buffers.find((b) => getBufferId(b) === targetIdOrPath) 
+             || buffers.find((b) => b.kind === 'file' && b.filePath === resolvedPath);
+
+        if (buffer && buffer.kind === 'file') {
+            filePath = buffer.filePath;
+            bufferId = getBufferId(buffer);
+        } else if (resolvedPath && typeof resolvedPath === 'string') {
+             filePath = resolvedPath;
+        } else if (activeBufferId) {
+             const active = buffers.find(b => getBufferId(b) === activeBufferId);
+             if (active && active.kind === 'file') {
+                 filePath = active.filePath;
+                 bufferId = getBufferId(active);
+             }
+        }
+
+        if (!filePath) return;
+
+        if (!window.confirm(`Delete ${filePath}?`)) return;
+
+        const result = await electronAPI.filesystem.deleteFile(filePath);
 
         if (result.success) {
-            // Remove buffer and switch to another
-            setBuffers((prev) => {
+            // Remove buffer if open
+            // If the file was open, we need to close it.
+            // Check all buffers
+             setBuffers((prev) => {
                 const filtered = prev.filter(
-                    (b) => getBufferId(b) !== activeBufferId,
+                    (b) => !(b.kind === 'file' && b.filePath === filePath),
                 );
-                if (filtered.length === 0) {
-                    // Create a new untitled buffer if this was the last one
-                    return [
-                        {
-                            kind: 'untitled',
-                            id: v4(),
-                            content: DEFAULT_PATCH,
-                            dirty: false,
-                        },
-                    ];
-                }
                 return filtered;
             });
-            setActiveBufferId(getBufferId(buffers[0]));
+
+            // If the deleted file was active, switch.
+            const activeIsDeleted = activeBufferId && (
+                 (bufferId && activeBufferId === bufferId) ||
+                 (buffers.find(b => getBufferId(b) === activeBufferId)?.kind === 'file' 
+                  && (buffers.find(b => getBufferId(b) === activeBufferId) as any).filePath === filePath)
+            );
+
+            if (activeIsDeleted) {
+                 // The active buffer is gone. We need to pick a new one.
+                 // Since we don't have access to the *new* buffers list here immediately (setState is async),
+                 // we estimate.
+                 const remaining = buffers.filter(b => !(b.kind === 'file' && b.filePath === filePath));
+                 if (remaining.length > 0) {
+                     setActiveBufferId(getBufferId(remaining[0]));
+                 } else {
+                     setActiveBufferId(undefined);
+                 }
+            }
+            
             await refreshFileTree();
         } else {
             setError(result.error || 'Failed to delete file');
         }
     }, [activeBufferId, buffers, refreshFileTree]);
+
+    // Handle context menu commands
+    useEffect(() => {
+        return electronAPI.onContextMenuCommand((action) => {
+            switch (action.command) {
+                case 'save':
+                    saveFile(action.bufferId);
+                    break;
+                case 'rename':
+                    renameFile(action.path || action.bufferId);
+                    break;
+                case 'delete':
+                    deleteFile(action.path || action.bufferId);
+                    break;
+            }
+        });
+    }, [saveFile, renameFile, deleteFile]);
 
     const closeBuffer = useCallback(
         (bufferId: string) => {
@@ -597,6 +760,19 @@ function App() {
                 );
                 return filtered;
             });
+            
+            // If it was untitled, release the number
+            if (buffer.kind === 'untitled') {
+                 const match = buffer.id.match(/^untitled-(\d+)$/);
+                 if (match) {
+                     const num = parseInt(match[1], 10);
+                     setUsedUntitledNumbers(prev => {
+                         const next = new Set(prev);
+                         next.delete(num);
+                         return next;
+                     });
+                 }
+            }
 
             if (activeBufferId === bufferId) {
                 const remaining = buffers.filter(
@@ -737,6 +913,14 @@ function App() {
             });
     }, [isRecording]);
 
+    const keepBuffer = useCallback((bufferId: string) => {
+        setBuffers((prev) =>
+            prev.map((b) =>
+                getBufferId(b) === bufferId ? { ...b, isPreview: false } : b,
+            ),
+        );
+    }, []);
+
     return (
         <div className="app">
             <header className="app-header">
@@ -794,6 +978,7 @@ function App() {
                             buffers={buffers}
                             activeBufferId={activeBufferId}
                             runningBufferId={runningBufferId}
+                            renamingPath={renamingPath}
                             formatLabel={(buffer) => {
                                 const path = formatFileLabel(buffer);
                                 const parts = path.split(/[/\\]/);
@@ -808,6 +993,9 @@ function App() {
                             onCloseBuffer={closeBuffer}
                             onSelectWorkspace={selectWorkspaceFolder}
                             onRefreshTree={refreshFileTree}
+                            onRenameCommit={handleRenameCommit}
+                            onRenameCancel={() => setRenamingPath(null)}
+                            onKeepBuffer={keepBuffer}
                         />
                     </>
                 )}

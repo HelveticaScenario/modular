@@ -1,6 +1,6 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, shell, MenuItem } from 'electron';
 import { getSchemas, PatchGraph, Synthesizer, parsePattern } from '@modular/core';
-import { IPC_CHANNELS, IPCHandlers, FileTreeEntry, MENU_CHANNELS } from './ipcTypes';
+import { IPC_CHANNELS, IPCHandlers, FileTreeEntry, MENU_CHANNELS, ContextMenuOptions } from './ipcTypes';
 import { reconcilePatchBySimilarity } from './patchSimilarityRemap';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -301,6 +301,57 @@ registerIPCHandler('SYNTH_IS_STOPPED', () => {
   return synth.isStopped();
 });
 
+registerIPCHandler('SHOW_CONTEXT_MENU', (options: ContextMenuOptions) => {
+    // We import Menu, MenuItem dynamically or assume they are available if imported at top
+    // Since imports are top-level, we can use them.
+    const menu = new Menu();
+    const webContents = BrowserWindow.getAllWindows()[0]?.webContents;
+
+    if (!webContents) return;
+
+    if (options.type === 'untitled') {
+        menu.append(new MenuItem({
+            label: 'Save',
+            click: () => webContents.send(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, { command: 'save', bufferId: options.bufferId })
+        }));
+    } else if (options.type === 'file' || options.type === 'directory') {
+        const filePath = options.path;
+
+        if (options.type === 'file') {
+             if (options.isOpenBuffer) {
+                  menu.append(new MenuItem({
+                      label: 'Save',
+                      click: () => webContents.send(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, { command: 'save', bufferId: options.bufferId })
+                  }));
+                  menu.append(new MenuItem({ type: 'separator' }));
+             }
+        }
+        
+        menu.append(new MenuItem({
+            label: 'Rename...',
+            click: () => webContents.send(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, { command: 'rename', path: options.path, bufferId: options.bufferId })
+        }));
+        
+        menu.append(new MenuItem({
+            label: 'Delete',
+            click: () => webContents.send(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, { command: 'delete', path: options.path, bufferId: options.bufferId })
+        }));
+
+        menu.append(new MenuItem({ type: 'separator' }));
+        menu.append(new MenuItem({
+            label: 'Reveal in Finder/Explorer',
+            click: () => {
+                if (filePath) {
+                    const absPath = validatePathInWorkspace(filePath);
+                    if (absPath) shell.showItemInFolder(absPath);
+                }
+            }
+        }));
+    }
+
+    menu.popup();
+});
+
 // Filesystem IPC handlers
 // @ts-ignore - async handler returns Promise
 registerIPCHandler('FS_SELECT_WORKSPACE', async () => {
@@ -390,6 +441,22 @@ registerIPCHandler('FS_RENAME_FILE', (oldPath, newPath) => {
     const dir = path.dirname(newAbsolutePath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // Check for collision
+    if (fs.existsSync(newAbsolutePath)) {
+      // Check if it's the same file (e.g. case-only rename on case-insensitive FS)
+      try {
+        const oldStat = fs.statSync(oldAbsolutePath);
+        const newStat = fs.statSync(newAbsolutePath);
+        // If inodes coincide, it's the same file, so allow rename (case change)
+        if (oldStat.ino !== newStat.ino) {
+           return { success: false, error: 'A file with that name already exists.' };
+        }
+      } catch (e) {
+         // If we can't verify, be safe and prevent overwrite
+         return { success: false, error: 'A file with that name already exists.' };
+      }
     }
 
     fs.renameSync(oldAbsolutePath, newAbsolutePath);

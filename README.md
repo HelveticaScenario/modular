@@ -49,21 +49,20 @@ The frontend will be available at `http://localhost:5173`
 
 **Simple Sine Wave:**
 ```javascript
-const osc = sine('osc1').freq(hz(440));
+const osc = sine('440hz');
 out.source(osc);
 ```
 
 **Musical Note:**
 ```javascript
-const osc = sine('osc1').freq(note('a4'));
+const osc = sine('a4');
 out.source(osc);
 ```
 
 **FM Synthesis:**
 ```javascript
-const modulator = sine('mod').freq(note('a4'));
-const carrier = sine('carrier')
-  .freq(note('a4'))
+const modulator = sine('a4');
+const carrier = sine('a4')
   .phase(modulator.scale(0.5));
 out.source(carrier);
 ```

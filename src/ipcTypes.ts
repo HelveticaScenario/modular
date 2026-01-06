@@ -43,6 +43,24 @@ export interface WorkspaceFolder {
     path: string;
 }
 
+export interface ContextMenuOptions {
+    type: 'file' | 'directory' | 'unknown' | 'untitled';
+    path?: string;
+    bufferId?: string;
+    isWorkspaceFile?: boolean;
+    isOpenBuffer?: boolean;
+    x?: number;
+    y?: number;
+}
+
+export type ContextMenuCommand = 'save' | 'rename' | 'delete';
+
+export interface ContextMenuAction {
+    command: ContextMenuCommand;
+    path?: string;
+    bufferId?: string;
+}
+
 /**
  * IPC Channel names - centralized to avoid typos
  */
@@ -76,6 +94,10 @@ export const IPC_CHANNELS = {
     FS_CREATE_FOLDER: 'modular:fs:create-folder',
     FS_SHOW_SAVE_DIALOG: 'modular:fs:show-save-dialog',
     FS_SHOW_INPUT_DIALOG: 'modular:fs:show-input-dialog',
+
+    // UI operations
+    SHOW_CONTEXT_MENU: 'ui:show-context-menu',
+    ON_CONTEXT_MENU_COMMAND: 'ui:on-context-menu-command',
 
     // Window operations
     OPEN_HELP_WINDOW: 'modular:window:open-help',
@@ -132,6 +154,10 @@ export interface IPCHandlers {
     [IPC_CHANNELS.FS_CREATE_FOLDER]: (filePath: string) => FSOperationResult;
     [IPC_CHANNELS.FS_SHOW_SAVE_DIALOG]: (defaultPath?: string) => string | null;
     [IPC_CHANNELS.FS_SHOW_INPUT_DIALOG]: (title: string, defaultValue?: string) => string | null;
+
+    // UI operations
+    [IPC_CHANNELS.SHOW_CONTEXT_MENU]: (options: ContextMenuOptions) => void;
+    [IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND]: (action: ContextMenuAction) => void;
 
     // Window operations
     [IPC_CHANNELS.OPEN_HELP_WINDOW]: () => void;
