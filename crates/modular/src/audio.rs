@@ -722,7 +722,7 @@ pub fn get_host_by_preference() -> Host {
     }
 
     // Fall back to WASAPI
-    if let Ok(wasapi) = cpal::host_from_id(HostId::WasapiHost) {
+    if let Ok(wasapi) = cpal::host_from_id(HostId::Wasapi) {
       println!("Using WASAPI");
       return wasapi;
     }
