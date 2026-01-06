@@ -7,7 +7,7 @@ import { useSchemas } from './SchemaContext';
 import './App.css';
 import type { editor } from 'monaco-editor';
 import { findScopeCallEndLines } from './utils/findScopeCallEndLines';
-import { FileExplorer, SCRATCH_FILE } from './components/FileExplorer';
+import { FileExplorer } from './components/FileExplorer';
 import electronAPI from './electronAPI';
 import { ModuleSchema, ScopeItem, ValidationError } from '@modular/core';
 import type { FileTreeEntry } from './ipcTypes';
@@ -216,7 +216,6 @@ function App() {
         ValidationError[] | null
     >(null);
     const { schemas: schemasMap } = useSchemas();
-    const schemas = Object.values(schemasMap);
     const [scopeViews, setScopeViews] = useState<ScopeView[]>([]);
     const [runningBufferId, setRunningBufferId] = useState<string | null>(null);
 
@@ -314,8 +313,8 @@ function App() {
 
     const schemaRef = useRef<ModuleSchema[]>([]);
     useEffect(() => {
-        schemaRef.current = schemas;
-    }, [schemas]);
+        schemaRef.current = Object.values(schemasMap);
+    }, [schemasMap]);
 
     const patchCodeRef = useRef<string>(patchCode);
     useEffect(() => {
@@ -739,87 +738,81 @@ function App() {
     }, [isRecording]);
 
     return (
-            <div className="app">
-                <header className="app-header">
-                    <h1></h1>
-                    <AudioControls
-                        isRunning={isClockRunning}
-                        isRecording={isRecording}
-                        onStop={handleStopRef.current}
-                        onStartRecording={async () => {
-                            await electronAPI.synthesizer.startRecording();
-                            setIsRecording(true);
-                        }}
-                        onStopRecording={async () => {
-                            await electronAPI.synthesizer.stopRecording();
-                            setIsRecording(false);
-                        }}
-                        onUpdatePatch={handleSubmitRef.current}
-                    />
-                </header>
-
-                <ErrorDisplay
-                    error={error}
-                    errors={validationErrors}
-                    onDismiss={dismissError}
+        <div className="app">
+            <header className="app-header">
+                <h1></h1>
+                <AudioControls
+                    isRunning={isClockRunning}
+                    isRecording={isRecording}
+                    onStop={handleStopRef.current}
+                    onStartRecording={async () => {
+                        await electronAPI.synthesizer.startRecording();
+                        setIsRecording(true);
+                    }}
+                    onStopRecording={async () => {
+                        await electronAPI.synthesizer.stopRecording();
+                        setIsRecording(false);
+                    }}
+                    onUpdatePatch={handleSubmitRef.current}
                 />
+            </header>
 
-                <main className="app-main">
-                    {!workspaceRoot ? (
-                        <div className="empty-state">
-                            <button
-                                className="open-folder-button"
-                                onClick={selectWorkspaceFolder}
-                            >
-                                Open Folder
-                            </button>
-                        </div>
-                    ) : (
-                        <>
-                            <div className="editor-panel">
-                                <PatchEditor
-                                    value={patchCode}
-                                    lastSubmittedCode={lastSubmittedCode}
-                                    currentFile={activeBufferId}
-                                    onChange={handlePatchChange}
-                                    onSubmit={handleSubmitRef}
-                                    onStop={handleStopRef}
-                                    onSave={handleSaveFileRef}
-                                    editorRef={editorRef}
-                                    schemas={schemas}
-                                    scopeViews={scopeViews}
-                                    onRegisterScopeCanvas={registerScopeCanvas}
-                                    onUnregisterScopeCanvas={
-                                        unregisterScopeCanvas
-                                    }
-                                />
-                            </div>
+            <ErrorDisplay
+                error={error}
+                errors={validationErrors}
+                onDismiss={dismissError}
+            />
 
-                            <FileExplorer
-                                workspaceRoot={workspaceRoot}
-                                fileTree={fileTree}
-                                buffers={buffers}
-                                activeBufferId={activeBufferId}
-                                runningBufferId={runningBufferId}
-                                formatLabel={(buffer) => {
-                                    const path = formatFileLabel(buffer);
-                                    const parts = path.split(/[/\\]/);
-                                    return parts[parts.length - 1];
-                                }}
-                                onSelectBuffer={setActiveBufferId}
-                                onOpenFile={openFile}
-                                onCreateFile={createUntitledFile}
-                                onSaveFile={handleSaveFileRef.current}
-                                onRenameFile={renameFile}
-                                onDeleteFile={deleteFile}
-                                onCloseBuffer={closeBuffer}
-                                onSelectWorkspace={selectWorkspaceFolder}
-                                onRefreshTree={refreshFileTree}
+            <main className="app-main">
+                {!workspaceRoot ? (
+                    <div className="empty-state">
+                        <button
+                            className="open-folder-button"
+                            onClick={selectWorkspaceFolder}
+                        >
+                            Open Folder
+                        </button>
+                    </div>
+                ) : (
+                    <>
+                        <div className="editor-panel">
+                            <PatchEditor
+                                value={patchCode}
+                                lastSubmittedCode={lastSubmittedCode}
+                                currentFile={activeBufferId}
+                                onChange={handlePatchChange}
+                                editorRef={editorRef}
+                                scopeViews={scopeViews}
+                                onRegisterScopeCanvas={registerScopeCanvas}
+                                onUnregisterScopeCanvas={unregisterScopeCanvas}
                             />
-                        </>
-                    )}
-                </main>
-            </div>
+                        </div>
+
+                        <FileExplorer
+                            workspaceRoot={workspaceRoot}
+                            fileTree={fileTree}
+                            buffers={buffers}
+                            activeBufferId={activeBufferId}
+                            runningBufferId={runningBufferId}
+                            formatLabel={(buffer) => {
+                                const path = formatFileLabel(buffer);
+                                const parts = path.split(/[/\\]/);
+                                return parts[parts.length - 1];
+                            }}
+                            onSelectBuffer={setActiveBufferId}
+                            onOpenFile={openFile}
+                            onCreateFile={createUntitledFile}
+                            onSaveFile={handleSaveFileRef.current}
+                            onRenameFile={renameFile}
+                            onDeleteFile={deleteFile}
+                            onCloseBuffer={closeBuffer}
+                            onSelectWorkspace={selectWorkspaceFolder}
+                            onRefreshTree={refreshFileTree}
+                        />
+                    </>
+                )}
+            </main>
+        </div>
     );
 }
 

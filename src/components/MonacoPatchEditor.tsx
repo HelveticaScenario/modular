@@ -29,15 +29,10 @@ export interface PatchEditorProps {
     value: string;
     currentFile?: string;
     onChange: (value: string) => void;
-    onSubmit: React.RefObject<() => void>;
-    onStop: React.RefObject<() => void>;
-    onSave?: React.RefObject<() => void>;
     editorRef: React.RefObject<editor.IStandaloneCodeEditor | null>;
     scopeViews?: ScopeView[];
     onRegisterScopeCanvas?: (key: string, canvas: HTMLCanvasElement) => void;
     onUnregisterScopeCanvas?: (key: string) => void;
-    // Optional explicit schemas prop; if omitted, we fall back to context.
-    schemas?: ModuleSchema[];
     lastSubmittedCode?: string | null;
 }
 
@@ -107,21 +102,18 @@ export function MonacoPatchEditor({
     value,
     currentFile,
     onChange,
-    onSubmit,
-    onStop,
-    onSave,
     editorRef,
     scopeViews = [],
     onRegisterScopeCanvas,
     onUnregisterScopeCanvas,
     lastSubmittedCode,
-    schemas: propSchemas,
 }: PatchEditorProps) {
     const { schemas: contextSchemasMap } = useSchemas();
     const schemas = useMemo(() => {
-        if (propSchemas) return propSchemas;
         return Object.values(contextSchemasMap);
-    }, [propSchemas, contextSchemasMap]);
+    }, [contextSchemasMap]);
+
+    console.log('MonacoPatchEditor schemas:', schemas);
 
     const extraLibDisposeRef = useRef<IDisposable | null>(null);
     const inlayHintDisposeRef = useRef<IDisposable | null>(null);
