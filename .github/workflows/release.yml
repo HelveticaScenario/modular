@@ -40,16 +40,16 @@ jobs:
                   sudo apt-get update
                   sudo apt-get install -y libasound2-dev libudev-dev libjack-jackd2-dev rpm
 
-            - name: Setup ASIO SDK (Windows)
-              if: matrix.os == 'windows-latest'
-              shell: powershell
-              run: |
-                  $url = "https://www.steinberg.net/asiosdk"
-                  $zip = "$env:TEMP\asiosdk.zip"
-                  Invoke-WebRequest -Uri $url -OutFile $zip
-                  Expand-Archive -Path $zip -DestinationPath "$env:TEMP\asio_temp"
-                  $subFolder = Get-ChildItem -Path "$env:TEMP\asio_temp" -Directory | Select-Object -First 1
-                  Move-Item -Path $subFolder.FullName -Destination "$env:TEMP\asio_sdk"
+            # - name: Setup ASIO SDK (Windows)
+            #   if: matrix.os == 'windows-latest'
+            #   shell: powershell
+            #   run: |
+            #       $url = "https://www.steinberg.net/asiosdk"
+            #       $zip = "$env:TEMP\asiosdk.zip"
+            #       Invoke-WebRequest -Uri $url -OutFile $zip
+            #       Expand-Archive -Path $zip -DestinationPath "$env:TEMP\asio_temp"
+            #       $subFolder = Get-ChildItem -Path "$env:TEMP\asio_temp" -Directory | Select-Object -First 1
+            #       Move-Item -Path $subFolder.FullName -Destination "$env:TEMP\asio_sdk"
 
             # macOS-specific: Import Apple certificate for signing
             - name: Import Apple Certificate
