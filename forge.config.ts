@@ -62,6 +62,7 @@ const config: ForgeConfig = {
         name: 'modular',
       },
       prerelease: false,
+      draft: false,
     }),
   ],
   plugins: [
