@@ -56,10 +56,10 @@ const config: ForgeConfig = {
       },
     }),
     new MakerFlatpak({
+      // @ts-ignore
       options: {
         bin: 'Taxi',
         id: 'com.helveticascenario.taxi',
-        files: []
       },
     }),
   ],
