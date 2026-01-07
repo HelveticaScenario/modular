@@ -16,9 +16,8 @@ export const rendererConfig: Configuration = {
   plugins: [
     ...plugins,
     new MonacoWebpackPlugin({
-      globalAPI: true
-      // options:
-      // languages: ['json', 'css', 'html', 'typescript'] // Specify only the languages you need to reduce bundle size
+      globalAPI: true,
+      languages: ['javascript', 'typescript', 'json', 'css']
     })
   ],
   resolve: {

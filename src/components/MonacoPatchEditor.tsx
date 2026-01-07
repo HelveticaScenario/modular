@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { type OnMount, useMonaco } from '@monaco-editor/react';
 import { editor, type IDisposable } from 'monaco-editor';
+import { useTheme } from '../themes/ThemeContext';
 import * as prettier from 'prettier/standalone';
 import * as prettierBabel from 'prettier/plugins/babel';
 import * as prettierEstree from 'prettier/plugins/estree';
@@ -9,6 +10,7 @@ import { buildLibSource } from '../dsl/typescriptLibGen';
 import { findScopeCallEndLines } from '../utils/findScopeCallEndLines';
 import { ModuleSchema } from '@modular/core';
 import { useCustomMonaco } from '../hooks/useCustomMonaco';
+import { configSchema } from '../configSchema';
 
 type Monaco = ReturnType<typeof useCustomMonaco>;
 
@@ -595,14 +597,106 @@ export function MonacoPatchEditor({
         onUnregisterScopeCanvas,
     ]);
 
+    const { theme: appTheme, cursorStyle } = useTheme();
+    const monacoThemeId = `theme-${appTheme.id}`;
+
+    // Define Monaco theme from the current app theme
+    useEffect(() => {
+        if (!monaco) return;
+
+        const raw = appTheme.raw;
+
+        // Convert VS Code tokenColors to Monaco rules
+        const rules = raw.tokenColors
+            .map((tc) => {
+                const scopes = Array.isArray(tc.scope)
+                    ? tc.scope
+                    : [tc.scope || ''];
+                return scopes.map((scope) => ({
+                    token: scope.replace(/\./g, ' ').trim() || '',
+                    foreground: tc.settings.foreground?.replace('#', ''),
+                    background: tc.settings.background?.replace('#', ''),
+                    fontStyle: tc.settings.fontStyle,
+                }));
+            })
+            .flat();
+
+        monaco.editor.defineTheme(monacoThemeId, {
+            base: appTheme.type === 'light' ? 'vs' : 'vs-dark',
+            inherit: true,
+            rules,
+            colors: raw.colors,
+        });
+
+        // Apply the theme to the editor
+        monaco.editor.setTheme(monacoThemeId);
+    }, [monaco, appTheme, monacoThemeId]);
+
+    // Configure JSON schema for config files
+    useEffect(() => {
+        if (!monaco) return;
+
+        // Access jsonDefaults through the languages API
+        const jsonDefaults = monaco.json.jsonDefaults;
+        jsonDefaults.setDiagnosticsOptions({
+            validate: true,
+            allowComments: true,
+            schemas: [
+                {
+                    uri: 'modular://config-schema.json',
+                    // Match any config.json file path
+                    fileMatch: [
+                        '*/config.json',
+                        '**/config.json',
+                        'config.json',
+                        '*.config.json',
+                    ],
+                    schema: configSchema,
+                },
+            ],
+        });
+    }, [monaco]);
+
+    // Also configure schema when editing config file specifically
+    useEffect(() => {
+        if (!monaco || !currentFile?.endsWith('config.json')) return;
+
+        const jsonDefaults = monaco.json.jsonDefaults;
+        // Re-apply with the specific file URI
+        const fileUri = `file://${currentFile}`;
+        jsonDefaults.setDiagnosticsOptions({
+            validate: true,
+            allowComments: true,
+            schemas: [
+                {
+                    uri: 'modular://config-schema.json',
+                    fileMatch: [
+                        fileUri,
+                        currentFile,
+                        '**/config.json',
+                        'config.json',
+                    ],
+                    schema: configSchema,
+                },
+            ],
+        });
+    }, [monaco, currentFile]);
+
+    // Determine language based on file extension
+    const editorLanguage = useMemo(() => {
+        if (!currentFile) return 'javascript';
+        if (currentFile.endsWith('.json')) return 'json';
+        return 'javascript';
+    }, [currentFile]);
+
     return (
         <div className="patch-editor" style={{ height: '100%' }}>
             {currentFile && (
                 <Editor
                     height="100%"
                     path={formatPath(currentFile)}
-                    language="javascript"
-                    theme="vs-dark"
+                    language={editorLanguage}
+                    theme={monacoThemeId}
                     value={value}
                     onChange={(val) => {
                         onChange(val ?? '');
@@ -611,11 +705,30 @@ export function MonacoPatchEditor({
                     options={{
                         minimap: { enabled: false },
                         lineNumbers: 'on',
-                        folding: true,
+                        folding: false,
                         matchBrackets: 'always',
                         automaticLayout: true,
                         fontFamily: 'Fira Code, monospace',
                         fontLigatures: true,
+                        fontSize: 13,
+                        lineHeight: 1.6,
+                        padding: { top: 8, bottom: 8 },
+                        renderLineHighlight: 'line',
+                        cursorBlinking: 'solid',
+                        cursorStyle: cursorStyle,
+                        scrollbar: {
+                            vertical: 'auto',
+                            horizontal: 'auto',
+                            verticalScrollbarSize: 8,
+                            horizontalScrollbarSize: 8,
+                        },
+                        overviewRulerBorder: false,
+                        hideCursorInOverviewRuler: true,
+                        renderLineHighlightOnlyWhenFocus: false,
+                        guides: {
+                            indentation: true,
+                            bracketPairs: false,
+                        },
                     }}
                 />
             )}

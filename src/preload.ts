@@ -1,7 +1,7 @@
 // See the Electron documentation for details on how to use preload scripts:
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 import { contextBridge, ipcRenderer } from 'electron/renderer';
-import { IPC_CHANNELS, IPCHandlers, IPCRequest, IPCResponse, Promisify, MENU_CHANNELS, ContextMenuOptions, ContextMenuAction } from './ipcTypes';
+import { IPC_CHANNELS, IPCHandlers, IPCRequest, IPCResponse, Promisify, MENU_CHANNELS, ContextMenuOptions, ContextMenuAction, AppConfig } from './ipcTypes';
 
 
 
@@ -62,6 +62,7 @@ export interface ElectronAPI {
     onMenuOpenWorkspace: (callback: () => void) => () => void;
     onMenuCloseBuffer: (callback: () => void) => () => void;
     onMenuToggleRecording: (callback: () => void) => () => void;
+    onMenuOpenSettings: (callback: () => void) => () => void;
     // UI operations
     showContextMenu: (options: ContextMenuOptions) => Promise<void>;
     onContextMenuCommand: (callback: (action: ContextMenuAction) => void) => () => void;
@@ -69,6 +70,13 @@ export interface ElectronAPI {
 
     // Window operations
     openHelpWindow: () => Promise<void>;
+
+    // Config operations
+    config: {
+        getPath: () => Promise<string>;
+        read: () => Promise<AppConfig>;
+        onChange: (callback: (config: AppConfig) => void) => () => void;
+    };
 }
 
 const electronAPI: ElectronAPI = {
@@ -184,6 +192,11 @@ const electronAPI: ElectronAPI = {
         ipcRenderer.on(MENU_CHANNELS.TOGGLE_RECORDING, subscription);
         return () => ipcRenderer.removeListener(MENU_CHANNELS.TOGGLE_RECORDING, subscription);
     },
+    onMenuOpenSettings: (callback) => {
+        const subscription = (_event: any) => callback();
+        ipcRenderer.on(MENU_CHANNELS.OPEN_SETTINGS, subscription);
+        return () => ipcRenderer.removeListener(MENU_CHANNELS.OPEN_SETTINGS, subscription);
+    },
 
     // UI operations
     showContextMenu: (options) => invokeIPC('SHOW_CONTEXT_MENU', options),
@@ -192,7 +205,18 @@ const electronAPI: ElectronAPI = {
         ipcRenderer.on(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, subscription);
         return () => ipcRenderer.removeListener(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, subscription);
     },
-    showUnsavedChangesDialog: (fileName) => invokeIPC('SHOW_UNSAVED_CHANGES_DIALOG', fileName)
+    showUnsavedChangesDialog: (fileName) => invokeIPC('SHOW_UNSAVED_CHANGES_DIALOG', fileName),
+
+    // Config operations
+    config: {
+        getPath: () => invokeIPC('CONFIG_GET_PATH'),
+        read: () => invokeIPC('CONFIG_READ'),
+        onChange: (callback) => {
+            const subscription = (_event: any, config: AppConfig) => callback(config);
+            ipcRenderer.on(IPC_CHANNELS.CONFIG_ON_CHANGE, subscription);
+            return () => ipcRenderer.removeListener(IPC_CHANNELS.CONFIG_ON_CHANGE, subscription);
+        },
+    },
 };
 
 // Expose the API to the renderer process

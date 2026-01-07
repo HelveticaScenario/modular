@@ -6,12 +6,51 @@
 @import '@fontsource/fira-code/600.css';
 
 :root {
-  font-family: 'Fira Code', 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Droid Sans Mono', monospace;
-  line-height: 1.5;
+  /* Typography - monospace as the foundation */
+  --font-mono: 'Fira Code', 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  --font-size: 13px;
+  --line-height: 1.6;
+  
+  /* Spacing units based on character width (1ch ≈ font-size * 0.6) */
+  --sp-1: 1ch;
+  --sp-2: 2ch;
+  --sp-3: 3ch;
+  --sp-4: 4ch;
+  --sp-half: 0.5ch;
+  
+  /* Colors - these are set dynamically by ThemeContext */
+  /* Fallback values match Modular Dark theme */
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #111111;
+  --bg-tertiary: #161616;
+  --bg-hover: #1a1a1a;
+  --bg-active: #1f3a3a;
+  
+  --border-subtle: #222222;
+  --border-default: #2a2a2a;
+  
+  --text-primary: #cccccc;
+  --text-secondary: #888888;
+  --text-muted: #555555;
+  --text-bright: #ffffff;
+  
+  --accent-primary: #4ec9b0;
+  --accent-secondary: #5ce1e6;
+  --accent-muted: #2d6b5f;
+  
+  --color-success: #3fb27f;
+  --color-warning: #d4a855;
+  --color-error: #e05561;
+  --color-info: #61afef;
+  
+  /* Apply base styles */
+  font-family: var(--font-mono);
+  font-size: var(--font-size);
+  line-height: var(--line-height);
   font-weight: 400;
   color-scheme: dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #1a1a1a;
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -27,10 +66,39 @@ body {
   min-height: 100vh;
 }
 
+/* Selection styling */
+::selection {
+  background: var(--accent-muted);
+  color: var(--text-bright);
+}
+
+/* Scrollbar styling - minimal */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 0;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .active-seq-step {
-    background-color: rgba(255, 255, 0, 0.3);
-    border-radius: 2px;
-    color: #fff !important;
-    font-weight: bold;
+  background-color: rgba(78, 201, 176, 0.25);
+  border-radius: 0;
+  color: var(--accent-secondary) !important;
+  font-weight: 600;
 }
 

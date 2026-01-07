@@ -58,10 +58,16 @@ try {
 }
 
 const AppConfigSchema = z.object({
+  theme: z.string().optional(),
+  cursorStyle: z.enum(['line', 'block', 'underline', 'line-thin', 'block-outline', 'underline-thin']).optional(),
   lastOpenedFolder: z.string().optional(),
 });
 
 type AppConfig = z.infer<typeof AppConfigSchema>;
+
+// File watcher for config changes
+let configWatcher: fs.FSWatcher | null = null;
+let mainWindow: BrowserWindow | null = null;
 
 function loadConfig(): AppConfig {
   try {
@@ -87,6 +93,35 @@ function saveConfig(config: AppConfig) {
   } catch (error) {
     console.error('Error saving config:', error);
   }
+}
+
+function ensureConfigExists() {
+  if (!fs.existsSync(CONFIG_FILE)) {
+    const defaultConfig: AppConfig = {
+      theme: 'modular-dark',
+      cursorStyle: 'block',
+    };
+    saveConfig(defaultConfig);
+  }
+}
+
+function startConfigWatcher() {
+  if (configWatcher) {
+    configWatcher.close();
+  }
+  
+  ensureConfigExists();
+  
+  // Watch for config file changes
+  configWatcher = fs.watch(CONFIG_FILE, (eventType) => {
+    if (eventType === 'change') {
+      const config = loadConfig();
+      // Send updated config to renderer
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(IPC_CHANNELS.CONFIG_ON_CHANGE, config);
+      }
+    }
+  });
 }
 
 // Patch reconciliation state (reset when a different file/buffer is evaluated)
@@ -602,14 +637,29 @@ registerIPCHandler('OPEN_HELP_WINDOW', async () => {
   createHelpWindow();
 });
 
+// Config IPC handlers
+registerIPCHandler('CONFIG_GET_PATH', () => {
+  ensureConfigExists();
+  return CONFIG_FILE;
+});
+
+registerIPCHandler('CONFIG_READ', () => {
+  ensureConfigExists();
+  return loadConfig();
+});
+
 /**
  * Create the main application window
  */
 const createWindow = (): void => {
+  const isMac = process.platform === 'darwin';
+  
   // Create the browser window.
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     height: 600,
     width: 800,
+    titleBarStyle: isMac ? 'hiddenInset' : 'default',
+    trafficLightPosition: isMac ? { x: 12, y: 10 } : undefined,
     webPreferences: {
       preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
     },
@@ -622,6 +672,9 @@ const createWindow = (): void => {
 
   // and load the index.html of the app.
   mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
+
+  // Start watching config file for changes
+  startConfigWatcher();
 };
 
 /**
@@ -636,6 +689,16 @@ const createMenu = (): void => {
       label: app.name,
       submenu: [
         { role: 'about' as const },
+        { type: 'separator' as const },
+        {
+          label: 'Settings...',
+          accelerator: 'Cmd+,',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send(MENU_CHANNELS.OPEN_SETTINGS);
+            }
+          }
+        },
         { type: 'separator' as const },
         { role: 'services' as const },
         { type: 'separator' as const },

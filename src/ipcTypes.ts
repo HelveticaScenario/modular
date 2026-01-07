@@ -18,6 +18,12 @@ import type {
 
 export type { PatchGraph, ApplyPatchError };
 
+export interface AppConfig {
+    theme?: string;
+    cursorStyle?: 'line' | 'block' | 'underline' | 'line-thin' | 'block-outline' | 'underline-thin';
+    lastOpenedFolder?: string;
+}
+
 export interface UpdatePatchResult {
     errors: ApplyPatchError[];
     appliedPatch: PatchGraph;
@@ -102,6 +108,11 @@ export const IPC_CHANNELS = {
 
     // Window operations
     OPEN_HELP_WINDOW: 'modular:window:open-help',
+
+    // Config operations
+    CONFIG_GET_PATH: 'modular:config:get-path',
+    CONFIG_READ: 'modular:config:read',
+    CONFIG_ON_CHANGE: 'modular:config:on-change',
 } as const;
 
 export const MENU_CHANNELS = {
@@ -111,6 +122,7 @@ export const MENU_CHANNELS = {
     OPEN_WORKSPACE: 'modular:menu:open-workspace',
     CLOSE_BUFFER: 'modular:menu:close-buffer',
     TOGGLE_RECORDING: 'modular:menu:toggle-recording',
+    OPEN_SETTINGS: 'modular:menu:open-settings',
 } as const;
 
 /**
@@ -165,6 +177,11 @@ export interface IPCHandlers {
 
     // Window operations
     [IPC_CHANNELS.OPEN_HELP_WINDOW]: () => void;
+
+    // Config operations
+    [IPC_CHANNELS.CONFIG_GET_PATH]: () => string;
+    [IPC_CHANNELS.CONFIG_READ]: () => AppConfig;
+    [IPC_CHANNELS.CONFIG_ON_CHANGE]: (config: AppConfig) => void;
 }
 
 /**

@@ -1,25 +1,42 @@
-/* App Layout */
+/* ═══════════════════════════════════════════════════════════════════════════
+   App Layout - Terminal/Editor inspired minimal design
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .app {
     display: flex;
     flex-direction: column;
     height: 100vh;
-    background-color: #1a1a1a;
-    color: #fff;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
 }
 
+/* Header - custom titlebar with drag region */
 .app-header {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     align-items: center;
-    padding: 1rem 2rem;
-    background-color: #242424;
-    border-bottom: 1px solid #333;
+    padding: var(--sp-half) var(--sp-2);
+    padding-left: 80px; /* Space for macOS traffic lights */
+    background-color: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-subtle);
+    min-height: 38px;
+    -webkit-app-region: drag;
+    user-select: none;
+}
+
+/* Allow interactive elements in header */
+.app-header button,
+.app-header input,
+.app-header select {
+    -webkit-app-region: no-drag;
 }
 
 .app-header h1 {
     margin: 0;
-    font-size: 1.5rem;
-    font-weight: 600;
+    font-size: var(--font-size);
+    font-weight: 400;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
 }
 
 .app-main {
@@ -29,12 +46,16 @@
     min-height: 0;
 }
 
-/* Editor Panel */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Editor Panel
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .editor-panel {
     flex: 1;
     display: flex;
     flex-direction: column;
-    border-right: 1px solid #333;
+    background-color: var(--bg-primary);
+    min-width: 0;
 }
 
 .patch-editor {
@@ -47,112 +68,124 @@
     height: 100%;
 }
 
-/* Audio Controls */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Audio Controls - compact terminal style
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .audio-controls {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: var(--sp-2);
 }
 
 .connection-status {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    background-color: #1a1a1a;
-    border-radius: 4px;
-    font-size: 0.85rem;
+    gap: var(--sp-1);
+    color: var(--text-secondary);
 }
 
 .status-indicator {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background-color: #666;
+    width: 1ch;
+    height: 1ch;
+    border-radius: 0;
+    background-color: var(--text-muted);
 }
 
 .status-indicator.connected {
-    background-color: #00ff00;
+    background-color: var(--color-success);
 }
 
 .status-indicator.connecting {
-    background-color: #ffff00;
+    background-color: var(--color-warning);
     animation: pulse 1s infinite;
 }
 
 .status-indicator.disconnected {
-    background-color: #666;
+    background-color: var(--text-muted);
 }
 
 .status-indicator.error {
-    background-color: #ff0000;
+    background-color: var(--color-error);
 }
 
 @keyframes pulse {
-    0%,
-    100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: 0.5;
-    }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
 }
 
 .control-buttons {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--sp-1);
 }
 
-/* Buttons */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Buttons - minimal, text-like
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .btn {
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-    border: none;
-    border-radius: 4px;
+    padding: var(--sp-half) var(--sp-1);
+    font-family: var(--font-mono);
+    font-size: var(--font-size);
+    font-weight: 400;
+    border: 1px solid var(--border-default);
+    border-radius: 0;
+    background-color: transparent;
+    color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all 0.1s ease;
+}
+
+.btn:hover:not(:disabled) {
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+    background-color: var(--bg-hover);
 }
 
 .btn:disabled {
-    opacity: 0.5;
+    opacity: 0.4;
     cursor: not-allowed;
 }
 
 .btn-primary {
-    background-color: #646cff;
-    color: white;
+    color: var(--accent-primary);
+    border-color: var(--accent-muted);
 }
 
 .btn-primary:hover:not(:disabled) {
-    background-color: #535bf2;
+    background-color: var(--accent-muted);
+    color: var(--text-bright);
+    border-color: var(--accent-primary);
 }
 
 .btn-success {
-    background-color: #22c55e;
-    color: white;
+    color: var(--color-success);
+    border-color: color-mix(in srgb, var(--color-success) 40%, transparent);
 }
 
 .btn-success:hover:not(:disabled) {
-    background-color: #16a34a;
+    background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
+    border-color: var(--color-success);
 }
 
 .btn-danger {
-    background-color: #ef4444;
-    color: white;
+    color: var(--color-error);
+    border-color: color-mix(in srgb, var(--color-error) 40%, transparent);
 }
 
 .btn-danger:hover:not(:disabled) {
-    background-color: #dc2626;
+    background-color: color-mix(in srgb, var(--color-error) 20%, transparent);
+    border-color: var(--color-error);
 }
 
 .btn-secondary {
-    background-color: #374151;
-    color: white;
+    color: var(--text-secondary);
+    border-color: var(--border-default);
 }
 
 .btn-secondary:hover:not(:disabled) {
-    background-color: #4b5563;
+    color: var(--text-primary);
+    background-color: var(--bg-hover);
 }
 
 .btn.recording {
@@ -160,57 +193,67 @@
 }
 
 @keyframes recording-pulse {
-    0%,
-    100% {
-        background-color: #ef4444;
+    0%, 100% { 
+        color: var(--color-error);
+        border-color: var(--color-error);
     }
-    50% {
-        background-color: #b91c1c;
+    50% { 
+        color: color-mix(in srgb, var(--color-error) 60%, transparent);
+        border-color: color-mix(in srgb, var(--color-error) 40%, transparent);
     }
 }
 
-/* Error Display */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Error Display - terminal error style
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .error-display {
-    padding: 0.5rem 2rem;
-    background-color: #7f1d1d;
-    border-bottom: 1px solid #991b1b;
+    padding: var(--sp-half) var(--sp-2);
+    background-color: color-mix(in srgb, var(--color-error) 15%, var(--bg-primary));
+    border-bottom: 1px solid color-mix(in srgb, var(--color-error) 30%, transparent);
 }
 
 .error-content {
     display: flex;
     align-items: flex-start;
-    gap: 0.5rem;
+    gap: var(--sp-1);
 }
 
 .error-icon {
     flex-shrink: 0;
+    color: var(--color-error);
 }
 
 .error-message {
     flex: 1;
     margin: 0;
-    font-size: 0.85rem;
-    font-family: 'Fira Code', monospace;
+    font-family: var(--font-mono);
+    font-size: var(--font-size);
     white-space: pre-wrap;
-    color: #fca5a5;
+    color: color-mix(in srgb, var(--color-error) 80%, var(--text-primary));
 }
 
 .error-dismiss {
     flex-shrink: 0;
-    width: 24px;
-    height: 24px;
+    width: 2ch;
+    height: calc(var(--font-size) * var(--line-height));
     padding: 0;
     border: none;
     background: transparent;
-    color: #fca5a5;
-    font-size: 1.25rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size);
     cursor: pointer;
     line-height: 1;
 }
 
 .error-dismiss:hover {
-    color: #fff;
+    color: var(--text-primary);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Slider Widget - minimal inline slider
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 .slider-widget {
     cursor: pointer;
@@ -224,6 +267,7 @@
     margin: 0;
     cursor: pointer;
     -webkit-appearance: none;
+    appearance: none;
     background: transparent;
     position: absolute;
     top: 0;
@@ -232,71 +276,95 @@
 
 .slider-widget input[type='range']::-webkit-slider-thumb {
     -webkit-appearance: none;
-    height: 16px;
-    width: 10px;
-    background: #569cd6;
+    height: calc(var(--font-size) * var(--line-height));
+    width: 1ch;
+    background: var(--accent-primary);
     cursor: pointer;
-    border-radius: 2px;
+    border-radius: 0;
 }
 
 .slider-widget input[type='range']::-webkit-slider-runnable-track {
-    height: 4px;
-    background: #3c3c3c;
-    border-radius: 2px;
+    height: 2px;
+    background: var(--border-default);
+    border-radius: 0;
 }
 
 .slider-widget input[type='range']::-moz-range-thumb {
-    height: 16px;
-    width: 10px;
-    background: #569cd6;
+    height: calc(var(--font-size) * var(--line-height));
+    width: 1ch;
+    background: var(--accent-primary);
     cursor: pointer;
-    border-radius: 2px;
+    border-radius: 0;
     border: none;
 }
 
 .slider-widget input[type='range']::-moz-range-track {
-    height: 4px;
-    background: #3c3c3c;
-    border-radius: 2px;
+    height: 2px;
+    background: var(--border-default);
+    border-radius: 0;
 }
 
 .slider-widget input[type='range']:focus {
     outline: none;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   Scope View - oscilloscope canvas
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .scope-view-zone canvas {
     display: block;
-    width:500px;
+    width: 100%;
+    background-color: var(--bg-primary);
 }
 
-/* Ensure Monaco overlays (suggestions, hovers, etc.) sit above the header */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Monaco Editor Overrides
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .monaco-editor .editor-widget,
 .monaco-editor .peekview-widget,
 .monaco-editor .suggest-widget {
     z-index: 2000 !important;
 }
 
-/* Empty State */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Empty State - minimal prompt
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .empty-state {
     flex: 1;
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
-    background-color: #1a1a1a;
+    gap: var(--sp-2);
+    background-color: var(--bg-primary);
+    color: var(--text-muted);
+}
+
+.empty-state::before {
+    content: '~';
+    font-size: calc(var(--font-size) * 3);
+    color: var(--text-muted);
+    opacity: 0.3;
 }
 
 .open-folder-button {
-    padding: 1rem 2rem;
-    font-size: 1.2rem;
-    background-color: #007acc;
-    color: white;
-    border: none;
-    border-radius: 4px;
+    padding: var(--sp-1) var(--sp-2);
+    font-family: var(--font-mono);
+    font-size: var(--font-size);
+    background-color: transparent;
+    color: var(--accent-primary);
+    border: 1px solid var(--accent-muted);
+    border-radius: 0;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: all 0.1s ease;
 }
 
 .open-folder-button:hover {
-    background-color: #005c99;
+    background-color: var(--accent-muted);
+    color: var(--text-bright);
+    border-color: var(--accent-primary);
 }
 

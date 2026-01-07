@@ -63,14 +63,22 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
     const w = canvas.width;
     const h = canvas.height;
 
-    ctx.fillStyle = 'rgb(30, 30, 30)';
+    // Get theme colors from CSS variables
+    const styles = getComputedStyle(document.documentElement);
+    const bgColor = styles.getPropertyValue('--bg-primary').trim() || '#0a0a0a';
+    const borderColor = styles.getPropertyValue('--border-subtle').trim() || '#222222';
+    const mutedColor = styles.getPropertyValue('--text-muted').trim() || '#555555';
+    const accentColor = styles.getPropertyValue('--accent-primary').trim() || '#4ec9b0';
+
+    ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, w, h);
 
     const midY = h / 2;
     const maxAbsAmplitude = 10;
     const pixelsPerUnit = h / 2 / maxAbsAmplitude;
 
-    ctx.strokeStyle = '#333';
+    // Subtle grid line
+    ctx.strokeStyle = borderColor;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, midY);
@@ -78,10 +86,10 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
     ctx.stroke();
 
     if (!data || data.length === 0) {
-        ctx.fillStyle = '#666';
-        ctx.font = '14px monospace';
+        ctx.fillStyle = mutedColor;
+        ctx.font = '13px "Fira Code", monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('No Signal', w / 2, midY);
+        ctx.fillText('~', w / 2, midY);
         return;
     }
 
@@ -93,8 +101,9 @@ const drawOscilloscope = (data: Float32Array, canvas: HTMLCanvasElement) => {
         return;
     }
 
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2;
+    // Accent color for waveform
+    ctx.strokeStyle = accentColor;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
 
     const stepX = w / (windowSize - 1);
@@ -956,6 +965,33 @@ function App() {
             }
         });
 
+        // Handle opening settings from menu (Cmd+,)
+        const cleanupOpenSettings = electronAPI.onMenuOpenSettings(async () => {
+            try {
+                const configPath = await electronAPI.config.getPath();
+                const content = await electronAPI.filesystem.readFile(configPath);
+                const existingBuffer = buffers.find(b => 
+                    b.kind === 'file' && b.filePath === configPath
+                );
+                if (existingBuffer) {
+                    setActiveBufferId(getBufferId(existingBuffer));
+                } else {
+                    const newBuffer: EditorBuffer = {
+                        kind: 'file',
+                        id: configPath,
+                        filePath: configPath,
+                        content,
+                        dirty: false,
+                        isPreview: false,
+                    };
+                    setBuffers(prev => [...prev, newBuffer]);
+                    setActiveBufferId(configPath);
+                }
+            } catch (err) {
+                console.error('Failed to open settings:', err);
+            }
+        });
+
         return () => {
             cleanupSave();
             cleanupStop();
@@ -963,8 +999,9 @@ function App() {
             cleanupOpenWorkspace();
             cleanupCloseBuffer();
             cleanupToggleRecording();
+            cleanupOpenSettings();
         };
-    }, [activeBufferId, closeBuffer, isRecording]);
+    }, [activeBufferId, closeBuffer, isRecording, buffers]);
 
     const keepBuffer = useCallback((bufferId: string) => {
         setBuffers((prev) =>
@@ -977,7 +1014,6 @@ function App() {
     return (
         <div className="app">
             <header className="app-header">
-                <h1></h1>
                 <AudioControls
                     isRunning={isClockRunning}
                     isRecording={isRecording}
