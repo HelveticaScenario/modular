@@ -98,6 +98,16 @@ function findSliderCalls(code: string) {
     return matches;
 }
 
+function formatPath(currentFile: string) {
+    if (!currentFile.startsWith('/')) {
+        currentFile = '/' + currentFile;
+    }
+    if (!currentFile.endsWith('.js') && !currentFile.endsWith('.mjs')) {
+        currentFile = currentFile + '.mjs';
+    }
+    return `file://${currentFile}`;
+}
+
 export function MonacoPatchEditor({
     value,
     currentFile,
@@ -590,14 +600,8 @@ export function MonacoPatchEditor({
             {currentFile && (
                 <Editor
                     height="100%"
-                    defaultLanguage="javascript"
-                    path={`file://${encodeURI(currentFile)}${
-                        currentFile.endsWith('.js') ||
-                        currentFile.endsWith('.mjs') ||
-                        currentFile.endsWith('.ts')
-                            ? ''
-                            : '.mjs'
-                    }`}
+                    path={formatPath(currentFile)}
+                    language="javascript"
                     theme="vs-dark"
                     value={value}
                     onChange={(val) => {
