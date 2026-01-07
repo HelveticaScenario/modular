@@ -98,6 +98,7 @@ export const IPC_CHANNELS = {
     // UI operations
     SHOW_CONTEXT_MENU: 'ui:show-context-menu',
     ON_CONTEXT_MENU_COMMAND: 'ui:on-context-menu-command',
+    SHOW_UNSAVED_CHANGES_DIALOG: 'ui:show-unsaved-changes-dialog',
 
     // Window operations
     OPEN_HELP_WINDOW: 'modular:window:open-help',
@@ -108,6 +109,8 @@ export const MENU_CHANNELS = {
     STOP: 'modular:menu:stop',
     UPDATE_PATCH: 'modular:menu:update-patch',
     OPEN_WORKSPACE: 'modular:menu:open-workspace',
+    CLOSE_BUFFER: 'modular:menu:close-buffer',
+    TOGGLE_RECORDING: 'modular:menu:toggle-recording',
 } as const;
 
 /**
@@ -158,6 +161,7 @@ export interface IPCHandlers {
     // UI operations
     [IPC_CHANNELS.SHOW_CONTEXT_MENU]: (options: ContextMenuOptions) => void;
     [IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND]: (action: ContextMenuAction) => void;
+    [IPC_CHANNELS.SHOW_UNSAVED_CHANGES_DIALOG]: (fileName: string) => Promise<number>;
 
     // Window operations
     [IPC_CHANNELS.OPEN_HELP_WINDOW]: () => void;

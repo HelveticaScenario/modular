@@ -60,9 +60,12 @@ export interface ElectronAPI {
     onMenuStop: (callback: () => void) => () => void;
     onMenuUpdatePatch: (callback: () => void) => () => void;
     onMenuOpenWorkspace: (callback: () => void) => () => void;
+    onMenuCloseBuffer: (callback: () => void) => () => void;
+    onMenuToggleRecording: (callback: () => void) => () => void;
     // UI operations
     showContextMenu: (options: ContextMenuOptions) => Promise<void>;
     onContextMenuCommand: (callback: (action: ContextMenuAction) => void) => () => void;
+    showUnsavedChangesDialog: (fileName: string) => Promise<number>;
 
     // Window operations
     openHelpWindow: () => Promise<void>;
@@ -171,6 +174,16 @@ const electronAPI: ElectronAPI = {
         ipcRenderer.on(MENU_CHANNELS.OPEN_WORKSPACE, subscription);
         return () => ipcRenderer.removeListener(MENU_CHANNELS.OPEN_WORKSPACE, subscription);
     },
+    onMenuCloseBuffer: (callback) => {
+        const subscription = (_event: any) => callback();
+        ipcRenderer.on(MENU_CHANNELS.CLOSE_BUFFER, subscription);
+        return () => ipcRenderer.removeListener(MENU_CHANNELS.CLOSE_BUFFER, subscription);
+    },
+    onMenuToggleRecording: (callback) => {
+        const subscription = (_event: any) => callback();
+        ipcRenderer.on(MENU_CHANNELS.TOGGLE_RECORDING, subscription);
+        return () => ipcRenderer.removeListener(MENU_CHANNELS.TOGGLE_RECORDING, subscription);
+    },
 
     // UI operations
     showContextMenu: (options) => invokeIPC('SHOW_CONTEXT_MENU', options),
@@ -178,7 +191,8 @@ const electronAPI: ElectronAPI = {
         const subscription = (_event: any, action: ContextMenuAction) => callback(action);
         ipcRenderer.on(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, subscription);
         return () => ipcRenderer.removeListener(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, subscription);
-    }
+    },
+    showUnsavedChangesDialog: (fileName) => invokeIPC('SHOW_UNSAVED_CHANGES_DIALOG', fileName)
 };
 
 // Expose the API to the renderer process

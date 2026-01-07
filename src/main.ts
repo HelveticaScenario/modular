@@ -560,6 +560,19 @@ registerIPCHandler('FS_SHOW_INPUT_DIALOG', async (title: string, defaultValue?: 
   return path.basename(result.filePath);
 });
 
+registerIPCHandler('SHOW_UNSAVED_CHANGES_DIALOG', async (fileName: string) => {
+  const result = await dialog.showMessageBox({
+    type: 'warning',
+    buttons: ['Save', "Don't Save", 'Cancel'],
+    defaultId: 0, // Save is default (primary)
+    cancelId: 2, // Cancel
+    message: `Do you want to save the changes you made to ${fileName}?`,
+    detail: 'Your changes will be lost if you don\'t save them.',
+  });
+
+  return result.response; // Returns the button index: 0=Save, 1=Don't Save, 2=Cancel
+});
+
 let helpWindow: BrowserWindow | null = null;
 
 const createHelpWindow = () => {
@@ -656,6 +669,15 @@ const createMenu = (): void => {
             }
           }
         },
+        {
+          label: 'Close Buffer',
+          accelerator: 'CmdOrCtrl+W',
+          click: (_item, focusedWindow) => {
+            if (focusedWindow) {
+              BrowserWindow.fromId(focusedWindow.id)?.webContents.send(MENU_CHANNELS.CLOSE_BUFFER);
+            }
+          }
+        },
         { type: 'separator' as const },
         isMac ? { role: 'close' as const } : { role: 'quit' as const }
       ]
@@ -723,6 +745,16 @@ const createMenu = (): void => {
           click: (_item, focusedWindow) => {
             if (focusedWindow) {
               BrowserWindow.fromId(focusedWindow.id)?.webContents.send(MENU_CHANNELS.STOP);
+            }
+          }
+        },
+        { type: 'separator' as const },
+        {
+          label: 'Toggle Recording',
+          accelerator: 'Alt+R',
+          click: (_item, focusedWindow) => {
+            if (focusedWindow) {
+              BrowserWindow.fromId(focusedWindow.id)?.webContents.send(MENU_CHANNELS.TOGGLE_RECORDING);
             }
           }
         }

@@ -740,50 +740,82 @@ function App() {
     }, [saveFile, renameFile, deleteFile]);
 
     const closeBuffer = useCallback(
-        (bufferId: string) => {
+        async (bufferId: string) => {
             const buffer = buffers.find((b) => getBufferId(b) === bufferId);
             if (!buffer) return;
 
             if (buffer.dirty) {
-                const shouldSave = window.confirm(
-                    `${formatFileLabel(buffer)} has unsaved changes. Save before closing?`,
+                // Show native Electron dialog
+                const response = await electronAPI.showUnsavedChangesDialog(
+                    formatFileLabel(buffer)
                 );
-                if (shouldSave) {
-                    // TODO: Save before closing
+
+                // Handle the response: 0=Save, 1=Don't Save, 2=Cancel
+                if (response === 2) {
+                    // Cancel - do nothing
                     return;
+                } else if (response === 0) {
+                    // Save - save the file then close
+                    try {
+                        await saveFile(bufferId);
+                        performCloseBuffer(bufferId);
+                    } catch (error) {
+                        console.error('Error saving file:', error);
+                        // Still close buffer even if save fails, to avoid getting stuck
+                        performCloseBuffer(bufferId);
+                    }
+                } else {
+                    // Don't Save - close without saving
+                    performCloseBuffer(bufferId);
                 }
-            }
-
-            setBuffers((prev) => {
-                const filtered = prev.filter(
-                    (b) => getBufferId(b) !== bufferId,
-                );
-                return filtered;
-            });
-            
-            // If it was untitled, release the number
-            if (buffer.kind === 'untitled') {
-                 const match = buffer.id.match(/^untitled-(\d+)$/);
-                 if (match) {
-                     const num = parseInt(match[1], 10);
-                     setUsedUntitledNumbers(prev => {
-                         const next = new Set(prev);
-                         next.delete(num);
-                         return next;
-                     });
-                 }
-            }
-
-            if (activeBufferId === bufferId) {
-                const remaining = buffers.filter(
-                    (b) => getBufferId(b) !== bufferId,
-                );
-                if (remaining.length > 0) {
-                    setActiveBufferId(getBufferId(remaining[0]));
-                }
+            } else {
+                // If not dirty, close immediately
+                performCloseBuffer(bufferId);
             }
         },
-        [activeBufferId, buffers, formatFileLabel],
+        [buffers, formatFileLabel, saveFile],
+    );
+
+    const performCloseBuffer = useCallback(
+        (bufferId: string) => {
+            const buffer = buffers.find((b) => getBufferId(b) === bufferId);
+            if (!buffer) return;
+
+            // Add a small delay to allow Monaco's cleanup to complete
+            setTimeout(() => {
+                setBuffers((prev) => {
+                    const filtered = prev.filter(
+                        (b) => getBufferId(b) !== bufferId,
+                    );
+                    return filtered;
+                });
+                
+                // If it was untitled, release the number
+                if (buffer.kind === 'untitled') {
+                     const match = buffer.id.match(/^untitled-(\d+)$/);
+                     if (match) {
+                         const num = parseInt(match[1], 10);
+                         setUsedUntitledNumbers(prev => {
+                             const next = new Set(prev);
+                             next.delete(num);
+                             return next;
+                         });
+                     }
+                }
+
+                if (activeBufferId === bufferId) {
+                    const remaining = buffers.filter(
+                        (b) => getBufferId(b) !== bufferId,
+                    );
+                    if (remaining.length > 0) {
+                        setActiveBufferId(getBufferId(remaining[0]));
+                    } else {
+                        setActiveBufferId(undefined);
+                    }
+                }
+            }, 50); // 50ms delay to allow Monaco cleanup
+        },
+        [activeBufferId, buffers],
     );
 
     const handleSaveFileRef = useRef(() => {});
@@ -869,6 +901,34 @@ function App() {
     }, []);
 
     useEffect(() => {
+        // Add global error handler to suppress Monaco cancellation errors
+        const handleError = (event: ErrorEvent) => {
+            // Suppress Monaco-specific cancellation errors that occur during buffer closing
+            if (event.error && event.error.message === 'Canceled') {
+                event.preventDefault();
+                event.stopPropagation();
+                return false;
+            }
+        };
+
+        const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+            // Suppress Monaco-specific cancellation errors in promises
+            if (event.reason && event.reason.message === 'Canceled') {
+                event.preventDefault();
+                return false;
+            }
+        };
+
+        window.addEventListener('error', handleError);
+        window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+        return () => {
+            window.removeEventListener('error', handleError);
+            window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+        };
+    }, []);
+
+    useEffect(() => {
         const cleanupSave = electronAPI.onMenuSave(() => {
             handleSaveFileRef.current();
         });
@@ -881,37 +941,30 @@ function App() {
         const cleanupOpenWorkspace = electronAPI.onMenuOpenWorkspace(() => {
             handleOpenWorkspaceRef.current();
         });
+        const cleanupCloseBuffer = electronAPI.onMenuCloseBuffer(() => {
+            if (activeBufferId) {
+                closeBuffer(activeBufferId);
+            }
+        });
+        const cleanupToggleRecording = electronAPI.onMenuToggleRecording(() => {
+            if (isRecording) {
+                electronAPI.synthesizer.stopRecording();
+                setIsRecording(false);
+            } else {
+                electronAPI.synthesizer.startRecording();
+                setIsRecording(true);
+            }
+        });
 
         return () => {
             cleanupSave();
             cleanupStop();
             cleanupUpdate();
             cleanupOpenWorkspace();
+            cleanupCloseBuffer();
+            cleanupToggleRecording();
         };
-    }, []);
-
-    useEffect(() => {
-        const handleKeyDown = async (e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.altKey) && (e.key === 'r' || e.key === 'R')) {
-                if (e.altKey) {
-                    e.preventDefault();
-                }
-                if (isRecording) {
-                    await electronAPI.synthesizer.stopRecording();
-                    setIsRecording(false);
-                } else {
-                    await electronAPI.synthesizer.startRecording();
-                    setIsRecording(true);
-                }
-            }
-        };
-
-        window.addEventListener('keydown', handleKeyDown, { capture: true });
-        return () =>
-            window.removeEventListener('keydown', handleKeyDown, {
-                capture: true,
-            });
-    }, [isRecording]);
+    }, [activeBufferId, closeBuffer, isRecording]);
 
     const keepBuffer = useCallback((bufferId: string) => {
         setBuffers((prev) =>
