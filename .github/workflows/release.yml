@@ -38,7 +38,8 @@ jobs:
               if: matrix.os == 'ubuntu-latest'
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y libasound2-dev libudev-dev libjack-jackd2-dev rpm flatpak-builder elfutils
+                  sudo apt-get install -y libasound2-dev libudev-dev libjack-jackd2-dev rpm flatpak flatpak-builder elfutils
+                  flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
             # - name: Setup ASIO SDK (Windows)
             #   if: matrix.os == 'windows-latest'
