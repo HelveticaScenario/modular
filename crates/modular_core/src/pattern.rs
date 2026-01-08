@@ -289,6 +289,26 @@ fn parse_ast(pair: Pair<Rule>, idx: &mut usize) -> Result<ASTNode, PatternParseE
             })
         }
 
+        Rule::ScaleInterval => {
+            let span = pair.as_span();
+            let num_str = pair
+                .into_inner()
+                .next()
+                .ok_or_else(|| PatternParseError {
+                    message: "Parse error: missing scale interval number".to_string(),
+                })?
+                .as_str();
+            let interval = num_str.parse::<f64>().unwrap_or(0.0);
+
+            let i = *idx;
+            *idx += 1;
+            Ok(ASTNode::Leaf {
+                value: Value::ScaleInterval(interval),
+                idx: i,
+                span: (span.start(), span.end()),
+            })
+        }
+
         other => Err(PatternParseError {
             message: format!("Parse error: unexpected rule {other:?}"),
         }),
@@ -298,6 +318,182 @@ fn parse_ast(pair: Pair<Rule>, idx: &mut usize) -> Result<ASTNode, PatternParseE
 fn hz_to_voct(frequency_hz: f64) -> f64 {
     // Matches src/dsl/factories.ts hz(): log2(f / 27.5)
     (frequency_hz / 27.5).log2()
+}
+
+/// Parsed scale modifier from the pattern
+#[derive(Debug, Clone)]
+struct ScaleModifier {
+    root_letter: char,
+    root_accidental: Option<char>,
+    root_octave: i32,
+    scale_name: String,
+}
+
+/// Convert a scale interval to V/Oct using the given scale modifier
+fn scale_interval_to_voct(interval: f64, scale_mod: &ScaleModifier) -> Result<f64, PatternParseError> {
+    use rust_music_theory::note::{Note, Notes, Pitch};
+    use rust_music_theory::scale::Scale;
+
+    // Build pitch string
+    let pitch_str = match scale_mod.root_accidental {
+        Some(acc) => format!("{}{}", scale_mod.root_letter, acc),
+        None => scale_mod.root_letter.to_string(),
+    };
+
+    let pitch = Pitch::from_str(&pitch_str).ok_or_else(|| PatternParseError {
+        message: format!("Invalid pitch: {}", pitch_str),
+    })?;
+
+    let root_note = Note::new(pitch, scale_mod.root_octave as u8);
+
+    // Build scale definition
+    let scale_def = format!("{} {}", root_note.pitch, scale_mod.scale_name);
+    let scale = Scale::from_regex(&scale_def).map_err(|_| PatternParseError {
+        message: format!("Invalid scale definition: {}", scale_def),
+    })?;
+
+    let interval_idx = interval.floor() as i64;
+    let cents = (interval - interval.floor()) * 100.0;
+
+    // Handle intervals: 1-indexed, wrap around octaves
+    let target_idx_total = interval_idx - 1;
+
+    let notes = scale.notes();
+    let len = notes.len() as i64;
+    if len == 0 {
+        return Err(PatternParseError {
+            message: "Scale has no notes".to_string(),
+        });
+    }
+
+    let scale_root_octave = notes[0].octave as i64;
+
+    // Handle both positive and negative intervals with proper wrapping
+    let (octave_shift, note_idx) = if target_idx_total >= 0 {
+        ((target_idx_total / len), (target_idx_total % len) as usize)
+    } else {
+        // For negative intervals, we need to wrap backwards
+        let abs_idx = (-target_idx_total - 1) as i64;
+        let octave_down = (abs_idx / len) + 1;
+        let note_from_end = (abs_idx % len) as usize;
+        (-octave_down, len as usize - 1 - note_from_end)
+    };
+
+    let base_note = &notes[note_idx];
+    let relative_octave = (base_note.octave as i64) - scale_root_octave;
+    let target_octave = (scale_mod.root_octave as i64) + relative_octave + octave_shift;
+
+    let mut target_note = base_note.clone();
+    target_note.octave = target_octave as u8;
+
+    let pc_val = target_note.pitch.into_u8();
+
+    let midi = (target_octave as f64 + 1.0) * 12.0 + (pc_val as f64);
+    let midi_with_cents = midi + (cents / 100.0);
+
+    // Convert to V/Oct (A0 = 0V, MIDI 21)
+    let volts = (midi_with_cents - 21.0) / 12.0;
+    Ok(volts)
+}
+
+/// Parse a ScaleModifier from a Pair
+fn parse_scale_modifier(pair: Pair<Rule>) -> Result<ScaleModifier, PatternParseError> {
+    let mut inner = pair.into_inner();
+
+    // Parse NoteName (root note)
+    let note_pair = inner.next().ok_or_else(|| PatternParseError {
+        message: "Parse error: missing root note in scale modifier".to_string(),
+    })?;
+
+    let mut note_inner = note_pair.into_inner();
+    let letter_pair = note_inner.next().ok_or_else(|| PatternParseError {
+        message: "Parse error: missing note letter in scale modifier".to_string(),
+    })?;
+    let letter = letter_pair.as_str().chars().next().ok_or_else(|| PatternParseError {
+        message: "Parse error: invalid note letter in scale modifier".to_string(),
+    })?;
+
+    let next = note_inner.next().ok_or_else(|| PatternParseError {
+        message: "Parse error: missing octave in scale modifier".to_string(),
+    })?;
+
+    let (accidental, octave_pair) = if next.as_rule() == Rule::Accidental {
+        let acc = next.as_str().chars().next();
+        let octave_pair = note_inner.next().ok_or_else(|| PatternParseError {
+            message: "Parse error: missing octave in scale modifier".to_string(),
+        })?;
+        (acc, octave_pair)
+    } else {
+        (None, next)
+    };
+
+    let octave = octave_pair.as_str().parse::<i32>().map_err(|_| PatternParseError {
+        message: "Parse error: invalid octave in scale modifier".to_string(),
+    })?;
+
+    // Parse scale name
+    let scale_name_pair = inner.next().ok_or_else(|| PatternParseError {
+        message: "Parse error: missing scale name in scale modifier".to_string(),
+    })?;
+    let scale_name = scale_name_pair.as_str().to_string();
+
+    Ok(ScaleModifier {
+        root_letter: letter,
+        root_accidental: accidental,
+        root_octave: octave,
+        scale_name,
+    })
+}
+
+/// Resolve all ScaleInterval values in the AST to Numeric values
+fn resolve_scale_intervals(
+    elements: &mut Vec<ASTNode>,
+    scale_mod: &ScaleModifier,
+) -> Result<(), PatternParseError> {
+    for element in elements {
+        resolve_scale_intervals_in_node(element, scale_mod)?;
+    }
+    Ok(())
+}
+
+fn resolve_scale_intervals_in_node(
+    node: &mut ASTNode,
+    scale_mod: &ScaleModifier,
+) -> Result<(), PatternParseError> {
+    match node {
+        ASTNode::Leaf { value, .. } => {
+            if let Value::ScaleInterval(interval) = value {
+                let voct = scale_interval_to_voct(*interval, scale_mod)?;
+                *value = Value::Numeric(voct);
+            }
+        }
+        ASTNode::FastSubsequence { elements } | ASTNode::SlowSubsequence { elements } => {
+            for element in elements {
+                resolve_scale_intervals_in_node(element, scale_mod)?;
+            }
+        }
+        ASTNode::RandomChoice { choices } => {
+            for choice in choices {
+                resolve_scale_intervals_in_node(choice, scale_mod)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Check if any ScaleInterval values remain unresolved in the AST
+fn has_unresolved_scale_intervals(elements: &[ASTNode]) -> bool {
+    elements.iter().any(|e| has_unresolved_in_node(e))
+}
+
+fn has_unresolved_in_node(node: &ASTNode) -> bool {
+    match node {
+        ASTNode::Leaf { value, .. } => matches!(value, Value::ScaleInterval(_)),
+        ASTNode::FastSubsequence { elements } | ASTNode::SlowSubsequence { elements } => {
+            elements.iter().any(|e| has_unresolved_in_node(e))
+        }
+        ASTNode::RandomChoice { choices } => choices.iter().any(|c| has_unresolved_in_node(c)),
+    }
 }
 
 fn note_name_to_voct(letter: char, accidental: Option<char>, octave: i32) -> f64 {
@@ -329,6 +525,10 @@ fn note_name_to_voct(letter: char, accidental: Option<char>, octave: i32) -> f64
 ///
 /// This mirrors the existing Ohm grammar in `src/dsl/mini.ohm` and the conversions
 /// done in the TS parser (`hz()`/`note()`/MIDI mapping).
+///
+/// If the pattern contains scale interval values (e.g., `1s`, `2s`), it must end with
+/// a scale modifier (e.g., `$ scale(c4:major)`). The scale intervals will be resolved
+/// to V/Oct values based on the specified scale.
 pub fn parse_pattern_elements(source: &str) -> Result<Vec<ASTNode>, PatternParseError> {
     let mut pairs =
         PatternDslParser::parse(Rule::Program, source).map_err(|err| PatternParseError {
@@ -340,10 +540,32 @@ pub fn parse_pattern_elements(source: &str) -> Result<Vec<ASTNode>, PatternParse
     })?;
 
     let mut elements = Vec::new();
+    let mut scale_modifier: Option<ScaleModifier> = None;
     let mut idx: usize = 0;
+
     for pair in program.into_inner() {
-        if pair.as_rule() == Rule::Element {
-            elements.push(parse_ast(pair, &mut idx)?);
+        match pair.as_rule() {
+            Rule::Element => {
+                elements.push(parse_ast(pair, &mut idx)?);
+            }
+            Rule::ScaleModifier => {
+                scale_modifier = Some(parse_scale_modifier(pair)?);
+            }
+            _ => {}
+        }
+    }
+
+    // If we have scale intervals but no scale modifier, that's an error
+    if has_unresolved_scale_intervals(&elements) {
+        match &scale_modifier {
+            Some(scale_mod) => {
+                resolve_scale_intervals(&mut elements, scale_mod)?;
+            }
+            None => {
+                return Err(PatternParseError {
+                    message: "Pattern contains scale intervals (e.g., 1s, 2s) but no scale modifier. Add '$ scale(note:scale)' at the end.".to_string(),
+                });
+            }
         }
     }
 
@@ -360,6 +582,9 @@ pub enum Value {
         signal: Signal,
         sample_and_hold: bool,
     },
+    /// Unresolved scale interval - will be converted to Numeric after parsing
+    /// when the scale modifier is processed
+    ScaleInterval(f64),
 }
 
 /// Compiled node with precomputed information for efficient lookup
@@ -884,5 +1109,213 @@ mod tests {
         assert_eq!(pattern.run(0.5, 0), Some((Value::Numeric(1.0), 0.0, 1.0, 0)));
         assert_eq!(pattern.run(2.5, 0), Some((Value::Numeric(1.0), 2.0, 1.0, 0)));
         assert_eq!(pattern.run(1.5, 0), Some((Value::Numeric(2.0), 1.0, 1.0, 1)));
+    }
+
+    #[test]
+    fn test_scale_interval_basic() {
+        // 1s(A0:Major) -> A0 (root) -> 0V
+        let ast = parse_pattern_elements("1s $ scale(A0:Major)").unwrap();
+        assert_eq!(ast.len(), 1);
+        if let ASTNode::Leaf { value: Value::Numeric(v), .. } = &ast[0] {
+            assert!((*v - 0.0).abs() < 1e-6, "Expected ~0V for 1s(A0:Major), got {}", v);
+        } else {
+            panic!("Expected numeric leaf");
+        }
+    }
+
+    #[test]
+    fn test_scale_interval_second_degree() {
+        // 2s(A0:Major) -> B0 (2nd in A Major) -> 2 semitones -> 2/12 V
+        let ast = parse_pattern_elements("2s $ scale(A0:Major)").unwrap();
+        assert_eq!(ast.len(), 1);
+        if let ASTNode::Leaf { value: Value::Numeric(v), .. } = &ast[0] {
+            let expected = 2.0 / 12.0;
+            assert!((*v - expected).abs() < 1e-6, "Expected ~{}V for 2s(A0:Major), got {}", expected, v);
+        } else {
+            panic!("Expected numeric leaf");
+        }
+    }
+
+    #[test]
+    fn test_scale_interval_octave_wrap() {
+        // 8s(A0:Major) -> A1 (octave up) -> 1V
+        let ast = parse_pattern_elements("8s $ scale(A0:Major)").unwrap();
+        assert_eq!(ast.len(), 1);
+        if let ASTNode::Leaf { value: Value::Numeric(v), .. } = &ast[0] {
+            assert!((*v - 1.0).abs() < 1e-6, "Expected ~1V for 8s(A0:Major), got {}", v);
+        } else {
+            panic!("Expected numeric leaf");
+        }
+    }
+
+    #[test]
+    fn test_scale_interval_with_cents() {
+        // 1.5s(A0:Major) -> A0 + 50 cents -> 0.5/12 V
+        let ast = parse_pattern_elements("1.5s $ scale(A0:Major)").unwrap();
+        assert_eq!(ast.len(), 1);
+        if let ASTNode::Leaf { value: Value::Numeric(v), .. } = &ast[0] {
+            let expected = 0.5 / 12.0;
+            assert!((*v - expected).abs() < 1e-6, "Expected ~{}V for 1.5s(A0:Major), got {}", expected, v);
+        } else {
+            panic!("Expected numeric leaf");
+        }
+    }
+
+    #[test]
+    fn test_scale_interval_sequence() {
+        // Test a sequence of scale intervals
+        let ast = parse_pattern_elements("1s 3s 5s $ scale(C4:Major)").unwrap();
+        assert_eq!(ast.len(), 3);
+
+        // All should be numeric (resolved)
+        for node in &ast {
+            if let ASTNode::Leaf { value, .. } = node {
+                assert!(matches!(value, Value::Numeric(_)));
+            } else {
+                panic!("Expected leaf nodes");
+            }
+        }
+    }
+
+    #[test]
+    fn test_scale_interval_in_subsequence() {
+        // Test scale intervals inside subsequences
+        let ast = parse_pattern_elements("[1s 2s] <3s 4s> $ scale(A0:Major)").unwrap();
+        assert_eq!(ast.len(), 2);
+
+        // First is fast subsequence
+        if let ASTNode::FastSubsequence { elements } = &ast[0] {
+            assert_eq!(elements.len(), 2);
+        } else {
+            panic!("Expected fast subsequence");
+        }
+
+        // Second is slow subsequence
+        if let ASTNode::SlowSubsequence { elements } = &ast[1] {
+            assert_eq!(elements.len(), 2);
+        } else {
+            panic!("Expected slow subsequence");
+        }
+    }
+
+    #[test]
+    fn test_scale_interval_missing_modifier_error() {
+        // Scale intervals without modifier should error
+        let result = parse_pattern_elements("1s 2s 3s");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("scale modifier"), "Error should mention scale modifier: {}", err.message);
+    }
+
+    #[test]
+    fn test_scale_interval_with_negative_octave() {
+        // Test with negative octave in scale modifier
+        let ast = parse_pattern_elements("1s $ scale(A-1:Major)").unwrap();
+        assert_eq!(ast.len(), 1);
+        if let ASTNode::Leaf { value: Value::Numeric(v), .. } = &ast[0] {
+            // A-1 is one octave below A0, so -1V
+            assert!((*v - (-1.0)).abs() < 1e-6, "Expected ~-1V for 1s(A-1:Major), got {}", v);
+        } else {
+            panic!("Expected numeric leaf");
+        }
+    }
+
+    #[test]
+    fn test_scale_interval_mixed_with_notes() {
+        // Mix scale intervals with regular notes and numbers
+        let ast = parse_pattern_elements("1s c4 2s 440hz $ scale(A0:Major)").unwrap();
+        assert_eq!(ast.len(), 4);
+
+        // All should be resolved to numeric
+        for node in &ast {
+            if let ASTNode::Leaf { value, .. } = node {
+                assert!(matches!(value, Value::Numeric(_)));
+            } else {
+                panic!("Expected leaf nodes");
+            }
+        }
+    }
+
+    #[test]
+    fn test_negative_octave_in_note_name() {
+        // Test that note names now support negative octaves
+        let ast = parse_pattern_elements("A-1").unwrap();
+        assert_eq!(ast.len(), 1);
+        if let ASTNode::Leaf { value: Value::Numeric(v), .. } = &ast[0] {
+            // A-1 is one octave below A0, so -1V
+            assert!((*v - (-1.0)).abs() < 1e-6, "Expected ~-1V for A-1, got {}", v);
+        } else {
+            panic!("Expected numeric leaf");
+        }
+    }
+
+    #[test]
+    fn test_spans_without_scale_modifier() {
+        // Test that spans are correct for regular patterns
+        let ast = parse_pattern_elements("c4 d4 e4").unwrap();
+        assert_eq!(ast.len(), 3);
+
+        // Check spans
+        if let ASTNode::Leaf { span, .. } = &ast[0] {
+            assert_eq!(*span, (0, 2), "c4 should be at span (0, 2)");
+        }
+        if let ASTNode::Leaf { span, .. } = &ast[1] {
+            assert_eq!(*span, (3, 5), "d4 should be at span (3, 5)");
+        }
+        if let ASTNode::Leaf { span, .. } = &ast[2] {
+            assert_eq!(*span, (6, 8), "e4 should be at span (6, 8)");
+        }
+    }
+
+    #[test]
+    fn test_spans_with_scale_modifier() {
+        // Test that spans are correct when scale modifier is present
+        let ast = parse_pattern_elements("1s 2s 3s $ scale(A0:Major)").unwrap();
+        assert_eq!(ast.len(), 3);
+
+        // Check spans - they should match the positions in the original string
+        if let ASTNode::Leaf { span, .. } = &ast[0] {
+            assert_eq!(*span, (0, 2), "1s should be at span (0, 2)");
+        }
+        if let ASTNode::Leaf { span, .. } = &ast[1] {
+            assert_eq!(*span, (3, 5), "2s should be at span (3, 5)");
+        }
+        if let ASTNode::Leaf { span, .. } = &ast[2] {
+            assert_eq!(*span, (6, 8), "3s should be at span (6, 8)");
+        }
+    }
+
+    #[test]
+    fn test_spans_mixed_elements_with_scale() {
+        // Test spans with mixed elements and scale modifier
+        let ast = parse_pattern_elements("1s c4 2s 440hz $ scale(A0:Major)").unwrap();
+        assert_eq!(ast.len(), 4);
+
+        // Check spans
+        if let ASTNode::Leaf { span, .. } = &ast[0] {
+            assert_eq!(*span, (0, 2), "1s should be at span (0, 2)");
+        }
+        if let ASTNode::Leaf { span, .. } = &ast[1] {
+            assert_eq!(*span, (3, 5), "c4 should be at span (3, 5)");
+        }
+        if let ASTNode::Leaf { span, .. } = &ast[2] {
+            assert_eq!(*span, (6, 8), "2s should be at span (6, 8)");
+        }
+        if let ASTNode::Leaf { span, .. } = &ast[3] {
+            assert_eq!(*span, (9, 14), "440hz should be at span (9, 14)");
+        }
+    }
+
+    #[test]
+    fn test_json_output_format() {
+        // Test what the JSON output looks like for debugging
+        let ast = parse_pattern_elements("c4 d4").unwrap();
+        let json = serde_json::to_string_pretty(&ast).unwrap();
+        println!("JSON output for 'c4 d4':\n{}", json);
+
+        // The JSON should have Leaf nodes with span arrays
+        assert!(json.contains("Leaf"));
+        assert!(json.contains("span"));
+        assert!(json.contains("Numeric"));
     }
 }

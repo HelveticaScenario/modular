@@ -127,6 +127,10 @@ impl Seq {
                         self.outputs.gate = self.gate.process();
                         self.outputs.trig = self.trigger.process();
                     }
+                    Value::ScaleInterval(_) => {
+                        // ScaleInterval values should be resolved during parsing
+                        unreachable!("ScaleInterval should be resolved to Numeric during parsing")
+                    }
                 }
                 return;
             }
@@ -158,6 +162,10 @@ impl Seq {
                         self.gate.set_state(TempGateState::Low, TempGateState::Low);
                         self.outputs.gate = self.gate.process();
                         self.outputs.trig = self.trigger.process();
+                    }
+                    Value::ScaleInterval(_) => {
+                        // ScaleInterval values should be resolved during parsing
+                        unreachable!("ScaleInterval should be resolved to Numeric during parsing")
                     }
                 }
                 self.cached_node = Some(CachedNode {

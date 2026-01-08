@@ -1,5 +1,5 @@
 use crate::types::{Clickless, Signal};
-use napi::Result;
+use napi::{Result, sys::ThreadsafeFunctionReleaseMode::release};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -73,14 +73,15 @@ impl Default for Adsr {
 impl Adsr {
     fn update(&mut self, sample_rate: f32) -> () {
         // Smooth parameter targets to avoid clicks when values change
-        self.attack
-            .update(self.params.attack.get_value_or(0.).clamp(0.0, 10.0));
-        self.decay
-            .update(self.params.decay.get_value_or(0.).clamp(0.0, 10.0));
-        self.release
-            .update(self.params.release.get_value_or(0.).clamp(0.0, 10.0));
+        self.attack.update(self.params.attack.get_value_or(10.0));
+        self.decay.update(self.params.decay.get_value_or(10.0));
+        self.release.update(self.params.release.get_value_or(10.0));
         self.sustain
-            .update(self.params.sustain.get_value_or(5.).clamp(0.0, 5.0));
+            .update(self.params.sustain.get_value_or(5.).max(0.0));
+
+        let attack = 1.0 / (27.5f32 * 2.0f32.powf(*self.attack));
+        let decay = 1.0 / (27.5f32 * 2.0f32.powf(*self.decay));
+        let release_var = 1.0 / (27.5f32 * 2.0f32.powf(*self.release));
 
         let gate_on = self.params.gate.get_value() > 2.5;
 
@@ -98,11 +99,11 @@ impl Adsr {
                 self.current_level = 0.0;
             }
             EnvelopeStage::Attack => {
-                if *self.attack <= 0.0001 {
+                if attack < 0.0001 {
                     self.current_level = 1.0;
                     self.stage = EnvelopeStage::Decay;
                 } else {
-                    let step = 1.0 / (*self.attack * sample_rate);
+                    let step = 1.0 / (attack * sample_rate);
                     self.current_level += step;
                     if self.current_level >= 1.0 {
                         self.current_level = 1.0;
@@ -111,11 +112,11 @@ impl Adsr {
                 }
             }
             EnvelopeStage::Decay => {
-                if *self.decay <= 0.0001 || self.current_level <= sustain_level {
+                if decay <= 0.0001 || self.current_level <= sustain_level {
                     self.current_level = sustain_level;
                     self.stage = EnvelopeStage::Sustain;
                 } else {
-                    let step = (1.0 - sustain_level) / (*self.decay * sample_rate);
+                    let step = (1.0 - sustain_level) / (decay * sample_rate);
                     self.current_level = (self.current_level - step).max(sustain_level);
                     if self.current_level <= sustain_level {
                         self.current_level = sustain_level;
@@ -130,11 +131,11 @@ impl Adsr {
                 }
             }
             EnvelopeStage::Release => {
-                if *self.release <= 0.0001 {
+                if release_var <= 0.0001 {
                     self.current_level = 0.0;
                     self.stage = EnvelopeStage::Idle;
                 } else {
-                    let step = self.current_level / (*self.release * sample_rate);
+                    let step = self.current_level / (release_var * sample_rate);
                     self.current_level = (self.current_level - step).max(0.0);
                     if self.current_level <= 0.00001 {
                         self.current_level = 0.0;

@@ -1,7 +1,7 @@
 // Pest grammar for the Musical DSL pattern language.
 // Mirrors `src/dsl/mini.ohm`.
 
-Program = { SOI ~ Element* ~ EOI }
+Program = { SOI ~ Element* ~ ScaleModifier? ~ EOI }
 
 Element = { RandomChoice | NonRandomElement }
 
@@ -12,7 +12,7 @@ SlowSubsequence = { "<" ~ Element* ~ ">" }
 
 RandomChoice = { NonRandomElement ~ ("|" ~ NonRandomElement)+ }
 
-Value = { Rest | HzValue | NumericLiteral | NoteName | MidiValue | ModuleRef }
+Value = { Rest | HzValue | ScaleInterval | NumericLiteral | NoteName | MidiValue | ModuleRef }
 
 Rest = { "~" }
 
@@ -29,9 +29,15 @@ SignedDecimal = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 NoteName = { NoteLetter ~ Accidental? ~ Octave }
 NoteLetter = { "a" | "b" | "c" | "d" | "e" | "f" | "g" | "A" | "B" | "C" | "D" | "E" | "F" | "G" }
 Accidental = { "#" | "b" }
-Octave = @{ ASCII_DIGIT+ }
+Octave = @{ "-"? ~ ASCII_DIGIT+ }
 
 MidiValue = { MidiNumber ~ "m" }
 MidiNumber = @{ ASCII_DIGIT+ }
+
+ScaleInterval = { SignedDecimal ~ ScaleIntervalSuffix }
+ScaleIntervalSuffix = @{ "s" }
+
+ScaleModifier = { "$" ~ "scale" ~ "(" ~ NoteName ~ ":" ~ ScaleName ~ ")" }
+ScaleName = @{ ASCII_ALPHA+ }
 
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
