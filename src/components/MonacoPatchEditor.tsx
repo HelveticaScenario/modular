@@ -534,11 +534,11 @@ export function MonacoPatchEditor({
             const container = document.createElement('div');
             container.className = 'scope-view-zone';
             container.style.height = `60px`;
-            container.style.width = '500px';
+            container.style.width = '100%';
             container.style.display = 'flex';
 
             const canvas = document.createElement('canvas');
-            canvas.style.width = '500px';
+            canvas.style.width = '100%';
             canvas.style.height = '60px';
             canvas.dataset.scopeKey = view.key;
 
@@ -671,10 +671,7 @@ export function MonacoPatchEditor({
                 {
                     uri: 'modular://config-schema.json',
                     fileMatch: [
-                        fileUri,
-                        currentFile,
-                        '**/config.json',
-                        'config.json',
+                        "*",
                     ],
                     schema: configSchema,
                 },
@@ -710,7 +707,7 @@ export function MonacoPatchEditor({
                         automaticLayout: true,
                         fontFamily: 'Fira Code, monospace',
                         fontLigatures: true,
-                        fontSize: 13,
+                        fontSize: 18,
                         lineHeight: 1.6,
                         padding: { top: 8, bottom: 8 },
                         renderLineHighlight: 'line',

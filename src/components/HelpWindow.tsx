@@ -32,8 +32,8 @@ export const HelpWindow: React.FC = () => {
                     <div>
                         <h2>Hotkeys</h2>
                         <ul>
-                            <li><b>Alt + Enter</b>: Update Patch</li>
-                            <li><b>Alt + .</b>: Stop Sound</li>
+                            <li><b>Ctrl + Enter</b>: Update Patch</li>
+                            <li><b>Ctrl + .</b>: Stop Sound</li>
                             <li><b>Cmd/Ctrl + S</b>: Save</li>
                             <li><b>Cmd/Ctrl + O</b>: Open Workspace</li>
                         </ul>

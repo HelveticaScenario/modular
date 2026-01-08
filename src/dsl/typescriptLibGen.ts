@@ -209,7 +209,7 @@ type Signal = number | Note | HZ | MidiNote | Scale | ModuleOutput | ModuleNode;
 interface ModuleOutput {
   readonly moduleId: string;
   readonly portName: string;
-  scale(factor: Signal): ModuleNode;
+  gain(factor: Signal): ModuleNode;
   shift(offset: Signal): ModuleNode;
   scope(msPerFrame?: number, triggerThreshold?: number): ModuleOutput;
 }
@@ -218,7 +218,7 @@ interface ModuleNode {
   readonly id: string;
   readonly moduleType: string;
   readonly o: ModuleOutput;
-  scale(value: Signal): ModuleNode;
+  gain(value: Signal): ModuleNode;
   shift(value: Signal): ModuleNode;
   scope(msPerFrame?: number, triggerThreshold?: number): ModuleNode;
 }

@@ -8,7 +8,7 @@
 :root {
   /* Typography - monospace as the foundation */
   --font-mono: 'Fira Code', 'SF Mono', 'Monaco', 'Inconsolata', monospace;
-  --font-size: 13px;
+  --font-size: 18px;
   --line-height: 1.6;
   
   /* Spacing units based on character width (1ch ≈ font-size * 0.6) */

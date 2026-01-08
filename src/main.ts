@@ -1,6 +1,25 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, shell, MenuItem } from 'electron';
-import { getSchemas, PatchGraph, Synthesizer, parsePattern } from '@modular/core';
-import { IPC_CHANNELS, IPCHandlers, FileTreeEntry, MENU_CHANNELS, ContextMenuOptions } from './ipcTypes';
+import {
+    app,
+    BrowserWindow,
+    ipcMain,
+    dialog,
+    Menu,
+    shell,
+    MenuItem,
+} from 'electron';
+import {
+    getSchemas,
+    PatchGraph,
+    Synthesizer,
+    parsePattern,
+} from '@modular/core';
+import {
+    IPC_CHANNELS,
+    IPCHandlers,
+    FileTreeEntry,
+    MENU_CHANNELS,
+    ContextMenuOptions,
+} from './ipcTypes';
 import { reconcilePatchBySimilarity } from './patchSimilarityRemap';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -17,23 +36,23 @@ declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require('electron-squirrel-startup')) {
-  app.quit();
+    app.quit();
 }
 
 // Enforce single instance
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
-  app.quit();
+    app.quit();
 } else {
-  app.on('second-instance', () => {
-    // Focus the existing window if someone tries to open a second instance
-    const windows = BrowserWindow.getAllWindows();
-    if (windows.length > 0) {
-      const mainWindow = windows[0];
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
-  });
+    app.on('second-instance', () => {
+        // Focus the existing window if someone tries to open a second instance
+        const windows = BrowserWindow.getAllWindows();
+        if (windows.length > 0) {
+            const mainWindow = windows[0];
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.focus();
+        }
+    });
 }
 
 // Initialize the synthesizer instance
@@ -41,8 +60,8 @@ console.log('Initializing Synthesizer...');
 const synth = new Synthesizer();
 
 setInterval(() => {
-  // Keep the audio thread alive
-  console.log('health:', synth.getHealth());
+    // Keep the audio thread alive
+    console.log('health:', synth.getHealth());
 }, 10000);
 
 // Workspace root state
@@ -51,16 +70,25 @@ let currentWorkspaceRoot: string | null = null;
 let CONFIG_FILE: string;
 // Config persistence
 try {
-  CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
+    CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
 } catch (error) {
-  console.error('Error determining config file path:', error);
-  CONFIG_FILE = 'config.json';
+    console.error('Error determining config file path:', error);
+    CONFIG_FILE = 'config.json';
 }
 
 const AppConfigSchema = z.object({
-  theme: z.string().optional(),
-  cursorStyle: z.enum(['line', 'block', 'underline', 'line-thin', 'block-outline', 'underline-thin']).optional(),
-  lastOpenedFolder: z.string().optional(),
+    theme: z.string().optional(),
+    cursorStyle: z
+        .enum([
+            'line',
+            'block',
+            'underline',
+            'line-thin',
+            'block-outline',
+            'underline-thin',
+        ])
+        .optional(),
+    lastOpenedFolder: z.string().optional(),
 });
 
 type AppConfig = z.infer<typeof AppConfigSchema>;
@@ -70,58 +98,61 @@ let configWatcher: fs.FSWatcher | null = null;
 let mainWindow: BrowserWindow | null = null;
 
 function loadConfig(): AppConfig {
-  try {
-    if (fs.existsSync(CONFIG_FILE)) {
-      const data = fs.readFileSync(CONFIG_FILE, 'utf-8');
-      const json = JSON.parse(data);
-      const result = AppConfigSchema.safeParse(json);
-      if (result.success) {
-        return result.data;
-      } else {
-        console.error('Config validation failed:', result.error);
-      }
+    try {
+        if (fs.existsSync(CONFIG_FILE)) {
+            const data = fs.readFileSync(CONFIG_FILE, 'utf-8');
+            const json = JSON.parse(data);
+            const result = AppConfigSchema.safeParse(json);
+            if (result.success) {
+                return result.data;
+            } else {
+                console.error('Config validation failed:', result.error);
+            }
+        }
+    } catch (error) {
+        console.error('Error loading config:', error);
     }
-  } catch (error) {
-    console.error('Error loading config:', error);
-  }
-  return {};
+    return {};
 }
 
 function saveConfig(config: AppConfig) {
-  try {
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
-  } catch (error) {
-    console.error('Error saving config:', error);
-  }
+    try {
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+    } catch (error) {
+        console.error('Error saving config:', error);
+    }
 }
 
 function ensureConfigExists() {
-  if (!fs.existsSync(CONFIG_FILE)) {
-    const defaultConfig: AppConfig = {
-      theme: 'modular-dark',
-      cursorStyle: 'block',
-    };
-    saveConfig(defaultConfig);
-  }
+    if (!fs.existsSync(CONFIG_FILE)) {
+        const defaultConfig: AppConfig = {
+            theme: 'modular-dark',
+            cursorStyle: 'block',
+        };
+        saveConfig(defaultConfig);
+    }
 }
 
 function startConfigWatcher() {
-  if (configWatcher) {
-    configWatcher.close();
-  }
-  
-  ensureConfigExists();
-  
-  // Watch for config file changes
-  configWatcher = fs.watch(CONFIG_FILE, (eventType) => {
-    if (eventType === 'change') {
-      const config = loadConfig();
-      // Send updated config to renderer
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(IPC_CHANNELS.CONFIG_ON_CHANGE, config);
-      }
+    if (configWatcher) {
+        configWatcher.close();
     }
-  });
+
+    ensureConfigExists();
+
+    // Watch for config file changes
+    configWatcher = fs.watch(CONFIG_FILE, (eventType) => {
+        if (eventType === 'change') {
+            const config = loadConfig();
+            // Send updated config to renderer
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send(
+                    IPC_CHANNELS.CONFIG_ON_CHANGE,
+                    config,
+                );
+            }
+        }
+    });
 }
 
 // Patch reconciliation state (reset when a different file/buffer is evaluated)
@@ -129,15 +160,15 @@ let lastAppliedPatchGraph: PatchGraph | null = null;
 let lastAppliedSourceId: string | null = null;
 
 const DEBUG_LOG =
-  process.env.MODULAR_DEBUG_LOG === '1' ||
-  process.env.MODULAR_DEBUG_LOG === 'true';
+    process.env.MODULAR_DEBUG_LOG === '1' ||
+    process.env.MODULAR_DEBUG_LOG === 'true';
 
 const PATCH_REMAP_THRESHOLD = process.env.MODULAR_PATCH_REMAP_THRESHOLD
-  ? Number(process.env.MODULAR_PATCH_REMAP_THRESHOLD)
-  : undefined;
+    ? Number(process.env.MODULAR_PATCH_REMAP_THRESHOLD)
+    : undefined;
 const PATCH_REMAP_MARGIN = process.env.MODULAR_PATCH_REMAP_MARGIN
-  ? Number(process.env.MODULAR_PATCH_REMAP_MARGIN)
-  : undefined;
+    ? Number(process.env.MODULAR_PATCH_REMAP_MARGIN)
+    : undefined;
 
 console.log('Patch remap debug mode:', DEBUG_LOG);
 
@@ -145,195 +176,208 @@ console.log('Patch remap debug mode:', DEBUG_LOG);
  * Validate that a path is valid (absolute or relative to workspace)
  */
 function validatePathInWorkspace(filePath: string): string | null {
-  if (path.isAbsolute(filePath)) {
-    return filePath;
-  }
+    if (path.isAbsolute(filePath)) {
+        return filePath;
+    }
 
-  if (!currentWorkspaceRoot) {
-    return null;
-  }
+    if (!currentWorkspaceRoot) {
+        return null;
+    }
 
-  return path.resolve(currentWorkspaceRoot, filePath);
+    return path.resolve(currentWorkspaceRoot, filePath);
 }
 
 /**
  * Check if a file should be included (only .js and .mjs files)
  */
 function isJavaScriptFile(filename: string): boolean {
-  return filename.endsWith('.js') || filename.endsWith('.mjs');
+    return filename.endsWith('.js') || filename.endsWith('.mjs');
 }
 
 /**
  * Recursively build file tree for JavaScript files
  */
-function buildFileTree(dirPath: string, relativePath: string = ''): FileTreeEntry[] {
-  const entries: FileTreeEntry[] = [];
+function buildFileTree(
+    dirPath: string,
+    relativePath: string = '',
+): FileTreeEntry[] {
+    const entries: FileTreeEntry[] = [];
 
-  try {
-    const items = fs.readdirSync(dirPath, { withFileTypes: true });
+    try {
+        const items = fs.readdirSync(dirPath, { withFileTypes: true });
 
-    for (const item of items) {
-      // Skip hidden files and node_modules
-      if (item.name.startsWith('.') || item.name === 'node_modules') {
-        continue;
-      }
+        for (const item of items) {
+            // Skip hidden files and node_modules
+            if (item.name.startsWith('.') || item.name === 'node_modules') {
+                continue;
+            }
 
-      const itemRelativePath = relativePath ? `${relativePath}/${item.name}` : item.name;
-      const itemAbsolutePath = path.join(dirPath, item.name);
+            const itemRelativePath = relativePath
+                ? `${relativePath}/${item.name}`
+                : item.name;
+            const itemAbsolutePath = path.join(dirPath, item.name);
 
-      if (item.isDirectory()) {
-        const children = buildFileTree(itemAbsolutePath, itemRelativePath);
-        if (children.length > 0) {
-          entries.push({
-            name: item.name,
-            path: itemRelativePath,
-            type: 'directory',
-            children
-          });
+            if (item.isDirectory()) {
+                const children = buildFileTree(
+                    itemAbsolutePath,
+                    itemRelativePath,
+                );
+                if (children.length > 0) {
+                    entries.push({
+                        name: item.name,
+                        path: itemRelativePath,
+                        type: 'directory',
+                        children,
+                    });
+                }
+            } else if (item.isFile() && isJavaScriptFile(item.name)) {
+                entries.push({
+                    name: item.name,
+                    path: itemRelativePath,
+                    type: 'file',
+                });
+            }
         }
-      } else if (item.isFile() && isJavaScriptFile(item.name)) {
-        entries.push({
-          name: item.name,
-          path: itemRelativePath,
-          type: 'file'
-        });
-      }
+    } catch (error) {
+        console.error('Error reading directory:', dirPath, error);
     }
-  } catch (error) {
-    console.error('Error reading directory:', dirPath, error);
-  }
 
-  // Sort: directories first, then files, alphabetically
-  return entries.sort((a, b) => {
-    if (a.type !== b.type) {
-      return a.type === 'directory' ? -1 : 1;
-    }
-    return a.name.localeCompare(b.name);
-  });
+    // Sort: directories first, then files, alphabetically
+    return entries.sort((a, b) => {
+        if (a.type !== b.type) {
+            return a.type === 'directory' ? -1 : 1;
+        }
+        return a.name.localeCompare(b.name);
+    });
 }
 
 /**
  * Type-safe IPC handler registration
  */
 function registerIPCHandler<T extends keyof typeof IPC_CHANNELS>(
-  channel: T,
-  handler: IPCHandlers[typeof IPC_CHANNELS[T]]
+    channel: T,
+    handler: IPCHandlers[(typeof IPC_CHANNELS)[T]],
 ) {
-  ipcMain.handle(IPC_CHANNELS[channel], async (_event, ...args) => {
-    try {
-      // @ts-ignore - TypeScript has trouble with the variadic handler signatures
-      const ret = handler(...args);
-      if (ret instanceof Promise) {
-        return await ret;
-      }
-      return ret;
-    } catch (error) {
-      console.error(`Error in IPC handler ${channel}:`, error);
-      throw error;
-    }
-  });
+    ipcMain.handle(IPC_CHANNELS[channel], async (_event, ...args) => {
+        try {
+            // @ts-ignore - TypeScript has trouble with the variadic handler signatures
+            const ret = handler(...args);
+            if (ret instanceof Promise) {
+                return await ret;
+            }
+            return ret;
+        } catch (error) {
+            console.error(`Error in IPC handler ${channel}:`, error);
+            throw error;
+        }
+    });
 }
 
 // Register all IPC handlers
 registerIPCHandler('GET_SCHEMAS', () => {
-  return getSchemas();
+    return getSchemas();
 });
 
 registerIPCHandler('SYNTH_GET_SAMPLE_RATE', () => {
-  return synth.sampleRate();
+    return synth.sampleRate();
 });
 
 registerIPCHandler('SYNTH_GET_CHANNELS', () => {
-  return synth.channels();
+    return synth.channels();
 });
 
 registerIPCHandler('SYNTH_GET_SCOPES', () => {
-  return synth.getScopes();
+    return synth.getScopes();
 });
 
 registerIPCHandler('SYNTH_GET_MODULE_STATES', () => {
-  return synth.getModuleStates();
+    return synth.getModuleStates();
 });
 
 registerIPCHandler('PARSE_PATTERN', (source) => {
-  return parsePattern(source);
+    return parsePattern(source);
 });
 
 registerIPCHandler('SYNTH_UPDATE_PATCH', (patch, sourceId) => {
-  // Requirement: assume a full change when a different file/buffer is evaluated.
-  const shouldReconcile = !!sourceId && lastAppliedSourceId === sourceId;
+    // Requirement: assume a full change when a different file/buffer is evaluated.
+    const shouldReconcile = !!sourceId && lastAppliedSourceId === sourceId;
 
-  if (DEBUG_LOG) {
-    if (!sourceId) {
-      console.log('[patch-remap] no sourceId; reconciliation disabled');
-    } else if (!shouldReconcile) {
-      console.log(
-        `[patch-remap] source changed (${lastAppliedSourceId ?? 'none'} -> ${sourceId}); reconciliation disabled`,
-      );
-    } else {
-      console.log(`[patch-remap] reconciling for sourceId=${sourceId}`);
+    if (DEBUG_LOG) {
+        if (!sourceId) {
+            console.log('[patch-remap] no sourceId; reconciliation disabled');
+        } else if (!shouldReconcile) {
+            console.log(
+                `[patch-remap] source changed (${lastAppliedSourceId ?? 'none'} -> ${sourceId}); reconciliation disabled`,
+            );
+        } else {
+            console.log(`[patch-remap] reconciling for sourceId=${sourceId}`);
+        }
     }
-  }
 
-  const { moduleIdRemap } = reconcilePatchBySimilarity(
-    patch,
-    shouldReconcile ? lastAppliedPatchGraph : null,
-    {
-      matchThreshold: PATCH_REMAP_THRESHOLD,
-      ambiguityMargin: PATCH_REMAP_MARGIN,
-      debugLog: DEBUG_LOG ? (message) => console.log(message) : undefined,
-    },
-  );
-
-  if (DEBUG_LOG) {
-    const remapCount = Object.keys(moduleIdRemap).length;
-    const thresholdInfo =
-      PATCH_REMAP_THRESHOLD !== undefined
-        ? PATCH_REMAP_THRESHOLD.toFixed(4)
-        : 'default';
-    const marginInfo =
-      PATCH_REMAP_MARGIN !== undefined ? PATCH_REMAP_MARGIN.toFixed(4) : 'default';
-    console.log(
-      `[patch-remap] summary shouldReconcile=${shouldReconcile} remaps=${remapCount} threshold=${thresholdInfo} margin=${marginInfo}`,
+    const { moduleIdRemap } = reconcilePatchBySimilarity(
+        patch,
+        shouldReconcile ? lastAppliedPatchGraph : null,
+        {
+            matchThreshold: PATCH_REMAP_THRESHOLD,
+            ambiguityMargin: PATCH_REMAP_MARGIN,
+            debugLog: DEBUG_LOG ? (message) => console.log(message) : undefined,
+        },
     );
-  }
 
-  // Send remap hints along with the desired patch; Rust will use them to
-  // preserve module instances while keeping the desired ids.
-  patch.moduleIdRemaps = Object.entries(moduleIdRemap).map(([from, to]) => ({ from, to }));
+    if (DEBUG_LOG) {
+        const remapCount = Object.keys(moduleIdRemap).length;
+        const thresholdInfo =
+            PATCH_REMAP_THRESHOLD !== undefined
+                ? PATCH_REMAP_THRESHOLD.toFixed(4)
+                : 'default';
+        const marginInfo =
+            PATCH_REMAP_MARGIN !== undefined
+                ? PATCH_REMAP_MARGIN.toFixed(4)
+                : 'default';
+        console.log(
+            `[patch-remap] summary shouldReconcile=${shouldReconcile} remaps=${remapCount} threshold=${thresholdInfo} margin=${marginInfo}`,
+        );
+    }
 
-  const errors = synth.updatePatch(patch);
+    // Send remap hints along with the desired patch; Rust will use them to
+    // preserve module instances while keeping the desired ids.
+    patch.moduleIdRemaps = Object.entries(moduleIdRemap).map(([from, to]) => ({
+        from,
+        to,
+    }));
 
-  if (errors.length === 0) {
-    lastAppliedPatchGraph = patch;
-    lastAppliedSourceId = sourceId ?? null;
-  }
+    const errors = synth.updatePatch(patch);
 
-  return { errors, appliedPatch: patch, moduleIdRemap };
+    if (errors.length === 0) {
+        lastAppliedPatchGraph = patch;
+        lastAppliedSourceId = sourceId ?? null;
+    }
+
+    return { errors, appliedPatch: patch, moduleIdRemap };
 });
 
 registerIPCHandler('SYNTH_START_RECORDING', (path) => {
-  return synth.startRecording(path);
+    return synth.startRecording(path);
 });
 
 registerIPCHandler('SYNTH_STOP_RECORDING', () => {
-  return synth.stopRecording();
+    return synth.stopRecording();
 });
 
 registerIPCHandler('SYNTH_IS_RECORDING', () => {
-  return synth.isRecording();
+    return synth.isRecording();
 });
 
 registerIPCHandler('SYNTH_GET_HEALTH', () => {
-  return synth.getHealth();
+    return synth.getHealth();
 });
 
 registerIPCHandler('SYNTH_STOP', () => {
-  synth.stop();
+    synth.stop();
 });
 
 registerIPCHandler('SYNTH_IS_STOPPED', () => {
-  return synth.isStopped();
+    return synth.isStopped();
 });
 
 registerIPCHandler('SHOW_CONTEXT_MENU', (options: ContextMenuOptions) => {
@@ -345,43 +389,71 @@ registerIPCHandler('SHOW_CONTEXT_MENU', (options: ContextMenuOptions) => {
     if (!webContents) return;
 
     if (options.type === 'untitled') {
-        menu.append(new MenuItem({
-            label: 'Save',
-            click: () => webContents.send(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, { command: 'save', bufferId: options.bufferId })
-        }));
+        menu.append(
+            new MenuItem({
+                label: 'Save',
+                click: () =>
+                    webContents.send(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, {
+                        command: 'save',
+                        bufferId: options.bufferId,
+                    }),
+            }),
+        );
     } else if (options.type === 'file' || options.type === 'directory') {
         const filePath = options.path;
 
         if (options.type === 'file') {
-             if (options.isOpenBuffer) {
-                  menu.append(new MenuItem({
-                      label: 'Save',
-                      click: () => webContents.send(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, { command: 'save', bufferId: options.bufferId })
-                  }));
-                  menu.append(new MenuItem({ type: 'separator' }));
-             }
+            if (options.isOpenBuffer) {
+                menu.append(
+                    new MenuItem({
+                        label: 'Save',
+                        click: () =>
+                            webContents.send(
+                                IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND,
+                                { command: 'save', bufferId: options.bufferId },
+                            ),
+                    }),
+                );
+                menu.append(new MenuItem({ type: 'separator' }));
+            }
         }
-        
-        menu.append(new MenuItem({
-            label: 'Rename...',
-            click: () => webContents.send(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, { command: 'rename', path: options.path, bufferId: options.bufferId })
-        }));
-        
-        menu.append(new MenuItem({
-            label: 'Delete',
-            click: () => webContents.send(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, { command: 'delete', path: options.path, bufferId: options.bufferId })
-        }));
+
+        menu.append(
+            new MenuItem({
+                label: 'Rename...',
+                click: () =>
+                    webContents.send(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, {
+                        command: 'rename',
+                        path: options.path,
+                        bufferId: options.bufferId,
+                    }),
+            }),
+        );
+
+        menu.append(
+            new MenuItem({
+                label: 'Delete',
+                click: () =>
+                    webContents.send(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, {
+                        command: 'delete',
+                        path: options.path,
+                        bufferId: options.bufferId,
+                    }),
+            }),
+        );
 
         menu.append(new MenuItem({ type: 'separator' }));
-        menu.append(new MenuItem({
-            label: 'Reveal in Finder/Explorer',
-            click: () => {
-                if (filePath) {
-                    const absPath = validatePathInWorkspace(filePath);
-                    if (absPath) shell.showItemInFolder(absPath);
-                }
-            }
-        }));
+        menu.append(
+            new MenuItem({
+                label: 'Reveal in Finder/Explorer',
+                click: () => {
+                    if (filePath) {
+                        const absPath = validatePathInWorkspace(filePath);
+                        if (absPath) shell.showItemInFolder(absPath);
+                    }
+                },
+            }),
+        );
     }
 
     menu.popup();
@@ -390,487 +462,540 @@ registerIPCHandler('SHOW_CONTEXT_MENU', (options: ContextMenuOptions) => {
 // Filesystem IPC handlers
 // @ts-ignore - async handler returns Promise
 registerIPCHandler('FS_SELECT_WORKSPACE', async () => {
-  const properties: Electron.OpenDialogOptions['properties'] = ['openDirectory'];
+    const properties: Electron.OpenDialogOptions['properties'] = [
+        'openDirectory',
+    ];
 
-  // Add 'createDirectory' for macOS or 'promptToCreate' for Windows if needed
-  if (process.platform === 'darwin') {
-    properties.push('createDirectory'); // Allows creating new directories from the dialog on macOS
-  } else if (process.platform === 'win32') {
-    // Note: promptToCreate on Windows prompts for creation if the path doesn't exist, 
-    // but doesn't handle the actual creation, which must be done by your app.
-    properties.push('promptToCreate');
-  }
-  const result = await dialog.showOpenDialog({
-    properties
-  });
+    // Add 'createDirectory' for macOS or 'promptToCreate' for Windows if needed
+    if (process.platform === 'darwin') {
+        properties.push('createDirectory'); // Allows creating new directories from the dialog on macOS
+    } else if (process.platform === 'win32') {
+        // Note: promptToCreate on Windows prompts for creation if the path doesn't exist,
+        // but doesn't handle the actual creation, which must be done by your app.
+        properties.push('promptToCreate');
+    }
+    const result = await dialog.showOpenDialog({
+        properties,
+    });
 
-  if (result.canceled || result.filePaths.length === 0) {
-    return null;
-  }
+    if (result.canceled || result.filePaths.length === 0) {
+        return null;
+    }
 
-  currentWorkspaceRoot = result.filePaths[0];
-  console.log('Workspace selected:', currentWorkspaceRoot);
+    currentWorkspaceRoot = result.filePaths[0];
+    console.log('Workspace selected:', currentWorkspaceRoot);
 
-  // Save to config
-  saveConfig({ lastOpenedFolder: currentWorkspaceRoot });
+    // Save to config
+    saveConfig({ lastOpenedFolder: currentWorkspaceRoot });
 
-  return { path: currentWorkspaceRoot };
+    return { path: currentWorkspaceRoot };
 });
 
 registerIPCHandler('FS_GET_WORKSPACE', () => {
-  return currentWorkspaceRoot ? { path: currentWorkspaceRoot } : null;
+    return currentWorkspaceRoot ? { path: currentWorkspaceRoot } : null;
 });
 
 registerIPCHandler('FS_LIST_FILES', () => {
-  if (!currentWorkspaceRoot) {
-    return [];
-  }
-  return buildFileTree(currentWorkspaceRoot);
+    if (!currentWorkspaceRoot) {
+        return [];
+    }
+    return buildFileTree(currentWorkspaceRoot);
 });
 
 registerIPCHandler('FS_READ_FILE', (relativePath) => {
-  const absolutePath = validatePathInWorkspace(relativePath);
-  if (!absolutePath) {
-    throw new Error('Invalid file path or no workspace selected');
-  }
+    const absolutePath = validatePathInWorkspace(relativePath);
+    if (!absolutePath) {
+        throw new Error('Invalid file path or no workspace selected');
+    }
 
-  try {
-    return fs.readFileSync(absolutePath, 'utf-8');
-  } catch (error) {
-    console.error('Error reading file:', error);
-    throw new Error(`Failed to read file: ${relativePath}`);
-  }
+    try {
+        return fs.readFileSync(absolutePath, 'utf-8');
+    } catch (error) {
+        console.error('Error reading file:', error);
+        throw new Error(`Failed to read file: ${relativePath}`);
+    }
 });
 
 registerIPCHandler('FS_WRITE_FILE', (relativePath, content) => {
-  const absolutePath = validatePathInWorkspace(relativePath);
-  if (!absolutePath) {
-    return { success: false, error: 'Invalid file path or no workspace selected' };
-  }
-
-  try {
-    // Ensure directory exists
-    const dir = path.dirname(absolutePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    const absolutePath = validatePathInWorkspace(relativePath);
+    if (!absolutePath) {
+        return {
+            success: false,
+            error: 'Invalid file path or no workspace selected',
+        };
     }
 
-    fs.writeFileSync(absolutePath, content, 'utf-8');
-    return { success: true };
-  } catch (error) {
-    console.error('Error writing file:', error);
-    return { success: false, error: `Failed to write file: ${relativePath}` };
-  }
+    try {
+        // Ensure directory exists
+        const dir = path.dirname(absolutePath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+
+        fs.writeFileSync(absolutePath, content, 'utf-8');
+        return { success: true };
+    } catch (error) {
+        console.error('Error writing file:', error);
+        return {
+            success: false,
+            error: `Failed to write file: ${relativePath}`,
+        };
+    }
 });
 
 registerIPCHandler('FS_RENAME_FILE', (oldPath, newPath) => {
-  const oldAbsolutePath = validatePathInWorkspace(oldPath);
-  const newAbsolutePath = validatePathInWorkspace(newPath);
+    const oldAbsolutePath = validatePathInWorkspace(oldPath);
+    const newAbsolutePath = validatePathInWorkspace(newPath);
 
-  if (!oldAbsolutePath || !newAbsolutePath) {
-    return { success: false, error: 'Invalid file path or no workspace selected' };
-  }
-
-  try {
-    // Ensure target directory exists
-    const dir = path.dirname(newAbsolutePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    if (!oldAbsolutePath || !newAbsolutePath) {
+        return {
+            success: false,
+            error: 'Invalid file path or no workspace selected',
+        };
     }
 
-    // Check for collision
-    if (fs.existsSync(newAbsolutePath)) {
-      // Check if it's the same file (e.g. case-only rename on case-insensitive FS)
-      try {
-        const oldStat = fs.statSync(oldAbsolutePath);
-        const newStat = fs.statSync(newAbsolutePath);
-        // If inodes coincide, it's the same file, so allow rename (case change)
-        if (oldStat.ino !== newStat.ino) {
-           return { success: false, error: 'A file with that name already exists.' };
+    try {
+        // Ensure target directory exists
+        const dir = path.dirname(newAbsolutePath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
         }
-      } catch (e) {
-         // If we can't verify, be safe and prevent overwrite
-         return { success: false, error: 'A file with that name already exists.' };
-      }
-    }
 
-    fs.renameSync(oldAbsolutePath, newAbsolutePath);
-    return { success: true };
-  } catch (error) {
-    console.error('Error renaming file:', error);
-    return { success: false, error: `Failed to rename file: ${oldPath}` };
-  }
+        // Check for collision
+        if (fs.existsSync(newAbsolutePath)) {
+            // Check if it's the same file (e.g. case-only rename on case-insensitive FS)
+            try {
+                const oldStat = fs.statSync(oldAbsolutePath);
+                const newStat = fs.statSync(newAbsolutePath);
+                // If inodes coincide, it's the same file, so allow rename (case change)
+                if (oldStat.ino !== newStat.ino) {
+                    return {
+                        success: false,
+                        error: 'A file with that name already exists.',
+                    };
+                }
+            } catch (e) {
+                // If we can't verify, be safe and prevent overwrite
+                return {
+                    success: false,
+                    error: 'A file with that name already exists.',
+                };
+            }
+        }
+
+        fs.renameSync(oldAbsolutePath, newAbsolutePath);
+        return { success: true };
+    } catch (error) {
+        console.error('Error renaming file:', error);
+        return { success: false, error: `Failed to rename file: ${oldPath}` };
+    }
 });
 
 registerIPCHandler('FS_DELETE_FILE', async (absolutePath) => {
-
-  try {
-    await shell.trashItem(absolutePath);
-    return { success: true };
-  } catch (error) {
-    console.error('Error deleting file:', error);
-    return { success: false, error: `Failed to delete: ${absolutePath}` };
-  }
+    try {
+        await shell.trashItem(absolutePath);
+        return { success: true };
+    } catch (error) {
+        console.error('Error deleting file:', error);
+        return { success: false, error: `Failed to delete: ${absolutePath}` };
+    }
 });
 
 registerIPCHandler('FS_MOVE_FILE', (sourcePath, destPath) => {
-  const sourceAbsolutePath = validatePathInWorkspace(sourcePath);
-  const destAbsolutePath = validatePathInWorkspace(destPath);
+    const sourceAbsolutePath = validatePathInWorkspace(sourcePath);
+    const destAbsolutePath = validatePathInWorkspace(destPath);
 
-  if (!sourceAbsolutePath || !destAbsolutePath) {
-    return { success: false, error: 'Invalid file path or no workspace selected' };
-  }
-
-  try {
-    // Ensure target directory exists
-    const dir = path.dirname(destAbsolutePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    if (!sourceAbsolutePath || !destAbsolutePath) {
+        return {
+            success: false,
+            error: 'Invalid file path or no workspace selected',
+        };
     }
 
-    fs.renameSync(sourceAbsolutePath, destAbsolutePath);
-    return { success: true };
-  } catch (error) {
-    console.error('Error moving file:', error);
-    return { success: false, error: `Failed to move file: ${sourcePath}` };
-  }
+    try {
+        // Ensure target directory exists
+        const dir = path.dirname(destAbsolutePath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+
+        fs.renameSync(sourceAbsolutePath, destAbsolutePath);
+        return { success: true };
+    } catch (error) {
+        console.error('Error moving file:', error);
+        return { success: false, error: `Failed to move file: ${sourcePath}` };
+    }
 });
 
 registerIPCHandler('FS_CREATE_FOLDER', (relativePath) => {
-  const absolutePath = validatePathInWorkspace(relativePath);
-  if (!absolutePath) {
-    return { success: false, error: 'Invalid folder path or no workspace selected' };
-  }
+    const absolutePath = validatePathInWorkspace(relativePath);
+    if (!absolutePath) {
+        return {
+            success: false,
+            error: 'Invalid folder path or no workspace selected',
+        };
+    }
 
-  try {
-    fs.mkdirSync(absolutePath, { recursive: true });
-    return { success: true };
-  } catch (error) {
-    console.error('Error creating folder:', error);
-    return { success: false, error: `Failed to create folder: ${relativePath}` };
-  }
+    try {
+        fs.mkdirSync(absolutePath, { recursive: true });
+        return { success: true };
+    } catch (error) {
+        console.error('Error creating folder:', error);
+        return {
+            success: false,
+            error: `Failed to create folder: ${relativePath}`,
+        };
+    }
 });
 
 // @ts-ignore - async handler returns Promise
 registerIPCHandler('FS_SHOW_SAVE_DIALOG', async (defaultPath?: string) => {
-  console.log('defaultPath:', defaultPath);
-  const result = await dialog.showSaveDialog({
-    defaultPath: defaultPath || 'untitled.mjs',
-    filters: [
-      { name: 'JavaScript Files', extensions: ['js', 'mjs'] },
-      { name: 'All Files', extensions: ['*'] }
-    ]
-  });
+    console.log('defaultPath:', defaultPath);
+    const result = await dialog.showSaveDialog({
+        defaultPath: defaultPath || 'untitled.mjs',
+        filters: [
+            { name: 'JavaScript Files', extensions: ['js', 'mjs'] },
+            { name: 'All Files', extensions: ['*'] },
+        ],
+    });
 
-  if (result.canceled || !result.filePath) {
-    return null;
-  }
+    if (result.canceled || !result.filePath) {
+        return null;
+    }
 
-  // Return relative path if within workspace, otherwise absolute
-  if (currentWorkspaceRoot && result.filePath.startsWith(currentWorkspaceRoot)) {
-    return path.relative(currentWorkspaceRoot, result.filePath);
-  }
+    // Return relative path if within workspace, otherwise absolute
+    if (
+        currentWorkspaceRoot &&
+        result.filePath.startsWith(currentWorkspaceRoot)
+    ) {
+        return path.relative(currentWorkspaceRoot, result.filePath);
+    }
 
-  return result.filePath;
+    return result.filePath;
 });
 
-// @ts-ignore - async handler returns Promise
-registerIPCHandler('FS_SHOW_INPUT_DIALOG', async (title: string, defaultValue?: string) => {
-  // Electron doesn't have a built-in input dialog, so we'll use a save dialog for now
-  // A proper implementation would create a custom BrowserWindow with a form
-  const result = await dialog.showSaveDialog({
-    title,
-    defaultPath: defaultValue || '',
-    filters: [
-      { name: 'JavaScript Files', extensions: ['js', 'mjs'] },
-      { name: 'All Files', extensions: ['*'] }
-    ]
-  });
+registerIPCHandler(
+    'FS_SHOW_INPUT_DIALOG',
+    // @ts-ignore - async handler returns Promise
+    async (title: string, defaultValue?: string) => {
+        // Electron doesn't have a built-in input dialog, so we'll use a save dialog for now
+        // A proper implementation would create a custom BrowserWindow with a form
+        const result = await dialog.showSaveDialog({
+            title,
+            defaultPath: defaultValue || '',
+            filters: [
+                { name: 'JavaScript Files', extensions: ['js', 'mjs'] },
+                { name: 'All Files', extensions: ['*'] },
+            ],
+        });
 
-  if (result.canceled || !result.filePath) {
-    return null;
-  }
+        if (result.canceled || !result.filePath) {
+            return null;
+        }
 
-  // Return just the filename for rename operations
-  return path.basename(result.filePath);
-});
+        // Return just the filename for rename operations
+        return path.basename(result.filePath);
+    },
+);
 
 registerIPCHandler('SHOW_UNSAVED_CHANGES_DIALOG', async (fileName: string) => {
-  const result = await dialog.showMessageBox({
-    type: 'warning',
-    buttons: ['Save', "Don't Save", 'Cancel'],
-    defaultId: 0, // Save is default (primary)
-    cancelId: 2, // Cancel
-    message: `Do you want to save the changes you made to ${fileName}?`,
-    detail: 'Your changes will be lost if you don\'t save them.',
-  });
+    const result = await dialog.showMessageBox({
+        type: 'warning',
+        buttons: ['Save', "Don't Save", 'Cancel'],
+        defaultId: 0, // Save is default (primary)
+        cancelId: 2, // Cancel
+        message: `Do you want to save the changes you made to ${fileName}?`,
+        detail: "Your changes will be lost if you don't save them.",
+    });
 
-  return result.response; // Returns the button index: 0=Save, 1=Don't Save, 2=Cancel
+    return result.response; // Returns the button index: 0=Save, 1=Don't Save, 2=Cancel
 });
 
 let helpWindow: BrowserWindow | null = null;
 
 const createHelpWindow = () => {
-  if (helpWindow) {
-    helpWindow.focus();
-    return;
-  }
+    if (helpWindow) {
+        helpWindow.focus();
+        return;
+    }
 
-  helpWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
-    webPreferences: {
-      preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
-    },
-    title: 'Modular Help',
-  });
+    helpWindow = new BrowserWindow({
+        width: 800,
+        height: 600,
+        webPreferences: {
+            preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
+        },
+        title: 'Modular Help',
+    });
 
-  // Load the index.html of the app with #help hash
-  helpWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY + '#help');
+    // Load the index.html of the app with #help hash
+    helpWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY + '#help');
 
-  helpWindow.on('closed', () => {
-    helpWindow = null;
-  });
+    helpWindow.on('closed', () => {
+        helpWindow = null;
+    });
 };
 
 registerIPCHandler('OPEN_HELP_WINDOW', async () => {
-  createHelpWindow();
+    createHelpWindow();
 });
 
 // Config IPC handlers
 registerIPCHandler('CONFIG_GET_PATH', () => {
-  ensureConfigExists();
-  return CONFIG_FILE;
+    ensureConfigExists();
+    return CONFIG_FILE;
 });
 
 registerIPCHandler('CONFIG_READ', () => {
-  ensureConfigExists();
-  return loadConfig();
+    ensureConfigExists();
+    return loadConfig();
 });
 
 /**
  * Create the main application window
  */
 const createWindow = (): void => {
-  const isMac = process.platform === 'darwin';
-  
-  // Create the browser window.
-  mainWindow = new BrowserWindow({
-    height: 600,
-    width: 800,
-    titleBarStyle: isMac ? 'hiddenInset' : 'default',
-    trafficLightPosition: isMac ? { x: 12, y: 10 } : undefined,
-    webPreferences: {
-      preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
-    },
-  });
+    const isMac = process.platform === 'darwin';
 
-  // Quit app when window is closed (on all platforms, including macOS)
-  mainWindow.on('close', () => {
-    app.quit();
-  });
+    // Create the browser window.
+    mainWindow = new BrowserWindow({
+        height: 600,
+        width: 800,
+        titleBarStyle: isMac ? 'hiddenInset' : 'default',
+        trafficLightPosition: isMac ? { x: 12, y: 10 } : undefined,
+        webPreferences: {
+            preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
+        },
+    });
 
-  // and load the index.html of the app.
-  mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
+    // Quit app when window is closed (on all platforms, including macOS)
+    mainWindow.on('close', () => {
+        app.quit();
+    });
 
-  // Start watching config file for changes
-  startConfigWatcher();
+    // and load the index.html of the app.
+    mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
+
+    // Start watching config file for changes
+    startConfigWatcher();
 };
 
 /**
  * Create the application menu
  */
 const createMenu = (): void => {
-  const isMac = process.platform === 'darwin';
+    const isMac = process.platform === 'darwin';
 
-  const template: Electron.MenuItemConstructorOptions[] = [
-    // App menu (macOS only)
-    ...(isMac ? [{
-      label: app.name,
-      submenu: [
-        { role: 'about' as const },
-        { type: 'separator' as const },
+    const template: Electron.MenuItemConstructorOptions[] = [
+        // App menu (macOS only)
+        ...(isMac
+            ? [
+                  {
+                      label: app.name,
+                      submenu: [
+                          { role: 'about' as const },
+                          { type: 'separator' as const },
+                          {
+                              label: 'Settings...',
+                              accelerator: 'Cmd+,',
+                              click: () => {
+                                  if (mainWindow && !mainWindow.isDestroyed()) {
+                                      mainWindow.webContents.send(
+                                          MENU_CHANNELS.OPEN_SETTINGS,
+                                      );
+                                  }
+                              },
+                          },
+                          { type: 'separator' as const },
+                          { role: 'services' as const },
+                          { type: 'separator' as const },
+                          { role: 'hide' as const },
+                          { role: 'hideOthers' as const },
+                          { role: 'unhide' as const },
+                          { type: 'separator' as const },
+                          { role: 'quit' as const },
+                      ],
+                  },
+              ]
+            : []),
+        // File menu
         {
-          label: 'Settings...',
-          accelerator: 'Cmd+,',
-          click: () => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send(MENU_CHANNELS.OPEN_SETTINGS);
-            }
-          }
+            label: 'File',
+            submenu: [
+                {
+                    label: 'Open Workspace...',
+                    accelerator: 'CmdOrCtrl+O',
+                    click: (_item, focusedWindow) => {
+                        if (focusedWindow) {
+                            BrowserWindow.fromId(
+                                focusedWindow.id,
+                            )?.webContents.send(MENU_CHANNELS.OPEN_WORKSPACE);
+                        }
+                    },
+                },
+                { type: 'separator' as const },
+                {
+                    label: 'Save',
+                    accelerator: 'CmdOrCtrl+S',
+                    click: (_item, focusedWindow) => {
+                        if (focusedWindow) {
+                            BrowserWindow.fromId(
+                                focusedWindow.id,
+                            )?.webContents.send(MENU_CHANNELS.SAVE);
+                        }
+                    },
+                },
+                {
+                    label: 'Close Buffer',
+                    accelerator: 'CmdOrCtrl+W',
+                    click: (_item, focusedWindow) => {
+                        if (focusedWindow) {
+                            BrowserWindow.fromId(
+                                focusedWindow.id,
+                            )?.webContents.send(MENU_CHANNELS.CLOSE_BUFFER);
+                        }
+                    },
+                },
+                { type: 'separator' as const },
+                isMac ? { role: 'close' as const } : { role: 'quit' as const },
+            ],
         },
-        { type: 'separator' as const },
-        { role: 'services' as const },
-        { type: 'separator' as const },
-        { role: 'hide' as const },
-        { role: 'hideOthers' as const },
-        { role: 'unhide' as const },
-        { type: 'separator' as const },
-        { role: 'quit' as const }
-      ]
-    }] : []),
-    // File menu
-    {
-      label: 'File',
-      submenu: [
+        // Edit menu
         {
-          label: 'Open Workspace...',
-          accelerator: 'CmdOrCtrl+O',
-          click: (_item, focusedWindow) => {
-            if (focusedWindow) {
-              BrowserWindow.fromId(focusedWindow.id)?.webContents.send(MENU_CHANNELS.OPEN_WORKSPACE);
-            }
-          }
+            label: 'Edit',
+            submenu: [
+                { role: 'undo' as const },
+                { role: 'redo' as const },
+                { type: 'separator' as const },
+                { role: 'cut' as const },
+                { role: 'copy' as const },
+                { role: 'paste' as const },
+                ...(isMac
+                    ? [
+                          { role: 'pasteAndMatchStyle' as const },
+                          { role: 'delete' as const },
+                          { role: 'selectAll' as const },
+                      ]
+                    : [
+                          { role: 'delete' as const },
+                          { type: 'separator' as const },
+                          { role: 'selectAll' as const },
+                      ]),
+            ],
         },
-        { type: 'separator' as const },
+        // View menu
         {
-          label: 'Save',
-          accelerator: 'CmdOrCtrl+S',
-          click: (_item, focusedWindow) => {
-            if (focusedWindow) {
-              BrowserWindow.fromId(focusedWindow.id)?.webContents.send(MENU_CHANNELS.SAVE);
-            }
-          }
+            label: 'View',
+            submenu: [
+                { role: 'reload' as const },
+                { role: 'forceReload' as const },
+                {
+                    label: 'Toggle Developer Tools',
+                    accelerator: isMac ? 'Cmd+Option+I' : 'Ctrl+Shift+I',
+                    click: (_item, focusedWindow) => {
+                        if (focusedWindow) {
+                            BrowserWindow.fromId(
+                                focusedWindow.id,
+                            )?.webContents.toggleDevTools();
+                        }
+                    },
+                },
+                { type: 'separator' as const },
+                { role: 'resetZoom' as const },
+                { role: 'zoomIn' as const },
+                { role: 'zoomOut' as const },
+                { type: 'separator' as const },
+                { role: 'togglefullscreen' as const },
+            ],
         },
+        // Run menu
         {
-          label: 'Close Buffer',
-          accelerator: 'CmdOrCtrl+W',
-          click: (_item, focusedWindow) => {
-            if (focusedWindow) {
-              BrowserWindow.fromId(focusedWindow.id)?.webContents.send(MENU_CHANNELS.CLOSE_BUFFER);
-            }
-          }
+            label: 'Run',
+            submenu: [
+                {
+                    label: 'Update Patch',
+                    accelerator: 'Ctrl+Enter',
+                    click: (_item, focusedWindow) => {
+                        if (focusedWindow) {
+                            BrowserWindow.fromId(
+                                focusedWindow.id,
+                            )?.webContents.send(MENU_CHANNELS.UPDATE_PATCH);
+                        }
+                    },
+                },
+                {
+                    label: 'Stop Sound',
+                    accelerator: 'Ctrl+.',
+                    click: (_item, focusedWindow) => {
+                        if (focusedWindow) {
+                            BrowserWindow.fromId(
+                                focusedWindow.id,
+                            )?.webContents.send(MENU_CHANNELS.STOP);
+                        }
+                    },
+                },
+                { type: 'separator' as const },
+                {
+                    label: 'Toggle Recording',
+                    accelerator: 'Ctrl+R',
+                    click: (_item, focusedWindow) => {
+                        if (focusedWindow) {
+                            BrowserWindow.fromId(
+                                focusedWindow.id,
+                            )?.webContents.send(MENU_CHANNELS.TOGGLE_RECORDING);
+                        }
+                    },
+                },
+            ],
         },
-        { type: 'separator' as const },
-        isMac ? { role: 'close' as const } : { role: 'quit' as const }
-      ]
-    },
-    // Edit menu
-    {
-      label: 'Edit',
-      submenu: [
-        { role: 'undo' as const },
-        { role: 'redo' as const },
-        { type: 'separator' as const },
-        { role: 'cut' as const },
-        { role: 'copy' as const },
-        { role: 'paste' as const },
-        ...(isMac ? [
-          { role: 'pasteAndMatchStyle' as const },
-          { role: 'delete' as const },
-          { role: 'selectAll' as const }
-        ] : [
-          { role: 'delete' as const },
-          { type: 'separator' as const },
-          { role: 'selectAll' as const }
-        ])
-      ]
-    },
-    // View menu
-    {
-      label: 'View',
-      submenu: [
-        { role: 'reload' as const },
-        { role: 'forceReload' as const },
+        // Window menu
         {
-          label: 'Toggle Developer Tools',
-          accelerator: isMac ? 'Cmd+Option+I' : 'Ctrl+Shift+I',
-          click: (_item, focusedWindow) => {
-            if (focusedWindow) {
-              BrowserWindow.fromId(focusedWindow.id)?.webContents.toggleDevTools();
-            }
-          }
+            label: 'Window',
+            submenu: [
+                { role: 'minimize' as const },
+                { role: 'zoom' as const },
+                ...(isMac
+                    ? [
+                          { type: 'separator' as const },
+                          { role: 'front' as const },
+                          { type: 'separator' as const },
+                          { role: 'window' as const },
+                      ]
+                    : [{ role: 'close' as const }]),
+            ],
         },
-        { type: 'separator' as const },
-        { role: 'resetZoom' as const },
-        { role: 'zoomIn' as const },
-        { role: 'zoomOut' as const },
-        { type: 'separator' as const },
-        { role: 'togglefullscreen' as const }
-      ]
-    },
-    // Run menu
-    {
-      label: 'Run',
-      submenu: [
-        {
-          label: 'Update Patch',
-          accelerator: isMac ? 'Alt+Enter' : 'Ctrl+Enter',
-          click: (_item, focusedWindow) => {
-            if (focusedWindow) {
-              BrowserWindow.fromId(focusedWindow.id)?.webContents.send(MENU_CHANNELS.UPDATE_PATCH);
-            }
-          }
-        },
-        {
-          label: 'Stop Sound',
-          accelerator: isMac ? 'Alt+.' : 'Ctrl+.',
-          click: (_item, focusedWindow) => {
-            if (focusedWindow) {
-              BrowserWindow.fromId(focusedWindow.id)?.webContents.send(MENU_CHANNELS.STOP);
-            }
-          }
-        },
-        { type: 'separator' as const },
-        {
-          label: 'Toggle Recording',
-          accelerator: 'Alt+R',
-          click: (_item, focusedWindow) => {
-            if (focusedWindow) {
-              BrowserWindow.fromId(focusedWindow.id)?.webContents.send(MENU_CHANNELS.TOGGLE_RECORDING);
-            }
-          }
-        }
-      ]
-    },
-    // Window menu
-    {
-      label: 'Window',
-      submenu: [
-        { role: 'minimize' as const },
-        { role: 'zoom' as const },
-        ...(isMac ? [
-          { type: 'separator' as const },
-          { role: 'front' as const },
-          { type: 'separator' as const },
-          { role: 'window' as const }
-        ] : [
-          { role: 'close' as const }
-        ])
-      ]
-    }
-  ];
+    ];
 
-  const menu = Menu.buildFromTemplate(template);
-  Menu.setApplicationMenu(menu);
+    const menu = Menu.buildFromTemplate(template);
+    Menu.setApplicationMenu(menu);
 };
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', () => {
-  // Load last opened folder
-  const config = loadConfig();
-  if (config.lastOpenedFolder && fs.existsSync(config.lastOpenedFolder)) {
-    currentWorkspaceRoot = config.lastOpenedFolder;
-    console.log('Restored last opened folder:', currentWorkspaceRoot);
-  }
+    // Load last opened folder
+    const config = loadConfig();
+    if (config.lastOpenedFolder && fs.existsSync(config.lastOpenedFolder)) {
+        currentWorkspaceRoot = config.lastOpenedFolder;
+        console.log('Restored last opened folder:', currentWorkspaceRoot);
+    }
 
-  createWindow();
-  createMenu();
+    createWindow();
+    createMenu();
 });
 
 // Quit when all windows are closed (on all platforms, including macOS)
 app.on('window-all-closed', () => {
-  app.quit();
+    app.quit();
 });
 
 // Remove the macOS-specific reactivation behavior since we want single window only
 app.on('activate', () => {
-  // Prevent window recreation on macOS
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
+    // Prevent window recreation on macOS
+    if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+    }
 });
 
 // In this file you can include the rest of your app's specific main process

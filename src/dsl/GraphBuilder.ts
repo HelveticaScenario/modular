@@ -212,8 +212,8 @@ export class ModuleNode {
     return this._output(defaultOutput.name);
   }
 
-  scale(value: Value): ModuleNode {
-    return this.o.scale(value);
+  gain(value: Value): ModuleNode {
+    return this.o.gain(value);
   }
 
   shift(value: Value): ModuleNode {
@@ -271,7 +271,7 @@ export class ModuleOutput {
   /**
    * Scale this output by a factor
    */
-  scale(factor: Value): ModuleNode {
+  gain(factor: Value): ModuleNode {
     const scaleNode = this.builder.addModule('scaleAndShift');
     scaleNode._setParam('input', this);
     scaleNode._setParam('scale', factor);
