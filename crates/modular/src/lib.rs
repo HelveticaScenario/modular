@@ -154,9 +154,9 @@ impl Synthesizer {
 
 #[napi]
 pub fn parse_pattern(source: String) -> Result<serde_json::Value> {
-    use modular_core::pattern::parse_pattern_elements;
-    let elements = parse_pattern_elements(&source).map_err(|e| napi::Error::from_reason(e.to_string()))?;
-    Ok(serde_json::to_value(elements).unwrap())
+    use modular_core::pattern::parse_pattern;
+    let program = parse_pattern(&source).map_err(|e| napi::Error::from_reason(e.to_string()))?;
+    Ok(serde_json::to_value(program).unwrap())
 }
 
 #[napi]

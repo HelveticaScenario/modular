@@ -27,7 +27,7 @@ lazy_static! {
     static ref RE_HZ: Regex = Regex::new(r"^([\d.]+)hz$").unwrap();
     static ref RE_MIDI: Regex = Regex::new(r"^([\d.]+)m$").unwrap();
     static ref RE_SCALE: Regex = Regex::new(r"^([\d.]+)s\(([^:]+):([^)]+)\)$").unwrap();
-    static ref RE_NOTE: Regex = Regex::new(r"^([A-Ga-g])([#b]?)(-?\d+)$").unwrap();
+    static ref RE_NOTE: Regex = Regex::new(r"^([A-Ga-g])([#b]?)(-?\d+)?$").unwrap();
 }
 
 pub trait MessageHandler {
@@ -194,7 +194,10 @@ fn parse_note_str(s: &str) -> StdResult<Note, String> {
         .ok_or("Invalid note format".to_string())?;
     let name = &caps[1];
     let acc = &caps[2];
-    let oct: i32 = caps[3].parse().map_err(|_| "Invalid octave".to_string())?;
+    let oct: i32 = caps
+        .get(3)
+        .map(|m| m.as_str().parse().unwrap_or(3))
+        .unwrap_or(3);
 
     let pitch_str = format!("{}{}", name, acc);
     let pitch = Pitch::from_str(&pitch_str).ok_or("Invalid pitch".to_string())?;

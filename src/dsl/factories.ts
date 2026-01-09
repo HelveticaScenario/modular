@@ -109,7 +109,7 @@ export function hz(frequency: number): number {
  * Supports notes like "c4", "c#4", "db4", etc.
  */
 export function note(noteName: string): number {
-  const noteRegex = /^([a-g])([#b]?)(-?\d+)$/i;
+  const noteRegex = /^([a-g])([#b]?)(-?\d+)?$/i;
   const match = noteName.toLowerCase().match(noteRegex);
 
   if (!match) {
@@ -117,7 +117,7 @@ export function note(noteName: string): number {
   }
 
   const [, noteLetter, accidental, octaveStr] = match;
-  const octave = parseInt(octaveStr, 10);
+  const octave = octaveStr ? parseInt(octaveStr, 10) : 3;
 
   // Map note letters to semitones (C = 0)
   const noteMap: Record<string, number> = {

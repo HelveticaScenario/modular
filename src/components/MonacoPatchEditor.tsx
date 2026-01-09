@@ -141,6 +141,12 @@ export function MonacoPatchEditor({
     const [seqTrackingIds, setSeqTrackingIds] = useState<
         Map<string, Map<number, string>>
     >(new Map());
+    const [scaleTrackingIds, setScaleTrackingIds] = useState<
+        Map<string, Map<number, string>>
+    >(new Map());
+    const [addTrackingIds, setAddTrackingIds] = useState<
+        Map<string, Map<number, string>>
+    >(new Map());
     const trackingCollectionRef =
         useRef<editor.IEditorDecorationsCollection | null>(null);
     const activeStepCollectionRef =
@@ -180,8 +186,10 @@ export function MonacoPatchEditor({
             }
 
             const newTrackingIds = new Map<string, Map<number, string>>();
+            const newScaleTrackingIds = new Map<string, Map<number, string>>();
+            const newAddTrackingIds = new Map<string, Map<number, string>>();
             const decorationsToCreate: editor.IModelDeltaDecoration[] = [];
-            const decorationMetadata: { seqId: string; stepIdx: number }[] = [];
+            const decorationMetadata: { seqId: string; stepIdx: number; type: 'main' | 'scale' | 'add' }[] = [];
             const model = editor.getModel();
             if (!model) return;
 
@@ -206,31 +214,26 @@ export function MonacoPatchEditor({
                         );
                     }
 
-                    const ast =
+                    const program =
                         await window.electronAPI.parsePattern(patternToParse);
+                    console.log('program', program);
                     const seqId = `seq-${i + 1}`;
 
-                    const traverse = (nodes: any[]) => {
+                    // Helper to calculate offset within the pattern string
+                    const patternStartOffset =
+                        currentMatch.index +
+                        currentMatch.fullMatch.indexOf(currentMatch.quote) +
+                        1;
+
+                    // Traverse main pattern elements
+                    const traverseMain = (nodes: any[]) => {
                         for (const node of nodes) {
                             if (node.Leaf) {
                                 const { idx, span } = node.Leaf;
-                                const startOffset =
-                                    currentMatch.index +
-                                    currentMatch.fullMatch.indexOf(
-                                        currentMatch.quote,
-                                    ) +
-                                    1 +
-                                    span[0];
-                                const endOffset =
-                                    currentMatch.index +
-                                    currentMatch.fullMatch.indexOf(
-                                        currentMatch.quote,
-                                    ) +
-                                    1 +
-                                    span[1];
+                                const startOffset = patternStartOffset + span[0];
+                                const endOffset = patternStartOffset + span[1];
 
-                                const startPos =
-                                    model.getPositionAt(startOffset);
+                                const startPos = model.getPositionAt(startOffset);
                                 const endPos = model.getPositionAt(endOffset);
 
                                 decorationsToCreate.push({
@@ -249,20 +252,110 @@ export function MonacoPatchEditor({
                                 decorationMetadata.push({
                                     seqId,
                                     stepIdx: idx,
+                                    type: 'main',
                                 });
                             }
-                            if (node.Container) {
-                                traverse(node.Container.children);
-                            }
                             if (node.FastSubsequence)
-                                traverse(node.FastSubsequence.elements);
+                                traverseMain(node.FastSubsequence.elements);
                             if (node.SlowSubsequence)
-                                traverse(node.SlowSubsequence.elements);
+                                traverseMain(node.SlowSubsequence.elements);
                             if (node.RandomChoice)
-                                traverse(node.RandomChoice.choices);
+                                traverseMain(node.RandomChoice.choices);
                         }
                     };
-                    traverse(ast);
+
+                    // Traverse scale pattern nodes
+                    const traverseScale = (nodes: any[]) => {
+                        for (const node of nodes) {
+                            if (node.Leaf) {
+                                const { idx, span } = node.Leaf;
+                                const startOffset = patternStartOffset + span[0];
+                                const endOffset = patternStartOffset + span[1];
+
+                                const startPos = model.getPositionAt(startOffset);
+                                const endPos = model.getPositionAt(endOffset);
+
+                                decorationsToCreate.push({
+                                    range: new monaco.Range(
+                                        startPos.lineNumber,
+                                        startPos.column,
+                                        endPos.lineNumber,
+                                        endPos.column,
+                                    ),
+                                    options: {
+                                        stickiness:
+                                            monaco.editor.TrackedRangeStickiness
+                                                .NeverGrowsWhenTypingAtEdges,
+                                    },
+                                });
+                                decorationMetadata.push({
+                                    seqId,
+                                    stepIdx: idx,
+                                    type: 'scale',
+                                });
+                            }
+                            if (node.FastSubsequence)
+                                traverseScale(node.FastSubsequence.elements);
+                            if (node.SlowSubsequence)
+                                traverseScale(node.SlowSubsequence.elements);
+                            if (node.RandomChoice)
+                                traverseScale(node.RandomChoice.choices);
+                        }
+                    };
+
+                    // Traverse add pattern nodes (reuses ASTNode structure)
+                    const traverseAdd = (nodes: any[]) => {
+                        for (const node of nodes) {
+                            if (node.Leaf) {
+                                const { idx, span } = node.Leaf;
+                                const startOffset = patternStartOffset + span[0];
+                                const endOffset = patternStartOffset + span[1];
+
+                                const startPos = model.getPositionAt(startOffset);
+                                const endPos = model.getPositionAt(endOffset);
+
+                                decorationsToCreate.push({
+                                    range: new monaco.Range(
+                                        startPos.lineNumber,
+                                        startPos.column,
+                                        endPos.lineNumber,
+                                        endPos.column,
+                                    ),
+                                    options: {
+                                        stickiness:
+                                            monaco.editor.TrackedRangeStickiness
+                                                .NeverGrowsWhenTypingAtEdges,
+                                    },
+                                });
+                                decorationMetadata.push({
+                                    seqId,
+                                    stepIdx: idx,
+                                    type: 'add',
+                                });
+                            }
+                            if (node.FastSubsequence)
+                                traverseAdd(node.FastSubsequence.elements);
+                            if (node.SlowSubsequence)
+                                traverseAdd(node.SlowSubsequence.elements);
+                            if (node.RandomChoice)
+                                traverseAdd(node.RandomChoice.choices);
+                        }
+                    };
+
+                    // Traverse main pattern
+                    if (program.elements) {
+                        traverseMain(program.elements);
+                    }
+
+                    // Traverse scale pattern if present
+                    if (program.scale_pattern?.elements) {
+                        traverseScale(program.scale_pattern.elements);
+                    }
+
+                    // Traverse add pattern if present
+                    if (program.add_pattern?.elements) {
+                        traverseAdd(program.add_pattern.elements);
+                    }
                 } catch (e) {
                     console.error('Failed to parse pattern', e);
                 }
@@ -276,16 +369,30 @@ export function MonacoPatchEditor({
             const ids = collection.set(decorationsToCreate);
             trackingCollectionRef.current = collection;
 
-            // Map IDs back to (SeqID, StepIndex)
+            // Map IDs back to (SeqID, StepIndex) for each type
             for (let k = 0; k < ids.length; k++) {
-                const { seqId, stepIdx } = decorationMetadata[k];
-                if (!newTrackingIds.has(seqId)) {
-                    newTrackingIds.set(seqId, new Map());
+                const { seqId, stepIdx, type } = decorationMetadata[k];
+                if (type === 'main') {
+                    if (!newTrackingIds.has(seqId)) {
+                        newTrackingIds.set(seqId, new Map());
+                    }
+                    newTrackingIds.get(seqId)!.set(stepIdx, ids[k]);
+                } else if (type === 'scale') {
+                    if (!newScaleTrackingIds.has(seqId)) {
+                        newScaleTrackingIds.set(seqId, new Map());
+                    }
+                    newScaleTrackingIds.get(seqId)!.set(stepIdx, ids[k]);
+                } else if (type === 'add') {
+                    if (!newAddTrackingIds.has(seqId)) {
+                        newAddTrackingIds.set(seqId, new Map());
+                    }
+                    newAddTrackingIds.get(seqId)!.set(stepIdx, ids[k]);
                 }
-                newTrackingIds.get(seqId)!.set(stepIdx, ids[k]);
             }
 
             setSeqTrackingIds(newTrackingIds);
+            setScaleTrackingIds(newScaleTrackingIds);
+            setAddTrackingIds(newAddTrackingIds);
         };
 
         setupTracking();
@@ -304,7 +411,14 @@ export function MonacoPatchEditor({
 
                 for (const [id, state] of Object.entries(states)) {
                     if (id.startsWith('seq-') && 'active_step' in state) {
-                        const activeStep = (state as any).active_step as number;
+                        const typedState = state as {
+                            active_step: number;
+                            active_scale_step?: number | null;
+                            active_add_step?: number | null;
+                        };
+
+                        // Main pattern step
+                        const activeStep = typedState.active_step;
                         const stepMap = seqTrackingIds.get(id);
                         if (stepMap && stepMap.has(activeStep)) {
                             const decoId = stepMap.get(activeStep)!;
@@ -318,6 +432,46 @@ export function MonacoPatchEditor({
                                         isWholeLine: false,
                                     },
                                 });
+                            }
+                        }
+
+                        // Scale pattern step
+                        const activeScaleStep = typedState.active_scale_step;
+                        if (activeScaleStep != null) {
+                            const scaleMap = scaleTrackingIds.get(id);
+                            if (scaleMap && scaleMap.has(activeScaleStep)) {
+                                const decoId = scaleMap.get(activeScaleStep)!;
+                                const range = model.getDecorationRange(decoId);
+
+                                if (range && !range.isEmpty()) {
+                                    newDecorations.push({
+                                        range: range,
+                                        options: {
+                                            className: 'active-seq-step',
+                                            isWholeLine: false,
+                                        },
+                                    });
+                                }
+                            }
+                        }
+
+                        // Add pattern step
+                        const activeAddStep = typedState.active_add_step;
+                        if (activeAddStep != null) {
+                            const addMap = addTrackingIds.get(id);
+                            if (addMap && addMap.has(activeAddStep)) {
+                                const decoId = addMap.get(activeAddStep)!;
+                                const range = model.getDecorationRange(decoId);
+
+                                if (range && !range.isEmpty()) {
+                                    newDecorations.push({
+                                        range: range,
+                                        options: {
+                                            className: 'active-seq-step',
+                                            isWholeLine: false,
+                                        },
+                                    });
+                                }
                             }
                         }
                     }
@@ -335,7 +489,7 @@ export function MonacoPatchEditor({
         }, 50);
 
         return () => clearInterval(interval);
-    }, [editor, monaco, seqTrackingIds]);
+    }, [editor, monaco, seqTrackingIds, scaleTrackingIds, addTrackingIds]);
 
     const activeScopeViews = useMemo(
         () => scopeViews.filter((view) => view.file === currentFile),
