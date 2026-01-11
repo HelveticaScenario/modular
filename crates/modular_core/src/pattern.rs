@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 use pest::Parser;
 use pest::iterators::Pair;
 
-use crate::types::{Connect, Signal};
+use crate::{
+    dsp::utils::{hz_to_voct_f64, midi_to_voct_f64, voct_to_hz_f64, voct_to_midi_f64},
+    types::{Connect, Signal},
+};
 
 #[derive(pest_derive::Parser)]
 #[grammar = "pattern.pest"]
@@ -322,11 +325,6 @@ fn parse_ast(pair: Pair<Rule>, idx: &mut usize) -> Result<ASTNode, PatternParseE
     }
 }
 
-fn hz_to_voct(frequency_hz: f64) -> f64 {
-    // Matches src/dsl/factories.ts hz(): log2(f / 27.5)
-    (frequency_hz / 27.5).log2()
-}
-
 /// A scale definition (root note + scale name) that can be used at runtime
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct ScaleDefinition {
@@ -593,7 +591,7 @@ fn note_name_to_voct(letter: char, accidental: Option<char>, octave: i32) -> f64
 
     let semitones_from_c4 = (octave - 4) * 12 + semitone;
     let frequency = 440.0 * 2.0_f64.powf((semitones_from_c4 as f64 - 9.0) / 12.0);
-    hz_to_voct(frequency)
+    hz_to_voct_f64(frequency)
 }
 
 /// Parse a scale pattern node (recursive for nested patterns)
@@ -941,40 +939,20 @@ pub fn hash_components(seed: u64, time_bits: u64, choice_id: u64) -> u64 {
     hash
 }
 
-// ============ Pitch Conversion Functions ============
-
-/// A0 frequency in Hz (reference for V/Oct)
-const A0_HZ: f64 = 27.5;
-
-/// Convert MIDI note number to V/Oct (A0 = 0V = MIDI 21)
-fn midi_to_voct(midi: f64) -> f64 {
-    (midi - 21.0) / 12.0
-}
-
-/// Convert V/Oct to MIDI note number
-fn voct_to_midi(voct: f64) -> f64 {
-    voct * 12.0 + 21.0
-}
-
-/// Convert V/Oct to frequency in Hz
-fn voct_to_hz(voct: f64) -> f64 {
-    A0_HZ * 2.0_f64.powf(voct)
-}
-
 /// Resolve a Value to V/Oct, optionally using a scale for ScaleInterval values
 fn resolve_value_to_voct(value: &Value, scale: Option<&ScaleDefinition>) -> Option<f64> {
     match value {
         Value::Numeric(v) => Some(*v),
         Value::Pitch(pv) => match pv {
             PitchValue::Volts(v) => Some(*v),
-            PitchValue::Hz(hz) => Some(hz_to_voct(*hz)),
-            PitchValue::Midi(m) => Some(midi_to_voct(*m)),
+            PitchValue::Hz(hz) => Some(hz_to_voct_f64(*hz)),
+            PitchValue::Midi(m) => Some(midi_to_voct_f64(*m)),
             PitchValue::ScaleInterval(interval) => {
                 if let Some(s) = scale {
                     scale_interval_to_voct(*interval, s).ok()
                 } else {
                     // Without scale, treat as MIDI (shouldn't happen in well-formed patterns)
-                    Some(midi_to_voct(*interval))
+                    Some(midi_to_voct_f64(*interval))
                 }
             }
         },
@@ -1024,15 +1002,15 @@ pub fn apply_add(
                         }
                     }
                     // Otherwise: convert main to MIDI, add, convert back to V/Oct
-                    let main_midi = voct_to_midi(main_voct);
+                    let main_midi = voct_to_midi_f64(main_voct);
                     let result_midi = main_midi + value;
-                    midi_to_voct(result_midi)
+                    midi_to_voct_f64(result_midi)
                 }
                 AddPatternType::Hz => {
                     // Convert main to Hz, add Hz, convert back to V/Oct
-                    let main_hz = voct_to_hz(main_voct);
+                    let main_hz = voct_to_hz_f64(main_voct);
                     let result_hz = main_hz + value;
-                    hz_to_voct(result_hz.max(1.0)) // Clamp to avoid log of 0
+                    hz_to_voct_f64(result_hz.max(1.0)) // Clamp to avoid log of 0
                 }
                 AddPatternType::Volts => {
                     // Add directly to V/Oct output
@@ -2338,11 +2316,11 @@ mod tests {
     #[test]
     fn test_midi_to_voct_conversion() {
         // MIDI 21 = A0 = 0V
-        assert!((midi_to_voct(21.0) - 0.0).abs() < 1e-6);
+        assert!((midi_to_voct_f64(21.0) - 0.0).abs() < 1e-6);
         // MIDI 33 = A1 = 1V
-        assert!((midi_to_voct(33.0) - 1.0).abs() < 1e-6);
+        assert!((midi_to_voct_f64(33.0) - 1.0).abs() < 1e-6);
         // MIDI 60 = C4 = 3.25V (C4 is 39 semitones above A0)
-        assert!((midi_to_voct(60.0) - 39.0 / 12.0).abs() < 1e-6);
+        assert!((midi_to_voct_f64(60.0) - 39.0 / 12.0).abs() < 1e-6);
     }
 
     #[test]

@@ -125,8 +125,6 @@ export function MonacoPatchEditor({
         return Object.values(contextSchemasMap);
     }, [contextSchemasMap]);
 
-    console.log('MonacoPatchEditor schemas:', schemas);
-
     const extraLibDisposeRef = useRef<IDisposable | null>(null);
     const inlayHintDisposeRef = useRef<IDisposable | null>(null);
     const formattingProviderRef = useRef<IDisposable | null>(null);
@@ -189,7 +187,11 @@ export function MonacoPatchEditor({
             const newScaleTrackingIds = new Map<string, Map<number, string>>();
             const newAddTrackingIds = new Map<string, Map<number, string>>();
             const decorationsToCreate: editor.IModelDeltaDecoration[] = [];
-            const decorationMetadata: { seqId: string; stepIdx: number; type: 'main' | 'scale' | 'add' }[] = [];
+            const decorationMetadata: {
+                seqId: string;
+                stepIdx: number;
+                type: 'main' | 'scale' | 'add';
+            }[] = [];
             const model = editor.getModel();
             if (!model) return;
 
@@ -230,10 +232,12 @@ export function MonacoPatchEditor({
                         for (const node of nodes) {
                             if (node.Leaf) {
                                 const { idx, span } = node.Leaf;
-                                const startOffset = patternStartOffset + span[0];
+                                const startOffset =
+                                    patternStartOffset + span[0];
                                 const endOffset = patternStartOffset + span[1];
 
-                                const startPos = model.getPositionAt(startOffset);
+                                const startPos =
+                                    model.getPositionAt(startOffset);
                                 const endPos = model.getPositionAt(endOffset);
 
                                 decorationsToCreate.push({
@@ -269,10 +273,12 @@ export function MonacoPatchEditor({
                         for (const node of nodes) {
                             if (node.Leaf) {
                                 const { idx, span } = node.Leaf;
-                                const startOffset = patternStartOffset + span[0];
+                                const startOffset =
+                                    patternStartOffset + span[0];
                                 const endOffset = patternStartOffset + span[1];
 
-                                const startPos = model.getPositionAt(startOffset);
+                                const startPos =
+                                    model.getPositionAt(startOffset);
                                 const endPos = model.getPositionAt(endOffset);
 
                                 decorationsToCreate.push({
@@ -308,10 +314,12 @@ export function MonacoPatchEditor({
                         for (const node of nodes) {
                             if (node.Leaf) {
                                 const { idx, span } = node.Leaf;
-                                const startOffset = patternStartOffset + span[0];
+                                const startOffset =
+                                    patternStartOffset + span[0];
                                 const endOffset = patternStartOffset + span[1];
 
-                                const startPos = model.getPositionAt(startOffset);
+                                const startPos =
+                                    model.getPositionAt(startOffset);
                                 const endPos = model.getPositionAt(endOffset);
 
                                 decorationsToCreate.push({
@@ -824,9 +832,7 @@ export function MonacoPatchEditor({
             schemas: [
                 {
                     uri: 'modular://config-schema.json',
-                    fileMatch: [
-                        "*",
-                    ],
+                    fileMatch: ['*'],
                     schema: configSchema,
                 },
             ],

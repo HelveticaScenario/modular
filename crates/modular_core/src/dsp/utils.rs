@@ -1,3 +1,5 @@
+use num::Float;
+
 use crate::dsp::consts::{LUT_PITCH_RATIO_HIGH, LUT_PITCH_RATIO_LOW};
 
 /// Map a value from one range to another. If the input range is degenerate, returns `y0`.
@@ -301,4 +303,46 @@ impl TempGate {
             TempGateState::High => self.high_val,
         }
     }
+}
+
+// ============ Pitch Conversion Functions ============
+
+pub fn hz_to_voct_f64(frequency_hz: f64) -> f64 {
+    // Matches src/dsl/factories.ts hz(): log2(f / 27.5)
+    (frequency_hz / 27.5).log2()
+}
+
+/// Convert MIDI note number to V/Oct (A0 = 0V = MIDI 21)
+pub fn midi_to_voct_f64(midi: f64) -> f64 {
+    (midi - 21.0) / 12.0
+}
+
+/// Convert V/Oct to MIDI note number
+pub fn voct_to_midi_f64(voct: f64) -> f64 {
+    voct * 12.0 + 21.0
+}
+
+/// Convert V/Oct to frequency in Hz
+pub fn voct_to_hz_f64(voct: f64) -> f64 {
+    27.5 * 2.0.powf(voct)
+}
+
+pub fn hz_to_voct(frequency_hz: f32) -> f32 {
+    // Matches src/dsl/factories.ts hz(): log2(f / 27.5)
+    (frequency_hz / 27.5).log2()
+}
+
+/// Convert MIDI note number to V/Oct (A0 = 0V = MIDI 21)
+pub fn midi_to_voct(midi: f32) -> f32 {
+    (midi - 21.0) / 12.0
+}
+
+/// Convert V/Oct to MIDI note number
+pub fn voct_to_midi(voct: f32) -> f32 {
+    voct * 12.0 + 21.0
+}
+
+/// Convert V/Oct to frequency in Hz
+pub fn voct_to_hz(voct: f32) -> f32 {
+    27.5 * 2.0.powf(voct)
 }

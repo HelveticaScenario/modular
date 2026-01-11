@@ -72,16 +72,16 @@ impl Default for Adsr {
 
 impl Adsr {
     fn update(&mut self, sample_rate: f32) -> () {
-        // Smooth parameter targets to avoid clicks when values change
-        self.attack.update(self.params.attack.get_value_or(10.0));
-        self.decay.update(self.params.decay.get_value_or(10.0));
-        self.release.update(self.params.release.get_value_or(10.0));
+        // Smooth parameter targets to avoid clicks when values change (times in seconds)
+        self.attack.update(self.params.attack.get_value_or(0.01).max(0.001));
+        self.decay.update(self.params.decay.get_value_or(0.1).max(0.001));
+        self.release.update(self.params.release.get_value_or(0.1).max(0.001));
         self.sustain
             .update(self.params.sustain.get_value_or(5.).max(0.0));
 
-        let attack = 1.0 / (27.5f32 * 2.0f32.powf(*self.attack));
-        let decay = 1.0 / (27.5f32 * 2.0f32.powf(*self.decay));
-        let release_var = 1.0 / (27.5f32 * 2.0f32.powf(*self.release));
+        let attack = *self.attack;
+        let decay = *self.decay;
+        let release_var = *self.release;
 
         let gate_on = self.params.gate.get_value() > 2.5;
 

@@ -3,30 +3,17 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    dsp::utils::{TempGate, TempGateState},
+    dsp::utils::{TempGate, TempGateState, hz_to_voct_f64, midi_to_voct_f64},
     pattern::{AddPatternType, PatternProgram, PitchValue, Value, apply_add, parse_pattern},
     types::{Connect, Signal},
 };
-
-/// A0 frequency in Hz (reference for V/Oct)
-const A0_HZ: f64 = 27.5;
-
-/// Convert Hz to V/Oct
-fn hz_to_voct(hz: f64) -> f64 {
-    (hz / A0_HZ).log2()
-}
-
-/// Convert MIDI note to V/Oct (A0 = 0V = MIDI 21)
-fn midi_to_voct(midi: f64) -> f64 {
-    (midi - 21.0) / 12.0
-}
 
 /// Convert a PitchValue to V/Oct
 fn pitch_to_voct(pv: &PitchValue) -> f64 {
     match pv {
         PitchValue::Volts(v) => *v,
-        PitchValue::Hz(hz) => hz_to_voct(*hz),
-        PitchValue::Midi(m) => midi_to_voct(*m),
+        PitchValue::Hz(hz) => hz_to_voct_f64(*hz),
+        PitchValue::Midi(m) => midi_to_voct_f64(*m),
         PitchValue::ScaleInterval(_) => {
             // ScaleInterval should be resolved during parsing for simple scales
             // For patternable scales, this would need runtime resolution

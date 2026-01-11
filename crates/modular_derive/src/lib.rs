@@ -823,6 +823,32 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     let constructor_name = Ident::new(&constructor_name, Span::call_site());
     let params_struct_name = format_ident!("{}Params", name);
 
+    // Extract generics for proper impl blocks
+    let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
+
+    // For the wrapper struct, we need to replace all lifetime parameters with 'static
+    // since Sampleable requires 'static. Build a static version of ty_generics.
+    let static_ty_generics = {
+        let params = ast.generics.params.iter().map(|p| {
+            match p {
+                syn::GenericParam::Lifetime(_) => quote!('static),
+                syn::GenericParam::Type(t) => {
+                    let ident = &t.ident;
+                    quote!(#ident)
+                }
+                syn::GenericParam::Const(c) => {
+                    let ident = &c.ident;
+                    quote!(#ident)
+                }
+            }
+        }).collect::<Vec<_>>();
+        if params.is_empty() {
+            quote!()
+        } else {
+            quote!(<#(#params),*>)
+        }
+    };
+
     let is_stateful = ast.attrs.iter().any(|attr| attr.path().is_ident("stateful"));
     let get_state_impl = if is_stateful {
         quote! {
@@ -839,7 +865,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         struct #struct_name {
             id: String,
             outputs: parking_lot::RwLock<#outputs_ty>,
-            module: parking_lot::Mutex<#name>,
+            module: parking_lot::Mutex<#name #static_ty_generics>,
             processed: core::sync::atomic::AtomicBool,
             sample_rate: f32
         }
@@ -910,7 +936,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             })))
         }
 
-        impl crate::types::Module for #name {
+        impl #impl_generics crate::types::Module for #name #ty_generics #where_clause {
             fn install_constructor(map: &mut std::collections::HashMap<String, crate::types::SampleableConstructor>) {
                 map.insert(#module_name.into(), Box::new(#constructor_name));
             }

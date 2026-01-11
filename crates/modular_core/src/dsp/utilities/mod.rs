@@ -8,6 +8,7 @@ pub mod clock_divider;
 pub mod lag;
 pub mod logic;
 pub mod math;
+pub mod percussion_envelope;
 pub mod sample_and_hold;
 
 // Re-export useful types
@@ -23,6 +24,7 @@ pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     math::Math::install_constructor(map);
     sample_and_hold::SampleAndHold::install_constructor(map);
     sample_and_hold::TrackAndHold::install_constructor(map);
+    percussion_envelope::PercussionEnvelope::install_constructor(map);
 }
 
 pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
@@ -35,6 +37,7 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     math::Math::install_params_validator(map);
     sample_and_hold::SampleAndHold::install_params_validator(map);
     sample_and_hold::TrackAndHold::install_params_validator(map);
+    percussion_envelope::PercussionEnvelope::install_params_validator(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {
@@ -48,5 +51,6 @@ pub fn schemas() -> Vec<ModuleSchema> {
         math::Math::get_schema(),
         sample_and_hold::SampleAndHold::get_schema(),
         sample_and_hold::TrackAndHold::get_schema(),
+        percussion_envelope::PercussionEnvelope::get_schema(),
     ]
 }
