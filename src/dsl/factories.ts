@@ -4,6 +4,10 @@ import { GraphBuilder, ModuleNode, ModuleOutput } from './GraphBuilder';
 
 type FactoryFunction = (...args: any[]) => ModuleNode;
 
+type NamespaceTree = {
+  [key: string]: NamespaceTree | FactoryFunction;
+};
+
 function sanitizeIdentifier(name: string): string {
   let id = name.replace(
     /[^a-zA-Z0-9_$]+(.)?/g,
@@ -16,18 +20,73 @@ function sanitizeIdentifier(name: string): string {
 }
 
 /**
+ * Build a nested namespace tree from module schemas
+ * Mirrors the logic in typescriptLibGen.ts buildTreeFromSchemas()
+ */
+function buildNamespaceTree(
+  schemas: ModuleSchema[],
+  factoryMap: Record<string, FactoryFunction>
+): NamespaceTree {
+  const tree: NamespaceTree = {};
+
+  for (const schema of schemas) {
+    const fullName = schema.name.trim();
+    const parts = fullName.split('.').filter(p => p.length > 0);
+
+    const factoryName = sanitizeIdentifier(fullName);
+    const factory = factoryMap[factoryName];
+
+    if (parts.length === 1) {
+      // No namespace, add to root
+      tree[parts[0]] = factory;
+    } else {
+      // Navigate/create namespace hierarchy
+      const className = parts[parts.length - 1];
+      const namespacePath = parts.slice(0, -1);
+
+      let current: NamespaceTree = tree;
+      for (const ns of namespacePath) {
+        if (!current[ns]) {
+          current[ns] = {};
+        } else if (typeof current[ns] === 'function') {
+          throw new Error(
+            `Namespace collision: ${ns} is both a module and a namespace`
+          );
+        }
+        current = current[ns] as NamespaceTree;
+      }
+
+      if (current[className] && typeof current[className] !== 'function') {
+        throw new Error(
+          `Module name collision: ${className} already exists as a namespace`
+        );
+      }
+      current[className] = factory;
+    }
+  }
+
+  return tree;
+}
+
+/**
  * DSL Context holds the builder and provides factory functions
  */
 export class DSLContext {
   factories: Record<string, FactoryFunction> = {};
+  namespaceTree: NamespaceTree = {};
   private builder: GraphBuilder;
 
   constructor(schemas: ModuleSchema[]) {
     this.builder = new GraphBuilder(schemas);
+
+    // Build flat factory map (internal use for tree building)
     for (const schema of schemas) {
       const factoryName = sanitizeIdentifier(schema.name);
       this.factories[factoryName] = this.createFactory(schema);
     }
+
+    // Build namespace tree (only way to access modules)
+    this.namespaceTree = buildNamespaceTree(schemas, this.factories);
   }
 
   /**

@@ -13,16 +13,16 @@ export function executePatchScript(
   // Create DSL context
   console.log('Executing DSL script with schemas:', schemas);
   const context = new DSLContext(schemas);
-  const out = context.factories.signal(undefined, { id: 'root' });
+  const out = (context.namespaceTree.signal as any)(undefined, { id: 'root' });
 
   // Create default clock module that runs at 120 BPM
-  const rootClock = context.factories.clock(bpm(120), { id: 'root_clock' });
+  const rootClock = (context.namespaceTree.clock as any)(bpm(120), { id: 'root_clock' });
   console.log('Created clock module:', rootClock);
 
 
   // Create the execution environment with all DSL functions
   const dslGlobals = {
-    ...context.factories,
+    ...context.namespaceTree,
     // Helper functions
     hz,
     note,
