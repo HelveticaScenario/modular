@@ -14,9 +14,15 @@ RandomChoice = { NonRandomElement ~ ("|" ~ NonRandomElement)+ }
 
 // Value types - order matters for precedence
 // VoltsValue must come before NumericLiteral to match "1v" before "1"
-Value = { Rest | HzValue | VoltsValue | NoteName | NumericLiteral | ModuleRef }
+// Interpolation must come early to match placeholder characters used for template strings
+Value = { Rest | Interpolation | HzValue | VoltsValue | NoteName | NumericLiteral | ModuleRef }
 
 Rest = { "~" }
+
+// Interpolation placeholder - uses NUL character (ASCII 0x00 / 0)
+// This character is used to mask ${...} interpolations in template strings
+// during parsing to preserve correct span positions
+Interpolation = { "\x00"+ }
 
 ModuleRef = { "module(" ~ ModuleId ~ ":" ~ PortName ~ ")" }
 ModuleId = @{ (ASCII_ALPHANUMERIC | "-" | "_")+ }

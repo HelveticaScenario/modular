@@ -163,6 +163,20 @@ fn parse_ast(pair: Pair<Rule>, idx: &mut usize) -> Result<ASTNode, PatternParseE
             })
         }
 
+        Rule::Interpolation => {
+            // Interpolation placeholders (NUL/0x00) are treated as Rest during parsing.
+            // They represent ${...} template string interpolations that will be
+            // resolved at runtime.
+            let i = *idx;
+            *idx += 1;
+            let span = pair.as_span();
+            Ok(ASTNode::Leaf {
+                value: Value::Rest,
+                idx: i,
+                span: (span.start(), span.end()),
+            })
+        }
+
         Rule::NumericLiteral => {
             let span = pair.as_span();
             let num_str = pair

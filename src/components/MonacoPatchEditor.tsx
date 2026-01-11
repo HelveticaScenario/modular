@@ -36,6 +36,7 @@ export interface PatchEditorProps {
     onRegisterScopeCanvas?: (key: string, canvas: HTMLCanvasElement) => void;
     onUnregisterScopeCanvas?: (key: string) => void;
     lastSubmittedCode?: string | null;
+    runningBufferId?: string | null;
 }
 
 // Apply the generated DSL .d.ts library to Monaco and expose some
@@ -119,6 +120,7 @@ export function MonacoPatchEditor({
     onRegisterScopeCanvas,
     onUnregisterScopeCanvas,
     lastSubmittedCode,
+    runningBufferId,
 }: PatchEditorProps) {
     const { schemas: contextSchemasMap } = useSchemas();
     const schemas = useMemo(() => {
@@ -153,6 +155,8 @@ export function MonacoPatchEditor({
     // Setup tracking when submitted code changes
     useEffect(() => {
         if (!lastSubmittedCode || !editor || !monaco) return;
+        // Only set up tracking for the file that was actually run
+        if (currentFile !== runningBufferId) return;
 
         const setupTracking = async () => {
             // Regex to match seq(...) calls, supporting multiline strings ([\s\S])
@@ -207,12 +211,13 @@ export function MonacoPatchEditor({
 
                 try {
                     let patternToParse = submittedMatch.pattern;
-                    // If using backticks, mask interpolation ${...} to ensure it parses as a single token
-                    // while preserving the original length for correct span mapping.
+                    // If using backticks, mask interpolation ${...} with NUL characters (0x00)
+                    // to ensure they parse as separate single steps while preserving the
+                    // original character length for correct span mapping.
                     if (submittedMatch.quote === '`') {
                         patternToParse = patternToParse.replace(
                             /\$\{[\s\S]*?\}/g,
-                            (m) => '0'.repeat(m.length),
+                            (m) => '\x00'.repeat(m.length),
                         );
                     }
 
@@ -404,11 +409,20 @@ export function MonacoPatchEditor({
         };
 
         setupTracking();
-    }, [lastSubmittedCode, editor, monaco]);
+    }, [lastSubmittedCode, editor, monaco, currentFile, runningBufferId]);
 
     // Poll module states
     useEffect(() => {
         if (!editor || !monaco) return;
+        // Only poll for active steps if this is the running buffer
+        if (currentFile !== runningBufferId) {
+            // Clear any existing decorations when switching away from running file
+            if (activeStepCollectionRef.current) {
+                activeStepCollectionRef.current.clear();
+            }
+            return;
+        }
+
         const interval = setInterval(async () => {
             try {
                 const states =
@@ -497,7 +511,7 @@ export function MonacoPatchEditor({
         }, 50);
 
         return () => clearInterval(interval);
-    }, [editor, monaco, seqTrackingIds, scaleTrackingIds, addTrackingIds]);
+    }, [editor, monaco, seqTrackingIds, scaleTrackingIds, addTrackingIds, currentFile, runningBufferId]);
 
     const activeScopeViews = useMemo(
         () => scopeViews.filter((view) => view.file === currentFile),

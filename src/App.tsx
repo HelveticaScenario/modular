@@ -252,6 +252,41 @@ function App() {
     const editorRef = useRef<editor.IStandaloneCodeEditor>(null);
     const scopeCanvasMapRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
 
+    // Suppress harmless Monaco Editor cancellation errors when switching files
+    useEffect(() => {
+        const handleError = (event: ErrorEvent) => {
+            // Check if this is the Monaco WordHighlighter cancellation error
+            if (
+                event.error?.message === 'Canceled' &&
+                event.error?.stack?.includes('WordHighlighter')
+            ) {
+                // Suppress this error - it's harmless and happens during normal file switching
+                event.preventDefault();
+                return;
+            }
+        };
+
+        const handleRejection = (event: PromiseRejectionEvent) => {
+            // Also catch if it appears as an unhandled promise rejection
+            const reason = event.reason;
+            if (
+                reason?.message === 'Canceled' &&
+                (reason?.stack?.includes('WordHighlighter') ||
+                    reason?.stack?.includes('Delayer'))
+            ) {
+                event.preventDefault();
+                return;
+            }
+        };
+
+        window.addEventListener('error', handleError);
+        window.addEventListener('unhandledrejection', handleRejection);
+        return () => {
+            window.removeEventListener('error', handleError);
+            window.removeEventListener('unhandledrejection', handleRejection);
+        };
+    }, []);
+
     // Load workspace and file tree on mount
     useEffect(() => {
         electronAPI.filesystem
@@ -1052,6 +1087,7 @@ function App() {
                             <PatchEditor
                                 value={patchCode}
                                 lastSubmittedCode={lastSubmittedCode}
+                                runningBufferId={runningBufferId}
                                 currentFile={activeBufferId}
                                 onChange={handlePatchChange}
                                 editorRef={editorRef}
