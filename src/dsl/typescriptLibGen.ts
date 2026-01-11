@@ -206,11 +206,17 @@ type Scale = \`\${number}s(\${Note}:\${ModeString})\`
 // Core DSL types used by the generated declarations
 type Signal = number | Note | HZ | MidiNote | Scale | ModuleOutput | ModuleNode;
 
+type Deferrable<T> = 
+  | T 
+  | (() => Deferrable<T>)
+  | (T extends (infer U)[] ? Deferrable<U>[] : never)
+  | (T extends object ? { [K in keyof T]: Deferrable<T[K]> } : never);
+
 interface ModuleOutput {
   readonly moduleId: string;
   readonly portName: string;
-  gain(factor: Signal): ModuleNode;
-  shift(offset: Signal): ModuleNode;
+  gain(factor: Deferrable<Signal>): ModuleNode;
+  shift(offset: Deferrable<Signal>): ModuleNode;
   scope(msPerFrame?: number, triggerThreshold?: number): this;
   out(mute?: boolean): this;
 }
@@ -219,8 +225,8 @@ interface ModuleNode {
   readonly id: string;
   readonly moduleType: string;
   readonly o: ModuleOutput;
-  gain(value: Signal): ModuleNode;
-  shift(value: Signal): ModuleNode;
+  gain(value: Deferrable<Signal>): ModuleNode;
+  shift(value: Deferrable<Signal>): ModuleNode;
   scope(msPerFrame?: number, triggerThreshold?: number): this;
   out(mute?: boolean): this;
 }
@@ -229,6 +235,9 @@ interface ModuleNode {
 declare function hz(frequency: number): number;
 declare function note(noteName: string): number;
 declare function bpm(beatsPerMinute: number): number;
+
+// Tagged template literal allowing strings with deferred values
+declare function defer(strings: TemplateStringsArray, ...values: any[]): string;
 `;
 
 export function buildLibSource(schemas: ModuleSchema[]): string {
@@ -530,7 +539,9 @@ function renderParamsInterface(
         lines.push('');
         lines.push(...renderDocComment(prop.description, indent + '  '));
         const type = schemaToTypeExpr(prop.schema, classSpec.rootSchema);
-        lines.push(`${indent}  ${renderPropertyKey(prop.name)}?: ${type};`);
+        lines.push(
+            `${indent}  ${renderPropertyKey(prop.name)}?: Deferrable<${type}>;`,
+        );
     }
     lines.push(`${indent}}`);
     return lines;
@@ -562,7 +573,7 @@ function renderFactoryFunction(
             ? schemaToTypeExpr(propSchema, moduleSchema.paramsSchema)
             : 'any';
         const optional = arg.optional ? '?' : '';
-        args.push(`${arg.name}${optional}: ${type}`);
+        args.push(`${arg.name}${optional}: Deferrable<${type}>`);
 
         // Add @param for positional arg
         const description = propSchema?.description;
@@ -608,7 +619,7 @@ function renderFactoryFunction(
 
     const configType = `{ ${configProps.join('; ')} }`;
 
-    args.push(`config?: ${configType}`);
+    args.push(`config?: Defferable<${configType}>`);
 
     // Add @param config with nested property descriptions
     if (configParamDocs.length > 0) {
@@ -686,7 +697,9 @@ function renderInterface(
             classSpec.rootSchema,
             prop.description,
         );
-        const argList = args.map((a) => `${a.name}: ${a.type}`).join(', ');
+        const argList = args
+            .map((a) => `${a.name}: Deferrable<${a.type}>`)
+            .join(', ');
         lines.push(
             `${indent}  ${renderPropertyKey(prop.name)}(${argList}): this;`,
         );
@@ -734,19 +747,6 @@ export function generateDSL(schemas: ModuleSchema[]): string {
     }
     const tree = buildTreeFromSchemas(schemas);
     const lines = renderTree(tree, 0);
-
-    const signalSchema = schemas.find((s) => s.name === 'signal');
-    if (signalSchema) {
-        lines.push('');
-        lines.push("/** Root output helper bound to the 'signal' module. */");
-        lines.push(
-            `export declare const out: ${getQualifiedNodeInterfaceType(signalSchema.name)};`,
-        );
-    } else {
-        lines.push('');
-        lines.push('/** Root output helper. */');
-        lines.push('export declare const out: ModuleNode;');
-    }
 
     const clockSchema = schemas.find((s) => s.name === 'clock');
     if (clockSchema) {

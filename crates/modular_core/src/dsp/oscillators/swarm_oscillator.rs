@@ -28,7 +28,7 @@ struct SwarmOscillatorOutputs {
 
 #[derive(Default, Module)]
 #[module("mi.swarm", "Granular swarm synthesis")]
-#[args(freq, timbre?, morph?, harmonics?)]
+#[args(freq)]
 pub struct SwarmOscillator {
     outputs: SwarmOscillatorOutputs,
     engine: Option<SwarmEngine>,
@@ -74,11 +74,11 @@ impl SwarmOscillator {
             self.freq
                 .update(self.params.freq.get_value_or(4.0).clamp(-10.0, 10.0));
             self.timbre
-                .update(self.params.timbre.get_value_or(0.0).clamp(0.0, 5.0));
+                .update(self.params.timbre.get_value_or(2.5).clamp(0.0, 5.0));
             self.morph
-                .update(self.params.morph.get_value_or(0.0).clamp(0.0, 5.0));
+                .update(self.params.morph.get_value_or(2.5).clamp(0.0, 5.0));
             self.harmonics
-                .update(self.params.harmonics.get_value_or(0.0).clamp(0.0, 5.0));
+                .update(self.params.harmonics.get_value_or(2.5).clamp(0.0, 5.0));
 
             // Convert V/oct to MIDI note (A4 = 4V/oct = 69 MIDI)
             let midi_note = voct_to_midi(*self.freq + 2.0);

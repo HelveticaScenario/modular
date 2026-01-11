@@ -10,6 +10,7 @@ struct PercussionEnvelopeParams {
     trigger: Signal,
     /// decay time in seconds
     decay: Signal,
+    range: (Signal, Signal),
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -19,7 +20,7 @@ struct PercussionEnvelopeOutputs {
 }
 
 #[derive(Module)]
-#[module("percEnv", "Percussion envelope with exponential decay")]
+#[module("perc", "Percussion envelope with exponential decay")]
 #[args(trigger)]
 pub struct PercussionEnvelope {
     outputs: PercussionEnvelopeOutputs,
@@ -70,7 +71,9 @@ impl PercussionEnvelope {
         }
 
         // Output 0-5V
-        self.outputs.sample = (self.current_level * 5.0).clamp(0.0, 5.0);
+        let min = self.params.range.0.get_value_or(0.0);
+        let max = self.params.range.1.get_value_or(5.0);
+        self.outputs.sample = crate::dsp::utils::map_range(self.current_level, 0.0, 1.0, min, max);
     }
 }
 

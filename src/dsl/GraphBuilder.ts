@@ -7,6 +7,71 @@ import type {
 import type { ProcessedModuleSchema } from './paramsSchema';
 import { processSchemas } from './paramsSchema';
 
+export type Defferable<T> =
+    | T
+    | (() => Defferable<T>)
+    | (T extends (infer U)[] ? Defferable<U>[] : never)
+    | (T extends object ? { [K in keyof T]: Defferable<T[K]> } : never);
+
+export function resolveValue(value: any): any {
+    if (typeof value === 'function') {
+        return resolveValue(value());
+    }
+
+    if (Array.isArray(value)) {
+        return value.map((item) => resolveValue(item));
+    }
+
+    if (
+        value !== null &&
+        typeof value === 'object' &&
+        value.constructor === Object
+    ) {
+        const resolved: Record<string, any> = {};
+        for (const key in value) {
+            if (value.hasOwnProperty(key)) {
+                resolved[key] = resolveValue(value[key]);
+            }
+        }
+        return resolved;
+    }
+
+    return value;
+}
+
+function foo(arg: Defferable<string[]>) {
+    const resolved = resolveValue(arg);
+    console.log(resolved);
+}
+
+// foo([() => 5, 'b', 'c']);
+
+export function defer(
+    strings: TemplateStringsArray,
+    ...values: any[]
+): Defferable<string> {
+    const fn = () => {
+        let result = strings[0];
+
+        for (let i = 0; i < values.length; i++) {
+            const resolved = resolveValue(values[i]);
+
+            let stringValue: string;
+            if (typeof resolved === 'object' && resolved !== null) {
+                stringValue = JSON.stringify(resolved);
+            } else {
+                stringValue = String(resolved);
+            }
+
+            result += stringValue + strings[i + 1];
+        }
+
+        return result;
+    };
+
+    return fn;
+}
+
 /**
  * GraphBuilder manages the construction of a PatchGraph from DSL code.
  * It tracks modules, generates deterministic IDs, and builds the final graph.
@@ -127,9 +192,16 @@ export class GraphBuilder {
             // Connect the sum output to the root signal's source
             rootSignal._setParam('source', sumModule.o);
         }
-
+        console.log('modules', new Map(this.modules.entries()));
+        for (let [k, v] of this.modules.entries()) {
+            this.modules.set(k, resolveValue({ ...v }));
+        }
+        console.log('modules', new Map(this.modules.entries()));
         return {
-            modules: Array.from(this.modules.values()),
+            modules: Array.from(this.modules.values()).map((m) => ({
+                ...m,
+                params: replaceSignals(m.params),
+            })),
             scopes: Array.from(this.scopes),
         };
     }

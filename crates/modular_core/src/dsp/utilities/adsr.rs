@@ -16,6 +16,8 @@ struct AdsrParams {
     sustain: Signal,
     /// release time in seconds
     release: Signal,
+
+    range: (Signal, Signal),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -73,9 +75,12 @@ impl Default for Adsr {
 impl Adsr {
     fn update(&mut self, sample_rate: f32) -> () {
         // Smooth parameter targets to avoid clicks when values change (times in seconds)
-        self.attack.update(self.params.attack.get_value_or(0.01).max(0.001));
-        self.decay.update(self.params.decay.get_value_or(0.1).max(0.001));
-        self.release.update(self.params.release.get_value_or(0.1).max(0.001));
+        self.attack
+            .update(self.params.attack.get_value_or(0.01).max(0.001));
+        self.decay
+            .update(self.params.decay.get_value_or(0.1).max(0.001));
+        self.release
+            .update(self.params.release.get_value_or(0.1).max(0.001));
         self.sustain
             .update(self.params.sustain.get_value_or(5.).max(0.0));
 
@@ -149,7 +154,9 @@ impl Adsr {
             }
         }
 
-        self.outputs.sample = (self.current_level * 5.0).clamp(0.0, 5.0);
+        let min = self.params.range.0.get_value_or(0.0);
+        let max = self.params.range.1.get_value_or(5.0);
+        self.outputs.sample = crate::dsp::utils::map_range(self.current_level, 0.0, 1.0, min, max);
     }
 }
 

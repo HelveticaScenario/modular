@@ -1,5 +1,6 @@
 import { ModuleSchema, PatchGraph } from '@modular/core';
 import { DSLContext, hz, note, bpm } from './factories';
+import { defer } from './GraphBuilder';
 
 /**
  * Execute a DSL script and return the resulting PatchGraph
@@ -26,6 +27,7 @@ export function executePatchScript(
         note,
         bpm,
         // Built-in modules
+        defer,
         rootClock,
     };
 
