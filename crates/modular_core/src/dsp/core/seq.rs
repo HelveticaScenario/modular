@@ -42,8 +42,8 @@ struct CachedNode {
     time_start: f64,
     time_end: f64,
     idx: usize,
-    scale_idx: Option<usize>,
-    add_idx: Option<usize>,
+    scale_modifier: Option<(crate::pattern::ScaleDefinition, usize)>,
+    add_modifier: Option<(f64, usize, AddPatternType)>,
 }
 
 #[derive(Default, JsonSchema)]
@@ -145,11 +145,23 @@ impl Seq {
                         self.outputs.cv = *v as f32;
                         self.outputs.gate = self.gate.process();
                         self.outputs.trig = self.trigger.process();
+                        self.outputs.cv = apply_add(
+                            self.outputs.cv as f64,
+                            &cached_node.value,
+                            &cached_node.add_modifier,
+                            &cached_node.scale_modifier,
+                        ) as f32;
                     }
                     Value::ModuleRef { signal, .. } => {
                         self.outputs.cv = signal.get_value();
                         self.outputs.gate = self.gate.process();
                         self.outputs.trig = self.trigger.process();
+                        self.outputs.cv = apply_add(
+                            self.outputs.cv as f64,
+                            &cached_node.value,
+                            &cached_node.add_modifier,
+                            &cached_node.scale_modifier,
+                        ) as f32;
                     }
                     Value::Rest => {
                         self.outputs.gate = self.gate.process();
@@ -160,6 +172,12 @@ impl Seq {
                         self.outputs.cv = voct as f32;
                         self.outputs.gate = self.gate.process();
                         self.outputs.trig = self.trigger.process();
+                        self.outputs.cv = apply_add(
+                            self.outputs.cv as f64,
+                            &cached_node.value,
+                            &cached_node.add_modifier,
+                            &cached_node.scale_modifier,
+                        ) as f32;
                     }
                     Value::UnresolvedNumeric(_) => {
                         unreachable!("UnresolvedNumeric should be resolved during parsing")
@@ -171,6 +189,27 @@ impl Seq {
         let value = self.params.pattern.pattern.run(playhead_value, self.seed);
         match value {
             Some((value, start, duration, idx)) => {
+                // Run scale pattern to get current scale (for add pattern resolution)
+                let scale_modifier: Option<(crate::pattern::ScaleDefinition, usize)> = self
+                    .params
+                    .pattern
+                    .pattern
+                    .scale_pattern
+                    .as_ref()
+                    .and_then(|sp| sp.run(playhead_value, self.seed));
+
+                // Run add pattern and apply the add value to CV
+                let add_modifier: Option<(f64, usize, AddPatternType)> = self
+                    .params
+                    .pattern
+                    .pattern
+                    .add_pattern
+                    .as_ref()
+                    .and_then(|ap| {
+                        ap.run(playhead_value, self.seed)
+                            .map(|(value, idx)| (value, idx, ap.value_type))
+                    });
+
                 match value {
                     Value::Numeric(v) => {
                         self.gate.set_state(TempGateState::Low, TempGateState::High);
@@ -179,6 +218,12 @@ impl Seq {
                         self.outputs.cv = v as f32;
                         self.outputs.gate = self.gate.process();
                         self.outputs.trig = self.trigger.process();
+                        self.outputs.cv = apply_add(
+                            self.outputs.cv as f64,
+                            &value,
+                            &add_modifier,
+                            &scale_modifier,
+                        ) as f32;
                     }
                     Value::ModuleRef { ref signal, .. } => {
                         // For now, treat module refs as rests
@@ -188,6 +233,12 @@ impl Seq {
                         self.outputs.cv = signal.get_value();
                         self.outputs.gate = self.gate.process();
                         self.outputs.trig = self.trigger.process();
+                        self.outputs.cv = apply_add(
+                            self.outputs.cv as f64,
+                            &value,
+                            &add_modifier,
+                            &scale_modifier,
+                        ) as f32;
                     }
                     Value::Rest => {
                         self.trigger
@@ -204,49 +255,16 @@ impl Seq {
                         self.outputs.cv = voct as f32;
                         self.outputs.gate = self.gate.process();
                         self.outputs.trig = self.trigger.process();
+                        self.outputs.cv = apply_add(
+                            self.outputs.cv as f64,
+                            &value,
+                            &add_modifier,
+                            &scale_modifier,
+                        ) as f32;
                     }
                     Value::UnresolvedNumeric(_) => {
                         unreachable!("UnresolvedNumeric should be resolved during parsing")
                     }
-                }
-                // Run scale pattern to get current scale (for add pattern resolution)
-                let scale_result = self
-                    .params
-                    .pattern
-                    .pattern
-                    .scale_pattern
-                    .as_ref()
-                    .and_then(|sp| sp.run(playhead_value, self.seed));
-                let scale_idx = scale_result.as_ref().map(|(_, idx)| *idx);
-
-                // Run add pattern and apply the add value to CV
-                let add_result = self
-                    .params
-                    .pattern
-                    .pattern
-                    .add_pattern
-                    .as_ref()
-                    .and_then(|ap| ap.run(playhead_value, self.seed));
-                let add_idx = add_result.as_ref().map(|(_, idx)| *idx);
-
-                if let Some((add_value, _)) = add_result {
-                    let add_type = self
-                        .params
-                        .pattern
-                        .pattern
-                        .add_pattern
-                        .as_ref()
-                        .map(|ap| ap.value_type)
-                        .unwrap_or(AddPatternType::BareNumber);
-                    let scale_def = scale_result.as_ref().map(|(s, _)| s);
-                    let new_cv = apply_add(
-                        self.outputs.cv as f64,
-                        &value,
-                        add_value,
-                        add_type,
-                        scale_def,
-                    );
-                    self.outputs.cv = new_cv as f32;
                 }
 
                 self.cached_node = Some(CachedNode {
@@ -254,8 +272,8 @@ impl Seq {
                     time_start: start,
                     time_end: start + duration,
                     idx,
-                    scale_idx,
-                    add_idx,
+                    scale_modifier,
+                    add_modifier,
                 });
             }
             None => {
@@ -272,8 +290,8 @@ impl crate::types::StatefulModule for Seq {
         self.cached_node.as_ref().map(|cached| {
             serde_json::json!({
                 "active_step": cached.idx,
-                "active_scale_step": cached.scale_idx,
-                "active_add_step": cached.add_idx
+                "active_scale_step": cached.scale_modifier.as_ref().map(|(_, idx)| idx),
+                "active_add_step": cached.add_modifier.as_ref().map(|(_, idx, _)| idx)
             })
         })
     }

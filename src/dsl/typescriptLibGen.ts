@@ -128,7 +128,7 @@ interface Console {
 declare var console: Console;
 type NoteNames = "a" | "A" | "b" | "B" | "c" | "C" | "d" | "D" | "e" | "E" | "f" | "F" | "g" | "G"
 type Accidental = "" | "#" | "b"
-type Note = \`\${NoteNames}\${Accidental}\${number}\`
+type Note = \`\${NoteNames}\${Accidental}\${number | ''}\`
 
 type HZ = \`\${number}hz\` | \`\${number}Hz\`
 

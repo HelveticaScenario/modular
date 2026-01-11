@@ -61,7 +61,7 @@ const synth = new Synthesizer();
 
 setInterval(() => {
     // Keep the audio thread alive
-    console.log('health:', synth.getHealth());
+    // console.log('health:', synth.getHealth());
 }, 10000);
 
 // Workspace root state
