@@ -17,6 +17,7 @@ export class GraphBuilder {
     private schemas: ProcessedModuleSchema[] = [];
     private schemaByName: Map<string, ProcessedModuleSchema> = new Map();
     private scopes: Scope[] = [];
+    private outModules: ModuleOutput[] = [];
 
     constructor(schemas: ModuleSchema[]) {
         this.schemas = processSchemas(schemas);
@@ -106,6 +107,27 @@ export class GraphBuilder {
      * Build the final PatchGraph
      */
     toPatch(): PatchGraph {
+        // Create the root signal module that will receive the final output
+        const rootSignal = this.addModule('signal', 'root');
+
+        // If there are any modules registered with out(), create a sum module
+        if (this.outModules.length > 0) {
+            const sumModule = this.addModule('sum');
+
+            // Convert all outModules to signal format
+            const signals = this.outModules.map((output) => ({
+                type: 'cable',
+                module: output.moduleId,
+                port: output.portName,
+            }));
+
+            // Set the signals parameter on the sum module
+            this.setParam(sumModule.id, 'signals', signals);
+
+            // Connect the sum output to the root signal's source
+            rootSignal._setParam('source', sumModule.o);
+        }
+
         return {
             modules: Array.from(this.modules.values()),
             scopes: Array.from(this.scopes),
@@ -119,6 +141,15 @@ export class GraphBuilder {
         this.modules.clear();
         this.scopes = [];
         this.counters.clear();
+        this.outModules = [];
+    }
+
+    /**
+     * Register a module or output to be sent to speakers
+     */
+    addOut(value: ModuleOutput | ModuleNode): void {
+        const output = value instanceof ModuleNode ? value.o : value;
+        this.outModules.push(output);
     }
 
     addScope(
@@ -230,6 +261,13 @@ export class ModuleNode {
         return this;
     }
 
+    out(mute?: boolean): this {
+        if (!mute) {
+            this.builder.addOut(this);
+        }
+        return this;
+    }
+
     _setParam(paramName: string, value: unknown): this {
         this.builder.setParam(this.id, paramName, replaceSignals(value));
         return this;
@@ -292,6 +330,13 @@ export class ModuleOutput {
 
     scope(msPerFrame: number = 500, triggerThreshold?: number): this {
         this.builder.addScope(this, msPerFrame, triggerThreshold);
+        return this;
+    }
+
+    out(mute?: boolean): this {
+        if (!mute) {
+            this.builder.addOut(this);
+        }
         return this;
     }
 

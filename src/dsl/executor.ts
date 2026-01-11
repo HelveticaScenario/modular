@@ -11,9 +11,6 @@ export function executePatchScript(
     // Create DSL context
     console.log('Executing DSL script with schemas:', schemas);
     const context = new DSLContext(schemas);
-    const out = (context.namespaceTree.signal as any)(undefined, {
-        id: 'root',
-    });
 
     // Create default clock module that runs at 120 BPM
     const rootClock = (context.namespaceTree.clock as any)(bpm(120), {
@@ -29,7 +26,6 @@ export function executePatchScript(
         note,
         bpm,
         // Built-in modules
-        out,
         rootClock,
     };
 

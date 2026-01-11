@@ -212,6 +212,7 @@ interface ModuleOutput {
   gain(factor: Signal): ModuleNode;
   shift(offset: Signal): ModuleNode;
   scope(msPerFrame?: number, triggerThreshold?: number): this;
+  out(mute?: boolean): this;
 }
 
 interface ModuleNode {
@@ -221,6 +222,7 @@ interface ModuleNode {
   gain(value: Signal): ModuleNode;
   shift(value: Signal): ModuleNode;
   scope(msPerFrame?: number, triggerThreshold?: number): this;
+  out(mute?: boolean): this;
 }
 
 // Helper functions exposed by the DSL runtime

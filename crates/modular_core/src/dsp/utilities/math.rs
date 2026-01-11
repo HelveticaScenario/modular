@@ -106,8 +106,8 @@ impl Connect for MathParams {
 
 #[derive(Outputs, JsonSchema)]
 struct MathOutputs {
-    #[output("out", "result of the expression", default)]
-    out: f32,
+    #[output("output", "result of the expression", default)]
+    output: f32,
 }
 
 #[derive(Module)]
@@ -150,7 +150,7 @@ impl Math {
             }
         }
 
-        self.outputs.out = self.eval().unwrap_or(0.0) as f32;
+        self.outputs.output = self.eval().unwrap_or(0.0) as f32;
     }
 
     fn eval(&mut self) -> std::result::Result<f64, fasteval::Error> {

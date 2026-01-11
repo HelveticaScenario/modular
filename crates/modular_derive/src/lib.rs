@@ -286,6 +286,12 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
                     "Output name cannot be 'o' as it is a reserved keyword",
                 ));
             }
+            if name.value() == "out" {
+                return Err(syn::Error::new(
+                    name.span(),
+                    "Output name cannot be 'out' as it is a reserved keyword",
+                ));
+            }
 
             input.parse::<Token![,]>()?;
 
@@ -976,6 +982,10 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                         });
                     if let Some(props) = props {
                         for key in props.keys() {
+                            // Check for reserved parameter names
+                            if key == "o" || key == "out" {
+                                panic!("Parameter name '{}' is reserved and cannot be used", key);
+                            }
                             param_names.insert(key.clone());
                         }
                     }

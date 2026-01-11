@@ -71,7 +71,7 @@ export const HelpWindow: React.FC = () => {
                 return (
                     <div>
                         <h2>Sound Output</h2>
-                        <p>Use `out.source(signal)` to send audio to the speakers.</p>
+                        <p>Use `signal.out()` to send audio to the speakers. Multiple signals can be sent to output and will be summed together.</p>
                     </div>
                 );
             case 'clock':
