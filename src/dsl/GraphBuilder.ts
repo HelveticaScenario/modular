@@ -333,8 +333,8 @@ export class ModuleNode {
         return this;
     }
 
-    out(mute?: boolean): this {
-        if (!mute) {
+    out(mode?: 'm'): this {
+        if (mode !== 'm') {
             this.builder.addOut(this);
         }
         return this;
@@ -405,8 +405,8 @@ export class ModuleOutput {
         return this;
     }
 
-    out(mute?: boolean): this {
-        if (!mute) {
+    out(mode?: 'm'): this {
+        if (mode !== 'm') {
             this.builder.addOut(this);
         }
         return this;
