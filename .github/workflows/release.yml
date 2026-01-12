@@ -133,8 +133,8 @@ jobs:
 
             - name: Install Linux dependencies
               run: |
-                  sudo apt-get update
-                  sudo apt-get install -y libasound2-dev libudev-dev libjack-jackd2-dev rpm flatpak flatpak-builder elfutils
+                  apt-get update
+                  apt-get install -y libasound2-dev libudev-dev libjack-jackd2-dev rpm flatpak flatpak-builder elfutils
 
             - name: Run tests
               run: yarn test
