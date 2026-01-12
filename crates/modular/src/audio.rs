@@ -767,7 +767,6 @@ pub fn get_sample_rate() -> Result<f32> {
 }
 
 enum VolumeChange {
-  Increase,
   Decrease,
   None,
 }
@@ -790,10 +789,8 @@ impl FinalStateProcessor {
     let is_stopped = audio_state.is_stopped();
     match (self.prev_is_stopped, is_stopped) {
       (true, false) => {
-        self.volume_change = VolumeChange::Increase;
-        if self.attenuation_factor < f32::EPSILON {
-          self.attenuation_factor = 0.01;
-        }
+        self.volume_change = VolumeChange::None;
+        self.attenuation_factor = 1.0;
       }
       (false, true) => {
         self.volume_change = VolumeChange::Decrease;
@@ -807,13 +804,6 @@ impl FinalStateProcessor {
         self.attenuation_factor *= 0.999;
         if self.attenuation_factor < 0.0001 {
           self.attenuation_factor = 0.0;
-          self.volume_change = VolumeChange::None;
-        }
-      }
-      VolumeChange::Increase => {
-        self.attenuation_factor *= 1.001;
-        if self.attenuation_factor > 1.0 {
-          self.attenuation_factor = 1.0;
           self.volume_change = VolumeChange::None;
         }
       }
