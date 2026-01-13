@@ -12,7 +12,7 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                os: [macos-latest, windows-latest]
+                os: [macos-latest, ubuntu-latest, windows-latest]
 
         steps:
             - name: Checkout code
@@ -33,6 +33,12 @@ jobs:
 
             - name: Install dependencies
               run: yarn install --frozen-lockfile
+
+            - name: Install Linux dependencies
+              if: matrix.os == 'ubuntu-latest'
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libasound2-dev libudev-dev libjack-jackd2-dev rpm
 
             # - name: Setup ASIO SDK (Windows)
             #   if: matrix.os == 'windows-latest'
@@ -103,44 +109,3 @@ jobs:
                   if [ -f "$KEYCHAIN_PATH" ]; then
                     security delete-keychain $KEYCHAIN_PATH
                   fi
-
-    release-linux:
-        name: Build and Release Linux
-        runs-on: ubuntu-latest
-        container:
-            image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
-            options: --privileged
-        strategy:
-            fail-fast: false
-
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v4
-              with:
-                  submodules: recursive
-
-            - name: Setup Node.js
-              uses: actions/setup-node@v4
-              with:
-                  node-version: 24
-                  cache: 'yarn'
-
-            - name: Setup Rust
-              uses: dtolnay/rust-toolchain@stable
-
-            - name: Install dependencies
-              run: yarn install --frozen-lockfile
-
-            - name: Install Linux dependencies
-              run: |
-                  apt-get update
-                  apt-get install -y libasound2-dev libudev-dev libjack-jackd2-dev rpm flatpak flatpak-builder elfutils
-
-            - name: Run tests
-              run: yarn test
-
-            - name: Publish
-              if: startsWith(github.ref, 'refs/tags/')
-              run: yarn forge-publish
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
