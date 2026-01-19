@@ -175,9 +175,9 @@ export class GraphBuilder {
         // Create the root signal module that will receive the final output
         const rootSignal = this.addModule('signal', 'root');
 
-        // If there are any modules registered with out(), create a sum module
+        // If there are any modules registered with out(), create a mix module
         if (this.outModules.length > 0) {
-            const sumModule = this.addModule('sum');
+            const mixModule = this.addModule('mix');
 
             // Convert all outModules to signal format
             const signals = this.outModules.map((output) => ({
@@ -186,11 +186,11 @@ export class GraphBuilder {
                 port: output.portName,
             }));
 
-            // Set the signals parameter on the sum module
-            this.setParam(sumModule.id, 'signals', signals);
+            // Set the signals parameter on the mix module
+            this.setParam(mixModule.id, 'signals', signals);
 
-            // Connect the sum output to the root signal's source
-            rootSignal._setParam('source', sumModule.o);
+            // Connect the mix output to the root signal's source
+            rootSignal._setParam('source', mixModule.o);
         }
         console.log('modules', new Map(this.modules.entries()));
         for (let [k, v] of this.modules.entries()) {
