@@ -1,0 +1,32 @@
+import * as prettier from 'prettier/standalone';
+import * as prettierBabel from 'prettier/plugins/babel';
+import * as prettierEstree from 'prettier/plugins/estree';
+import { useCustomMonaco } from '../../hooks/useCustomMonaco';
+
+type Monaco = NonNullable<ReturnType<typeof useCustomMonaco>>;
+
+export function registerDslFormattingProvider(monaco: Monaco) {
+    return monaco.languages.registerDocumentFormattingEditProvider(
+        'javascript',
+        {
+            async provideDocumentFormattingEdits(model) {
+                const formatted = await prettier.format(model.getValue(), {
+                    parser: 'babel',
+                    plugins: [prettierBabel, prettierEstree],
+                    singleQuote: true,
+                    trailingComma: 'all',
+                    semi: false,
+                    tabWidth: 2,
+                    printWidth: 30,
+                });
+
+                return [
+                    {
+                        range: model.getFullModelRange(),
+                        text: formatted.trimEnd(),
+                    },
+                ];
+            },
+        },
+    );
+}

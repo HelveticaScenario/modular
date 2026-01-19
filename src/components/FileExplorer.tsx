@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import './FileExplorer.css';
 import type { FileTreeEntry } from '../ipcTypes';
-import type { EditorBuffer } from '../App';
+import type { EditorBuffer } from '../types/editor';
+import { getBufferId } from '../app/buffers';
 import electronAPI from '../electronAPI';
 
 interface FileExplorerProps {
@@ -27,10 +28,6 @@ interface FileExplorerProps {
 }
 
 export const SCRATCH_FILE = '__scratch__.mjs';
-
-const getBufferId = (buffer: EditorBuffer): string => {
-    return buffer.kind === 'file' ? buffer.filePath : buffer.id;
-};
 
 function TreeNode({
     entry,
