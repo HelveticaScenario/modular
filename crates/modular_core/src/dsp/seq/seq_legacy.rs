@@ -71,14 +71,14 @@ impl Connect for PatternParam {
 
 #[derive(Deserialize, Default, JsonSchema)]
 #[serde(default)]
-struct SeqParams {
+struct SeqLegacyParams {
     /// Musical DSL pattern source string (parsed/compiled in Rust)
     pattern: PatternParam,
     /// playhead control signal
     playhead: Signal,
 }
 
-impl Connect for SeqParams {
+impl Connect for SeqLegacyParams {
     fn connect(&mut self, patch: &crate::Patch) {
         Connect::connect(&mut self.playhead, patch);
         Connect::connect(&mut self.pattern, patch);
@@ -86,7 +86,7 @@ impl Connect for SeqParams {
 }
 
 #[derive(Outputs, JsonSchema)]
-struct SeqOutputs {
+struct SeqLegacyOutputs {
     #[output("cv", "control voltage output", default)]
     cv: f32,
     #[output("gate", "gate output")]
@@ -96,23 +96,23 @@ struct SeqOutputs {
 }
 
 #[derive(Module)]
-#[module("seq", "A 4 channel mixer")]
+#[module("seqLegacy", "A 4 channel mixer")]
 #[args(pattern, playhead?)]
 #[stateful]
-pub struct Seq {
-    outputs: SeqOutputs,
-    params: SeqParams,
+pub struct SeqLegacy {
+    outputs: SeqLegacyOutputs,
+    params: SeqLegacyParams,
     cached_node: Option<CachedNode>,
     seed: u64,
     trigger: TempGate,
     gate: TempGate,
 }
 
-impl Default for Seq {
+impl Default for SeqLegacy {
     fn default() -> Self {
         Self {
-            outputs: SeqOutputs::default(),
-            params: SeqParams::default(),
+            outputs: SeqLegacyOutputs::default(),
+            params: SeqLegacyParams::default(),
             cached_node: None,
             seed: 0,
             trigger: TempGate::new(TempGateState::Low, 0.0, 1.0),
@@ -121,7 +121,7 @@ impl Default for Seq {
     }
 }
 
-impl Seq {
+impl SeqLegacy {
     fn update(&mut self, _sample_rate: f32) -> () {
         let playhead_value = f64::from(self.params.playhead.get_value());
         if let Some(cached_node) = &self.cached_node {
@@ -272,7 +272,7 @@ impl Seq {
     }
 }
 
-impl crate::types::StatefulModule for Seq {
+impl crate::types::StatefulModule for SeqLegacy {
     fn get_state(&self) -> Option<serde_json::Value> {
         self.cached_node.as_ref().map(|cached| {
             serde_json::json!({
@@ -284,4 +284,4 @@ impl crate::types::StatefulModule for Seq {
     }
 }
 
-message_handlers!(impl Seq {});
+message_handlers!(impl SeqLegacy {});

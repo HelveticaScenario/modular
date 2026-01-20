@@ -8,6 +8,7 @@ pub mod oscillators;
 pub mod filters;
 pub mod utilities;
 pub mod utils;
+pub mod seq;
 
 // #[cfg(test)]
 mod test_overlap;
@@ -18,6 +19,7 @@ pub fn get_constructors() -> HashMap<String, SampleableConstructor> {
     oscillators::install_constructors(&mut map);
     filters::install_constructors(&mut map);
     utilities::install_constructors(&mut map);
+    seq::install_constructors(&mut map);
     return map;
 }
 
@@ -31,6 +33,7 @@ pub fn get_param_validators() -> HashMap<String, ParamsValidator> {
     oscillators::install_param_validators(&mut map);
     filters::install_param_validators(&mut map);
     utilities::install_param_validators(&mut map);
+    seq::install_param_validators(&mut map);
     map
 }
 
@@ -40,6 +43,7 @@ pub fn schema() -> Vec<ModuleSchema> {
         oscillators::schemas(),
         filters::schemas(),
         utilities::schemas(),
+        seq::schemas(),
     ]
     .concat()
 }

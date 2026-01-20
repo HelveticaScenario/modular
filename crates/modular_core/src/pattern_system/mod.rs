@@ -41,7 +41,7 @@ pub mod euclidean;
 pub mod mini;
 
 pub use fraction::Fraction;
-pub use hap::{Hap, HapContext, SourceSpan};
+pub use hap::{DspHap, Hap, HapContext, SourceSpan};
 pub use state::{Controls, State};
 pub use timespan::TimeSpan;
 
@@ -255,6 +255,88 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     pub fn continuous_only(&self) -> Pattern<T> {
         self.filter_haps(|hap| hap.is_continuous())
     }
+
+    // ===== DSP Fast-Path Methods =====
+    //
+    // These methods use f64 for efficient sample-rate queries.
+    // The pattern is still constructed with exact rational arithmetic,
+    // but these methods avoid repeated BigRational→f64 conversion.
+
+    /// Query for a time range using f64 (DSP fast-path).
+    ///
+    /// Converts f64 to Fraction internally, but the returned haps
+    /// can use the fast f64 accessor methods.
+    pub fn query_arc_f64(&self, begin: f64, end: f64) -> Vec<Hap<T>> {
+        self.query_arc(Fraction::from(begin), Fraction::from(end))
+    }
+
+    /// Query at a specific point in time (DSP fast-path).
+    ///
+    /// Returns haps whose part span contains the given time.
+    /// This queries a tiny window around `t` and filters to haps containing it.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let haps = pattern.query_at(0.5);
+    /// for hap in haps {
+    ///     println!("Value at t=0.5: {:?}", hap.value);
+    /// }
+    /// ```
+    pub fn query_at(&self, t: f64) -> Vec<Hap<T>> {
+        // Query the cycle containing t
+        let cycle = t.floor();
+        let haps = self.query_arc_f64(cycle, cycle + 1.0);
+
+        // Filter to haps whose part contains t
+        haps.into_iter()
+            .filter(|hap| hap.part_contains_f64(t))
+            .collect()
+    }
+
+    /// Query at a point and return the first matching hap (if any).
+    ///
+    /// This is the most common case for DSP - getting a single active event.
+    #[inline]
+    pub fn query_at_first(&self, t: f64) -> Option<Hap<T>> {
+        // Query the cycle containing t
+        let cycle = t.floor();
+        let haps = self.query_arc_f64(cycle, cycle + 1.0);
+
+        // Find first hap whose part contains t
+        haps.into_iter().find(|hap| hap.part_contains_f64(t))
+    }
+
+    /// Query at a point and return as DspHap for cached DSP use.
+    ///
+    /// The returned DspHap has pre-computed f64 bounds for fast comparisons.
+    #[inline]
+    pub fn query_at_dsp(&self, t: f64) -> Option<DspHap<T>> {
+        self.query_at_first(t).map(|h| h.to_dsp_hap())
+    }
+
+    /// Query a time range and return as DspHaps.
+    ///
+    /// Useful for pre-computing events for a render buffer.
+    pub fn query_arc_dsp(&self, begin: f64, end: f64) -> Vec<DspHap<T>> {
+        self.query_arc_f64(begin, end)
+            .into_iter()
+            .map(|h| h.to_dsp_hap())
+            .collect()
+    }
+
+    /// Get all events (with onsets) in a cycle as DspHaps.
+    ///
+    /// This is useful for pre-computing a cycle's worth of events.
+    pub fn query_cycle_dsp(&self, cycle: i64) -> Vec<DspHap<T>> {
+        let begin = cycle as f64;
+        let end = (cycle + 1) as f64;
+
+        self.query_arc_f64(begin, end)
+            .into_iter()
+            .filter(|h| h.has_onset())
+            .map(|h| h.to_dsp_hap())
+            .collect()
+    }
 }
 
 impl<T: Clone + Send + Sync + 'static> std::fmt::Debug for Pattern<T> {
@@ -341,5 +423,219 @@ mod tests {
         let haps3 = pat.query_arc(Fraction::from_integer(3), Fraction::from_integer(4));
         assert_eq!(haps3.len(), 1);
         assert_eq!(haps3[0].value, 0);
+    }
+
+
+    // ===== DSP Fast-Path Pattern Methods =====
+
+    #[test]
+    fn test_query_arc_f64() {
+        let pat = fastcat(vec![pure(0), pure(1), pure(2), pure(3)]);
+        let haps = pat.query_arc_f64(0.0, 1.0);
+
+        assert_eq!(haps.len(), 4);
+        assert_eq!(haps[0].value, 0);
+        assert_eq!(haps[1].value, 1);
+        assert_eq!(haps[2].value, 2);
+        assert_eq!(haps[3].value, 3);
+    }
+
+    #[test]
+    fn test_query_arc_f64_fractional_range() {
+        let pat = fastcat(vec![pure(0), pure(1), pure(2), pure(3)]);
+        // Query just the middle half
+        let haps = pat.query_arc_f64(0.25, 0.75);
+
+        // Should capture events 1 and 2 (at 0.25-0.5 and 0.5-0.75)
+        assert_eq!(haps.len(), 2);
+        assert_eq!(haps[0].value, 1);
+        assert_eq!(haps[1].value, 2);
+    }
+
+    #[test]
+    fn test_query_at() {
+        let pat = fastcat(vec![pure(0), pure(1), pure(2), pure(3)]);
+
+        // Query at different points
+        let h0 = pat.query_at(0.1);
+        assert_eq!(h0.len(), 1);
+        assert_eq!(h0[0].value, 0);
+
+        let h1 = pat.query_at(0.3);
+        assert_eq!(h1.len(), 1);
+        assert_eq!(h1[0].value, 1);
+
+        let h3 = pat.query_at(0.9);
+        assert_eq!(h3.len(), 1);
+        assert_eq!(h3[0].value, 3);
+    }
+
+    #[test]
+    fn test_query_at_boundary() {
+        let pat = fastcat(vec![pure(0), pure(1)]);
+
+        // At 0.0 should be in event 0
+        let h0 = pat.query_at(0.0);
+        assert_eq!(h0.len(), 1);
+        assert_eq!(h0[0].value, 0);
+
+        // At exactly 0.5 should be in event 1 (half-open interval [0.5, 1.0))
+        let h1 = pat.query_at(0.5);
+        assert_eq!(h1.len(), 1);
+        assert_eq!(h1[0].value, 1);
+    }
+
+    #[test]
+    fn test_query_at_silence() {
+        let pat: Pattern<i32> = silence();
+        let haps = pat.query_at(0.5);
+        assert!(haps.is_empty());
+    }
+
+    #[test]
+    fn test_query_at_first() {
+        let pat = fastcat(vec![pure(0), pure(1), pure(2)]);
+
+        let h = pat.query_at_first(0.4);
+        assert!(h.is_some());
+        assert_eq!(h.unwrap().value, 1);
+    }
+
+    #[test]
+    fn test_query_at_first_none() {
+        let pat: Pattern<i32> = silence();
+        let h = pat.query_at_first(0.5);
+        assert!(h.is_none());
+    }
+
+    #[test]
+    fn test_query_at_dsp() {
+        let pat = fastcat(vec![pure(10), pure(20), pure(30)]);
+
+        let dsp = pat.query_at_dsp(0.5);
+        assert!(dsp.is_some());
+        let dsp = dsp.unwrap();
+        assert_eq!(dsp.value, 20);
+        assert!(dsp.is_discrete());
+        // Check f64 bounds are pre-computed
+        assert!((dsp.part_begin - (1.0 / 3.0)).abs() < 1e-10);
+        assert!((dsp.part_end - (2.0 / 3.0)).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_query_at_dsp_none() {
+        let pat: Pattern<i32> = silence();
+        let dsp = pat.query_at_dsp(0.5);
+        assert!(dsp.is_none());
+    }
+
+    #[test]
+    fn test_query_arc_dsp() {
+        let pat = fastcat(vec![pure(1), pure(2)]);
+        let dsps = pat.query_arc_dsp(0.0, 1.0);
+
+        assert_eq!(dsps.len(), 2);
+        assert_eq!(dsps[0].value, 1);
+        assert_eq!(dsps[1].value, 2);
+
+        // Check bounds are pre-computed
+        assert!((dsps[0].part_begin - 0.0).abs() < 1e-10);
+        assert!((dsps[0].part_end - 0.5).abs() < 1e-10);
+        assert!((dsps[1].part_begin - 0.5).abs() < 1e-10);
+        assert!((dsps[1].part_end - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_query_cycle_dsp() {
+        let pat = fastcat(vec![pure(1), pure(2), pure(3)]);
+
+        let cycle0 = pat.query_cycle_dsp(0);
+        assert_eq!(cycle0.len(), 3);
+        assert_eq!(cycle0[0].value, 1);
+        assert_eq!(cycle0[1].value, 2);
+        assert_eq!(cycle0[2].value, 3);
+
+        // Check all have onsets (should be filtered)
+        for dsp in &cycle0 {
+            assert!(dsp.is_discrete());
+        }
+    }
+
+    #[test]
+    fn test_query_cycle_dsp_different_cycles() {
+        let pat = slowcat(vec![pure(10), pure(20), pure(30)]);
+
+        let c0 = pat.query_cycle_dsp(0);
+        assert_eq!(c0.len(), 1);
+        assert_eq!(c0[0].value, 10);
+
+        let c1 = pat.query_cycle_dsp(1);
+        assert_eq!(c1.len(), 1);
+        assert_eq!(c1[0].value, 20);
+
+        let c2 = pat.query_cycle_dsp(2);
+        assert_eq!(c2.len(), 1);
+        assert_eq!(c2[0].value, 30);
+
+        // Should wrap
+        let c3 = pat.query_cycle_dsp(3);
+        assert_eq!(c3.len(), 1);
+        assert_eq!(c3[0].value, 10);
+    }
+
+    #[test]
+    fn test_query_cycle_dsp_filters_non_onsets() {
+        // Using a pattern where some haps may not have onsets due to slicing
+        // pure() patterns always have onsets when queried within their whole,
+        // but this confirms the filter is working
+        let pat = pure(42);
+        let events = pat.query_cycle_dsp(0);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].value, 42);
+    }
+
+    #[test]
+    fn test_dsp_methods_with_stack() {
+        // Stack overlays patterns, so both should be active at any time point
+        let pat = stack(vec![pure(100), pure(200)]);
+
+        let at_half = pat.query_at(0.5);
+        assert_eq!(at_half.len(), 2);
+        let values: Vec<_> = at_half.iter().map(|h| h.value).collect();
+        assert!(values.contains(&100));
+        assert!(values.contains(&200));
+
+        // DSP version
+        let dsps = pat.query_arc_dsp(0.0, 1.0);
+        assert_eq!(dsps.len(), 2);
+        let dsp_values: Vec<_> = dsps.iter().map(|d| d.value).collect();
+        assert!(dsp_values.contains(&100));
+        assert!(dsp_values.contains(&200));
+    }
+
+    #[test]
+    fn test_query_across_cycle_boundary() {
+        let pat = pure(42);
+
+        // Query across cycle boundary
+        let haps = pat.query_arc_f64(0.5, 1.5);
+
+        // Should get partial events from both cycles
+        assert!(haps.len() >= 1);
+    }
+
+    #[test]
+    fn test_dsp_fast_path_preserves_value_types() {
+        // Test with different value types
+        let str_pat = pure("hello".to_string());
+        let dsp = str_pat.query_at_dsp(0.5);
+        assert!(dsp.is_some());
+        assert_eq!(dsp.unwrap().value, "hello");
+
+        // Test with tuple
+        let tuple_pat = pure((1, 2, 3));
+        let dsp = tuple_pat.query_at_dsp(0.5);
+        assert!(dsp.is_some());
+        assert_eq!(dsp.unwrap().value, (1, 2, 3));
     }
 }

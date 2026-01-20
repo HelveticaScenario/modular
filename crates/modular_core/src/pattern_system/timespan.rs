@@ -126,6 +126,33 @@ impl TimeSpan {
     pub fn midpoint(&self) -> Fraction {
         (&self.begin + &self.end) / Fraction::from_integer(2)
     }
+
+    // ===== f64 Fast-Path Methods for DSP =====
+
+    /// Get begin time as f64 (for fast DSP comparisons).
+    #[inline]
+    pub fn begin_f64(&self) -> f64 {
+        self.begin.to_f64()
+    }
+
+    /// Get end time as f64 (for fast DSP comparisons).
+    #[inline]
+    pub fn end_f64(&self) -> f64 {
+        self.end.to_f64()
+    }
+
+    /// Get duration as f64.
+    #[inline]
+    pub fn duration_f64(&self) -> f64 {
+        self.end_f64() - self.begin_f64()
+    }
+
+    /// Fast containment check using f64.
+    /// Checks if time t is within [begin, end).
+    #[inline]
+    pub fn contains_f64(&self, t: f64) -> bool {
+        t >= self.begin_f64() && t < self.end_f64()
+    }
 }
 
 impl Default for TimeSpan {

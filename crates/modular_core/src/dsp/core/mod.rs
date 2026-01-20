@@ -4,7 +4,6 @@ use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor}
 
 pub mod mix;
 pub mod scale_and_shift;
-pub mod seq;
 pub mod signal;
 pub mod sum;
 pub mod track;
@@ -15,7 +14,6 @@ pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     sum::Sum::install_constructor(map);
     mix::Mix::install_constructor(map);
     track::Track::install_constructor(map);
-    seq::Seq::install_constructor(map);
 }
 
 pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
@@ -24,7 +22,6 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     sum::Sum::install_params_validator(map);
     mix::Mix::install_params_validator(map);
     track::Track::install_params_validator(map);
-    seq::Seq::install_params_validator(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {
@@ -34,6 +31,5 @@ pub fn schemas() -> Vec<ModuleSchema> {
         sum::Sum::get_schema(),
         mix::Mix::get_schema(),
         track::Track::get_schema(),
-        seq::Seq::get_schema(),
     ]
 }
