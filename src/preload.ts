@@ -162,63 +162,35 @@ const electronAPI: ElectronAPI = {
     },
 
     // Menu events
-    onMenuSave: (callback) => {
-        const subscription = (_event: any) => callback();
-        ipcRenderer.on(MENU_CHANNELS.SAVE, subscription);
-        return () => ipcRenderer.removeListener(MENU_CHANNELS.SAVE, subscription);
-    },
-    onMenuStop: (callback) => {
-        const subscription = (_event: any) => callback();
-        ipcRenderer.on(MENU_CHANNELS.STOP, subscription);
-        return () => ipcRenderer.removeListener(MENU_CHANNELS.STOP, subscription);
-    },
-    onMenuUpdatePatch: (callback) => {
-        const subscription = (_event: any) => callback();
-        ipcRenderer.on(MENU_CHANNELS.UPDATE_PATCH, subscription);
-        return () => ipcRenderer.removeListener(MENU_CHANNELS.UPDATE_PATCH, subscription);
-    },
-    onMenuOpenWorkspace: (callback) => {
-        const subscription = (_event: any) => callback();
-        ipcRenderer.on(MENU_CHANNELS.OPEN_WORKSPACE, subscription);
-        return () => ipcRenderer.removeListener(MENU_CHANNELS.OPEN_WORKSPACE, subscription);
-    },
-    onMenuCloseBuffer: (callback) => {
-        const subscription = (_event: any) => callback();
-        ipcRenderer.on(MENU_CHANNELS.CLOSE_BUFFER, subscription);
-        return () => ipcRenderer.removeListener(MENU_CHANNELS.CLOSE_BUFFER, subscription);
-    },
-    onMenuToggleRecording: (callback) => {
-        const subscription = (_event: any) => callback();
-        ipcRenderer.on(MENU_CHANNELS.TOGGLE_RECORDING, subscription);
-        return () => ipcRenderer.removeListener(MENU_CHANNELS.TOGGLE_RECORDING, subscription);
-    },
-    onMenuOpenSettings: (callback) => {
-        const subscription = (_event: any) => callback();
-        ipcRenderer.on(MENU_CHANNELS.OPEN_SETTINGS, subscription);
-        return () => ipcRenderer.removeListener(MENU_CHANNELS.OPEN_SETTINGS, subscription);
-    },
+    onMenuSave: menuEventHandler(MENU_CHANNELS.SAVE),
+    onMenuStop: menuEventHandler(MENU_CHANNELS.STOP),
+    onMenuUpdatePatch: menuEventHandler(MENU_CHANNELS.UPDATE_PATCH),
+    onMenuOpenWorkspace: menuEventHandler(MENU_CHANNELS.OPEN_WORKSPACE),
+    onMenuCloseBuffer: menuEventHandler(MENU_CHANNELS.CLOSE_BUFFER),
+    onMenuToggleRecording: menuEventHandler(MENU_CHANNELS.TOGGLE_RECORDING),
+    onMenuOpenSettings: menuEventHandler(MENU_CHANNELS.OPEN_SETTINGS),
 
     // UI operations
     showContextMenu: (options) => invokeIPC('SHOW_CONTEXT_MENU', options),
-    onContextMenuCommand: (callback) => {
-        const subscription = (_event: any, action: ContextMenuAction) => callback(action);
-        ipcRenderer.on(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, subscription);
-        return () => ipcRenderer.removeListener(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, subscription);
-    },
+    onContextMenuCommand: menuEventHandler(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND),
     showUnsavedChangesDialog: (fileName) => invokeIPC('SHOW_UNSAVED_CHANGES_DIALOG', fileName),
 
     // Config operations
     config: {
         getPath: () => invokeIPC('CONFIG_GET_PATH'),
         read: () => invokeIPC('CONFIG_READ'),
-        onChange: (callback) => {
-            const subscription = (_event: any, config: AppConfig) => callback(config);
-            ipcRenderer.on(IPC_CHANNELS.CONFIG_ON_CHANGE, subscription);
-            return () => ipcRenderer.removeListener(IPC_CHANNELS.CONFIG_ON_CHANGE, subscription);
-        },
+        onChange: menuEventHandler(IPC_CHANNELS.CONFIG_ON_CHANGE),
     },
 };
 
 // Expose the API to the renderer process
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
+
+function menuEventHandler<T extends any[]>(channel: string): (callback: (...args: T) => void) => () => Electron.IpcRenderer {
+    return (callback: (...args: T) => void) => {
+        const subscription = (_event: any, ...args: T) => callback(...args);
+        ipcRenderer.on(channel, subscription);
+        return () => ipcRenderer.removeListener(channel, subscription);
+    }
+}
 
