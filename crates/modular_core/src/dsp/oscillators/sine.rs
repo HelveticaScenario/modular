@@ -49,7 +49,7 @@ impl SineOscillator {
             self.outputs.sample = crate::dsp::utils::map_range(self.phase, 0.0, 1.0, min, max);
         } else {
             self.freq.update(self.params.freq.get_value_or(4.0).clamp(-10.0, 10.0));
-            let frequency = 27.5f32 * 2.0f32.powf(*self.freq) / sample_rate;
+            let frequency = 55.0f32 * 2.0f32.powf(*self.freq) / sample_rate;
             self.phase += frequency;
             while self.phase >= 1.0 {
                 self.phase -= 1.0;

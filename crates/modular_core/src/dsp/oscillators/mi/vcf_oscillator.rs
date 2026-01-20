@@ -87,8 +87,8 @@ impl VcfOscillator {
             self.harmonics
                 .update(self.params.harmonics.get_value_or(2.5).clamp(0.0, 5.0));
 
-            // Convert V/oct to MIDI note (A4 = 4V/oct = 69 MIDI)
-            let midi_note = voct_to_midi(*self.freq + 2.0);
+            // Convert V/oct to MIDI note (A4 = 4V/oct = 81 MIDI)
+            let midi_note = voct_to_midi(*self.freq);
 
             // Convert signals (0V to +5V) to normalized (0.0 to 1.0)
             let timbre_norm = (*self.timbre) / 5.0;
@@ -114,7 +114,7 @@ impl VcfOscillator {
                 timbre: timbre_norm,
                 morph: morph_norm,
                 harmonics: harmonics_norm,
-                accent: 0.8,
+                accent: 1.0,
                 a0_normalized: 55.0 / sample_rate,
             };
             let mut already_enveloped = false;

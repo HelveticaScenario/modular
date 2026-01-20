@@ -65,7 +65,7 @@ impl Clock {
             .update(self.params.tempo.get_value_or(0.0).clamp(-10.0, 10.0));
 
         // Convert V/Oct to Hz
-        let frequency_hz = 27.5 * 2.0_f32.powf(*self.freq);
+        let frequency_hz = 55.0 * 2.0_f32.powf(*self.freq);
 
         // Calculate phase increment per sample
         // For a clock, we want the phase to go from 0 to 1 over one bar

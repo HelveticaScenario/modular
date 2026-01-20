@@ -9,7 +9,7 @@ The meaning of bare numbers depends on whether a scale modifier is present:
 
 **Without scale modifier** → **MIDI note numbers**:
 ```
-60 62 64        // MIDI notes: C4, D4, E4
+60 62 64        // MIDI notes: C3, D3, E3
 ```
 
 **With scale modifier** → **scale intervals** (0-indexed):
@@ -33,10 +33,10 @@ Use the `v` suffix for explicit voltage values:
 ### Hz Values (`Xhz`, `Xkhz`)
 Frequency values with Hz suffix:
 ```
-440hz           // 440 Hz (A4)
-880hz           // 880 Hz (A5)
+440hz           // 440 Hz (A3)
+880hz           // 880 Hz (A4)
 1khz            // 1000 Hz
-27.5hz          // A0 = 0V
+55hz            // A0 = 0V
 ```
 
 ### Note Names
@@ -171,17 +171,17 @@ Common scales (case-insensitive):
 ## V/Oct Reference
 
 The V/Oct (Volts per Octave) standard used:
-- **A0 = 0V = 27.5Hz = MIDI 21**
+- **A0 = 0V = 55Hz = MIDI 33**
 - Each volt = one octave
 - Each 1/12 volt = one semitone
 
 | Note | MIDI | V/Oct |
 |------|------|-------|
-| A0   | 21   | 0.000 |
-| A1   | 33   | 1.000 |
-| C4   | 60   | 3.250 |
-| A4   | 69   | 4.000 |
-| A5   | 81   | 5.000 |
+| A0   | 33   | 0.000 |
+| A1   | 45   | 1.000 |
+| C4   | 72   | 3.250 |
+| A4   | 81   | 4.000 |
+| A5   | 93   | 5.000 |
 
 ## Complete Examples
 

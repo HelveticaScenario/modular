@@ -154,13 +154,13 @@ export class DSLContext {
 
 /**
  * Helper function to convert Hz to V/oct
- * V/oct = log2(Hz / 27.5)
+ * V/oct = log2(Hz / 55)
  */
 export function hz(frequency: number): number {
   if (frequency <= 0) {
     throw new Error('Frequency must be positive');
   }
-  return Math.log2(frequency / 27.5);
+  return Math.log2(frequency / 55);
 }
 
 /**
@@ -192,10 +192,9 @@ export function note(noteName: string): number {
     semitone -= 1;
   }
 
-  // Calculate frequency: A4 = 440 Hz, A4 is 9 semitones above C4
-  // C4 is octave 4, semitone 0
-  const semitonesFromC4 = (octave - 4) * 12 + semitone;
-  const frequency = 440 * Math.pow(2, (semitonesFromC4 - 9) / 12);
+  // Calculate frequency: A0 = 55 Hz
+  const semitonesFromA0 = octave * 12 + semitone - 9;
+  const frequency = 55 * Math.pow(2, semitonesFromA0 / 12);
 
   return hz(frequency);
 }

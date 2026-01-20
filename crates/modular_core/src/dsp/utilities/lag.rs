@@ -53,8 +53,8 @@ impl LagProcessor {
         let rise_cv = *self.rise;
         let fall_cv = *self.fall;
 
-        let rise_time = 27.5f32 * 2.0f32.powf(rise_cv);
-        let fall_time = 27.5f32 * 2.0f32.powf(fall_cv);
+        let rise_time = 55.0f32 * 2.0f32.powf(rise_cv);
+        let fall_time = 55.0f32 * 2.0f32.powf(fall_cv);
 
         // Calculate max change per sample
         // Assuming time is seconds for 10V change (full scale)

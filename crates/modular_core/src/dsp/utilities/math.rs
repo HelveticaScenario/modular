@@ -182,8 +182,8 @@ impl Math {
             match name {
                 "vToHz" => args
                     .get(0)
-                    .and_then(|v| Some(27.5f64 * 2.0f64.powf(*v as f64))),
-                "hzToV" => args.get(0).and_then(|v| Some((v / 27.5f64).log2())),
+                    .and_then(|v| Some(55.0f64 * 2.0f64.powf(*v as f64))),
+                "hzToV" => args.get(0).and_then(|v| Some((v / 55.0f64).log2())),
 
                 // A wildcard to handle all undefined names:
                 _ => None,

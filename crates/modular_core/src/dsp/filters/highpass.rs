@@ -43,7 +43,7 @@ impl HighpassFilter {
             .update(self.params.resonance.get_value_or(0.0));
 
         // Convert v/oct to frequency
-        let freq = 27.5f32 * 2.0f32.powf(*self.cutoff);
+        let freq = 55.0f32 * 2.0f32.powf(*self.cutoff);
         let freq_clamped = freq.min(sample_rate * 0.45).max(20.0);
 
         // Calculate filter coefficients

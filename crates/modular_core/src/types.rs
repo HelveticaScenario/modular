@@ -3,7 +3,7 @@ use napi::Result;
 use napi::bindgen_prelude::{FromNapiValue, Object, ToNapiValue};
 use napi_derive::napi;
 use regex::Regex;
-use rust_music_theory::note::{Note, Notes, Pitch};
+use rust_music_theory::note::{Notes, Pitch};
 use rust_music_theory::scale::Scale;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,6 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 use std::ops::{Add, Deref, Div, Mul, Sub};
 use std::result::Result as StdResult;
-use std::str::FromStr;
 use std::{
     collections::HashMap,
     sync::{self, Arc},
@@ -24,9 +23,9 @@ lazy_static! {
     pub static ref ROOT_ID: String = "root".into();
     pub static ref ROOT_OUTPUT_PORT: String = "output".into();
     pub static ref ROOT_CLOCK_ID: String = "root_clock".into();
-    static ref RE_HZ: Regex = Regex::new(r"^([\d.]+)hz$").unwrap();
-    static ref RE_MIDI: Regex = Regex::new(r"^([\d.]+)m$").unwrap();
-    static ref RE_SCALE: Regex = Regex::new(r"^([\d.]+)s\(([^:]+):([^)]+)\)$").unwrap();
+    static ref RE_HZ: Regex = Regex::new(r"^(-?\d*\.?\d+)hz$").unwrap();
+    static ref RE_MIDI: Regex = Regex::new(r"^(-?\d*\.?\d+)m$").unwrap();
+    static ref RE_SCALE: Regex = Regex::new(r"^(-?\d*\.?\d+)s\(([^:]+):([^)]+)\)$").unwrap();
     static ref RE_NOTE: Regex = Regex::new(r"^([A-Ga-g])([#b]?)(-?\d+)?$").unwrap();
 }
 
@@ -188,20 +187,25 @@ pub trait Connect {
     fn connect(&mut self, patch: &Patch);
 }
 
-fn parse_note_str(s: &str) -> StdResult<Note, String> {
+struct ParsedNote {
+    pitch: Pitch,
+    octave: i32,
+}
+
+fn parse_note_str(s: &str) -> StdResult<ParsedNote, String> {
     let caps = RE_NOTE
         .captures(s)
         .ok_or("Invalid note format".to_string())?;
     let name = &caps[1];
     let acc = &caps[2];
-    let oct: i32 = caps
+    let octave: i32 = caps
         .get(3)
         .map(|m| m.as_str().parse().unwrap_or(3))
         .unwrap_or(3);
 
     let pitch_str = format!("{}{}", name, acc);
     let pitch = Pitch::from_str(&pitch_str).ok_or("Invalid pitch".to_string())?;
-    Ok(Note::new(pitch, oct as u8))
+    Ok(ParsedNote { pitch, octave })
 }
 
 fn parse_signal_string(s: &str) -> StdResult<Signal, String> {
@@ -212,7 +216,7 @@ fn parse_signal_string(s: &str) -> StdResult<Signal, String> {
         if hz <= 0.0 {
             return Err("Frequency must be positive".to_string());
         }
-        let volts = (hz / 27.5).log2();
+        let volts = (hz / 55.0).log2();
         return Ok(Signal::Volts { value: volts });
     }
 
@@ -220,7 +224,7 @@ fn parse_signal_string(s: &str) -> StdResult<Signal, String> {
         let midi: f32 = caps[1]
             .parse()
             .map_err(|_| "Invalid MIDI number".to_string())?;
-        let volts = (midi - 21.0) / 12.0;
+        let volts = (midi - 33.0) / 12.0;
         return Ok(Signal::Volts { value: volts });
     }
 
@@ -236,42 +240,50 @@ fn parse_signal_string(s: &str) -> StdResult<Signal, String> {
         let scale =
             Scale::from_regex(&scale_def).map_err(|_| "Invalid scale definition".to_string())?;
 
-        let interval_idx = val.floor() as usize;
-        let cents = (val - val.floor()) * 100.0;
-
-        let target_idx_total = interval_idx - 1;
+        let interval_idx = val.floor() as i64;
+        let cents = (val - interval_idx as f32) * 100.0;
 
         let notes = scale.notes();
-        let len = notes.len();
-        if len == 0 {
+        let note_len = notes.len();
+        if note_len == 0 {
             return Err("Scale has no notes".to_string());
         }
 
+        let effective_len = if note_len > 1 && notes[0].pitch == notes[note_len - 1].pitch {
+            note_len - 1
+        } else {
+            note_len
+        };
+        let len = effective_len as i64;
+
         let scale_root_octave = notes[0].octave as i32;
 
-        let octave_shift = target_idx_total / len;
-        let note_idx = target_idx_total % len;
+        let (octave_shift, note_idx) = if interval_idx >= 0 {
+            ((interval_idx / len), (interval_idx % len) as usize)
+        } else {
+            let abs_idx = (-interval_idx - 1) as i64;
+            let octave_down = (abs_idx / len) + 1;
+            let note_from_end = (abs_idx % len) as usize;
+            (-octave_down, len as usize - 1 - note_from_end)
+        };
 
         let base_note = &notes[note_idx];
         let relative_octave = (base_note.octave as i32) - scale_root_octave;
         let target_octave = (root_note.octave as i32) + relative_octave + (octave_shift as i32);
 
-        let mut target_note = base_note.clone();
-        target_note.octave = target_octave as u8;
+        let pc_val = base_note.pitch.into_u8();
 
-        let pc_val = target_note.pitch.into_u8();
-
-        let midi = (target_note.octave as f32 + 1.0) * 12.0 + (pc_val as f32);
+        let midi = (target_octave as f32 + 2.0) * 12.0 + (pc_val as f32);
         let midi_with_cents = midi + (cents / 100.0);
 
-        let volts = (midi_with_cents - 21.0) / 12.0;
+        let volts = (midi_with_cents - 33.0) / 12.0;
         return Ok(Signal::Volts { value: volts });
     }
 
     if let Ok(note) = parse_note_str(s) {
         let pc_val = note.pitch.into_u8();
-        let midi = (note.octave as f32 + 1.0) * 12.0 + (pc_val as f32);
-        let volts = (midi - 21.0) / 12.0;
+        let midi = (note.octave as f32 + 2.0) * 12.0 + (pc_val as f32);
+        let volts = (midi - 33.0) / 12.0;
         return Ok(Signal::Volts { value: volts });
     }
 
@@ -678,15 +690,15 @@ mod tests {
 
     #[test]
     fn test_signal_deserialization_hz() {
-        // 27.5Hz is 0V
-        let s: Signal = from_str("\"27.5hz\"").unwrap();
+        // 55Hz is 0V
+        let s: Signal = from_str("\"55hz\"").unwrap();
         match s {
             Signal::Volts { value } => assert!((value - 0.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
-        // 55Hz is 1V (one octave up)
-        let s: Signal = from_str("\"55hz\"").unwrap();
+        // 110Hz is 1V (one octave up)
+        let s: Signal = from_str("\"110hz\"").unwrap();
         match s {
             Signal::Volts { value } => assert!((value - 1.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
@@ -695,15 +707,15 @@ mod tests {
 
     #[test]
     fn test_signal_deserialization_midi() {
-        // MIDI 21 (A0) is 0V
-        let s: Signal = from_str("\"21m\"").unwrap();
+        // MIDI 33 (A0) is 0V
+        let s: Signal = from_str("\"33m\"").unwrap();
         match s {
             Signal::Volts { value } => assert!((value - 0.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
-        // MIDI 33 (A1) is 1V
-        let s: Signal = from_str("\"33m\"").unwrap();
+        // MIDI 45 (A1) is 1V
+        let s: Signal = from_str("\"45m\"").unwrap();
         match s {
             Signal::Volts { value } => assert!((value - 1.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
@@ -719,6 +731,13 @@ mod tests {
             _ => panic!("Expected Volts"),
         }
 
+        // A-1 is -1V
+        let s: Signal = from_str("\"A-1\"").unwrap();
+        match s {
+            Signal::Volts { value } => assert!((value + 1.0).abs() < 1e-6),
+            _ => panic!("Expected Volts"),
+        }
+
         // A1 is 1V
         let s: Signal = from_str("\"A1\"").unwrap();
         match s {
@@ -726,7 +745,7 @@ mod tests {
             _ => panic!("Expected Volts"),
         }
 
-        // C4 (Middle C) -> MIDI 60 -> (60-21)/12 = 3.25V
+        // C4 (Middle C) -> MIDI 72 -> (72-33)/12 = 3.25V
         let s: Signal = from_str("\"C4\"").unwrap();
         match s {
             Signal::Volts { value } => assert!((value - 3.25).abs() < 1e-6),
@@ -734,7 +753,7 @@ mod tests {
         }
 
         // Sharps/Flats
-        // A#0 -> MIDI 22 -> 1/12 V
+        // A#0 -> MIDI 34 -> 1/12 V
         let s: Signal = from_str("\"A#0\"").unwrap();
         match s {
             Signal::Volts { value } => assert!((value - (1.0 / 12.0)).abs() < 1e-6),
@@ -744,32 +763,47 @@ mod tests {
 
     #[test]
     fn test_signal_deserialization_scale() {
-        // 1s(A0:Major) -> 1st interval (root) -> A0 -> 0V
-        let s: Signal = from_str("\"1s(A0:Major)\"").unwrap();
+        // 0s(A0:Major) -> treat as root -> A0 -> 0V
+        let s: Signal = from_str("\"0s(A0:Major)\"").unwrap();
         match s {
             Signal::Volts { value } => assert!((value - 0.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
-        // 2s(A0:Major) -> 2nd interval (Major 2nd) -> B0 -> 2 semitones -> 2/12 V
-        let s: Signal = from_str("\"2s(A0:Major)\"").unwrap();
+        // 1s(A0:Major) -> 2nd interval -> B0 -> 2 semitones -> 2/12 V
+        let s: Signal = from_str("\"1s(A0:Major)\"").unwrap();
         match s {
             Signal::Volts { value } => assert!((value - (2.0 / 12.0)).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
-        // 8s(A0:Major) -> Octave -> A1 -> 1V
+        // 2s(A0:Major) -> 3rd interval -> C#0 -> 4 semitones -> 4/12 V
+        let s: Signal = from_str("\"2s(A0:Major)\"").unwrap();
+        match s {
+            Signal::Volts { value } => assert!((value - (4.0 / 12.0)).abs() < 1e-6),
+            _ => panic!("Expected Volts"),
+        }
+
+        // 8s(A0:Major) -> 9th interval -> B1 -> 14 semitones -> 14/12 V
         let s: Signal = from_str("\"8s(A0:Major)\"").unwrap();
         match s {
-            Signal::Volts { value } => assert!((value - 1.0).abs() < 1e-6),
+            Signal::Volts { value } => assert!((value - (14.0 / 12.0)).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
         // Cents
-        // 1.5s(A0:Major) -> 1st interval + 50 cents -> 0.5 semitones -> 0.5/12 V
+        // 1.5s(A0:Major) -> 2nd interval + 50 cents -> 2.5 semitones -> 2.5/12 V
         let s: Signal = from_str("\"1.5s(a0:maj)\"").unwrap();
         match s {
-            Signal::Volts { value } => assert!((value - (0.5 / 12.0)).abs() < 1e-6),
+            Signal::Volts { value } => assert!((value - (2.5 / 12.0)).abs() < 1e-6),
+            _ => panic!("Expected Volts"),
+        }
+
+        // Negative degrees wrap to lower octave
+        // -1s(A0:Major) -> G#-1 -> one semitone below A0 -> -1/12 V
+        let s: Signal = from_str("\"-1s(A0:Major)\"").unwrap();
+        match s {
+            Signal::Volts { value } => assert!((value - (-1.0 / 12.0)).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
     }
@@ -778,6 +812,5 @@ mod tests {
     fn test_signal_deserialization_errors() {
         assert!(from_str::<Signal>("\"invalid\"").is_err());
         assert!(from_str::<Signal>("\"-10hz\"").is_err());
-        assert!(from_str::<Signal>("\"0s(A0:Major)\"").is_err()); // Interval must be >= 1
     }
 }

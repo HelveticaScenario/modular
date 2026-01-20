@@ -57,7 +57,7 @@ impl SawOscillator {
             self.freq
                 .update(self.params.freq.get_value_or(4.0).clamp(-10.0, 10.0));
 
-            let frequency = 27.5f32 * 2.0f32.powf(*self.freq);
+            let frequency = 55.0f32 * 2.0f32.powf(*self.freq);
             let phase_increment = frequency / sample_rate;
 
             self.phase += phase_increment;

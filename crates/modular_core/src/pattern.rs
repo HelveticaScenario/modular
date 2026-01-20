@@ -230,51 +230,15 @@ fn parse_ast(pair: Pair<Rule>, idx: &mut usize) -> Result<ASTNode, PatternParseE
         }
 
         Rule::NoteName => {
-            let mut inner = pair.into_inner();
-            let letter_pair = inner.next().ok_or_else(|| PatternParseError {
-                message: "Parse error: missing note letter".to_string(),
-            })?;
-            let span_start = letter_pair.as_span().start();
-            let mut span_end = letter_pair.as_span().end();
-            let letter = letter_pair
-                .as_str()
-                .chars()
-                .next()
-                .ok_or_else(|| PatternParseError {
-                    message: "Parse error: invalid note letter".to_string(),
-                })?;
-
-            let next = inner.next();
-
-            let (accidental, octave) = match next {
-                Some(p) if p.as_rule() == Rule::Accidental => {
-                    span_end = p.as_span().end();
-                    let acc = p.as_str().chars().next().ok_or_else(|| PatternParseError {
-                        message: "Parse error: invalid accidental".to_string(),
-                    })?;
-                    let octave = inner
-                        .next()
-                        .map(|oct_p| {
-                            span_end = oct_p.as_span().end();
-                            oct_p.as_str().parse::<i32>().unwrap_or(3)
-                        })
-                        .unwrap_or(3);
-                    (Some(acc), octave)
-                }
-                Some(p) if p.as_rule() == Rule::Octave => {
-                    span_end = p.as_span().end();
-                    let octave = p.as_str().parse::<i32>().unwrap_or(3);
-                    (None, octave)
-                }
-                _ => (None, 3),
-            };
+            let span = pair.as_span();
+            let (letter, accidental, octave) = parse_note_name_str(pair.as_str())?;
             let voct = note_name_to_voct(letter, accidental, octave);
             let i = *idx;
             *idx += 1;
             Ok(ASTNode::Leaf {
                 value: Value::Numeric(voct),
                 idx: i,
-                span: (span_start, span_end),
+                span: (span.start(), span.end()),
             })
         }
 
@@ -424,12 +388,19 @@ fn scale_interval_to_voct(
     let target_idx_total = interval_idx;
 
     let notes = scale.notes();
-    let len = notes.len() as i64;
-    if len == 0 {
+    let note_len = notes.len();
+    if note_len == 0 {
         return Err(PatternParseError {
             message: "Scale has no notes".to_string(),
         });
     }
+
+    let effective_len = if note_len > 1 && notes[0].pitch == notes[note_len - 1].pitch {
+        note_len - 1
+    } else {
+        note_len
+    };
+    let len = effective_len as i64;
 
     let scale_root_octave = notes[0].octave as i64;
 
@@ -453,11 +424,11 @@ fn scale_interval_to_voct(
 
     let pc_val = target_note.pitch.into_u8();
 
-    let midi = (target_octave as f64 + 1.0) * 12.0 + (pc_val as f64);
+    let midi = (target_octave as f64 + 2.0) * 12.0 + (pc_val as f64);
     let midi_with_cents = midi + (cents / 100.0);
 
-    // Convert to V/Oct (A0 = 0V, MIDI 21)
-    let volts = (midi_with_cents - 21.0) / 12.0;
+    // Convert to V/Oct (A0 = 0V, MIDI 33)
+    let volts = (midi_with_cents - 33.0) / 12.0;
     Ok(volts)
 }
 
@@ -469,36 +440,7 @@ fn parse_scale_definition(pair: Pair<Rule>) -> Result<ScaleDefinition, PatternPa
     let note_pair = inner.next().ok_or_else(|| PatternParseError {
         message: "Parse error: missing root note in scale modifier".to_string(),
     })?;
-
-    let mut note_inner = note_pair.into_inner();
-    let letter_pair = note_inner.next().ok_or_else(|| PatternParseError {
-        message: "Parse error: missing note letter in scale modifier".to_string(),
-    })?;
-    let letter = letter_pair
-        .as_str()
-        .chars()
-        .next()
-        .ok_or_else(|| PatternParseError {
-            message: "Parse error: invalid note letter in scale modifier".to_string(),
-        })?;
-
-    let next = note_inner.next();
-
-    let (accidental, octave) = match next {
-        Some(p) if p.as_rule() == Rule::Accidental => {
-            let acc = p.as_str().chars().next();
-            let octave = note_inner
-                .next()
-                .map(|oct_p| oct_p.as_str().parse::<i32>().unwrap_or(3))
-                .unwrap_or(3);
-            (acc, octave)
-        }
-        Some(p) if p.as_rule() == Rule::Octave => {
-            let octave = p.as_str().parse::<i32>().unwrap_or(3);
-            (None, octave)
-        }
-        _ => (None, 3),
-    };
+    let (letter, accidental, octave) = parse_note_name_str(note_pair.as_str())?;
 
     // Parse scale name
     let scale_name_pair = inner.next().ok_or_else(|| PatternParseError {
@@ -584,7 +526,7 @@ fn resolve_unresolved_numerics_in_node(node: &mut ASTNode, has_scale: bool) {
 }
 
 fn note_name_to_voct(letter: char, accidental: Option<char>, octave: i32) -> f64 {
-    // Matches src/dsl/factories.ts note() implementation.
+    // Matches src/dsl/factories.ts note() implementation (A0 = 55 Hz).
     let base = match letter.to_ascii_lowercase() {
         'c' => 0,
         'd' => 2,
@@ -603,9 +545,43 @@ fn note_name_to_voct(letter: char, accidental: Option<char>, octave: i32) -> f64
         semitone -= 1;
     }
 
-    let semitones_from_c4 = (octave - 4) * 12 + semitone;
-    let frequency = 440.0 * 2.0_f64.powf((semitones_from_c4 as f64 - 9.0) / 12.0);
+    let semitones_from_a0 = octave * 12 + semitone - 9;
+    let frequency = 55.0 * 2.0_f64.powf(semitones_from_a0 as f64 / 12.0);
     hz_to_voct_f64(frequency)
+}
+
+fn parse_note_name_str(note_str: &str) -> Result<(char, Option<char>, i32), PatternParseError> {
+    let mut chars = note_str.chars();
+    let letter = chars.next().ok_or_else(|| PatternParseError {
+        message: "Parse error: empty note name".to_string(),
+    })?;
+
+    if !matches!(
+        letter,
+        'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G'
+    ) {
+        return Err(PatternParseError {
+            message: "Parse error: invalid note letter".to_string(),
+        });
+    }
+
+    let mut remainder: String = chars.collect();
+    let mut accidental: Option<char> = None;
+
+    if remainder.starts_with('#') || remainder.starts_with('b') {
+        accidental = remainder.chars().next();
+        remainder = remainder.chars().skip(1).collect();
+    }
+
+    let octave = if remainder.is_empty() {
+        3
+    } else {
+        remainder.parse::<i32>().map_err(|_| PatternParseError {
+            message: "Parse error: invalid octave".to_string(),
+        })?
+    };
+
+    Ok((letter, accidental, octave))
 }
 
 /// Parse a scale pattern node (recursive for nested patterns)
@@ -1574,6 +1550,25 @@ mod tests {
         ASTNode::RandomChoice { choices }
     }
 
+    fn scale_def(letter: char, accidental: Option<char>, octave: i32, name: &str) -> ScaleDefinition {
+        ScaleDefinition {
+            root_letter: letter,
+            root_accidental: accidental,
+            root_octave: octave,
+            scale_name: name.to_string(),
+        }
+    }
+
+    fn assert_close(actual: f64, expected: f64, msg: &str) {
+        assert!(
+            (actual - expected).abs() < 1e-6,
+            "{}: expected {}, got {}",
+            msg,
+            expected,
+            actual
+        );
+    }
+
     #[test]
     fn test_basic_sequence() {
         let pattern = PatternProgram::new(vec![num(1.0, 0), num(2.0, 1), num(3.0, 2)]);
@@ -1927,6 +1922,98 @@ mod tests {
         } else {
             panic!("Expected slow subsequence");
         }
+    }
+
+    #[test]
+    fn test_scale_interval_to_voct_major_degrees() {
+        let scale = scale_def('A', None, 0, "Major");
+        let cases = vec![
+            (0.0, 33.0), // A0
+            (1.0, 35.0), // B0
+            (2.0, 37.0), // C#1
+            (3.0, 38.0), // D1
+            (4.0, 40.0), // E1
+            (5.0, 42.0), // F#1
+            (6.0, 44.0), // G#1
+            (7.0, 45.0), // A1
+            (8.0, 47.0), // B1
+        ];
+
+        for (interval, midi) in cases {
+            let actual = scale_interval_to_voct(interval, &scale).unwrap();
+            let expected = midi_to_voct_f64(midi);
+            assert_close(
+                actual,
+                expected,
+                &format!("interval {} in A0 Major", interval),
+            );
+        }
+    }
+
+    #[test]
+    fn test_scale_interval_to_voct_negative_intervals() {
+        let scale = scale_def('A', None, 0, "Major");
+        let cases = vec![
+            (-1.0, 32.0), // G#0
+            (-2.0, 30.0), // F#0
+            (-7.0, 21.0), // A-1
+            (-8.0, 20.0), // G#-1
+        ];
+
+        for (interval, midi) in cases {
+            let actual = scale_interval_to_voct(interval, &scale).unwrap();
+            let expected = midi_to_voct_f64(midi);
+            assert_close(
+                actual,
+                expected,
+                &format!("interval {} in A0 Major", interval),
+            );
+        }
+    }
+
+    #[test]
+    fn test_scale_interval_to_voct_fractional_cents() {
+        let scale = scale_def('A', None, 0, "Major");
+        // 2.5 -> C#1 + 50 cents => MIDI 37.5
+        let actual = scale_interval_to_voct(2.5, &scale).unwrap();
+        let expected = midi_to_voct_f64(37.5);
+        assert_close(actual, expected, "interval 2.5 in A0 Major");
+    }
+
+    #[test]
+    fn test_scale_interval_to_voct_root_octave_and_accidental() {
+        let c_major = scale_def('C', None, 4, "Major");
+        let eb_major = scale_def('E', Some('b'), 3, "Major");
+
+        let c4 = scale_interval_to_voct(0.0, &c_major).unwrap();
+        let c5 = scale_interval_to_voct(7.0, &c_major).unwrap();
+        let f4 = scale_interval_to_voct(3.0, &c_major).unwrap();
+
+        assert_close(c4, midi_to_voct_f64(72.0), "C4 root");
+        assert_close(c5, midi_to_voct_f64(84.0), "C5 octave");
+        assert_close(f4, midi_to_voct_f64(77.0), "F4 degree 3");
+
+        let eb3 = scale_interval_to_voct(0.0, &eb_major).unwrap();
+        assert_close(eb3, midi_to_voct_f64(63.0), "Eb3 root");
+    }
+
+    #[test]
+    fn test_scale_interval_to_voct_invalid_scale_or_pitch() {
+        let invalid_scale = scale_def('A', None, 0, "NotAScale");
+        let err = scale_interval_to_voct(0.0, &invalid_scale).unwrap_err();
+        assert!(
+            err.message.contains("Invalid scale definition"),
+            "Expected invalid scale definition error, got {}",
+            err.message
+        );
+
+        let invalid_pitch = scale_def('H', None, 0, "Major");
+        let err = scale_interval_to_voct(0.0, &invalid_pitch).unwrap_err();
+        assert!(
+            err.message.contains("Invalid pitch"),
+            "Expected invalid pitch error, got {}",
+            err.message
+        );
     }
 
     #[test]
@@ -2329,12 +2416,12 @@ mod tests {
 
     #[test]
     fn test_midi_to_voct_conversion() {
-        // MIDI 21 = A0 = 0V
-        assert!((midi_to_voct_f64(21.0) - 0.0).abs() < 1e-6);
-        // MIDI 33 = A1 = 1V
-        assert!((midi_to_voct_f64(33.0) - 1.0).abs() < 1e-6);
-        // MIDI 60 = C4 = 3.25V (C4 is 39 semitones above A0)
-        assert!((midi_to_voct_f64(60.0) - 39.0 / 12.0).abs() < 1e-6);
+        // MIDI 33 = A0 = 0V
+        assert!((midi_to_voct_f64(33.0) - 0.0).abs() < 1e-6);
+        // MIDI 45 = A1 = 1V
+        assert!((midi_to_voct_f64(45.0) - 1.0).abs() < 1e-6);
+        // MIDI 72 = C4 = 3.25V (C4 is 39 semitones above A0)
+        assert!((midi_to_voct_f64(72.0) - 39.0 / 12.0).abs() < 1e-6);
     }
 
     #[test]

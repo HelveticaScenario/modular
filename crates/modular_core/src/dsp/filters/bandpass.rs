@@ -41,7 +41,7 @@ impl BandpassFilter {
         self.q.update(self.params.resonance.get_value_or(1.0));
 
         // Convert v/oct to frequency
-        let freq = 27.5f32 * 2.0f32.powf(*self.center);
+        let freq = 55.0f32 * 2.0f32.powf(*self.center);
         let freq_clamped = freq.min(sample_rate * 0.45).max(20.0);
 
         // Calculate filter coefficients

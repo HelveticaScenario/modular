@@ -38,7 +38,7 @@ HzSuffix = @{ (("h" | "H") ~ ("z" | "Z")) | (("k" | "K") ~ ("h" | "H") ~ ("z" | 
 NumericLiteral = { SignedDecimal }
 SignedDecimal = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 
-NoteName = { NoteLetter ~ Accidental? ~ Octave? }
+NoteName = @{ NoteLetter ~ Accidental? ~ Octave? }
 NoteLetter = { "a" | "b" | "c" | "d" | "e" | "f" | "g" | "A" | "B" | "C" | "D" | "E" | "F" | "G" }
 Accidental = { "#" | "b" }
 Octave = @{ "-"? ~ ASCII_DIGIT+ }

@@ -51,6 +51,168 @@ where
     val
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SchmittState {
+    Low,
+    High,
+    Uninitialized,
+}
+
+/// Reusable Schmitt trigger with hysteresis
+#[derive(Debug, Clone, Copy)]
+pub struct SchmittTrigger {
+    pub state: SchmittState,
+    low_threshold: f32,
+    high_threshold: f32,
+}
+
+impl SchmittTrigger {
+    /// Create a new Schmitt trigger with the given thresholds
+    pub fn new(low_threshold: f32, high_threshold: f32) -> Self {
+        Self {
+            state: SchmittState::Uninitialized,
+            low_threshold,
+            high_threshold,
+        }
+    }
+
+    /// Process a sample through the Schmitt trigger
+    /// Returns true if it toggled from low to high
+    pub fn process(&mut self, input: f32) -> bool {
+        match self.state {
+            SchmittState::Uninitialized => {
+                // Initialize state based on input
+                if input >= self.high_threshold {
+                    self.state = SchmittState::High;
+                } else {
+                    self.state = SchmittState::Low;
+                }
+            }
+            SchmittState::High => {
+                // Currently high - check if we should go low
+                if input < self.low_threshold {
+                    self.state = SchmittState::Low;
+                }
+            }
+            SchmittState::Low => {
+                // Currently low - check if we should go high
+                if input > self.high_threshold {
+                    self.state = SchmittState::High;
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Update thresholds
+    pub fn set_thresholds(&mut self, low_threshold: f32, high_threshold: f32) {
+        self.low_threshold = low_threshold;
+        self.high_threshold = high_threshold;
+    }
+
+    /// Get current state
+    pub fn state(&self) -> SchmittState {
+        self.state
+    }
+
+    /// Reset state to Uninitialized
+    pub fn reset(&mut self) {
+        self.state = SchmittState::Uninitialized;
+    }
+}
+
+impl Default for SchmittTrigger {
+    fn default() -> Self {
+        Self::new(-1.0, 1.0)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum TempGateState {
+    #[default]
+    Low,
+    High,
+}
+
+#[derive(Clone, Copy, Default, PartialEq)]
+pub struct TempGate {
+    target: TempGateState,
+    state: TempGateState,
+    low_val: f32,
+    high_val: f32,
+}
+
+impl TempGate {
+    pub fn new(state: TempGateState, low_val: f32, high_val: f32) -> Self {
+        Self {
+            target: state,
+            state,
+            low_val,
+            high_val,
+        }
+    }
+
+    pub fn set_state(&mut self, state: TempGateState, target: TempGateState) {
+        self.state = state;
+        self.target = target;
+    }
+
+    pub fn process(&mut self) -> f32 {
+        let state = self.state;
+        if self.state != self.target {
+            self.state = self.target;
+        }
+        match state {
+            TempGateState::Low => self.low_val,
+            TempGateState::High => self.high_val,
+        }
+    }
+}
+
+// ============ Pitch Conversion Functions ============
+
+pub fn hz_to_voct_f64(frequency_hz: f64) -> f64 {
+    // Matches src/dsl/factories.ts hz(): log2(f / 55)
+    (frequency_hz / 55.0).log2()
+}
+
+/// Convert MIDI note number to V/Oct (A0 = 0V = MIDI 33)
+pub fn midi_to_voct_f64(midi: f64) -> f64 {
+    (midi - 33.0) / 12.0
+}
+
+/// Convert V/Oct to MIDI note number
+pub fn voct_to_midi_f64(voct: f64) -> f64 {
+    voct * 12.0 + 33.0
+}
+
+/// Convert V/Oct to frequency in Hz
+pub fn voct_to_hz_f64(voct: f64) -> f64 {
+    55.0 * 2.0.powf(voct)
+}
+
+pub fn hz_to_voct(frequency_hz: f32) -> f32 {
+    // Matches src/dsl/factories.ts hz(): log2(f / 55)
+    (frequency_hz / 55.0).log2()
+}
+
+/// Convert MIDI note number to V/Oct (A0 = 0V = MIDI 33)
+pub fn midi_to_voct(midi: f32) -> f32 {
+    (midi - 33.0) / 12.0
+}
+
+/// Convert V/Oct to MIDI note number
+pub fn voct_to_midi(voct: f32) -> f32 {
+    voct * 12.0 + 33.0
+}
+
+/// Convert V/Oct to frequency in Hz
+pub fn voct_to_hz(voct: f32) -> f32 {
+    55.0 * 2.0.powf(voct)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,166 +345,186 @@ mod tests {
         assert!((map_range(0.5, 0.0, 1.0, -1.0, 1.0) - 0.0).abs() < 1e-6);
         assert_eq!(map_range(1.0, 1.0, 1.0, 2.0, 4.0), 2.0);
     }
-}
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SchmittState {
-    Low,
-    High,
-    Uninitialized,
-}
-
-/// Reusable Schmitt trigger with hysteresis
-#[derive(Debug, Clone, Copy)]
-pub struct SchmittTrigger {
-    pub state: SchmittState,
-    low_threshold: f32,
-    high_threshold: f32,
-}
-
-impl SchmittTrigger {
-    /// Create a new Schmitt trigger with the given thresholds
-    pub fn new(low_threshold: f32, high_threshold: f32) -> Self {
-        Self {
-            state: SchmittState::Uninitialized,
-            low_threshold,
-            high_threshold,
+    // Exhaustive-ish tests for pitch conversion functions
+    #[test]
+    fn test_pitch_roundtrip_midi_voct_f64() {
+        for midi in 0..=127 {
+            let midi_f = midi as f64;
+            let voct = midi_to_voct_f64(midi_f);
+            let roundtrip = voct_to_midi_f64(voct);
+            assert!(
+                (roundtrip - midi_f).abs() < 1e-9,
+                "midi->voct->midi should roundtrip, got {} for {}",
+                roundtrip,
+                midi_f
+            );
         }
     }
 
-    /// Process a sample through the Schmitt trigger
-    /// Returns true if it toggled from low to high
-    pub fn process(&mut self, input: f32) -> bool {
-        match self.state {
-            SchmittState::Uninitialized => {
-                // Initialize state based on input
-                if input >= self.high_threshold {
-                    self.state = SchmittState::High;
-                } else {
-                    self.state = SchmittState::Low;
-                }
-            }
-            SchmittState::High => {
-                // Currently high - check if we should go low
-                if input < self.low_threshold {
-                    self.state = SchmittState::Low;
-                }
-            }
-            SchmittState::Low => {
-                // Currently low - check if we should go high
-                if input > self.high_threshold {
-                    self.state = SchmittState::High;
-                    return true;
-                }
-            }
-        }
-
-        false
-    }
-
-    /// Update thresholds
-    pub fn set_thresholds(&mut self, low_threshold: f32, high_threshold: f32) {
-        self.low_threshold = low_threshold;
-        self.high_threshold = high_threshold;
-    }
-
-    /// Get current state
-    pub fn state(&self) -> SchmittState {
-        self.state
-    }
-
-    /// Reset state to Uninitialized
-    pub fn reset(&mut self) {
-        self.state = SchmittState::Uninitialized;
-    }
-}
-
-impl Default for SchmittTrigger {
-    fn default() -> Self {
-        Self::new(-1.0, 1.0)
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum TempGateState {
-    #[default]
-    Low,
-    High,
-}
-
-#[derive(Clone, Copy, Default, PartialEq)]
-pub struct TempGate {
-    target: TempGateState,
-    state: TempGateState,
-    low_val: f32,
-    high_val: f32,
-}
-
-impl TempGate {
-    pub fn new(state: TempGateState, low_val: f32, high_val: f32) -> Self {
-        Self {
-            target: state,
-            state,
-            low_val,
-            high_val,
+    #[test]
+    fn test_pitch_roundtrip_midi_voct_f32() {
+        for midi in 0..=127 {
+            let midi_f = midi as f32;
+            let voct = midi_to_voct(midi_f);
+            let roundtrip = voct_to_midi(voct);
+            assert!(
+                (roundtrip - midi_f).abs() < 1e-5,
+                "midi->voct->midi should roundtrip, got {} for {}",
+                roundtrip,
+                midi_f
+            );
         }
     }
 
-    pub fn set_state(&mut self, state: TempGateState, target: TempGateState) {
-        self.state = state;
-        self.target = target;
+    #[test]
+    fn test_pitch_roundtrip_voct_hz_f64() {
+        for steps in -120..=120 {
+            let voct = steps as f64 / 12.0;
+            let hz = voct_to_hz_f64(voct);
+            let roundtrip = hz_to_voct_f64(hz);
+            assert!(
+                (roundtrip - voct).abs() < 1e-9,
+                "voct->hz->voct should roundtrip, got {} for {}",
+                roundtrip,
+                voct
+            );
+        }
     }
 
-    pub fn process(&mut self) -> f32 {
-        let state = self.state;
-        if self.state != self.target {
-            self.state = self.target;
-        }
-        match state {
-            TempGateState::Low => self.low_val,
-            TempGateState::High => self.high_val,
+    #[test]
+    fn test_pitch_roundtrip_voct_hz_f32() {
+        for steps in -120..=120 {
+            let voct = steps as f32 / 12.0;
+            let hz = voct_to_hz(voct);
+            let roundtrip = hz_to_voct(hz);
+            assert!(
+                (roundtrip - voct).abs() < 1e-5,
+                "voct->hz->voct should roundtrip, got {} for {}",
+                roundtrip,
+                voct
+            );
         }
     }
-}
 
-// ============ Pitch Conversion Functions ============
+    #[test]
+    fn test_pitch_expected_anchors_f64() {
+        // A0 = MIDI 33 = 0V = 55 Hz
+        let voct_a0 = midi_to_voct_f64(33.0);
+        assert!((voct_a0 - 0.0).abs() < 1e-12);
+        let hz_a0 = voct_to_hz_f64(0.0);
+        assert!((hz_a0 - 55.0).abs() < 1e-12);
 
-pub fn hz_to_voct_f64(frequency_hz: f64) -> f64 {
-    // Matches src/dsl/factories.ts hz(): log2(f / 27.5)
-    (frequency_hz / 27.5).log2()
-}
+        // A3 = MIDI 69 = 3V = 440 Hz
+        let voct_a3 = midi_to_voct_f64(69.0);
+        assert!((voct_a3 - 3.0).abs() < 1e-12);
+        let hz_a3 = voct_to_hz_f64(3.0);
+        assert!((hz_a3 - 440.0).abs() < 1e-9);
+    }
 
-/// Convert MIDI note number to V/Oct (A0 = 0V = MIDI 21)
-pub fn midi_to_voct_f64(midi: f64) -> f64 {
-    (midi - 21.0) / 12.0
-}
+    #[test]
+    fn test_pitch_expected_anchors_f32() {
+        // A0 = MIDI 33 = 0V = 55 Hz
+        let voct_a0 = midi_to_voct(33.0);
+        assert!((voct_a0 - 0.0).abs() < 1e-6);
+        let hz_a0 = voct_to_hz(0.0);
+        assert!((hz_a0 - 55.0).abs() < 1e-6);
 
-/// Convert V/Oct to MIDI note number
-pub fn voct_to_midi_f64(voct: f64) -> f64 {
-    voct * 12.0 + 21.0
-}
+        // A3 = MIDI 69 = 3V = 440 Hz
+        let voct_a3 = midi_to_voct(69.0);
+        assert!((voct_a3 - 3.0).abs() < 1e-6);
+        let hz_a3 = voct_to_hz(3.0);
+        assert!((hz_a3 - 440.0).abs() < 1e-4);
+    }
 
-/// Convert V/Oct to frequency in Hz
-pub fn voct_to_hz_f64(voct: f64) -> f64 {
-    27.5 * 2.0.powf(voct)
-}
+    #[test]
+    fn test_pitch_arbitrary_cents_f64() {
+        // A3 plus/minus cents
+        let cases = [
+            (25.0, 3.0 + 25.0 / 1200.0),
+            (-37.0, 3.0 - 37.0 / 1200.0),
+            (123.0, 3.0 + 123.0 / 1200.0),
+        ];
+        for (cents, expected_voct) in cases {
+            let freq = 440.0 * 2.0_f64.powf(cents / 1200.0);
+            let voct = hz_to_voct_f64(freq);
+            assert!(
+                (voct - expected_voct).abs() < 1e-9,
+                "hz_to_voct_f64 cents {} got {} expected {}",
+                cents,
+                voct,
+                expected_voct
+            );
 
-pub fn hz_to_voct(frequency_hz: f32) -> f32 {
-    // Matches src/dsl/factories.ts hz(): log2(f / 27.5)
-    (frequency_hz / 27.5).log2()
-}
+            let freq_roundtrip = voct_to_hz_f64(expected_voct);
+            assert!(
+                (freq_roundtrip - freq).abs() < 1e-9,
+                "voct_to_hz_f64 cents {} got {} expected {}",
+                cents,
+                freq_roundtrip,
+                freq
+            );
+        }
+    }
 
-/// Convert MIDI note number to V/Oct (A0 = 0V = MIDI 21)
-pub fn midi_to_voct(midi: f32) -> f32 {
-    (midi - 21.0) / 12.0
-}
+    #[test]
+    fn test_pitch_arbitrary_cents_f32() {
+        let cases = [
+            (25.0_f32, 3.0_f32 + 25.0_f32 / 1200.0_f32),
+            (-37.0_f32, 3.0_f32 - 37.0_f32 / 1200.0_f32),
+            (123.0_f32, 3.0_f32 + 123.0_f32 / 1200.0_f32),
+        ];
+        for (cents, expected_voct) in cases {
+            let freq = 440.0_f32 * 2.0_f32.powf(cents / 1200.0_f32);
+            let voct = hz_to_voct(freq);
+            assert!(
+                (voct - expected_voct).abs() < 1e-5,
+                "hz_to_voct cents {} got {} expected {}",
+                cents,
+                voct,
+                expected_voct
+            );
 
-/// Convert V/Oct to MIDI note number
-pub fn voct_to_midi(voct: f32) -> f32 {
-    voct * 12.0 + 21.0
-}
+            let freq_roundtrip = voct_to_hz(expected_voct);
+            assert!(
+                (freq_roundtrip - freq).abs() < 1e-4,
+                "voct_to_hz cents {} got {} expected {}",
+                cents,
+                freq_roundtrip,
+                freq
+            );
+        }
+    }
 
-/// Convert V/Oct to frequency in Hz
-pub fn voct_to_hz(voct: f32) -> f32 {
-    27.5 * 2.0.powf(voct)
+    #[test]
+    fn test_pitch_arbitrary_fractional_midi_f64() {
+        let cases = [
+            (69.5, 3.0 + 0.5 / 12.0),
+            (60.25, 2.25 + 0.25 / 12.0),
+            (33.75, 0.75 / 12.0),
+        ];
+        for (midi, expected_voct) in cases {
+            let voct = midi_to_voct_f64(midi);
+            assert!((voct - expected_voct).abs() < 1e-12);
+
+            let midi_roundtrip = voct_to_midi_f64(expected_voct);
+            assert!((midi_roundtrip - midi).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn test_pitch_arbitrary_fractional_midi_f32() {
+        let cases = [
+            (69.5_f32, 3.0_f32 + 0.5_f32 / 12.0_f32),
+            (60.25_f32, 2.25_f32 + 0.25_f32 / 12.0_f32),
+            (33.75_f32, 0.75_f32 / 12.0_f32),
+        ];
+        for (midi, expected_voct) in cases {
+            let voct = midi_to_voct(midi);
+            assert!((voct - expected_voct).abs() < 1e-6);
+
+            let midi_roundtrip = voct_to_midi(expected_voct);
+            assert!((midi_roundtrip - midi).abs() < 1e-5);
+        }
+    }
 }
