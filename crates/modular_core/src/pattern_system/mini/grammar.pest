@@ -1,0 +1,114 @@
+// Mini notation grammar for Strudel-style patterns
+// Supports: sequences, stacks, subsequences, modifiers, operators, and tails
+
+// Entry point: a pattern expression optionally followed by operator chain
+program = { SOI ~ pattern_expr ~ operator_chain? ~ EOI }
+
+// Operator chain: $ operator(arg) $ operator(arg) ...
+operator_chain = { operator_call+ }
+operator_call = { "$" ~ WHITESPACE* ~ identifier ~ variant? ~ "(" ~ WHITESPACE* ~ pattern_expr? ~ WHITESPACE* ~ ")" }
+variant = { "." ~ identifier }
+
+// Pattern expressions - stack is lowest precedence
+pattern_expr = { stack_expr }
+
+// Stack: comma-separated patterns (simultaneous)
+stack_expr = { sequence_expr ~ (WHITESPACE* ~ "," ~ WHITESPACE* ~ sequence_expr)* }
+
+// Sequence: space-separated elements with optional weights
+sequence_expr = { weighted_elem+ }
+
+// Weighted element: element with optional weight (@n)
+weighted_elem = { element ~ (WHITESPACE* ~ "@" ~ WHITESPACE* ~ number)? ~ WHITESPACE* }
+
+// Element types
+element = {
+    polymeter |
+    fast_sub |
+    slow_sub |
+    group |
+    modified_atom
+}
+
+// Grouping
+group = { "(" ~ WHITESPACE* ~ pattern_expr ~ WHITESPACE* ~ ")" }
+
+// Subsequences
+fast_sub = { "[" ~ WHITESPACE* ~ pattern_expr ~ WHITESPACE* ~ "]" }
+slow_sub = { "<" ~ WHITESPACE* ~ pattern_expr ~ WHITESPACE* ~ ">" }
+
+// Polymeter: {a b, c d e}
+polymeter = { "{" ~ WHITESPACE* ~ sequence_expr ~ (WHITESPACE* ~ "," ~ WHITESPACE* ~ sequence_expr)+ ~ WHITESPACE* ~ "}" }
+
+// Atom with modifiers
+modified_atom = { atom ~ modifier* }
+
+// Modifiers (applied to atoms)
+modifier = {
+    fast_mod |
+    slow_mod |
+    replicate |
+    degrade |
+    euclidean
+}
+
+fast_mod = { "*" ~ slice }
+slow_mod = { "/" ~ slice }
+replicate = { "!" ~ integer? }
+degrade = { "?" ~ number? }
+euclidean = { "(" ~ WHITESPACE* ~ integer ~ WHITESPACE* ~ "," ~ WHITESPACE* ~ integer ~ (WHITESPACE* ~ "," ~ WHITESPACE* ~ integer)? ~ WHITESPACE* ~ ")" }
+
+// A slice can be a number or a subsequence
+slice = { number | fast_sub | slow_sub | group }
+
+// Atoms - the basic building blocks
+atom = {
+    rest |
+    range_pattern |
+    random_choice |
+    value_with_tail
+}
+
+// Rest/silence
+rest = { "~" | "-" }
+
+// Range: 0..4 becomes [0, 1, 2, 3, 4]
+range_pattern = { integer ~ ".." ~ integer }
+
+// Random choice: a | b | c
+random_choice = { value ~ (WHITESPACE* ~ "|" ~ WHITESPACE* ~ value)+ }
+
+// Value with optional tail: c:e:g becomes a list [c, e, g]
+value_with_tail = { value ~ (":" ~ value)* }
+
+// Values - various atom types
+value = {
+    hz_value |
+    volts_value |
+    midi_value |
+    note_value |
+    number |
+    string |
+    identifier
+}
+
+// Number formats
+hz_value = { number ~ "hz" }
+volts_value = { number ~ "v" }
+midi_value = { "m" ~ integer }
+note_value = { note_letter ~ accidental? ~ octave? }
+
+// Note components
+note_letter = { 'a'..'g' | 'A'..'G' }
+accidental = { "#" | "b" | "s" | "f" }
+octave = { "-"? ~ ASCII_DIGIT+ }
+
+// Basic types
+number = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+integer = @{ "-"? ~ ASCII_DIGIT+ }
+identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+string = { "\"" ~ inner_string ~ "\"" }
+inner_string = @{ (!"\"" ~ ANY)* }
+
+// Whitespace handling
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
