@@ -720,8 +720,8 @@ const createHelpWindow = () => {
     }
 
     helpWindow = new BrowserWindow({
-        width: 800,
-        height: 600,
+        width: 1500,
+        height: 1000,
         webPreferences: {
             preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
         },
@@ -759,8 +759,8 @@ const createWindow = (): void => {
 
     // Create the browser window.
     mainWindow = new BrowserWindow({
-        height: 600,
-        width: 800,
+        height: 1000,
+        width: 1500,
         titleBarStyle: isMac ? 'hiddenInset' : 'default',
         trafficLightPosition: isMac ? { x: 12, y: 10 } : undefined,
         webPreferences: {
@@ -790,33 +790,33 @@ const createMenu = (): void => {
         // App menu (macOS only)
         ...(isMac
             ? [
-                  {
-                      label: app.name,
-                      submenu: [
-                          { role: 'about' as const },
-                          { type: 'separator' as const },
-                          {
-                              label: 'Settings...',
-                              accelerator: 'Cmd+,',
-                              click: () => {
-                                  if (mainWindow && !mainWindow.isDestroyed()) {
-                                      mainWindow.webContents.send(
-                                          MENU_CHANNELS.OPEN_SETTINGS,
-                                      );
-                                  }
-                              },
-                          },
-                          { type: 'separator' as const },
-                          { role: 'services' as const },
-                          { type: 'separator' as const },
-                          { role: 'hide' as const },
-                          { role: 'hideOthers' as const },
-                          { role: 'unhide' as const },
-                          { type: 'separator' as const },
-                          { role: 'quit' as const },
-                      ],
-                  },
-              ]
+                {
+                    label: app.name,
+                    submenu: [
+                        { role: 'about' as const },
+                        { type: 'separator' as const },
+                        {
+                            label: 'Settings...',
+                            accelerator: 'Cmd+,',
+                            click: () => {
+                                if (mainWindow && !mainWindow.isDestroyed()) {
+                                    mainWindow.webContents.send(
+                                        MENU_CHANNELS.OPEN_SETTINGS,
+                                    );
+                                }
+                            },
+                        },
+                        { type: 'separator' as const },
+                        { role: 'services' as const },
+                        { type: 'separator' as const },
+                        { role: 'hide' as const },
+                        { role: 'hideOthers' as const },
+                        { role: 'unhide' as const },
+                        { type: 'separator' as const },
+                        { role: 'quit' as const },
+                    ],
+                },
+            ]
             : []),
         // File menu
         {
@@ -872,15 +872,15 @@ const createMenu = (): void => {
                 { role: 'paste' as const },
                 ...(isMac
                     ? [
-                          { role: 'pasteAndMatchStyle' as const },
-                          { role: 'delete' as const },
-                          { role: 'selectAll' as const },
-                      ]
+                        { role: 'pasteAndMatchStyle' as const },
+                        { role: 'delete' as const },
+                        { role: 'selectAll' as const },
+                    ]
                     : [
-                          { role: 'delete' as const },
-                          { type: 'separator' as const },
-                          { role: 'selectAll' as const },
-                      ]),
+                        { role: 'delete' as const },
+                        { type: 'separator' as const },
+                        { role: 'selectAll' as const },
+                    ]),
             ],
         },
         // View menu
@@ -956,11 +956,11 @@ const createMenu = (): void => {
                 { role: 'zoom' as const },
                 ...(isMac
                     ? [
-                          { type: 'separator' as const },
-                          { role: 'front' as const },
-                          { type: 'separator' as const },
-                          { role: 'window' as const },
-                      ]
+                        { type: 'separator' as const },
+                        { role: 'front' as const },
+                        { type: 'separator' as const },
+                        { role: 'window' as const },
+                    ]
                     : [{ role: 'close' as const }]),
             ],
         },
