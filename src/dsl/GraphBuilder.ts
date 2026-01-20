@@ -54,16 +54,7 @@ export function defer(
         let result = strings[0];
 
         for (let i = 0; i < values.length; i++) {
-            const resolved = resolveValue(values[i]);
-
-            let stringValue: string;
-            if (typeof resolved === 'object' && resolved !== null) {
-                stringValue = JSON.stringify(resolved);
-            } else {
-                stringValue = String(resolved);
-            }
-
-            result += stringValue + strings[i + 1];
+            result += String(resolveValue(values[i])) + strings[i + 1];
         }
 
         return result;
@@ -290,7 +281,7 @@ export class ModuleNode {
                     target.schema.outputs.find((o) => o.name === prop) ??
                     (prop === 'output'
                         ? (target.schema.outputs.find((o) => o.default) ??
-                          target.schema.outputs[0])
+                            target.schema.outputs[0])
                         : undefined);
                 if (outputSchema) {
                     return target._output(outputSchema.name);
