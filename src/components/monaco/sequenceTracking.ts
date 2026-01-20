@@ -1,8 +1,6 @@
 import type React from 'react';
-import { useCustomMonaco } from '../../hooks/useCustomMonaco';
 import type { editor } from 'monaco-editor';
-
-type Monaco = NonNullable<ReturnType<typeof useCustomMonaco>>;
+import type { Monaco } from '../../hooks/useCustomMonaco';
 
 type TrackingMaps = {
     seqTrackingIds: Map<string, Map<number, string>>;

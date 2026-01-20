@@ -1,6 +1,4 @@
-import { useCustomMonaco } from '../../hooks/useCustomMonaco';
-
-type Monaco = NonNullable<ReturnType<typeof useCustomMonaco>>;
+import type { Monaco } from '../../hooks/useCustomMonaco';
 
 export function registerConfigSchema(monaco: Monaco, schema: object) {
     const jsonDefaults = monaco.json.jsonDefaults;

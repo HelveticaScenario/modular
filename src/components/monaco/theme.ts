@@ -1,7 +1,5 @@
 import type { AppTheme } from '../../themes/types';
-import { useCustomMonaco } from '../../hooks/useCustomMonaco';
-
-type Monaco = NonNullable<ReturnType<typeof useCustomMonaco>>;
+import type { Monaco } from '../../hooks/useCustomMonaco';
 
 export function applyMonacoTheme(
     monaco: Monaco,

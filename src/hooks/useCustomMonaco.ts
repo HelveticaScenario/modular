@@ -27,4 +27,6 @@ export function useCustomMonaco() {
     return monaco;
 }
 
+export type Monaco = NonNullable<ReturnType<typeof useCustomMonaco>>;
+
 export default useCustomMonaco;

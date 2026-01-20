@@ -1,8 +1,6 @@
 import type { ModuleSchema } from '@modular/core';
 import { buildLibSource } from '../../dsl/typescriptLibGen';
-import { useCustomMonaco } from '../../hooks/useCustomMonaco';
-
-type Monaco = NonNullable<ReturnType<typeof useCustomMonaco>>;
+import type { Monaco } from '../../hooks/useCustomMonaco';
 
 // Apply the generated DSL .d.ts library to Monaco and expose some
 // debug handles on window so we can inspect schemas and lib source

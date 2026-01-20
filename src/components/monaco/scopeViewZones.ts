@@ -1,8 +1,6 @@
 import type { ScopeView } from '../../types/editor';
-import { useCustomMonaco } from '../../hooks/useCustomMonaco';
 import type { editor } from 'monaco-editor';
-
-type Monaco = NonNullable<ReturnType<typeof useCustomMonaco>>;
+import type { Monaco } from '../../hooks/useCustomMonaco';
 
 type ScopeViewZoneParams = {
     editor: editor.IStandaloneCodeEditor;

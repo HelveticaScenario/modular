@@ -1,9 +1,7 @@
 import * as prettier from 'prettier/standalone';
 import * as prettierBabel from 'prettier/plugins/babel';
 import * as prettierEstree from 'prettier/plugins/estree';
-import { useCustomMonaco } from '../../hooks/useCustomMonaco';
-
-type Monaco = NonNullable<ReturnType<typeof useCustomMonaco>>;
+import type { Monaco } from '../../hooks/useCustomMonaco';
 
 export function registerDslFormattingProvider(monaco: Monaco) {
     return monaco.languages.registerDocumentFormattingEditProvider(

@@ -1,7 +1,5 @@
 import { editor } from 'monaco-editor';
-import { useCustomMonaco } from '../../hooks/useCustomMonaco';
-
-type Monaco = NonNullable<ReturnType<typeof useCustomMonaco>>;
+import type { Monaco } from '../../hooks/useCustomMonaco';
 
 type SliderCall = {
     fullMatch: string;

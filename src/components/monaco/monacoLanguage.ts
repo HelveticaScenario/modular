@@ -1,9 +1,7 @@
 import type { ModuleSchema } from '@modular/core';
-import { useCustomMonaco } from '../../hooks/useCustomMonaco';
+import type { Monaco } from '../../hooks/useCustomMonaco';
 import { applyDslLibToMonaco } from './monacoHelpers';
 import { findSliderCalls } from './sliderWidgets';
-
-type Monaco = NonNullable<ReturnType<typeof useCustomMonaco>>;
 
 export function setupMonacoJavascript(monaco: Monaco, schemas: ModuleSchema[]) {
     const ts = monaco.typescript;
