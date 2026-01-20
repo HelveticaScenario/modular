@@ -4,7 +4,6 @@ import { editor } from 'monaco-editor';
 import { useTheme } from '../themes/ThemeContext';
 import { useSchemas } from '../SchemaContext';
 import { findScopeCallEndLines } from '../utils/findScopeCallEndLines';
-import { ModuleSchema } from '@modular/core';
 import { useCustomMonaco } from '../hooks/useCustomMonaco';
 import { configSchema } from '../configSchema';
 import { formatPath } from './monaco/monacoHelpers';
@@ -23,15 +22,6 @@ import {
     startActiveStepPolling,
 } from './monaco/sequenceTracking';
 
-type Monaco = ReturnType<typeof useCustomMonaco>;
-
-declare global {
-    interface Window {
-        __MONACO_DSL_SCHEMAS__?: ModuleSchema[];
-        __MONACO_DSL_LIB__?: string;
-    }
-}
-
 export interface PatchEditorProps {
     value: string;
     currentFile?: string;
@@ -43,7 +33,6 @@ export interface PatchEditorProps {
     lastSubmittedCode?: string | null;
     runningBufferId?: string | null;
 }
-
 
 export function MonacoPatchEditor({
     value,
@@ -121,7 +110,15 @@ export function MonacoPatchEditor({
             getModuleStates: () =>
                 window.electronAPI.synthesizer.getModuleStates(),
         });
-    }, [editor, monaco, seqTrackingIds, scaleTrackingIds, addTrackingIds, currentFile, runningBufferId]);
+    }, [
+        editor,
+        monaco,
+        seqTrackingIds,
+        scaleTrackingIds,
+        addTrackingIds,
+        currentFile,
+        runningBufferId,
+    ]);
 
     const activeScopeViews = useMemo(
         () => scopeViews.filter((view) => view.file === currentFile),

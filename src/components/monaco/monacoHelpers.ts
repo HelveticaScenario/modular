@@ -9,12 +9,6 @@ export function applyDslLibToMonaco(monaco: Monaco, schemas: ModuleSchema[]) {
     if (!monaco) return null;
 
     const libSource = buildLibSource(schemas);
-
-    if (typeof window !== 'undefined') {
-        window.__MONACO_DSL_SCHEMAS__ = schemas;
-        window.__MONACO_DSL_LIB__ = libSource;
-    }
-
     const ts = monaco.typescript;
     const jsDefaults = ts.javascriptDefaults;
     return jsDefaults.addExtraLib(libSource, 'file:///modular/dsl-lib.d.ts');
