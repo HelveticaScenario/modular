@@ -175,6 +175,20 @@ impl Math {
             btree.insert(format!("module{}", i).to_string(), *val);
         }
 
+        let mut cb = move |name: &str, args: Vec<f64>| -> Option<f64> {
+            if let Some(val) = btree.get(name) {
+                return Some(*val);
+            }
+            match name {
+                "vToHz" => args
+                    .get(0)
+                    .and_then(|v| Some(27.5f64 * 2.0f64.powf(*v as f64))),
+                "hzToV" => args.get(0).and_then(|v| Some((v / 27.5f64).log2())),
+
+                // A wildcard to handle all undefined names:
+                _ => None,
+            }
+        };
         // let mut ns = fasteval::CachedCallbackNamespace::new(cb);
 
         Ok({
@@ -182,7 +196,7 @@ impl Math {
             if let fasteval::IConst(c) = evaler {
                 *c
             } else {
-                evaler.eval(&mut self.params.expression.slab, &mut btree)?
+                evaler.eval(&mut self.params.expression.slab, &mut cb)?
             }
         })
     }
