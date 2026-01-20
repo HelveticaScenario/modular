@@ -7,6 +7,7 @@ import { useSchemas } from './SchemaContext';
 import './App.css';
 import type { editor } from 'monaco-editor';
 import { findScopeCallEndLines } from './utils/findScopeCallEndLines';
+import { getErrorMessage } from './utils/errorUtils';
 import { FileExplorer } from './components/FileExplorer';
 import electronAPI from './electronAPI';
 import { ModuleSchema, ValidationError } from '@modular/core';
@@ -181,11 +182,7 @@ function App() {
             try {
                 await deleteFile(targetIdOrPath);
             } catch (error) {
-                const message =
-                    error instanceof Error
-                        ? error.message
-                        : 'Failed to delete file';
-                setError(message);
+                setError(getErrorMessage(error, 'Failed to delete file'));
             }
         },
         [deleteFile],
@@ -196,11 +193,7 @@ function App() {
             try {
                 await handleRenameCommit(oldPath, newName);
             } catch (error) {
-                const message =
-                    error instanceof Error
-                        ? error.message
-                        : 'Failed to rename file';
-                setError(message);
+                setError(getErrorMessage(error, 'Failed to rename file'));
             }
         },
         [handleRenameCommit],
@@ -212,29 +205,19 @@ function App() {
             switch (action.command) {
                 case 'save':
                     saveFile(action.bufferId).catch((error) => {
-                        const message =
-                            error instanceof Error
-                                ? error.message
-                                : 'Failed to save file';
-                        setError(message);
+                        setError(getErrorMessage(error, 'Failed to save file'));
                     });
                     break;
                 case 'rename':
                     renameFile(action.path || action.bufferId).catch((error) => {
-                        const message =
-                            error instanceof Error
-                                ? error.message
-                                : 'Failed to rename file';
-                        setError(message);
+                        setError(
+                            getErrorMessage(error, 'Failed to rename file'),
+                        );
                     });
                     break;
                 case 'delete':
                     deleteFile(action.path || action.bufferId).catch((error) => {
-                        const message =
-                            error instanceof Error
-                                ? error.message
-                                : 'Failed to delete file';
-                        setError(message);
+                        setError(getErrorMessage(error, 'Failed to delete file'));
                     });
                     break;
             }
@@ -304,11 +287,7 @@ function App() {
             try {
                 await saveFile(id);
             } catch (error) {
-                const message =
-                    error instanceof Error
-                        ? error.message
-                        : 'Failed to save file';
-                setError(message);
+                setError(getErrorMessage(error, 'Failed to save file'));
             }
         },
         [saveFile],
@@ -375,9 +354,7 @@ function App() {
 
                 setScopeViews(views);
             } catch (err) {
-                const errorMessage =
-                    err instanceof Error ? err.message : 'Unknown error';
-                setError(errorMessage);
+                setError(getErrorMessage(err, 'Unknown error'));
                 setValidationErrors(null);
             }
         };
