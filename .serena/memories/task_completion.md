@@ -1,0 +1,1 @@
+After changes: run relevant Rust tests (cargo test --package modular_core --lib -- pattern::tests --nocapture). If Rust types changed, rebuild N-API (cd crates/modular && yarn build). Ensure no real-time unsafe changes in audio callback.
