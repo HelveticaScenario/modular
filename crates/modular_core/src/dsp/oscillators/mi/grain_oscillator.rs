@@ -2,8 +2,11 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{dsp::utils::voct_to_midi, types::{Clickless, Signal}};
-use mi_plaits_dsp::engine::{grain_engine::GrainEngine, Engine, EngineParameters, TriggerState};
+use crate::{
+    dsp::utils::voct_to_midi,
+    types::{Clickless, Signal},
+};
+use mi_plaits_dsp::engine::{Engine, EngineParameters, TriggerState, grain_engine::GrainEngine};
 
 const BLOCK_SIZE: usize = 1;
 
@@ -81,7 +84,7 @@ impl GrainOscillator {
         let out_sample = self.buffer_out[self.buffer_pos];
         let aux_sample = self.buffer_aux[self.buffer_pos];
 
-        self.outputs.sample = crate::dsp::utils::map_range(out_sample, -1.0, 1.0, min, max);
+        self.outputs.sample = crate::dsp::utils::map_range(out_sample, -2.5, 2.5, min, max);
         self.outputs.aux = crate::dsp::utils::map_range(aux_sample, -1.0, 1.0, min, max);
 
         self.buffer_pos += 1;
@@ -89,7 +92,7 @@ impl GrainOscillator {
 
     fn render_block(&mut self, sample_rate: f32) {
         if let Some(ref mut engine) = self.engine {
-                        // Update smooth parameters
+            // Update smooth parameters
             self.freq
                 .update(self.params.freq.get_value_or(4.0).clamp(-10.0, 10.0));
             self.timbre

@@ -2,7 +2,10 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{dsp::utils::voct_to_midi, types::{Clickless, Signal}};
+use crate::{
+    dsp::utils::voct_to_midi,
+    types::{Clickless, Signal},
+};
 use mi_plaits_dsp::engine::{Engine, EngineParameters, TriggerState, chord_engine::ChordEngine};
 
 const BLOCK_SIZE: usize = 1;
@@ -76,9 +79,9 @@ impl ChordOscillator {
         let max = self.params.range.1.get_value_or(5.0);
 
         self.outputs.sample =
-            crate::dsp::utils::map_range(self.buffer_out[self.buffer_pos], -1.0, 1.0, min, max);
+            crate::dsp::utils::map_range(self.buffer_out[self.buffer_pos], -2.0, 2.0, min, max);
         self.outputs.aux =
-            crate::dsp::utils::map_range(self.buffer_aux[self.buffer_pos], -1.0, 1.0, min, max);
+            crate::dsp::utils::map_range(self.buffer_aux[self.buffer_pos], -3.0, 3.0, min, max);
 
         self.buffer_pos += 1;
     }

@@ -2,10 +2,11 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{dsp::utils::voct_to_midi, types::{Clickless, Signal}};
-use mi_plaits_dsp::engine::{
-    hihat_engine::HihatEngine, Engine, EngineParameters, TriggerState,
+use crate::{
+    dsp::utils::voct_to_midi,
+    types::{Clickless, Signal},
 };
+use mi_plaits_dsp::engine::{Engine, EngineParameters, TriggerState, hihat_engine::HihatEngine};
 
 const BLOCK_SIZE: usize = 1;
 
@@ -63,14 +64,16 @@ impl HihatOscillator {
         }
         let min = self.params.range.0.get_value_or(-5.0);
         let max = self.params.range.1.get_value_or(5.0);
-        self.outputs.sample = crate::dsp::utils::map_range(self.buffer_out[self.buffer_pos], -1.0, 1.0, min, max);
-        self.outputs.aux = crate::dsp::utils::map_range(self.buffer_aux[self.buffer_pos], -1.0, 1.0, min, max);
+        self.outputs.sample =
+            crate::dsp::utils::map_range(self.buffer_out[self.buffer_pos], -2.2, 2.2, min, max);
+        self.outputs.aux =
+            crate::dsp::utils::map_range(self.buffer_aux[self.buffer_pos], -2.0, 2.0, min, max);
         self.buffer_pos += 1;
     }
 
     fn render_block(&mut self, sample_rate: f32) {
         if let Some(ref mut engine) = self.engine {
-                        // Update smooth parameters
+            // Update smooth parameters
             self.freq
                 .update(self.params.freq.get_value_or(4.0).clamp(-10.0, 10.0));
             self.timbre
@@ -111,7 +114,12 @@ impl HihatOscillator {
                 a0_normalized: 55.0 / sample_rate,
             };
             let mut already_enveloped = false;
-            engine.render(&engine_params, &mut self.buffer_out, &mut self.buffer_aux, &mut already_enveloped);
+            engine.render(
+                &engine_params,
+                &mut self.buffer_out,
+                &mut self.buffer_aux,
+                &mut already_enveloped,
+            );
         }
     }
 }

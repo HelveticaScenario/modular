@@ -65,9 +65,9 @@ impl<'a> SpeechOscillator<'a> {
         let min = self.params.range.0.get_value_or(-5.0);
         let max = self.params.range.1.get_value_or(5.0);
         self.outputs.sample =
-            crate::dsp::utils::map_range(self.buffer_out[self.buffer_pos], -1.0, 1.0, min, max);
+            crate::dsp::utils::map_range(self.buffer_out[self.buffer_pos], -2.0, 2.0, min, max);
         self.outputs.aux =
-            crate::dsp::utils::map_range(self.buffer_aux[self.buffer_pos], -1.0, 1.0, min, max);
+            crate::dsp::utils::map_range(self.buffer_aux[self.buffer_pos], -2.0, 2.0, min, max);
         self.buffer_pos += 1;
     }
 
