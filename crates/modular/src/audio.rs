@@ -572,6 +572,18 @@ impl AudioState {
       }];
     }
 
+    // If stopped, fully recreate patch state to avoid reusing module instances.
+    if self.is_stopped() {
+      {
+        let mut patch_lock = self.patch.lock();
+        patch_lock.sampleables.clear();
+        patch_lock.rebuild_message_listeners();
+      }
+
+      let mut scope_collection = self.scope_collection.lock();
+      scope_collection.clear();
+    }
+
     // Apply patch
     if let Err(e) = self.apply_patch(patch, sample_rate) {
       return vec![ApplyPatchError {
