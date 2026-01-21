@@ -63,10 +63,11 @@ euclidean = { "(" ~ WHITESPACE* ~ integer ~ WHITESPACE* ~ "," ~ WHITESPACE* ~ in
 slice = { number | fast_sub | slow_sub | group }
 
 // Atoms - the basic building blocks
+// Note: random_choice must come before rest to handle patterns like ~|c4
 atom = {
-    rest |
     range_pattern |
     random_choice |
+    rest |
     value
 }
 
@@ -76,8 +77,11 @@ rest = { "~" | "-" }
 // Range: 0..4 becomes [0, 1, 2, 3, 4]
 range_pattern = { integer ~ ".." ~ integer }
 
-// Random choice: a | b | c
-random_choice = { value ~ (WHITESPACE* ~ "|" ~ WHITESPACE* ~ value)+ }
+// Choice element: used in random_choice, can be value or rest
+choice_element = { rest | value }
+
+// Random choice: a | b | c (can include rests like c|~)
+random_choice = { choice_element ~ (WHITESPACE* ~ "|" ~ WHITESPACE* ~ choice_element)+ }
 
 // Tail element for list syntax: allows values or subpatterns after :
 tail_element = { fast_sub | slow_sub | group | value }

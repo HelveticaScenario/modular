@@ -11,13 +11,24 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     /// Shift the pattern earlier in time.
     ///
     /// Events that would occur at time `t` now occur at time `t - offset`.
+    /// Accepts both constant values and patterns.
     ///
     /// # Example
     /// ```ignore
     /// let pat = pure(42).early(Fraction::new(1, 4));
     /// // Events shifted 1/4 cycle earlier
     /// ```
-    pub fn early(&self, offset: Fraction) -> Pattern<T> {
+    pub fn early<F: super::IntoPattern<Fraction> + 'static>(&self, offset: F) -> Pattern<T> {
+        let offset_pat = offset.into_pattern();
+        let pat = self.clone();
+
+        offset_pat.inner_join(move |o| {
+            pat._early(o.clone())
+        })
+    }
+
+    /// Internal constant-offset early (no pattern overhead).
+    pub(crate) fn _early(&self, offset: Fraction) -> Pattern<T> {
         let query = self.query.clone();
         let steps = self.steps.clone();
         let offset_clone = offset.clone();
@@ -42,14 +53,25 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     /// Shift the pattern later in time.
     ///
     /// Events that would occur at time `t` now occur at time `t + offset`.
+    /// Accepts both constant values and patterns.
     ///
     /// # Example
     /// ```ignore
     /// let pat = pure(42).late(Fraction::new(1, 4));
     /// // Events shifted 1/4 cycle later
     /// ```
-    pub fn late(&self, offset: Fraction) -> Pattern<T> {
-        self.early(-offset)
+    pub fn late<F: super::IntoPattern<Fraction> + 'static>(&self, offset: F) -> Pattern<T> {
+        let offset_pat = offset.into_pattern();
+        let pat = self.clone();
+
+        offset_pat.inner_join(move |o| {
+            pat._late(o.clone())
+        })
+    }
+
+    /// Internal constant-offset late (no pattern overhead).
+    pub(crate) fn _late(&self, offset: Fraction) -> Pattern<T> {
+        self._early(-offset.clone())
     }
 
     /// Reverse the pattern within each cycle.
@@ -126,9 +148,10 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
         let span_begin = span.begin.clone();
         let span_sam = span_begin.sam();
 
-        self.early(span_sam.clone())
-            .fast(Fraction::from_integer(1) / duration)
-            .late(span_begin)
+        // Use internal methods for efficiency (constant factors, no pattern overhead)
+        self._early(span_sam.clone())
+            ._fast(Fraction::from_integer(1) / duration)
+            ._late(span_begin)
     }
 
     /// Repeat the pattern n times per cycle.
@@ -138,7 +161,7 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
         if n == 0 {
             return super::constructors::silence();
         }
-        self.fast(Fraction::from_integer(n as i64))
+        self._fast(Fraction::from_integer(n as i64))
     }
 
     /// Play the pattern only during the first part of each cycle.
@@ -174,6 +197,73 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     /// Play the pattern at half speed.
     pub fn half(&self) -> Pattern<T> {
         self.slow(Fraction::from_integer(2))
+    }
+
+    /// Discretize a continuous signal by sampling it n times per cycle.
+    ///
+    /// Essential for converting continuous signals (like `saw()` or `sine()`)
+    /// to discrete events that can be used with other pattern operations.
+    ///
+    /// # Arguments
+    /// * `n` - Number of samples per cycle (accepts both values and patterns)
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Sample a sawtooth 8 times per cycle
+    /// saw().segment(8)
+    /// ```
+    pub fn segment<N: super::IntoPattern<Fraction> + 'static>(&self, n: N) -> Pattern<T> {
+        let n_pat = n.into_pattern();
+        let pat = self.clone();
+
+        n_pat.inner_join(move |n_frac| {
+            pat._segment(n_frac.clone())
+        })
+    }
+
+    /// Internal constant-n segment (no pattern overhead).
+    fn _segment(&self, n_frac: Fraction) -> Pattern<T> {
+        let n = n_frac.to_f64() as i64;
+        if n <= 0 {
+            return super::constructors::silence();
+        }
+
+        let pat = self.clone();
+        let frac_n = Fraction::from_integer(n);
+
+        Pattern::new(move |state: &State| {
+            let mut result = Vec::new();
+
+            for span in state.span.span_cycles() {
+                let cycle_start = span.begin.sam();
+
+                for i in 0..n {
+                    let frac_i = Fraction::from_integer(i);
+                    let event_start = &cycle_start + &frac_i / &frac_n;
+                    let event_end = &cycle_start + (&frac_i + Fraction::from_integer(1)) / &frac_n;
+                    let event_span = TimeSpan::new(event_start.clone(), event_end.clone());
+
+                    // Check if this event intersects the query span
+                    if let Some(part) = event_span.intersection(&span) {
+                        // Sample the pattern at the event start
+                        let sample_state = state.set_span(TimeSpan::new(
+                            event_start.clone(),
+                            event_start.clone() + Fraction::new(1, 10000), // tiny window
+                        ));
+
+                        if let Some(hap) = pat.query(&sample_state).into_iter().next() {
+                            result.push(Hap::new(
+                                Some(event_span),
+                                part,
+                                hap.value.clone(),
+                            ));
+                        }
+                    }
+                }
+            }
+
+            result
+        })
     }
 }
 

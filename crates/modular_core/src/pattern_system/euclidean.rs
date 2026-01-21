@@ -196,14 +196,49 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     /// Apply Euclidean rhythm structure to this pattern.
     ///
     /// The pattern's events are distributed according to the Euclidean rhythm.
+    /// Non-pulse positions are filtered out (no hap returned).
+    /// 
+    /// For patterns that support rests, use `euclid_with_rest` instead to
+    /// ensure queries always return a hap.
     pub fn euclid(&self, pulses: i32, steps: u32) -> Pattern<T> {
         self.euclid_rot(pulses, steps, 0)
     }
 
     /// Apply Euclidean rhythm structure with rotation.
+    /// 
+    /// Non-pulse positions are filtered out (no hap returned).
+    /// For patterns that support rests, use `euclid_rot_with_rest` instead.
     pub fn euclid_rot(&self, pulses: i32, steps: u32, rotation: i32) -> Pattern<T> {
         let struct_pat = euclid_struct(pulses, steps, Some(rotation));
         self.app_left(&struct_pat, |val, _| val.clone())
+    }
+
+    /// Apply Euclidean rhythm structure with rest values at non-pulse positions.
+    ///
+    /// This ensures the pattern always returns a hap when queried.
+    pub fn euclid_with_rest(&self, pulses: i32, steps: u32, rest: T) -> Pattern<T> {
+        self.euclid_rot_with_rest(pulses, steps, 0, rest)
+    }
+
+    /// Apply Euclidean rhythm structure with rotation and rest values.
+    ///
+    /// Non-pulse positions produce the rest value instead of being filtered.
+    /// This ensures the pattern always returns a hap when queried.
+    pub fn euclid_rot_with_rest(&self, pulses: i32, steps: u32, rotation: i32, rest: T) -> Pattern<T> {
+        let rhythm = euclidean_rhythm(pulses, steps, Some(rotation));
+        let bool_pat = euclid_bool(pulses, steps, Some(rotation));
+        
+        // Use app_left to combine: if pulse position, use pattern value; else use rest
+        let pat = self.clone();
+        let rest_val = rest.clone();
+        
+        pat.app_left(&bool_pat, move |val, is_pulse| {
+            if *is_pulse {
+                val.clone()
+            } else {
+                rest_val.clone()
+            }
+        })
     }
 }
 

@@ -6,7 +6,7 @@
 //! - `app_left` - structure from the left (function) pattern
 //! - `app_right` - structure from the right (value) pattern
 
-use super::{Fraction, Hap, HapContext, Pattern, State};
+use super::{Hap, HapContext, Pattern, State};
 use std::sync::Arc;
 
 impl<T: Clone + Send + Sync + 'static> Pattern<T> {
@@ -227,12 +227,70 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     {
         self.app_left(other, |a, b| a.clone() / b.clone())
     }
+
+    /// Apply binary operation with Reset alignment.
+    ///
+    /// Retrigger the argument pattern at this pattern's onsets,
+    /// aligning the argument's cycle position with each onset.
+    pub fn op_reset<U, V, F>(&self, other: &Pattern<U>, f: F) -> Pattern<V>
+    where
+        U: Clone + Send + Sync + 'static,
+        V: Clone + Send + Sync + 'static,
+        F: Fn(&T, &U) -> V + Send + Sync + Clone + 'static,
+    {
+        let this = self.clone();
+        let f = f.clone();
+        other.reset_join(move |b| {
+            let f = f.clone();
+            let b = b.clone();
+            this.fmap(move |a| f(a, &b))
+        }, false)
+    }
+
+    /// Apply binary operation with Restart alignment.
+    ///
+    /// Retrigger the argument pattern at this pattern's onsets,
+    /// aligning from cycle zero at each onset.
+    pub fn op_restart<U, V, F>(&self, other: &Pattern<U>, f: F) -> Pattern<V>
+    where
+        U: Clone + Send + Sync + 'static,
+        V: Clone + Send + Sync + 'static,
+        F: Fn(&T, &U) -> V + Send + Sync + Clone + 'static,
+    {
+        let this = self.clone();
+        let f = f.clone();
+        other.reset_join(move |b| {
+            let f = f.clone();
+            let b = b.clone();
+            this.fmap(move |a| f(a, &b))
+        }, true)
+    }
+
+    /// Apply binary operation with SqueezeOut alignment.
+    ///
+    /// Squeeze this pattern into the argument pattern's events.
+    /// Structure comes from the argument pattern.
+    pub fn op_squeeze_out<U, V, F>(&self, other: &Pattern<U>, f: F) -> Pattern<V>
+    where
+        U: Clone + Send + Sync + 'static,
+        V: Clone + Send + Sync + 'static,
+        F: Fn(&T, &U) -> V + Send + Sync + Clone + 'static,
+    {
+        let this = self.clone();
+        let f = f.clone();
+        other.squeeze_join(move |b| {
+            let f = f.clone();
+            let b = b.clone();
+            this.fmap(move |a| f(a, &b))
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::pattern_system::constructors::{pure, silence};
+    use crate::pattern_system::Fraction;
 
     #[test]
     fn test_app_both() {

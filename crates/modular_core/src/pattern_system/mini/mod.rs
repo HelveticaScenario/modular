@@ -56,7 +56,7 @@ pub mod convert;
 pub mod parser;
 
 pub use ast::{AtomValue, Located, MiniAST, OperatorCall};
-pub use convert::{convert, convert_with_operators, ConvertError, FromMiniAtom};
+pub use convert::{convert, convert_with_operators, ConvertError, FromMiniAtom, HasRest};
 pub use parser::{parse as parse_ast, ParseError};
 
 use crate::pattern_system::{operators::OperatorRegistry, Pattern};
@@ -134,10 +134,45 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_euclidean() {
-        let pat: Pattern<f64> = parse("1(3,8)").unwrap();
-        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
-        assert_eq!(haps.len(), 3);
+    fn test_parse_euclidean_requires_rest_support() {
+        // Euclidean should fail for f64 patterns because f64 doesn't support rests
+        let result: Result<Pattern<f64>, _> = parse("1(3,8)");
+        assert!(result.is_err(), "Euclidean should fail for f64 patterns");
+        
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, ConvertError::RestNotSupported(_)),
+            "Expected RestNotSupported error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_parse_degrade_requires_rest_support() {
+        // Degrade should fail for f64 patterns
+        let result: Result<Pattern<f64>, _> = parse("1?");
+        assert!(result.is_err(), "Degrade should fail for f64 patterns");
+        
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, ConvertError::RestNotSupported(_)),
+            "Expected RestNotSupported error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_parse_rest_requires_rest_support() {
+        // Rest (~) should fail for f64 patterns
+        let result: Result<Pattern<f64>, _> = parse("1 ~ 2");
+        assert!(result.is_err(), "Rest should fail for f64 patterns");
+        
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, ConvertError::RestNotSupported(_)),
+            "Expected RestNotSupported error, got {:?}",
+            err
+        );
     }
 
     #[test]

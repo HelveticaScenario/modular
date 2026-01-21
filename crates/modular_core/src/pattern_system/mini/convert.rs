@@ -13,6 +13,16 @@ use crate::pattern_system::{
     Fraction, Pattern,
 };
 
+/// Trait for types that support rest values.
+///
+/// Types implementing this trait can represent "silence" or "no value" states.
+/// Operations that can produce rests (like `degrade`, `euclid`, `mask`) require
+/// this trait to ensure the pattern always produces a hap when queried.
+pub trait HasRest: Clone + Send + Sync + 'static {
+    /// Get the rest value for this type.
+    fn rest_value() -> Self;
+}
+
 /// Trait for types that can be created from mini notation atoms.
 pub trait FromMiniAtom: Clone + Send + Sync + 'static {
     /// Convert a single atom value to this type.
@@ -34,8 +44,20 @@ pub trait FromMiniAtom: Clone + Send + Sync + 'static {
     fn combine_with_head(head_atoms: &[AtomValue], tail: &Self) -> Result<Self, ConvertError>;
 
     /// Get the rest/silence value, if supported.
+    /// 
+    /// DEPRECATED: Use `HasRest` trait instead. This method is kept for
+    /// backward compatibility but should not be used for new code.
     fn rest_value() -> Option<Self> {
         None
+    }
+
+    /// Returns true if this type supports rest values.
+    ///
+    /// Types that support rests can use operations like `degrade`, `euclid`,
+    /// and the `~` (rest) syntax in mini notation. Types that don't support
+    /// rests will produce parse errors when these operations are used.
+    fn supports_rest() -> bool {
+        false
     }
 }
 
@@ -50,6 +72,8 @@ pub enum ConvertError {
     OperatorError(String),
     /// Parse error.
     ParseError(ParseError),
+    /// Operation requires rest support but pattern type doesn't support rests.
+    RestNotSupported(String),
 }
 
 impl std::fmt::Display for ConvertError {
@@ -59,6 +83,11 @@ impl std::fmt::Display for ConvertError {
             ConvertError::ListNotSupported => write!(f, "List syntax not supported for this type"),
             ConvertError::OperatorError(msg) => write!(f, "Operator error: {}", msg),
             ConvertError::ParseError(err) => write!(f, "Parse error: {}", err),
+            ConvertError::RestNotSupported(op) => write!(
+                f,
+                "'{}' requires a pattern type that supports rests. This operation is only available for note/sequence patterns.",
+                op
+            ),
         }
     }
 }
@@ -101,10 +130,7 @@ impl FromMiniAtom for f64 {
         values.push(*tail);
         Ok(values.iter().sum::<f64>() / values.len() as f64)
     }
-
-    fn rest_value() -> Option<Self> {
-        Some(0.0)
-    }
+    // f64 does not support rests - use default supports_rest() -> false
 }
 
 impl FromMiniAtom for f32 {
@@ -122,10 +148,7 @@ impl FromMiniAtom for f32 {
         values.push(*tail);
         Ok(values.iter().sum::<f32>() / values.len() as f32)
     }
-
-    fn rest_value() -> Option<Self> {
-        Some(0.0)
-    }
+    // f32 does not support rests - use default supports_rest() -> false
 }
 
 impl FromMiniAtom for i64 {
@@ -138,10 +161,7 @@ impl FromMiniAtom for i64 {
     fn combine_with_head(_head_atoms: &[AtomValue], _tail: &Self) -> Result<Self, ConvertError> {
         Err(ConvertError::ListNotSupported)
     }
-
-    fn rest_value() -> Option<Self> {
-        Some(0)
-    }
+    // i64 does not support rests - use default supports_rest() -> false
 }
 
 impl FromMiniAtom for i32 {
@@ -154,10 +174,7 @@ impl FromMiniAtom for i32 {
     fn combine_with_head(_head_atoms: &[AtomValue], _tail: &Self) -> Result<Self, ConvertError> {
         Err(ConvertError::ListNotSupported)
     }
-
-    fn rest_value() -> Option<Self> {
-        Some(0)
-    }
+    // i32 does not support rests - use default supports_rest() -> false
 }
 
 impl FromMiniAtom for String {
@@ -205,10 +222,7 @@ impl FromMiniAtom for bool {
     fn combine_with_head(_head_atoms: &[AtomValue], _tail: &Self) -> Result<Self, ConvertError> {
         Err(ConvertError::ListNotSupported)
     }
-
-    fn rest_value() -> Option<Self> {
-        Some(false)
-    }
+    // bool does not support rests - use default supports_rest() -> false
 }
 
 /// Convert an AST to a Pattern.
@@ -242,11 +256,13 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
             Ok(pure_with_span(value, span.clone()))
         }
 
-        MiniAST::Rest(span) => {
-            match T::rest_value() {
-                Some(val) => Ok(pure_with_span(val, span.clone())),
-                None => Ok(silence()), // No rest value, return silence
+        MiniAST::Rest(_span) => {
+            if !T::supports_rest() {
+                return Err(ConvertError::RestNotSupported("~ (rest)".to_string()));
             }
+            // Safe to unwrap because supports_rest() returned true
+            let val = T::rest_value().expect("supports_rest() returned true but rest_value() is None");
+            Ok(pure_with_span(val, _span.clone()))
         }
 
         MiniAST::List(Located { node, span }) => {
@@ -414,15 +430,25 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
         }
 
         MiniAST::Degrade(pattern, prob) => {
+            if !T::supports_rest() {
+                return Err(ConvertError::RestNotSupported("? (degrade)".to_string()));
+            }
             let pat = convert_inner(pattern)?;
             let probability = prob.unwrap_or(0.5);
-            Ok(pat.degrade_by(probability))
+            // Safe to unwrap because supports_rest() returned true
+            let rest = T::rest_value().expect("supports_rest() returned true but rest_value() is None");
+            Ok(pat.degrade_by_with_rest(probability, rest))
         }
 
         MiniAST::Euclidean { pattern, pulses, steps, rotation } => {
+            if !T::supports_rest() {
+                return Err(ConvertError::RestNotSupported("euclidean rhythm (n,k)".to_string()));
+            }
             let pat = convert_inner(pattern)?;
             let rot = rotation.map(|r| r as i32).unwrap_or(0);
-            Ok(pat.euclid_rot(*pulses as i32, *steps, rot))
+            // Safe to unwrap because supports_rest() returned true
+            let rest = T::rest_value().expect("supports_rest() returned true but rest_value() is None");
+            Ok(pat.euclid_rot_with_rest(*pulses as i32, *steps, rot, rest))
         }
 
         MiniAST::WithOperators { base, .. } => {
@@ -689,11 +715,11 @@ mod tests {
 
     #[test]
     fn test_convert_euclidean() {
+        // Euclidean should fail for f64 patterns because f64 doesn't support rests
         let ast = parse("1(3,8)").unwrap();
-        let pat: Pattern<f64> = convert(&ast).unwrap();
-        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
-        // Euclidean(3,8) has 3 hits
-        assert_eq!(haps.len(), 3);
+        let result: Result<Pattern<f64>, _> = convert(&ast);
+        assert!(result.is_err(), "Euclidean should fail for f64 patterns");
+        assert!(matches!(result.unwrap_err(), ConvertError::RestNotSupported(_)));
     }
 
     #[test]
@@ -749,5 +775,41 @@ mod tests {
                 hap.context.modifier_spans.len()
             );
         }
+    }
+
+    #[test]
+    fn test_convert_degrade() {
+        // Degrade should fail for f64 patterns because f64 doesn't support rests
+        let ast = parse("c4?").unwrap();
+        let result: Result<Pattern<f64>, _> = convert(&ast);
+        assert!(result.is_err(), "Degrade should fail for f64 patterns");
+        assert!(matches!(result.unwrap_err(), ConvertError::RestNotSupported(_)));
+    }
+
+    #[test]
+    fn test_convert_degrade_in_sequence() {
+        // Degrade should fail for f64 patterns even when in a sequence
+        let ast = parse("c2 c3 c4? c5").unwrap();
+        let result: Result<Pattern<f64>, _> = convert(&ast);
+        assert!(result.is_err(), "Degrade should fail for f64 patterns");
+        assert!(matches!(result.unwrap_err(), ConvertError::RestNotSupported(_)));
+    }
+
+    #[test]
+    fn test_convert_random_choice_with_rest() {
+        // Rest in random choice should fail for f64 patterns
+        let ast = parse("c4|~").unwrap();
+        let result: Result<Pattern<f64>, _> = convert(&ast);
+        assert!(result.is_err(), "Rest in random choice should fail for f64 patterns");
+        assert!(matches!(result.unwrap_err(), ConvertError::RestNotSupported(_)));
+    }
+
+    #[test]
+    fn test_convert_random_choice_with_rest_in_sequence() {
+        // Rest in random choice should fail for f64 patterns
+        let ast = parse("c2 c3 c4|~ c5").unwrap();
+        let result: Result<Pattern<f64>, _> = convert(&ast);
+        assert!(result.is_err(), "Rest in random choice should fail for f64 patterns");
+        assert!(matches!(result.unwrap_err(), ConvertError::RestNotSupported(_)));
     }
 }

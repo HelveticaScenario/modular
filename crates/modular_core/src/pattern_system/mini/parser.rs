@@ -374,11 +374,7 @@ fn parse_atom(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseError> 
         Rule::random_choice => {
             let values: Vec<MiniAST> = inner
                 .into_inner()
-                .map(|p| {
-                    let span = p.as_span();
-                    let value = parse_value(p)?;
-                    Ok(MiniAST::Pure(Located::new(value, span.start(), span.end())))
-                })
+                .map(|p| parse_choice_element(p))
                 .collect::<Result<_, ParseError>>()?;
             Ok(MiniAST::RandomChoice(values))
         }
@@ -391,6 +387,25 @@ fn parse_atom(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseError> 
 
         _ => Err(ParseError {
             message: format!("Unexpected atom rule: {:?}", inner.as_rule()),
+            span: Some(SourceSpan::new(span.start(), span.end())),
+        }),
+    }
+}
+
+/// Parse a choice_element (used in random_choice), which can be a value or a rest.
+fn parse_choice_element(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseError> {
+    let span = pair.as_span();
+    let inner = pair.into_inner().next().unwrap();
+
+    match inner.as_rule() {
+        Rule::rest => Ok(MiniAST::Rest(SourceSpan::new(span.start(), span.end()))),
+        Rule::value => {
+            let value_span = inner.as_span();
+            let atom = parse_value(inner)?;
+            Ok(MiniAST::Pure(Located::new(atom, value_span.start(), value_span.end())))
+        }
+        _ => Err(ParseError {
+            message: format!("Unexpected choice_element rule: {:?}", inner.as_rule()),
             span: Some(SourceSpan::new(span.start(), span.end())),
         }),
     }
@@ -765,6 +780,103 @@ mod tests {
                 assert!(accidental.is_none() || accidental == Some('#') || accidental == Some('b'),
                     "Accidental should be single character only");
             }
+        }
+    }
+
+    #[test]
+    fn test_degrade_simple() {
+        let result = parse("c4?");
+        assert!(result.is_ok(), "c4? should parse: {:?}", result);
+        let ast = result.unwrap();
+        assert!(matches!(ast, MiniAST::Degrade(_, None)));
+    }
+
+    #[test]
+    fn test_degrade_with_probability() {
+        let result = parse("c4?0.3");
+        assert!(result.is_ok(), "c4?0.3 should parse: {:?}", result);
+        let ast = result.unwrap();
+        if let MiniAST::Degrade(_, prob) = ast {
+            assert_eq!(prob, Some(0.3));
+        } else {
+            panic!("Expected Degrade, got {:?}", ast);
+        }
+    }
+
+    #[test]
+    fn test_degrade_in_sequence() {
+        let result = parse("c2 c3 c4? c5");
+        assert!(result.is_ok(), "c2 c3 c4? c5 should parse: {:?}", result);
+        if let MiniAST::Sequence(elements) = result.unwrap() {
+            assert_eq!(elements.len(), 4);
+            // Third element should be Degrade
+            let (third, _) = &elements[2];
+            assert!(matches!(third, MiniAST::Degrade(_, None)));
+        } else {
+            panic!("Expected Sequence");
+        }
+    }
+
+    #[test]
+    fn test_random_choice_with_rest() {
+        let result = parse("c4|~");
+        assert!(result.is_ok(), "c4|~ should parse: {:?}", result);
+        let ast = result.unwrap();
+        if let MiniAST::RandomChoice(choices) = ast {
+            assert_eq!(choices.len(), 2);
+            assert!(matches!(&choices[0], MiniAST::Pure(_)));
+            assert!(matches!(&choices[1], MiniAST::Rest(_)));
+        } else {
+            panic!("Expected RandomChoice, got {:?}", ast);
+        }
+    }
+
+    #[test]
+    fn test_random_choice_rest_first() {
+        let result = parse("~|c4");
+        assert!(result.is_ok(), "~|c4 should parse: {:?}", result);
+        let ast = result.unwrap();
+        if let MiniAST::RandomChoice(choices) = ast {
+            assert_eq!(choices.len(), 2);
+            assert!(matches!(&choices[0], MiniAST::Rest(_)));
+            assert!(matches!(&choices[1], MiniAST::Pure(_)));
+        } else {
+            panic!("Expected RandomChoice, got {:?}", ast);
+        }
+    }
+
+    #[test]
+    fn test_random_choice_multiple_rests() {
+        let result = parse("c4|~|d4|~");
+        assert!(result.is_ok(), "c4|~|d4|~ should parse: {:?}", result);
+        let ast = result.unwrap();
+        if let MiniAST::RandomChoice(choices) = ast {
+            assert_eq!(choices.len(), 4);
+            assert!(matches!(&choices[0], MiniAST::Pure(_)));
+            assert!(matches!(&choices[1], MiniAST::Rest(_)));
+            assert!(matches!(&choices[2], MiniAST::Pure(_)));
+            assert!(matches!(&choices[3], MiniAST::Rest(_)));
+        } else {
+            panic!("Expected RandomChoice, got {:?}", ast);
+        }
+    }
+
+    #[test]
+    fn test_random_choice_with_rest_in_sequence() {
+        let result = parse("c2 c3 c4|~ c5");
+        assert!(result.is_ok(), "c2 c3 c4|~ c5 should parse: {:?}", result);
+        if let MiniAST::Sequence(elements) = result.unwrap() {
+            assert_eq!(elements.len(), 4);
+            // Third element should be RandomChoice with rest
+            let (third, _) = &elements[2];
+            if let MiniAST::RandomChoice(choices) = third {
+                assert_eq!(choices.len(), 2);
+                assert!(matches!(&choices[1], MiniAST::Rest(_)));
+            } else {
+                panic!("Expected RandomChoice, got {:?}", third);
+            }
+        } else {
+            panic!("Expected Sequence");
         }
     }
 }

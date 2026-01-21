@@ -134,9 +134,40 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
         .fmap(|v| v.clone().unwrap())
     }
 
+    /// Randomly replace events with a rest value based on probability.
+    ///
+    /// Unlike `degrade_by` which filters out events entirely, this method
+    /// replaces degraded events with the provided rest value, preserving the
+    /// time slot. This is important for sequencers where we want the degraded
+    /// slot to be cached rather than re-querying the pattern every tick.
+    ///
+    /// # Arguments
+    /// * `prob` - Probability of keeping the original event (0.0 to 1.0)
+    /// * `rest` - Value to use when the event is degraded
+    pub fn degrade_by_with_rest(&self, prob: f64, rest: T) -> Pattern<T> {
+        let pat = self.clone();
+        let rand_pat = rand();
+
+        // Use app_left to preserve structure from self
+        pat.app_left(&rand_pat, move |val, r| {
+            if *r < prob {
+                val.clone()
+            } else {
+                rest.clone()
+            }
+        })
+    }
+
     /// Randomly drop events with 50% probability.
     pub fn degrade(&self) -> Pattern<T> {
         self.degrade_by(0.5)
+    }
+
+    /// Randomly replace events with a rest value with 50% probability.
+    ///
+    /// See `degrade_by_with_rest` for details on why this preserves time slots.
+    pub fn degrade_with_rest(&self, rest: T) -> Pattern<T> {
+        self.degrade_by_with_rest(0.5, rest)
     }
 
     /// Randomly remove events, opposite of degrade_by.
@@ -339,5 +370,43 @@ mod tests {
         // Allow wide margin for randomness
         assert!(present_count > 20);
         assert!(present_count < 80);
+    }
+
+    #[test]
+    fn test_degrade_by_with_rest() {
+        let pat = pure(42i32);
+        let rest_value = -1i32;
+
+        // With prob=0.0, all events should become rest
+        let degraded = pat.degrade_by_with_rest(0.0, rest_value);
+        for i in 0..10 {
+            let haps = degraded.query_arc(Fraction::from_integer(i), Fraction::from_integer(i + 1));
+            // Should always have exactly one hap (the rest)
+            assert_eq!(haps.len(), 1, "Should have a hap (rest value) at cycle {}", i);
+            assert_eq!(haps[0].value, rest_value, "Value should be the rest value");
+        }
+
+        // With prob=1.0, all events should be kept
+        let kept = pat.degrade_by_with_rest(1.0, rest_value);
+        for i in 0..10 {
+            let haps = kept.query_arc(Fraction::from_integer(i), Fraction::from_integer(i + 1));
+            assert_eq!(haps.len(), 1, "Should have a hap at cycle {}", i);
+            assert_eq!(haps[0].value, 42, "Value should be the original");
+        }
+
+        // With prob=0.5, should get a mix (and always have a hap)
+        let mixed = pat.degrade_by_with_rest(0.5, rest_value);
+        let mut kept_count = 0;
+        for i in 0..100 {
+            let haps = mixed.query_arc(Fraction::from_integer(i), Fraction::from_integer(i + 1));
+            // Should always have exactly one hap
+            assert_eq!(haps.len(), 1, "Should always have a hap (either value or rest)");
+            if haps[0].value == 42 {
+                kept_count += 1;
+            }
+        }
+        // With 50% probability, should have roughly 50% kept
+        assert!(kept_count > 20, "Should have some kept values");
+        assert!(kept_count < 80, "Should have some rest values");
     }
 }

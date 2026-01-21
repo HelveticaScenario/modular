@@ -47,6 +47,12 @@ pub enum OperatorVariant {
     Squeeze,
     /// Intersection structure (appBoth/mix).
     Mix,
+    /// Retrigger inner pattern at outer onsets, aligning cycle position.
+    Reset,
+    /// Retrigger inner pattern at outer onsets, aligning from cycle zero.
+    Restart,
+    /// Inverse of Squeeze: squeeze primary into argument events.
+    SqueezeOut,
 }
 
 impl OperatorVariant {
@@ -57,6 +63,9 @@ impl OperatorVariant {
             "out" | "outer" => Some(OperatorVariant::Out),
             "squeeze" | "sq" => Some(OperatorVariant::Squeeze),
             "mix" | "both" => Some(OperatorVariant::Mix),
+            "reset" => Some(OperatorVariant::Reset),
+            "restart" => Some(OperatorVariant::Restart),
+            "squeezeout" | "sqout" => Some(OperatorVariant::SqueezeOut),
             _ => None,
         }
     }
@@ -211,6 +220,9 @@ impl PatternOperator<f64> for AddOperator {
             OperatorVariant::Out => pattern.app_right(&arg_pattern, |a, b| a + b),
             OperatorVariant::Mix => pattern.app_both(&arg_pattern, |a, b| a + b),
             OperatorVariant::Squeeze => pattern.squeeze_join(move |a| super::constructors::pure(a + value)),
+            OperatorVariant::SqueezeOut => pattern.op_squeeze_out(&arg_pattern, |a, b| a + b),
+            OperatorVariant::Reset => pattern.op_reset(&arg_pattern, |a, b| a + b),
+            OperatorVariant::Restart => pattern.op_restart(&arg_pattern, |a, b| a + b),
         })
     }
 }
@@ -243,6 +255,9 @@ impl PatternOperator<f64> for MulOperator {
             OperatorVariant::Out => pattern.app_right(&arg_pattern, |a, b| a * b),
             OperatorVariant::Mix => pattern.app_both(&arg_pattern, |a, b| a * b),
             OperatorVariant::Squeeze => pattern.squeeze_join(move |a| super::constructors::pure(a * value)),
+            OperatorVariant::SqueezeOut => pattern.op_squeeze_out(&arg_pattern, |a, b| a * b),
+            OperatorVariant::Reset => pattern.op_reset(&arg_pattern, |a, b| a * b),
+            OperatorVariant::Restart => pattern.op_restart(&arg_pattern, |a, b| a * b),
         })
     }
 }
@@ -346,31 +361,15 @@ impl PatternOperator<f64> for LateOperator {
     }
 }
 
-/// Degrade operator - randomly drop events.
-pub struct DegradeOperator;
-
-impl PatternOperator<f64> for DegradeOperator {
-    fn name(&self) -> &'static str {
-        "degrade"
-    }
-
-    fn apply(
-        &self,
-        pattern: Pattern<f64>,
-        argument: Option<&str>,
-        _variant: OperatorVariant,
-    ) -> Result<Pattern<f64>, OperatorError> {
-        let prob = match argument {
-            Some(arg) => arg
-                .parse()
-                .map_err(|_| OperatorError::ParseError(format!("Cannot parse '{}' as number", arg)))?,
-            None => 0.5,
-        };
-        Ok(pattern.degrade_by(prob))
-    }
-}
+// Note: DegradeOperator is NOT included in the f64 registry because f64 patterns
+// don't support rests. Degrade is only available for pattern types that implement
+// HasRest (like SeqValue). See seq_operators.rs for the SeqValue implementation.
 
 /// Create a registry with all standard f64 operators.
+/// 
+/// Note: Degrade is NOT included because f64 patterns don't support rests.
+/// Operations that produce rests (degrade, euclid) are only available for
+/// pattern types that support rests (like SeqValue).
 pub fn standard_f64_registry() -> OperatorRegistry<f64> {
     let mut registry = OperatorRegistry::new();
     registry.register(FastOperator);
@@ -381,7 +380,7 @@ pub fn standard_f64_registry() -> OperatorRegistry<f64> {
     registry.register(RevOperator);
     registry.register(EarlyOperator);
     registry.register(LateOperator);
-    registry.register(DegradeOperator);
+    // DegradeOperator not included - f64 doesn't support rests
     registry
 }
 
@@ -453,6 +452,10 @@ mod tests {
             Some(OperatorVariant::Squeeze)
         );
         assert_eq!(OperatorVariant::from_str("mix"), Some(OperatorVariant::Mix));
+        assert_eq!(OperatorVariant::from_str("reset"), Some(OperatorVariant::Reset));
+        assert_eq!(OperatorVariant::from_str("restart"), Some(OperatorVariant::Restart));
+        assert_eq!(OperatorVariant::from_str("squeezeout"), Some(OperatorVariant::SqueezeOut));
+        assert_eq!(OperatorVariant::from_str("sqout"), Some(OperatorVariant::SqueezeOut));
         assert_eq!(OperatorVariant::from_str("unknown"), None);
     }
 }

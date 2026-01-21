@@ -4,7 +4,7 @@
 //! the next pattern. Different join strategies determine how the
 //! inner pattern's timing relates to the outer pattern.
 
-use super::{Fraction, Hap, HapContext, Pattern, State, TimeSpan};
+use super::{Hap, HapContext, Pattern, State, TimeSpan};
 use std::sync::Arc;
 
 impl<T: Clone + Send + Sync + 'static> Pattern<T> {
@@ -141,6 +141,143 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
         })
     }
 
+    /// Reset join - retrigger inner patterns at outer onsets.
+    ///
+    /// For each discrete outer event, the inner pattern is shifted so that
+    /// its timing aligns with the outer event's start:
+    /// - `restart=false` (reset): align cycle position with outer hap start
+    /// - `restart=true` (restart): align from cycle zero
+    ///
+    /// Ported from Strudel's `resetJoin(restart: bool)`.
+    pub fn reset_join<U, F>(&self, f: F, restart: bool) -> Pattern<U>
+    where
+        U: Clone + Send + Sync + 'static,
+        F: Fn(&T) -> Pattern<U> + Send + Sync + 'static,
+    {
+        let outer = self.clone();
+        let f = Arc::new(f);
+
+        Pattern::new(move |state: &State| {
+            // Only consider discrete (onset) events from outer
+            let outer_haps: Vec<_> = outer
+                .query(state)
+                .into_iter()
+                .filter(|h| h.is_discrete() && h.has_onset())
+                .collect();
+
+            let mut result = Vec::new();
+
+            for outer_hap in outer_haps {
+                let inner_pat = f(&outer_hap.value);
+
+                // Calculate shift amount:
+                // - reset: align cycle position (use whole.begin.cycle_pos())
+                // - restart: align from zero (use whole.begin directly)
+                let outer_begin = &outer_hap.whole_or_part().begin;
+                let shift = if restart {
+                    outer_begin.clone()
+                } else {
+                    outer_begin.cycle_pos()
+                };
+
+                // Shift inner pattern later by the calculated amount
+                let shifted = inner_pat.late(shift);
+
+                // Query shifted pattern
+                let inner_haps = shifted.query(state);
+
+                for inner_hap in inner_haps {
+                    let outer_whole = outer_hap.whole_or_part();
+
+                    // For inner whole: intersect if discrete, else None
+                    let new_whole = inner_hap.whole.as_ref().and_then(|w| {
+                        w.intersection(outer_whole)
+                    });
+
+                    // For inner part: must intersect with outer hap's part
+                    if let Some(new_part) = inner_hap.part.intersection(&outer_hap.part) {
+                        let combined_context = outer_hap.combine_context(&inner_hap);
+                        result.push(Hap::with_context(
+                            new_whole,
+                            new_part,
+                            inner_hap.value.clone(),
+                            combined_context,
+                        ));
+                    }
+                }
+            }
+
+            result
+        })
+    }
+
+    /// Restart join - retrigger inner patterns at outer onsets from cycle zero.
+    ///
+    /// Convenience wrapper for `reset_join(f, true)`.
+    pub fn restart_join<U, F>(&self, f: F) -> Pattern<U>
+    where
+        U: Clone + Send + Sync + 'static,
+        F: Fn(&T) -> Pattern<U> + Send + Sync + 'static,
+    {
+        self.reset_join(f, true)
+    }
+
+    /// Squeeze out join - squeeze outer pattern into inner pattern's events.
+    ///
+    /// Inverse of squeeze_join: structure comes from the inner (argument) pattern.
+    /// For `a.squeeze_out_join(|v| b)`:
+    /// - Structure comes from `b`
+    /// - For each event in `b`, squeeze `a` into that event's duration
+    ///
+    /// This is equivalent to Strudel's `_opSqueezeOut`:
+    /// `return otherPat.fmap((a) => thisPat.fmap((b) => func(b)(a))).squeezeJoin()`
+    pub fn squeeze_out_join<U, F>(&self, f: F) -> Pattern<U>
+    where
+        U: Clone + Send + Sync + 'static,
+        F: Fn(&T) -> Pattern<U> + Send + Sync + 'static,
+    {
+        let outer = self.clone();
+        let f = Arc::new(f);
+
+        Pattern::new(move |state: &State| {
+            // Query outer for structure (only onset events)
+            let outer_haps: Vec<_> = outer
+                .query(state)
+                .into_iter()
+                .filter(|h| h.has_onset())
+                .collect();
+
+            let mut result = Vec::new();
+
+            for outer_hap in outer_haps {
+                let inner_pat = f(&outer_hap.value);
+
+                // Focus the inner pattern to fit within the outer event's duration
+                let squeeze_span = outer_hap.whole_or_part();
+                let focused = inner_pat.focus_span(squeeze_span);
+
+                let inner_haps = focused.query(state);
+
+                for inner_hap in inner_haps {
+                    if let Some(new_part) = inner_hap.part.intersection(&outer_hap.part) {
+                        let new_whole = inner_hap.whole.as_ref().and_then(|w| {
+                            w.intersection(outer_hap.whole_or_part())
+                        });
+
+                        let combined_context = outer_hap.combine_context(&inner_hap);
+                        result.push(Hap::with_context(
+                            new_whole,
+                            new_part,
+                            inner_hap.value.clone(),
+                            combined_context,
+                        ));
+                    }
+                }
+            }
+
+            result
+        })
+    }
 }
 
 /// Pattern of patterns - can be joined/flattened
@@ -161,6 +298,7 @@ mod tests {
     use super::*;
     use crate::pattern_system::combinators::fastcat;
     use crate::pattern_system::constructors::pure;
+    use crate::pattern_system::Fraction;
 
     #[test]
     fn test_bind_basic() {

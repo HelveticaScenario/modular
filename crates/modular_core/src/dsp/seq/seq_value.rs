@@ -12,7 +12,7 @@ use serde::Deserialize;
 use crate::{
     dsp::utils::midi_to_voct_f64,
     pattern_system::{
-        mini::{ast::AtomValue, convert::ConvertError, FromMiniAtom},
+        mini::{ast::AtomValue, convert::{ConvertError, HasRest}, FromMiniAtom},
         Pattern,
     },
     types::{Connect, Signal},
@@ -221,6 +221,16 @@ impl FromMiniAtom for SeqValue {
 
     fn rest_value() -> Option<Self> {
         Some(SeqValue::Rest)
+    }
+
+    fn supports_rest() -> bool {
+        true
+    }
+}
+
+impl HasRest for SeqValue {
+    fn rest_value() -> Self {
+        SeqValue::Rest
     }
 }
 
@@ -442,5 +452,73 @@ mod tests {
         assert_eq!(midis[1], 45.0, "a2 should be MIDI 45");
         assert_eq!(midis[2], 57.0, "a3 should be MIDI 57");
         assert_eq!(midis[3], 69.0, "a4 should be MIDI 69");
+    }
+
+    #[test]
+    fn test_seq_value_supports_rest() {
+        use crate::pattern_system::mini::convert::FromMiniAtom;
+        // SeqValue should support rests
+        assert!(SeqValue::supports_rest());
+        assert!(<SeqValue as FromMiniAtom>::rest_value().is_some());
+        assert!(matches!(<SeqValue as FromMiniAtom>::rest_value(), Some(SeqValue::Rest)));
+    }
+
+    #[test]
+    fn test_seq_value_has_rest_trait() {
+        // Test HasRest trait implementation
+        use crate::pattern_system::HasRest;
+        let rest = <SeqValue as HasRest>::rest_value();
+        assert!(matches!(rest, SeqValue::Rest));
+    }
+
+    #[test]
+    fn test_seq_value_rest_in_pattern() {
+        use crate::pattern_system::mini::parse;
+        use crate::pattern_system::Fraction;
+
+        // SeqValue should allow rest (~) in patterns
+        let pattern: crate::pattern_system::Pattern<SeqValue> =
+            parse("c4 ~ e4").expect("Should parse with rest");
+
+        let haps = pattern.query_arc(Fraction::from(0), Fraction::from(1));
+        assert_eq!(haps.len(), 3, "Should have 3 haps including rest");
+        
+        // Second hap should be a rest
+        assert!(haps[1].value.is_rest(), "Second hap should be a rest");
+    }
+
+    #[test]
+    fn test_seq_value_degrade_in_pattern() {
+        use crate::pattern_system::mini::parse;
+        use crate::pattern_system::Fraction;
+
+        // SeqValue should allow degrade (?) in patterns
+        let pattern: crate::pattern_system::Pattern<SeqValue> =
+            parse("c4?").expect("Should parse with degrade");
+
+        // Query multiple times - should always get a hap (either note or rest)
+        for i in 0..10 {
+            let haps = pattern.query_arc(Fraction::from(i), Fraction::from(i + 1));
+            assert_eq!(haps.len(), 1, "Should always have exactly 1 hap at cycle {}", i);
+        }
+    }
+
+    #[test]
+    fn test_seq_value_euclidean_in_pattern() {
+        use crate::pattern_system::mini::parse;
+        use crate::pattern_system::Fraction;
+
+        // SeqValue should allow euclidean in patterns
+        let pattern: crate::pattern_system::Pattern<SeqValue> =
+            parse("c4(3,8)").expect("Should parse with euclidean");
+
+        let haps = pattern.query_arc(Fraction::from(0), Fraction::from(1));
+        
+        // Should have 8 haps (3 notes + 5 rests)
+        assert_eq!(haps.len(), 8, "Should have 8 haps (euclidean 3,8)");
+        
+        // Count pulses (non-rests)
+        let pulse_count = haps.iter().filter(|h| !h.value.is_rest()).count();
+        assert_eq!(pulse_count, 3, "Should have 3 pulses");
     }
 }

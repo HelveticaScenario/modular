@@ -39,6 +39,7 @@ pub mod operators;
 pub mod random;
 pub mod euclidean;
 pub mod mini;
+pub mod strudel_compat;
 
 pub use fraction::Fraction;
 pub use hap::{DspHap, Hap, HapContext, SourceSpan};
@@ -48,7 +49,64 @@ pub use timespan::TimeSpan;
 pub use constructors::{pure, pure_with_span, silence, signal};
 pub use combinators::{fastcat, slowcat, stack, timecat};
 
+// Re-export mini notation types
+pub use mini::{FromMiniAtom, HasRest};
+
 use std::sync::Arc;
+
+// ===== IntoPattern Trait =====
+
+/// Trait for types that can be converted into a Pattern.
+/// Enables generic methods that accept both constant values and patterns.
+///
+/// This allows temporal methods like `fast`, `slow`, `early`, `late` to accept
+/// either a direct value (which becomes a `pure` pattern) or a pattern argument
+/// for patterned parameters.
+///
+/// # Example
+/// ```ignore
+/// // Both of these work:
+/// pattern.fast(Fraction::from(2))           // Constant: 2x speed
+/// pattern.fast(some_fraction_pattern)       // Pattern: varying speed
+/// ```
+pub trait IntoPattern<T> {
+    fn into_pattern(self) -> Pattern<T>;
+}
+
+/// Pattern<T> -> identity (just return self)
+impl<T: Clone + Send + Sync + 'static> IntoPattern<T> for Pattern<T> {
+    fn into_pattern(self) -> Pattern<T> {
+        self
+    }
+}
+
+/// Fraction -> pure pattern of Fraction
+impl IntoPattern<Fraction> for Fraction {
+    fn into_pattern(self) -> Pattern<Fraction> {
+        pure(self)
+    }
+}
+
+/// i64 -> pure pattern of Fraction
+impl IntoPattern<Fraction> for i64 {
+    fn into_pattern(self) -> Pattern<Fraction> {
+        pure(Fraction::from_integer(self))
+    }
+}
+
+/// i32 -> pure pattern of Fraction
+impl IntoPattern<Fraction> for i32 {
+    fn into_pattern(self) -> Pattern<Fraction> {
+        pure(Fraction::from_integer(self as i64))
+    }
+}
+
+/// f64 -> pure pattern of Fraction
+impl IntoPattern<Fraction> for f64 {
+    fn into_pattern(self) -> Pattern<Fraction> {
+        pure(Fraction::from(self))
+    }
+}
 
 /// The query function type: takes a State, returns events.
 pub type QueryFn<T> = Arc<dyn Fn(&State) -> Vec<Hap<T>> + Send + Sync>;

@@ -229,7 +229,22 @@ pub fn timecat<T: Clone + Send + Sync + 'static>(
 
 impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     /// Speed up the pattern by a factor.
-    pub fn fast(&self, factor: Fraction) -> Pattern<T> {
+    ///
+    /// Accepts both constant values and patterns:
+    /// - `pattern.fast(2)` - constant 2x speed
+    /// - `pattern.fast(Fraction::from(2))` - constant 2x speed
+    /// - `pattern.fast(some_pattern)` - patterned speed factor
+    pub fn fast<F: super::IntoPattern<Fraction> + 'static>(&self, factor: F) -> Pattern<T> {
+        let factor_pat = factor.into_pattern();
+        let pat = self.clone();
+
+        factor_pat.inner_join(move |f| {
+            pat._fast(f.clone())
+        })
+    }
+
+    /// Internal constant-factor fast (no pattern overhead).
+    pub(crate) fn _fast(&self, factor: Fraction) -> Pattern<T> {
         if factor.is_zero() {
             return super::constructors::silence();
         }
@@ -250,12 +265,27 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     }
 
     /// Slow down the pattern by a factor.
-    pub fn slow(&self, factor: Fraction) -> Pattern<T> {
+    ///
+    /// Accepts both constant values and patterns:
+    /// - `pattern.slow(2)` - constant half speed
+    /// - `pattern.slow(Fraction::from(2))` - constant half speed
+    /// - `pattern.slow(some_pattern)` - patterned slow factor
+    pub fn slow<F: super::IntoPattern<Fraction> + 'static>(&self, factor: F) -> Pattern<T> {
+        let factor_pat = factor.into_pattern();
+        let pat = self.clone();
+
+        factor_pat.inner_join(move |f| {
+            pat._slow(f.clone())
+        })
+    }
+
+    /// Internal constant-factor slow (no pattern overhead).
+    pub(crate) fn _slow(&self, factor: Fraction) -> Pattern<T> {
         if factor.is_zero() {
             return super::constructors::silence();
         }
 
-        self.fast(Fraction::from_integer(1) / factor)
+        self._fast(Fraction::from_integer(1) / factor)
     }
 
     /// Compress a pattern to fit within a portion of each cycle.

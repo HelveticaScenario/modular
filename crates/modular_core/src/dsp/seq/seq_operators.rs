@@ -183,7 +183,10 @@ impl PatternOperator<SeqValue> for LateOperator {
     }
 }
 
-/// Degrade operator - randomly drop events.
+/// Degrade operator - randomly replace events with rests.
+/// 
+/// Unlike the filtering degrade on types without rest support, this produces
+/// rest values at degraded positions, ensuring the pattern always returns a hap.
 pub struct DegradeOperator;
 
 impl PatternOperator<SeqValue> for DegradeOperator {
@@ -203,7 +206,8 @@ impl PatternOperator<SeqValue> for DegradeOperator {
             })?,
             None => 0.5,
         };
-        Ok(pattern.degrade_by(prob))
+        // Use rest-aware degrade to ensure pattern always returns a hap
+        Ok(pattern.degrade_by_with_rest(prob, SeqValue::Rest))
     }
 }
 
