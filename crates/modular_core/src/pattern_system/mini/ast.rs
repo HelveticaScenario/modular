@@ -30,8 +30,9 @@ pub enum MiniAST {
     /// Rest/silence.
     Rest(SourceSpan),
 
-    /// A list of values (from tail syntax: c:e:g).
-    List(Located<Vec<AtomValue>>),
+    /// A list of patterns (from tail syntax: c:e:g or c:[e f]).
+    /// Elements can be atoms or subpatterns.
+    List(Located<Vec<MiniAST>>),
 
     /// Sequence of patterns (space-separated, played in order).
     Sequence(Vec<(MiniAST, Option<f64>)>), // (pattern, optional weight)
@@ -96,6 +97,7 @@ pub enum AtomValue {
     /// Musical note (e.g., c4, a#3, bb5).
     Note {
         letter: char,
+        /// Accidental: '#' for sharp, 'b' for flat
         accidental: Option<char>,
         octave: Option<i32>,
     },
@@ -205,7 +207,7 @@ fn parse_note(s: &str) -> Option<AtomValue> {
     let mut idx = 1;
     let mut accidental = None;
 
-    // Check for accidental
+    // Check for single accidental
     if idx < chars.len() {
         match chars[idx] {
             '#' | 's' => {
@@ -213,7 +215,7 @@ fn parse_note(s: &str) -> Option<AtomValue> {
                 idx += 1;
             }
             'b' | 'f' => {
-                // 'b' or 'f' as accidental only if followed by digit or at end
+                // 'b' or 'f' as accidental only if followed by digit, or at end
                 // and not part of a word like "bd" (bass drum)
                 if idx + 1 >= chars.len() {
                     // At end - this is ambiguous, treat as accidental for single letter note

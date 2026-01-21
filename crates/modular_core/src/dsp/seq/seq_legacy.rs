@@ -58,7 +58,6 @@ impl<'de> Deserialize<'de> for PatternParam {
     {
         let source = String::deserialize(deserializer)?;
         let pattern = Self::do_parse(&source).map_err(|e| serde::de::Error::custom(e))?;
-        println!("PatternParam deserialized: {:#?}", pattern);
         Ok(Self { source, pattern })
     }
 }

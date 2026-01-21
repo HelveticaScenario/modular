@@ -184,6 +184,12 @@ impl<T: Clone> Hap<T> {
         self
     }
 
+    /// Add a modifier span to this hap's context.
+    pub fn add_modifier_span(mut self, span: SourceSpan) -> Self {
+        self.context.add_modifier_span(span);
+        self
+    }
+
     /// Combine this hap's context with another hap's context.
     pub fn combine_context<U>(&self, other: &Hap<U>) -> HapContext {
         self.context.combine(&other.context)

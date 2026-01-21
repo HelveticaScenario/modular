@@ -21,8 +21,9 @@ sequence_expr = { weighted_elem+ }
 // Weighted element: element with optional weight (@n)
 weighted_elem = { element ~ (WHITESPACE* ~ "@" ~ WHITESPACE* ~ number)? ~ WHITESPACE* }
 
-// Element types
-element = {
+// Element types - with optional tail for list syntax like [a b]:minor
+element = { element_base ~ (":" ~ tail_element)* }
+element_base = {
     polymeter |
     fast_sub |
     slow_sub |
@@ -66,7 +67,7 @@ atom = {
     rest |
     range_pattern |
     random_choice |
-    value_with_tail
+    value
 }
 
 // Rest/silence
@@ -78,8 +79,8 @@ range_pattern = { integer ~ ".." ~ integer }
 // Random choice: a | b | c
 random_choice = { value ~ (WHITESPACE* ~ "|" ~ WHITESPACE* ~ value)+ }
 
-// Value with optional tail: c:e:g becomes a list [c, e, g]
-value_with_tail = { value ~ (":" ~ value)* }
+// Tail element for list syntax: allows values or subpatterns after :
+tail_element = { fast_sub | slow_sub | group | value }
 
 // Values - various atom types
 value = {
@@ -96,11 +97,14 @@ value = {
 hz_value = { number ~ "hz" }
 volts_value = { number ~ "v" }
 midi_value = { "m" ~ integer }
-note_value = { note_letter ~ accidental? ~ octave? }
+// note_value must be atomic (@) to prevent implicit whitespace consumption
+// This ensures "a b" is parsed as two notes, not "a" with flat "b"
+note_value = @{ note_letter ~ accidental? ~ octave? }
 
 // Note components
 note_letter = { 'a'..'g' | 'A'..'G' }
-accidental = { "#" | "b" | "s" | "f" }
+// Single accidental only: # or s for sharp, b for flat
+accidental = { "#" | "s" | "b" }
 octave = { "-"? ~ ASCII_DIGIT+ }
 
 // Basic types

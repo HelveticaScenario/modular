@@ -1,9 +1,22 @@
+//! Sequencer modules for the modular synthesizer.
+//!
+//! This module provides:
+//! - `Seq`: A Strudel/TidalCycles style sequencer using the new pattern system
+//! - `SeqLegacy`: The original sequencer implementation (for backwards compatibility)
+
 use std::collections::HashMap;
 
 use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
 
+pub mod scale;
 pub mod seq;
 pub mod seq_legacy;
+pub mod seq_operators;
+pub mod seq_value;
+
+pub use scale::{FixedRoot, ScaleRoot, ScaleSnapper};
+pub use seq_operators::{seq_value_registry, CachedOperator};
+pub use seq_value::{SeqPatternParam, SeqValue};
 
 pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     seq::Seq::install_constructor(map);

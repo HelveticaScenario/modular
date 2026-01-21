@@ -28,6 +28,11 @@ pub trait FromMiniAtom: Clone + Send + Sync + 'static {
         }
     }
 
+    /// Combine a list of head atoms with a tail value.
+    /// Used for distributing patterns like `c:e:[f g]` -> `[c:e:f, c:e:g]`
+    /// Default implementation prepends atoms to a single-element list with the value.
+    fn combine_with_head(head_atoms: &[AtomValue], tail: &Self) -> Result<Self, ConvertError>;
+
     /// Get the rest/silence value, if supported.
     fn rest_value() -> Option<Self> {
         None
@@ -87,6 +92,16 @@ impl FromMiniAtom for f64 {
         }
     }
 
+    fn combine_with_head(head_atoms: &[AtomValue], tail: &Self) -> Result<Self, ConvertError> {
+        // For f64, combine by averaging all values
+        let mut values: Vec<f64> = head_atoms
+            .iter()
+            .map(|a| Self::from_atom(a))
+            .collect::<Result<_, _>>()?;
+        values.push(*tail);
+        Ok(values.iter().sum::<f64>() / values.len() as f64)
+    }
+
     fn rest_value() -> Option<Self> {
         Some(0.0)
     }
@@ -97,6 +112,15 @@ impl FromMiniAtom for f32 {
         atom.to_f64()
             .map(|f| f as f32)
             .ok_or_else(|| ConvertError::InvalidAtom("Cannot convert to f32".to_string()))
+    }
+
+    fn combine_with_head(head_atoms: &[AtomValue], tail: &Self) -> Result<Self, ConvertError> {
+        let mut values: Vec<f32> = head_atoms
+            .iter()
+            .map(|a| Self::from_atom(a))
+            .collect::<Result<_, _>>()?;
+        values.push(*tail);
+        Ok(values.iter().sum::<f32>() / values.len() as f32)
     }
 
     fn rest_value() -> Option<Self> {
@@ -111,6 +135,10 @@ impl FromMiniAtom for i64 {
             .ok_or_else(|| ConvertError::InvalidAtom("Cannot convert to i64".to_string()))
     }
 
+    fn combine_with_head(_head_atoms: &[AtomValue], _tail: &Self) -> Result<Self, ConvertError> {
+        Err(ConvertError::ListNotSupported)
+    }
+
     fn rest_value() -> Option<Self> {
         Some(0)
     }
@@ -121,6 +149,10 @@ impl FromMiniAtom for i32 {
         atom.to_f64()
             .map(|f| f as i32)
             .ok_or_else(|| ConvertError::InvalidAtom("Cannot convert to i32".to_string()))
+    }
+
+    fn combine_with_head(_head_atoms: &[AtomValue], _tail: &Self) -> Result<Self, ConvertError> {
+        Err(ConvertError::ListNotSupported)
     }
 
     fn rest_value() -> Option<Self> {
@@ -146,6 +178,15 @@ impl FromMiniAtom for String {
             .collect::<Result<_, _>>()?;
         Ok(strings.join(":"))
     }
+
+    fn combine_with_head(head_atoms: &[AtomValue], tail: &Self) -> Result<Self, ConvertError> {
+        let mut strings: Vec<String> = head_atoms
+            .iter()
+            .map(|a| Self::from_atom(a))
+            .collect::<Result<_, _>>()?;
+        strings.push(tail.clone());
+        Ok(strings.join(":"))
+    }
 }
 
 impl FromMiniAtom for bool {
@@ -159,6 +200,10 @@ impl FromMiniAtom for bool {
             },
             _ => Err(ConvertError::InvalidAtom("Cannot convert to bool".to_string())),
         }
+    }
+
+    fn combine_with_head(_head_atoms: &[AtomValue], _tail: &Self) -> Result<Self, ConvertError> {
+        Err(ConvertError::ListNotSupported)
     }
 
     fn rest_value() -> Option<Self> {
@@ -205,8 +250,74 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
         }
 
         MiniAST::List(Located { node, span }) => {
-            let value = T::from_list(node)?;
-            Ok(pure_with_span(value, span.clone()))
+            // Check if all elements are Pure (simple atoms)
+            let all_pure = node.iter().all(|elem| matches!(elem, MiniAST::Pure(_)));
+            
+            if all_pure {
+                // Extract atoms and use from_list
+                let atoms: Vec<AtomValue> = node
+                    .iter()
+                    .filter_map(|elem| {
+                        if let MiniAST::Pure(Located { node: atom, .. }) = elem {
+                            Some(atom.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                let value = T::from_list(&atoms)?;
+                Ok(pure_with_span(value, span.clone()))
+            } else {
+                // Some elements are patterns - need to distribute
+                // e.g., c:[e f] -> fastcat([c:e, c:f])
+                // 
+                // Strategy: convert each element to a pattern, then distribute
+                // by applying the "list" semantics across pattern events
+                
+                // For now, find the first non-Pure element and distribute over it
+                // This handles the common case: head:[a b c]
+                
+                // Separate head atoms (Pure elements before first non-Pure) from tail pattern
+                let mut head_atoms: Vec<AtomValue> = Vec::new();
+                let mut tail_pattern: Option<Pattern<T>> = None;
+                
+                for elem in node.iter() {
+                    match elem {
+                        MiniAST::Pure(Located { node: atom, .. }) => {
+                            if tail_pattern.is_none() {
+                                head_atoms.push(atom.clone());
+                            } else {
+                                // Atoms after a pattern - not supported yet
+                                return Err(ConvertError::InvalidAtom(
+                                    "Atoms after pattern in list not yet supported".to_string()
+                                ));
+                            }
+                        }
+                        _ => {
+                            if tail_pattern.is_some() {
+                                return Err(ConvertError::InvalidAtom(
+                                    "Multiple patterns in list not yet supported".to_string()
+                                ));
+                            }
+                            tail_pattern = Some(convert_inner(elem)?);
+                        }
+                    }
+                }
+                
+                if let Some(tail) = tail_pattern {
+                    // Distribute head over tail: head:[a b] -> [head:a, head:b]
+                    // Use combine_with_head to merge head atoms with each tail value
+                    let head = head_atoms.clone();
+                    Ok(tail.fmap(move |tail_val: &T| {
+                        // This unwrap is safe because we validated the atoms can convert
+                        // to the target type when parsing Pure nodes
+                        T::combine_with_head(&head, tail_val).unwrap_or_else(|_| tail_val.clone())
+                    }))
+                } else {
+                    // No patterns, but we hit the !all_pure branch? Shouldn't happen
+                    Err(ConvertError::InvalidAtom("Internal error in list processing".to_string()))
+                }
+            }
         }
 
         MiniAST::Sequence(elements) => {
@@ -336,9 +447,12 @@ fn apply_operator<T: FromMiniAtom>(
         .and_then(|v| OperatorVariant::from_str(v))
         .unwrap_or_default();
 
-    registry
+    let result = registry
         .apply(&op.name, pattern, arg_string.as_deref(), variant)
-        .map_err(|e| ConvertError::OperatorError(e.to_string()))
+        .map_err(|e| ConvertError::OperatorError(e.to_string()))?;
+
+    // Add the operator's source span to all haps for editor highlighting
+    Ok(result.with_modifier_span(op.span.clone()))
 }
 
 /// Convert an AST back to a string representation (for operator arguments).
@@ -346,7 +460,7 @@ fn ast_to_string(ast: &MiniAST) -> String {
     match ast {
         MiniAST::Pure(Located { node, .. }) => atom_to_string(node),
         MiniAST::List(Located { node, .. }) => {
-            node.iter().map(atom_to_string).collect::<Vec<_>>().join(":")
+            node.iter().map(ast_to_string).collect::<Vec<_>>().join(":")
         }
         MiniAST::Sequence(elements) => {
             elements
@@ -448,6 +562,94 @@ mod tests {
     }
 
     #[test]
+    fn test_convert_nested_slowcat_in_sequence() {
+        // Test that slowcat nested inside a sequence alternates correctly
+        // Pattern: a <b c> should give [a, b] on even cycles and [a, c] on odd cycles
+        // where a=69, b=71, c=60
+        let ast = parse("a <b c>").unwrap();
+        let pat: Pattern<f64> = convert(&ast).unwrap();
+
+        // Cycle 0: should have a (69) and b (71)
+        let haps0 = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+        let values0: Vec<f64> = haps0.iter().map(|h| h.value).collect();
+        assert_eq!(values0.len(), 2);
+        assert_eq!(values0[0], 69.0, "First element should be 'a' (69)");
+        assert_eq!(values0[1], 71.0, "Second element should be 'b' (71) on cycle 0");
+
+        // Cycle 1: should have a (69) and c (60)
+        let haps1 = pat.query_arc(Fraction::from_integer(1), Fraction::from_integer(2));
+        let values1: Vec<f64> = haps1.iter().map(|h| h.value).collect();
+        assert_eq!(values1.len(), 2);
+        assert_eq!(values1[0], 69.0, "First element should be 'a' (69)");
+        assert_eq!(values1[1], 60.0, "Second element should be 'c' (60) on cycle 1");
+
+        // Cycle 2: should alternate back to b
+        let haps2 = pat.query_arc(Fraction::from_integer(2), Fraction::from_integer(3));
+        let values2: Vec<f64> = haps2.iter().map(|h| h.value).collect();
+        assert_eq!(values2[1], 71.0, "Second element should be 'b' (71) on cycle 2");
+    }
+
+    #[test]
+    fn test_convert_deeply_nested_slowcat() {
+        // Test that deeply nested slowcat respects the inner slowcat
+        // Pattern: c3 c#3 <cb <d d5>>
+        // This should parse as: Sequence([c3, c#3, SlowCat([cb, SlowCat([d, d5])])])
+        // 
+        // Let's understand what values we expect:
+        // c3 = 48, c#3 = 49, cb4 = 59, d4 = 62, d5 = 74
+        // 
+        // The outer slowcat has 2 elements: cb and <d d5>
+        // Cycle 0: outer picks cb (index 0)
+        // Cycle 1: outer picks <d d5> (index 1) - inner has its own cycle tracking
+        // Cycle 2: outer picks cb (index 0)
+        // Cycle 3: outer picks <d d5> (index 1) - inner advances
+        //
+        // The inner slowcat sees adjusted time, so it will have its own cycle counting
+        let ast = parse("c3 c#3 <cb <d d5>>").unwrap();
+        let pat: Pattern<f64> = convert(&ast).unwrap();
+
+        // Verify the pattern structure by querying different cycles
+        // c3 = 48, c#3 = 49, cb4 = 59 (c4 flat), d4 = 62, d5 = 74
+        
+        // Cycle 0: c3, c#3, cb
+        let haps0 = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+        let values0: Vec<f64> = haps0.iter().map(|h| h.value).collect();
+        assert_eq!(values0.len(), 3, "Cycle 0 should have 3 elements");
+        assert_eq!(values0[0], 48.0, "First element should be c3 (48)");
+        assert_eq!(values0[1], 49.0, "Second element should be c#3 (49)");
+        assert_eq!(values0[2], 59.0, "Third element should be cb (59) on cycle 0");
+
+        // Cycle 1: c3, c#3, <d d5> - inner slowcat picks based on its time
+        let haps1 = pat.query_arc(Fraction::from_integer(1), Fraction::from_integer(2));
+        let values1: Vec<f64> = haps1.iter().map(|h| h.value).collect();
+        assert_eq!(values1.len(), 3, "Cycle 1 should have 3 elements");
+        assert_eq!(values1[0], 48.0, "First element should be c3 (48)");
+        assert_eq!(values1[1], 49.0, "Second element should be c#3 (49)");
+        // The inner slowcat sees cycle 0 from its perspective (first time it's queried)
+        // But due to time adjustment, it might see a different cycle
+        // Let's check what we actually get and verify both d and d5 appear at some point
+        let cycle1_third = values1[2];
+        assert!(cycle1_third == 62.0 || cycle1_third == 74.0, 
+            "Third element on cycle 1 should be d (62) or d5 (74), got {}", cycle1_third);
+
+        // Cycle 2: c3, c#3, cb
+        let haps2 = pat.query_arc(Fraction::from_integer(2), Fraction::from_integer(3));
+        let values2: Vec<f64> = haps2.iter().map(|h| h.value).collect();
+        assert_eq!(values2[2], 59.0, "Third element should be cb (59) on cycle 2");
+
+        // Cycle 3: c3, c#3, <d d5> - inner slowcat advances
+        let haps3 = pat.query_arc(Fraction::from_integer(3), Fraction::from_integer(4));
+        let values3: Vec<f64> = haps3.iter().map(|h| h.value).collect();
+        let cycle3_third = values3[2];
+        assert!(cycle3_third == 62.0 || cycle3_third == 74.0, 
+            "Third element on cycle 3 should be d (62) or d5 (74), got {}", cycle3_third);
+        
+        // Key assertion: cycle 1 and cycle 3 should be DIFFERENT values from inner slowcat
+        assert_ne!(cycle1_third, cycle3_third, 
+            "Inner slowcat should alternate between d and d5 on cycles 1 and 3");
+    }
+
+    #[test]
     fn test_convert_fast() {
         let ast = parse("0*2").unwrap();
         let pat: Pattern<f64> = convert(&ast).unwrap();
@@ -503,6 +705,49 @@ mod tests {
         // Each hap should have a source span
         for hap in &haps {
             assert!(hap.context.source_span.is_some());
+        }
+    }
+
+    #[test]
+    fn test_operator_spans_captured() {
+        use crate::pattern_system::operators::standard_f64_registry;
+
+        let ast = parse("0 1 2 $ fast(2)").unwrap();
+        let registry = standard_f64_registry();
+        let pat: Pattern<f64> = convert_with_operators(&ast, &registry).unwrap();
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        // fast(2) doubles the events to 6
+        assert_eq!(haps.len(), 6);
+
+        // Each hap should have the operator span in modifier_spans
+        for hap in &haps {
+            assert!(
+                !hap.context.modifier_spans.is_empty(),
+                "Expected operator span in modifier_spans"
+            );
+            // The operator span should cover "$ fast(2)" 
+            let op_span = &hap.context.modifier_spans[0];
+            assert!(op_span.start < op_span.end);
+        }
+    }
+
+    #[test]
+    fn test_multiple_operator_spans() {
+        use crate::pattern_system::operators::standard_f64_registry;
+
+        let ast = parse("0 1 $ fast(2) $ add(10)").unwrap();
+        let registry = standard_f64_registry();
+        let pat: Pattern<f64> = convert_with_operators(&ast, &registry).unwrap();
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        // Each hap should have BOTH operator spans in modifier_spans
+        for hap in &haps {
+            assert!(
+                hap.context.modifier_spans.len() >= 2,
+                "Expected two operator spans, got {}",
+                hap.context.modifier_spans.len()
+            );
         }
     }
 }

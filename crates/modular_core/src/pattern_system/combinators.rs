@@ -74,10 +74,10 @@ pub fn slowcat<T: Clone + Send + Sync + 'static>(pats: Vec<Pattern<T>>) -> Patte
                 let pat = &pats[pat_idx];
 
                 // Calculate offset to adjust times
-                // This ensures patterns don't skip cycles
+                // Each pattern should see its own cycle count: floor(global_cycle / n)
+                // So we offset by: global_cycle - floor(global_cycle / n)
                 let n_frac = Fraction::from_integer(n as i64);
-                let offset = subspan.begin.floor() - (&subspan.begin / &n_frac).floor() * &n_frac
-                    + Fraction::from_integer(pat_idx as i64);
+                let offset = subspan.begin.floor() - (&subspan.begin / &n_frac).floor();
 
                 // Query with adjusted time
                 let query_span = subspan.with_time(|t| t - &offset);
@@ -115,10 +115,57 @@ pub fn fastcat<T: Clone + Send + Sync + 'static>(pats: Vec<Pattern<T>>) -> Patte
     }
 
     let n = pats.len();
+    let n_frac = Fraction::from_integer(n as i64);
+    let steps = n_frac.clone();
 
-    // fastcat is slowcat sped up by n
-    let mut result = slowcat(pats).fast(Fraction::from_integer(n as i64));
-    result.set_steps(Fraction::from_integer(n as i64));
+    // Direct implementation: each pattern takes 1/n of each cycle
+    // This avoids the time distortion issues with slowcat + fast
+    let mut result = Pattern::new(move |state: &State| {
+        state
+            .span
+            .span_cycles()
+            .into_iter()
+            .flat_map(|cycle_span| {
+                // For each cycle, split into n equal parts
+                (0..n)
+                    .flat_map(|i| {
+                        let i_frac = Fraction::from_integer(i as i64);
+                        let cycle_start = cycle_span.begin.floor();
+                        
+                        // This pattern's portion: [cycle + i/n, cycle + (i+1)/n)
+                        let part_begin = &cycle_start + &i_frac / &n_frac;
+                        let part_end = &cycle_start + (&i_frac + Fraction::from_integer(1)) / &n_frac;
+                        let part_span = TimeSpan { begin: part_begin.clone(), end: part_end.clone() };
+                        
+                        // Intersect with the query span
+                        if let Some(query_part) = cycle_span.intersection(&part_span) {
+                            // Transform times so pattern sees [cycle, cycle+1)
+                            // i.e., stretch by n and shift
+                            let query_transformed = query_part.with_time(|t| {
+                                (t - &cycle_start) * &n_frac - &i_frac + &cycle_start
+                            });
+                            
+                            let haps = pats[i].query(&state.set_span(query_transformed));
+                            
+                            // Transform results back
+                            haps.into_iter()
+                                .map(|hap| {
+                                    hap.with_span_transform(|span| {
+                                        span.with_time(|t| {
+                                            (t - &cycle_start + &i_frac) / &n_frac + &cycle_start
+                                        })
+                                    })
+                                })
+                                .collect::<Vec<_>>()
+                        } else {
+                            Vec::new()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    });
+    result.set_steps(steps);
     result
 }
 

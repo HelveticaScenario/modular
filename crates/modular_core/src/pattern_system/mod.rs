@@ -135,6 +135,23 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
         self.fmap(f)
     }
 
+    /// Add a modifier span to all haps in this pattern.
+    /// Used for tracking which operators are active during editor highlighting.
+    pub fn with_modifier_span(&self, span: SourceSpan) -> Pattern<T> {
+        let query = self.query.clone();
+        let steps = self.steps.clone();
+        let mut result = Pattern::new(move |state| {
+            query(state)
+                .into_iter()
+                .map(|hap| hap.add_modifier_span(span.clone()))
+                .collect()
+        });
+        if let Some(s) = steps {
+            result.steps = Some(s);
+        }
+        result
+    }
+
     // ===== Query Transformations =====
 
     /// Transform the query span before querying.

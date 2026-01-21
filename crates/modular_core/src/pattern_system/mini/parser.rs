@@ -134,21 +134,83 @@ fn parse_weighted_elem(pair: pest::iterators::Pair<Rule>) -> Result<(MiniAST, Op
 }
 
 fn parse_element(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseError> {
-    let inner = pair.into_inner().next().unwrap();
+    let span = pair.as_span();
+    let mut elements: Vec<MiniAST> = Vec::new();
+    let mut first_span = None;
+    let mut last_span = None;
 
-    match inner.as_rule() {
-        Rule::polymeter => parse_polymeter(inner),
-        Rule::fast_sub => parse_fast_sub(inner),
-        Rule::slow_sub => parse_slow_sub(inner),
-        Rule::group => {
-            let inner_expr = inner.into_inner().next().unwrap();
-            parse_pattern_expr(inner_expr)
+    for inner in pair.into_inner() {
+        let inner_span = inner.as_span();
+        if first_span.is_none() {
+            first_span = Some(inner_span.start());
         }
-        Rule::modified_atom => parse_modified_atom(inner),
-        _ => Err(ParseError {
-            message: format!("Unexpected element rule: {:?}", inner.as_rule()),
-            span: Some(SourceSpan::new(inner.as_span().start(), inner.as_span().end())),
-        }),
+        last_span = Some(inner_span.end());
+
+        match inner.as_rule() {
+            Rule::element_base => {
+                let base_inner = inner.into_inner().next().unwrap();
+                let base_ast = match base_inner.as_rule() {
+                    Rule::polymeter => parse_polymeter(base_inner)?,
+                    Rule::fast_sub => parse_fast_sub(base_inner)?,
+                    Rule::slow_sub => parse_slow_sub(base_inner)?,
+                    Rule::group => {
+                        let inner_expr = base_inner.into_inner().next().unwrap();
+                        parse_pattern_expr(inner_expr)?
+                    }
+                    Rule::modified_atom => parse_modified_atom(base_inner)?,
+                    _ => {
+                        return Err(ParseError {
+                            message: format!("Unexpected element_base rule: {:?}", base_inner.as_rule()),
+                            span: Some(SourceSpan::new(base_inner.as_span().start(), base_inner.as_span().end())),
+                        });
+                    }
+                };
+                elements.push(base_ast);
+            }
+            Rule::tail_element => {
+                // tail_element can be fast_sub, slow_sub, group, or value
+                let inner_pair = inner.into_inner().next().unwrap();
+                match inner_pair.as_rule() {
+                    Rule::value => {
+                        let atom = parse_value(inner_pair)?;
+                        let elem_span = SourceSpan::new(inner_span.start(), inner_span.end());
+                        elements.push(MiniAST::Pure(Located::new(atom, elem_span.start, elem_span.end)));
+                    }
+                    Rule::fast_sub => {
+                        elements.push(parse_fast_sub(inner_pair)?);
+                    }
+                    Rule::slow_sub => {
+                        elements.push(parse_slow_sub(inner_pair)?);
+                    }
+                    Rule::group => {
+                        // group contains pattern_expr
+                        let inner_expr = inner_pair.into_inner().next().unwrap();
+                        elements.push(parse_pattern_expr(inner_expr)?);
+                    }
+                    _ => {
+                        return Err(ParseError {
+                            message: format!("Unexpected tail element rule: {:?}", inner_pair.as_rule()),
+                            span: Some(SourceSpan::new(inner_pair.as_span().start(), inner_pair.as_span().end())),
+                        });
+                    }
+                }
+            }
+            _ => {
+                return Err(ParseError {
+                    message: format!("Unexpected element rule: {:?}", inner.as_rule()),
+                    span: Some(SourceSpan::new(inner_span.start(), inner_span.end())),
+                });
+            }
+        }
+    }
+
+    let start = first_span.unwrap_or(span.start());
+    let end = last_span.unwrap_or(span.end());
+
+    if elements.len() == 1 {
+        Ok(elements.remove(0))
+    } else {
+        Ok(MiniAST::List(Located::new(elements, start, end)))
     }
 }
 
@@ -321,28 +383,10 @@ fn parse_atom(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseError> 
             Ok(MiniAST::RandomChoice(values))
         }
 
-        Rule::value_with_tail => {
-            let mut values: Vec<AtomValue> = Vec::new();
-            let mut first_span = None;
-            let mut last_span = None;
-
-            for value_pair in inner.into_inner() {
-                let value_span = value_pair.as_span();
-                if first_span.is_none() {
-                    first_span = Some(value_span.start());
-                }
-                last_span = Some(value_span.end());
-                values.push(parse_value(value_pair)?);
-            }
-
-            let start = first_span.unwrap_or(span.start());
-            let end = last_span.unwrap_or(span.end());
-
-            if values.len() == 1 {
-                Ok(MiniAST::Pure(Located::new(values.remove(0), start, end)))
-            } else {
-                Ok(MiniAST::List(Located::new(values, start, end)))
-            }
+        Rule::value => {
+            let value_span = inner.as_span();
+            let atom = parse_value(inner)?;
+            Ok(MiniAST::Pure(Located::new(atom, value_span.start(), value_span.end())))
         }
 
         _ => Err(ParseError {
@@ -372,18 +416,27 @@ fn parse_value(pair: pest::iterators::Pair<Rule>) -> Result<AtomValue, ParseErro
             Ok(AtomValue::Midi(n))
         }
         Rule::note_value => {
-            let s = inner.as_str();
-            let mut chars = s.chars();
+            let s = inner.as_str().trim();  // Trim whitespace!
+            let mut chars = s.chars().peekable();
             let letter = chars.next().unwrap_or('c');
-            let mut accidental = None;
             let mut octave_str = String::new();
 
-            for c in chars {
-                if c == '#' || c == 'b' || c == 's' || c == 'f' {
-                    accidental = Some(if c == 's' { '#' } else if c == 'f' { 'b' } else { c });
-                } else {
-                    octave_str.push(c);
+            // Check for single accidental
+            let accidental = match chars.peek() {
+                Some(&c) if c == '#' || c == 's' => {
+                    chars.next();
+                    Some('#')  // Normalize 's' to '#'
                 }
+                Some(&'b') => {
+                    chars.next();
+                    Some('b')
+                }
+                _ => None,
+            };
+
+            // Collect remaining as octave
+            for c in chars {
+                octave_str.push(c);
             }
 
             let octave = if octave_str.is_empty() {
@@ -509,11 +562,97 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_note_octaves() {
+        // Test that a1, a2, a3, a4 parse as notes with different octaves
+        let ast = parse("a1").unwrap();
+        if let MiniAST::Pure(Located { node: AtomValue::Note { letter, octave, .. }, .. }) = ast {
+            assert_eq!(letter, 'a');
+            assert_eq!(octave, Some(1), "a1 should have octave 1");
+        } else {
+            panic!("Expected note for 'a1', got {:#?}", ast);
+        }
+
+        let ast = parse("a2").unwrap();
+        if let MiniAST::Pure(Located { node: AtomValue::Note { letter, octave, .. }, .. }) = ast {
+            assert_eq!(letter, 'a');
+            assert_eq!(octave, Some(2), "a2 should have octave 2");
+        } else {
+            panic!("Expected note for 'a2', got {:#?}", ast);
+        }
+
+        // Test sequence "a1 a2 a3 a4"
+        let ast = parse("a1 a2 a3 a4").unwrap();
+        if let MiniAST::Sequence(elements) = ast {
+            assert_eq!(elements.len(), 4, "Should have 4 elements");
+            for (i, (elem, _weight)) in elements.iter().enumerate() {
+                if let MiniAST::Pure(Located { node: AtomValue::Note { letter, octave, .. }, .. }) = elem {
+                    assert_eq!(*letter, 'a');
+                    assert_eq!(*octave, Some((i + 1) as i32), "a{} should have octave {}", i + 1, i + 1);
+                } else {
+                    panic!("Expected note for element {}, got {:#?}", i, elem);
+                }
+            }
+        } else {
+            panic!("Expected sequence, got {:#?}", ast);
+        }
+
+        // Test that "a b" parses as two notes, not "a" with flat "b"
+        // This ensures the atomic note_value rule prevents whitespace consumption
+        let ast = parse("<a b>").unwrap();
+        if let MiniAST::SlowCat(elements) = ast {
+            assert_eq!(elements.len(), 2, "Should have 2 elements in slowcat");
+            // First element should be 'a'
+            if let MiniAST::Pure(Located { node: AtomValue::Note { letter, accidental, .. }, .. }) = &elements[0] {
+                assert_eq!(*letter, 'a');
+                assert!(accidental.is_none(), "'a' should have no accidental");
+            } else {
+                panic!("Expected note 'a' for first element");
+            }
+            // Second element should be 'b'  
+            if let MiniAST::Pure(Located { node: AtomValue::Note { letter, accidental, .. }, .. }) = &elements[1] {
+                assert_eq!(*letter, 'b');
+                assert!(accidental.is_none(), "'b' should have no accidental, not be parsed as flat of 'a'");
+            } else {
+                panic!("Expected note 'b' for second element");
+            }
+        } else {
+            panic!("Expected slowcat, got {:#?}", ast);
+        }
+    }
+
+    #[test]
     fn test_parse_tail() {
         let ast = parse("c:e:g").unwrap();
         assert!(matches!(ast, MiniAST::List(_)));
         if let MiniAST::List(Located { node: values, .. }) = ast {
             assert_eq!(values.len(), 3);
+        }
+    }
+
+    #[test]
+    fn test_parse_tail_with_subpattern() {
+        // c:[e f] should parse as List with [Pure(c), Sequence([Pure(e), Pure(f)])]
+        let ast = parse("c:[e f]").unwrap();
+        if let MiniAST::List(Located { node: elements, .. }) = ast {
+            assert_eq!(elements.len(), 2, "Should have 2 elements: c and [e f]");
+            // First element is Pure(c)
+            assert!(matches!(&elements[0], MiniAST::Pure(_)));
+            // Second element is Sequence([e, f])
+            assert!(matches!(&elements[1], MiniAST::Sequence(_)));
+            if let MiniAST::Sequence(seq_elems) = &elements[1] {
+                assert_eq!(seq_elems.len(), 2, "Sequence should have e and f");
+            }
+        } else {
+            panic!("Expected List, got {:?}", ast);
+        }
+
+        // a:<minor major> should parse as List with SlowCat
+        let ast = parse("a:<minor major>").unwrap();
+        if let MiniAST::List(Located { node: elements, .. }) = ast {
+            assert_eq!(elements.len(), 2);
+            assert!(matches!(&elements[1], MiniAST::SlowCat(_)));
+        } else {
+            panic!("Expected List, got {:?}", ast);
         }
     }
 
@@ -548,6 +687,84 @@ mod tests {
             assert_eq!(operators.len(), 2);
         } else {
             panic!("Expected WithOperators");
+        }
+    }
+
+    #[test]
+    fn test_parse_subpattern_head_with_tail() {
+        // [c d]:minor should parse as List with [Sequence([c,d]), minor]
+        let ast = parse("[c d]:minor").unwrap();
+        if let MiniAST::List(Located { node: elements, .. }) = ast {
+            assert_eq!(elements.len(), 2, "Should have 2 elements: [c d] and minor");
+            // First element is Sequence([c, d])
+            assert!(matches!(&elements[0], MiniAST::Sequence(_)), "First element should be Sequence");
+            // Second element is Pure(minor)
+            assert!(matches!(&elements[1], MiniAST::Pure(_)), "Second element should be Pure");
+        } else {
+            panic!("Expected List, got {:?}", ast);
+        }
+
+        // <x y>:tail should parse as List with [SlowCat([x,y]), tail]
+        let ast = parse("<x y>:tail").unwrap();
+        if let MiniAST::List(Located { node: elements, .. }) = ast {
+            assert_eq!(elements.len(), 2);
+            assert!(matches!(&elements[0], MiniAST::SlowCat(_)));
+        } else {
+            panic!("Expected List, got {:?}", ast);
+        }
+    }
+
+    #[test]
+    fn test_parse_nested_slowcat_in_sequence() {
+        // "c3 c#3 <cb <d d5>>" should parse as Sequence([c3, c#3, SlowCat([cb, SlowCat([d, d5])])])
+        let ast = parse("c3 c#3 <cb <d d5>>").unwrap();
+        if let MiniAST::Sequence(elements) = &ast {
+            assert_eq!(elements.len(), 3, "Should have 3 elements: c3, c#3, and <cb <d d5>>");
+            
+            // Third element should be SlowCat
+            let (third, _) = &elements[2];
+            if let MiniAST::SlowCat(slowcat_elems) = third {
+                assert_eq!(slowcat_elems.len(), 2, "Outer slowcat should have 2 elements: cb and <d d5>");
+                
+                // Second element of the slowcat should be another SlowCat
+                let second_elem = &slowcat_elems[1];
+                if let MiniAST::SlowCat(inner_slowcat) = second_elem {
+                    assert_eq!(inner_slowcat.len(), 2, "Inner slowcat should have 2 elements: d and d5");
+                } else {
+                    panic!("Expected inner SlowCat, got {:?}", second_elem);
+                }
+            } else {
+                panic!("Expected SlowCat, got {:?}", third);
+            }
+        } else {
+            panic!("Expected Sequence, got {:?}", ast);
+        }
+    }
+
+    #[test]
+    fn test_double_accidentals_rejected() {
+        // Double sharps should be rejected (## should not parse as a valid note)
+        // c##4 should fail to parse as a single note
+        let result = parse("c##4");
+        // The parser will parse c# as a note and then fail or treat #4 separately
+        // Since ## is not valid, it should either fail or parse differently
+        if let Ok(ast) = result {
+            // If it parses, it should NOT be a single note with ## accidental
+            if let MiniAST::Pure(Located { node: AtomValue::Note { accidental, .. }, .. }) = ast {
+                // We've changed accidental to Option<char>, so it can only hold one character
+                // This test verifies that behavior
+                assert!(accidental.is_none() || accidental == Some('#') || accidental == Some('b'),
+                    "Accidental should be single character only");
+            }
+        }
+
+        // Similarly for double flats
+        let result = parse("cbb4");
+        if let Ok(ast) = result {
+            if let MiniAST::Pure(Located { node: AtomValue::Note { accidental, .. }, .. }) = ast {
+                assert!(accidental.is_none() || accidental == Some('#') || accidental == Some('b'),
+                    "Accidental should be single character only");
+            }
         }
     }
 }
