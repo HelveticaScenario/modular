@@ -196,7 +196,7 @@ impl Default for Seq {
 
 impl Seq {
     fn update(&mut self, _sample_rate: f32) {
-        let playhead = f64::from(self.params.playhead.get_value());
+        let playhead = self.params.playhead.get_value_f64();
 
         // Check if we're still within the cached hap
         if let Some(ref cached) = self.cached_hap {
@@ -220,7 +220,7 @@ impl Seq {
         };
 
         // Query pattern at playhead
-        if let Some(dsp_hap) = pattern.query_at_dsp(playhead) {
+        if let Some(dsp_hap) = pattern.query_at_dsp_cached(playhead) {
             // Create cached hap with operators
             let operators = self.params.pattern.operators.clone();
             let cached = CachedHap::new(dsp_hap, operators);

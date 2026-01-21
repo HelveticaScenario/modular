@@ -345,17 +345,26 @@ pub fn module_macro_derive(input: TokenStream) -> TokenStream {
     impl_module_macro(&ast)
 }
 
+/// Precision type for output fields
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OutputPrecision {
+    F32,
+    F64,
+}
+
+/// Parsed output field data
+struct OutputField {
+    field_name: Ident,
+    is_default: bool,
+    output_name: LitStr,
+    precision: OutputPrecision,
+    description: TokenStream2,
+}
+
 fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
     let name = &ast.ident;
 
-    let outputs: Vec<(
-        Ident,
-        bool,
-        LitStr,
-        TokenStream2,
-        TokenStream2,
-        TokenStream2,
-    )> = match ast.data {
+    let outputs: Vec<OutputField> = match ast.data {
         Data::Struct(ref data) => match data.fields {
             Fields::Named(ref fields) => {
                 let mut out = Vec::new();
@@ -377,21 +386,36 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
                         }
                     };
 
-                    // Enforce f32 outputs (engine expects f32 samples).
-                    let is_f32 = match &f.ty {
-                        Type::Path(tp) => tp
-                            .path
-                            .segments
-                            .last()
-                            .map(|seg| seg.ident == "f32")
-                            .unwrap_or(false),
-                        _ => false,
-                    };
-                    if !is_f32 {
-                        return syn::Error::new(f.ty.span(), "Output fields must have type f32")
+                    // Detect field precision (f32 or f64)
+                    let precision = match &f.ty {
+                        Type::Path(tp) => {
+                            let type_name = tp
+                                .path
+                                .segments
+                                .last()
+                                .map(|seg| seg.ident.to_string());
+                            match type_name.as_deref() {
+                                Some("f32") => OutputPrecision::F32,
+                                Some("f64") => OutputPrecision::F64,
+                                _ => {
+                                    return syn::Error::new(
+                                        f.ty.span(),
+                                        "Output fields must have type f32 or f64",
+                                    )
+                                    .to_compile_error()
+                                    .into();
+                                }
+                            }
+                        }
+                        _ => {
+                            return syn::Error::new(
+                                f.ty.span(),
+                                "Output fields must have type f32 or f64",
+                            )
                             .to_compile_error()
                             .into();
-                    }
+                        }
+                    };
 
                     let output_attr = parse_output_attr(output_attr_tokens);
                     let output_name = output_attr.name;
@@ -402,24 +426,13 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
                         .unwrap_or(quote!("".to_string()));
                     let is_default = output_attr.is_default;
 
-                    out.push((
-                        field_name.clone(),
+                    out.push(OutputField {
+                        field_name,
                         is_default,
-                        output_name.clone(),
-                        quote! {
-                            #output_name => Some(self.#field_name),
-                        },
-                        quote! {
-                            crate::types::OutputSchema {
-                                name: #output_name.to_string(),
-                                description: #description,
-                                default: #is_default,
-                            }
-                        },
-                        quote! {
-                            self.#field_name = other.#field_name;
-                        },
-                    ));
+                        output_name,
+                        precision,
+                        description,
+                    });
                 }
                 out
             }
@@ -440,10 +453,7 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
     };
 
     // Validate that at most one output is marked as default.
-    let default_count = outputs
-        .iter()
-        .filter(|(_, is_default, _, _, _, _)| *is_default)
-        .count();
+    let default_count = outputs.iter().filter(|o| o.is_default).count();
     if default_count > 1 {
         let error_msg = format!(
             "Outputs struct '{}' has {} outputs marked as default, but only one is allowed",
@@ -454,10 +464,67 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
             .into();
     }
 
-    let field_idents = outputs.iter().map(|(field, _, _, _, _, _)| field);
-    let sample_match_arms = outputs.iter().map(|(_, _, _, arm, _, _)| arm);
-    let schema_exprs = outputs.iter().map(|(_, _, _, _, schema, _)| schema);
-    let copy_stmts = outputs.iter().map(|(_, _, _, _, _, copy)| copy);
+    let field_idents: Vec<_> = outputs.iter().map(|o| &o.field_name).collect();
+
+    // Generate get_sample match arms (returns f32, converts f64 -> f32)
+    let sample_match_arms: Vec<_> = outputs
+        .iter()
+        .map(|o| {
+            let output_name = &o.output_name;
+            let field_name = &o.field_name;
+            match o.precision {
+                OutputPrecision::F32 => quote! {
+                    #output_name => Some(self.#field_name),
+                },
+                OutputPrecision::F64 => quote! {
+                    #output_name => Some(self.#field_name as f32),
+                },
+            }
+        })
+        .collect();
+
+    // Generate get_sample_f64 match arms (returns f64, converts f32 -> f64)
+    let sample_f64_match_arms: Vec<_> = outputs
+        .iter()
+        .map(|o| {
+            let output_name = &o.output_name;
+            let field_name = &o.field_name;
+            match o.precision {
+                OutputPrecision::F32 => quote! {
+                    #output_name => Some(self.#field_name as f64),
+                },
+                OutputPrecision::F64 => quote! {
+                    #output_name => Some(self.#field_name),
+                },
+            }
+        })
+        .collect();
+
+    let schema_exprs: Vec<_> = outputs
+        .iter()
+        .map(|o| {
+            let output_name = &o.output_name;
+            let description = &o.description;
+            let is_default = o.is_default;
+            quote! {
+                crate::types::OutputSchema {
+                    name: #output_name.to_string(),
+                    description: #description,
+                    default: #is_default,
+                }
+            }
+        })
+        .collect();
+
+    let copy_stmts: Vec<_> = outputs
+        .iter()
+        .map(|o| {
+            let field_name = &o.field_name;
+            quote! {
+                self.#field_name = other.#field_name;
+            }
+        })
+        .collect();
 
     let generated = quote! {
         impl Default for #name {
@@ -476,6 +543,13 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
             fn get_sample(&self, port: &str) -> Option<f32> {
                 match port {
                     #(#sample_match_arms)*
+                    _ => None,
+                }
+            }
+
+            fn get_sample_f64(&self, port: &str) -> Option<f64> {
+                match port {
+                    #(#sample_f64_match_arms)*
                     _ => None,
                 }
             }
@@ -899,6 +973,21 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 self.update();
                 let outputs = self.outputs.try_read_for(core::time::Duration::from_millis(10)).unwrap();
                 crate::types::OutputStruct::get_sample(&*outputs, port.as_str()).ok_or_else(|| {
+                    napi::Error::from_reason(
+                        format!(
+                            "{} with id {} does not have port {}",
+                            #module_name,
+                            &self.id,
+                            port
+                        )
+                    )
+                })
+            }
+
+            fn get_sample_f64(&self, port: &String) -> Result<f64> {
+                self.update();
+                let outputs = self.outputs.try_read_for(core::time::Duration::from_millis(10)).unwrap();
+                crate::types::OutputStruct::get_sample_f64(&*outputs, port.as_str()).ok_or_else(|| {
                     napi::Error::from_reason(
                         format!(
                             "{} with id {} does not have port {}",

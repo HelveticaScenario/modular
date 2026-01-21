@@ -21,6 +21,134 @@ impl<T> Located<T> {
     }
 }
 
+/// AST for signed integer patterns (used for euclidean rotation).
+#[derive(Clone, Debug, PartialEq)]
+pub enum MiniASTI32 {
+    /// A single value atom.
+    Pure(Located<i32>),
+
+    /// Rest/silence.
+    Rest(SourceSpan),
+
+    /// A list of patterns (from tail syntax).
+    List(Located<Vec<MiniASTI32>>),
+
+    /// Sequence of patterns (space-separated, played in order).
+    Sequence(Vec<(MiniASTI32, Option<f64>)>), // (pattern, optional weight)
+
+    /// Slow subsequence (one item per cycle).
+    SlowCat(Vec<MiniASTI32>),
+
+    /// Random choice between values.
+    RandomChoice(Vec<MiniASTI32>),
+
+    /// Fast modifier: pattern * factor.
+    Fast(Box<MiniASTI32>, Box<MiniASTF64>),
+
+    /// Slow modifier: pattern / factor.
+    Slow(Box<MiniASTI32>, Box<MiniASTF64>),
+
+    /// Replicate: pattern ! n (repeat n times).
+    Replicate(Box<MiniASTI32>, u32),
+
+    /// Degrade: pattern ? prob (randomly drop with probability).
+    Degrade(Box<MiniASTI32>, Option<f64>),
+
+    /// Euclidean rhythm: pattern(pulses, steps, rotation?).
+    Euclidean {
+        pattern: Box<MiniASTI32>,
+        pulses: Box<MiniASTU32>,
+        steps: Box<MiniASTU32>,
+        rotation: Option<Box<MiniASTI32>>,
+    },
+}
+
+/// AST for unsigned integer patterns (used for euclidean pulses/steps).
+#[derive(Clone, Debug, PartialEq)]
+pub enum MiniASTU32 {
+    /// A single value atom.
+    Pure(Located<u32>),
+
+    /// Rest/silence.
+    Rest(SourceSpan),
+
+    /// A list of patterns (from tail syntax: c:e:g or c:[e f]).
+    /// Elements can be atoms or subpatterns.
+    List(Located<Vec<MiniASTU32>>),
+
+    /// Sequence of patterns (space-separated, played in order).
+    Sequence(Vec<(MiniASTU32, Option<f64>)>), // (pattern, optional weight)
+
+    /// Slow subsequence (one item per cycle).
+    SlowCat(Vec<MiniASTU32>),
+
+    /// Random choice between values.
+    RandomChoice(Vec<MiniASTU32>),
+
+    /// Fast modifier: pattern * factor.
+    Fast(Box<MiniASTU32>, Box<MiniASTF64>),
+
+    /// Slow modifier: pattern / factor.
+    Slow(Box<MiniASTU32>, Box<MiniASTF64>),
+
+    /// Replicate: pattern ! n (repeat n times).
+    /// Count is a plain u32 since Strudel doesn't support patterned replicate counts.
+    Replicate(Box<MiniASTU32>, u32),
+
+    /// Degrade: pattern ? prob (randomly drop with probability).
+    Degrade(Box<MiniASTU32>, Option<f64>),
+
+    /// Euclidean rhythm: pattern(pulses, steps, rotation?).
+    Euclidean {
+        pattern: Box<MiniASTU32>,
+        pulses: Box<MiniASTU32>,
+        steps: Box<MiniASTU32>,
+        rotation: Option<Box<MiniASTI32>>,
+    },
+}
+/// The main AST node type.
+#[derive(Clone, Debug, PartialEq)]
+pub enum MiniASTF64 {
+    /// A single value atom.
+    Pure(Located<f64>),
+
+    /// Rest/silence.
+    Rest(SourceSpan),
+
+    /// A list of patterns (from tail syntax: c:e:g or c:[e f]).
+    /// Elements can be atoms or subpatterns.
+    List(Located<Vec<MiniASTF64>>),
+
+    /// Sequence of patterns (space-separated, played in order).
+    Sequence(Vec<(MiniASTF64, Option<f64>)>), // (pattern, optional weight)
+
+    /// Slow subsequence (one item per cycle).
+    SlowCat(Vec<MiniASTF64>),
+
+    /// Random choice between values.
+    RandomChoice(Vec<MiniASTF64>),
+
+    /// Fast modifier: pattern * factor.
+    Fast(Box<MiniASTF64>, Box<MiniASTF64>),
+
+    /// Slow modifier: pattern / factor.
+    Slow(Box<MiniASTF64>, Box<MiniASTF64>),
+
+    /// Replicate: pattern ! n (repeat n times).
+    /// Count is a plain u32 since Strudel doesn't support patterned replicate counts.
+    Replicate(Box<MiniASTF64>, u32),
+
+    /// Degrade: pattern ? prob (randomly drop with probability).
+    Degrade(Box<MiniASTF64>, Option<f64>),
+
+    /// Euclidean rhythm: pattern(pulses, steps, rotation?).
+    Euclidean {
+        pattern: Box<MiniASTF64>,
+        pulses: Box<MiniASTU32>,
+        steps: Box<MiniASTU32>,
+        rotation: Option<Box<MiniASTI32>>,
+    },
+}
 /// The main AST node type.
 #[derive(Clone, Debug, PartialEq)]
 pub enum MiniAST {
@@ -37,28 +165,20 @@ pub enum MiniAST {
     /// Sequence of patterns (space-separated, played in order).
     Sequence(Vec<(MiniAST, Option<f64>)>), // (pattern, optional weight)
 
-    /// Stack of patterns (comma-separated, played simultaneously).
-    Stack(Vec<MiniAST>),
-
     /// Slow subsequence (one item per cycle).
     SlowCat(Vec<MiniAST>),
 
     /// Random choice between values.
     RandomChoice(Vec<MiniAST>),
 
-    /// Integer range (0..4 → [0, 1, 2, 3, 4]).
-    Range(i64, i64),
-
-    /// Polymeter: different length sequences played simultaneously.
-    PolyMeter(Vec<MiniAST>),
-
     /// Fast modifier: pattern * factor.
-    Fast(Box<MiniAST>, Box<MiniAST>),
+    Fast(Box<MiniAST>, Box<MiniASTF64>),
 
     /// Slow modifier: pattern / factor.
     Slow(Box<MiniAST>, Box<MiniAST>),
 
     /// Replicate: pattern ! n (repeat n times).
+    /// Count is a plain u32 since Strudel doesn't support patterned replicate counts.
     Replicate(Box<MiniAST>, u32),
 
     /// Degrade: pattern ? prob (randomly drop with probability).
@@ -67,15 +187,9 @@ pub enum MiniAST {
     /// Euclidean rhythm: pattern(pulses, steps, rotation?).
     Euclidean {
         pattern: Box<MiniAST>,
-        pulses: u32,
-        steps: u32,
-        rotation: Option<u32>,
-    },
-
-    /// Pattern with operator chain.
-    WithOperators {
-        base: Box<MiniAST>,
-        operators: Vec<OperatorCall>,
+        pulses: Box<MiniASTU32>,
+        steps: Box<MiniASTU32>,
+        rotation: Option<Box<MiniASTI32>>,
     },
 }
 
@@ -117,7 +231,11 @@ impl AtomValue {
             AtomValue::Midi(m) => Some(*m as f64),
             AtomValue::Hz(h) => Some(*h),
             AtomValue::Volts(v) => Some(*v),
-            AtomValue::Note { letter, accidental, octave } => {
+            AtomValue::Note {
+                letter,
+                accidental,
+                octave,
+            } => {
                 // Convert note to MIDI number
                 let base = match letter.to_ascii_lowercase() {
                     'c' => 0,
@@ -153,14 +271,14 @@ impl AtomValue {
 
         // Check for Hz suffix
         if s.ends_with("hz") || s.ends_with("Hz") {
-            if let Ok(n) = s[..s.len()-2].parse::<f64>() {
+            if let Ok(n) = s[..s.len() - 2].parse::<f64>() {
                 return AtomValue::Hz(n);
             }
         }
 
         // Check for voltage suffix
         if s.ends_with('v') || s.ends_with('V') {
-            if let Ok(n) = s[..s.len()-1].parse::<f64>() {
+            if let Ok(n) = s[..s.len() - 1].parse::<f64>() {
                 return AtomValue::Volts(n);
             }
         }
@@ -252,33 +370,6 @@ fn parse_note(s: &str) -> Option<AtomValue> {
         accidental,
         octave,
     })
-}
-
-/// A single operator call: $ name.variant(argument)
-#[derive(Clone, Debug, PartialEq)]
-pub struct OperatorCall {
-    /// Operator name (e.g., "fast", "add", "scale").
-    pub name: String,
-
-    /// Optional variant (e.g., "squeeze", "in", "out").
-    pub variant: Option<String>,
-
-    /// Operator argument (can be a pattern).
-    pub argument: Option<Box<MiniAST>>,
-
-    /// Source span of the entire operator call.
-    pub span: SourceSpan,
-}
-
-impl OperatorCall {
-    pub fn new(name: String, variant: Option<String>, argument: Option<MiniAST>, start: usize, end: usize) -> Self {
-        Self {
-            name,
-            variant,
-            argument: argument.map(Box::new),
-            span: SourceSpan::new(start, end),
-        }
-    }
 }
 
 #[cfg(test)]

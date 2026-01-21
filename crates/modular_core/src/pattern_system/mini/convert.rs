@@ -3,14 +3,13 @@
 //! The conversion is parameterized by the target atom type through
 //! the `FromMiniAtom` trait.
 
-use super::ast::{AtomValue, Located, MiniAST, OperatorCall};
+use super::ast::{AtomValue, Located, MiniAST, MiniASTF64, MiniASTI32, MiniASTU32};
 use super::parser::ParseError;
 use crate::pattern_system::{
-    combinators::{fastcat, slowcat, stack, timecat},
-    constructors::{pure, pure_with_span, silence},
-    operators::{OperatorRegistry, OperatorVariant},
-    random::choose,
     Fraction, Pattern,
+    combinators::{fastcat, slowcat, timecat},
+    constructors::pure_with_span,
+    random::choose,
 };
 
 /// Trait for types that support rest values.
@@ -44,7 +43,7 @@ pub trait FromMiniAtom: Clone + Send + Sync + 'static {
     fn combine_with_head(head_atoms: &[AtomValue], tail: &Self) -> Result<Self, ConvertError>;
 
     /// Get the rest/silence value, if supported.
-    /// 
+    ///
     /// DEPRECATED: Use `HasRest` trait instead. This method is kept for
     /// backward compatibility but should not be used for new code.
     fn rest_value() -> Option<Self> {
@@ -183,7 +182,9 @@ impl FromMiniAtom for String {
             AtomValue::Identifier(s) => Ok(s.clone()),
             AtomValue::String(s) => Ok(s.clone()),
             AtomValue::Number(n) => Ok(n.to_string()),
-            _ => Err(ConvertError::InvalidAtom("Cannot convert to String".to_string())),
+            _ => Err(ConvertError::InvalidAtom(
+                "Cannot convert to String".to_string(),
+            )),
         }
     }
 
@@ -213,9 +214,14 @@ impl FromMiniAtom for bool {
             AtomValue::Identifier(s) => match s.to_lowercase().as_str() {
                 "true" | "t" | "1" | "yes" => Ok(true),
                 "false" | "f" | "0" | "no" => Ok(false),
-                _ => Err(ConvertError::InvalidAtom(format!("Cannot convert '{}' to bool", s))),
+                _ => Err(ConvertError::InvalidAtom(format!(
+                    "Cannot convert '{}' to bool",
+                    s
+                ))),
             },
-            _ => Err(ConvertError::InvalidAtom("Cannot convert to bool".to_string())),
+            _ => Err(ConvertError::InvalidAtom(
+                "Cannot convert to bool".to_string(),
+            )),
         }
     }
 
@@ -230,22 +236,153 @@ pub fn convert<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertErro
     convert_inner(ast)
 }
 
-/// Convert with operator registry for applying operator chains.
-pub fn convert_with_operators<T: FromMiniAtom>(
-    ast: &MiniAST,
-    registry: &OperatorRegistry<T>,
-) -> Result<Pattern<T>, ConvertError> {
+/// Evaluate a MiniASTF64 to get a single f64 value.
+///
+/// This recursively evaluates the AST at cycle 0. For complex patterns,
+/// it returns the first value found.
+fn eval_f64(ast: &MiniASTF64) -> f64 {
     match ast {
-        MiniAST::WithOperators { base, operators } => {
-            let mut pattern = convert_inner(base)?;
+        MiniASTF64::Pure(Located { node, .. }) => *node,
+        MiniASTF64::Rest(_) => 0.0, // Rest evaluates to 0
+        MiniASTF64::List(Located { node, .. }) => {
+            // Return first element or 0
+            node.first().map(|e| eval_f64(e)).unwrap_or(0.0)
+        }
+        MiniASTF64::Sequence(elements) => {
+            // Return first element or 0
+            elements.first().map(|(e, _)| eval_f64(e)).unwrap_or(0.0)
+        }
+        MiniASTF64::SlowCat(elements) => elements.first().map(|e| eval_f64(e)).unwrap_or(0.0),
+        MiniASTF64::RandomChoice(elements) => {
+            // For deterministic evaluation, just take first
+            elements.first().map(|e| eval_f64(e)).unwrap_or(0.0)
+        }
+        MiniASTF64::Fast(pattern, _) => eval_f64(pattern),
+        MiniASTF64::Slow(pattern, _) => eval_f64(pattern),
+        MiniASTF64::Replicate(pattern, _) => eval_f64(pattern),
+        MiniASTF64::Degrade(pattern, _) => eval_f64(pattern),
+        MiniASTF64::Euclidean { pattern, .. } => eval_f64(pattern),
+    }
+}
 
-            for op in operators {
-                pattern = apply_operator(pattern, op, registry)?;
+/// Convert a MiniASTF64 to a Pattern<Fraction>.
+///
+/// This properly handles patterned values like `[2 3]` instead of
+/// reducing them to a single scalar.
+fn convert_f64_pattern(ast: &MiniASTF64) -> Pattern<Fraction> {
+    use crate::pattern_system::constructors::pure;
+
+    match ast {
+        MiniASTF64::Pure(Located { node, .. }) => pure(Fraction::from(*node)),
+
+        MiniASTF64::Rest(_) => pure(Fraction::from_integer(0)),
+
+        MiniASTF64::List(Located { node, .. }) => {
+            // Take first element for list (same as eval_f64 behavior)
+            node.first()
+                .map(convert_f64_pattern)
+                .unwrap_or_else(|| pure(Fraction::from_integer(0)))
+        }
+
+        MiniASTF64::Sequence(elements) => {
+            if elements.is_empty() {
+                return pure(Fraction::from_integer(0));
             }
 
-            Ok(pattern)
+            // Check if any elements have weights
+            let has_weights = elements.iter().any(|(_, w)| w.is_some());
+
+            if has_weights {
+                // Use timecat for weighted sequences
+                let weighted: Vec<(Fraction, Pattern<Fraction>)> = elements
+                    .iter()
+                    .map(|(e, w)| {
+                        let weight = w.unwrap_or(1.0);
+                        (Fraction::from(weight), convert_f64_pattern(e))
+                    })
+                    .collect();
+                timecat(weighted)
+            } else {
+                // Use fastcat for unweighted sequences
+                let pats: Vec<Pattern<Fraction>> =
+                    elements.iter().map(|(e, _)| convert_f64_pattern(e)).collect();
+                fastcat(pats)
+            }
         }
-        _ => convert_inner(ast),
+
+        MiniASTF64::SlowCat(elements) => {
+            let pats: Vec<Pattern<Fraction>> = elements.iter().map(convert_f64_pattern).collect();
+            slowcat(pats)
+        }
+
+        MiniASTF64::RandomChoice(elements) => {
+            let pats: Vec<Pattern<Fraction>> = elements.iter().map(convert_f64_pattern).collect();
+            choose(pats).bind(|p| p.clone())
+        }
+
+        MiniASTF64::Fast(pattern, factor) => {
+            let pat = convert_f64_pattern(pattern);
+            let factor_pat = convert_f64_pattern(factor);
+            pat.fast(factor_pat)
+        }
+
+        MiniASTF64::Slow(pattern, factor) => {
+            let pat = convert_f64_pattern(pattern);
+            let factor_pat = convert_f64_pattern(factor);
+            pat.slow(factor_pat)
+        }
+
+        MiniASTF64::Replicate(pattern, count) => {
+            let pat = convert_f64_pattern(pattern);
+            let pats: Vec<Pattern<Fraction>> = (0..*count).map(|_| pat.clone()).collect();
+            fastcat(pats)
+        }
+
+        MiniASTF64::Degrade(pattern, _prob) => {
+            // For Fraction patterns, degrade doesn't make much sense
+            // Just return the pattern without degrading
+            convert_f64_pattern(pattern)
+        }
+
+        MiniASTF64::Euclidean { pattern, .. } => {
+            // For Fraction patterns, euclidean doesn't make much sense
+            // Just return the pattern
+            convert_f64_pattern(pattern)
+        }
+    }
+}
+
+/// Evaluate a MiniASTU32 to get a single u32 value.
+fn eval_u32(ast: &MiniASTU32) -> u32 {
+    match ast {
+        MiniASTU32::Pure(Located { node, .. }) => *node,
+        MiniASTU32::Rest(_) => 0, // Rest evaluates to 0
+        MiniASTU32::List(Located { node, .. }) => node.first().map(|e| eval_u32(e)).unwrap_or(0),
+        MiniASTU32::Sequence(elements) => elements.first().map(|(e, _)| eval_u32(e)).unwrap_or(0),
+        MiniASTU32::SlowCat(elements) => elements.first().map(|e| eval_u32(e)).unwrap_or(0),
+        MiniASTU32::RandomChoice(elements) => elements.first().map(|e| eval_u32(e)).unwrap_or(0),
+        MiniASTU32::Fast(pattern, _) => eval_u32(pattern),
+        MiniASTU32::Slow(pattern, _) => eval_u32(pattern),
+        MiniASTU32::Replicate(pattern, _count) => eval_u32(pattern),
+        MiniASTU32::Degrade(pattern, _) => eval_u32(pattern),
+        MiniASTU32::Euclidean { pattern, .. } => eval_u32(pattern),
+    }
+}
+
+/// Evaluate a MiniASTI32 to get a single i32 value.
+fn eval_i32(ast: &MiniASTI32) -> i32 {
+    match ast {
+        MiniASTI32::Pure(Located { node, .. }) => *node,
+        MiniASTI32::Rest(_) => 0, // Rest evaluates to 0
+        MiniASTI32::List(Located { node, .. }) => node.first().map(|e| eval_i32(e)).unwrap_or(0),
+        MiniASTI32::Sequence(elements) => elements.first().map(|(e, _)| eval_i32(e)).unwrap_or(0),
+        MiniASTI32::SlowCat(elements) => elements.first().map(|e| eval_i32(e)).unwrap_or(0),
+        MiniASTI32::RandomChoice(elements) => elements.first().map(|e| eval_i32(e)).unwrap_or(0),
+        MiniASTI32::Fast(pattern, _) => eval_i32(pattern),
+        MiniASTI32::Slow(pattern, _) => eval_i32(pattern),
+        MiniASTI32::Replicate(pattern, _count) => eval_i32(pattern),
+        MiniASTI32::Degrade(pattern, _) => eval_i32(pattern),
+        MiniASTI32::Euclidean { pattern, .. } => eval_i32(pattern),
     }
 }
 
@@ -261,14 +398,15 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
                 return Err(ConvertError::RestNotSupported("~ (rest)".to_string()));
             }
             // Safe to unwrap because supports_rest() returned true
-            let val = T::rest_value().expect("supports_rest() returned true but rest_value() is None");
+            let val =
+                T::rest_value().expect("supports_rest() returned true but rest_value() is None");
             Ok(pure_with_span(val, _span.clone()))
         }
 
         MiniAST::List(Located { node, span }) => {
             // Check if all elements are Pure (simple atoms)
             let all_pure = node.iter().all(|elem| matches!(elem, MiniAST::Pure(_)));
-            
+
             if all_pure {
                 // Extract atoms and use from_list
                 let atoms: Vec<AtomValue> = node
@@ -286,17 +424,17 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
             } else {
                 // Some elements are patterns - need to distribute
                 // e.g., c:[e f] -> fastcat([c:e, c:f])
-                // 
+                //
                 // Strategy: convert each element to a pattern, then distribute
                 // by applying the "list" semantics across pattern events
-                
+
                 // For now, find the first non-Pure element and distribute over it
                 // This handles the common case: head:[a b c]
-                
+
                 // Separate head atoms (Pure elements before first non-Pure) from tail pattern
                 let mut head_atoms: Vec<AtomValue> = Vec::new();
                 let mut tail_pattern: Option<Pattern<T>> = None;
-                
+
                 for elem in node.iter() {
                     match elem {
                         MiniAST::Pure(Located { node: atom, .. }) => {
@@ -305,21 +443,21 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
                             } else {
                                 // Atoms after a pattern - not supported yet
                                 return Err(ConvertError::InvalidAtom(
-                                    "Atoms after pattern in list not yet supported".to_string()
+                                    "Atoms after pattern in list not yet supported".to_string(),
                                 ));
                             }
                         }
                         _ => {
                             if tail_pattern.is_some() {
                                 return Err(ConvertError::InvalidAtom(
-                                    "Multiple patterns in list not yet supported".to_string()
+                                    "Multiple patterns in list not yet supported".to_string(),
                                 ));
                             }
                             tail_pattern = Some(convert_inner(elem)?);
                         }
                     }
                 }
-                
+
                 if let Some(tail) = tail_pattern {
                     // Distribute head over tail: head:[a b] -> [head:a, head:b]
                     // Use combine_with_head to merge head atoms with each tail value
@@ -331,7 +469,9 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
                     }))
                 } else {
                     // No patterns, but we hit the !all_pure branch? Shouldn't happen
-                    Err(ConvertError::InvalidAtom("Internal error in list processing".to_string()))
+                    Err(ConvertError::InvalidAtom(
+                        "Internal error in list processing".to_string(),
+                    ))
                 }
             }
         }
@@ -353,18 +493,12 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
 
             if has_weights {
                 // timecat expects (Fraction, Pattern) pairs
-                Ok(timecat(weights.into_iter().zip(patterns.into_iter()).collect()))
+                Ok(timecat(
+                    weights.into_iter().zip(patterns.into_iter()).collect(),
+                ))
             } else {
                 Ok(fastcat(patterns))
             }
-        }
-
-        MiniAST::Stack(patterns) => {
-            let converted: Vec<Pattern<T>> = patterns
-                .iter()
-                .map(convert_inner)
-                .collect::<Result<_, _>>()?;
-            Ok(stack(converted))
         }
 
         MiniAST::SlowCat(patterns) => {
@@ -384,42 +518,20 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
             Ok(choose(converted).bind(|p| p.clone()))
         }
 
-        MiniAST::Range(start, end) => {
-            // Generate a sequence of integers in the range
-            let values: Vec<i64> = (*start..=*end).collect();
-            let patterns: Result<Vec<Pattern<T>>, _> = values
-                .iter()
-                .map(|n| {
-                    let atom = AtomValue::Number(*n as f64);
-                    T::from_atom(&atom).map(pure)
-                })
-                .collect();
-            Ok(fastcat(patterns?))
-        }
-
-        MiniAST::PolyMeter(sequences) => {
-            // Polymeter: stack patterns with different lengths
-            let converted: Vec<Pattern<T>> = sequences
-                .iter()
-                .map(convert_inner)
-                .collect::<Result<_, _>>()?;
-            Ok(stack(converted))
-        }
-
         MiniAST::Fast(pattern, factor) => {
             let pat = convert_inner(pattern)?;
-            let factor_pat: Pattern<f64> = convert_inner(factor)?;
-            // For now, query factor at cycle start
-            let factor_haps = factor_pat.query_arc(Fraction::from_integer(0), Fraction::new(1, 1000));
-            let factor_val = factor_haps.first().map(|h| h.value).unwrap_or(1.0);
-            Ok(pat.fast(Fraction::from(factor_val)))
+            let factor_pat = convert_f64_pattern(factor);
+            Ok(pat.fast(factor_pat))
         }
 
         MiniAST::Slow(pattern, factor) => {
             let pat = convert_inner(pattern)?;
-            let factor_pat: Pattern<f64> = convert_inner(factor)?;
-            let factor_haps = factor_pat.query_arc(Fraction::from_integer(0), Fraction::new(1, 1000));
-            let factor_val = factor_haps.first().map(|h| h.value).unwrap_or(1.0);
+            // Note: Slow uses MiniAST, not MiniASTF64, so we need to handle it differently
+            // For now, try to extract a numeric value from the AST
+            let factor_val = match factor.as_ref() {
+                MiniAST::Pure(Located { node, .. }) => node.to_f64().unwrap_or(1.0),
+                _ => 1.0, // Default for complex patterns
+            };
             Ok(pat.slow(Fraction::from(factor_val)))
         }
 
@@ -436,76 +548,55 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
             let pat = convert_inner(pattern)?;
             let probability = prob.unwrap_or(0.5);
             // Safe to unwrap because supports_rest() returned true
-            let rest = T::rest_value().expect("supports_rest() returned true but rest_value() is None");
+            let rest =
+                T::rest_value().expect("supports_rest() returned true but rest_value() is None");
             Ok(pat.degrade_by_with_rest(probability, rest))
         }
 
-        MiniAST::Euclidean { pattern, pulses, steps, rotation } => {
+        MiniAST::Euclidean {
+            pattern,
+            pulses,
+            steps,
+            rotation,
+        } => {
             if !T::supports_rest() {
-                return Err(ConvertError::RestNotSupported("euclidean rhythm (n,k)".to_string()));
+                return Err(ConvertError::RestNotSupported(
+                    "euclidean rhythm (n,k)".to_string(),
+                ));
             }
             let pat = convert_inner(pattern)?;
-            let rot = rotation.map(|r| r as i32).unwrap_or(0);
-            // Safe to unwrap because supports_rest() returned true
-            let rest = T::rest_value().expect("supports_rest() returned true but rest_value() is None");
-            Ok(pat.euclid_rot_with_rest(*pulses as i32, *steps, rot, rest))
-        }
 
-        MiniAST::WithOperators { base, .. } => {
-            // Without a registry, just convert the base
-            convert_inner(base)
+            // Evaluate pulses, steps, and rotation from their typed ASTs
+            let pulses_val = eval_u32(pulses) as i32;
+            let steps_val = eval_u32(steps);
+            let rot = rotation.as_ref().map(|r| eval_i32(r)).unwrap_or(0);
+
+            // Safe to unwrap because supports_rest() returned true
+            let rest =
+                T::rest_value().expect("supports_rest() returned true but rest_value() is None");
+            Ok(pat.euclid_rot_with_rest(pulses_val, steps_val, rot, rest))
         }
     }
 }
 
-fn apply_operator<T: FromMiniAtom>(
-    pattern: Pattern<T>,
-    op: &OperatorCall,
-    registry: &OperatorRegistry<T>,
-) -> Result<Pattern<T>, ConvertError> {
-    // Get the argument as a string for the operator
-    let arg_string = op.argument.as_ref().map(|arg| ast_to_string(arg));
-
-    // Parse variant
-    let variant = op
-        .variant
-        .as_ref()
-        .and_then(|v| OperatorVariant::from_str(v))
-        .unwrap_or_default();
-
-    let result = registry
-        .apply(&op.name, pattern, arg_string.as_deref(), variant)
-        .map_err(|e| ConvertError::OperatorError(e.to_string()))?;
-
-    // Add the operator's source span to all haps for editor highlighting
-    Ok(result.with_modifier_span(op.span.clone()))
-}
-
-/// Convert an AST back to a string representation (for operator arguments).
+/// Convert an AST back to a string representation.
 fn ast_to_string(ast: &MiniAST) -> String {
     match ast {
         MiniAST::Pure(Located { node, .. }) => atom_to_string(node),
         MiniAST::List(Located { node, .. }) => {
             node.iter().map(ast_to_string).collect::<Vec<_>>().join(":")
         }
-        MiniAST::Sequence(elements) => {
-            elements
-                .iter()
-                .map(|(a, w)| {
-                    let s = ast_to_string(a);
-                    match w {
-                        Some(weight) => format!("{}@{}", s, weight),
-                        None => s,
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(" ")
-        }
-        MiniAST::Stack(patterns) => patterns
+        MiniAST::Sequence(elements) => elements
             .iter()
-            .map(ast_to_string)
+            .map(|(a, w)| {
+                let s = ast_to_string(a);
+                match w {
+                    Some(weight) => format!("{}@{}", s, weight),
+                    None => s,
+                }
+            })
             .collect::<Vec<_>>()
-            .join(", "),
+            .join(" "),
         MiniAST::SlowCat(patterns) => {
             format!(
                 "<{}>",
@@ -516,7 +607,6 @@ fn ast_to_string(ast: &MiniAST) -> String {
                     .join(" ")
             )
         }
-        MiniAST::Range(start, end) => format!("{}..{}", start, end),
         _ => String::new(),
     }
 }
@@ -527,7 +617,11 @@ fn atom_to_string(atom: &AtomValue) -> String {
         AtomValue::Midi(m) => format!("m{}", m),
         AtomValue::Hz(h) => format!("{}hz", h),
         AtomValue::Volts(v) => format!("{}v", v),
-        AtomValue::Note { letter, accidental, octave } => {
+        AtomValue::Note {
+            letter,
+            accidental,
+            octave,
+        } => {
             let mut s = letter.to_string();
             if let Some(acc) = accidental {
                 s.push(*acc);
@@ -545,6 +639,7 @@ fn atom_to_string(atom: &AtomValue) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pattern_system::SourceSpan;
     use crate::pattern_system::mini::parser::parse;
 
     #[test]
@@ -562,14 +657,6 @@ mod tests {
         let pat: Pattern<f64> = convert(&ast).unwrap();
         let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
         assert_eq!(haps.len(), 3);
-    }
-
-    #[test]
-    fn test_convert_stack() {
-        let ast = parse("0, 1").unwrap();
-        let pat: Pattern<f64> = convert(&ast).unwrap();
-        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
-        assert_eq!(haps.len(), 2);
     }
 
     #[test]
@@ -600,19 +687,28 @@ mod tests {
         let values0: Vec<f64> = haps0.iter().map(|h| h.value).collect();
         assert_eq!(values0.len(), 2);
         assert_eq!(values0[0], 69.0, "First element should be 'a' (69)");
-        assert_eq!(values0[1], 71.0, "Second element should be 'b' (71) on cycle 0");
+        assert_eq!(
+            values0[1], 71.0,
+            "Second element should be 'b' (71) on cycle 0"
+        );
 
         // Cycle 1: should have a (69) and c (60)
         let haps1 = pat.query_arc(Fraction::from_integer(1), Fraction::from_integer(2));
         let values1: Vec<f64> = haps1.iter().map(|h| h.value).collect();
         assert_eq!(values1.len(), 2);
         assert_eq!(values1[0], 69.0, "First element should be 'a' (69)");
-        assert_eq!(values1[1], 60.0, "Second element should be 'c' (60) on cycle 1");
+        assert_eq!(
+            values1[1], 60.0,
+            "Second element should be 'c' (60) on cycle 1"
+        );
 
         // Cycle 2: should alternate back to b
         let haps2 = pat.query_arc(Fraction::from_integer(2), Fraction::from_integer(3));
         let values2: Vec<f64> = haps2.iter().map(|h| h.value).collect();
-        assert_eq!(values2[1], 71.0, "Second element should be 'b' (71) on cycle 2");
+        assert_eq!(
+            values2[1], 71.0,
+            "Second element should be 'b' (71) on cycle 2"
+        );
     }
 
     #[test]
@@ -620,10 +716,10 @@ mod tests {
         // Test that deeply nested slowcat respects the inner slowcat
         // Pattern: c3 c#3 <cb <d d5>>
         // This should parse as: Sequence([c3, c#3, SlowCat([cb, SlowCat([d, d5])])])
-        // 
+        //
         // Let's understand what values we expect:
         // c3 = 48, c#3 = 49, cb4 = 59, d4 = 62, d5 = 74
-        // 
+        //
         // The outer slowcat has 2 elements: cb and <d d5>
         // Cycle 0: outer picks cb (index 0)
         // Cycle 1: outer picks <d d5> (index 1) - inner has its own cycle tracking
@@ -636,14 +732,17 @@ mod tests {
 
         // Verify the pattern structure by querying different cycles
         // c3 = 48, c#3 = 49, cb4 = 59 (c4 flat), d4 = 62, d5 = 74
-        
+
         // Cycle 0: c3, c#3, cb
         let haps0 = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
         let values0: Vec<f64> = haps0.iter().map(|h| h.value).collect();
         assert_eq!(values0.len(), 3, "Cycle 0 should have 3 elements");
         assert_eq!(values0[0], 48.0, "First element should be c3 (48)");
         assert_eq!(values0[1], 49.0, "Second element should be c#3 (49)");
-        assert_eq!(values0[2], 59.0, "Third element should be cb (59) on cycle 0");
+        assert_eq!(
+            values0[2], 59.0,
+            "Third element should be cb (59) on cycle 0"
+        );
 
         // Cycle 1: c3, c#3, <d d5> - inner slowcat picks based on its time
         let haps1 = pat.query_arc(Fraction::from_integer(1), Fraction::from_integer(2));
@@ -655,24 +754,35 @@ mod tests {
         // But due to time adjustment, it might see a different cycle
         // Let's check what we actually get and verify both d and d5 appear at some point
         let cycle1_third = values1[2];
-        assert!(cycle1_third == 62.0 || cycle1_third == 74.0, 
-            "Third element on cycle 1 should be d (62) or d5 (74), got {}", cycle1_third);
+        assert!(
+            cycle1_third == 62.0 || cycle1_third == 74.0,
+            "Third element on cycle 1 should be d (62) or d5 (74), got {}",
+            cycle1_third
+        );
 
         // Cycle 2: c3, c#3, cb
         let haps2 = pat.query_arc(Fraction::from_integer(2), Fraction::from_integer(3));
         let values2: Vec<f64> = haps2.iter().map(|h| h.value).collect();
-        assert_eq!(values2[2], 59.0, "Third element should be cb (59) on cycle 2");
+        assert_eq!(
+            values2[2], 59.0,
+            "Third element should be cb (59) on cycle 2"
+        );
 
         // Cycle 3: c3, c#3, <d d5> - inner slowcat advances
         let haps3 = pat.query_arc(Fraction::from_integer(3), Fraction::from_integer(4));
         let values3: Vec<f64> = haps3.iter().map(|h| h.value).collect();
         let cycle3_third = values3[2];
-        assert!(cycle3_third == 62.0 || cycle3_third == 74.0, 
-            "Third element on cycle 3 should be d (62) or d5 (74), got {}", cycle3_third);
-        
+        assert!(
+            cycle3_third == 62.0 || cycle3_third == 74.0,
+            "Third element on cycle 3 should be d (62) or d5 (74), got {}",
+            cycle3_third
+        );
+
         // Key assertion: cycle 1 and cycle 3 should be DIFFERENT values from inner slowcat
-        assert_ne!(cycle1_third, cycle3_third, 
-            "Inner slowcat should alternate between d and d5 on cycles 1 and 3");
+        assert_ne!(
+            cycle1_third, cycle3_third,
+            "Inner slowcat should alternate between d and d5 on cycles 1 and 3"
+        );
     }
 
     #[test]
@@ -689,14 +799,6 @@ mod tests {
         let pat: Pattern<f64> = convert(&ast).unwrap();
         let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
         assert_eq!(haps.len(), 3);
-    }
-
-    #[test]
-    fn test_convert_range() {
-        let ast = parse("0..4").unwrap();
-        let pat: Pattern<f64> = convert(&ast).unwrap();
-        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
-        assert_eq!(haps.len(), 5); // 0, 1, 2, 3, 4
     }
 
     #[test]
@@ -719,7 +821,10 @@ mod tests {
         let ast = parse("1(3,8)").unwrap();
         let result: Result<Pattern<f64>, _> = convert(&ast);
         assert!(result.is_err(), "Euclidean should fail for f64 patterns");
-        assert!(matches!(result.unwrap_err(), ConvertError::RestNotSupported(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            ConvertError::RestNotSupported(_)
+        ));
     }
 
     #[test]
@@ -735,55 +840,15 @@ mod tests {
     }
 
     #[test]
-    fn test_operator_spans_captured() {
-        use crate::pattern_system::operators::standard_f64_registry;
-
-        let ast = parse("0 1 2 $ fast(2)").unwrap();
-        let registry = standard_f64_registry();
-        let pat: Pattern<f64> = convert_with_operators(&ast, &registry).unwrap();
-        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
-
-        // fast(2) doubles the events to 6
-        assert_eq!(haps.len(), 6);
-
-        // Each hap should have the operator span in modifier_spans
-        for hap in &haps {
-            assert!(
-                !hap.context.modifier_spans.is_empty(),
-                "Expected operator span in modifier_spans"
-            );
-            // The operator span should cover "$ fast(2)" 
-            let op_span = &hap.context.modifier_spans[0];
-            assert!(op_span.start < op_span.end);
-        }
-    }
-
-    #[test]
-    fn test_multiple_operator_spans() {
-        use crate::pattern_system::operators::standard_f64_registry;
-
-        let ast = parse("0 1 $ fast(2) $ add(10)").unwrap();
-        let registry = standard_f64_registry();
-        let pat: Pattern<f64> = convert_with_operators(&ast, &registry).unwrap();
-        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
-
-        // Each hap should have BOTH operator spans in modifier_spans
-        for hap in &haps {
-            assert!(
-                hap.context.modifier_spans.len() >= 2,
-                "Expected two operator spans, got {}",
-                hap.context.modifier_spans.len()
-            );
-        }
-    }
-
-    #[test]
     fn test_convert_degrade() {
         // Degrade should fail for f64 patterns because f64 doesn't support rests
         let ast = parse("c4?").unwrap();
         let result: Result<Pattern<f64>, _> = convert(&ast);
         assert!(result.is_err(), "Degrade should fail for f64 patterns");
-        assert!(matches!(result.unwrap_err(), ConvertError::RestNotSupported(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            ConvertError::RestNotSupported(_)
+        ));
     }
 
     #[test]
@@ -792,7 +857,10 @@ mod tests {
         let ast = parse("c2 c3 c4? c5").unwrap();
         let result: Result<Pattern<f64>, _> = convert(&ast);
         assert!(result.is_err(), "Degrade should fail for f64 patterns");
-        assert!(matches!(result.unwrap_err(), ConvertError::RestNotSupported(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            ConvertError::RestNotSupported(_)
+        ));
     }
 
     #[test]
@@ -800,8 +868,14 @@ mod tests {
         // Rest in random choice should fail for f64 patterns
         let ast = parse("c4|~").unwrap();
         let result: Result<Pattern<f64>, _> = convert(&ast);
-        assert!(result.is_err(), "Rest in random choice should fail for f64 patterns");
-        assert!(matches!(result.unwrap_err(), ConvertError::RestNotSupported(_)));
+        assert!(
+            result.is_err(),
+            "Rest in random choice should fail for f64 patterns"
+        );
+        assert!(matches!(
+            result.unwrap_err(),
+            ConvertError::RestNotSupported(_)
+        ));
     }
 
     #[test]
@@ -809,7 +883,1020 @@ mod tests {
         // Rest in random choice should fail for f64 patterns
         let ast = parse("c2 c3 c4|~ c5").unwrap();
         let result: Result<Pattern<f64>, _> = convert(&ast);
-        assert!(result.is_err(), "Rest in random choice should fail for f64 patterns");
-        assert!(matches!(result.unwrap_err(), ConvertError::RestNotSupported(_)));
+        assert!(
+            result.is_err(),
+            "Rest in random choice should fail for f64 patterns"
+        );
+        assert!(matches!(
+            result.unwrap_err(),
+            ConvertError::RestNotSupported(_)
+        ));
+    }
+
+    // ============ eval_f64 tests ============
+
+    #[test]
+    fn test_eval_f64_pure() {
+        let ast = MiniASTF64::Pure(Located::new(42.5, 0, 4));
+        assert!((eval_f64(&ast) - 42.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_eval_f64_rest() {
+        let ast = MiniASTF64::Rest(SourceSpan::new(0, 1));
+        assert!((eval_f64(&ast) - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_eval_f64_list() {
+        let ast = MiniASTF64::List(Located::new(
+            vec![
+                MiniASTF64::Pure(Located::new(1.0, 0, 1)),
+                MiniASTF64::Pure(Located::new(2.0, 2, 3)),
+            ],
+            0,
+            3,
+        ));
+        assert!((eval_f64(&ast) - 1.0).abs() < 0.001); // Returns first element
+    }
+
+    #[test]
+    fn test_eval_f64_list_with_rest() {
+        let ast = MiniASTF64::List(Located::new(
+            vec![
+                MiniASTF64::Rest(SourceSpan::new(0, 1)),
+                MiniASTF64::Pure(Located::new(2.0, 2, 3)),
+            ],
+            0,
+            3,
+        ));
+        assert!((eval_f64(&ast) - 0.0).abs() < 0.001); // Rest is first, returns 0
+    }
+
+    #[test]
+    fn test_eval_f64_sequence() {
+        let ast = MiniASTF64::Sequence(vec![
+            (MiniASTF64::Pure(Located::new(3.0, 0, 1)), None),
+            (
+                MiniASTF64::Pure(Located::new(4.0, 2, 3)),
+                Some(2.0),
+            ),
+        ]);
+        assert!((eval_f64(&ast) - 3.0).abs() < 0.001); // Returns first element
+    }
+
+    #[test]
+    fn test_eval_f64_slowcat() {
+        let ast = MiniASTF64::SlowCat(vec![
+            MiniASTF64::Pure(Located::new(5.0, 0, 1)),
+            MiniASTF64::Pure(Located::new(6.0, 2, 3)),
+        ]);
+        assert!((eval_f64(&ast) - 5.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_eval_f64_random_choice() {
+        let ast = MiniASTF64::RandomChoice(vec![
+            MiniASTF64::Pure(Located::new(7.0, 0, 1)),
+            MiniASTF64::Pure(Located::new(8.0, 2, 3)),
+        ]);
+        assert!((eval_f64(&ast) - 7.0).abs() < 0.001); // Deterministic: returns first
+    }
+
+    #[test]
+    fn test_eval_f64_fast() {
+        let ast = MiniASTF64::Fast(
+            Box::new(MiniASTF64::Pure(Located::new(9.0, 0, 1))),
+            Box::new(MiniASTF64::Pure(Located::new(2.0, 2, 3))),
+        );
+        assert!((eval_f64(&ast) - 9.0).abs() < 0.001); // Returns pattern value
+    }
+
+    #[test]
+    fn test_eval_f64_slow() {
+        let ast = MiniASTF64::Slow(
+            Box::new(MiniASTF64::Pure(Located::new(10.0, 0, 1))),
+            Box::new(MiniASTF64::Pure(Located::new(2.0, 2, 3))),
+        );
+        assert!((eval_f64(&ast) - 10.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_eval_f64_replicate() {
+        let ast = MiniASTF64::Replicate(
+            Box::new(MiniASTF64::Pure(Located::new(11.0, 0, 2))),
+            3,
+        );
+        assert!((eval_f64(&ast) - 11.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_eval_f64_degrade() {
+        let ast = MiniASTF64::Degrade(
+            Box::new(MiniASTF64::Pure(Located::new(12.0, 0, 2))),
+            Some(0.5),
+        );
+        assert!((eval_f64(&ast) - 12.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_eval_f64_degrade_no_prob() {
+        let ast = MiniASTF64::Degrade(Box::new(MiniASTF64::Pure(Located::new(13.0, 0, 2))), None);
+        assert!((eval_f64(&ast) - 13.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_eval_f64_euclidean() {
+        let ast = MiniASTF64::Euclidean {
+            pattern: Box::new(MiniASTF64::Pure(Located::new(14.0, 0, 2))),
+            pulses: Box::new(MiniASTU32::Pure(Located::new(3, 3, 4))),
+            steps: Box::new(MiniASTU32::Pure(Located::new(8, 5, 6))),
+            rotation: None,
+        };
+        assert!((eval_f64(&ast) - 14.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_eval_f64_euclidean_with_rotation() {
+        let ast = MiniASTF64::Euclidean {
+            pattern: Box::new(MiniASTF64::Pure(Located::new(15.0, 0, 2))),
+            pulses: Box::new(MiniASTU32::Pure(Located::new(3, 3, 4))),
+            steps: Box::new(MiniASTU32::Pure(Located::new(8, 5, 6))),
+            rotation: Some(Box::new(MiniASTI32::Pure(Located::new(2, 7, 8)))),
+        };
+        assert!((eval_f64(&ast) - 15.0).abs() < 0.001);
+    }
+
+    // ============ eval_f64 nested tests (1 level deep) ============
+
+    #[test]
+    fn test_eval_f64_fast_with_sequence() {
+        let ast = MiniASTF64::Fast(
+            Box::new(MiniASTF64::Sequence(vec![
+                (MiniASTF64::Pure(Located::new(20.0, 0, 2)), None),
+                (MiniASTF64::Pure(Located::new(21.0, 3, 5)), None),
+            ])),
+            Box::new(MiniASTF64::Pure(Located::new(2.0, 6, 7))),
+        );
+        assert!((eval_f64(&ast) - 20.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_eval_f64_slow_with_list() {
+        let ast = MiniASTF64::Slow(
+            Box::new(MiniASTF64::List(Located::new(
+                vec![
+                    MiniASTF64::Pure(Located::new(22.0, 0, 2)),
+                    MiniASTF64::Pure(Located::new(23.0, 3, 5)),
+                ],
+                0,
+                5,
+            ))),
+            Box::new(MiniASTF64::Pure(Located::new(2.0, 6, 7))),
+        );
+        assert!((eval_f64(&ast) - 22.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_eval_f64_replicate_with_slowcat() {
+        let ast = MiniASTF64::Replicate(
+            Box::new(MiniASTF64::SlowCat(vec![
+                MiniASTF64::Pure(Located::new(24.0, 0, 2)),
+                MiniASTF64::Pure(Located::new(25.0, 3, 5)),
+            ])),
+            3,
+        );
+        assert!((eval_f64(&ast) - 24.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_eval_f64_degrade_with_random_choice() {
+        let ast = MiniASTF64::Degrade(
+            Box::new(MiniASTF64::RandomChoice(vec![
+                MiniASTF64::Pure(Located::new(26.0, 0, 2)),
+                MiniASTF64::Pure(Located::new(27.0, 3, 5)),
+            ])),
+            Some(0.5),
+        );
+        assert!((eval_f64(&ast) - 26.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_eval_f64_euclidean_with_nested_pattern() {
+        let ast = MiniASTF64::Euclidean {
+            pattern: Box::new(MiniASTF64::Fast(
+                Box::new(MiniASTF64::Pure(Located::new(28.0, 0, 2))),
+                Box::new(MiniASTF64::Pure(Located::new(2.0, 3, 4))),
+            )),
+            pulses: Box::new(MiniASTU32::Sequence(vec![(
+                MiniASTU32::Pure(Located::new(3, 5, 6)),
+                None,
+            )])),
+            steps: Box::new(MiniASTU32::Pure(Located::new(8, 7, 8))),
+            rotation: None,
+        };
+        assert!((eval_f64(&ast) - 28.0).abs() < 0.001);
+    }
+
+    // ============ eval_u32 tests ============
+
+    #[test]
+    fn test_eval_u32_pure() {
+        let ast = MiniASTU32::Pure(Located::new(42, 0, 2));
+        assert_eq!(eval_u32(&ast), 42);
+    }
+
+    #[test]
+    fn test_eval_u32_rest() {
+        let ast = MiniASTU32::Rest(SourceSpan::new(0, 1));
+        assert_eq!(eval_u32(&ast), 0);
+    }
+
+    #[test]
+    fn test_eval_u32_list() {
+        let ast = MiniASTU32::List(Located::new(
+            vec![
+                MiniASTU32::Pure(Located::new(1, 0, 1)),
+                MiniASTU32::Pure(Located::new(2, 2, 3)),
+            ],
+            0,
+            3,
+        ));
+        assert_eq!(eval_u32(&ast), 1); // Returns first element
+    }
+
+    #[test]
+    fn test_eval_u32_list_with_rest() {
+        let ast = MiniASTU32::List(Located::new(
+            vec![
+                MiniASTU32::Rest(SourceSpan::new(0, 1)),
+                MiniASTU32::Pure(Located::new(2, 2, 3)),
+            ],
+            0,
+            3,
+        ));
+        assert_eq!(eval_u32(&ast), 0); // Rest is first, returns 0
+    }
+
+    #[test]
+    fn test_eval_u32_sequence() {
+        let ast = MiniASTU32::Sequence(vec![
+            (MiniASTU32::Pure(Located::new(3, 0, 1)), None),
+            (
+                MiniASTU32::Pure(Located::new(4, 2, 3)),
+                Some(2.0),
+            ),
+        ]);
+        assert_eq!(eval_u32(&ast), 3);
+    }
+
+    #[test]
+    fn test_eval_u32_slowcat() {
+        let ast = MiniASTU32::SlowCat(vec![
+            MiniASTU32::Pure(Located::new(5, 0, 1)),
+            MiniASTU32::Pure(Located::new(6, 2, 3)),
+        ]);
+        assert_eq!(eval_u32(&ast), 5);
+    }
+
+    #[test]
+    fn test_eval_u32_random_choice() {
+        let ast = MiniASTU32::RandomChoice(vec![
+            MiniASTU32::Pure(Located::new(7, 0, 1)),
+            MiniASTU32::Pure(Located::new(8, 2, 3)),
+        ]);
+        assert_eq!(eval_u32(&ast), 7); // Deterministic: returns first
+    }
+
+    #[test]
+    fn test_eval_u32_fast() {
+        let ast = MiniASTU32::Fast(
+            Box::new(MiniASTU32::Pure(Located::new(9, 0, 1))),
+            Box::new(MiniASTF64::Pure(Located::new(2.0, 2, 3))),
+        );
+        assert_eq!(eval_u32(&ast), 9);
+    }
+
+    #[test]
+    fn test_eval_u32_slow() {
+        let ast = MiniASTU32::Slow(
+            Box::new(MiniASTU32::Pure(Located::new(10, 0, 2))),
+            Box::new(MiniASTF64::Pure(Located::new(2.0, 3, 4))),
+        );
+        assert_eq!(eval_u32(&ast), 10);
+    }
+
+    #[test]
+    fn test_eval_u32_replicate() {
+        let ast = MiniASTU32::Replicate(
+            Box::new(MiniASTU32::Pure(Located::new(11, 0, 2))),
+            3,
+        );
+        assert_eq!(eval_u32(&ast), 11);
+    }
+
+    #[test]
+    fn test_eval_u32_degrade() {
+        let ast = MiniASTU32::Degrade(
+            Box::new(MiniASTU32::Pure(Located::new(12, 0, 2))),
+            Some(0.5),
+        );
+        assert_eq!(eval_u32(&ast), 12);
+    }
+
+    #[test]
+    fn test_eval_u32_degrade_no_prob() {
+        let ast = MiniASTU32::Degrade(Box::new(MiniASTU32::Pure(Located::new(13, 0, 2))), None);
+        assert_eq!(eval_u32(&ast), 13);
+    }
+
+    #[test]
+    fn test_eval_u32_euclidean() {
+        let ast = MiniASTU32::Euclidean {
+            pattern: Box::new(MiniASTU32::Pure(Located::new(14, 0, 2))),
+            pulses: Box::new(MiniASTU32::Pure(Located::new(3, 3, 4))),
+            steps: Box::new(MiniASTU32::Pure(Located::new(8, 5, 6))),
+            rotation: None,
+        };
+        assert_eq!(eval_u32(&ast), 14);
+    }
+
+    #[test]
+    fn test_eval_u32_euclidean_with_rotation() {
+        let ast = MiniASTU32::Euclidean {
+            pattern: Box::new(MiniASTU32::Pure(Located::new(15, 0, 2))),
+            pulses: Box::new(MiniASTU32::Pure(Located::new(3, 3, 4))),
+            steps: Box::new(MiniASTU32::Pure(Located::new(8, 5, 6))),
+            rotation: Some(Box::new(MiniASTI32::Pure(Located::new(2, 7, 8)))),
+        };
+        assert_eq!(eval_u32(&ast), 15);
+    }
+
+    // ============ eval_u32 nested tests (1 level deep) ============
+
+    #[test]
+    fn test_eval_u32_fast_with_sequence() {
+        let ast = MiniASTU32::Fast(
+            Box::new(MiniASTU32::Sequence(vec![
+                (MiniASTU32::Pure(Located::new(20, 0, 2)), None),
+                (MiniASTU32::Pure(Located::new(21, 3, 5)), None),
+            ])),
+            Box::new(MiniASTF64::Pure(Located::new(2.0, 6, 7))),
+        );
+        assert_eq!(eval_u32(&ast), 20);
+    }
+
+    #[test]
+    fn test_eval_u32_slow_with_list() {
+        let ast = MiniASTU32::Slow(
+            Box::new(MiniASTU32::List(Located::new(
+                vec![
+                    MiniASTU32::Pure(Located::new(22, 0, 2)),
+                    MiniASTU32::Pure(Located::new(23, 3, 5)),
+                ],
+                0,
+                5,
+            ))),
+            Box::new(MiniASTF64::Pure(Located::new(2.0, 6, 7))),
+        );
+        assert_eq!(eval_u32(&ast), 22);
+    }
+
+    #[test]
+    fn test_eval_u32_replicate_with_slowcat() {
+        let ast = MiniASTU32::Replicate(
+            Box::new(MiniASTU32::SlowCat(vec![
+                MiniASTU32::Pure(Located::new(24, 0, 2)),
+                MiniASTU32::Pure(Located::new(25, 3, 5)),
+            ])),
+            3,
+        );
+        assert_eq!(eval_u32(&ast), 24);
+    }
+
+    #[test]
+    fn test_eval_u32_degrade_with_random_choice() {
+        let ast = MiniASTU32::Degrade(
+            Box::new(MiniASTU32::RandomChoice(vec![
+                MiniASTU32::Pure(Located::new(26, 0, 2)),
+                MiniASTU32::Pure(Located::new(27, 3, 5)),
+            ])),
+            Some(0.5),
+        );
+        assert_eq!(eval_u32(&ast), 26);
+    }
+
+    #[test]
+    fn test_eval_u32_euclidean_with_nested_pattern() {
+        let ast = MiniASTU32::Euclidean {
+            pattern: Box::new(MiniASTU32::Fast(
+                Box::new(MiniASTU32::Pure(Located::new(28, 0, 2))),
+                Box::new(MiniASTF64::Pure(Located::new(2.0, 3, 4))),
+            )),
+            pulses: Box::new(MiniASTU32::Sequence(vec![(
+                MiniASTU32::Pure(Located::new(3, 5, 6)),
+                None,
+            )])),
+            steps: Box::new(MiniASTU32::Pure(Located::new(8, 7, 8))),
+            rotation: None,
+        };
+        assert_eq!(eval_u32(&ast), 28);
+    }
+
+    // ============ Cross-type interaction tests ============
+
+    #[test]
+    fn test_eval_f64_with_u32_in_replicate() {
+        // f64 pattern with u32 count
+        let ast = MiniASTF64::Replicate(
+            Box::new(MiniASTF64::Sequence(vec![
+                (MiniASTF64::Pure(Located::new(1.5, 0, 3)), None),
+                (MiniASTF64::Pure(Located::new(2.5, 4, 7)), None),
+            ])),
+            3,
+        );
+        assert!((eval_f64(&ast) - 1.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_eval_f64_euclidean_with_u32_nested() {
+        // f64 pattern with complex u32 params
+        let ast = MiniASTF64::Euclidean {
+            pattern: Box::new(MiniASTF64::SlowCat(vec![
+                MiniASTF64::Pure(Located::new(100.0, 0, 3)),
+                MiniASTF64::Pure(Located::new(200.0, 4, 7)),
+            ])),
+            pulses: Box::new(MiniASTU32::Fast(
+                Box::new(MiniASTU32::Pure(Located::new(3, 8, 9))),
+                Box::new(MiniASTF64::Pure(Located::new(2.0, 10, 11))),
+            )),
+            steps: Box::new(MiniASTU32::RandomChoice(vec![
+                MiniASTU32::Pure(Located::new(8, 12, 13)),
+                MiniASTU32::Pure(Located::new(16, 14, 16)),
+            ])),
+            rotation: Some(Box::new(MiniASTI32::Degrade(
+                Box::new(MiniASTI32::Pure(Located::new(2, 17, 18))),
+                None,
+            ))),
+        };
+        assert!((eval_f64(&ast) - 100.0).abs() < 0.001);
+    }
+
+    // ============ Pattern Behavior Tests with Rest Support ============
+    //
+    // These tests use Option<f64> which supports rests to verify
+    // pattern behavior for euclidean, degrade, and other rest-requiring operations.
+
+    /// Test wrapper type that supports rests for behavioral testing
+    impl FromMiniAtom for Option<f64> {
+        fn from_atom(atom: &AtomValue) -> Result<Self, ConvertError> {
+            atom.to_f64()
+                .map(Some)
+                .ok_or_else(|| ConvertError::InvalidAtom("Cannot convert to f64".to_string()))
+        }
+
+        fn combine_with_head(head_atoms: &[AtomValue], tail: &Self) -> Result<Self, ConvertError> {
+            let mut values: Vec<f64> = head_atoms.iter().filter_map(|a| a.to_f64()).collect();
+            if let Some(t) = tail {
+                values.push(*t);
+            }
+            Ok(Some(values.iter().sum::<f64>() / values.len() as f64))
+        }
+
+        fn rest_value() -> Option<Self> {
+            Some(None)
+        }
+
+        fn supports_rest() -> bool {
+            true
+        }
+    }
+
+    impl HasRest for Option<f64> {
+        fn rest_value() -> Self {
+            None
+        }
+    }
+
+    // --- Euclidean Pattern Behavior Tests ---
+
+    #[test]
+    fn test_euclidean_3_8_produces_correct_rhythm() {
+        // Euclidean(3,8) should produce [1,0,0,1,0,0,1,0] pattern
+        // That's hits at positions 0, 3, 5 (using Bjorklund algorithm)
+        let ast = parse("1(3,8)").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        // Should have 3 hits (value = Some(1.0)) and 5 rests (value = None)
+        let hits: Vec<_> = haps.iter().filter(|h| h.value.is_some()).collect();
+        let rests: Vec<_> = haps.iter().filter(|h| h.value.is_none()).collect();
+
+        assert_eq!(hits.len(), 3, "Euclidean(3,8) should have 3 hits");
+        assert_eq!(rests.len(), 5, "Euclidean(3,8) should have 5 rests");
+        assert_eq!(haps.len(), 8, "Euclidean(3,8) should have 8 total events");
+    }
+
+    #[test]
+    fn test_euclidean_4_8_produces_even_rhythm() {
+        // Euclidean(4,8) should produce [1,0,1,0,1,0,1,0] - evenly spaced
+        let ast = parse("1(4,8)").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        let hits: Vec<_> = haps.iter().filter(|h| h.value.is_some()).collect();
+        assert_eq!(hits.len(), 4, "Euclidean(4,8) should have 4 hits");
+        assert_eq!(haps.len(), 8, "Euclidean(4,8) should have 8 total events");
+
+        // Verify even spacing: hits should be at positions 0, 2, 4, 6
+        for (i, hap) in haps.iter().enumerate() {
+            if i % 2 == 0 {
+                assert!(hap.value.is_some(), "Even positions should be hits");
+            } else {
+                assert!(hap.value.is_none(), "Odd positions should be rests");
+            }
+        }
+    }
+
+    #[test]
+    fn test_euclidean_with_rotation() {
+        // Euclidean(3,8,2) should rotate the pattern by 2 steps
+        let ast = parse("1(3,8,2)").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        let hits: Vec<_> = haps.iter().filter(|h| h.value.is_some()).collect();
+        assert_eq!(
+            hits.len(),
+            3,
+            "Rotated Euclidean(3,8,2) should still have 3 hits"
+        );
+    }
+
+    #[test]
+    fn test_euclidean_consistent_over_cycles() {
+        // Euclidean should produce the same pattern every cycle
+        let ast = parse("1(3,8)").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps0 = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+        let haps1 = pat.query_arc(Fraction::from_integer(1), Fraction::from_integer(2));
+        let haps2 = pat.query_arc(Fraction::from_integer(2), Fraction::from_integer(3));
+
+        let pattern0: Vec<bool> = haps0.iter().map(|h| h.value.is_some()).collect();
+        let pattern1: Vec<bool> = haps1.iter().map(|h| h.value.is_some()).collect();
+        let pattern2: Vec<bool> = haps2.iter().map(|h| h.value.is_some()).collect();
+
+        assert_eq!(
+            pattern0, pattern1,
+            "Euclidean should be consistent across cycles 0 and 1"
+        );
+        assert_eq!(
+            pattern1, pattern2,
+            "Euclidean should be consistent across cycles 1 and 2"
+        );
+    }
+
+    #[test]
+    fn test_euclidean_in_sequence() {
+        // [1(3,8) 2(2,4)] - two euclidean patterns in sequence
+        let ast = parse("[1(3,8) 2(2,4)]").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        // First half: 1(3,8) compressed to half cycle = 8 events
+        // Second half: 2(2,4) compressed to half cycle = 4 events
+        // Total: 12 events
+        assert_eq!(haps.len(), 12, "Should have 12 total events");
+
+        // First euclidean has 3 hits, second has 2 hits
+        let first_half: Vec<_> = haps
+            .iter()
+            .filter(|h| h.whole.as_ref().unwrap().begin < Fraction::new(1, 2))
+            .collect();
+        let second_half: Vec<_> = haps
+            .iter()
+            .filter(|h| h.whole.as_ref().unwrap().begin >= Fraction::new(1, 2))
+            .collect();
+
+        let first_hits = first_half.iter().filter(|h| h.value.is_some()).count();
+        let second_hits = second_half.iter().filter(|h| h.value.is_some()).count();
+
+        assert_eq!(first_hits, 3, "First euclidean(3,8) should have 3 hits");
+        assert_eq!(second_hits, 2, "Second euclidean(2,4) should have 2 hits");
+    }
+
+    #[test]
+    fn test_multiple_euclideans_in_fastcat() {
+        // 1(3,8) 2(5,8) - two euclideans taking half cycle each
+        let ast = parse("1(3,8) 2(5,8)").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        // Each euclidean(n,8) produces 8 events in its half
+        // Total: 16 events
+        assert_eq!(haps.len(), 16, "Should have 16 total events");
+
+        // Count hits by value
+        let hits_1: Vec<_> = haps.iter().filter(|h| h.value == Some(1.0)).collect();
+        let hits_2: Vec<_> = haps.iter().filter(|h| h.value == Some(2.0)).collect();
+
+        assert_eq!(hits_1.len(), 3, "First euclidean should contribute 3 hits");
+        assert_eq!(hits_2.len(), 5, "Second euclidean should contribute 5 hits");
+    }
+
+    // --- Degrade Pattern Behavior Tests ---
+
+    #[test]
+    fn test_degrade_replaces_with_rest() {
+        // Degrade replaces values with rest (None)
+        // In a sequence "1? 2? 3? 4?", each element is independently degraded
+        // The sequence structure is preserved but values may become None
+        let ast = parse("1?").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        // Query a single cycle
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        // Should have 1 event
+        assert_eq!(haps.len(), 1, "Should have one event");
+
+        // The value is either Some(1.0) or None depending on randomness
+        let v = haps[0].value;
+        assert!(
+            v.is_none() || v == Some(1.0),
+            "Value should be 1.0 or rest (None)"
+        );
+    }
+
+    #[test]
+    fn test_degrade_with_probability() {
+        // Degrade with 0% probability should keep all values (probability is "keep" probability)
+        // Actually, prob=0.5 means keep if random < 0.5
+        // So 1?0.9 means keep if random < 0.9 (keep 90% of the time)
+        let ast = parse("1?0.99").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        // With 99% keep probability, most queries should return the value
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+        assert_eq!(haps.len(), 1);
+        // High probability of being kept
+        assert!(
+            haps[0].value.is_some(),
+            "With 99% keep probability, value should typically be kept"
+        );
+    }
+
+    // --- Rest Pattern Behavior Tests ---
+
+    #[test]
+    fn test_rest_in_sequence() {
+        let ast = parse("1 ~ 2 ~").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        assert_eq!(haps.len(), 4, "Should have 4 events");
+        assert_eq!(haps[0].value, Some(1.0));
+        assert_eq!(haps[1].value, None, "Second should be rest");
+        assert_eq!(haps[2].value, Some(2.0));
+        assert_eq!(haps[3].value, None, "Fourth should be rest");
+    }
+
+    #[test]
+    fn test_rest_in_slowcat() {
+        let ast = parse("<1 ~ 2>").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps0 = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+        let haps1 = pat.query_arc(Fraction::from_integer(1), Fraction::from_integer(2));
+        let haps2 = pat.query_arc(Fraction::from_integer(2), Fraction::from_integer(3));
+
+        assert_eq!(haps0[0].value, Some(1.0), "Cycle 0: value");
+        assert_eq!(haps1[0].value, None, "Cycle 1: rest");
+        assert_eq!(haps2[0].value, Some(2.0), "Cycle 2: value");
+    }
+
+    // --- Random Choice Behavior Tests ---
+
+    #[test]
+    fn test_random_choice_produces_variety() {
+        let ast = parse("1|2|3").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let mut seen = std::collections::HashSet::new();
+
+        for cycle in 0..100 {
+            let haps = pat.query_arc(
+                Fraction::from_integer(cycle),
+                Fraction::from_integer(cycle + 1),
+            );
+            if let Some(val) = haps[0].value {
+                seen.insert(val as i32);
+            }
+        }
+
+        // Should see all three values over 100 cycles
+        assert!(seen.contains(&1), "Should see value 1");
+        assert!(seen.contains(&2), "Should see value 2");
+        assert!(seen.contains(&3), "Should see value 3");
+    }
+
+    #[test]
+    fn test_random_choice_with_rest() {
+        let ast = parse("1|~").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let mut has_value = false;
+        let mut has_rest = false;
+
+        for cycle in 0..100 {
+            let haps = pat.query_arc(
+                Fraction::from_integer(cycle),
+                Fraction::from_integer(cycle + 1),
+            );
+            if haps[0].value.is_some() {
+                has_value = true;
+            } else {
+                has_rest = true;
+            }
+            if has_value && has_rest {
+                break;
+            }
+        }
+
+        assert!(has_value, "Random choice should produce some values");
+        assert!(has_rest, "Random choice should produce some rests");
+    }
+
+    // --- Fast/Slow Modifier Behavior Tests ---
+
+    #[test]
+    fn test_fast_doubles_events() {
+        let ast = parse("1 2*2").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        // "1" takes half, "2*2" takes half but plays twice
+        // So we get: 1 (half cycle), 2 (quarter cycle), 2 (quarter cycle)
+        assert_eq!(haps.len(), 3);
+        assert_eq!(haps[0].value, Some(1.0));
+        assert_eq!(haps[1].value, Some(2.0));
+        assert_eq!(haps[2].value, Some(2.0));
+    }
+
+    #[test]
+    fn test_fast_with_subsequence() {
+        // 1*[2 3] should apply speed pattern [2 3] to "1"
+        // Expected behavior (Strudel/Tidal):
+        //   First half: speed 2 → event spans 0 to 1/2
+        //   Second half: speed 3 → events at 1/3→2/3 (fragment) and 2/3→1
+        //   The fragment at 1/3→2/3 has its onset before 1/2, so has_onset=false
+        let ast = parse("1*[2 3]").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        // We get 3 haps total, but only 2 have onsets (will trigger sounds)
+        assert_eq!(haps.len(), 3, "Should produce 3 haps (including fragment)");
+
+        // Count haps with onsets (these are what Strudel shows)
+        let onset_haps: Vec<_> = haps.iter().filter(|h| h.has_onset()).collect();
+        assert_eq!(onset_haps.len(), 2, "Should have 2 haps with onsets");
+
+        // First event: 0 to 1/2 (speed 2)
+        assert_eq!(haps[0].value, Some(1.0));
+        assert_eq!(haps[0].whole.as_ref().unwrap().begin, Fraction::new(0, 1));
+        assert_eq!(haps[0].whole.as_ref().unwrap().end, Fraction::new(1, 2));
+        assert!(haps[0].has_onset());
+
+        // Second event: fragment from 1/3→2/3, part=1/2→2/3 (no onset)
+        assert_eq!(haps[1].value, Some(1.0));
+        assert_eq!(haps[1].whole.as_ref().unwrap().begin, Fraction::new(1, 3));
+        assert_eq!(haps[1].whole.as_ref().unwrap().end, Fraction::new(2, 3));
+        assert!(!haps[1].has_onset(), "Fragment should not have onset");
+
+        // Third event: 2/3 to 1 (speed 3)
+        assert_eq!(haps[2].value, Some(1.0));
+        assert_eq!(haps[2].whole.as_ref().unwrap().begin, Fraction::new(2, 3));
+        assert_eq!(haps[2].whole.as_ref().unwrap().end, Fraction::new(1, 1));
+        assert!(haps[2].has_onset());
+    }
+
+    #[test]
+    fn test_slow_extends_pattern() {
+        let ast = parse("1/2").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        // Slowed by 2, so takes 2 cycles to complete
+        let haps0 = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+        let haps1 = pat.query_arc(Fraction::from_integer(1), Fraction::from_integer(2));
+
+        // Both cycles should see the same event (spanning 2 cycles)
+        assert_eq!(haps0.len(), 1);
+        assert_eq!(haps1.len(), 1);
+        assert_eq!(haps0[0].value, haps1[0].value);
+    }
+
+    // --- Replicate Behavior Tests ---
+
+    #[test]
+    fn test_replicate_creates_copies() {
+        let ast = parse("1!4").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        assert_eq!(haps.len(), 4, "Replicate !4 should create 4 copies");
+        for hap in &haps {
+            assert_eq!(hap.value, Some(1.0));
+        }
+    }
+
+    #[test]
+    fn test_replicate_default() {
+        let ast = parse("1!").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        assert_eq!(haps.len(), 2, "Replicate ! should default to 2 copies");
+    }
+
+    // --- Weighted Sequence Behavior Tests ---
+
+    #[test]
+    fn test_weighted_timing() {
+        let ast = parse("1@3 2@1").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        assert_eq!(haps.len(), 2);
+
+        // First element (weight 3) should take 3/4 of cycle
+        let first_dur = haps[0].whole.as_ref().unwrap().duration();
+        assert_eq!(first_dur, Fraction::new(3, 4));
+
+        // Second element (weight 1) should take 1/4 of cycle
+        let second_dur = haps[1].whole.as_ref().unwrap().duration();
+        assert_eq!(second_dur, Fraction::new(1, 4));
+    }
+
+    #[test]
+    fn test_weighted_in_fastcat() {
+        // Weights should be preserved in fast subsequences
+        let ast = parse("[1@2 2@1]").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        assert_eq!(haps.len(), 2);
+
+        // Within the fast subsequence, weights are relative
+        // 1@2 gets 2/3 of the subsequence, 2@1 gets 1/3
+        let first_dur = haps[0].whole.as_ref().unwrap().duration();
+        let second_dur = haps[1].whole.as_ref().unwrap().duration();
+
+        assert_eq!(first_dur, Fraction::new(2, 3));
+        assert_eq!(second_dur, Fraction::new(1, 3));
+    }
+
+    // --- Complex Interaction Tests ---
+
+    #[test]
+    fn test_euclidean_in_slowcat() {
+        // <1(3,8) 2(5,8)> - alternating euclidean patterns
+        let ast = parse("<1(3,8) 2(5,8)>").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        // Cycle 0: 1(3,8)
+        let haps0 = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+        let hits0 = haps0.iter().filter(|h| h.value == Some(1.0)).count();
+        assert_eq!(hits0, 3, "Cycle 0: euclidean(3,8) should have 3 hits");
+
+        // Cycle 1: 2(5,8)
+        let haps1 = pat.query_arc(Fraction::from_integer(1), Fraction::from_integer(2));
+        let hits1 = haps1.iter().filter(|h| h.value == Some(2.0)).count();
+        assert_eq!(hits1, 5, "Cycle 1: euclidean(5,8) should have 5 hits");
+    }
+
+    #[test]
+    fn test_fast_euclidean() {
+        // 1(3,8)*2 - euclidean played twice per cycle
+        let ast = parse("1(3,8)*2").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        // 8 events * 2 = 16 events
+        assert_eq!(haps.len(), 16);
+
+        // 3 hits * 2 = 6 total hits
+        let hits = haps.iter().filter(|h| h.value.is_some()).count();
+        assert_eq!(hits, 6);
+    }
+
+    #[test]
+    fn test_replicated_euclidean() {
+        // 1(3,8)!2 - euclidean pattern repeated
+        let ast = parse("1(3,8)!2").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        // 8 events * 2 = 16 events
+        assert_eq!(haps.len(), 16);
+    }
+
+    #[test]
+    fn test_euclidean_with_slowcat_rotation() {
+        // 1(3,8,<0 2 4>) - rotation changes each cycle
+        // Note: Due to how patterns work, the rotation parameter is evaluated
+        // per-cycle via the pattern structure, not statically.
+        let ast = parse("1(3,8,<0 2 4>)").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps0 = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+        let haps1 = pat.query_arc(Fraction::from_integer(1), Fraction::from_integer(2));
+        let haps2 = pat.query_arc(Fraction::from_integer(2), Fraction::from_integer(3));
+
+        // All should have 3 hits
+        let hits0 = haps0.iter().filter(|h| h.value.is_some()).count();
+        let hits1 = haps1.iter().filter(|h| h.value.is_some()).count();
+        let hits2 = haps2.iter().filter(|h| h.value.is_some()).count();
+
+        assert_eq!(hits0, 3, "Cycle 0 should have 3 hits");
+        assert_eq!(hits1, 3, "Cycle 1 should have 3 hits");
+        assert_eq!(hits2, 3, "Cycle 2 should have 3 hits");
+
+        // Note: Currently the rotation is evaluated once when converting,
+        // so all cycles have the same rotation. This is a limitation of the
+        // current implementation. Future work could make rotation patternable.
+    }
+
+    #[test]
+    fn test_degrade_then_fast() {
+        // 1?*2 - degrade then speed up
+        let ast = parse("1?*2").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        // Fast *2 means 2 events per cycle
+        assert_eq!(haps.len(), 2);
+    }
+
+    #[test]
+    fn test_nested_euclidean_patterns() {
+        // [1(2,4) 2(3,4)] 3(4,4) - mixed euclidean and regular
+        let ast = parse("[1(2,4) 2(3,4)] 3(4,4)").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        // First half: [1(2,4) 2(3,4)] = 4 + 4 = 8 events
+        // Second half: 3(4,4) = 4 events (all hits since 4/4 = 1)
+        assert_eq!(haps.len(), 12);
+
+        // Verify third euclidean has all hits
+        let second_half: Vec<_> = haps
+            .iter()
+            .filter(|h| h.whole.as_ref().unwrap().begin >= Fraction::new(1, 2))
+            .filter(|h| h.value == Some(3.0))
+            .collect();
+        assert_eq!(second_half.len(), 4, "3(4,4) should produce 4 hits");
+    }
+
+    #[test]
+    fn test_sequence_with_euclidean_element() {
+        // A sequence containing a euclidean element
+        // Euclidean is applied to the value "1", creating a rhythm
+        let ast = parse("1(3,8) 2").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+
+        // First half: 1(3,8) = 8 events (3 hits of 1.0, 5 rests)
+        // Second half: 2 = 1 event
+        // Total: 9 events
+        assert_eq!(
+            haps.len(),
+            9,
+            "Should have 9 total events (8 from euclidean + 1)"
+        );
+
+        // Verify we have hits of value 1.0 and 2.0
+        let ones = haps.iter().filter(|h| h.value == Some(1.0)).count();
+        let twos = haps.iter().filter(|h| h.value == Some(2.0)).count();
+
+        assert_eq!(ones, 3, "Should have 3 hits of value 1.0");
+        assert_eq!(twos, 1, "Should have 1 hit of value 2.0");
     }
 }

@@ -35,11 +35,9 @@ pub mod combinators;
 pub mod temporal;
 pub mod applicative;
 pub mod monadic;
-pub mod operators;
 pub mod random;
 pub mod euclidean;
 pub mod mini;
-pub mod strudel_compat;
 
 pub use fraction::Fraction;
 pub use hap::{DspHap, Hap, HapContext, SourceSpan};
@@ -414,6 +412,48 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     }
 }
 
+// ===== HasRest-specific methods for DSP caching =====
+
+impl<T: HasRest> Pattern<T> {
+    /// Query at a point and return a DspHap suitable for caching.
+    ///
+    /// Unlike `query_at_dsp`, this method handles fragments by converting them
+    /// to rest haps with `whole = part`. This ensures that every point in time
+    /// has a cacheable hap with correct bounds.
+    ///
+    /// A fragment is a hap where `whole.begin < part.begin` (onset before visible portion).
+    /// These represent events that started earlier but are partially visible in the query.
+    /// For DSP caching, fragments are converted to rests so they don't trigger sounds
+    /// but still provide valid cache bounds.
+    #[inline]
+    pub fn query_at_dsp_cached(&self, t: f64) -> Option<DspHap<T>> {
+        let cycle = t.floor();
+        let haps = self.query_arc_f64(cycle, cycle + 1.0);
+
+        // Find first hap whose part contains t
+        haps.into_iter()
+            .find(|hap| hap.part_contains_f64(t))
+            .map(|hap| {
+                if hap.has_onset() {
+                    // Normal hap with onset - use as-is
+                    hap.to_dsp_hap()
+                } else {
+                    // Fragment: convert to rest with whole = part
+                    // This fills the gap with a cacheable rest hap
+                    DspHap {
+                        whole_begin: hap.part_begin_f64(),
+                        whole_end: hap.part_end_f64(),
+                        part_begin: hap.part_begin_f64(),
+                        part_end: hap.part_end_f64(),
+                        value: T::rest_value(),
+                        context: hap.context.clone(),
+                        has_whole: true,
+                    }
+                }
+            })
+    }
+}
+
 impl<T: Clone + Send + Sync + 'static> std::fmt::Debug for Pattern<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Pattern {{ steps: {:?} }}", self.steps)
@@ -712,5 +752,51 @@ mod tests {
         let dsp = tuple_pat.query_at_dsp(0.5);
         assert!(dsp.is_some());
         assert_eq!(dsp.unwrap().value, (1, 2, 3));
+    }
+
+    #[test]
+    fn test_query_at_dsp_cached_converts_fragments_to_rests() {
+        // Test that fragments are converted to rests with whole=part
+        // We use Option<f64> which implements HasRest (rest_value = None)
+
+        // Create a pattern: 1*[2 3]
+        // This produces:
+        //   - hap at 0→1/2 (speed 2)
+        //   - fragment at 1/3→2/3 with part 1/2→2/3 (speed 3, onset before query)
+        //   - hap at 2/3→1 (speed 3)
+
+        // Build pattern programmatically: pure(1).fast(fastcat([2, 3]))
+        let factor_pat = fastcat(vec![
+            pure(Fraction::from_integer(2)),
+            pure(Fraction::from_integer(3)),
+        ]);
+        let base: Pattern<Option<f64>> = pure(Some(1.0));
+        let pat = base.fast(factor_pat);
+
+        // Query at 0.55 - should find the fragment
+        let dsp = pat.query_at_dsp_cached(0.55);
+        assert!(dsp.is_some());
+        let dsp = dsp.unwrap();
+
+        // The fragment should be converted to a rest with whole=part
+        assert_eq!(dsp.value, None); // rest value
+        assert!((dsp.whole_begin - 0.5).abs() < 0.001); // whole starts at 1/2
+        assert!((dsp.whole_end - 2.0 / 3.0).abs() < 0.001); // whole ends at 2/3
+
+        // Query at 0.1 - should find the real hap
+        let dsp2 = pat.query_at_dsp_cached(0.1);
+        assert!(dsp2.is_some());
+        let dsp2 = dsp2.unwrap();
+        assert_eq!(dsp2.value, Some(1.0)); // actual value
+        assert!((dsp2.whole_begin - 0.0).abs() < 0.001); // whole starts at 0
+        assert!((dsp2.whole_end - 0.5).abs() < 0.001); // whole ends at 1/2
+
+        // Query at 0.8 - should find the third hap
+        let dsp3 = pat.query_at_dsp_cached(0.8);
+        assert!(dsp3.is_some());
+        let dsp3 = dsp3.unwrap();
+        assert_eq!(dsp3.value, Some(1.0)); // actual value
+        assert!((dsp3.whole_begin - 2.0 / 3.0).abs() < 0.001); // whole starts at 2/3
+        assert!((dsp3.whole_end - 1.0).abs() < 0.001); // whole ends at 1
     }
 }

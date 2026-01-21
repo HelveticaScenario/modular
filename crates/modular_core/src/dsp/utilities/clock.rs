@@ -16,20 +16,20 @@ struct ClockParams {
 #[args(tempo?)]
 pub struct Clock {
     outputs: ClockOutputs,
-    phase: f32,
+    phase: f64,
     freq: Clickless,
-    ppq_phase: f32,
+    ppq_phase: f64,
     last_bar_trigger: bool,
     last_ppq_trigger: bool,
     running: bool,
     params: ClockParams,
-    loop_index: usize,
+    loop_index: u64,
 }
 
 #[derive(Outputs, JsonSchema)]
 struct ClockOutputs {
     #[output("playhead", "how many bars have elapsed", default)]
-    playhead: f32,
+    playhead: f64,
     #[output("barTrigger", "trigger output every bar")]
     bar_trigger: f32,
     #[output("ramp", "ramp from 0 to 5V every bar")]
@@ -64,15 +64,15 @@ impl Clock {
         self.freq
             .update(self.params.tempo.get_value_or(0.0).clamp(-10.0, 10.0));
 
-        // Convert V/Oct to Hz
-        let frequency_hz = 55.0 * 2.0_f32.powf(*self.freq);
+        // Convert V/Oct to Hz (use f64 for precision)
+        let frequency_hz = 55.0 * 2.0_f64.powf(*self.freq as f64);
 
         // Calculate phase increment per sample
         // For a clock, we want the phase to go from 0 to 1 over one bar
         // At 120 BPM = 2 Hz, one bar (4 beats) = 2 seconds = 0.5 Hz
         // So bar frequency = tempo_hz / 4
         let bar_frequency = frequency_hz / 4.0;
-        let phase_increment = bar_frequency / sample_rate;
+        let phase_increment = bar_frequency / sample_rate as f64;
 
         // Update phase if running
         if self.running {
@@ -91,10 +91,10 @@ impl Clock {
             }
         }
 
-        self.outputs.playhead = self.loop_index as f32 + self.phase;
+        self.outputs.playhead = self.loop_index as f64 + self.phase;
 
         // Generate ramp output (0 to 5V over one bar)
-        self.outputs.ramp = self.phase * 5.0;
+        self.outputs.ramp = self.phase as f32 * 5.0;
 
         // Generate bar trigger (trigger at start of bar)
         let should_bar_trigger = self.phase < phase_increment && self.running;

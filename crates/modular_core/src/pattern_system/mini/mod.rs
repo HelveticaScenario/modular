@@ -55,11 +55,11 @@ pub mod ast;
 pub mod convert;
 pub mod parser;
 
-pub use ast::{AtomValue, Located, MiniAST, OperatorCall};
-pub use convert::{convert, convert_with_operators, ConvertError, FromMiniAtom, HasRest};
+pub use ast::{AtomValue, Located, MiniAST};
+pub use convert::{convert, ConvertError, FromMiniAtom, HasRest};
 pub use parser::{parse as parse_ast, ParseError};
 
-use crate::pattern_system::{operators::OperatorRegistry, Pattern};
+use crate::pattern_system::Pattern;
 
 /// Parse a mini notation string and convert to a Pattern.
 ///
@@ -77,49 +77,16 @@ pub fn parse<T: FromMiniAtom>(input: &str) -> Result<Pattern<T>, ConvertError> {
     convert(&ast)
 }
 
-/// Parse a mini notation string with operator support.
-///
-/// Uses the provided operator registry to apply any operators in the pattern.
-///
-/// # Example
-/// ```ignore
-/// let registry = standard_f64_registry();
-/// let pat: Pattern<f64> = parse_with_operators("0 1 2 $ fast(2)", &registry)?;
-/// ```
-pub fn parse_with_operators<T: FromMiniAtom>(
-    input: &str,
-    registry: &OperatorRegistry<T>,
-) -> Result<Pattern<T>, ConvertError> {
-    let ast = parse_ast(input)?;
-    convert_with_operators(&ast, registry)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pattern_system::{operators::standard_f64_registry, Fraction};
+    use crate::pattern_system::Fraction;
 
     #[test]
     fn test_parse_simple() {
         let pat: Pattern<f64> = parse("0 1 2 3").unwrap();
         let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
         assert_eq!(haps.len(), 4);
-    }
-
-    #[test]
-    fn test_parse_with_fast_operator() {
-        let registry = standard_f64_registry();
-        let pat: Pattern<f64> = parse_with_operators("0 1 2 $ fast(2)", &registry).unwrap();
-        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
-        // fast(2) doubles the events
-        assert_eq!(haps.len(), 6);
-    }
-
-    #[test]
-    fn test_parse_stack() {
-        let pat: Pattern<f64> = parse("0, 1").unwrap();
-        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
-        assert_eq!(haps.len(), 2);
     }
 
     #[test]

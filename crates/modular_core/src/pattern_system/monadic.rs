@@ -45,7 +45,10 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
 
             for outer_hap in outer_haps {
                 let inner_pat = f(&outer_hap.value);
-                let inner_haps = inner_pat.query(state);
+                // Query inner pattern constrained to outer hap's part
+                // (matching Strudel's behavior)
+                let inner_state = state.set_span(outer_hap.part.clone());
+                let inner_haps = inner_pat.query(&inner_state);
 
                 for inner_hap in inner_haps {
                     if let Some(part) = outer_hap.part.intersection(&inner_hap.part) {

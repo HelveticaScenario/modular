@@ -122,7 +122,7 @@ impl Default for SeqLegacy {
 
 impl SeqLegacy {
     fn update(&mut self, _sample_rate: f32) -> () {
-        let playhead_value = f64::from(self.params.playhead.get_value());
+        let playhead_value = self.params.playhead.get_value_f64();
         if let Some(cached_node) = &self.cached_node {
             if playhead_value >= cached_node.time_start && playhead_value < cached_node.time_end {
                 // Use cached value

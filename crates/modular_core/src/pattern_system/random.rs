@@ -55,39 +55,17 @@ pub fn rand_cycle() -> Pattern<f64> {
     })
 }
 
-/// Random integer in range [min, max].
-pub fn irand(min: i64, max: i64) -> Pattern<i64> {
-    rand().fmap(move |r| {
-        let range = (max - min + 1) as f64;
-        min + (r * range).floor() as i64
-    })
-}
-
-/// Random integer that changes once per cycle.
-pub fn irand_cycle(min: i64, max: i64) -> Pattern<i64> {
-    rand_cycle().fmap(move |r| {
-        let range = (max - min + 1) as f64;
-        min + (r * range).floor() as i64
-    })
-}
-
-/// Random float in range [min, max].
-pub fn frand(min: f64, max: f64) -> Pattern<f64> {
-    rand().fmap(move |r| min + r * (max - min))
-}
-
-/// Random float that changes once per cycle.
-pub fn frand_cycle(min: f64, max: f64) -> Pattern<f64> {
-    rand_cycle().fmap(move |r| min + r * (max - min))
-}
-
 /// Choose randomly from a list of values (changes per cycle).
 pub fn choose<T: Clone + Send + Sync + 'static>(values: Vec<T>) -> Pattern<T> {
     if values.is_empty() {
         panic!("choose requires at least one value");
     }
     let len = values.len();
-    irand_cycle(0, (len - 1) as i64).fmap(move |i| values[*i as usize].clone())
+    let rand_pat = rand_cycle();
+    rand_pat.fmap(move |r| {
+        let idx = (r * len as f64).floor() as usize;
+        values[idx.min(len - 1)].clone()
+    })
 }
 
 /// Choose randomly with weights.
@@ -177,112 +155,6 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     pub fn undegrade_by(&self, prob: f64) -> Pattern<T> {
         self.degrade_by(1.0 - prob)
     }
-
-    /// Sometimes apply a function based on probability.
-    pub fn sometimes_by<F>(&self, prob: f64, f: F) -> Pattern<T>
-    where
-        F: Fn(&Pattern<T>) -> Pattern<T> + Send + Sync + 'static,
-    {
-        // This is a simplification - true implementation would
-        // randomly choose which events to transform
-        if prob <= 0.0 {
-            return self.clone();
-        }
-        if prob >= 1.0 {
-            return f(self);
-        }
-
-        // Mix original and transformed based on probability
-        let original = self.clone();
-        let transformed = f(self);
-
-        // Create a random pattern to decide which to use
-        let rand_pat = rand_cycle();
-
-        Pattern::new(move |state| {
-            let r_haps = rand_pat.query(state);
-            let r = if r_haps.is_empty() {
-                0.5
-            } else {
-                r_haps[0].value
-            };
-
-            if r < prob {
-                transformed.query(state)
-            } else {
-                original.query(state)
-            }
-        })
-    }
-
-    /// Apply function with 50% probability.
-    pub fn sometimes<F>(&self, f: F) -> Pattern<T>
-    where
-        F: Fn(&Pattern<T>) -> Pattern<T> + Send + Sync + 'static,
-    {
-        self.sometimes_by(0.5, f)
-    }
-
-    /// Apply function rarely (25% probability).
-    pub fn rarely<F>(&self, f: F) -> Pattern<T>
-    where
-        F: Fn(&Pattern<T>) -> Pattern<T> + Send + Sync + 'static,
-    {
-        self.sometimes_by(0.25, f)
-    }
-
-    /// Apply function often (75% probability).
-    pub fn often<F>(&self, f: F) -> Pattern<T>
-    where
-        F: Fn(&Pattern<T>) -> Pattern<T> + Send + Sync + 'static,
-    {
-        self.sometimes_by(0.75, f)
-    }
-
-    /// Apply function almost always (90% probability).
-    pub fn almost_always<F>(&self, f: F) -> Pattern<T>
-    where
-        F: Fn(&Pattern<T>) -> Pattern<T> + Send + Sync + 'static,
-    {
-        self.sometimes_by(0.9, f)
-    }
-
-    /// Apply function almost never (10% probability).
-    pub fn almost_never<F>(&self, f: F) -> Pattern<T>
-    where
-        F: Fn(&Pattern<T>) -> Pattern<T> + Send + Sync + 'static,
-    {
-        self.sometimes_by(0.1, f)
-    }
-
-    /// Shuffle the events within each cycle randomly.
-    pub fn shuffle(&self) -> Pattern<T> {
-        // This is a complex operation - for now, just rotate randomly
-        let pat = self.clone();
-
-        Pattern::new(move |state| {
-            let mut haps = pat.query(state);
-            if haps.len() <= 1 {
-                return haps;
-            }
-
-            // Use cycle number as seed for consistent shuffle per cycle
-            let cycle = state.span.begin.sam();
-            let seed = time_hash(&cycle, 42);
-
-            // Fisher-Yates shuffle with deterministic random
-            let n = haps.len();
-            for i in 0..n - 1 {
-                let mut hasher = DefaultHasher::new();
-                seed.hash(&mut hasher);
-                i.hash(&mut hasher);
-                let j = i + (hasher.finish() as usize % (n - i));
-                haps.swap(i, j);
-            }
-
-            haps
-        })
-    }
 }
 
 #[cfg(test)]
@@ -322,15 +194,6 @@ mod tests {
 
         assert!(haps[0].value >= 0.0);
         assert!(haps[0].value < 1.0);
-    }
-
-    #[test]
-    fn test_irand() {
-        let pat = irand(1, 6);
-        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::new(1, 100));
-
-        assert!(haps[0].value >= 1);
-        assert!(haps[0].value <= 6);
     }
 
     #[test]

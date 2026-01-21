@@ -15,7 +15,7 @@ pub mod seq_operators;
 pub mod seq_value;
 
 pub use scale::{FixedRoot, ScaleRoot, ScaleSnapper};
-pub use seq_operators::{seq_value_registry, CachedOperator};
+pub use seq_operators::CachedOperator;
 pub use seq_value::{SeqPatternParam, SeqValue};
 
 pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {

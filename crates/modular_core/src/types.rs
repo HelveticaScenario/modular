@@ -50,6 +50,11 @@ pub trait Sampleable: MessageHandler + Send + Sync {
     fn tick(&self) -> ();
     fn update(&self) -> ();
     fn get_sample(&self, port: &String) -> Result<f32>;
+    /// Get sample as f64 for high-precision outputs (e.g., playhead).
+    /// Default implementation widens f32 to f64.
+    fn get_sample_f64(&self, port: &String) -> Result<f64> {
+        self.get_sample(port).map(f64::from)
+    }
     fn get_module_type(&self) -> String;
     fn try_update_params(&self, params: serde_json::Value) -> Result<()>;
     fn connect(&self, patch: &Patch);
@@ -415,6 +420,29 @@ impl Signal {
             Signal::Disconnected => None,
         }
     }
+
+    /// Get value as f64 for high-precision signals (e.g., playhead from clock).
+    pub fn get_value_f64(&self) -> f64 {
+        self.get_value_f64_or(0.0)
+    }
+    pub fn get_value_f64_or(&self, default: f64) -> f64 {
+        self.get_value_f64_optional().unwrap_or(default)
+    }
+    pub fn get_value_f64_optional(&self) -> Option<f64> {
+        match self {
+            Signal::Volts { value } => Some(*value as f64),
+            Signal::Cable {
+                module_ptr, port, ..
+            } => match module_ptr.upgrade() {
+                Some(module_ptr) => match module_ptr.get_sample_f64(port) {
+                    Ok(sample) => Some(sample),
+                    Err(_) => None,
+                },
+                None => None,
+            },
+            Signal::Disconnected => None,
+        }
+    }
 }
 
 impl Connect for Signal {
@@ -538,6 +566,11 @@ pub struct OutputSchema {
 pub trait OutputStruct: Default + Send + Sync + 'static {
     fn copy_from(&mut self, other: &Self);
     fn get_sample(&self, port: &str) -> Option<f32>;
+    /// Get sample as f64 for high-precision outputs (e.g., playhead).
+    /// Default implementation widens f32 to f64.
+    fn get_sample_f64(&self, port: &str) -> Option<f64> {
+        self.get_sample(port).map(f64::from)
+    }
     fn schemas() -> Vec<OutputSchema>
     where
         Self: Sized;

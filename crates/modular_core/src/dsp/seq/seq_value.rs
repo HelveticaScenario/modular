@@ -19,7 +19,7 @@ use crate::{
     Patch,
 };
 
-use super::seq_operators::{seq_value_registry, CachedOperator};
+use super::seq_operators::CachedOperator;
 
 /// A value in a sequence pattern.
 ///
@@ -316,10 +316,8 @@ unsafe impl Sync for SeqPatternParam {}
 impl SeqPatternParam {
     /// Parse a pattern string and collect signals.
     fn parse(source: &str) -> Result<Self, String> {
-        let registry = seq_value_registry();
-
-        // Parse with operators - we'll need to track operators applied
-        let pattern = crate::pattern_system::mini::parse_with_operators::<SeqValue>(source, &registry)
+        // Parse mini notation into a pattern
+        let pattern = crate::pattern_system::mini::parse::<SeqValue>(source)
             .map_err(|e| e.to_string())?;
 
         // TODO: Collect signals from pattern - this requires walking the pattern

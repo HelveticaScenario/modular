@@ -5,7 +5,7 @@
 use pest::Parser;
 use pest_derive::Parser;
 
-use super::ast::{AtomValue, Located, MiniAST, OperatorCall};
+use super::ast::{AtomValue, Located, MiniAST, MiniASTF64, MiniASTI32, MiniASTU32};
 use crate::pattern_system::SourceSpan;
 
 #[derive(Parser)]
@@ -61,20 +61,7 @@ fn parse_program(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseErro
         span: None,
     })?;
 
-    let mut ast = parse_pattern_expr(pattern_pair)?;
-
-    // Check for operator chain
-    if let Some(chain_pair) = inner.next() {
-        if chain_pair.as_rule() == Rule::operator_chain {
-            let operators = parse_operator_chain(chain_pair)?;
-            ast = MiniAST::WithOperators {
-                base: Box::new(ast),
-                operators,
-            };
-        }
-    }
-
-    Ok(ast)
+    parse_pattern_expr(pattern_pair)
 }
 
 fn parse_pattern_expr(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseError> {
@@ -83,7 +70,6 @@ fn parse_pattern_expr(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, Pars
             let inner = pair.into_inner().next().unwrap();
             parse_pattern_expr(inner)
         }
-        Rule::stack_expr => parse_stack_expr(pair),
         Rule::sequence_expr => parse_sequence_expr(pair),
         Rule::weighted_elem => parse_weighted_elem(pair).map(|(ast, _)| ast),
         Rule::element => parse_element(pair),
@@ -93,19 +79,6 @@ fn parse_pattern_expr(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, Pars
             message: format!("Unexpected rule: {:?}", pair.as_rule()),
             span: Some(SourceSpan::new(pair.as_span().start(), pair.as_span().end())),
         }),
-    }
-}
-
-fn parse_stack_expr(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseError> {
-    let sequences: Vec<MiniAST> = pair
-        .into_inner()
-        .map(parse_sequence_expr)
-        .collect::<Result<_, _>>()?;
-
-    if sequences.len() == 1 {
-        Ok(sequences.into_iter().next().unwrap())
-    } else {
-        Ok(MiniAST::Stack(sequences))
     }
 }
 
@@ -128,7 +101,12 @@ fn parse_weighted_elem(pair: pest::iterators::Pair<Rule>) -> Result<(MiniAST, Op
     let element_pair = inner.next().unwrap();
     let ast = parse_element(element_pair)?;
 
-    let weight = inner.next().and_then(|p| p.as_str().parse::<f64>().ok());
+    let weight = if let Some(p) = inner.next() {
+        let n: f64 = p.as_str().parse().unwrap_or(1.0);
+        Some(n)
+    } else {
+        None
+    };
 
     Ok((ast, weight))
 }
@@ -150,7 +128,6 @@ fn parse_element(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseErro
             Rule::element_base => {
                 let base_inner = inner.into_inner().next().unwrap();
                 let base_ast = match base_inner.as_rule() {
-                    Rule::polymeter => parse_polymeter(base_inner)?,
                     Rule::fast_sub => parse_fast_sub(base_inner)?,
                     Rule::slow_sub => parse_slow_sub(base_inner)?,
                     Rule::group => {
@@ -214,26 +191,13 @@ fn parse_element(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseErro
     }
 }
 
-fn parse_polymeter(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseError> {
-    let sequences: Vec<MiniAST> = pair
-        .into_inner()
-        .map(parse_sequence_expr)
-        .collect::<Result<_, _>>()?;
-
-    Ok(MiniAST::PolyMeter(sequences))
-}
-
 fn parse_fast_sub(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseError> {
     let inner = pair.into_inner().next().unwrap();
     let ast = parse_pattern_expr(inner)?;
 
-    // Fast subsequence means fastcat
+    // Fast subsequence means fastcat (preserves weights for timecat)
     match ast {
-        MiniAST::Sequence(elements) => {
-            let patterns: Vec<MiniAST> = elements.into_iter().map(|(p, _)| p).collect();
-            Ok(MiniAST::Sequence(patterns.into_iter().map(|p| (p, None)).collect()))
-        }
-        MiniAST::Stack(patterns) => Ok(MiniAST::Stack(patterns)),
+        MiniAST::Sequence(elements) => Ok(MiniAST::Sequence(elements)),
         other => Ok(other),
     }
 }
@@ -249,6 +213,795 @@ fn parse_slow_sub(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseErr
             Ok(MiniAST::SlowCat(patterns))
         }
         other => Ok(MiniAST::SlowCat(vec![other])),
+    }
+}
+
+// ============ Typed parsing functions for MiniASTF64 ============
+
+fn parse_pattern_expr_f64(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTF64, ParseError> {
+    match pair.as_rule() {
+        Rule::pattern_expr => {
+            let inner = pair.into_inner().next().unwrap();
+            parse_pattern_expr_f64(inner)
+        }
+        Rule::sequence_expr => parse_sequence_expr_f64(pair),
+        Rule::weighted_elem => parse_weighted_elem_f64(pair).map(|(ast, _)| ast),
+        Rule::element => parse_element_f64(pair),
+        Rule::modified_atom => parse_modified_atom_f64(pair),
+        Rule::atom => parse_atom_f64(pair),
+        _ => Err(ParseError {
+            message: format!("Unexpected rule (f64): {:?}", pair.as_rule()),
+            span: Some(SourceSpan::new(pair.as_span().start(), pair.as_span().end())),
+        }),
+    }
+}
+
+fn parse_sequence_expr_f64(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTF64, ParseError> {
+    let elements: Vec<(MiniASTF64, Option<f64>)> = pair
+        .into_inner()
+        .map(parse_weighted_elem_f64)
+        .collect::<Result<_, _>>()?;
+
+    if elements.len() == 1 && elements[0].1.is_none() {
+        Ok(elements.into_iter().next().unwrap().0)
+    } else {
+        Ok(MiniASTF64::Sequence(elements))
+    }
+}
+
+fn parse_weighted_elem_f64(pair: pest::iterators::Pair<Rule>) -> Result<(MiniASTF64, Option<f64>), ParseError> {
+    let mut inner = pair.into_inner();
+
+    let element_pair = inner.next().unwrap();
+    let ast = parse_element_f64(element_pair)?;
+
+    let weight = if let Some(p) = inner.next() {
+        let n: f64 = p.as_str().parse().unwrap_or(1.0);
+        Some(n)
+    } else {
+        None
+    };
+
+    Ok((ast, weight))
+}
+
+fn parse_element_f64(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTF64, ParseError> {
+    let span = pair.as_span();
+    let mut elements: Vec<MiniASTF64> = Vec::new();
+    let mut first_span = None;
+    let mut last_span = None;
+
+    for inner in pair.into_inner() {
+        let inner_span = inner.as_span();
+        if first_span.is_none() {
+            first_span = Some(inner_span.start());
+        }
+        last_span = Some(inner_span.end());
+
+        match inner.as_rule() {
+            Rule::element_base => {
+                let base_inner = inner.into_inner().next().unwrap();
+                let base_ast = match base_inner.as_rule() {
+                    Rule::fast_sub => parse_fast_sub_f64(base_inner)?,
+                    Rule::slow_sub => parse_slow_sub_f64(base_inner)?,
+                    Rule::group => {
+                        let inner_expr = base_inner.into_inner().next().unwrap();
+                        parse_pattern_expr_f64(inner_expr)?
+                    }
+                    Rule::modified_atom => parse_modified_atom_f64(base_inner)?,
+                    _ => {
+                        return Err(ParseError {
+                            message: format!("Unexpected element_base rule (f64): {:?}", base_inner.as_rule()),
+                            span: Some(SourceSpan::new(base_inner.as_span().start(), base_inner.as_span().end())),
+                        });
+                    }
+                };
+                elements.push(base_ast);
+            }
+            Rule::tail_element => {
+                let inner_pair = inner.into_inner().next().unwrap();
+                match inner_pair.as_rule() {
+                    Rule::value | Rule::number => {
+                        let n: f64 = inner_pair.as_str().parse().unwrap_or(0.0);
+                        let elem_span = SourceSpan::new(inner_span.start(), inner_span.end());
+                        elements.push(MiniASTF64::Pure(Located::new(n, elem_span.start, elem_span.end)));
+                    }
+                    Rule::fast_sub => {
+                        elements.push(parse_fast_sub_f64(inner_pair)?);
+                    }
+                    Rule::slow_sub => {
+                        elements.push(parse_slow_sub_f64(inner_pair)?);
+                    }
+                    Rule::group => {
+                        let inner_expr = inner_pair.into_inner().next().unwrap();
+                        elements.push(parse_pattern_expr_f64(inner_expr)?);
+                    }
+                    _ => {
+                        return Err(ParseError {
+                            message: format!("Unexpected tail element rule (f64): {:?}", inner_pair.as_rule()),
+                            span: Some(SourceSpan::new(inner_pair.as_span().start(), inner_pair.as_span().end())),
+                        });
+                    }
+                }
+            }
+            _ => {
+                return Err(ParseError {
+                    message: format!("Unexpected element rule (f64): {:?}", inner.as_rule()),
+                    span: Some(SourceSpan::new(inner_span.start(), inner_span.end())),
+                });
+            }
+        }
+    }
+
+    let start = first_span.unwrap_or(span.start());
+    let end = last_span.unwrap_or(span.end());
+
+    if elements.len() == 1 {
+        Ok(elements.remove(0))
+    } else {
+        Ok(MiniASTF64::List(Located::new(elements, start, end)))
+    }
+}
+
+fn parse_modified_atom_f64(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTF64, ParseError> {
+    let span = pair.as_span();
+    let mut inner = pair.into_inner();
+
+    let atom_pair = inner.next().unwrap();
+    let mut ast = parse_atom_f64(atom_pair)?;
+
+    // Apply modifiers
+    for modifier in inner {
+        ast = apply_modifier_f64(ast, modifier, span.start(), span.end())?;
+    }
+
+    Ok(ast)
+}
+
+fn parse_atom_f64(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTF64, ParseError> {
+    let span = pair.as_span();
+    let inner = pair.into_inner().next().unwrap();
+
+    match inner.as_rule() {
+        Rule::rest => Ok(MiniASTF64::Rest(SourceSpan::new(span.start(), span.end()))),
+        Rule::random_choice => {
+            let values: Vec<MiniASTF64> = inner
+                .into_inner()
+                .map(parse_choice_element_f64)
+                .collect::<Result<_, ParseError>>()?;
+            Ok(MiniASTF64::RandomChoice(values))
+        }
+        Rule::value | Rule::number => {
+            let n: f64 = inner.as_str().parse().unwrap_or(0.0);
+            let value_span = inner.as_span();
+            Ok(MiniASTF64::Pure(Located::new(n, value_span.start(), value_span.end())))
+        }
+        _ => Err(ParseError {
+            message: format!("Unexpected atom rule (f64): {:?}", inner.as_rule()),
+            span: Some(SourceSpan::new(span.start(), span.end())),
+        }),
+    }
+}
+
+fn parse_choice_element_f64(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTF64, ParseError> {
+    let inner = pair.into_inner().next().unwrap();
+    match inner.as_rule() {
+        Rule::value | Rule::number => {
+            let span = inner.as_span();
+            let n: f64 = inner.as_str().parse().unwrap_or(0.0);
+            Ok(MiniASTF64::Pure(Located::new(n, span.start(), span.end())))
+        }
+        Rule::pattern_expr | Rule::sequence_expr => parse_pattern_expr_f64(inner),
+        _ => Err(ParseError {
+            message: format!("Unexpected choice element rule (f64): {:?}", inner.as_rule()),
+            span: Some(SourceSpan::new(inner.as_span().start(), inner.as_span().end())),
+        }),
+    }
+}
+
+fn apply_modifier_f64(
+    ast: MiniASTF64,
+    modifier: pest::iterators::Pair<Rule>,
+    _start: usize,
+    _end: usize,
+) -> Result<MiniASTF64, ParseError> {
+    let inner = modifier.into_inner().next().unwrap();
+
+    match inner.as_rule() {
+        Rule::fast_mod => {
+            let operand_pair = inner.into_inner().next().unwrap();
+            let factor = parse_mod_operand_f64(operand_pair)?;
+            Ok(MiniASTF64::Fast(Box::new(ast), Box::new(factor)))
+        }
+        Rule::slow_mod => {
+            let operand_pair = inner.into_inner().next().unwrap();
+            let factor = parse_mod_operand_f64(operand_pair)?;
+            Ok(MiniASTF64::Slow(Box::new(ast), Box::new(factor)))
+        }
+        Rule::replicate => {
+            let count = inner
+                .into_inner()
+                .next()
+                .map(|p| p.as_str().parse().unwrap_or(2))
+                .unwrap_or(2);
+            Ok(MiniASTF64::Replicate(Box::new(ast), count))
+        }
+        Rule::degrade => {
+            let prob = if let Some(p) = inner.into_inner().next() {
+                let n: f64 = p.as_str().parse().unwrap_or(0.5);
+                Some(n)
+            } else {
+                None
+            };
+            Ok(MiniASTF64::Degrade(Box::new(ast), prob))
+        }
+        Rule::euclidean => {
+            let mut operands = inner.into_inner();
+            let pulses = Box::new(parse_mod_operand_u32(operands.next().unwrap())?);
+            let steps = Box::new(parse_mod_operand_u32(operands.next().unwrap())?);
+            let rotation = operands.next().map(|p| parse_mod_operand_i32(p)).transpose()?.map(Box::new);
+
+            Ok(MiniASTF64::Euclidean {
+                pattern: Box::new(ast),
+                pulses,
+                steps,
+                rotation,
+            })
+        }
+        _ => Err(ParseError {
+            message: format!("Unknown modifier (f64): {:?}", inner.as_rule()),
+            span: Some(SourceSpan::new(inner.as_span().start(), inner.as_span().end())),
+        }),
+    }
+}
+
+fn parse_fast_sub_f64(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTF64, ParseError> {
+    let inner = pair.into_inner().next().unwrap();
+    let ast = parse_pattern_expr_f64(inner)?;
+
+    // Fast subsequence means fastcat (preserves weights for timecat)
+    match ast {
+        MiniASTF64::Sequence(elements) => Ok(MiniASTF64::Sequence(elements)),
+        other => Ok(other),
+    }
+}
+
+fn parse_slow_sub_f64(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTF64, ParseError> {
+    let inner = pair.into_inner().next().unwrap();
+    let ast = parse_pattern_expr_f64(inner)?;
+
+    match ast {
+        MiniASTF64::Sequence(elements) => {
+            let patterns: Vec<MiniASTF64> = elements.into_iter().map(|(p, _)| p).collect();
+            Ok(MiniASTF64::SlowCat(patterns))
+        }
+        other => Ok(MiniASTF64::SlowCat(vec![other])),
+    }
+}
+
+// ============ Typed parsing functions for MiniASTU32 ============
+
+fn parse_pattern_expr_u32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTU32, ParseError> {
+    match pair.as_rule() {
+        Rule::pattern_expr => {
+            let inner = pair.into_inner().next().unwrap();
+            parse_pattern_expr_u32(inner)
+        }
+        Rule::sequence_expr => parse_sequence_expr_u32(pair),
+        Rule::weighted_elem => parse_weighted_elem_u32(pair).map(|(ast, _)| ast),
+        Rule::element => parse_element_u32(pair),
+        Rule::modified_atom => parse_modified_atom_u32(pair),
+        Rule::atom => parse_atom_u32(pair),
+        _ => Err(ParseError {
+            message: format!("Unexpected rule (u32): {:?}", pair.as_rule()),
+            span: Some(SourceSpan::new(pair.as_span().start(), pair.as_span().end())),
+        }),
+    }
+}
+
+fn parse_sequence_expr_u32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTU32, ParseError> {
+    let elements: Vec<(MiniASTU32, Option<f64>)> = pair
+        .into_inner()
+        .map(parse_weighted_elem_u32)
+        .collect::<Result<_, _>>()?;
+
+    if elements.len() == 1 && elements[0].1.is_none() {
+        Ok(elements.into_iter().next().unwrap().0)
+    } else {
+        Ok(MiniASTU32::Sequence(elements))
+    }
+}
+
+fn parse_weighted_elem_u32(pair: pest::iterators::Pair<Rule>) -> Result<(MiniASTU32, Option<f64>), ParseError> {
+    let mut inner = pair.into_inner();
+
+    let element_pair = inner.next().unwrap();
+    let ast = parse_element_u32(element_pair)?;
+
+    let weight = if let Some(p) = inner.next() {
+        let n: f64 = p.as_str().parse().unwrap_or(1.0);
+        Some(n)
+    } else {
+        None
+    };
+
+    Ok((ast, weight))
+}
+
+fn parse_element_u32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTU32, ParseError> {
+    let span = pair.as_span();
+    let mut elements: Vec<MiniASTU32> = Vec::new();
+    let mut first_span = None;
+    let mut last_span = None;
+
+    for inner in pair.into_inner() {
+        let inner_span = inner.as_span();
+        if first_span.is_none() {
+            first_span = Some(inner_span.start());
+        }
+        last_span = Some(inner_span.end());
+
+        match inner.as_rule() {
+            Rule::element_base => {
+                let base_inner = inner.into_inner().next().unwrap();
+                let base_ast = match base_inner.as_rule() {
+                    Rule::fast_sub => parse_fast_sub_u32(base_inner)?,
+                    Rule::slow_sub => parse_slow_sub_u32(base_inner)?,
+                    Rule::group => {
+                        let inner_expr = base_inner.into_inner().next().unwrap();
+                        parse_pattern_expr_u32(inner_expr)?
+                    }
+                    Rule::modified_atom => parse_modified_atom_u32(base_inner)?,
+                    _ => {
+                        return Err(ParseError {
+                            message: format!("Unexpected element_base rule (u32): {:?}", base_inner.as_rule()),
+                            span: Some(SourceSpan::new(base_inner.as_span().start(), base_inner.as_span().end())),
+                        });
+                    }
+                };
+                elements.push(base_ast);
+            }
+            Rule::tail_element => {
+                let inner_pair = inner.into_inner().next().unwrap();
+                match inner_pair.as_rule() {
+                    Rule::value | Rule::number => {
+                        let n: u32 = inner_pair.as_str().parse().unwrap_or(0);
+                        let elem_span = SourceSpan::new(inner_span.start(), inner_span.end());
+                        elements.push(MiniASTU32::Pure(Located::new(n, elem_span.start, elem_span.end)));
+                    }
+                    Rule::fast_sub => {
+                        elements.push(parse_fast_sub_u32(inner_pair)?);
+                    }
+                    Rule::slow_sub => {
+                        elements.push(parse_slow_sub_u32(inner_pair)?);
+                    }
+                    Rule::group => {
+                        let inner_expr = inner_pair.into_inner().next().unwrap();
+                        elements.push(parse_pattern_expr_u32(inner_expr)?);
+                    }
+                    _ => {
+                        return Err(ParseError {
+                            message: format!("Unexpected tail element rule (u32): {:?}", inner_pair.as_rule()),
+                            span: Some(SourceSpan::new(inner_pair.as_span().start(), inner_pair.as_span().end())),
+                        });
+                    }
+                }
+            }
+            _ => {
+                return Err(ParseError {
+                    message: format!("Unexpected element rule (u32): {:?}", inner.as_rule()),
+                    span: Some(SourceSpan::new(inner_span.start(), inner_span.end())),
+                });
+            }
+        }
+    }
+
+    let start = first_span.unwrap_or(span.start());
+    let end = last_span.unwrap_or(span.end());
+
+    if elements.len() == 1 {
+        Ok(elements.remove(0))
+    } else {
+        Ok(MiniASTU32::List(Located::new(elements, start, end)))
+    }
+}
+
+fn parse_modified_atom_u32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTU32, ParseError> {
+    let span = pair.as_span();
+    let mut inner = pair.into_inner();
+
+    let atom_pair = inner.next().unwrap();
+    let mut ast = parse_atom_u32(atom_pair)?;
+
+    // Apply modifiers
+    for modifier in inner {
+        ast = apply_modifier_u32(ast, modifier, span.start(), span.end())?;
+    }
+
+    Ok(ast)
+}
+
+fn parse_atom_u32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTU32, ParseError> {
+    let span = pair.as_span();
+    let inner = pair.into_inner().next().unwrap();
+
+    match inner.as_rule() {
+        Rule::rest => Ok(MiniASTU32::Rest(SourceSpan::new(span.start(), span.end()))),
+        Rule::random_choice => {
+            let values: Vec<MiniASTU32> = inner
+                .into_inner()
+                .map(parse_choice_element_u32)
+                .collect::<Result<_, ParseError>>()?;
+            Ok(MiniASTU32::RandomChoice(values))
+        }
+        Rule::value | Rule::number => {
+            let n: u32 = inner.as_str().parse().unwrap_or(0);
+            let value_span = inner.as_span();
+            Ok(MiniASTU32::Pure(Located::new(n, value_span.start(), value_span.end())))
+        }
+        _ => Err(ParseError {
+            message: format!("Unexpected atom rule (u32): {:?}", inner.as_rule()),
+            span: Some(SourceSpan::new(span.start(), span.end())),
+        }),
+    }
+}
+
+fn parse_choice_element_u32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTU32, ParseError> {
+    let inner = pair.into_inner().next().unwrap();
+    match inner.as_rule() {
+        Rule::value | Rule::number => {
+            let span = inner.as_span();
+            let n: u32 = inner.as_str().parse().unwrap_or(0);
+            Ok(MiniASTU32::Pure(Located::new(n, span.start(), span.end())))
+        }
+        Rule::pattern_expr | Rule::sequence_expr => parse_pattern_expr_u32(inner),
+        _ => Err(ParseError {
+            message: format!("Unexpected choice element rule (u32): {:?}", inner.as_rule()),
+            span: Some(SourceSpan::new(inner.as_span().start(), inner.as_span().end())),
+        }),
+    }
+}
+
+fn apply_modifier_u32(
+    ast: MiniASTU32,
+    modifier: pest::iterators::Pair<Rule>,
+    _start: usize,
+    _end: usize,
+) -> Result<MiniASTU32, ParseError> {
+    let inner = modifier.into_inner().next().unwrap();
+
+    match inner.as_rule() {
+        Rule::fast_mod => {
+            let operand_pair = inner.into_inner().next().unwrap();
+            let factor = parse_mod_operand_f64(operand_pair)?;
+            Ok(MiniASTU32::Fast(Box::new(ast), Box::new(factor)))
+        }
+        Rule::slow_mod => {
+            let operand_pair = inner.into_inner().next().unwrap();
+            let factor = parse_mod_operand_f64(operand_pair)?;
+            Ok(MiniASTU32::Slow(Box::new(ast), Box::new(factor)))
+        }
+        Rule::replicate => {
+            let count = inner
+                .into_inner()
+                .next()
+                .map(|p| p.as_str().parse().unwrap_or(2))
+                .unwrap_or(2);
+            Ok(MiniASTU32::Replicate(Box::new(ast), count))
+        }
+        Rule::degrade => {
+            let prob = if let Some(p) = inner.into_inner().next() {
+                let n: f64 = p.as_str().parse().unwrap_or(0.5);
+                Some(n)
+            } else {
+                None
+            };
+            Ok(MiniASTU32::Degrade(Box::new(ast), prob))
+        }
+        Rule::euclidean => {
+            let mut operands = inner.into_inner();
+            let pulses = Box::new(parse_mod_operand_u32(operands.next().unwrap())?);
+            let steps = Box::new(parse_mod_operand_u32(operands.next().unwrap())?);
+            let rotation = operands.next().map(|p| parse_mod_operand_i32(p)).transpose()?.map(Box::new);
+
+            Ok(MiniASTU32::Euclidean {
+                pattern: Box::new(ast),
+                pulses,
+                steps,
+                rotation,
+            })
+        }
+        _ => Err(ParseError {
+            message: format!("Unknown modifier (u32): {:?}", inner.as_rule()),
+            span: Some(SourceSpan::new(inner.as_span().start(), inner.as_span().end())),
+        }),
+    }
+}
+
+fn parse_fast_sub_u32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTU32, ParseError> {
+    let inner = pair.into_inner().next().unwrap();
+    let ast = parse_pattern_expr_u32(inner)?;
+
+    // Fast subsequence means fastcat (preserves weights for timecat)
+    match ast {
+        MiniASTU32::Sequence(elements) => Ok(MiniASTU32::Sequence(elements)),
+        other => Ok(other),
+    }
+}
+
+fn parse_slow_sub_u32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTU32, ParseError> {
+    let inner = pair.into_inner().next().unwrap();
+    let ast = parse_pattern_expr_u32(inner)?;
+
+    match ast {
+        MiniASTU32::Sequence(elements) => {
+            let patterns: Vec<MiniASTU32> = elements.into_iter().map(|(p, _)| p).collect();
+            Ok(MiniASTU32::SlowCat(patterns))
+        }
+        other => Ok(MiniASTU32::SlowCat(vec![other])),
+    }
+}
+
+// ============ Typed parsing functions for MiniASTI32 ============
+
+fn parse_pattern_expr_i32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTI32, ParseError> {
+    match pair.as_rule() {
+        Rule::pattern_expr => {
+            let inner = pair.into_inner().next().unwrap();
+            parse_pattern_expr_i32(inner)
+        }
+        Rule::sequence_expr => parse_sequence_expr_i32(pair),
+        Rule::weighted_elem => parse_weighted_elem_i32(pair).map(|(ast, _)| ast),
+        Rule::element => parse_element_i32(pair),
+        Rule::modified_atom => parse_modified_atom_i32(pair),
+        Rule::atom => parse_atom_i32(pair),
+        _ => Err(ParseError {
+            message: format!("Unexpected rule (i32): {:?}", pair.as_rule()),
+            span: Some(SourceSpan::new(pair.as_span().start(), pair.as_span().end())),
+        }),
+    }
+}
+
+fn parse_sequence_expr_i32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTI32, ParseError> {
+    let elements: Vec<(MiniASTI32, Option<f64>)> = pair
+        .into_inner()
+        .map(parse_weighted_elem_i32)
+        .collect::<Result<_, _>>()?;
+
+    if elements.len() == 1 && elements[0].1.is_none() {
+        Ok(elements.into_iter().next().unwrap().0)
+    } else {
+        Ok(MiniASTI32::Sequence(elements))
+    }
+}
+
+fn parse_weighted_elem_i32(pair: pest::iterators::Pair<Rule>) -> Result<(MiniASTI32, Option<f64>), ParseError> {
+    let mut inner = pair.into_inner();
+
+    let element_pair = inner.next().unwrap();
+    let ast = parse_element_i32(element_pair)?;
+
+    let weight = if let Some(p) = inner.next() {
+        let n: f64 = p.as_str().parse().unwrap_or(1.0);
+        Some(n)
+    } else {
+        None
+    };
+
+    Ok((ast, weight))
+}
+
+fn parse_element_i32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTI32, ParseError> {
+    let span = pair.as_span();
+    let mut elements: Vec<MiniASTI32> = Vec::new();
+    let mut first_span = None;
+    let mut last_span = None;
+
+    for inner in pair.into_inner() {
+        let inner_span = inner.as_span();
+        if first_span.is_none() {
+            first_span = Some(inner_span.start());
+        }
+        last_span = Some(inner_span.end());
+
+        match inner.as_rule() {
+            Rule::element_base => {
+                let base_inner = inner.into_inner().next().unwrap();
+                let base_ast = match base_inner.as_rule() {
+                    Rule::fast_sub => parse_fast_sub_i32(base_inner)?,
+                    Rule::slow_sub => parse_slow_sub_i32(base_inner)?,
+                    Rule::group => {
+                        let inner_expr = base_inner.into_inner().next().unwrap();
+                        parse_pattern_expr_i32(inner_expr)?
+                    }
+                    Rule::modified_atom => parse_modified_atom_i32(base_inner)?,
+                    _ => {
+                        return Err(ParseError {
+                            message: format!("Unexpected element_base rule (i32): {:?}", base_inner.as_rule()),
+                            span: Some(SourceSpan::new(base_inner.as_span().start(), base_inner.as_span().end())),
+                        });
+                    }
+                };
+                elements.push(base_ast);
+            }
+            Rule::tail_element => {
+                let inner_pair = inner.into_inner().next().unwrap();
+                match inner_pair.as_rule() {
+                    Rule::value | Rule::number => {
+                        let n: i32 = inner_pair.as_str().parse().unwrap_or(0);
+                        let elem_span = SourceSpan::new(inner_span.start(), inner_span.end());
+                        elements.push(MiniASTI32::Pure(Located::new(n, elem_span.start, elem_span.end)));
+                    }
+                    Rule::fast_sub => {
+                        elements.push(parse_fast_sub_i32(inner_pair)?);
+                    }
+                    Rule::slow_sub => {
+                        elements.push(parse_slow_sub_i32(inner_pair)?);
+                    }
+                    Rule::group => {
+                        let inner_expr = inner_pair.into_inner().next().unwrap();
+                        elements.push(parse_pattern_expr_i32(inner_expr)?);
+                    }
+                    _ => {
+                        return Err(ParseError {
+                            message: format!("Unexpected tail element rule (i32): {:?}", inner_pair.as_rule()),
+                            span: Some(SourceSpan::new(inner_pair.as_span().start(), inner_pair.as_span().end())),
+                        });
+                    }
+                }
+            }
+            _ => {
+                return Err(ParseError {
+                    message: format!("Unexpected element rule (i32): {:?}", inner.as_rule()),
+                    span: Some(SourceSpan::new(inner_span.start(), inner_span.end())),
+                });
+            }
+        }
+    }
+
+    let start = first_span.unwrap_or(span.start());
+    let end = last_span.unwrap_or(span.end());
+
+    if elements.len() == 1 {
+        Ok(elements.remove(0))
+    } else {
+        Ok(MiniASTI32::List(Located::new(elements, start, end)))
+    }
+}
+
+fn parse_modified_atom_i32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTI32, ParseError> {
+    let span = pair.as_span();
+    let mut inner = pair.into_inner();
+
+    let atom_pair = inner.next().unwrap();
+    let mut ast = parse_atom_i32(atom_pair)?;
+
+    // Apply modifiers
+    for modifier in inner {
+        ast = apply_modifier_i32(ast, modifier, span.start(), span.end())?;
+    }
+
+    Ok(ast)
+}
+
+fn parse_atom_i32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTI32, ParseError> {
+    let span = pair.as_span();
+    let inner = pair.into_inner().next().unwrap();
+
+    match inner.as_rule() {
+        Rule::rest => Ok(MiniASTI32::Rest(SourceSpan::new(span.start(), span.end()))),
+        Rule::random_choice => {
+            let values: Vec<MiniASTI32> = inner
+                .into_inner()
+                .map(parse_choice_element_i32)
+                .collect::<Result<_, ParseError>>()?;
+            Ok(MiniASTI32::RandomChoice(values))
+        }
+        Rule::value | Rule::number => {
+            let n: i32 = inner.as_str().parse().unwrap_or(0);
+            let value_span = inner.as_span();
+            Ok(MiniASTI32::Pure(Located::new(n, value_span.start(), value_span.end())))
+        }
+        _ => Err(ParseError {
+            message: format!("Unexpected atom rule (i32): {:?}", inner.as_rule()),
+            span: Some(SourceSpan::new(span.start(), span.end())),
+        }),
+    }
+}
+
+fn parse_choice_element_i32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTI32, ParseError> {
+    let inner = pair.into_inner().next().unwrap();
+    match inner.as_rule() {
+        Rule::value | Rule::number => {
+            let span = inner.as_span();
+            let n: i32 = inner.as_str().parse().unwrap_or(0);
+            Ok(MiniASTI32::Pure(Located::new(n, span.start(), span.end())))
+        }
+        Rule::pattern_expr | Rule::sequence_expr => parse_pattern_expr_i32(inner),
+        _ => Err(ParseError {
+            message: format!("Unexpected choice element rule (i32): {:?}", inner.as_rule()),
+            span: Some(SourceSpan::new(inner.as_span().start(), inner.as_span().end())),
+        }),
+    }
+}
+
+fn apply_modifier_i32(
+    ast: MiniASTI32,
+    modifier: pest::iterators::Pair<Rule>,
+    _start: usize,
+    _end: usize,
+) -> Result<MiniASTI32, ParseError> {
+    let inner = modifier.into_inner().next().unwrap();
+
+    match inner.as_rule() {
+        Rule::fast_mod => {
+            let operand_pair = inner.into_inner().next().unwrap();
+            let factor = parse_mod_operand_f64(operand_pair)?;
+            Ok(MiniASTI32::Fast(Box::new(ast), Box::new(factor)))
+        }
+        Rule::slow_mod => {
+            let operand_pair = inner.into_inner().next().unwrap();
+            let factor = parse_mod_operand_f64(operand_pair)?;
+            Ok(MiniASTI32::Slow(Box::new(ast), Box::new(factor)))
+        }
+        Rule::replicate => {
+            let count = inner
+                .into_inner()
+                .next()
+                .map(|p| p.as_str().parse().unwrap_or(2))
+                .unwrap_or(2);
+            Ok(MiniASTI32::Replicate(Box::new(ast), count))
+        }
+        Rule::degrade => {
+            let prob = if let Some(p) = inner.into_inner().next() {
+                let n: f64 = p.as_str().parse().unwrap_or(0.5);
+                Some(n)
+            } else {
+                None
+            };
+            Ok(MiniASTI32::Degrade(Box::new(ast), prob))
+        }
+        Rule::euclidean => {
+            let mut operands = inner.into_inner();
+            let pulses = Box::new(parse_mod_operand_u32(operands.next().unwrap())?);
+            let steps = Box::new(parse_mod_operand_u32(operands.next().unwrap())?);
+            let rotation = operands.next().map(|p| parse_mod_operand_i32(p)).transpose()?.map(Box::new);
+
+            Ok(MiniASTI32::Euclidean {
+                pattern: Box::new(ast),
+                pulses,
+                steps,
+                rotation,
+            })
+        }
+        _ => Err(ParseError {
+            message: format!("Unknown modifier (i32): {:?}", inner.as_rule()),
+            span: Some(SourceSpan::new(inner.as_span().start(), inner.as_span().end())),
+        }),
+    }
+}
+
+fn parse_fast_sub_i32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTI32, ParseError> {
+    let inner = pair.into_inner().next().unwrap();
+    let ast = parse_pattern_expr_i32(inner)?;
+
+    // Fast subsequence means fastcat (preserves weights for timecat)
+    match ast {
+        MiniASTI32::Sequence(elements) => Ok(MiniASTI32::Sequence(elements)),
+        other => Ok(other),
+    }
+}
+
+fn parse_slow_sub_i32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTI32, ParseError> {
+    let inner = pair.into_inner().next().unwrap();
+    let ast = parse_pattern_expr_i32(inner)?;
+
+    match ast {
+        MiniASTI32::Sequence(elements) => {
+            let patterns: Vec<MiniASTI32> = elements.into_iter().map(|(p, _)| p).collect();
+            Ok(MiniASTI32::SlowCat(patterns))
+        }
+        other => Ok(MiniASTI32::SlowCat(vec![other])),
     }
 }
 
@@ -277,45 +1030,37 @@ fn apply_modifier(
 
     match inner.as_rule() {
         Rule::fast_mod => {
-            let slice_pair = inner.into_inner().next().unwrap();
-            let factor = parse_slice(slice_pair)?;
+            let operand_pair = inner.into_inner().next().unwrap();
+            let factor = parse_mod_operand_f64(operand_pair)?;
             Ok(MiniAST::Fast(Box::new(ast), Box::new(factor)))
         }
         Rule::slow_mod => {
-            let slice_pair = inner.into_inner().next().unwrap();
-            let factor = parse_slice(slice_pair)?;
+            let operand_pair = inner.into_inner().next().unwrap();
+            let factor = parse_mod_operand(operand_pair)?;
             Ok(MiniAST::Slow(Box::new(ast), Box::new(factor)))
         }
         Rule::replicate => {
             let count = inner
                 .into_inner()
                 .next()
-                .and_then(|p| p.as_str().parse::<u32>().ok())
+                .map(|p| p.as_str().parse().unwrap_or(2))
                 .unwrap_or(2);
             Ok(MiniAST::Replicate(Box::new(ast), count))
         }
         Rule::degrade => {
-            let prob = inner
-                .into_inner()
-                .next()
-                .and_then(|p| p.as_str().parse::<f64>().ok());
+            let prob = if let Some(p) = inner.into_inner().next() {
+                let n: f64 = p.as_str().parse().unwrap_or(0.5);
+                Some(n)
+            } else {
+                None
+            };
             Ok(MiniAST::Degrade(Box::new(ast), prob))
         }
         Rule::euclidean => {
-            let mut nums = inner.into_inner();
-            let pulses = nums
-                .next()
-                .unwrap()
-                .as_str()
-                .parse::<u32>()
-                .unwrap_or(0);
-            let steps = nums
-                .next()
-                .unwrap()
-                .as_str()
-                .parse::<u32>()
-                .unwrap_or(0);
-            let rotation = nums.next().and_then(|p| p.as_str().parse::<u32>().ok());
+            let mut operands = inner.into_inner();
+            let pulses = Box::new(parse_mod_operand_u32(operands.next().unwrap())?);
+            let steps = Box::new(parse_mod_operand_u32(operands.next().unwrap())?);
+            let rotation = operands.next().map(|p| parse_mod_operand_i32(p)).transpose()?.map(Box::new);
 
             Ok(MiniAST::Euclidean {
                 pattern: Box::new(ast),
@@ -331,7 +1076,7 @@ fn apply_modifier(
     }
 }
 
-fn parse_slice(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseError> {
+fn parse_mod_operand(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseError> {
     let inner = pair.into_inner().next().unwrap();
 
     match inner.as_rule() {
@@ -351,7 +1096,76 @@ fn parse_slice(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseError>
             parse_pattern_expr(inner_expr)
         }
         _ => Err(ParseError {
-            message: format!("Unexpected slice rule: {:?}", inner.as_rule()),
+            message: format!("Unexpected mod_operand rule: {:?}", inner.as_rule()),
+            span: Some(SourceSpan::new(inner.as_span().start(), inner.as_span().end())),
+        }),
+    }
+}
+
+/// Parse a modifier operand as MiniASTF64 (for fast, slow factors, weights, degrade probability).
+fn parse_mod_operand_f64(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTF64, ParseError> {
+    let inner = pair.into_inner().next().unwrap();
+
+    match inner.as_rule() {
+        Rule::number => {
+            let n: f64 = inner.as_str().parse().unwrap_or(1.0);
+            let span = inner.as_span();
+            Ok(MiniASTF64::Pure(Located::new(n, span.start(), span.end())))
+        }
+        Rule::fast_sub => parse_fast_sub_f64(inner),
+        Rule::slow_sub => parse_slow_sub_f64(inner),
+        Rule::group => {
+            let inner_expr = inner.into_inner().next().unwrap();
+            parse_pattern_expr_f64(inner_expr)
+        }
+        _ => Err(ParseError {
+            message: format!("Unexpected mod_operand rule (f64): {:?}", inner.as_rule()),
+            span: Some(SourceSpan::new(inner.as_span().start(), inner.as_span().end())),
+        }),
+    }
+}
+
+/// Parse a modifier operand as MiniASTU32 (for euclidean pulses/steps).
+fn parse_mod_operand_u32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTU32, ParseError> {
+    let inner = pair.into_inner().next().unwrap();
+
+    match inner.as_rule() {
+        Rule::number => {
+            let n: u32 = inner.as_str().parse().unwrap_or(1);
+            let span = inner.as_span();
+            Ok(MiniASTU32::Pure(Located::new(n, span.start(), span.end())))
+        }
+        Rule::fast_sub => parse_fast_sub_u32(inner),
+        Rule::slow_sub => parse_slow_sub_u32(inner),
+        Rule::group => {
+            let inner_expr = inner.into_inner().next().unwrap();
+            parse_pattern_expr_u32(inner_expr)
+        }
+        _ => Err(ParseError {
+            message: format!("Unexpected mod_operand rule (u32): {:?}", inner.as_rule()),
+            span: Some(SourceSpan::new(inner.as_span().start(), inner.as_span().end())),
+        }),
+    }
+}
+
+/// Parse a modifier operand as MiniASTI32 (for euclidean rotation).
+fn parse_mod_operand_i32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTI32, ParseError> {
+    let inner = pair.into_inner().next().unwrap();
+
+    match inner.as_rule() {
+        Rule::number => {
+            let n: i32 = inner.as_str().parse().unwrap_or(0);
+            let span = inner.as_span();
+            Ok(MiniASTI32::Pure(Located::new(n, span.start(), span.end())))
+        }
+        Rule::fast_sub => parse_fast_sub_i32(inner),
+        Rule::slow_sub => parse_slow_sub_i32(inner),
+        Rule::group => {
+            let inner_expr = inner.into_inner().next().unwrap();
+            parse_pattern_expr_i32(inner_expr)
+        }
+        _ => Err(ParseError {
+            message: format!("Unexpected mod_operand rule (i32): {:?}", inner.as_rule()),
             span: Some(SourceSpan::new(inner.as_span().start(), inner.as_span().end())),
         }),
     }
@@ -363,13 +1177,6 @@ fn parse_atom(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseError> 
 
     match inner.as_rule() {
         Rule::rest => Ok(MiniAST::Rest(SourceSpan::new(span.start(), span.end()))),
-
-        Rule::range_pattern => {
-            let mut nums = inner.into_inner();
-            let start: i64 = nums.next().unwrap().as_str().parse().unwrap_or(0);
-            let end: i64 = nums.next().unwrap().as_str().parse().unwrap_or(0);
-            Ok(MiniAST::Range(start, end))
-        }
 
         Rule::random_choice => {
             let values: Vec<MiniAST> = inner
@@ -484,36 +1291,6 @@ fn parse_value(pair: pest::iterators::Pair<Rule>) -> Result<AtomValue, ParseErro
     }
 }
 
-fn parse_operator_chain(pair: pest::iterators::Pair<Rule>) -> Result<Vec<OperatorCall>, ParseError> {
-    pair.into_inner()
-        .map(parse_operator_call)
-        .collect()
-}
-
-fn parse_operator_call(pair: pest::iterators::Pair<Rule>) -> Result<OperatorCall, ParseError> {
-    let span = pair.as_span();
-    let mut inner = pair.into_inner();
-
-    let name = inner.next().unwrap().as_str().to_string();
-
-    let mut variant = None;
-    let mut argument = None;
-
-    for item in inner {
-        match item.as_rule() {
-            Rule::variant => {
-                variant = Some(item.into_inner().next().unwrap().as_str().to_string());
-            }
-            Rule::pattern_expr => {
-                argument = Some(parse_pattern_expr(item)?);
-            }
-            _ => {}
-        }
-    }
-
-    Ok(OperatorCall::new(name, variant, argument, span.start(), span.end()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -529,15 +1306,6 @@ mod tests {
         let ast = parse("0 1 2").unwrap();
         assert!(matches!(ast, MiniAST::Sequence(_)));
         if let MiniAST::Sequence(elements) = ast {
-            assert_eq!(elements.len(), 3);
-        }
-    }
-
-    #[test]
-    fn test_parse_stack() {
-        let ast = parse("0, 1, 2").unwrap();
-        assert!(matches!(ast, MiniAST::Stack(_)));
-        if let MiniAST::Stack(elements) = ast {
             assert_eq!(elements.len(), 3);
         }
     }
@@ -678,34 +1446,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_operator() {
-        let ast = parse("0 1 2 $ fast(2)").unwrap();
-        assert!(matches!(ast, MiniAST::WithOperators { .. }));
-    }
-
-    #[test]
-    fn test_parse_operator_with_variant() {
-        let ast = parse("0 1 2 $ add.squeeze(10)").unwrap();
-        if let MiniAST::WithOperators { operators, .. } = ast {
-            assert_eq!(operators.len(), 1);
-            assert_eq!(operators[0].name, "add");
-            assert_eq!(operators[0].variant, Some("squeeze".to_string()));
-        } else {
-            panic!("Expected WithOperators");
-        }
-    }
-
-    #[test]
-    fn test_parse_chained_operators() {
-        let ast = parse("0 1 2 $ fast(2) $ add(10)").unwrap();
-        if let MiniAST::WithOperators { operators, .. } = ast {
-            assert_eq!(operators.len(), 2);
-        } else {
-            panic!("Expected WithOperators");
-        }
-    }
-
-    #[test]
     fn test_parse_subpattern_head_with_tail() {
         // [c d]:minor should parse as List with [Sequence([c,d]), minor]
         let ast = parse("[c d]:minor").unwrap();
@@ -796,10 +1536,10 @@ mod tests {
         let result = parse("c4?0.3");
         assert!(result.is_ok(), "c4?0.3 should parse: {:?}", result);
         let ast = result.unwrap();
-        if let MiniAST::Degrade(_, prob) = ast {
-            assert_eq!(prob, Some(0.3));
+        if let MiniAST::Degrade(_, Some(prob)) = ast {
+            assert!((prob - 0.3).abs() < 0.001, "Expected 0.3, got {}", prob);
         } else {
-            panic!("Expected Degrade, got {:?}", ast);
+            panic!("Expected Degrade with Some probability, got {:?}", ast);
         }
     }
 
@@ -877,6 +1617,351 @@ mod tests {
             }
         } else {
             panic!("Expected Sequence");
+        }
+    }
+
+    // ============ Typed AST Parsing Tests ============
+
+    // --- MiniASTF64 operand tests (weights, fast factors, degrade probs) ---
+
+    #[test]
+    fn test_parse_weight_pure_f64() {
+        // Simple weight: number parsed directly as f64
+        let result = parse("c4@2");
+        assert!(result.is_ok());
+        if let MiniAST::Sequence(elements) = result.unwrap() {
+            let (_, weight) = &elements[0];
+            if let Some(w) = weight {
+                assert!((*w - 2.0).abs() < 0.001);
+            } else {
+                panic!("Expected weight");
+            }
+        } else {
+            panic!("Expected Sequence");
+        }
+    }
+
+    #[test]
+    fn test_parse_fast_factor_pure_f64() {
+        // Fast with number: factor is MiniASTF64::Pure
+        let result = parse("c4*2");
+        assert!(result.is_ok());
+        if let MiniAST::Fast(_, factor) = result.unwrap() {
+            assert!(matches!(*factor, MiniASTF64::Pure(_)));
+            if let MiniASTF64::Pure(Located { node, .. }) = *factor {
+                assert!((node - 2.0).abs() < 0.001);
+            }
+        } else {
+            panic!("Expected Fast");
+        }
+    }
+
+    #[test]
+    fn test_parse_fast_factor_subsequence_f64() {
+        // Fast with subsequence: [1 2] -> parsed as MiniASTF64::Sequence
+        let result = parse("c4*[1 2]");
+        assert!(result.is_ok());
+        if let MiniAST::Fast(_, factor) = result.unwrap() {
+            assert!(matches!(*factor, MiniASTF64::Sequence(_)));
+            if let MiniASTF64::Sequence(elements) = *factor {
+                assert_eq!(elements.len(), 2);
+                // Check first element is Pure(1.0)
+                if let MiniASTF64::Pure(Located { node, .. }) = &elements[0].0 {
+                    assert!((node - 1.0).abs() < 0.001);
+                }
+            }
+        } else {
+            panic!("Expected Fast");
+        }
+    }
+
+    #[test]
+    fn test_parse_fast_factor_slowcat_f64() {
+        // Fast with slow subsequence: <1 2> -> parsed as MiniASTF64::SlowCat
+        let result = parse("c4*<1 2>");
+        assert!(result.is_ok());
+        if let MiniAST::Fast(_, factor) = result.unwrap() {
+            assert!(matches!(*factor, MiniASTF64::SlowCat(_)));
+            if let MiniASTF64::SlowCat(elements) = *factor {
+                assert_eq!(elements.len(), 2);
+            }
+        } else {
+            panic!("Expected Fast");
+        }
+    }
+
+    #[test]
+    fn test_parse_degrade_prob_f64() {
+        // Degrade with probability: prob is now a plain f64
+        let result = parse("c4?0.75");
+        assert!(result.is_ok());
+        if let MiniAST::Degrade(_, Some(prob)) = result.unwrap() {
+            assert!((prob - 0.75).abs() < 0.001);
+        } else {
+            panic!("Expected Degrade with prob");
+        }
+    }
+
+    // --- MiniASTU32 operand tests (replicate count, euclidean params) ---
+
+    #[test]
+    fn test_parse_replicate_count_pure_u32() {
+        // Replicate with count: count is now a plain u32
+        let result = parse("c4!3");
+        assert!(result.is_ok());
+        if let MiniAST::Replicate(_, count) = result.unwrap() {
+            assert_eq!(count, 3);
+        } else {
+            panic!("Expected Replicate");
+        }
+    }
+
+    #[test]
+    fn test_parse_replicate_default_count() {
+        // Replicate without count: defaults to 2
+        let result = parse("c4!");
+        assert!(result.is_ok());
+        if let MiniAST::Replicate(_, count) = result.unwrap() {
+            assert_eq!(count, 2);
+        } else {
+            panic!("Expected Replicate");
+        }
+    }
+
+    #[test]
+    fn test_parse_euclidean_pulses_steps_u32() {
+        // Euclidean basic: pulses and steps are MiniASTU32::Pure
+        let result = parse("c4(3,8)");
+        assert!(result.is_ok());
+        if let MiniAST::Euclidean { pulses, steps, rotation, .. } = result.unwrap() {
+            assert!(matches!(*pulses, MiniASTU32::Pure(_)));
+            assert!(matches!(*steps, MiniASTU32::Pure(_)));
+            assert!(rotation.is_none());
+            
+            if let MiniASTU32::Pure(Located { node, .. }) = *pulses {
+                assert_eq!(node, 3);
+            }
+            if let MiniASTU32::Pure(Located { node, .. }) = *steps {
+                assert_eq!(node, 8);
+            }
+        } else {
+            panic!("Expected Euclidean");
+        }
+    }
+
+    #[test]
+    fn test_parse_euclidean_with_rotation_i32() {
+        // Euclidean with rotation: pulses/steps are MiniASTU32, rotation is MiniASTI32
+        let result = parse("c4(3,8,2)");
+        assert!(result.is_ok());
+        if let MiniAST::Euclidean { pulses, steps, rotation, .. } = result.unwrap() {
+            if let MiniASTU32::Pure(Located { node, .. }) = *pulses {
+                assert_eq!(node, 3);
+            }
+            if let MiniASTU32::Pure(Located { node, .. }) = *steps {
+                assert_eq!(node, 8);
+            }
+            if let Some(rot) = rotation {
+                if let MiniASTI32::Pure(Located { node, .. }) = *rot {
+                    assert_eq!(node, 2);
+                }
+            } else {
+                panic!("Expected rotation");
+            }
+        } else {
+            panic!("Expected Euclidean");
+        }
+    }
+
+    #[test]
+    fn test_parse_euclidean_pulses_subsequence_u32() {
+        // Euclidean with subsequence for pulses: [3 5] -> MiniASTU32::Sequence
+        let result = parse("c4([3 5],8)");
+        assert!(result.is_ok());
+        if let MiniAST::Euclidean { pulses, steps, .. } = result.unwrap() {
+            assert!(matches!(*pulses, MiniASTU32::Sequence(_)));
+            if let MiniASTU32::Sequence(elements) = *pulses {
+                assert_eq!(elements.len(), 2);
+                if let MiniASTU32::Pure(Located { node, .. }) = &elements[0].0 {
+                    assert_eq!(*node, 3);
+                }
+                if let MiniASTU32::Pure(Located { node, .. }) = &elements[1].0 {
+                    assert_eq!(*node, 5);
+                }
+            }
+            assert!(matches!(*steps, MiniASTU32::Pure(_)));
+        } else {
+            panic!("Expected Euclidean");
+        }
+    }
+
+    #[test]
+    fn test_parse_euclidean_steps_slowcat_u32() {
+        // Euclidean with slowcat for steps: <8 16> -> MiniASTU32::SlowCat
+        let result = parse("c4(3,<8 16>)");
+        assert!(result.is_ok());
+        if let MiniAST::Euclidean { pulses, steps, .. } = result.unwrap() {
+            assert!(matches!(*pulses, MiniASTU32::Pure(_)));
+            assert!(matches!(*steps, MiniASTU32::SlowCat(_)));
+            if let MiniASTU32::SlowCat(elements) = *steps {
+                assert_eq!(elements.len(), 2);
+            }
+        } else {
+            panic!("Expected Euclidean");
+        }
+    }
+
+    // --- Nested typed operand tests (1 level deep) ---
+
+    #[test]
+    fn test_parse_fast_nested_sequence_preserves_weights() {
+        // Fast with weighted sequence in operand - weights are preserved for timecat
+        let result = parse("c4*[1@2 3]");
+        assert!(result.is_ok());
+        if let MiniAST::Fast(_, factor) = result.unwrap() {
+            if let MiniASTF64::Sequence(elements) = *factor {
+                assert_eq!(elements.len(), 2);
+                // First element should have weight 2
+                let (_, weight) = &elements[0];
+                assert!(weight.is_some(), "Fast subsequence should preserve weights");
+                if let Some(w) = weight {
+                    assert!((*w - 2.0).abs() < 0.001);
+                }
+                // Second element should have no weight
+                let (_, weight2) = &elements[1];
+                assert!(weight2.is_none());
+            } else {
+                panic!("Expected MiniASTF64::Sequence");
+            }
+        } else {
+            panic!("Expected Fast");
+        }
+    }
+
+    #[test]
+    fn test_parse_euclidean_nested_slowcat_in_rotation() {
+        // Euclidean with slowcat in rotation: (3, 8, <0 2 4>)
+        let result = parse("c4(3,8,<0 2 4>)");
+        assert!(result.is_ok());
+        if let MiniAST::Euclidean { rotation, .. } = result.unwrap() {
+            if let Some(rot) = rotation {
+                assert!(matches!(*rot, MiniASTI32::SlowCat(_)));
+                if let MiniASTI32::SlowCat(elements) = *rot {
+                    assert_eq!(elements.len(), 3);
+                }
+            } else {
+                panic!("Expected rotation");
+            }
+        } else {
+            panic!("Expected Euclidean");
+        }
+    }
+
+    #[test]
+    fn test_parse_sequence_with_weighted_elements_nested() {
+        // Sequence with various weighted elements
+        let result = parse("1@2 2@0.5 3");
+        assert!(result.is_ok());
+        if let MiniAST::Sequence(elements) = result.unwrap() {
+            assert_eq!(elements.len(), 3);
+            
+            // First: weight 2
+            let (_, w1) = &elements[0];
+            if let Some(w) = w1 {
+                assert!((*w - 2.0).abs() < 0.001);
+            } else {
+                panic!("Expected weight on first element");
+            }
+            
+            // Second: weight 0.5
+            let (_, w2) = &elements[1];
+            if let Some(w) = w2 {
+                assert!((*w - 0.5).abs() < 0.001);
+            } else {
+                panic!("Expected weight on second element");
+            }
+            
+            // Third: no weight
+            let (_, w3) = &elements[2];
+            assert!(w3.is_none());
+        } else {
+            panic!("Expected Sequence");
+        }
+    }
+
+    #[test]
+    fn test_parse_fast_with_grouped_operand() {
+        // Fast with grouped operand: *(1) -> MiniASTF64::Pure via group
+        let result = parse("c4*(2)");
+        assert!(result.is_ok());
+        if let MiniAST::Fast(_, factor) = result.unwrap() {
+            // Group unwraps to the inner value
+            if let MiniASTF64::Pure(Located { node, .. }) = *factor {
+                assert!((node - 2.0).abs() < 0.001);
+            }
+        } else {
+            panic!("Expected Fast");
+        }
+    }
+
+    #[test]
+    fn test_parse_euclidean_all_nested() {
+        // Euclidean with all params as subsequences
+        let result = parse("c4([3 5],[8 16],[0 2])");
+        assert!(result.is_ok());
+        if let MiniAST::Euclidean { pulses, steps, rotation, .. } = result.unwrap() {
+            assert!(matches!(*pulses, MiniASTU32::Sequence(_)));
+            assert!(matches!(*steps, MiniASTU32::Sequence(_)));
+            if let Some(rot) = rotation {
+                assert!(matches!(*rot, MiniASTI32::Sequence(_)));
+            } else {
+                panic!("Expected rotation");
+            }
+        } else {
+            panic!("Expected Euclidean");
+        }
+    }
+
+    // --- Cross-type verification tests ---
+
+    #[test]
+    fn test_parse_mixed_typed_modifiers() {
+        // Combine fast (f64 factor), replicate (u32 count), degrade (f64 prob)
+        let result = parse("c4*2!3?0.5");
+        assert!(result.is_ok());
+        // This should parse as: Degrade(Replicate(Fast(c4, 2), 3), 0.5)
+        let ast = result.unwrap();
+        if let MiniAST::Degrade(inner, prob) = ast {
+            // Check prob is now f64
+            assert!(prob.is_some());
+            assert!((prob.unwrap() - 0.5).abs() < 0.001);
+            // Inner should be Replicate
+            if let MiniAST::Replicate(inner2, count) = *inner {
+                assert_eq!(count, 3);
+                // Inner2 should be Fast
+                if let MiniAST::Fast(_, factor) = *inner2 {
+                    assert!(matches!(*factor, MiniASTF64::Pure(_)));
+                } else {
+                    panic!("Expected Fast");
+                }
+            } else {
+                panic!("Expected Replicate");
+            }
+        } else {
+            panic!("Expected Degrade");
+        }
+    }
+
+    #[test]
+    fn test_parse_euclidean_then_fast() {
+        // Euclidean pattern with fast modifier
+        let result = parse("c4(3,8)*2");
+        assert!(result.is_ok());
+        if let MiniAST::Fast(inner, factor) = result.unwrap() {
+            assert!(matches!(*factor, MiniASTF64::Pure(_)));
+            assert!(matches!(*inner, MiniAST::Euclidean { .. }));
+        } else {
+            panic!("Expected Fast wrapping Euclidean");
         }
     }
 }
