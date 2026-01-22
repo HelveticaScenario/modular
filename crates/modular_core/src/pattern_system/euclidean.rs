@@ -225,19 +225,63 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     /// Non-pulse positions produce the rest value instead of being filtered.
     /// This ensures the pattern always returns a hap when queried.
     pub fn euclid_rot_with_rest(&self, pulses: i32, steps: u32, rotation: i32, rest: T) -> Pattern<T> {
-        let rhythm = euclidean_rhythm(pulses, steps, Some(rotation));
         let bool_pat = euclid_bool(pulses, steps, Some(rotation));
         
-        // Use app_left to combine: if pulse position, use pattern value; else use rest
+        // Use app_right to take structure from bool_pat (the euclidean rhythm steps)
+        // while querying self for values at each position
         let pat = self.clone();
         let rest_val = rest.clone();
         
-        pat.app_left(&bool_pat, move |val, is_pulse| {
+        pat.app_right(&bool_pat, move |val, is_pulse| {
             if *is_pulse {
                 val.clone()
             } else {
                 rest_val.clone()
             }
+        })
+    }
+
+    /// Apply Euclidean rhythm with patterned parameters.
+    ///
+    /// All parameters (pulses, steps, rotation) can be patterns.
+    /// This allows rhythms like `c([2 3], 8)` that alternate between
+    /// 2-in-8 and 3-in-8 euclidean patterns.
+    pub fn euclid_pat_with_rest<P, S, R>(
+        &self,
+        pulses: P,
+        steps: S,
+        rotation: R,
+        rest: T,
+    ) -> Pattern<T>
+    where
+        P: super::IntoPattern<i32> + 'static,
+        S: super::IntoPattern<u32> + 'static,
+        R: super::IntoPattern<i32> + 'static,
+    {
+        let pulses_pat = pulses.into_pattern();
+        let steps_pat = steps.into_pattern();
+        let rotation_pat = rotation.into_pattern();
+        let pat = self.clone();
+
+        // Combine the three parameter patterns into one pattern of (pulses, steps, rotation)
+        // Use inner_join to get structure from the parameter patterns
+        pulses_pat.inner_join(move |p| {
+            let steps_pat = steps_pat.clone();
+            let rotation_pat = rotation_pat.clone();
+            let pat = pat.clone();
+            let rest = rest.clone();
+            let pulses = *p;
+
+            steps_pat.inner_join(move |s| {
+                let rotation_pat = rotation_pat.clone();
+                let pat = pat.clone();
+                let rest = rest.clone();
+                let steps = *s;
+
+                rotation_pat.inner_join(move |r| {
+                    pat.euclid_rot_with_rest(pulses, steps, *r, rest.clone())
+                })
+            })
         })
     }
 }

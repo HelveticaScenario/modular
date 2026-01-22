@@ -153,13 +153,23 @@ impl Synthesizer {
 }
 
 #[napi]
-pub fn parse_pattern(source: String) -> Result<serde_json::Value> {
-    use modular_core::pattern::parse_pattern;
-    let program = parse_pattern(&source).map_err(|e| napi::Error::from_reason(e.to_string()))?;
-    Ok(serde_json::to_value(program).unwrap())
-}
-
-#[napi]
 pub fn get_schemas() -> Result<Vec<modular_core::types::ModuleSchema>> {
   Ok(schema())
+}
+
+/// Parse a mini notation pattern and return all leaf spans.
+/// 
+/// This is used by the Monaco editor to create tracked decorations
+/// that move with text edits.
+#[napi]
+pub fn get_mini_leaf_spans(source: String) -> Result<Vec<Vec<u32>>> {
+  use modular_core::pattern_system::mini::{parse_ast, collect_leaf_spans};
+  
+  let ast = parse_ast(&source)
+    .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+  
+  let spans = collect_leaf_spans(&ast);
+  
+  // Convert to Vec<Vec<u32>> for N-API (since tuples aren't directly supported)
+  Ok(spans.into_iter().map(|(start, end)| vec![start as u32, end as u32]).collect())
 }

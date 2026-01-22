@@ -18,7 +18,6 @@ extern crate simple_easing;
 
 pub mod dsp;
 pub mod patch;
-pub mod pattern;
 pub mod pattern_system;
 pub mod types;
 

@@ -9,9 +9,9 @@ import {
 } from 'electron';
 import {
     getSchemas,
+    getMiniLeafSpans,
     PatchGraph,
     Synthesizer,
-    parsePattern,
 } from '@modular/core';
 import {
     IPC_CHANNELS,
@@ -294,8 +294,8 @@ registerIPCHandler('SYNTH_GET_MODULE_STATES', () => {
     return synth.getModuleStates();
 });
 
-registerIPCHandler('PARSE_PATTERN', (source) => {
-    return parsePattern(source);
+registerIPCHandler('GET_MINI_LEAF_SPANS', (source) => {
+    return getMiniLeafSpans(source);
 });
 
 registerIPCHandler('SYNTH_UPDATE_PATCH', (patch, sourceId) => {

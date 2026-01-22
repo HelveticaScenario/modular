@@ -12,7 +12,7 @@ import type {
     ApplyPatchError,
     AudioThreadHealthSnapshot,
     getSchemas,
-    parsePattern,
+    getMiniLeafSpans,
     Synthesizer
 } from '@modular/core';
 
@@ -84,7 +84,7 @@ export const IPC_CHANNELS = {
     SYNTH_IS_RECORDING: 'modular:synth:is-recording',
     SYNTH_GET_HEALTH: 'modular:synth:get-health',
     SYNTH_GET_MODULE_STATES: 'modular:synth:get-module-states',
-    PARSE_PATTERN: 'modular:parse-pattern',
+    GET_MINI_LEAF_SPANS: 'modular:get-mini-leaf-spans',
     SYNTH_STOP: 'modular:synth:stop',
     SYNTH_IS_STOPPED: 'modular:synth:is-stopped',
 
@@ -151,7 +151,7 @@ export interface IPCHandlers {
 
     [IPC_CHANNELS.SYNTH_GET_MODULE_STATES]: typeof Synthesizer.prototype.getModuleStates;
 
-    [IPC_CHANNELS.PARSE_PATTERN]: typeof parsePattern;
+    [IPC_CHANNELS.GET_MINI_LEAF_SPANS]: typeof getMiniLeafSpans;
 
     [IPC_CHANNELS.SYNTH_STOP]: typeof Synthesizer.prototype.stop;
 

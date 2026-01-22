@@ -335,6 +335,11 @@ impl SeqPatternParam {
     pub fn pattern(&self) -> Option<&Pattern<SeqValue>> {
         self.pattern.as_ref()
     }
+
+    /// Get the source pattern string (the evaluated pattern passed to the parser).
+    pub fn source(&self) -> &str {
+        &self.source
+    }
 }
 
 impl<'de> Deserialize<'de> for SeqPatternParam {
@@ -467,6 +472,36 @@ mod tests {
         use crate::pattern_system::HasRest;
         let rest = <SeqValue as HasRest>::rest_value();
         assert!(matches!(rest, SeqValue::Rest));
+    }
+
+    #[test]
+    fn test_seq_value_euclidean() {
+        use crate::pattern_system::mini::parse;
+        use crate::pattern_system::Fraction;
+
+        // Test that euclidean patterns work with SeqValue
+        // c(2,4) means 2 pulses in 4 steps, so we should get:
+        // [c, ~, c, ~] = c at 0-0.25 and 0.5-0.75, rest at 0.25-0.5 and 0.75-1.0
+        let pattern: crate::pattern_system::Pattern<SeqValue> =
+            parse("c(2,4)").expect("Should parse euclidean pattern");
+
+        let haps = pattern.query_arc(Fraction::from(0), Fraction::from(1));
+        
+        println!("Euclidean c(2,4) haps:");
+        for hap in &haps {
+            println!("  {:?} at {:?}-{:?}", hap.value, 
+                hap.whole.as_ref().map(|w| w.begin.to_string()),
+                hap.whole.as_ref().map(|w| w.end.to_string()));
+        }
+
+        assert_eq!(haps.len(), 4, "Should have 4 haps (2 notes, 2 rests)");
+        
+        // Count notes and rests
+        let notes: Vec<_> = haps.iter().filter(|h| !h.value.is_rest()).collect();
+        let rests: Vec<_> = haps.iter().filter(|h| h.value.is_rest()).collect();
+        
+        assert_eq!(notes.len(), 2, "Should have 2 note haps");
+        assert_eq!(rests.len(), 2, "Should have 2 rest haps");
     }
 
     #[test]

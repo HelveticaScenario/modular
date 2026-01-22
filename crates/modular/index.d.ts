@@ -38,9 +38,15 @@ export interface AudioThreadHealthSnapshot {
   estimatedFrameBudgetUsageMax: number
 }
 
-export declare function getSchemas(): Array<ModuleSchema>
+/**
+ * Parse a mini notation pattern and return all leaf spans.
+ *
+ * This is used by the Monaco editor to create tracked decorations
+ * that move with text edits.
+ */
+export declare function getMiniLeafSpans(source: string): Array<Array<number>>
 
-export declare function parsePattern(source: string): any
+export declare function getSchemas(): Array<ModuleSchema>
 
 /** Detailed validation error for patch validation */
 export interface ValidationError {

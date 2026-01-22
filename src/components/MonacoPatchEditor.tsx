@@ -55,21 +55,19 @@ export function MonacoPatchEditor({
         null,
     );
 
-    const [seqTrackingIds, setSeqTrackingIds] = useState<
-        Map<string, Map<number, string>>
+    // Tracked decorations for seq patterns (created at eval time)
+    const [spanDecorations, setSpanDecorations] = useState<
+        Map<string, Map<string, string>>
     >(new Map());
-    const [scaleTrackingIds, setScaleTrackingIds] = useState<
-        Map<string, Map<number, string>>
-    >(new Map());
-    const [addTrackingIds, setAddTrackingIds] = useState<
-        Map<string, Map<number, string>>
+    const [seqCallCache, setSeqCallCache] = useState<
+        Map<string, { sourcePattern: string; patternOffset: number; hasInterpolations: boolean; positionMapper?: (evalPos: number) => number | null; evaluatedPatternForMapper?: string }>
     >(new Map());
     const trackingCollectionRef =
         useRef<editor.IEditorDecorationsCollection | null>(null);
     const activeStepCollectionRef =
         useRef<editor.IEditorDecorationsCollection | null>(null);
 
-    // Setup tracking when submitted code changes
+    // Build tracked decorations when code is evaluated
     useEffect(() => {
         if (!lastSubmittedCode || !editor || !monaco) return;
 
@@ -81,21 +79,20 @@ export function MonacoPatchEditor({
                 currentFile,
                 runningBufferId,
                 existingCollection: trackingCollectionRef.current,
-                parsePattern: window.electronAPI.parsePattern,
+                getMiniLeafSpans: window.electronAPI.getMiniLeafSpans,
             });
 
             if (!result) return;
 
             trackingCollectionRef.current = result.collection;
-            setSeqTrackingIds(result.seqTrackingIds);
-            setScaleTrackingIds(result.scaleTrackingIds);
-            setAddTrackingIds(result.addTrackingIds);
+            setSpanDecorations(result.spanDecorations);
+            setSeqCallCache(result.seqCallCache);
         };
 
         run();
     }, [lastSubmittedCode, editor, monaco, currentFile, runningBufferId]);
 
-    // Poll module states
+    // Poll module states for active step highlighting
     useEffect(() => {
         if (!editor || !monaco) return;
         return startActiveStepPolling({
@@ -103,9 +100,8 @@ export function MonacoPatchEditor({
             monaco,
             currentFile,
             runningBufferId,
-            seqTrackingIds,
-            scaleTrackingIds,
-            addTrackingIds,
+            spanDecorations,
+            seqCallCache,
             activeStepCollectionRef,
             getModuleStates: () =>
                 window.electronAPI.synthesizer.getModuleStates(),
@@ -113,9 +109,8 @@ export function MonacoPatchEditor({
     }, [
         editor,
         monaco,
-        seqTrackingIds,
-        scaleTrackingIds,
-        addTrackingIds,
+        spanDecorations,
+        seqCallCache,
         currentFile,
         runningBufferId,
     ]);

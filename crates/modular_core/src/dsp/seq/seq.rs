@@ -276,6 +276,7 @@ impl crate::types::StatefulModule for Seq {
                     "is_rest": cached.is_rest(),
                 },
                 "source_spans": cached.hap.get_active_spans(),
+                "pattern_source": self.params.pattern.source(),
             })
         })
     }

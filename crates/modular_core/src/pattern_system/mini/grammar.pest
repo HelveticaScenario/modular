@@ -8,19 +8,18 @@ program = { SOI ~ pattern_expr ~ EOI }
 // Pattern expressions - sequence of elements
 pattern_expr = { sequence_expr }
 
-// Sequence: space-separated elements with optional weights
-sequence_expr = { weighted_elem+ }
-
-// Weighted element: element with optional weight (@n)
-weighted_elem = { element ~ (WHITESPACE* ~ "@" ~ WHITESPACE* ~ number)? ~ WHITESPACE* }
+// Sequence: space-separated elements
+// Weight (@) is now part of modifiers, so all operators can be mixed in any order
+sequence_expr = { element+ }
 
 // Element types - with optional tail for list syntax like [a b]:minor
-element = { element_base ~ (":" ~ tail_element)* }
+// All modifiers (including weight @) can be applied in any order
+element = { element_base ~ modifier* ~ (":" ~ tail_element)* ~ WHITESPACE* }
 element_base = {
     fast_sub |
     slow_sub |
     group |
-    modified_atom
+    atom
 }
 
 // Grouping
@@ -30,11 +29,9 @@ group = { "(" ~ WHITESPACE* ~ pattern_expr ~ WHITESPACE* ~ ")" }
 fast_sub = { "[" ~ WHITESPACE* ~ pattern_expr ~ WHITESPACE* ~ "]" }
 slow_sub = { "<" ~ WHITESPACE* ~ pattern_expr ~ WHITESPACE* ~ ">" }
 
-// Atom with modifiers
-modified_atom = { atom ~ modifier* }
-
-// Modifiers (applied to atoms)
+// Modifiers (applied to atoms) - weight is now a modifier like in Strudel
 modifier = {
+    weight |
     fast_mod |
     slow_mod |
     replicate |
@@ -45,6 +42,8 @@ modifier = {
 // Modifier operands can be numbers, fast subsequences, or slow subsequences
 mod_operand = { number | fast_sub | slow_sub | group }
 
+// Weight modifier (@n) - like Strudel's op_weight
+weight = { "@" ~ number? }
 fast_mod = { "*" ~ mod_operand }
 slow_mod = { "/" ~ mod_operand }
 replicate = { "!" ~ integer? }

@@ -26,7 +26,7 @@ function invokeIPC<T extends keyof typeof IPC_CHANNELS>(
 export interface ElectronAPI {
     // Schema operations
     getSchemas: Promisify<IPCHandlers[typeof IPC_CHANNELS.GET_SCHEMAS]>;
-    parsePattern: Promisify<IPCHandlers[typeof IPC_CHANNELS.PARSE_PATTERN]>;
+    getMiniLeafSpans: Promisify<IPCHandlers[typeof IPC_CHANNELS.GET_MINI_LEAF_SPANS]>;
     // Synthesizer operations
     synthesizer: {
         getSampleRate: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_SAMPLE_RATE]>;
@@ -83,8 +83,8 @@ const electronAPI: ElectronAPI = {
     // Schema operations
     getSchemas: (...args) =>
         invokeIPC('GET_SCHEMAS', ...args),
-    parsePattern: (...args) =>
-        invokeIPC('PARSE_PATTERN', ...args),
+    getMiniLeafSpans: (...args) =>
+        invokeIPC('GET_MINI_LEAF_SPANS', ...args),
 
     // Window operations
     openHelpWindow: () => invokeIPC('OPEN_HELP_WINDOW'),

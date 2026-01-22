@@ -457,4 +457,231 @@ mod tests {
             AtomValue::Identifier("bd".to_string())
         );
     }
+
+    #[test]
+    fn test_collect_leaf_spans_includes_modifiers() {
+        use super::super::parser::parse;
+        
+        // Pattern: "c*[1 2]" - both 'c' and '1', '2' should have spans
+        // "c*[1 2]" positions:
+        //  c at 0-1
+        //  * at 1
+        //  [ at 2
+        //  1 at 3-4
+        //  space at 4
+        //  2 at 5-6
+        //  ] at 6
+        let ast = parse("c*[1 2]").unwrap();
+        let spans = collect_leaf_spans(&ast);
+        
+        // Should have 3 spans: c, 1, and 2
+        assert_eq!(spans.len(), 3, "Expected 3 spans (c, 1, 2), got {:?}", spans);
+        assert!(spans.contains(&(0, 1)), "Missing span for 'c' at 0-1: {:?}", spans);
+        assert!(spans.contains(&(3, 4)), "Missing span for '1' at 3-4: {:?}", spans);
+        assert!(spans.contains(&(5, 6)), "Missing span for '2' at 5-6: {:?}", spans);
+    }
+}
+
+/// Collect all leaf source spans from a MiniAST.
+/// This traverses the entire AST and collects spans from Pure nodes and Rest nodes.
+pub fn collect_leaf_spans(ast: &MiniAST) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    collect_leaf_spans_recursive(ast, &mut spans);
+    spans
+}
+
+fn collect_leaf_spans_recursive(ast: &MiniAST, spans: &mut Vec<(usize, usize)>) {
+    match ast {
+        MiniAST::Pure(located) => {
+            spans.push(located.span.to_tuple());
+        }
+        MiniAST::Rest(span) => {
+            spans.push(span.to_tuple());
+        }
+        MiniAST::List(located) => {
+            for child in &located.node {
+                collect_leaf_spans_recursive(child, spans);
+            }
+        }
+        MiniAST::Sequence(items) => {
+            for (child, _weight) in items {
+                collect_leaf_spans_recursive(child, spans);
+            }
+        }
+        MiniAST::SlowCat(items) | MiniAST::RandomChoice(items) => {
+            for child in items {
+                collect_leaf_spans_recursive(child, spans);
+            }
+        }
+        MiniAST::Fast(pattern, factor) => {
+            collect_leaf_spans_recursive(pattern, spans);
+            collect_f64_spans(factor, spans);
+        }
+        MiniAST::Slow(pattern, factor) => {
+            collect_leaf_spans_recursive(pattern, spans);
+            // Slow's factor is MiniAST, not MiniASTF64
+            collect_leaf_spans_recursive(factor, spans);
+        }
+        MiniAST::Replicate(pattern, _count) => {
+            collect_leaf_spans_recursive(pattern, spans);
+        }
+        MiniAST::Degrade(pattern, _prob) => {
+            collect_leaf_spans_recursive(pattern, spans);
+        }
+        MiniAST::Euclidean { pattern, pulses, steps, rotation } => {
+            collect_leaf_spans_recursive(pattern, spans);
+            collect_u32_spans(pulses, spans);
+            collect_u32_spans(steps, spans);
+            if let Some(rot) = rotation {
+                collect_i32_spans(rot, spans);
+            }
+        }
+    }
+}
+
+/// Collect spans from MiniASTF64 (used for fast/slow factors).
+fn collect_f64_spans(ast: &MiniASTF64, spans: &mut Vec<(usize, usize)>) {
+    match ast {
+        MiniASTF64::Pure(located) => {
+            spans.push(located.span.to_tuple());
+        }
+        MiniASTF64::Rest(span) => {
+            spans.push(span.to_tuple());
+        }
+        MiniASTF64::List(located) => {
+            for child in &located.node {
+                collect_f64_spans(child, spans);
+            }
+        }
+        MiniASTF64::Sequence(items) => {
+            for (child, _weight) in items {
+                collect_f64_spans(child, spans);
+            }
+        }
+        MiniASTF64::SlowCat(items) | MiniASTF64::RandomChoice(items) => {
+            for child in items {
+                collect_f64_spans(child, spans);
+            }
+        }
+        MiniASTF64::Fast(pattern, factor) => {
+            collect_f64_spans(pattern, spans);
+            collect_f64_spans(factor, spans);
+        }
+        MiniASTF64::Slow(pattern, factor) => {
+            collect_f64_spans(pattern, spans);
+            collect_f64_spans(factor, spans);
+        }
+        MiniASTF64::Replicate(pattern, _count) => {
+            collect_f64_spans(pattern, spans);
+        }
+        MiniASTF64::Degrade(pattern, _prob) => {
+            collect_f64_spans(pattern, spans);
+        }
+        MiniASTF64::Euclidean { pattern, pulses, steps, rotation } => {
+            collect_f64_spans(pattern, spans);
+            collect_u32_spans(pulses, spans);
+            collect_u32_spans(steps, spans);
+            if let Some(rot) = rotation {
+                collect_i32_spans(rot, spans);
+            }
+        }
+    }
+}
+
+/// Collect spans from MiniASTU32 (used for euclidean pulses/steps).
+fn collect_u32_spans(ast: &MiniASTU32, spans: &mut Vec<(usize, usize)>) {
+    match ast {
+        MiniASTU32::Pure(located) => {
+            spans.push(located.span.to_tuple());
+        }
+        MiniASTU32::Rest(span) => {
+            spans.push(span.to_tuple());
+        }
+        MiniASTU32::List(located) => {
+            for child in &located.node {
+                collect_u32_spans(child, spans);
+            }
+        }
+        MiniASTU32::Sequence(items) => {
+            for (child, _weight) in items {
+                collect_u32_spans(child, spans);
+            }
+        }
+        MiniASTU32::SlowCat(items) | MiniASTU32::RandomChoice(items) => {
+            for child in items {
+                collect_u32_spans(child, spans);
+            }
+        }
+        MiniASTU32::Fast(pattern, factor) => {
+            collect_u32_spans(pattern, spans);
+            collect_f64_spans(factor, spans);
+        }
+        MiniASTU32::Slow(pattern, factor) => {
+            collect_u32_spans(pattern, spans);
+            collect_f64_spans(factor, spans);
+        }
+        MiniASTU32::Replicate(pattern, _count) => {
+            collect_u32_spans(pattern, spans);
+        }
+        MiniASTU32::Degrade(pattern, _prob) => {
+            collect_u32_spans(pattern, spans);
+        }
+        MiniASTU32::Euclidean { pattern, pulses, steps, rotation } => {
+            collect_u32_spans(pattern, spans);
+            collect_u32_spans(pulses, spans);
+            collect_u32_spans(steps, spans);
+            if let Some(rot) = rotation {
+                collect_i32_spans(rot, spans);
+            }
+        }
+    }
+}
+
+/// Collect spans from MiniASTI32 (used for euclidean rotation).
+fn collect_i32_spans(ast: &MiniASTI32, spans: &mut Vec<(usize, usize)>) {
+    match ast {
+        MiniASTI32::Pure(located) => {
+            spans.push(located.span.to_tuple());
+        }
+        MiniASTI32::Rest(span) => {
+            spans.push(span.to_tuple());
+        }
+        MiniASTI32::List(located) => {
+            for child in &located.node {
+                collect_i32_spans(child, spans);
+            }
+        }
+        MiniASTI32::Sequence(items) => {
+            for (child, _weight) in items {
+                collect_i32_spans(child, spans);
+            }
+        }
+        MiniASTI32::SlowCat(items) | MiniASTI32::RandomChoice(items) => {
+            for child in items {
+                collect_i32_spans(child, spans);
+            }
+        }
+        MiniASTI32::Fast(pattern, factor) => {
+            collect_i32_spans(pattern, spans);
+            collect_f64_spans(factor, spans);
+        }
+        MiniASTI32::Slow(pattern, factor) => {
+            collect_i32_spans(pattern, spans);
+            collect_f64_spans(factor, spans);
+        }
+        MiniASTI32::Replicate(pattern, _count) => {
+            collect_i32_spans(pattern, spans);
+        }
+        MiniASTI32::Degrade(pattern, _prob) => {
+            collect_i32_spans(pattern, spans);
+        }
+        MiniASTI32::Euclidean { pattern, pulses, steps, rotation } => {
+            collect_i32_spans(pattern, spans);
+            collect_u32_spans(pulses, spans);
+            collect_u32_spans(steps, spans);
+            if let Some(rot) = rotation {
+                collect_i32_spans(rot, spans);
+            }
+        }
+    }
 }

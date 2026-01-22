@@ -53,7 +53,11 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
                 for inner_hap in inner_haps {
                     if let Some(part) = outer_hap.part.intersection(&inner_hap.part) {
                         let whole = whole_fn(outer_hap.whole.as_ref(), inner_hap.whole.as_ref());
-                        let context = HapContext::merge(&outer_hap.context, &inner_hap.context);
+                        // Merge contexts: inner is primary (its source_span is kept),
+                        // outer's source_span becomes a modifier_span.
+                        // This matches the semantic that the inner pattern's value is
+                        // the "result" and the outer is a modifier (e.g., fast factor).
+                        let context = HapContext::merge(&inner_hap.context, &outer_hap.context);
 
                         result.push(Hap {
                             whole,
@@ -128,7 +132,9 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
                 for inner_hap in inner_haps {
                     // Part must still intersect with query span
                     if let Some(part) = inner_hap.part.intersection(&state.span) {
-                        let context = HapContext::merge(&outer_hap.context, &inner_hap.context);
+                        // Inner is primary (its source_span is kept),
+                        // outer's source_span becomes a modifier_span
+                        let context = HapContext::merge(&inner_hap.context, &outer_hap.context);
 
                         result.push(Hap {
                             whole: inner_hap.whole,
