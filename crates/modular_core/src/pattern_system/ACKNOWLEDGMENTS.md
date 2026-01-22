@@ -1,0 +1,1 @@
+This code is largely a port of the [strudel](https://codeberg.org/uzu/strudel) pattern system, I take no credit in its design. Modular is distributed under the same license (AGPL) as strudel is.
