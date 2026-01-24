@@ -1,7 +1,7 @@
 import type { EditorBuffer, UnsavedBufferSnapshot } from '../types/editor';
 
 export const DEFAULT_PATCH = `// Simple 440 Hz sine wave
-sine('a4').out();
+sine('a3').out();
 `;
 
 const UNSAVED_STORAGE_KEY = 'modular_unsaved_buffers';

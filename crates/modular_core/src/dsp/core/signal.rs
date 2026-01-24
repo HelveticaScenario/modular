@@ -25,7 +25,7 @@ pub struct Signal {
 
 impl Signal {
     fn update(&mut self, _sample_rate: f32) -> () {
-        self.outputs.sample = self.params.source.get_value();
+        self.outputs.sample = self.params.source.get_poly_signal().get(0);
     }
 }
 

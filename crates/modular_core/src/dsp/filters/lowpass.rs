@@ -36,10 +36,10 @@ pub struct LowpassFilter {
 
 impl LowpassFilter {
     fn update(&mut self, sample_rate: f32) -> () {
-        let input = self.params.input.get_value();
+        let input = self.params.input.get_poly_signal().get(0);
 
-        self.cutoff.update(self.params.cutoff.get_value_or(4.0));
-        self.resonance.update(self.params.resonance.get_value_or(0.0));
+        self.cutoff.update(self.params.cutoff.get_poly_signal().get_or(0, 4.0));
+        self.resonance.update(self.params.resonance.get_poly_signal().get_or(0, 0.0));
 
         // Convert v/oct to frequency
         let freq = 55.0f32 * 2.0f32.powf(*self.cutoff);

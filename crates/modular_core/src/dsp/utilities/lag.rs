@@ -42,13 +42,15 @@ impl Default for LagProcessor {
 
 impl LagProcessor {
     pub fn update(&mut self, sample_rate: f32) {
-        let fall_val = self.params.fall.get_value();
-        let rise_val = self.params.rise.get_value_optional().unwrap_or(fall_val);
+        let fall_poly = self.params.fall.get_poly_signal();
+        let fall_val = fall_poly.get(0);
+        let rise_poly = self.params.rise.get_poly_signal();
+        let rise_val = if rise_poly.is_disconnected() { fall_val } else { rise_poly.get(0) };
 
         self.rise.update(rise_val);
         self.fall.update(fall_val);
 
-        let input = self.params.input.get_value();
+        let input = self.params.input.get_poly_signal().get(0);
 
         let rise_cv = *self.rise;
         let fall_cv = *self.fall;

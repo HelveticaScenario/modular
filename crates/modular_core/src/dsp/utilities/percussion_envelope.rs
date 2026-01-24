@@ -46,12 +46,12 @@ impl PercussionEnvelope {
     fn update(&mut self, sample_rate: f32) {
         // Smooth decay parameter (in seconds)
         self.decay
-            .update(self.params.decay.get_value_or(0.1).max(0.001));
+            .update(self.params.decay.get_poly_signal().get_or(0, 0.1).max(0.001));
 
         let decay_time = *self.decay;
 
         // Detect rising edge of trigger
-        let trigger = self.params.trigger.get_value();
+        let trigger = self.params.trigger.get_poly_signal().get(0);
         if trigger > 2.5 && self.last_trigger <= 2.5 {
             // Trigger detected - reset envelope to peak
             self.current_level = 1.0;
@@ -71,8 +71,8 @@ impl PercussionEnvelope {
         }
 
         // Output 0-5V
-        let min = self.params.range.0.get_value_or(0.0);
-        let max = self.params.range.1.get_value_or(5.0);
+        let min = self.params.range.0.get_poly_signal().get_or(0, 0.0);
+        let max = self.params.range.1.get_poly_signal().get_or(0, 5.0);
         self.outputs.sample = crate::dsp::utils::map_range(self.current_level, 0.0, 1.0, min, max);
     }
 }

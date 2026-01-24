@@ -42,7 +42,7 @@ impl Default for RisingEdgeDetector {
 
 impl RisingEdgeDetector {
     pub fn update(&mut self, _sample_rate: f32) {
-        let input = self.params.input.get_value();
+        let input = self.params.input.get_poly_signal().get(0);
 
         let output = if input > self.last_input { 5.0 } else { 0.0 };
 
@@ -74,7 +74,7 @@ impl Default for FallingEdgeDetector {
 
 impl FallingEdgeDetector {
     pub fn update(&mut self, _sample_rate: f32) {
-        let input = self.params.input.get_value();
+        let input = self.params.input.get_poly_signal().get(0);
 
         let output = if input < self.last_input { 5.0 } else { 0.0 };
 

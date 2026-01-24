@@ -314,7 +314,17 @@ fn convert_f64_pattern(ast: &MiniASTF64) -> Pattern<Fraction> {
         }
 
         MiniASTF64::SlowCat(elements) => {
-            let pats: Vec<Pattern<Fraction>> = elements.iter().map(convert_f64_pattern).collect();
+            // Expand Replicate nodes within SlowCat (see MiniAST::SlowCat for details)
+            let expanded: Vec<&MiniASTF64> = elements
+                .iter()
+                .flat_map(|p| match p {
+                    MiniASTF64::Replicate(inner, count) => {
+                        std::iter::repeat(inner.as_ref()).take(*count as usize).collect::<Vec<_>>()
+                    }
+                    other => vec![other],
+                })
+                .collect();
+            let pats: Vec<Pattern<Fraction>> = expanded.iter().map(|e| convert_f64_pattern(e)).collect();
             slowcat(pats)
         }
 
@@ -398,7 +408,17 @@ fn convert_u32_pattern(ast: &MiniASTU32) -> Pattern<u32> {
         }
 
         MiniASTU32::SlowCat(elements) => {
-            let pats: Vec<Pattern<u32>> = elements.iter().map(convert_u32_pattern).collect();
+            // Expand Replicate nodes within SlowCat (see MiniAST::SlowCat for details)
+            let expanded: Vec<&MiniASTU32> = elements
+                .iter()
+                .flat_map(|p| match p {
+                    MiniASTU32::Replicate(inner, count) => {
+                        std::iter::repeat(inner.as_ref()).take(*count as usize).collect::<Vec<_>>()
+                    }
+                    other => vec![other],
+                })
+                .collect();
+            let pats: Vec<Pattern<u32>> = expanded.iter().map(|e| convert_u32_pattern(e)).collect();
             slowcat(pats)
         }
 
@@ -479,7 +499,17 @@ fn convert_i32_pattern(ast: &MiniASTI32) -> Pattern<i32> {
         }
 
         MiniASTI32::SlowCat(elements) => {
-            let pats: Vec<Pattern<i32>> = elements.iter().map(convert_i32_pattern).collect();
+            // Expand Replicate nodes within SlowCat (see MiniAST::SlowCat for details)
+            let expanded: Vec<&MiniASTI32> = elements
+                .iter()
+                .flat_map(|p| match p {
+                    MiniASTI32::Replicate(inner, count) => {
+                        std::iter::repeat(inner.as_ref()).take(*count as usize).collect::<Vec<_>>()
+                    }
+                    other => vec![other],
+                })
+                .collect();
+            let pats: Vec<Pattern<i32>> = expanded.iter().map(|e| convert_i32_pattern(e)).collect();
             slowcat(pats)
         }
 
@@ -666,9 +696,22 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
         }
 
         MiniAST::SlowCat(patterns) => {
-            let converted: Vec<Pattern<T>> = patterns
+            // Expand Replicate nodes within SlowCat.
+            // In Strudel/Tidal, <a!3 b> means "slowcat of a, a, a, b" (each on separate cycles),
+            // not "slowcat of fastcat(a,a,a), b" (which would be 3 a's in cycle 1, b in cycle 2).
+            let expanded: Vec<&MiniAST> = patterns
                 .iter()
-                .map(convert_inner)
+                .flat_map(|p| match p {
+                    MiniAST::Replicate(inner, count) => {
+                        // Expand the replicate into multiple references to the inner pattern
+                        std::iter::repeat(inner.as_ref()).take(*count as usize).collect::<Vec<_>>()
+                    }
+                    other => vec![other],
+                })
+                .collect();
+            let converted: Vec<Pattern<T>> = expanded
+                .iter()
+                .map(|p| convert_inner(p))
                 .collect::<Result<_, _>>()?;
             Ok(slowcat(converted))
         }
@@ -801,6 +844,17 @@ fn atom_to_string(atom: &AtomValue) -> String {
         }
         AtomValue::Identifier(s) => s.clone(),
         AtomValue::String(s) => format!("\"{}\"", s),
+        AtomValue::ModuleRef {
+            module_id,
+            port,
+            sample_and_hold,
+        } => {
+            if *sample_and_hold {
+                format!("module({}:{})=", module_id, port)
+            } else {
+                format!("module({}:{})", module_id, port)
+            }
+        }
     }
 }
 
@@ -967,6 +1021,74 @@ mod tests {
         let pat: Pattern<f64> = convert(&ast).unwrap();
         let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
         assert_eq!(haps.len(), 3);
+    }
+
+    #[test]
+    fn test_convert_replicate_in_slowcat() {
+        // Test that <g!3 b> produces g on cycles 0,1,2 and b on cycle 3
+        // This is the Strudel/Tidal semantics: replicate expands BEFORE slowcat
+        // g = 67, b = 71
+        let ast = parse("<g!3 b>").unwrap();
+        let pat: Pattern<f64> = convert(&ast).unwrap();
+
+        // Cycles 0, 1, 2 should all be g (67)
+        let haps0 = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+        assert_eq!(haps0.len(), 1);
+        assert_eq!(haps0[0].value, 67.0, "Cycle 0 should be g (67)");
+
+        let haps1 = pat.query_arc(Fraction::from_integer(1), Fraction::from_integer(2));
+        assert_eq!(haps1.len(), 1);
+        assert_eq!(haps1[0].value, 67.0, "Cycle 1 should be g (67)");
+
+        let haps2 = pat.query_arc(Fraction::from_integer(2), Fraction::from_integer(3));
+        assert_eq!(haps2.len(), 1);
+        assert_eq!(haps2[0].value, 67.0, "Cycle 2 should be g (67)");
+
+        // Cycle 3 should be b (71)
+        let haps3 = pat.query_arc(Fraction::from_integer(3), Fraction::from_integer(4));
+        assert_eq!(haps3.len(), 1);
+        assert_eq!(haps3[0].value, 71.0, "Cycle 3 should be b (71)");
+
+        // Cycle 4 should wrap back to g (67)
+        let haps4 = pat.query_arc(Fraction::from_integer(4), Fraction::from_integer(5));
+        assert_eq!(haps4.len(), 1);
+        assert_eq!(haps4[0].value, 67.0, "Cycle 4 should be g (67) again");
+    }
+
+    #[test]
+    fn test_convert_replicate_in_slowcat_with_sequence() {
+        // Test "c e <g!3 b>" - the pattern from the user's bug report
+        // c=60, e=64, g=67, b=71
+        let ast = parse("c e <g!3 b>").unwrap();
+        let pat: Pattern<f64> = convert(&ast).unwrap();
+
+        // Cycle 0: c e g
+        let haps0 = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+        let values0: Vec<f64> = haps0.iter().map(|h| h.value).collect();
+        assert_eq!(values0.len(), 3);
+        assert_eq!(values0[0], 60.0, "Cycle 0: first should be c (60)");
+        assert_eq!(values0[1], 64.0, "Cycle 0: second should be e (64)");
+        assert_eq!(values0[2], 67.0, "Cycle 0: third should be g (67)");
+
+        // Cycle 1: c e g (still g because !3 means 3 cycles)
+        let haps1 = pat.query_arc(Fraction::from_integer(1), Fraction::from_integer(2));
+        let values1: Vec<f64> = haps1.iter().map(|h| h.value).collect();
+        assert_eq!(values1[2], 67.0, "Cycle 1: third should be g (67)");
+
+        // Cycle 2: c e g (still g)
+        let haps2 = pat.query_arc(Fraction::from_integer(2), Fraction::from_integer(3));
+        let values2: Vec<f64> = haps2.iter().map(|h| h.value).collect();
+        assert_eq!(values2[2], 67.0, "Cycle 2: third should be g (67)");
+
+        // Cycle 3: c e b (finally switches to b)
+        let haps3 = pat.query_arc(Fraction::from_integer(3), Fraction::from_integer(4));
+        let values3: Vec<f64> = haps3.iter().map(|h| h.value).collect();
+        assert_eq!(values3[2], 71.0, "Cycle 3: third should be b (71)");
+
+        // Cycle 4: c e g (wraps back)
+        let haps4 = pat.query_arc(Fraction::from_integer(4), Fraction::from_integer(5));
+        let values4: Vec<f64> = haps4.iter().map(|h| h.value).collect();
+        assert_eq!(values4[2], 67.0, "Cycle 4: third should be g (67) again");
     }
 
     #[test]

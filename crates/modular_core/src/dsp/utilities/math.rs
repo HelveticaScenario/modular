@@ -154,16 +154,16 @@ impl Math {
     }
 
     fn eval(&mut self) -> std::result::Result<f64, fasteval::Error> {
-        let x = self.params.x.get_value_or(0.0) as f64;
-        let y = self.params.y.get_value_or(0.0) as f64;
-        let z = self.params.z.get_value_or(0.0) as f64;
+        let x = self.params.x.get_poly_signal().get_or(0, 0.0) as f64;
+        let y = self.params.y.get_poly_signal().get_or(0, 0.0) as f64;
+        let z = self.params.z.get_poly_signal().get_or(0, 0.0) as f64;
         let t = self.phase as f64 + self.loop_index as f64;
         let signals = self
             .params
             .expression
             .signals
             .iter()
-            .map(|s| s.get_value_or(0.0) as f64)
+            .map(|s| s.get_poly_signal().get_or(0, 0.0) as f64)
             .collect::<Vec<_>>();
 
         let mut btree = BTreeMap::new();

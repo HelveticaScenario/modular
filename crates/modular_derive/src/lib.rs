@@ -350,6 +350,7 @@ pub fn module_macro_derive(input: TokenStream) -> TokenStream {
 enum OutputPrecision {
     F32,
     F64,
+    PolySignal,
 }
 
 /// Parsed output field data
@@ -386,7 +387,7 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
                         }
                     };
 
-                    // Detect field precision (f32 or f64)
+                    // Detect field precision (f32, f64, or PolySignal)
                     let precision = match &f.ty {
                         Type::Path(tp) => {
                             let type_name = tp
@@ -397,10 +398,11 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
                             match type_name.as_deref() {
                                 Some("f32") => OutputPrecision::F32,
                                 Some("f64") => OutputPrecision::F64,
+                                Some("PolySignal") => OutputPrecision::PolySignal,
                                 _ => {
                                     return syn::Error::new(
                                         f.ty.span(),
-                                        "Output fields must have type f32 or f64",
+                                        "Output fields must have type f32, f64, or PolySignal",
                                     )
                                     .to_compile_error()
                                     .into();
@@ -410,7 +412,7 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
                         _ => {
                             return syn::Error::new(
                                 f.ty.span(),
-                                "Output fields must have type f32 or f64",
+                                "Output fields must have type f32, f64, or PolySignal",
                             )
                             .to_compile_error()
                             .into();
@@ -464,36 +466,34 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
             .into();
     }
 
-    let field_idents: Vec<_> = outputs.iter().map(|o| &o.field_name).collect();
-
-    // Generate get_sample match arms (returns f32, converts f64 -> f32)
-    let sample_match_arms: Vec<_> = outputs
+    let _field_idents: Vec<_> = outputs.iter().map(|o| &o.field_name).collect();
+    
+    // Generate default value expressions for each field type
+    let field_defaults: Vec<_> = outputs
         .iter()
         .map(|o| {
-            let output_name = &o.output_name;
             let field_name = &o.field_name;
             match o.precision {
-                OutputPrecision::F32 => quote! {
-                    #output_name => Some(self.#field_name),
-                },
-                OutputPrecision::F64 => quote! {
-                    #output_name => Some(self.#field_name as f32),
-                },
+                OutputPrecision::F32 | OutputPrecision::F64 => quote! { #field_name: 0.0 },
+                OutputPrecision::PolySignal => quote! { #field_name: crate::poly::PolySignal::default() },
             }
         })
         .collect();
 
-    // Generate get_sample_f64 match arms (returns f64, converts f32 -> f64)
-    let sample_f64_match_arms: Vec<_> = outputs
+    // Generate get_poly_sample match arms (returns PolySignal)
+    let poly_sample_match_arms: Vec<_> = outputs
         .iter()
         .map(|o| {
             let output_name = &o.output_name;
             let field_name = &o.field_name;
             match o.precision {
                 OutputPrecision::F32 => quote! {
-                    #output_name => Some(self.#field_name as f64),
+                    #output_name => Some(crate::poly::PolySignal::mono(self.#field_name)),
                 },
                 OutputPrecision::F64 => quote! {
+                    #output_name => Some(crate::poly::PolySignal::mono(self.#field_name as f32)),
+                },
+                OutputPrecision::PolySignal => quote! {
                     #output_name => Some(self.#field_name),
                 },
             }
@@ -530,7 +530,7 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
         impl Default for #name {
             fn default() -> Self {
                 Self {
-                    #(#field_idents: 0.0,)*
+                    #(#field_defaults,)*
                 }
             }
         }
@@ -540,16 +540,9 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
                 #(#copy_stmts)*
             }
 
-            fn get_sample(&self, port: &str) -> Option<f32> {
+            fn get_poly_sample(&self, port: &str) -> Option<crate::poly::PolySignal> {
                 match port {
-                    #(#sample_match_arms)*
-                    _ => None,
-                }
-            }
-
-            fn get_sample_f64(&self, port: &str) -> Option<f64> {
-                match port {
-                    #(#sample_f64_match_arms)*
+                    #(#poly_sample_match_arms)*
                     _ => None,
                 }
             }
@@ -969,25 +962,10 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 }
             }
 
-            fn get_sample(&self, port: &String) -> Result<f32> {
+            fn get_poly_sample(&self, port: &String) -> napi::Result<crate::poly::PolySignal> {
                 self.update();
                 let outputs = self.outputs.try_read_for(core::time::Duration::from_millis(10)).unwrap();
-                crate::types::OutputStruct::get_sample(&*outputs, port.as_str()).ok_or_else(|| {
-                    napi::Error::from_reason(
-                        format!(
-                            "{} with id {} does not have port {}",
-                            #module_name,
-                            &self.id,
-                            port
-                        )
-                    )
-                })
-            }
-
-            fn get_sample_f64(&self, port: &String) -> Result<f64> {
-                self.update();
-                let outputs = self.outputs.try_read_for(core::time::Duration::from_millis(10)).unwrap();
-                crate::types::OutputStruct::get_sample_f64(&*outputs, port.as_str()).ok_or_else(|| {
+                crate::types::OutputStruct::get_poly_sample(&*outputs, port.as_str()).ok_or_else(|| {
                     napi::Error::from_reason(
                         format!(
                             "{} with id {} does not have port {}",

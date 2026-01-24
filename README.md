@@ -55,14 +55,14 @@ out.source(osc);
 
 **Musical Note:**
 ```javascript
-const osc = sine('a4');
+const osc = sine('a3');
 out.source(osc);
 ```
 
 **FM Synthesis:**
 ```javascript
-const modulator = sine('a4');
-const carrier = sine('a4')
+const modulator = sine('a3');
+const carrier = sine('a3')
   .phase(modulator.scale(0.5));
 out.source(carrier);
 ```

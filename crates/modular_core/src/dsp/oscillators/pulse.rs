@@ -39,9 +39,9 @@ pub struct PulseOscillator {
 impl PulseOscillator {
     fn update(&mut self, sample_rate: f32) -> () {
         self.freq
-            .update(self.params.freq.get_value_or(4.0).clamp(-10.0, 10.0));
-        let base_width = self.params.width.get_value_or(2.5);
-        let pwm = self.params.pwm.get_value_or(0.0);
+            .update(self.params.freq.get_poly_signal().get_or(0, 4.0).clamp(-10.0, 10.0));
+        let base_width = self.params.width.get_poly_signal().get_or(0, 2.5);
+        let pwm = self.params.pwm.get_poly_signal().get_or(0, 0.0);
         self.width.update((base_width + pwm).clamp(0.0, 5.0));
 
         let frequency = 55.0f32 * 2.0f32.powf(*self.freq);
@@ -73,8 +73,8 @@ impl PulseOscillator {
             phase_increment,
         );
 
-        let min = self.params.range.0.get_value_or(-5.0);
-        let max = self.params.range.1.get_value_or(5.0);
+        let min = self.params.range.0.get_poly_signal().get_or(0, -5.0);
+        let max = self.params.range.1.get_poly_signal().get_or(0, 5.0);
         self.outputs.sample = crate::dsp::utils::map_range(naive_pulse, -1.0, 1.0, min, max);
     }
 }

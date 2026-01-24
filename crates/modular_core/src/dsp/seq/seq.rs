@@ -56,7 +56,7 @@ impl CachedHap {
                 sample_and_hold: true,
             } => {
                 // Sample the signal now and convert to MIDI
-                let voct = signal.get_value() as f64;
+                let voct = signal.get_poly_signal().get(0) as f64;
                 Some(voct * 12.0 + 33.0) // V/Oct to MIDI
             }
             _ => None,
@@ -89,7 +89,7 @@ impl CachedHap {
                     self.sampled_midi
                 } else {
                     // Read signal continuously and convert to MIDI
-                    let voct = signal.get_value() as f64;
+                    let voct = signal.get_poly_signal().get(0) as f64;
                     let mut midi = voct * 12.0 + 33.0;
 
                     // Apply operators
@@ -196,7 +196,7 @@ impl Default for Seq {
 
 impl Seq {
     fn update(&mut self, _sample_rate: f32) {
-        let playhead = self.params.playhead.get_value_f64();
+        let playhead = self.params.playhead.get_poly_signal().get(0) as f64;
 
         // Check if we're still within the cached hap
         if let Some(ref cached) = self.cached_hap {

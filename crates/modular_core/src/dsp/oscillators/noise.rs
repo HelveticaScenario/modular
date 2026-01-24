@@ -131,8 +131,8 @@ impl Noise {
             NoiseKind::Brown => self.process_brown(white),
         };
 
-        let min = self.params.range.0.get_value_or(-5.0);
-        let max = self.params.range.1.get_value_or(5.0);
+        let min = self.params.range.0.get_poly_signal().get_or(0, -5.0);
+        let max = self.params.range.1.get_poly_signal().get_or(0, 5.0);
         self.outputs.sample =
             crate::dsp::utils::map_range(colored.clamp(-1.0, 1.0), -1.0, 1.0, min, max);
     }

@@ -78,8 +78,8 @@ impl GrainOscillator {
         }
 
         // Output current sample from buffer
-        let min = self.params.range.0.get_value_or(-5.0);
-        let max = self.params.range.1.get_value_or(5.0);
+        let min = self.params.range.0.get_poly_signal().get_or(0, -5.0);
+        let max = self.params.range.1.get_poly_signal().get_or(0, 5.0);
 
         let out_sample = self.buffer_out[self.buffer_pos];
         let aux_sample = self.buffer_aux[self.buffer_pos];
@@ -94,13 +94,13 @@ impl GrainOscillator {
         if let Some(ref mut engine) = self.engine {
             // Update smooth parameters
             self.freq
-                .update(self.params.freq.get_value_or(4.0).clamp(-10.0, 10.0));
+                .update(self.params.freq.get_poly_signal().get_or(0, 4.0).clamp(-10.0, 10.0));
             self.timbre
-                .update(self.params.timbre.get_value_or(2.5).clamp(0.0, 5.0));
+                .update(self.params.timbre.get_poly_signal().get_or(0, 2.5).clamp(0.0, 5.0));
             self.morph
-                .update(self.params.morph.get_value_or(2.5).clamp(0.0, 5.0));
+                .update(self.params.morph.get_poly_signal().get_or(0, 2.5).clamp(0.0, 5.0));
             self.harmonics
-                .update(self.params.harmonics.get_value_or(2.5).clamp(0.0, 5.0));
+                .update(self.params.harmonics.get_poly_signal().get_or(0, 2.5).clamp(0.0, 5.0));
 
             // Convert V/oct to MIDI note (A4 = 4V/oct = 81 MIDI)
             let midi_note = voct_to_midi(*self.freq);
@@ -114,7 +114,7 @@ impl GrainOscillator {
             let trigger_state = if self.params.sync == Signal::Disconnected {
                 TriggerState::Unpatched
             } else {
-                let sync_val = self.params.sync.get_value_or(0.0);
+                let sync_val = self.params.sync.get_poly_signal().get_or(0, 0.0);
                 if sync_val > 0.0 && self.last_sync <= 0.0 {
                     self.last_sync = sync_val;
                     TriggerState::RisingEdge

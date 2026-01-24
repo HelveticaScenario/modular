@@ -62,7 +62,7 @@ impl Clock {
     fn update(&mut self, sample_rate: f32) {
         // Smooth frequency parameter to avoid clicks
         self.freq
-            .update(self.params.tempo.get_value_or(0.0).clamp(-10.0, 10.0));
+            .update(self.params.tempo.get_poly_signal().get_or(0, 0.0).clamp(-10.0, 10.0));
 
         // Convert V/Oct to Hz (use f64 for precision)
         let frequency_hz = 55.0 * 2.0_f64.powf(*self.freq as f64);

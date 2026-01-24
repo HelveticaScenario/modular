@@ -19,10 +19,13 @@ extern crate simple_easing;
 pub mod dsp;
 pub mod patch;
 pub mod pattern_system;
+pub mod poly;
 pub mod types;
 
 // Re-export commonly used items
 pub use patch::Patch;
+
+pub use poly::{CycleGet, PolyChannels, PolySignal, PORT_MAX_CHANNELS, deserialize_poly};
 
 pub use types::{
     Module, ModuleSchema, ModuleState, PatchGraph, ROOT_ID, ROOT_OUTPUT_PORT, Sampleable,

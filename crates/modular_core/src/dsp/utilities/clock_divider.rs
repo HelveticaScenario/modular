@@ -48,7 +48,7 @@ impl ClockDivider {
     }
 
     fn update(&mut self, _sample_rate: f32) {
-        if self.params.input.get_value() > 0.0 {
+        if self.params.input.get_poly_signal().get(0) > 0.0 {
             self.counter += 1;
             if self.counter >= self.params.division.max(1) {
                 self.outputs.output = 5.0; // Trigger output

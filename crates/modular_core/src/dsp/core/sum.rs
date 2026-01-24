@@ -31,7 +31,7 @@ impl Sum {
             .params
             .signals
             .iter()
-            .fold(0.0, |acc, x| acc + x.get_value())
+            .fold(0.0, |acc, x| acc + x.get_poly_signal().get(0))
     }
 }
 

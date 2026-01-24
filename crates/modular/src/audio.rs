@@ -704,8 +704,8 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
         ..
       } => {
         if let Some(module) = patch_guard.sampleables.get(module_id) {
-          if let Ok(sample) = module.get_sample(&port_name) {
-            scope_buffer.push(sample);
+          if let Ok(poly) = module.get_poly_sample(&port_name) {
+            scope_buffer.push(poly.get(0));
           }
         }
       }
@@ -714,7 +714,9 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
 
   // Get output sample before dropping lock
   let output_sample = if let Some(root) = patch_guard.sampleables.get(&*ROOT_ID) {
-    root.get_sample(&ROOT_OUTPUT_PORT).unwrap_or(0.0)
+    root.get_poly_sample(&ROOT_OUTPUT_PORT)
+        .map(|p| p.get(0))
+        .unwrap_or(0.0)
   } else {
     0.0
   };

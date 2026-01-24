@@ -177,7 +177,7 @@ fn validate_signal_reference(
         });
       }
     }
-    Signal::Volts { .. } | Signal::Disconnected => {}
+    Signal::Volts(..) | Signal::Disconnected => {}
   }
 }
 

@@ -82,7 +82,9 @@ impl Patch {
     /// Get the output sample from the root module
     pub fn get_output(&self) -> f32 {
         if let Some(root) = self.sampleables.get(&*ROOT_ID) {
-            root.get_sample(&ROOT_OUTPUT_PORT).unwrap_or_default()
+            root.get_poly_sample(&ROOT_OUTPUT_PORT)
+                .map(|p| p.get(0))
+                .unwrap_or_default()
         } else {
             0.0
         }
@@ -126,8 +128,8 @@ mod tests {
 
         fn update(&self) {}
 
-        fn get_sample(&self, _port: &String) -> Result<f32> {
-            Ok(0.0)
+        fn get_poly_sample(&self, _port: &String) -> Result<crate::poly::PolySignal> {
+            Ok(crate::poly::PolySignal::mono(0.0))
         }
 
         fn get_module_type(&self) -> String {

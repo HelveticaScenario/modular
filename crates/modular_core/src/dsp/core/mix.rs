@@ -18,7 +18,7 @@ struct MixOutputs {
 }
 
 #[derive(Default, Module)]
-#[module("mix", "A 4 channel mixer")]
+#[module("mix", "A mixer that sums all input signals and their channels")]
 #[args(signals)]
 pub struct Mix {
     outputs: MixOutputs,
@@ -26,16 +26,38 @@ pub struct Mix {
 }
 
 impl Mix {
-    fn update(&mut self, _sample_rate: f32) -> () {
+    fn update(&mut self, _sample_rate: f32) {
         let inputs: Vec<_> = self
             .params
             .signals
             .iter()
             .filter(|input| **input != Signal::Disconnected)
             .collect();
-        let count = inputs.len();
-        self.outputs.sample = if count > 0 {
-            inputs.into_iter().fold(0.0, |acc, x| acc + x.get_value()) / count as f32
+
+        if inputs.is_empty() {
+            self.outputs.sample = 0.0;
+            return;
+        }
+
+        // Sum all channels of all polyphonic inputs
+        let mut total = 0.0f32;
+        let mut channel_count = 0usize;
+
+        for signal in inputs {
+            let poly = signal.get_poly_signal();
+            let channels = poly.channels() as usize;
+            if channels == 0 {
+                continue;
+            }
+            for ch in 0..channels {
+                total += poly.get(ch);
+                channel_count += 1;
+            }
+        }
+
+        // Average all channels
+        self.outputs.sample = if channel_count > 0 {
+            total / channel_count as f32
         } else {
             0.0
         };

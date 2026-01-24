@@ -39,11 +39,11 @@ pub struct SawOscillator {
 impl SawOscillator {
     fn update(&mut self, sample_rate: f32) -> () {
         self.shape
-            .update(self.params.shape.get_value_or(0.0).clamp(0.0, 5.0));
+            .update(self.params.shape.get_poly_signal().get_or(0, 0.0).clamp(0.0, 5.0));
 
         // If phase input is connected, use it directly (for syncing)
         let (current_phase, phase_increment) = if self.params.phase != Signal::Disconnected {
-            let phase_input = self.params.phase.get_value();
+            let phase_input = self.params.phase.get_poly_signal().get(0);
             let wrapped_phase = crate::dsp::utils::wrap(0.0..1.0, phase_input);
             // Calculate phase increment from phase change for PolyBLEP
             let phase_inc = if wrapped_phase >= self.last_phase {
@@ -55,7 +55,7 @@ impl SawOscillator {
         } else {
             // Normal frequency-driven oscillation
             self.freq
-                .update(self.params.freq.get_value_or(4.0).clamp(-10.0, 10.0));
+                .update(self.params.freq.get_poly_signal().get_or(0, 4.0).clamp(-10.0, 10.0));
 
             let frequency = 55.0f32 * 2.0f32.powf(*self.freq);
             let phase_increment = frequency / sample_rate;
@@ -89,8 +89,8 @@ impl SawOscillator {
             triangle * (1.0 - blend) + ramp * blend
         };
 
-        let min = self.params.range.0.get_value_or(-5.0);
-        let max = self.params.range.1.get_value_or(5.0);
+        let min = self.params.range.0.get_poly_signal().get_or(0, -5.0);
+        let max = self.params.range.1.get_poly_signal().get_or(0, 5.0);
         self.outputs.sample = crate::dsp::utils::map_range(output, -1.0, 1.0, min, max);
     }
 }

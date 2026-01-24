@@ -170,6 +170,18 @@ impl FromMiniAtom for SeqValue {
                 accidental: accidental.clone(),
                 octave: *octave,
             }),
+            AtomValue::ModuleRef {
+                module_id,
+                port,
+                sample_and_hold,
+            } => Ok(SeqValue::Signal {
+                signal: Signal::Cable {
+                    module: module_id.clone(),
+                    module_ptr: std::sync::Weak::new(),
+                    port: port.clone(),
+                },
+                sample_and_hold: *sample_and_hold,
+            }),
             AtomValue::Identifier(s) => {
                 // Check for module reference syntax: module(id:port) or module(id:port)=
                 if let Some(parsed) = parse_module_ref(s) {

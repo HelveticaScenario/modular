@@ -221,6 +221,16 @@ pub enum AtomValue {
 
     /// Quoted string.
     String(String),
+
+    /// Module reference: module(id:port) with optional sample-and-hold (=).
+    ModuleRef {
+        /// The module ID
+        module_id: String,
+        /// The output port name
+        port: String,
+        /// Whether to sample-and-hold the value
+        sample_and_hold: bool,
+    },
 }
 
 impl AtomValue {
@@ -259,6 +269,7 @@ impl AtomValue {
             }
             AtomValue::Identifier(_) => None,
             AtomValue::String(_) => None,
+            AtomValue::ModuleRef { .. } => None,
         }
     }
 

@@ -18,6 +18,7 @@ use std::{
 };
 
 use crate::patch::Patch;
+use crate::poly::PolySignal;
 
 lazy_static! {
     pub static ref ROOT_ID: String = "root".into();
@@ -49,12 +50,8 @@ pub trait Sampleable: MessageHandler + Send + Sync {
     fn get_id(&self) -> &String;
     fn tick(&self) -> ();
     fn update(&self) -> ();
-    fn get_sample(&self, port: &String) -> Result<f32>;
-    /// Get sample as f64 for high-precision outputs (e.g., playhead).
-    /// Default implementation widens f32 to f64.
-    fn get_sample_f64(&self, port: &String) -> Result<f64> {
-        self.get_sample(port).map(f64::from)
-    }
+    /// Get polyphonic sample output for a port.
+    fn get_poly_sample(&self, port: &String) -> Result<PolySignal>;
     fn get_module_type(&self) -> String;
     fn try_update_params(&self, params: serde_json::Value) -> Result<()>;
     fn connect(&self, patch: &Patch);
@@ -213,7 +210,7 @@ fn parse_note_str(s: &str) -> StdResult<ParsedNote, String> {
     Ok(ParsedNote { pitch, octave })
 }
 
-fn parse_signal_string(s: &str) -> StdResult<Signal, String> {
+fn parse_signal_string(s: &str) -> StdResult<f32, String> {
     if let Some(caps) = RE_HZ.captures(s) {
         let hz: f32 = caps[1]
             .parse()
@@ -222,7 +219,7 @@ fn parse_signal_string(s: &str) -> StdResult<Signal, String> {
             return Err("Frequency must be positive".to_string());
         }
         let volts = (hz / 55.0).log2();
-        return Ok(Signal::Volts { value: volts });
+        return Ok(volts);
     }
 
     if let Some(caps) = RE_MIDI.captures(s) {
@@ -230,7 +227,7 @@ fn parse_signal_string(s: &str) -> StdResult<Signal, String> {
             .parse()
             .map_err(|_| "Invalid MIDI number".to_string())?;
         let volts = (midi - 33.0) / 12.0;
-        return Ok(Signal::Volts { value: volts });
+        return Ok(volts);
     }
 
     if let Some(caps) = RE_SCALE.captures(s) {
@@ -282,14 +279,14 @@ fn parse_signal_string(s: &str) -> StdResult<Signal, String> {
         let midi_with_cents = midi + (cents / 100.0);
 
         let volts = (midi_with_cents - 33.0) / 12.0;
-        return Ok(Signal::Volts { value: volts });
+        return Ok(volts);
     }
 
     if let Ok(note) = parse_note_str(s) {
         let pc_val = note.pitch.into_u8();
         let midi = (note.octave as f32 + 2.0) * 12.0 + (pc_val as f32);
         let volts = (midi - 33.0) / 12.0;
-        return Ok(Signal::Volts { value: volts });
+        return Ok(volts);
     }
 
     Err("Invalid signal format".to_string())
@@ -297,9 +294,9 @@ fn parse_signal_string(s: &str) -> StdResult<Signal, String> {
 
 #[derive(Clone, Debug, Default)]
 pub enum Signal {
-    Volts {
-        value: f32,
-    },
+    /// Static voltage value(s) - mono is just channels=1
+    Volts(PolySignal),
+    /// Cable connection to another module's output
     Cable {
         module: String,
         module_ptr: std::sync::Weak<Box<dyn Sampleable>>,
@@ -312,8 +309,8 @@ pub enum Signal {
 // Custom serde deserialization to allow a bare number as shorthand for volts.
 //
 // Examples accepted:
-// - 0.5                      -> Signal::Volts { value: 0.5 }
-// - {"type":"volts","value":0.5} -> Signal::Volts { value: 0.5 }
+// - 0.5                      -> Signal::Volts(PolySignal::mono(0.5))
+// - [0.5, 1.0, 1.5]          -> Signal::Volts(PolySignal::poly(&[0.5, 1.0, 1.5]))
 //
 // Note: This keeps the existing *serialized* representation unchanged (still tagged objects).
 // If you also want JSON Schema / TS exports to reflect this shorthand, you'll need a custom
@@ -326,8 +323,10 @@ impl<'de> Deserialize<'de> for Signal {
         #[derive(Deserialize)]
         #[serde(untagged)]
         enum SignalDe {
-            Number(f32),
+            Number(f64),
+            NumberArray(Vec<f64>),
             String(String),
+            StringArray(Vec<String>),
             Tagged(SignalTagged),
         }
 
@@ -338,26 +337,31 @@ impl<'de> Deserialize<'de> for Signal {
             rename_all_fields = "camelCase"
         )]
         enum SignalTagged {
-            Volts { value: f32 },
             Cable { module: String, port: String },
-            Track { track: String },
             Disconnected,
         }
 
         match SignalDe::deserialize(deserializer)? {
-            SignalDe::Number(value) => Ok(Signal::Volts { value }),
-            SignalDe::String(s) => parse_signal_string(&s).map_err(serde::de::Error::custom),
+            SignalDe::Number(value) => Ok(Signal::Volts(PolySignal::mono(value as f32))),
+            SignalDe::NumberArray(values) => Ok(Signal::Volts(PolySignal::poly(
+                &values.into_iter().map(|v| v as f32).collect::<Vec<_>>(),
+            ))),
+            SignalDe::String(s) => parse_signal_string(&s)
+                .map(|v| Signal::Volts(PolySignal::mono(v)))
+                .map_err(serde::de::Error::custom),
+            SignalDe::StringArray(items) => {
+                let mut voltages = Vec::with_capacity(items.len());
+                for item in items {
+                    let v = parse_signal_string(&item).map_err(serde::de::Error::custom)?;
+                    voltages.push(v);
+                }
+                Ok(Signal::Volts(PolySignal::poly(&voltages)))
+            }
             SignalDe::Tagged(tagged) => Ok(match tagged {
-                SignalTagged::Volts { value } => Signal::Volts { value },
                 SignalTagged::Cable { module, port } => Signal::Cable {
                     module,
                     module_ptr: sync::Weak::new(),
                     port,
-                },
-                SignalTagged::Track { track } => Signal::Cable {
-                    module: track,
-                    module_ptr: sync::Weak::new(),
-                    port: "output".to_string(),
                 },
                 SignalTagged::Disconnected => Signal::Disconnected,
             }),
@@ -369,8 +373,10 @@ impl<'de> Deserialize<'de> for Signal {
 #[serde(untagged)]
 #[allow(dead_code)]
 enum SignalSchema {
-    Number(f32),
+    Number(f64),
+    NumberArray(Vec<f64>),
     String(String),
+    StringArray(Vec<String>),
     Tagged(SignalTaggedSchema),
 }
 
@@ -382,9 +388,7 @@ enum SignalSchema {
 )]
 #[allow(dead_code)]
 enum SignalTaggedSchema {
-    Volts { value: f32 },
     Cable { module: String, port: String },
-    Track { track: String },
     Disconnected,
 }
 
@@ -399,49 +403,23 @@ impl JsonSchema for Signal {
 }
 
 impl Signal {
-    pub fn get_value(&self) -> f32 {
-        self.get_value_or(0.0)
-    }
-    pub fn get_value_or(&self, default: f32) -> f32 {
-        self.get_value_optional().unwrap_or(default)
-    }
-    pub fn get_value_optional(&self) -> Option<f32> {
+    /// Get the full polyphonic signal.
+    pub fn get_poly_signal(&self) -> PolySignal {
         match self {
-            Signal::Volts { value } => Some(*value),
+            Signal::Volts(poly) => *poly,
             Signal::Cable {
                 module_ptr, port, ..
             } => match module_ptr.upgrade() {
-                Some(module_ptr) => match module_ptr.get_sample(port) {
-                    Ok(sample) => Some(sample),
-                    Err(_) => None,
-                },
-                None => None,
+                Some(module_ptr) => module_ptr.get_poly_sample(port).unwrap_or_default(),
+                None => PolySignal::default(),
             },
-            Signal::Disconnected => None,
+            Signal::Disconnected => PolySignal::default(),
         }
     }
 
-    /// Get value as f64 for high-precision signals (e.g., playhead from clock).
-    pub fn get_value_f64(&self) -> f64 {
-        self.get_value_f64_or(0.0)
-    }
-    pub fn get_value_f64_or(&self, default: f64) -> f64 {
-        self.get_value_f64_optional().unwrap_or(default)
-    }
-    pub fn get_value_f64_optional(&self) -> Option<f64> {
-        match self {
-            Signal::Volts { value } => Some(*value as f64),
-            Signal::Cable {
-                module_ptr, port, ..
-            } => match module_ptr.upgrade() {
-                Some(module_ptr) => match module_ptr.get_sample_f64(port) {
-                    Ok(sample) => Some(sample),
-                    Err(_) => None,
-                },
-                None => None,
-            },
-            Signal::Disconnected => None,
-        }
+    /// Check if the signal is disconnected
+    pub fn is_disconnected(&self) -> bool {
+        matches!(self, Signal::Disconnected)
     }
 }
 
@@ -471,9 +449,7 @@ impl PartialEq for Box<dyn Sampleable> {
 impl PartialEq for Signal {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Signal::Volts { value: value1 }, Signal::Volts { value: value2 }) => {
-                *value1 == *value2
-            }
+            (Signal::Volts(poly1), Signal::Volts(poly2)) => poly1 == poly2,
             (
                 Signal::Cable {
                     module: module_1,
@@ -565,12 +541,8 @@ pub struct OutputSchema {
 
 pub trait OutputStruct: Default + Send + Sync + 'static {
     fn copy_from(&mut self, other: &Self);
-    fn get_sample(&self, port: &str) -> Option<f32>;
-    /// Get sample as f64 for high-precision outputs (e.g., playhead).
-    /// Default implementation widens f32 to f64.
-    fn get_sample_f64(&self, port: &str) -> Option<f64> {
-        self.get_sample(port).map(f64::from)
-    }
+    /// Get polyphonic sample output for a port.
+    fn get_poly_sample(&self, port: &str) -> Option<PolySignal>;
     fn schemas() -> Vec<OutputSchema>
     where
         Self: Sized;
@@ -716,7 +688,7 @@ mod tests {
     fn test_signal_deserialization_volts() {
         let s: Signal = from_str("0.5").unwrap();
         match s {
-            Signal::Volts { value } => assert_eq!(value, 0.5),
+            Signal::Volts(poly) => assert_eq!(poly.get(0), 0.5),
             _ => panic!("Expected Volts"),
         }
     }
@@ -726,14 +698,14 @@ mod tests {
         // 55Hz is 0V
         let s: Signal = from_str("\"55hz\"").unwrap();
         match s {
-            Signal::Volts { value } => assert!((value - 0.0).abs() < 1e-6),
+            Signal::Volts(poly) => assert!((poly.get(0) - 0.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
         // 110Hz is 1V (one octave up)
         let s: Signal = from_str("\"110hz\"").unwrap();
         match s {
-            Signal::Volts { value } => assert!((value - 1.0).abs() < 1e-6),
+            Signal::Volts(poly) => assert!((poly.get(0) - 1.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
     }
@@ -743,14 +715,14 @@ mod tests {
         // MIDI 33 (A0) is 0V
         let s: Signal = from_str("\"33m\"").unwrap();
         match s {
-            Signal::Volts { value } => assert!((value - 0.0).abs() < 1e-6),
+            Signal::Volts(poly) => assert!((poly.get(0) - 0.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
         // MIDI 45 (A1) is 1V
         let s: Signal = from_str("\"45m\"").unwrap();
         match s {
-            Signal::Volts { value } => assert!((value - 1.0).abs() < 1e-6),
+            Signal::Volts(poly) => assert!((poly.get(0) - 1.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
     }
@@ -760,28 +732,28 @@ mod tests {
         // A0 is 0V
         let s: Signal = from_str("\"A0\"").unwrap();
         match s {
-            Signal::Volts { value } => assert!((value - 0.0).abs() < 1e-6),
+            Signal::Volts(poly) => assert!((poly.get(0) - 0.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
         // A-1 is -1V
         let s: Signal = from_str("\"A-1\"").unwrap();
         match s {
-            Signal::Volts { value } => assert!((value + 1.0).abs() < 1e-6),
+            Signal::Volts(poly) => assert!((poly.get(0) + 1.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
         // A1 is 1V
         let s: Signal = from_str("\"A1\"").unwrap();
         match s {
-            Signal::Volts { value } => assert!((value - 1.0).abs() < 1e-6),
+            Signal::Volts(poly) => assert!((poly.get(0) - 1.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
         // C4 (Middle C) -> MIDI 72 -> (72-33)/12 = 3.25V
         let s: Signal = from_str("\"C4\"").unwrap();
         match s {
-            Signal::Volts { value } => assert!((value - 3.25).abs() < 1e-6),
+            Signal::Volts(poly) => assert!((poly.get(0) - 3.25).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
@@ -789,7 +761,7 @@ mod tests {
         // A#0 -> MIDI 34 -> 1/12 V
         let s: Signal = from_str("\"A#0\"").unwrap();
         match s {
-            Signal::Volts { value } => assert!((value - (1.0 / 12.0)).abs() < 1e-6),
+            Signal::Volts(poly) => assert!((poly.get(0) - (1.0 / 12.0)).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
     }
@@ -799,28 +771,28 @@ mod tests {
         // 0s(A0:Major) -> treat as root -> A0 -> 0V
         let s: Signal = from_str("\"0s(A0:Major)\"").unwrap();
         match s {
-            Signal::Volts { value } => assert!((value - 0.0).abs() < 1e-6),
+            Signal::Volts(poly) => assert!((poly.get(0) - 0.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
         // 1s(A0:Major) -> 2nd interval -> B0 -> 2 semitones -> 2/12 V
         let s: Signal = from_str("\"1s(A0:Major)\"").unwrap();
         match s {
-            Signal::Volts { value } => assert!((value - (2.0 / 12.0)).abs() < 1e-6),
+            Signal::Volts(poly) => assert!((poly.get(0) - (2.0 / 12.0)).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
         // 2s(A0:Major) -> 3rd interval -> C#0 -> 4 semitones -> 4/12 V
         let s: Signal = from_str("\"2s(A0:Major)\"").unwrap();
         match s {
-            Signal::Volts { value } => assert!((value - (4.0 / 12.0)).abs() < 1e-6),
+            Signal::Volts(poly) => assert!((poly.get(0) - (4.0 / 12.0)).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
         // 8s(A0:Major) -> 9th interval -> B1 -> 14 semitones -> 14/12 V
         let s: Signal = from_str("\"8s(A0:Major)\"").unwrap();
         match s {
-            Signal::Volts { value } => assert!((value - (14.0 / 12.0)).abs() < 1e-6),
+            Signal::Volts(poly) => assert!((poly.get(0) - (14.0 / 12.0)).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
@@ -828,7 +800,7 @@ mod tests {
         // 1.5s(A0:Major) -> 2nd interval + 50 cents -> 2.5 semitones -> 2.5/12 V
         let s: Signal = from_str("\"1.5s(a0:maj)\"").unwrap();
         match s {
-            Signal::Volts { value } => assert!((value - (2.5 / 12.0)).abs() < 1e-6),
+            Signal::Volts(poly) => assert!((poly.get(0) - (2.5 / 12.0)).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
@@ -836,7 +808,7 @@ mod tests {
         // -1s(A0:Major) -> G#-1 -> one semitone below A0 -> -1/12 V
         let s: Signal = from_str("\"-1s(A0:Major)\"").unwrap();
         match s {
-            Signal::Volts { value } => assert!((value - (-1.0 / 12.0)).abs() < 1e-6),
+            Signal::Volts(poly) => assert!((poly.get(0) - (-1.0 / 12.0)).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
     }

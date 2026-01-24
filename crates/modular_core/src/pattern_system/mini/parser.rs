@@ -1614,6 +1614,35 @@ fn parse_value(pair: pest::iterators::Pair<Rule>) -> Result<AtomValue, ParseErro
     let inner = pair.into_inner().next().unwrap();
 
     match inner.as_rule() {
+        Rule::module_ref => {
+            // module(id:port) or module(id:port)=
+            let s = inner.as_str();
+            let sample_and_hold = s.ends_with('=');
+            
+            // Extract the inner part: module(inner) or module(inner)=
+            let start = "module(".len();
+            let end = if sample_and_hold {
+                s.len() - 2 // Remove ")="
+            } else {
+                s.len() - 1 // Remove ")"
+            };
+            let inner_str = &s[start..end];
+            
+            // Split by ':' to get module_id and port
+            let parts: Vec<&str> = inner_str.splitn(2, ':').collect();
+            if parts.len() != 2 {
+                return Err(ParseError {
+                    message: format!("Invalid module reference: expected 'id:port', got '{}'", inner_str),
+                    span: Some(SourceSpan::new(inner.as_span().start(), inner.as_span().end())),
+                });
+            }
+            
+            Ok(AtomValue::ModuleRef {
+                module_id: parts[0].to_string(),
+                port: parts[1].to_string(),
+                sample_and_hold,
+            })
+        }
         Rule::hz_value => {
             let num_str: String = inner.as_str().chars().take_while(|c| c.is_ascii_digit() || *c == '.' || *c == '-').collect();
             let n: f64 = num_str.parse().unwrap_or(0.0);
@@ -2500,6 +2529,57 @@ mod tests {
             assert!(matches!(*inner, MiniAST::SlowCat(_)), "Expected SlowCat, got {:?}", inner);
         } else {
             panic!("Expected Replicate, got {:?}", ast);
+        }
+    }
+
+    #[test]
+    fn test_parse_module_ref() {
+        // Test basic module reference: module(id:port)
+        let result = parse("module(sine-1:sample)");
+        assert!(result.is_ok(), "Failed to parse module(sine-1:sample): {:?}", result);
+        let ast = result.unwrap();
+        if let MiniAST::Pure(Located { node: AtomValue::ModuleRef { module_id, port, sample_and_hold }, .. }) = ast {
+            assert_eq!(module_id, "sine-1");
+            assert_eq!(port, "sample");
+            assert!(!sample_and_hold);
+        } else {
+            panic!("Expected ModuleRef, got {:?}", ast);
+        }
+    }
+
+    #[test]
+    fn test_parse_module_ref_sample_and_hold() {
+        // Test module reference with sample-and-hold: module(id:port)=
+        let result = parse("module(lfo-1:output)=");
+        assert!(result.is_ok(), "Failed to parse module(lfo-1:output)=: {:?}", result);
+        let ast = result.unwrap();
+        if let MiniAST::Pure(Located { node: AtomValue::ModuleRef { module_id, port, sample_and_hold }, .. }) = ast {
+            assert_eq!(module_id, "lfo-1");
+            assert_eq!(port, "output");
+            assert!(sample_and_hold);
+        } else {
+            panic!("Expected ModuleRef with sample_and_hold, got {:?}", ast);
+        }
+    }
+
+    #[test]
+    fn test_parse_module_ref_in_sequence() {
+        // Test module reference in a sequence: c4 module(osc:out) e4
+        let result = parse("c4 module(osc:out) e4");
+        assert!(result.is_ok(), "Failed to parse sequence with module ref: {:?}", result);
+        let ast = result.unwrap();
+        if let MiniAST::Sequence(elements) = ast {
+            assert_eq!(elements.len(), 3);
+            // Second element should be the module ref
+            if let (MiniAST::Pure(Located { node: AtomValue::ModuleRef { module_id, port, sample_and_hold }, .. }), _) = &elements[1] {
+                assert_eq!(module_id, "osc");
+                assert_eq!(port, "out");
+                assert!(!sample_and_hold);
+            } else {
+                panic!("Expected ModuleRef in second position, got {:?}", elements[1]);
+            }
+        } else {
+            panic!("Expected Sequence, got {:?}", ast);
         }
     }
 }
