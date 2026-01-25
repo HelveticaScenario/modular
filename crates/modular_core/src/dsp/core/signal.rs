@@ -2,6 +2,8 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+use crate::PolySignal;
+
 #[derive(Deserialize, Default, JsonSchema, Connect)]
 #[serde(default)]
 struct SignalParams {
@@ -12,7 +14,7 @@ struct SignalParams {
 #[derive(Outputs, JsonSchema)]
 struct SignalOutputs {
     #[output("output", "signal output", default)]
-    sample: f32,
+    sample: PolySignal,
 }
 
 #[derive(Default, Module)]
@@ -25,7 +27,7 @@ pub struct Signal {
 
 impl Signal {
     fn update(&mut self, _sample_rate: f32) -> () {
-        self.outputs.sample = self.params.source.get_poly_signal().get(0);
+        self.outputs.sample = self.params.source.get_poly_signal()
     }
 }
 
