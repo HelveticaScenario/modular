@@ -203,8 +203,10 @@ type ModeString =
 
 type Scale = \`\${number}s(\${Note}:\${ModeString})\`
 
+type OrArray<T> = T | T[];
+
 // Core DSL types used by the generated declarations
-type Signal = Deferrable<number | Note | HZ | MidiNote | Scale | ModuleOutput | ModuleNode>;
+type Signal = Deferrable<OrArray<number | Note | HZ | MidiNote | Scale> | ModuleOutput | ModuleNode>;
 
 type Deferrable<T> = 
   | T 
