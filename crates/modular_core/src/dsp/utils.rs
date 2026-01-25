@@ -2,6 +2,11 @@ use num::Float;
 
 use crate::dsp::consts::{LUT_PITCH_RATIO_HIGH, LUT_PITCH_RATIO_LOW};
 
+#[inline]
+pub fn changed(a: f32, b: f32) -> bool {
+    (a - b).abs() > 1e-6
+}
+
 /// Map a value from one range to another. If the input range is degenerate, returns `y0`.
 pub fn map_range(x: f32, x0: f32, x1: f32, y0: f32, y1: f32) -> f32 {
     let denom = x1 - x0;

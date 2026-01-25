@@ -209,6 +209,14 @@ impl PolySignal {
         }
         result
     }
+
+    pub fn max_channels(poly_signals: &[PolySignal]) -> u8 {
+        poly_signals
+            .iter()
+            .map(|sig| sig.channels)
+            .max()
+            .unwrap_or(0)
+    }
 }
 
 // === Serialization ===
@@ -432,8 +440,7 @@ mod tests {
         use serde_json::from_str;
 
         // Single value
-        let v: Vec<String> =
-            from_str(r#""pink""#).map(|s: String| vec![s]).unwrap();
+        let v: Vec<String> = from_str(r#""pink""#).map(|s: String| vec![s]).unwrap();
         assert_eq!(v, vec!["pink"]);
 
         // Array

@@ -2,7 +2,11 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::types::{Clickless, Signal};
+use crate::{
+    PORT_MAX_CHANNELS, PolySignal,
+    dsp::utils::changed,
+    types::Signal,
+};
 
 #[derive(Deserialize, Default, JsonSchema, Connect)]
 #[serde(default)]
@@ -18,7 +22,7 @@ struct LowpassFilterParams {
 #[derive(Outputs, JsonSchema)]
 struct LowpassFilterOutputs {
     #[output("output", "filtered signal", default)]
-    sample: f32,
+    sample: PolySignal,
 }
 
 #[derive(Default, Module)]
@@ -26,52 +30,125 @@ struct LowpassFilterOutputs {
 #[args(input, cutoff, resonance?)]
 pub struct LowpassFilter {
     outputs: LowpassFilterOutputs,
-    // State variables for 2-pole (12dB/oct) filter
-    z1: f32,
-    z2: f32,
-    cutoff: Clickless,
-    resonance: Clickless,
+    // Per-channel state (audio-rate)
+    z1: [f32; PORT_MAX_CHANNELS],
+    z2: [f32; PORT_MAX_CHANNELS],
+
+    // Cached coefficients (control-rate)
+    coeffs: [BiquadCoeffs; PORT_MAX_CHANNELS],
+
+    // Last seen params (for change detection)
+    last_cutoff: [f32; PORT_MAX_CHANNELS],
+    last_resonance: [f32; PORT_MAX_CHANNELS],
+
+    // For mono optimization
+    coeffs_mono: BiquadCoeffs,
+    last_cutoff_mono: f32,
+    last_resonance_mono: f32,
+
     params: LowpassFilterParams,
 }
 
+#[derive(Clone, Copy, Default)]
+struct BiquadCoeffs {
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
+}
+
+fn compute_biquad(cutoff: f32, resonance: f32, sample_rate: f32) -> BiquadCoeffs {
+    let freq = 55.0 * 2.0f32.powf(cutoff);
+    let freq = freq.min(sample_rate * 0.45).max(20.0);
+
+    let omega = 2.0 * std::f32::consts::PI * freq / sample_rate;
+    let sin = omega.sin();
+    let cos = omega.cos();
+    let q = (resonance / 5.0 * 9.0 + 0.5).max(0.5);
+    let alpha = sin / (2.0 * q);
+
+    let b0 = (1.0 - cos) / 2.0;
+    let b1 = 1.0 - cos;
+    let b2 = (1.0 - cos) / 2.0;
+    let a0 = 1.0 + alpha;
+    let a1 = -2.0 * cos;
+    let a2 = 1.0 - alpha;
+
+    BiquadCoeffs {
+        b0: b0 / a0,
+        b1: b1 / a0,
+        b2: b2 / a0,
+        a1: a1 / a0,
+        a2: a2 / a0,
+    }
+}
+
 impl LowpassFilter {
+    fn update_coeffs(
+        &mut self,
+        cutoff: &PolySignal,
+        resonance: &PolySignal,
+        channels: usize,
+        sample_rate: f32,
+    ) {
+        if cutoff.is_monophonic() && resonance.is_monophonic() {
+            let c = cutoff.get_or(0, 0.0);
+            let r = resonance.get_or(0, 0.0);
+
+            if changed(c, self.last_cutoff_mono) || changed(r, self.last_resonance_mono) {
+                println!("channel {} {} {}", channels, c, r);
+                self.coeffs_mono = compute_biquad(c, r, sample_rate);
+                self.last_cutoff_mono = c;
+                self.last_resonance_mono = r;
+            }
+        } else {
+            for i in 0..channels {
+                let c = cutoff.get_or(i, 0.0);
+                let r = resonance.get_or(i, 0.0);
+
+                if changed(c, self.last_cutoff[i]) || changed(r, self.last_resonance[i]) {
+                    println!("channel {} {} {}", channels, c, r);
+                    self.coeffs[i] = compute_biquad(c, r, sample_rate);
+                    self.last_cutoff[i] = c;
+                    self.last_resonance[i] = r;
+                }
+            }
+        }
+    }
+
     fn update(&mut self, sample_rate: f32) -> () {
-        let input = self.params.input.get_poly_signal().get(0);
+        let input_poly = self.params.input.get_poly_signal();
+        let cutoff_poly = self.params.cutoff.get_poly_signal();
+        let resonance_poly = self.params.resonance.get_poly_signal();
 
-        self.cutoff.update(self.params.cutoff.get_poly_signal().get_or(0, 4.0));
-        self.resonance.update(self.params.resonance.get_poly_signal().get_or(0, 0.0));
+        let channels = PolySignal::max_channels(&[input_poly, cutoff_poly, resonance_poly]);
 
-        // Convert v/oct to frequency
-        let freq = 55.0f32 * 2.0f32.powf(*self.cutoff);
-        let freq_clamped = freq.min(sample_rate * 0.45).max(20.0);
+        self.outputs.sample.set_channels(channels);
 
-        // Calculate filter coefficients
-        let omega = 2.0 * std::f32::consts::PI * freq_clamped / sample_rate;
-        let sin_omega = omega.sin();
-        let cos_omega = omega.cos();
-        let q = (*self.resonance / 5.0 * 9.0 + 0.5).max(0.5);
-        let alpha = sin_omega / (2.0 * q);
+        self.update_coeffs(
+            &cutoff_poly,
+            &resonance_poly,
+            channels as usize,
+            sample_rate,
+        );
 
-        let b0 = (1.0 - cos_omega) / 2.0;
-        let b1 = 1.0 - cos_omega;
-        let b2 = (1.0 - cos_omega) / 2.0;
-        let a0 = 1.0 + alpha;
-        let a1 = -2.0 * cos_omega;
-        let a2 = 1.0 - alpha;
+        for i in 0..channels as usize {
+            let input = input_poly.get_or(i, 0.0);
 
-        // Normalize coefficients
-        let b0_norm = b0 / a0;
-        let b1_norm = b1 / a0;
-        let b2_norm = b2 / a0;
-        let a1_norm = a1 / a0;
-        let a2_norm = a2 / a0;
+            let c = if cutoff_poly.is_monophonic() && resonance_poly.is_monophonic() {
+                self.coeffs_mono
+            } else {
+                self.coeffs[i]
+            };
 
-        // Process sample (Direct Form II)
-        let w = input - a1_norm * self.z1 - a2_norm * self.z2;
-        self.outputs.sample = b0_norm * w + b1_norm * self.z1 + b2_norm * self.z2;
-        self.z2 = self.z1;
-        self.z1 = w;
+            let w = input - c.a1 * self.z1[i] - c.a2 * self.z2[i];
+            let y = c.b0 * w + c.b1 * self.z1[i] + c.b2 * self.z2[i];
 
+            self.z2[i] = self.z1[i];
+            self.z1[i] = w;
+            self.outputs.sample.set(i, y);
+        }
         // Soft clipping to prevent overflow
         // self.sample = self.sample.clamp(-5.0, 5.0);
     }

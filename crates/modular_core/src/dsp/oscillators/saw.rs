@@ -2,7 +2,10 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::types::{Clickless, Signal};
+use crate::{
+    poly::{PORT_MAX_CHANNELS, PolySignal},
+    types::{Clickless, Signal},
+};
 
 #[derive(Deserialize, Default, JsonSchema, Connect)]
 #[serde(default)]
@@ -21,82 +24,125 @@ struct SawOscillatorParams {
 #[derive(Outputs, JsonSchema)]
 struct SawOscillatorOutputs {
     #[output("output", "signal output", default)]
-    sample: f32,
+    sample: PolySignal,
 }
 
-#[derive(Default, Module)]
-#[module("saw", "Sawtooth/Triangle/Ramp oscillator")]
-#[args(freq)]
-pub struct SawOscillator {
-    outputs: SawOscillatorOutputs,
+/// Per-channel oscillator state
+#[derive(Default, Clone, Copy)]
+struct ChannelState {
     phase: f32,
     last_phase: f32,
     freq: Clickless,
     shape: Clickless,
+}
+
+#[derive(Module)]
+#[module("saw", "Sawtooth/Triangle/Ramp oscillator")]
+#[args(freq)]
+pub struct SawOscillator {
+    outputs: SawOscillatorOutputs,
+    channels: [ChannelState; PORT_MAX_CHANNELS],
     params: SawOscillatorParams,
 }
 
-impl SawOscillator {
-    fn update(&mut self, sample_rate: f32) -> () {
-        self.shape
-            .update(self.params.shape.get_poly_signal().get_or(0, 0.0).clamp(0.0, 5.0));
-
-        // If phase input is connected, use it directly (for syncing)
-        let (current_phase, phase_increment) = if self.params.phase != Signal::Disconnected {
-            let phase_input = self.params.phase.get_poly_signal().get(0);
-            let wrapped_phase = crate::dsp::utils::wrap(0.0..1.0, phase_input);
-            // Calculate phase increment from phase change for PolyBLEP
-            let phase_inc = if wrapped_phase >= self.last_phase {
-                wrapped_phase - self.last_phase
-            } else {
-                wrapped_phase + (1.0 - self.last_phase)
-            };
-            (wrapped_phase, phase_inc)
-        } else {
-            // Normal frequency-driven oscillation
-            self.freq
-                .update(self.params.freq.get_poly_signal().get_or(0, 4.0).clamp(-10.0, 10.0));
-
-            let frequency = 55.0f32 * 2.0f32.powf(*self.freq);
-            let phase_increment = frequency / sample_rate;
-
-            self.phase += phase_increment;
-
-            // Wrap phase
-            while self.phase >= 1.0 {
-                self.phase -= 1.0;
-            }
-
-            (self.phase, phase_increment)
-        };
-
-        self.last_phase = current_phase;
-
-        // Shape parameter: 0 = saw, 2.5 = triangle, 5 = ramp (reversed saw)
-        let shape_norm = *self.shape / 5.0; // 0.0 to 1.0
-
-        let output = if shape_norm < 0.5 {
-            // Blend from saw (0.0) to triangle (0.5)
-            let blend = shape_norm * 2.0;
-            let saw = generate_saw(current_phase, phase_increment);
-            let triangle = generate_triangle(current_phase, phase_increment);
-            saw * (1.0 - blend) + triangle * blend
-        } else {
-            // Blend from triangle (0.5) to ramp (1.0)
-            let blend = (shape_norm - 0.5) * 2.0;
-            let triangle = generate_triangle(current_phase, phase_increment);
-            let ramp = generate_ramp(current_phase, phase_increment);
-            triangle * (1.0 - blend) + ramp * blend
-        };
-
-        let min = self.params.range.0.get_poly_signal().get_or(0, -5.0);
-        let max = self.params.range.1.get_poly_signal().get_or(0, 5.0);
-        self.outputs.sample = crate::dsp::utils::map_range(output, -1.0, 1.0, min, max);
+impl Default for SawOscillator {
+    fn default() -> Self {
+        Self {
+            outputs: SawOscillatorOutputs::default(),
+            channels: [ChannelState::default(); PORT_MAX_CHANNELS],
+            params: SawOscillatorParams::default(),
+        }
     }
 }
 
-// PolyBLEP (Polynomial Band-Limited Step) function
-// Reduces aliasing at discontinuities
+impl SawOscillator {
+    fn update(&mut self, sample_rate: f32) {
+        // Determine channel count from freq input (or phase if overriding)
+        let num_channels = if self.params.phase != Signal::Disconnected {
+            self.params.phase.get_poly_signal().channels().max(1) as usize
+        } else {
+            self.params.freq.get_poly_signal().channels().max(1) as usize
+        };
+
+        let mut output = PolySignal::default();
+        output.set_channels(num_channels as u8);
+
+        let phase_poly = self.params.phase.get_poly_signal();
+        let freq_poly = self.params.freq.get_poly_signal();
+        let shape_poly = self.params.shape.get_poly_signal();
+
+        // Pre-compute inverse sample rate for frequency calculation
+        let inv_sample_rate = 1.0 / sample_rate;
+
+        for ch in 0..num_channels {
+            let state = &mut self.channels[ch];
+
+            // Update shape with cycling - clamp to valid range
+            let shape_val = shape_poly.get_or(ch, 0.0).clamp(0.0, 5.0);
+            state.shape.update(shape_val);
+
+            // Compute current phase and phase increment
+            let (current_phase, phase_increment) = if self.params.phase != Signal::Disconnected {
+                let phase_input = phase_poly.get_cycling(ch);
+                let wrapped_phase = crate::dsp::utils::wrap(0.0..1.0, phase_input);
+                // Calculate phase increment from phase change for PolyBLEP
+                let phase_inc = if wrapped_phase >= state.last_phase {
+                    wrapped_phase - state.last_phase
+                } else {
+                    wrapped_phase + (1.0 - state.last_phase)
+                };
+                (wrapped_phase, phase_inc)
+            } else {
+                // Normal frequency-driven oscillation
+                let freq_val = freq_poly.get_or(ch, 4.0).clamp(-10.0, 10.0);
+                state.freq.update(freq_val);
+
+                let frequency = 55.0f32 * 2.0f32.powf(*state.freq);
+                let phase_increment = frequency * inv_sample_rate;
+
+                state.phase += phase_increment;
+
+                // Wrap phase
+                if state.phase >= 1.0 {
+                    state.phase -= 1.0;
+                }
+
+                (state.phase, phase_increment)
+            };
+
+            state.last_phase = current_phase;
+
+            // Shape parameter: 0 = saw, 2.5 = triangle, 5 = ramp (reversed saw)
+            let shape_norm = *state.shape * 0.2; // /5.0 -> *0.2 for performance
+
+            let raw_output = if shape_norm < 0.5 {
+                // Blend from saw (0.0) to triangle (0.5)
+                let blend = shape_norm * 2.0;
+                let saw = generate_saw(current_phase, phase_increment);
+                let triangle = generate_triangle(current_phase, phase_increment);
+                saw + (triangle - saw) * blend
+            } else {
+                // Blend from triangle (0.5) to ramp (1.0)
+                let blend = (shape_norm - 0.5) * 2.0;
+                let triangle = generate_triangle(current_phase, phase_increment);
+                let ramp = generate_ramp(current_phase, phase_increment);
+                triangle + (ramp - triangle) * blend
+            };
+            let min = self.params.range.0.get_poly_signal().get_or(ch, -5.0);
+            let max = self.params.range.1.get_poly_signal().get_or(ch, 5.0);
+            let range_scale = (max - min) * 0.5;
+            let range_offset = (max + min) * 0.5;
+            // Optimized map_range: output = raw * scale + offset
+            output.set(ch, raw_output * range_scale + range_offset);
+        }
+
+        self.outputs.sample = output;
+    }
+}
+
+/// PolyBLEP (Polynomial Band-Limited Step) function
+/// Reduces aliasing at discontinuities
+#[inline(always)]
 fn poly_blep(phase: f32, phase_increment: f32) -> f32 {
     // Detect discontinuity at phase wrap (0.0)
     if phase < phase_increment {
@@ -111,21 +157,24 @@ fn poly_blep(phase: f32, phase_increment: f32) -> f32 {
     0.0
 }
 
-// Generate band-limited sawtooth wave
+/// Generate band-limited sawtooth wave
+#[inline(always)]
 fn generate_saw(phase: f32, phase_increment: f32) -> f32 {
     let mut saw = 2.0 * phase - 1.0;
     saw -= poly_blep(phase, phase_increment);
     saw
 }
 
-// Generate band-limited ramp wave (reversed sawtooth)
+/// Generate band-limited ramp wave (reversed sawtooth)
+#[inline(always)]
 fn generate_ramp(phase: f32, phase_increment: f32) -> f32 {
     let mut ramp = 1.0 - 2.0 * phase;
     ramp += poly_blep(phase, phase_increment);
     ramp
 }
 
-// Generate band-limited triangle wave
+/// Generate band-limited triangle wave
+#[inline(always)]
 fn generate_triangle(phase: f32, phase_increment: f32) -> f32 {
     // Triangle is the integral of a square wave
     // We can generate it by integrating a PolyBLEP pulse
@@ -149,7 +198,8 @@ fn generate_triangle(phase: f32, phase_increment: f32) -> f32 {
     triangle
 }
 
-// Integrated PolyBLEP for triangle wave
+/// Integrated PolyBLEP for triangle wave
+#[inline(always)]
 fn poly_blep_integrated(phase: f32, phase_increment: f32) -> f32 {
     if phase < phase_increment {
         let t = phase / phase_increment;
