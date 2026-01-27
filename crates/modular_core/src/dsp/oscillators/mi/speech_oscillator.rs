@@ -10,7 +10,7 @@ use mi_plaits_dsp::engine::{Engine, EngineParameters, TriggerState, speech_engin
 
 const BLOCK_SIZE: usize = 1;
 
-#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct SpeechOscillatorParams {
     freq: Signal,

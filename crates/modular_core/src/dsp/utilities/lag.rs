@@ -3,7 +3,7 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct LagProcessorParams {
     input: Signal,

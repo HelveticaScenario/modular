@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::types::Signal;
 
-#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct MixParams {
     /// signals to mix (each signal is mono)

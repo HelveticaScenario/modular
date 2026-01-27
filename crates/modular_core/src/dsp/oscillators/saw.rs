@@ -7,7 +7,7 @@ use crate::{
     types::Clickless,
 };
 
-#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct SawOscillatorParams {
     /// frequency in v/oct
@@ -57,12 +57,7 @@ impl Default for SawOscillator {
 
 impl SawOscillator {
     fn update(&mut self, sample_rate: f32) {
-        // Determine channel count from freq input (or phase if overriding)
-        let num_channels = if !self.params.phase.is_disconnected() {
-            self.params.phase.channels().max(1) as usize
-        } else {
-            self.params.freq.channels().max(1) as usize
-        };
+        let num_channels = self.channel_count();
 
         let mut output = PolyOutput::default();
         output.set_channels(num_channels as u8);

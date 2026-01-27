@@ -147,7 +147,7 @@ fn default_channels() -> usize {
     4
 }
 
-#[derive(Default, JsonSchema)]
+#[derive(Default, ChannelCount, JsonSchema)]
 #[serde(default)]
 struct SeqParams {
     /// Strudel/tidalcycles style pattern string
@@ -267,7 +267,7 @@ impl Seq {
         let playhead = self.params.playhead.get(0).get_value() as f64
             + self.params.playhead.get(1).get_value() as f64;
 
-        let num_channels = self.params.channels.clamp(1, PORT_MAX_CHANNELS);
+        let num_channels = self.channel_count();
 
         // Set output channel counts
         self.outputs.cv.set_channels(num_channels as u8);
@@ -308,11 +308,25 @@ impl Seq {
             }
 
             // Check if this exact hap is already assigned to a voice
+            // Compare both timing AND value - for chords (stacks), notes have same timing but different values
+            let cached_cv = cached.get_cv(playhead);
             let already_assigned = (0..num_channels).any(|i| {
                 if let Some(ref existing) = self.voices[i].cached_hap {
-                    // Compare by timing - same whole span means same event
-                    (existing.hap.whole_begin - cached.hap.whole_begin).abs() < 1e-9
-                        && (existing.hap.whole_end - cached.hap.whole_end).abs() < 1e-9
+                    // Compare by timing
+                    let same_timing = (existing.hap.whole_begin - cached.hap.whole_begin).abs() < 1e-9
+                        && (existing.hap.whole_end - cached.hap.whole_end).abs() < 1e-9;
+                    
+                    if !same_timing {
+                        return false;
+                    }
+                    
+                    // Also compare by value (CV) to distinguish chord notes
+                    let existing_cv = existing.get_cv(playhead);
+                    match (existing_cv, cached_cv) {
+                        (Some(e), Some(c)) => (e - c).abs() < 1e-9,
+                        (None, None) => true, // Both rests or no CV
+                        _ => false,
+                    }
                 } else {
                     false
                 }
@@ -400,12 +414,12 @@ impl Seq {
 
 impl crate::types::StatefulModule for Seq {
     fn get_state(&self) -> Option<serde_json::Value> {
-        let num_channels = self.params.channels.clamp(1, PORT_MAX_CHANNELS);
-        
+        let num_channels = self.channel_count();
+
         // Collect all source spans from all active voices
         let mut all_source_spans: Vec<(usize, usize)> = Vec::new();
         let mut any_non_rest = false;
-        
+
         for voice in self.voices.iter().take(num_channels) {
             if let Some(ref cached) = voice.cached_hap {
                 if !cached.is_rest() {
@@ -421,7 +435,7 @@ impl crate::types::StatefulModule for Seq {
             // Deduplicate spans (same span could be in multiple voices for stacked patterns)
             all_source_spans.sort();
             all_source_spans.dedup();
-            
+
             Some(serde_json::json!({
                 "source_spans": all_source_spans,
                 "pattern_source": self.params.pattern.source(),

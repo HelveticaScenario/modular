@@ -859,6 +859,7 @@ fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
                     let Some(field_ident) = &field.ident else {
                         continue;
                     };
+                    
                     if !contains_signal(&field.ty) {
                         continue;
                     }
@@ -894,6 +895,56 @@ fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
     generated.into()
 }
 
+#[proc_macro_derive(ChannelCount)]
+pub fn channel_count_macro_derive(input: TokenStream) -> TokenStream {
+    let ast: DeriveInput = syn::parse(input).unwrap();
+    impl_channel_count_macro(&ast)
+}
+
+fn impl_channel_count_macro(ast: &DeriveInput) -> TokenStream {
+    let name = &ast.ident;
+
+    let poly_signal_field_refs: Vec<TokenStream2> = match &ast.data {
+        Data::Struct(data) => match &data.fields {
+            Fields::Named(fields) => {
+                fields.named.iter()
+                    .filter_map(|field| {
+                        let field_ident = field.ident.as_ref()?;
+                        if is_poly_signal(&field.ty) {
+                            Some(quote! { &self.#field_ident })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            }
+            Fields::Unnamed(_) | Fields::Unit => {
+                return syn::Error::new(
+                    ast.span(),
+                    "#[derive(ChannelCount)] only supports structs with named fields",
+                )
+                .to_compile_error()
+                .into();
+            }
+        },
+        Data::Enum(_) | Data::Union(_) => {
+            return syn::Error::new(ast.span(), "#[derive(ChannelCount)] only supports structs")
+                .to_compile_error()
+                .into();
+        }
+    };
+
+    let generated = quote! {
+        impl crate::types::PolySignalFields for #name {
+            fn poly_signal_fields(&self) -> Vec<&crate::poly::PolySignal> {
+                vec![#(#poly_signal_field_refs),*]
+            }
+        }
+    };
+
+    generated.into()
+}
+
 struct ArgAttr {
     name: Ident,
     optional: bool,
@@ -912,11 +963,31 @@ impl syn::parse::Parse for ArgAttr {
     }
 }
 
+/// Check if a type is exactly PolySignal (not nested in Option, Vec, etc.)
+fn is_poly_signal(ty: &Type) -> bool {
+    match ty {
+        Type::Path(tp) => {
+            let last = match tp.path.segments.last() {
+                Some(seg) => seg,
+                None => return false,
+            };
+            last.ident == "PolySignal"
+        }
+        _ => false,
+    }
+}
+
 fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     let name = &ast.ident;
     let module_attr = parse_module_attr(&ast.attrs);
     let module_name = module_attr.name;
     let module_description = module_attr.description;
+    
+    // Store channels info for channel_count generation
+    let hardcoded_channels = module_attr.channels;
+    let channels_param_name = module_attr.channels_param.clone();
+    let channels_param_default_val = module_attr.channels_param_default;
+    
     let module_channels = match module_attr.channels {
         Some(n) => quote! { Some(#n) },
         None => quote! { None },
@@ -1062,7 +1133,59 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         }
     };
 
+    // Generate channel_count() method body based on module attributes
+    // Priority: 1. hardcoded channels, 2. channels_param (with default), 3. max of PolySignal inputs
+    let channel_count_impl = match (hardcoded_channels, &channels_param_name, channels_param_default_val) {
+        // 1. Hardcoded channel count from #[module(..., channels = N)]
+        (Some(n), _, _) => {
+            let n = n as usize;
+            quote! {
+                #n
+            }
+        }
+        // 2. channels_param specified - read from params field, with optional default
+        (None, Some(param_name), default_val) => {
+            let param_ident = Ident::new(&param_name.value(), param_name.span());
+            match default_val {
+                Some(default) => {
+                    let default = default as usize;
+                    quote! {
+                        let param_value = self.params.#param_ident;
+                        if param_value > 0 {
+                            param_value.clamp(1, crate::poly::PORT_MAX_CHANNELS)
+                        } else {
+                            #default
+                        }
+                    }
+                }
+                None => {
+                    quote! {
+                        self.params.#param_ident.clamp(1, crate::poly::PORT_MAX_CHANNELS)
+                    }
+                }
+            }
+        }
+        // 3. Infer from PolySignal inputs
+        (None, None, _) => {
+            quote! {
+                use crate::types::PolySignalFields;
+                let fields = self.params.poly_signal_fields();
+                let refs: Vec<&crate::poly::PolySignal> = fields.into_iter().collect();
+                crate::poly::PolySignal::max_channels(&refs).max(1) as usize
+            }
+        }
+    };
+
     let generated = quote! {
+        // Generated channel_count method for the module
+        impl #impl_generics #name #ty_generics #where_clause {
+            /// Get the channel count for this module.
+            /// Priority: 1. hardcoded channels, 2. channels_param value/default, 3. max of PolySignal inputs
+            pub fn channel_count(&self) -> usize {
+                #channel_count_impl
+            }
+        }
+        
         #[derive(Default)]
         struct #struct_name {
             id: String,

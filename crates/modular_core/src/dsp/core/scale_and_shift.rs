@@ -5,7 +5,7 @@ use serde::Deserialize;
 use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
 use crate::types::Clickless;
 
-#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct ScaleAndShiftParams {
     /// signal input
@@ -34,13 +34,12 @@ pub struct ScaleAndShift {
 
 impl ScaleAndShift {
     fn update(&mut self, _sample_rate: f32) -> () {
-        let input = &self.params.input;
-        let channels = PolySignal::max_channels(&[input, &self.params.scale, &self.params.shift]);
+        let channels = self.channel_count() as u8;
 
         self.outputs.sample.set_channels(channels);
 
         for i in 0..channels as usize {
-            let input_val = input.get_value(i);
+            let input_val = self.params.input.get_value(i);
             let scale_val = self.params.scale.get_value_or(i, 5.0);
             let shift_val = self.params.shift.get_value_or(i, 0.0);
 

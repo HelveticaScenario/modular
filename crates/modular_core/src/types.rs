@@ -201,6 +201,17 @@ pub trait Connect {
     fn connect(&mut self, patch: &Patch);
 }
 
+/// Trait for params structs to provide references to all their top-level PolySignal fields.
+/// This is auto-derived by the Connect macro for params structs.
+/// For params structs that manually implement Connect, this trait should also be manually implemented.
+pub trait PolySignalFields {
+    /// Collect references to all top-level PolySignal fields for channel count calculation.
+    fn poly_signal_fields(&self) -> Vec<&crate::poly::PolySignal> {
+        // Default implementation returns empty vec (for mono-only modules)
+        vec![]
+    }
+}
+
 struct ParsedNote {
     pitch: Pitch,
     octave: i32,

@@ -88,7 +88,7 @@ impl Connect for MathExpressionParam {
     }
 }
 
-#[derive(Deserialize, Default, JsonSchema)]
+#[derive(Deserialize,  Default, JsonSchema, ChannelCount)]
 #[serde(default)]
 struct MathParams {
     expression: MathExpressionParam,

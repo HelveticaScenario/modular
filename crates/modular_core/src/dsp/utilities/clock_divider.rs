@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::types::{ClockMessages, Signal};
 
-#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct ClockDividerParams {
     pub division: u32,

@@ -7,7 +7,7 @@ use crate::{
     dsp::utils::changed,
 };
 
-#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct LowpassFilterParams {
     /// signal input
@@ -115,11 +115,7 @@ impl LowpassFilter {
     }
 
     fn update(&mut self, sample_rate: f32) -> () {
-        let channels = PolySignal::max_channels(&[
-            &self.params.input,
-            &self.params.cutoff,
-            &self.params.resonance,
-        ]);
+        let channels = self.channel_count() as u8;
 
         self.outputs.sample.set_channels(channels);
 

@@ -11,7 +11,7 @@ use crate::{
     types::Clickless,
 };
 
-#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct SineOscillatorParams {
     /// frequency in v/oct
@@ -61,12 +61,7 @@ impl Default for SineOscillator {
 
 impl SineOscillator {
     fn update(&mut self, sample_rate: f32) {
-        // Determine channel count from freq input (or phase if overriding)
-        let num_channels = if !self.params.phase.is_disconnected() {
-            PolySignal::max_channels(&[&self.params.phase, &self.params.sync]) as usize
-        } else {
-            PolySignal::max_channels(&[&self.params.freq, &self.params.sync]) as usize
-        };
+        let num_channels = self.channel_count();
 
         let mut output = PolyOutput::default();
         let mut phase_out = PolyOutput::default();

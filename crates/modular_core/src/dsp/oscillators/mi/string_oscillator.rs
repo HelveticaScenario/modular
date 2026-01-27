@@ -7,7 +7,7 @@ use mi_plaits_dsp::engine::{Engine, EngineParameters, TriggerState, string_engin
 
 const BLOCK_SIZE: usize = 1;
 
-#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct StringOscillatorParams {
     freq: Signal,

@@ -5,7 +5,7 @@ use simple_easing;
 
 use crate::types::{InterpolationType, Signal};
 
-#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct TrackParams {
     playhead: Signal,

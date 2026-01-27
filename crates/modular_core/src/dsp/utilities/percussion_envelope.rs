@@ -4,7 +4,7 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct PercussionEnvelopeParams {
     /// trigger input (rising edge triggers envelope)
@@ -53,8 +53,7 @@ impl Default for PercussionEnvelope {
 
 impl PercussionEnvelope {
     fn update(&mut self, sample_rate: f32) {
-        // Determine channel count from trigger input
-        let num_channels = self.params.trigger.channels().max(1) as usize;
+        let num_channels = self.channel_count();
 
         let mut output = PolyOutput::default();
         output.set_channels(num_channels as u8);

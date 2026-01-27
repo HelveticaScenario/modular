@@ -13,7 +13,7 @@ use mi_plaits_dsp::{
 
 const BLOCK_SIZE: usize = 1;
 
-#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct StringMachineOscillatorParams {
     freq: Signal,

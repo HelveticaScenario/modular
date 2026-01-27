@@ -24,7 +24,7 @@ pub enum MixMode {
     Min,
 }
 
-#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct PolyMixParams {
     /// Polyphonic input to mix down

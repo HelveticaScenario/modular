@@ -7,7 +7,7 @@ use crate::{
     types::{Clickless, ClockMessages, Signal},
 };
 
-#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct ClockParams {
     /// tempo in v/oct (tempo)

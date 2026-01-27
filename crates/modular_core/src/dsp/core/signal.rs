@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::poly::{PolyOutput, PolySignal};
 
-#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct SignalParams {
     /// signal input (polyphonic)
@@ -27,11 +27,10 @@ pub struct Signal {
 
 impl Signal {
     fn update(&mut self, _sample_rate: f32) -> () {
-        let input = &self.params.source;
-        let channels = input.channels();
+        let channels = self.channel_count() as u8;
         self.outputs.sample.set_channels(channels);
         for i in 0..channels as usize {
-            self.outputs.sample.set(i, input.get_value(i));
+            self.outputs.sample.set(i, self.params.source.get_value(i));
         }
     }
 }

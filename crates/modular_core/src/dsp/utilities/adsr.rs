@@ -4,7 +4,7 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct AdsrParams {
     /// gate input (expects >0V for on)
@@ -89,8 +89,7 @@ impl Default for Adsr {
 
 impl Adsr {
     fn update(&mut self, sample_rate: f32) {
-        // Determine channel count from gate input
-        let num_channels = self.params.gate.channels().max(1) as usize;
+        let num_channels = self.channel_count();
 
         let mut output = PolyOutput::default();
         output.set_channels(num_channels as u8);

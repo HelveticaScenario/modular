@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use crate::types::Signal;
 
-#[derive(Default, Deserialize, JsonSchema, Connect)]
+#[derive(Default, Deserialize, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct TestOverlapParams {
     /// this conflicts with the output name

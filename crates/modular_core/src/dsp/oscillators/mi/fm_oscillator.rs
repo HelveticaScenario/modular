@@ -7,7 +7,7 @@ use mi_plaits_dsp::engine::{Engine, EngineParameters, TriggerState, fm_engine::F
 
 const BLOCK_SIZE: usize = 1;
 
-#[derive(Deserialize, Default, JsonSchema, Connect)]
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct FmOscillatorParams {
     /// frequency in v/oct
