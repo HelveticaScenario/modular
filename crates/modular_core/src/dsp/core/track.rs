@@ -4,11 +4,14 @@ use serde::Deserialize;
 use simple_easing;
 
 use crate::types::{InterpolationType, Signal};
+use crate::poly::PolySignal;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct TrackParams {
-    playhead: Signal,
+    /// Playhead input - sums channels 0 and 1 for position
+    #[default_connection(id = "root_clock", port = "playhead", channels = [0, 1])]
+    playhead: PolySignal,
     /// Keyframes as (signal, time) tuples. Must be sorted by time.
     keyframes: Vec<(Signal, f32)>,
     interpolation_type: InterpolationType,
@@ -35,7 +38,9 @@ impl Track {
             return;
         }
 
-        let playhead_value = self.params.playhead.get_value();
+        // Sum channels 0 and 1 of the playhead
+        let playhead_value = self.params.playhead.get(0).get_value()
+            + self.params.playhead.get(1).get_value();
         if self.params.keyframes.is_empty() {
             self.outputs.sample = 0.0;
             return;

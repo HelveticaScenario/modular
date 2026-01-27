@@ -20,10 +20,62 @@ use std::{
 use crate::patch::Patch;
 use crate::poly::PolyOutput;
 
+// ============================================================================
+// Well-known module IDs and ports
+// ============================================================================
+
+/// Well-known modules in the system (root, clock, etc.)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WellKnownModule {
+    /// The root output module
+    Root,
+    /// The root clock module (provides playhead)
+    RootClock,
+}
+
+impl WellKnownModule {
+    /// Get the module ID string
+    pub fn id(&self) -> &'static str {
+        match self {
+            WellKnownModule::Root => "root",
+            WellKnownModule::RootClock => "root_clock",
+        }
+    }
+
+    /// Get the default output port name for this module
+    pub fn default_port(&self) -> &'static str {
+        match self {
+            WellKnownModule::Root => "output",
+            WellKnownModule::RootClock => "playhead",
+        }
+    }
+
+    /// Create a Cable signal pointing to this module's default port at the given channel
+    pub fn to_cable(&self, channel: usize) -> Signal {
+        Signal::Cable {
+            module: self.id().into(),
+            module_ptr: std::sync::Weak::new(),
+            port: self.default_port().into(),
+            channel,
+        }
+    }
+
+    /// Create a PolySignal with cables to this module's default port for the given channels
+    pub fn to_poly_signal(&self, channels: &[usize]) -> crate::poly::PolySignal {
+        crate::poly::PolySignal::poly(
+            &channels
+                .iter()
+                .map(|&ch| self.to_cable(ch))
+                .collect::<Vec<_>>(),
+        )
+    }
+}
+
 lazy_static! {
-    pub static ref ROOT_ID: String = "root".into();
-    pub static ref ROOT_OUTPUT_PORT: String = "output".into();
-    pub static ref ROOT_CLOCK_ID: String = "root_clock".into();
+    pub static ref ROOT_ID: String = WellKnownModule::Root.id().into();
+    pub static ref ROOT_OUTPUT_PORT: String = WellKnownModule::Root.default_port().into();
+    pub static ref ROOT_CLOCK_ID: String = WellKnownModule::RootClock.id().into();
+    pub static ref ROOT_CLOCK_PORT: String = WellKnownModule::RootClock.default_port().into();
     static ref RE_HZ: Regex = Regex::new(r"^(-?\d*\.?\d+)hz$").unwrap();
     static ref RE_MIDI: Regex = Regex::new(r"^(-?\d*\.?\d+)m$").unwrap();
     static ref RE_SCALE: Regex = Regex::new(r"^(-?\d*\.?\d+)s\(([^:]+):([^)]+)\)$").unwrap();
@@ -199,6 +251,115 @@ impl Div for Clickless {
 
 pub trait Connect {
     fn connect(&mut self, patch: &Patch);
+}
+
+// ============================================================================
+// No-op Connect impls for primitive types
+// ============================================================================
+
+macro_rules! impl_connect_noop {
+    ($($t:ty),*) => {
+        $(impl Connect for $t {
+            fn connect(&mut self, _patch: &Patch) {}
+        })*
+    };
+}
+
+impl_connect_noop!(
+    f32, f64, i8, i16, i32, i64, u8, u16, u32, u64, usize, isize, bool, String
+);
+
+// ============================================================================
+// Recursive Connect impls for container types
+// ============================================================================
+
+impl<T: Connect> Connect for Vec<T> {
+    fn connect(&mut self, patch: &Patch) {
+        for item in self {
+            item.connect(patch);
+        }
+    }
+}
+
+impl<T: Connect> Connect for Option<T> {
+    fn connect(&mut self, patch: &Patch) {
+        if let Some(inner) = self {
+            inner.connect(patch);
+        }
+    }
+}
+
+impl<T: Connect> Connect for Box<T> {
+    fn connect(&mut self, patch: &Patch) {
+        (**self).connect(patch);
+    }
+}
+
+impl<T: Connect, const N: usize> Connect for [T; N] {
+    fn connect(&mut self, patch: &Patch) {
+        for item in self {
+            item.connect(patch);
+        }
+    }
+}
+
+impl<V: Connect> Connect for std::collections::HashMap<String, V> {
+    fn connect(&mut self, patch: &Patch) {
+        for v in self.values_mut() {
+            v.connect(patch);
+        }
+    }
+}
+
+impl<V: Connect> Connect for std::collections::BTreeMap<String, V> {
+    fn connect(&mut self, patch: &Patch) {
+        for v in self.values_mut() {
+            v.connect(patch);
+        }
+    }
+}
+
+// Tuples (arity 1-5)
+impl<T1: Connect> Connect for (T1,) {
+    fn connect(&mut self, patch: &Patch) {
+        self.0.connect(patch);
+    }
+}
+
+impl<T1: Connect, T2: Connect> Connect for (T1, T2) {
+    fn connect(&mut self, patch: &Patch) {
+        self.0.connect(patch);
+        self.1.connect(patch);
+    }
+}
+
+impl<T1: Connect, T2: Connect, T3: Connect> Connect for (T1, T2, T3) {
+    fn connect(&mut self, patch: &Patch) {
+        self.0.connect(patch);
+        self.1.connect(patch);
+        self.2.connect(patch);
+    }
+}
+
+impl<T1: Connect, T2: Connect, T3: Connect, T4: Connect> Connect for (T1, T2, T3, T4) {
+    fn connect(&mut self, patch: &Patch) {
+        self.0.connect(patch);
+        self.1.connect(patch);
+        self.2.connect(patch);
+        self.3.connect(patch);
+    }
+}
+
+impl<T1: Connect, T2: Connect, T3: Connect, T4: Connect, T5: Connect> Connect
+    for (T1, T2, T3, T4, T5)
+{
+    fn connect(&mut self, patch: &Patch) {
+        self.0.connect(patch);
+        self.1.connect(patch);
+        self.2.connect(patch);
+        self.3.connect(patch);
+        self.4.connect(patch);
+    }
 }
 
 /// Trait for params structs to provide references to all their top-level PolySignal fields.
@@ -594,6 +755,10 @@ pub enum InterpolationType {
     BounceIn,
     BounceOut,
     BounceInOut,
+}
+
+impl Connect for InterpolationType {
+    fn connect(&mut self, _patch: &Patch) {}
 }
 
 pub enum Seq {

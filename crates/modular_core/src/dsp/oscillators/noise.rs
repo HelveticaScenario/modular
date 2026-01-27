@@ -29,6 +29,10 @@ impl Default for NoiseKind {
     }
 }
 
+impl crate::types::Connect for NoiseKind {
+    fn connect(&mut self, _patch: &crate::Patch) {}
+}
+
 #[derive(Default)]
 struct PinkFilter {
     b0: f32,

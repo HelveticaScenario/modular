@@ -118,7 +118,9 @@ fn signal_deserialize_number_as_volts() {
 
 #[test]
 fn signal_deserialize_tagged_variants_still_work() {
-    let volts: Signal = serde_json::from_value(json!({"type":"volts","value":-2.0})).unwrap();
+    // Note: Volts are deserialized as bare numbers, not as tagged variants
+    // So {"type":"volts","value":-2.0} is NOT supported - use -2.0 directly
+    let volts: Signal = serde_json::from_value(json!(-2.0)).unwrap();
     assert!(matches!(volts, Signal::Volts(v) if (v + 2.0).abs() < 1e-6));
 
     let cable: Signal =

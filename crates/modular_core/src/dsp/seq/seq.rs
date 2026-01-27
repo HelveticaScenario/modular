@@ -12,17 +12,15 @@
 //! - Gate: High while note is active
 //! - Trig: Short pulse at note onset
 
-use mi_plaits_dsp::fm::voice;
 use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    Patch, PolySignal,
+    PolySignal,
     dsp::utils::{TempGate, TempGateState, midi_to_voct_f64},
     pattern_system::DspHap,
     poly::{PORT_MAX_CHANNELS, PolyOutput},
-    types::Connect,
 };
 
 use super::seq_operators::CachedOperator;
@@ -156,56 +154,17 @@ fn default_channels() -> usize {
     4
 }
 
-#[derive(Default, ChannelCount, JsonSchema)]
+#[derive(Deserialize, Default, ChannelCount, JsonSchema, Connect)]
 #[serde(default)]
 struct SeqParams {
     /// Strudel/tidalcycles style pattern string
     pattern: SeqPatternParam,
     /// 2 channel control signal, sums the first 2 channels
+    #[default_connection(id = "root_clock", port = "playhead", channels = [0, 1])]
     playhead: PolySignal,
     /// Number of polyphonic voices (1-16, default 4)
     #[serde(default = "default_channels")]
     channels: usize,
-}
-
-impl<'de> Deserialize<'de> for SeqParams {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(default)]
-        struct SeqParamsHelper {
-            pattern: SeqPatternParam,
-            playhead: PolySignal,
-            #[serde(default = "default_channels")]
-            channels: usize,
-        }
-
-        impl Default for SeqParamsHelper {
-            fn default() -> Self {
-                Self {
-                    pattern: SeqPatternParam::default(),
-                    playhead: PolySignal::default(),
-                    channels: default_channels(),
-                }
-            }
-        }
-
-        let helper = SeqParamsHelper::deserialize(deserializer)?;
-        Ok(SeqParams {
-            pattern: helper.pattern,
-            playhead: helper.playhead,
-            channels: helper.channels.clamp(1, PORT_MAX_CHANNELS),
-        })
-    }
-}
-
-impl Connect for SeqParams {
-    fn connect(&mut self, patch: &Patch) {
-        Connect::connect(&mut self.playhead, patch);
-        Connect::connect(&mut self.pattern, patch);
-    }
 }
 
 #[derive(Outputs, JsonSchema)]

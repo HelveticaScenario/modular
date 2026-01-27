@@ -24,6 +24,10 @@ pub enum MixMode {
     Min,
 }
 
+impl crate::types::Connect for MixMode {
+    fn connect(&mut self, _patch: &crate::Patch) {}
+}
+
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct PolyMixParams {

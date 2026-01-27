@@ -8,7 +8,7 @@ use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote, quote_spanned};
 use syn::{Attribute, LitStr, Token, parse::Parser, punctuated::Punctuated, spanned::Spanned};
-use syn::{Data, DeriveInput, Fields, GenericArgument, PathArguments, Type};
+use syn::{Data, DeriveInput, Fields, Type};
 
 #[proc_macro]
 pub fn message_handlers(input: TokenStream) -> TokenStream {
@@ -649,224 +649,155 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
     generated.into()
 }
 
-#[proc_macro_derive(Connect)]
+#[proc_macro_derive(Connect, attributes(default_connection))]
 pub fn connect_macro_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
     impl_connect_macro(&ast)
 }
 
-fn contains_signal(ty: &Type) -> bool {
-    match ty {
-        Type::Paren(p) => contains_signal(&p.elem),
-        Type::Group(g) => contains_signal(&g.elem),
-        Type::Reference(r) => contains_signal(&r.elem),
-        Type::Array(a) => contains_signal(&a.elem),
-        Type::Slice(s) => contains_signal(&s.elem),
-        Type::Path(tp) => {
-            let last = match tp.path.segments.last() {
-                Some(seg) => seg,
-                None => return false,
-            };
+/// Parsed `#[default_connection(...)]` attribute data
+struct DefaultConnectionAttr {
+    id: String,
+    port: String,
+    /// For Signal: single channel. For PolySignal: multiple channels.
+    channels: Vec<usize>,
+}
 
-            // Match both Signal and PolySignal types
-            if last.ident == "Signal" || last.ident == "PolySignal" {
-                return true;
-            }
+/// Parse `#[default_connection(id = "...", port = "...", channel = N)]` for Signal
+/// or `#[default_connection(id = "...", port = "...", channels = [N, M, ...])]` for PolySignal
+fn parse_default_connection_attr(attr: &Attribute) -> syn::Result<DefaultConnectionAttr> {
+    let mut id: Option<String> = None;
+    let mut port: Option<String> = None;
+    let mut channels: Vec<usize> = Vec::new();
 
-            if let PathArguments::AngleBracketed(args) = &last.arguments {
-                return args.args.iter().any(|arg| match arg {
-                    GenericArgument::Type(inner_ty) => contains_signal(inner_ty),
-                    _ => false,
-                });
-            }
-
-            false
+    attr.parse_nested_meta(|meta| {
+        if meta.path.is_ident("id") {
+            let value: LitStr = meta.value()?.parse()?;
+            id = Some(value.value());
+            Ok(())
+        } else if meta.path.is_ident("port") {
+            let value: LitStr = meta.value()?.parse()?;
+            port = Some(value.value());
+            Ok(())
+        } else if meta.path.is_ident("channel") {
+            let value: syn::LitInt = meta.value()?.parse()?;
+            channels = vec![value.base10_parse()?];
+            Ok(())
+        } else if meta.path.is_ident("channels") {
+            meta.value()?;
+            let content;
+            syn::bracketed!(content in meta.input);
+            let parsed: Punctuated<syn::LitInt, Token![,]> =
+                Punctuated::parse_terminated(&content)?;
+            channels = parsed
+                .into_iter()
+                .map(|lit| lit.base10_parse())
+                .collect::<syn::Result<Vec<usize>>>()?;
+            Ok(())
+        } else {
+            Err(meta.error("expected `id`, `port`, `channel`, or `channels`"))
         }
-        Type::Tuple(tt) => tt.elems.iter().any(contains_signal),
+    })?;
+
+    let id = id.ok_or_else(|| syn::Error::new(attr.span(), "missing `id` in default_connection"))?;
+    let port =
+        port.ok_or_else(|| syn::Error::new(attr.span(), "missing `port` in default_connection"))?;
+    if channels.is_empty() {
+        return Err(syn::Error::new(
+            attr.span(),
+            "missing `channel` or `channels` in default_connection",
+        ));
+    }
+
+    Ok(DefaultConnectionAttr { id, port, channels })
+}
+
+/// Check if a type is exactly PolySignal (for default_connection code generation)
+fn is_poly_signal_type(ty: &Type) -> bool {
+    match ty {
+        Type::Path(tp) => tp
+            .path
+            .segments
+            .last()
+            .map(|seg| seg.ident == "PolySignal")
+            .unwrap_or(false),
         _ => false,
-    }
-}
-
-fn first_type_arg(_span: Span, last: &syn::PathSegment) -> Option<&Type> {
-    match &last.arguments {
-        PathArguments::AngleBracketed(args) => args.args.iter().find_map(|arg| match arg {
-            GenericArgument::Type(ty) => Some(ty),
-            _ => None,
-        }),
-        _ => None,
-    }
-}
-
-fn nth_type_arg(_span: Span, last: &syn::PathSegment, idx: usize) -> Option<&Type> {
-    match &last.arguments {
-        PathArguments::AngleBracketed(args) => args
-            .args
-            .iter()
-            .filter_map(|arg| match arg {
-                GenericArgument::Type(ty) => Some(ty),
-                _ => None,
-            })
-            .nth(idx),
-        _ => None,
-    }
-}
-
-fn gen_connect_stmts(
-    ty: &Type,
-    place_expr: TokenStream2,
-    depth: usize,
-    span: Span,
-) -> TokenStream2 {
-    match ty {
-        Type::Paren(p) => gen_connect_stmts(&p.elem, place_expr, depth, span),
-        Type::Group(g) => gen_connect_stmts(&g.elem, place_expr, depth, span),
-        Type::Reference(r) => gen_connect_stmts(&r.elem, quote! { *#place_expr }, depth, span),
-        Type::Array(a) => {
-            if !contains_signal(&a.elem) {
-                return quote! {};
-            }
-            let item_ident = format_ident!("__connect_item{}", depth);
-            let inner_place = quote! { *#item_ident };
-            let inner_body = gen_connect_stmts(&a.elem, inner_place, depth + 1, span);
-            quote_spanned! {span=>
-                for #item_ident in (#place_expr).iter_mut() {
-                    #inner_body
-                }
-            }
-        }
-        Type::Slice(s) => {
-            if !contains_signal(&s.elem) {
-                return quote! {};
-            }
-            let item_ident = format_ident!("__connect_item{}", depth);
-            let inner_place = quote! { *#item_ident };
-            let inner_body = gen_connect_stmts(&s.elem, inner_place, depth + 1, span);
-            quote_spanned! {span=>
-                for #item_ident in (#place_expr).iter_mut() {
-                    #inner_body
-                }
-            }
-        }
-        Type::Path(tp) => {
-            let last = match tp.path.segments.last() {
-                Some(seg) => seg,
-                None => return quote! {},
-            };
-
-            if last.ident == "Signal" {
-                return quote_spanned! {span=>
-                    crate::types::Connect::connect(&mut #place_expr, patch);
-                };
-            }
-
-            // PolySignal also implements Connect
-            if last.ident == "PolySignal" {
-                return quote_spanned! {span=>
-                    crate::types::Connect::connect(&mut #place_expr, patch);
-                };
-            }
-
-            if last.ident == "Vec" {
-                let Some(inner_ty) = first_type_arg(span, last) else {
-                    return quote! {};
-                };
-                if !contains_signal(inner_ty) {
-                    return quote! {};
-                }
-                let item_ident = format_ident!("__connect_item{}", depth);
-                let inner_place = quote! { *#item_ident };
-                let inner_body = gen_connect_stmts(inner_ty, inner_place, depth + 1, span);
-                return quote_spanned! {span=>
-                    for #item_ident in (#place_expr).iter_mut() {
-                        #inner_body
-                    }
-                };
-            }
-
-            if last.ident == "Option" {
-                let Some(inner_ty) = first_type_arg(span, last) else {
-                    return quote! {};
-                };
-                if !contains_signal(inner_ty) {
-                    return quote! {};
-                }
-                let item_ident = format_ident!("__connect_item{}", depth);
-                let inner_place = quote! { *#item_ident };
-                let inner_body = gen_connect_stmts(inner_ty, inner_place, depth + 1, span);
-                return quote_spanned! {span=>
-                    if let Some(#item_ident) = (#place_expr).as_mut() {
-                        #inner_body
-                    }
-                };
-            }
-
-            if last.ident == "Box" {
-                let Some(inner_ty) = first_type_arg(span, last) else {
-                    return quote! {};
-                };
-                if !contains_signal(inner_ty) {
-                    return quote! {};
-                }
-                let inner_place = quote! { **(#place_expr) };
-                return gen_connect_stmts(inner_ty, inner_place, depth + 1, span);
-            }
-
-            if last.ident == "HashMap" || last.ident == "BTreeMap" {
-                let Some(value_ty) = nth_type_arg(span, last, 1) else {
-                    return quote! {};
-                };
-                if !contains_signal(value_ty) {
-                    return quote! {};
-                }
-                let key_ident = format_ident!("__connect_key{}", depth);
-                let val_ident = format_ident!("__connect_val{}", depth);
-                let inner_place = quote! { *#val_ident };
-                let inner_body = gen_connect_stmts(value_ty, inner_place, depth + 1, span);
-                return quote_spanned! {span=>
-                    for (#key_ident, #val_ident) in (#place_expr).iter_mut() {
-                        let _ = #key_ident;
-                        #inner_body
-                    }
-                };
-            }
-
-            quote! {}
-        }
-        Type::Tuple(tt) => {
-            let mut out = TokenStream2::new();
-            for (idx, elem_ty) in tt.elems.iter().enumerate() {
-                if !contains_signal(elem_ty) {
-                    continue;
-                }
-                let index = syn::Index::from(idx);
-                let elem_place = quote! { (#place_expr).#index };
-                out.extend(gen_connect_stmts(elem_ty, elem_place, depth + 1, span));
-            }
-            out
-        }
-        _ => quote! {},
     }
 }
 
 fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
     let name = &ast.ident;
 
-    let connect_body = match &ast.data {
+    let (default_connection_stmts, connect_body) = match &ast.data {
         Data::Struct(data) => match &data.fields {
             Fields::Named(fields) => {
-                let mut stmts = TokenStream2::new();
+                let mut default_stmts = TokenStream2::new();
+                let mut connect_stmts = TokenStream2::new();
+
                 for field in fields.named.iter() {
                     let Some(field_ident) = &field.ident else {
                         continue;
                     };
-                    
-                    if !contains_signal(&field.ty) {
-                        continue;
+
+                    // Check for #[default_connection(...)] attribute
+                    for attr in &field.attrs {
+                        if attr.path().is_ident("default_connection") {
+                            match parse_default_connection_attr(attr) {
+                                Ok(dc) => {
+                                    let id = &dc.id;
+                                    let port = &dc.port;
+                                    let is_poly = is_poly_signal_type(&field.ty);
+
+                                    if is_poly {
+                                        // Generate PolySignal default
+                                        let cable_exprs: Vec<TokenStream2> = dc
+                                            .channels
+                                            .iter()
+                                            .map(|ch| {
+                                                quote! {
+                                                    crate::types::Signal::Cable {
+                                                        module: #id.into(),
+                                                        module_ptr: std::sync::Weak::new(),
+                                                        port: #port.into(),
+                                                        channel: #ch,
+                                                    }
+                                                }
+                                            })
+                                            .collect();
+                                        default_stmts.extend(quote_spanned! {field.span()=>
+                                            if self.#field_ident.is_disconnected() {
+                                                self.#field_ident = crate::poly::PolySignal::poly(&[
+                                                    #(#cable_exprs),*
+                                                ]);
+                                            }
+                                        });
+                                    } else {
+                                        // Generate Signal default (single channel)
+                                        let ch = dc.channels.first().copied().unwrap_or(0);
+                                        default_stmts.extend(quote_spanned! {field.span()=>
+                                            if self.#field_ident.is_disconnected() {
+                                                self.#field_ident = crate::types::Signal::Cable {
+                                                    module: #id.into(),
+                                                    module_ptr: std::sync::Weak::new(),
+                                                    port: #port.into(),
+                                                    channel: #ch,
+                                                };
+                                            }
+                                        });
+                                    }
+                                }
+                                Err(e) => return e.to_compile_error().into(),
+                            }
+                        }
                     }
-                    let place_expr = quote! { self.#field_ident };
-                    stmts.extend(gen_connect_stmts(&field.ty, place_expr, 0, field.span()));
+
+                    // Always call connect on every field (no-op impls handle primitives)
+                    connect_stmts.extend(quote_spanned! {field.span()=>
+                        crate::types::Connect::connect(&mut self.#field_ident, patch);
+                    });
                 }
-                stmts
+
+                (default_stmts, connect_stmts)
             }
             Fields::Unnamed(_) | Fields::Unit => {
                 return syn::Error::new(
@@ -887,6 +818,9 @@ fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
     let generated = quote! {
         impl crate::types::Connect for #name {
             fn connect(&mut self, patch: &crate::Patch) {
+                // Apply default connections for disconnected inputs
+                #default_connection_stmts
+                // Connect all fields
                 #connect_body
             }
         }
