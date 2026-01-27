@@ -238,8 +238,8 @@ interface ModuleNode extends ModuleNodeBase {
 // Interface for modules with polyphonic default output
 interface PolyModuleNode extends ModuleNodeBase {
   readonly o: ModuleOutput[];
-  gain(value: PolySignal): PolyModuleNode[];
-  shift(value: PolySignal): PolyModuleNode[];
+  gain(value: PolySignal): PolyModuleNode;
+  shift(value: PolySignal): PolyModuleNode;
 }
 
 // Helper functions exposed by the DSL runtime
@@ -248,8 +248,8 @@ declare function note(noteName: string): number;
 declare function bpm(beatsPerMinute: number): number;
 
 interface Array<T> {
-    gain(this: T extends ModuleOutput[] ? T : never, factor: Value): ModuleNode[];
-    offset(this: T extends ModuleOutput[] ? T : never, offset: Value): ModuleNode[];
+    gain(this: T extends ModuleOutput[] ? T : never, factor: Value): PolyModuleNode;
+    offset(this: T extends ModuleOutput[] ? T : never, offset: Value): PolyModuleNode;
     out(this: T extends ModuleOutput[] ? T : never, mode?: 'm'): ModuleOutput[];
 }
 `;
