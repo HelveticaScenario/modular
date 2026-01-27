@@ -173,17 +173,19 @@ impl FromMiniAtom for SeqValue {
             AtomValue::ModuleRef {
                 module_id,
                 port,
+                channel,
                 sample_and_hold,
             } => Ok(SeqValue::Signal {
                 signal: Signal::Cable {
                     module: module_id.clone(),
                     module_ptr: std::sync::Weak::new(),
                     port: port.clone(),
+                    channel: *channel,
                 },
                 sample_and_hold: *sample_and_hold,
             }),
             AtomValue::Identifier(s) => {
-                // Check for module reference syntax: module(id:port) or module(id:port)=
+                // Check for module reference syntax: module(id:port:channel) or module(id:port:channel)=
                 if let Some(parsed) = parse_module_ref(s) {
                     return Ok(parsed);
                 }
@@ -246,7 +248,7 @@ impl HasRest for SeqValue {
     }
 }
 
-/// Parse a module reference string like "module(id:port)" or "module(id:port)=".
+/// Parse a module reference string like "module(id:port:channel)" or "module(id:port:channel)=".
 /// The `=` suffix indicates sample-and-hold mode.
 fn parse_module_ref(s: &str) -> Option<SeqValue> {
     // Check for module( prefix
@@ -263,20 +265,22 @@ fn parse_module_ref(s: &str) -> Option<SeqValue> {
         return None;
     };
 
-    // Parse id:port
-    let parts: Vec<&str> = trimmed.splitn(2, ':').collect();
-    if parts.len() != 2 {
+    // Parse id:port:channel
+    let parts: Vec<&str> = trimmed.splitn(3, ':').collect();
+    if parts.len() != 3 {
         return None;
     }
 
     let module_id = parts[0].to_string();
     let port = parts[1].to_string();
+    let channel: usize = parts[2].parse().unwrap_or(0);
 
     Some(SeqValue::Signal {
         signal: Signal::Cable {
             module: module_id,
             module_ptr: std::sync::Weak::new(),
             port,
+            channel,
         },
         sample_and_hold,
     })
@@ -414,13 +418,23 @@ mod tests {
 
     #[test]
     fn test_parse_module_ref() {
-        let sig = parse_module_ref("module(osc1:output)").unwrap();
+        let sig = parse_module_ref("module(osc1:output:0)").unwrap();
         assert!(matches!(sig, SeqValue::Signal { sample_and_hold: false, .. }));
 
-        let sh_sig = parse_module_ref("module(osc1:output)=").unwrap();
+        let sh_sig = parse_module_ref("module(osc1:output:0)=").unwrap();
         assert!(matches!(sh_sig, SeqValue::Signal { sample_and_hold: true, .. }));
 
+        // Test with channel > 0
+        let sig_ch1 = parse_module_ref("module(osc1:output:1)").unwrap();
+        if let SeqValue::Signal { signal: Signal::Cable { channel, .. }, .. } = sig_ch1 {
+            assert_eq!(channel, 1);
+        } else {
+            panic!("Expected Signal::Cable");
+        }
+
         assert!(parse_module_ref("not_a_module").is_none());
+        // Old format without channel should now fail
+        assert!(parse_module_ref("module(osc1:output)").is_none());
     }
 
     #[test]

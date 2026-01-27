@@ -34,11 +34,11 @@ impl<'de> Deserialize<'de> for MathExpressionParam {
     {
         let source = String::deserialize(deserializer)?;
 
-        // Parse source to find module(id:port)
+        // Parse source to find module(id:port:channel)
         // Replace with module(index)
         // Store signals
 
-        let re = Regex::new(r"module\(([a-zA-Z0-9\-_]+):([a-zA-Z0-9\-_]+)\)")
+        let re = Regex::new(r"module\(([a-zA-Z0-9\-_]+):([a-zA-Z0-9\-_]+):(\d+)\)")
             .map_err(serde::de::Error::custom)?;
         let mut signals = Vec::new();
 
@@ -46,10 +46,12 @@ impl<'de> Deserialize<'de> for MathExpressionParam {
         let result = re.replace_all(&source, |caps: &regex::Captures| {
             let module = caps[1].to_string();
             let port = caps[2].to_string();
+            let channel: usize = caps[3].parse().unwrap_or(0);
             signals.push(Signal::Cable {
                 module,
                 module_ptr: Weak::default(),
                 port,
+                channel,
             });
             format!("module{}", signals.len() - 1)
         });
@@ -154,16 +156,16 @@ impl Math {
     }
 
     fn eval(&mut self) -> std::result::Result<f64, fasteval::Error> {
-        let x = self.params.x.get_poly_signal().get_or(0, 0.0) as f64;
-        let y = self.params.y.get_poly_signal().get_or(0, 0.0) as f64;
-        let z = self.params.z.get_poly_signal().get_or(0, 0.0) as f64;
+        let x = self.params.x.get_value_or(0.0) as f64;
+        let y = self.params.y.get_value_or(0.0) as f64;
+        let z = self.params.z.get_value_or(0.0) as f64;
         let t = self.phase as f64 + self.loop_index as f64;
         let signals = self
             .params
             .expression
             .signals
             .iter()
-            .map(|s| s.get_poly_signal().get_or(0, 0.0) as f64)
+            .map(|s| s.get_value_or(0.0) as f64)
             .collect::<Vec<_>>();
 
         let mut btree = BTreeMap::new();

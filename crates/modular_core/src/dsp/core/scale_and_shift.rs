@@ -2,23 +2,24 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::types::{Clickless, Signal};
+use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
+use crate::types::Clickless;
 
 #[derive(Deserialize, Default, JsonSchema, Connect)]
 #[serde(default)]
 struct ScaleAndShiftParams {
     /// signal input
-    input: Signal,
+    input: PolySignal,
     /// scale factor
-    scale: Signal,
+    scale: PolySignal,
     /// shift amount
-    shift: Signal,
+    shift: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
 struct ScaleAndShiftOutputs {
     #[output("output", "signal output", default)]
-    sample: f32,
+    sample: PolyOutput,
 }
 
 #[derive(Default, Module)]
@@ -26,17 +27,30 @@ struct ScaleAndShiftOutputs {
 #[args(input, scale?, shift?)]
 pub struct ScaleAndShift {
     outputs: ScaleAndShiftOutputs,
-    scale: Clickless,
-    shift: Clickless,
+    scale: [Clickless; PORT_MAX_CHANNELS],
+    shift: [Clickless; PORT_MAX_CHANNELS],
     params: ScaleAndShiftParams,
 }
 
 impl ScaleAndShift {
     fn update(&mut self, _sample_rate: f32) -> () {
-        let input = self.params.input.get_poly_signal().get(0);
-        self.scale.update(self.params.scale.get_poly_signal().get_or(0, 5.0));
-        self.shift.update(self.params.shift.get_poly_signal().get(0));
-        self.outputs.sample = input * (*self.scale / 5.0) + *self.shift;
+        let input = &self.params.input;
+        let channels = PolySignal::max_channels(&[input, &self.params.scale, &self.params.shift]);
+
+        self.outputs.sample.set_channels(channels);
+
+        for i in 0..channels as usize {
+            let input_val = input.get_value(i);
+            let scale_val = self.params.scale.get_value_or(i, 5.0);
+            let shift_val = self.params.shift.get_value_or(i, 0.0);
+
+            self.scale[i].update(scale_val);
+            self.shift[i].update(shift_val);
+
+            self.outputs
+                .sample
+                .set(i, input_val * (*self.scale[i] / 5.0) + *self.shift[i]);
+        }
     }
 }
 

@@ -7,9 +7,8 @@ use serde_json::json;
 
 use modular_core::SampleableMap;
 use modular_core::patch::Patch;
-use modular_core::poly::PolySignal;
 use modular_core::types::{
-    ClockMessages, Connect, InterpolationType, Message, MessageHandler,
+    ClockMessages, Connect, Message, MessageHandler,
     MessageTag, Sampleable, Signal,
 };
 
@@ -48,8 +47,8 @@ impl Sampleable for DummySampleable {
 
     fn update(&self) {}
 
-    fn get_poly_sample(&self, port: &String) -> Result<modular_core::poly::PolySignal> {
-        Ok(modular_core::poly::PolySignal::mono(
+    fn get_poly_sample(&self, port: &String) -> Result<modular_core::poly::PolyOutput> {
+        Ok(modular_core::poly::PolyOutput::mono(
             *self.outputs.get(port).unwrap_or(&0.0)
         ))
     }
@@ -97,7 +96,7 @@ fn approx_eq(a: f32, b: f32, eps: f32) {
 
 #[test]
 fn signal_volts_get_value() {
-    let s = Signal::Volts(PolySignal::mono(-1.23));
+    let s = Signal::Volts(-1.23);
     approx_eq(s.get_value(), -1.23, 1e-6);
 }
 
@@ -112,7 +111,7 @@ fn signal_disconnected_get_value_or() {
 fn signal_deserialize_number_as_volts() {
     let s: Signal = serde_json::from_value(json!(1.25)).unwrap();
     match s {
-        Signal::Volts(poly) => approx_eq(poly.get(0), 1.25, 1e-6),
+        Signal::Volts(v) => approx_eq(v, 1.25, 1e-6),
         other => panic!("expected Signal::Volts, got {other:?}"),
     }
 }
@@ -120,7 +119,7 @@ fn signal_deserialize_number_as_volts() {
 #[test]
 fn signal_deserialize_tagged_variants_still_work() {
     let volts: Signal = serde_json::from_value(json!({"type":"volts","value":-2.0})).unwrap();
-    assert!(matches!(volts, Signal::Volts(poly) if (poly.get(0) + 2.0).abs() < 1e-6));
+    assert!(matches!(volts, Signal::Volts(v) if (v + 2.0).abs() < 1e-6));
 
     let cable: Signal =
         serde_json::from_value(json!({"type":"cable","module":"m1","port":"out"})).unwrap();
@@ -129,9 +128,11 @@ fn signal_deserialize_tagged_variants_still_work() {
             module,
             port,
             module_ptr,
+            channel,
         } => {
             assert_eq!(module, "m1");
             assert_eq!(port, "out");
+            assert_eq!(channel, 0);
             assert!(module_ptr.upgrade().is_none());
         }
         other => panic!("expected Signal::Cable, got {other:?}"),
@@ -165,10 +166,11 @@ fn signal_cable_connect_and_read() {
         module: "m1".to_string(),
         module_ptr: Weak::new(),
         port: "out".to_string(),
+        channel: 0,
     };
 
-    // Before connect, cable should read default (module_ptr doesn't resolve).
-    approx_eq(s.get_value_or(-999.0), -999.0, 1e-6);
+    // Before connect, cable reads 0.0 (module_ptr doesn't resolve).
+    approx_eq(s.get_value(), 0.0, 1e-6);
 
     s.connect(&patch);
     approx_eq(s.get_value_or(-999.0), 3.5, 1e-6);
@@ -377,7 +379,7 @@ fn track_clamps_to_first_and_last_keyframes() {
 
 #[test]
 fn connect_noop_for_non_cable_and_non_track_signals() {
-    let mut s = Signal::Volts(PolySignal::mono(1.0));
+    let mut s = Signal::Volts(1.0);
     let patch = make_empty_patch();
     s.connect(&patch);
     approx_eq(s.get_value(), 1.0, 1e-6);

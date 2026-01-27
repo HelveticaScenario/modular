@@ -96,8 +96,8 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    use napi::Result;
     use crate::types::MessageHandler;
+    use napi::Result;
 
     #[test]
     fn test_patch_new_empty() {
@@ -128,8 +128,8 @@ mod tests {
 
         fn update(&self) {}
 
-        fn get_poly_sample(&self, _port: &String) -> Result<crate::poly::PolySignal> {
-            Ok(crate::poly::PolySignal::mono(0.0))
+        fn get_poly_sample(&self, _port: &String) -> Result<crate::poly::PolyOutput> {
+            Ok(crate::poly::PolyOutput::default())
         }
 
         fn get_module_type(&self) -> String {

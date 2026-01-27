@@ -65,6 +65,12 @@ export interface ModuleSchema {
   paramsSchema: Record<string, unknown>
   outputs: Array<OutputSchema>
   positionalArgs: Array<PositionalArg>
+  /** If set, this module always produces exactly this many channels (no inference needed) */
+  channels?: number
+  /** If set, the name of the parameter that controls channel count */
+  channelsParam?: string
+  /** If set, the default value for the channels param when not explicitly set */
+  channelsParamDefault?: number
 }
 
 export interface ModuleState {
@@ -78,6 +84,8 @@ export interface OutputSchema {
   name: string
   description: string
   default: boolean
+  /** Whether this output is polyphonic (PolyOutput) or monophonic (f32/f64) */
+  polyphonic: boolean
 }
 
 export interface PatchGraph {

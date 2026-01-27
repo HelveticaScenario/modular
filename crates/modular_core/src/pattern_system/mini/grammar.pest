@@ -81,7 +81,7 @@ value = {
     identifier
 }
 
-// Module reference: module(id:port) or module(id:port)= for sample-and-hold
+// Module reference: module(id:port:channel) or module(id:port:channel)= for sample-and-hold
 // The inner content allows alphanumeric, underscore, hyphen, and colon
 module_ref = @{ "module(" ~ module_ref_inner ~ ")" ~ "="? }
 module_ref_inner = @{ (ASCII_ALPHANUMERIC | "_" | "-" | ":")+ }

@@ -7,30 +7,30 @@ use crate::{
         consts::{LUT_SINE, LUT_SINE_SIZE},
         utils::{interpolate, wrap},
     },
-    poly::{PolySignal, PORT_MAX_CHANNELS},
-    types::{Clickless, Signal},
+    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal},
+    types::Clickless,
 };
 
 #[derive(Deserialize, Default, JsonSchema, Connect)]
 #[serde(default)]
 struct SineOscillatorParams {
     /// frequency in v/oct
-    freq: Signal,
+    freq: PolySignal,
     /// the phase of the oscillator, overrides freq if present
-    phase: Signal,
+    phase: PolySignal,
     /// sync input (expects >0V to trigger)
-    sync: Signal,
+    sync: PolySignal,
     /// @param min - minimum output value
     /// @param max - maximum output value
-    range: (Signal, Signal),
+    range: (PolySignal, PolySignal),
 }
 
 #[derive(Outputs, JsonSchema)]
 struct SineOscillatorOutputs {
     #[output("output", "signal output", default)]
-    sample: PolySignal,
+    sample: PolyOutput,
     #[output("phaseOut", "current phase output")]
-    phase_out: PolySignal,
+    phase_out: PolyOutput,
 }
 
 /// Per-channel oscillator state
@@ -61,35 +61,31 @@ impl Default for SineOscillator {
 
 impl SineOscillator {
     fn update(&mut self, sample_rate: f32) {
-        let min = self.params.range.0.get_poly_signal().get_or(0, -5.0);
-        let max = self.params.range.1.get_poly_signal().get_or(0, 5.0);
-
         // Determine channel count from freq input (or phase if overriding)
-        let num_channels = if self.params.phase != Signal::Disconnected {
-            self.params.phase.get_poly_signal().channels().max(1) as usize
+        let num_channels = if !self.params.phase.is_disconnected() {
+            PolySignal::max_channels(&[&self.params.phase, &self.params.sync]) as usize
         } else {
-            self.params.freq.get_poly_signal().channels().max(1) as usize
+            PolySignal::max_channels(&[&self.params.freq, &self.params.sync]) as usize
         };
 
-        let mut output = PolySignal::default();
-        let mut phase_out = PolySignal::default();
+        let mut output = PolyOutput::default();
+        let mut phase_out = PolyOutput::default();
         output.set_channels(num_channels as u8);
         phase_out.set_channels(num_channels as u8);
 
-        let phase_poly = self.params.phase.get_poly_signal();
-        let freq_poly = self.params.freq.get_poly_signal();
-
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
+            let min = self.params.range.0.get_value_or(ch, -5.0);
+            let max = self.params.range.1.get_value_or(ch, 5.0);
 
-            if self.params.phase != Signal::Disconnected {
+            if !self.params.phase.is_disconnected() {
                 // Phase override mode - read phase directly with cycling
-                state.phase = wrap(0.0..1.0, phase_poly.get_cycling(ch));
+                state.phase = wrap(0.0..1.0, self.params.phase.get_value(ch));
                 let sine = interpolate(LUT_SINE, state.phase, LUT_SINE_SIZE);
                 output.set(ch, crate::dsp::utils::map_range(sine, -1.0, 1.0, min, max));
             } else {
                 // Frequency mode - get freq for this channel with cycling
-                let freq_val = freq_poly.get_or(ch, 4.0).clamp(-10.0, 10.0);
+                let freq_val = self.params.freq.get_value_or(ch, 4.0).clamp(-10.0, 10.0);
                 state.freq.update(freq_val);
                 let frequency = 55.0f32 * 2.0f32.powf(*state.freq) / sample_rate;
                 state.phase += frequency;

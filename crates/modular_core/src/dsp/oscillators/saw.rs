@@ -3,28 +3,28 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    poly::{PORT_MAX_CHANNELS, PolySignal},
-    types::{Clickless, Signal},
+    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal},
+    types::Clickless,
 };
 
 #[derive(Deserialize, Default, JsonSchema, Connect)]
 #[serde(default)]
 struct SawOscillatorParams {
     /// frequency in v/oct
-    freq: Signal,
+    freq: PolySignal,
     /// waveform shape: 0=saw, 2.5=triangle, 5=ramp
-    shape: Signal,
+    shape: PolySignal,
     /// the phase of the oscillator, overrides freq if present
-    phase: Signal,
+    phase: PolySignal,
     /// @param min - minimum output value
     /// @param max - maximum output value
-    range: (Signal, Signal),
+    range: (PolySignal, PolySignal),
 }
 
 #[derive(Outputs, JsonSchema)]
 struct SawOscillatorOutputs {
     #[output("output", "signal output", default)]
-    sample: PolySignal,
+    sample: PolyOutput,
 }
 
 /// Per-channel oscillator state
@@ -58,18 +58,14 @@ impl Default for SawOscillator {
 impl SawOscillator {
     fn update(&mut self, sample_rate: f32) {
         // Determine channel count from freq input (or phase if overriding)
-        let num_channels = if self.params.phase != Signal::Disconnected {
-            self.params.phase.get_poly_signal().channels().max(1) as usize
+        let num_channels = if !self.params.phase.is_disconnected() {
+            self.params.phase.channels().max(1) as usize
         } else {
-            self.params.freq.get_poly_signal().channels().max(1) as usize
+            self.params.freq.channels().max(1) as usize
         };
 
-        let mut output = PolySignal::default();
+        let mut output = PolyOutput::default();
         output.set_channels(num_channels as u8);
-
-        let phase_poly = self.params.phase.get_poly_signal();
-        let freq_poly = self.params.freq.get_poly_signal();
-        let shape_poly = self.params.shape.get_poly_signal();
 
         // Pre-compute inverse sample rate for frequency calculation
         let inv_sample_rate = 1.0 / sample_rate;
@@ -78,12 +74,12 @@ impl SawOscillator {
             let state = &mut self.channels[ch];
 
             // Update shape with cycling - clamp to valid range
-            let shape_val = shape_poly.get_or(ch, 0.0).clamp(0.0, 5.0);
+            let shape_val = self.params.shape.get_value_or(ch, 0.0).clamp(0.0, 5.0);
             state.shape.update(shape_val);
 
             // Compute current phase and phase increment
-            let (current_phase, phase_increment) = if self.params.phase != Signal::Disconnected {
-                let phase_input = phase_poly.get_cycling(ch);
+            let (current_phase, phase_increment) = if !self.params.phase.is_disconnected() {
+                let phase_input = self.params.phase.get_value(ch);
                 let wrapped_phase = crate::dsp::utils::wrap(0.0..1.0, phase_input);
                 // Calculate phase increment from phase change for PolyBLEP
                 let phase_inc = if wrapped_phase >= state.last_phase {
@@ -94,7 +90,7 @@ impl SawOscillator {
                 (wrapped_phase, phase_inc)
             } else {
                 // Normal frequency-driven oscillation
-                let freq_val = freq_poly.get_or(ch, 4.0).clamp(-10.0, 10.0);
+                let freq_val = self.params.freq.get_value_or(ch, 4.0).clamp(-10.0, 10.0);
                 state.freq.update(freq_val);
 
                 let frequency = 55.0f32 * 2.0f32.powf(*state.freq);
@@ -128,8 +124,8 @@ impl SawOscillator {
                 let ramp = generate_ramp(current_phase, phase_increment);
                 triangle + (ramp - triangle) * blend
             };
-            let min = self.params.range.0.get_poly_signal().get_or(ch, -5.0);
-            let max = self.params.range.1.get_poly_signal().get_or(ch, 5.0);
+            let min = self.params.range.0.get_value_or(ch, -5.0);
+            let max = self.params.range.1.get_value_or(ch, 5.0);
             let range_scale = (max - min) * 0.5;
             let range_offset = (max + min) * 0.5;
             // Optimized map_range: output = raw * scale + offset

@@ -2,7 +2,10 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::types::{Clickless, ClockMessages, Signal};
+use crate::{
+    PolyOutput,
+    types::{Clickless, ClockMessages, Signal},
+};
 
 #[derive(Deserialize, Default, JsonSchema, Connect)]
 #[serde(default)]
@@ -12,7 +15,7 @@ struct ClockParams {
 }
 
 #[derive(Module)]
-#[module("clock", "A tempo clock with multiple outputs")]
+#[module("clock", "A tempo clock with multiple outputs", channels = 2)]
 #[args(tempo?)]
 pub struct Clock {
     outputs: ClockOutputs,
@@ -28,8 +31,8 @@ pub struct Clock {
 
 #[derive(Outputs, JsonSchema)]
 struct ClockOutputs {
-    #[output("playhead", "how many bars have elapsed", default)]
-    playhead: f64,
+    #[output("playhead", "how many bars have elapsed. 2 channel output with phase and loop index", default)]
+    playhead: PolyOutput,
     #[output("barTrigger", "trigger output every bar")]
     bar_trigger: f32,
     #[output("ramp", "ramp from 0 to 5V every bar")]
@@ -62,7 +65,7 @@ impl Clock {
     fn update(&mut self, sample_rate: f32) {
         // Smooth frequency parameter to avoid clicks
         self.freq
-            .update(self.params.tempo.get_poly_signal().get_or(0, 0.0).clamp(-10.0, 10.0));
+            .update(self.params.tempo.get_value_or(0.0).clamp(-10.0, 10.0));
 
         // Convert V/Oct to Hz (use f64 for precision)
         let frequency_hz = 55.0 * 2.0_f64.powf(*self.freq as f64);
@@ -90,8 +93,9 @@ impl Clock {
                 self.ppq_phase -= 1.0 / 48.0;
             }
         }
-
-        self.outputs.playhead = self.loop_index as f64 + self.phase;
+        self.outputs.playhead.set_channels(2);
+        self.outputs.playhead.set(0, self.phase as f32);
+        self.outputs.playhead.set(1, self.loop_index as f32);
 
         // Generate ramp output (0 to 5V over one bar)
         self.outputs.ramp = self.phase as f32 * 5.0;
@@ -122,7 +126,8 @@ impl Clock {
                 // Start implies a transport reset.
                 self.phase = 0.0;
                 self.ppq_phase = 0.0;
-                self.outputs.playhead = 0.0;
+                self.outputs.playhead.set(0, 0.0);
+                self.outputs.playhead.set(1, 0.0);
                 self.loop_index = 0;
                 self.last_bar_trigger = false;
                 self.last_ppq_trigger = false;
@@ -133,7 +138,8 @@ impl Clock {
                 // Ensure triggers are low while stopped.
                 self.outputs.bar_trigger = 0.0;
                 self.outputs.ppq_trigger = 0.0;
-                self.outputs.playhead = 0.0;
+                self.outputs.playhead.set(0, 0.0);
+                self.outputs.playhead.set(1, 0.0);
                 self.loop_index = 0;
             }
         }

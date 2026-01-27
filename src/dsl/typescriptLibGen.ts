@@ -206,31 +206,40 @@ type Scale = \`\${number}s(\${Note}:\${ModeString})\`
 type OrArray<T> = T | T[];
 
 // Core DSL types used by the generated declarations
-type Signal = Deferrable<OrArray<number | Note | HZ | MidiNote | Scale> | ModuleOutput | ModuleNode>;
+type Signal = number | Note | HZ | MidiNote | Scale | ModuleOutput | ModuleNode;
 
-type Deferrable<T> = 
-  | T 
-  | (() => Deferrable<T>)
-  | (T extends (infer U)[] ? Deferrable<U>[] : never)
-  | (T extends object ? { [K in keyof T]: Deferrable<T[K]> } : never);
+type PolySignal = OrArray<Signal> | PolyModuleNode;
 
 interface ModuleOutput {
   readonly moduleId: string;
   readonly portName: string;
+  readonly channel: number;
   gain(factor: Signal): ModuleNode;
   shift(offset: Signal): ModuleNode;
   scope(msPerFrame?: number, triggerThreshold?: number): this;
   out(mode?: 'm'): this;
 }
 
-interface ModuleNode {
+// Base interface for all module nodes
+interface ModuleNodeBase {
   readonly id: string;
   readonly moduleType: string;
+  scope(msPerFrame?: number, triggerThreshold?: number): this;
+  out(mode?: 'm'): this;
+}
+
+// Interface for modules with monophonic default output
+interface ModuleNode extends ModuleNodeBase {
   readonly o: ModuleOutput;
   gain(value: Signal): ModuleNode;
   shift(value: Signal): ModuleNode;
-  scope(msPerFrame?: number, triggerThreshold?: number): this;
-  out(mode?: 'm'): this;
+}
+
+// Interface for modules with polyphonic default output
+interface PolyModuleNode extends ModuleNodeBase {
+  readonly o: ModuleOutput[];
+  gain(value: PolySignal): PolyModuleNode[];
+  shift(value: PolySignal): PolyModuleNode[];
 }
 
 // Helper functions exposed by the DSL runtime
@@ -238,8 +247,11 @@ declare function hz(frequency: number): number;
 declare function note(noteName: string): number;
 declare function bpm(beatsPerMinute: number): number;
 
-// Tagged template literal allowing strings with deferred values
-declare function defer(strings: TemplateStringsArray, ...values: any[]): string;
+interface Array<T> {
+    gain(this: T extends ModuleOutput[] ? T : never, factor: Value): ModuleNode[];
+    offset(this: T extends ModuleOutput[] ? T : never, offset: Value): ModuleNode[];
+    out(this: T extends ModuleOutput[] ? T : never, mode?: 'm'): ModuleOutput[];
+}
 `;
 
 export function buildLibSource(schemas: ModuleSchema[]): string {
@@ -311,7 +323,7 @@ function extractParamNamesFromDoc(description?: string): string[] {
 function resolveRef(
     ref: string,
     rootSchema: JSONSchema,
-): JSONSchema | 'Signal' {
+): JSONSchema | 'Signal' | 'PolySignal' {
     if (ref === 'Signal') return 'Signal';
 
     const defsPrefix = '#/$defs/';
@@ -321,6 +333,7 @@ function resolveRef(
 
     const defName = ref.slice(defsPrefix.length);
     if (defName === 'Signal') return 'Signal';
+    if (defName === 'PolySignal') return 'PolySignal';
 
     const defs = rootSchema?.$defs;
     if (!defs || typeof defs !== 'object') {
@@ -333,6 +346,7 @@ function resolveRef(
     }
 
     if (resolved?.title === 'Signal') return 'Signal';
+    if (resolved?.title === 'PolySignal') return 'PolySignal';
     return resolved;
 }
 
@@ -343,10 +357,39 @@ function schemaToTypeExpr(schema: JSONSchema, rootSchema: JSONSchema): string {
     if (typeof schema === 'boolean') {
         throw new Error('Unsupported schema: boolean schema');
     }
-    if (schema.oneOf || schema.anyOf || schema.allOf) {
+
+    // Handle oneOf/anyOf - check if all variants resolve to Signal
+    if (schema.oneOf || schema.anyOf) {
+        const variants = schema.oneOf || schema.anyOf;
+        if (Array.isArray(variants)) {
+            // Check if this is an enum (all variants have 'const')
+            const isEnum = variants.every((v: JSONSchema) => v.const !== undefined);
+            if (isEnum) {
+                return variants.map((v: any) => JSON.stringify(v.const)).join(' | ');
+            }
+
+            const types = variants.map((v: JSONSchema) => {
+                try {
+                    return schemaToTypeExpr(v, rootSchema);
+                } catch {
+                    return 'any';
+                }
+            });
+            // If all variants are Signal, return Signal
+            if (types.every((t) => t === 'Signal')) {
+                return 'PolySignal';
+            }
+            // If it's a mix but includes Signal[], treat as Signal (for PolySignal)
+            if (types.includes('Signal') && types.includes('Signal[]')) {
+                return 'PolySignal';
+            }
+        }
         console.log('schema:', schema);
         return 'any';
-        // throw new Error("Unsupported schema composition (oneOf/anyOf/allOf)");
+    }
+    if (schema.allOf) {
+        console.log('schema:', schema);
+        return 'any';
     }
     if (Array.isArray(schema.type)) {
         throw new Error('Unsupported schema: union type array');
@@ -355,6 +398,7 @@ function schemaToTypeExpr(schema: JSONSchema, rootSchema: JSONSchema): string {
     if (schema.$ref) {
         const resolved = resolveRef(String(schema.$ref), rootSchema);
         if (resolved === 'Signal') return 'Signal';
+        if (resolved === 'PolySignal') return 'PolySignal';
         return schemaToTypeExpr(resolved, rootSchema);
     }
 
@@ -409,6 +453,18 @@ function schemaToTypeExpr(schema: JSONSchema, rootSchema: JSONSchema): string {
     }
 
     if (type === undefined) {
+        // If there's a $ref we didn't catch, or other structural hints, try to handle
+        if (schema.$ref) {
+            const resolved = resolveRef(String(schema.$ref), rootSchema);
+            if (resolved === 'Signal') return 'Signal';
+            if (resolved === 'PolySignal') return 'PolySignal';
+            return schemaToTypeExpr(resolved, rootSchema);
+        }
+        // Schema with only 'const' (used in tagged unions)
+        if (schema.const !== undefined) {
+            return JSON.stringify(schema.const);
+        }
+        console.error('Schema with missing type:', JSON.stringify(schema, null, 2));
         throw new Error('Unsupported schema: missing type');
     }
 
@@ -671,21 +727,32 @@ function renderInterface(
 
     lines.push(...renderDocComment(classSpec.description, indent));
     const interfaceName = renderNodeInterfaceName(capitalizeName(baseName));
+
+    // Determine if the default output is polyphonic
+    const defaultOutput = classSpec.moduleSchema.outputs?.find((o: any) => o.default) ?? classSpec.moduleSchema.outputs?.[0];
+    const hasPolyDefaultOutput = defaultOutput?.polyphonic === true;
+    const baseInterface = hasPolyDefaultOutput ? 'PolyModuleNode' : 'ModuleNode';
+
     lines.push(
-        `${indent}export interface ${interfaceName} extends ModuleNode {`,
+        `${indent}export interface ${interfaceName} extends ${baseInterface} {`,
     );
 
     const seenOutputNames = new Set<string>();
     for (const output of classSpec.outputs) {
         if (!output.name) continue;
-        if (output.name === 'o') continue; // already exists on ModuleNode
+        if (output.name === 'o') continue; // already exists on base interface
         if (seenOutputNames.has(output.name)) continue;
         seenOutputNames.add(output.name);
+
+        // Check if this specific output is polyphonic
+        const outputSchema = classSpec.moduleSchema.outputs?.find((o: any) => o.name === output.name);
+        const isPoly = outputSchema?.polyphonic === true;
+        const outputType = isPoly ? 'ModuleOutput[]' : 'ModuleOutput';
 
         lines.push('');
         lines.push(...renderDocComment(output.description, indent + '  '));
         lines.push(
-            `${indent}  readonly ${renderReadonlyPropertyKey(output.name)}: ModuleOutput;`,
+            `${indent}  readonly ${renderReadonlyPropertyKey(output.name)}: ${outputType};`,
         );
     }
 

@@ -18,7 +18,7 @@ use std::{
 };
 
 use crate::patch::Patch;
-use crate::poly::PolySignal;
+use crate::poly::PolyOutput;
 
 lazy_static! {
     pub static ref ROOT_ID: String = "root".into();
@@ -51,7 +51,7 @@ pub trait Sampleable: MessageHandler + Send + Sync {
     fn tick(&self) -> ();
     fn update(&self) -> ();
     /// Get polyphonic sample output for a port.
-    fn get_poly_sample(&self, port: &String) -> Result<PolySignal>;
+    fn get_poly_sample(&self, port: &String) -> Result<PolyOutput>;
     fn get_module_type(&self) -> String;
     fn try_update_params(&self, params: serde_json::Value) -> Result<()>;
     fn connect(&self, patch: &Patch);
@@ -292,15 +292,21 @@ fn parse_signal_string(s: &str) -> StdResult<f32, String> {
     Err("Invalid signal format".to_string())
 }
 
+/// A single-channel signal value.
+/// 
+/// This represents either a constant voltage, a cable connection to a specific
+/// channel of another module's output, or a disconnected input.
 #[derive(Clone, Debug, Default)]
 pub enum Signal {
-    /// Static voltage value(s) - mono is just channels=1
-    Volts(PolySignal),
-    /// Cable connection to another module's output
+    /// Static voltage value (mono)
+    Volts(f32),
+    /// Cable connection to another module's output at a specific channel
     Cable {
         module: String,
         module_ptr: std::sync::Weak<Box<dyn Sampleable>>,
         port: String,
+        /// Which channel of the output to read (0-indexed)
+        channel: usize,
     },
     #[default]
     Disconnected,
@@ -309,12 +315,11 @@ pub enum Signal {
 // Custom serde deserialization to allow a bare number as shorthand for volts.
 //
 // Examples accepted:
-// - 0.5                      -> Signal::Volts(PolySignal::mono(0.5))
-// - [0.5, 1.0, 1.5]          -> Signal::Volts(PolySignal::poly(&[0.5, 1.0, 1.5]))
+// - 0.5                      -> Signal::Volts(0.5)
+// - "440hz"                  -> Signal::Volts(computed voltage)
+// - { type: 'cable', module, port, channel } -> Signal::Cable
 //
-// Note: This keeps the existing *serialized* representation unchanged (still tagged objects).
-// If you also want JSON Schema / TS exports to reflect this shorthand, you'll need a custom
-// JsonSchema/TS representation as well.
+// Note: Arrays are no longer accepted for Signal - use PolySignal for polyphonic inputs.
 impl<'de> Deserialize<'de> for Signal {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -324,9 +329,7 @@ impl<'de> Deserialize<'de> for Signal {
         #[serde(untagged)]
         enum SignalDe {
             Number(f64),
-            NumberArray(Vec<f64>),
             String(String),
-            StringArray(Vec<String>),
             Tagged(SignalTagged),
         }
 
@@ -337,34 +340,63 @@ impl<'de> Deserialize<'de> for Signal {
             rename_all_fields = "camelCase"
         )]
         enum SignalTagged {
-            Cable { module: String, port: String },
+            Cable {
+                module: String,
+                port: String,
+                #[serde(default)]
+                channel: usize,
+            },
             Disconnected,
         }
 
         match SignalDe::deserialize(deserializer)? {
-            SignalDe::Number(value) => Ok(Signal::Volts(PolySignal::mono(value as f32))),
-            SignalDe::NumberArray(values) => Ok(Signal::Volts(PolySignal::poly(
-                &values.into_iter().map(|v| v as f32).collect::<Vec<_>>(),
-            ))),
+            SignalDe::Number(value) => Ok(Signal::Volts(value as f32)),
             SignalDe::String(s) => parse_signal_string(&s)
-                .map(|v| Signal::Volts(PolySignal::mono(v)))
+                .map(Signal::Volts)
                 .map_err(serde::de::Error::custom),
-            SignalDe::StringArray(items) => {
-                let mut voltages = Vec::with_capacity(items.len());
-                for item in items {
-                    let v = parse_signal_string(&item).map_err(serde::de::Error::custom)?;
-                    voltages.push(v);
-                }
-                Ok(Signal::Volts(PolySignal::poly(&voltages)))
-            }
             SignalDe::Tagged(tagged) => Ok(match tagged {
-                SignalTagged::Cable { module, port } => Signal::Cable {
+                SignalTagged::Cable {
+                    module,
+                    port,
+                    channel,
+                } => Signal::Cable {
                     module,
                     module_ptr: sync::Weak::new(),
                     port,
+                    channel,
                 },
                 SignalTagged::Disconnected => Signal::Disconnected,
             }),
+        }
+    }
+}
+
+impl serde::Serialize for Signal {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeMap;
+        match self {
+            Signal::Volts(v) => serializer.serialize_f32(*v),
+            Signal::Cable {
+                module,
+                port,
+                channel,
+                ..
+            } => {
+                let mut map = serializer.serialize_map(Some(4))?;
+                map.serialize_entry("type", "cable")?;
+                map.serialize_entry("module", module)?;
+                map.serialize_entry("port", port)?;
+                map.serialize_entry("channel", channel)?;
+                map.end()
+            }
+            Signal::Disconnected => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("type", "disconnected")?;
+                map.end()
+            }
         }
     }
 }
@@ -374,9 +406,7 @@ impl<'de> Deserialize<'de> for Signal {
 #[allow(dead_code)]
 enum SignalSchema {
     Number(f64),
-    NumberArray(Vec<f64>),
     String(String),
-    StringArray(Vec<String>),
     Tagged(SignalTaggedSchema),
 }
 
@@ -388,7 +418,12 @@ enum SignalSchema {
 )]
 #[allow(dead_code)]
 enum SignalTaggedSchema {
-    Cable { module: String, port: String },
+    Cable {
+        module: String,
+        port: String,
+        #[serde(default)]
+        channel: usize,
+    },
     Disconnected,
 }
 
@@ -403,17 +438,35 @@ impl JsonSchema for Signal {
 }
 
 impl Signal {
-    /// Get the full polyphonic signal.
-    pub fn get_poly_signal(&self) -> PolySignal {
+    /// Get the mono voltage value from this signal.
+    /// For Volts, returns the stored value.
+    /// For Cable, fetches the specific channel from the connected module's output.
+    /// For Disconnected, returns 0.0.
+    pub fn get_value(&self) -> f32 {
         match self {
-            Signal::Volts(poly) => *poly,
+            Signal::Volts(v) => *v,
             Signal::Cable {
-                module_ptr, port, ..
+                module_ptr,
+                port,
+                channel,
+                ..
             } => match module_ptr.upgrade() {
-                Some(module_ptr) => module_ptr.get_poly_sample(port).unwrap_or_default(),
-                None => PolySignal::default(),
+                Some(module_ptr) => module_ptr
+                    .get_poly_sample(port)
+                    .map(|p| p.get_cycling(*channel))
+                    .unwrap_or(0.0),
+                None => 0.0,
             },
-            Signal::Disconnected => PolySignal::default(),
+            Signal::Disconnected => 0.0,
+        }
+    }
+
+    /// Get value with fallback for disconnected inputs (normalled input)
+    pub fn get_value_or(&self, default: f32) -> f32 {
+        if self.is_disconnected() {
+            default
+        } else {
+            self.get_value()
         }
     }
 
@@ -429,7 +482,7 @@ impl Connect for Signal {
             Signal::Cable {
                 module,
                 module_ptr,
-                port: _,
+                ..
             } => {
                 if let Some(sampleable) = patch.sampleables.get(module) {
                     *module_ptr = Arc::downgrade(sampleable);
@@ -449,22 +502,25 @@ impl PartialEq for Box<dyn Sampleable> {
 impl PartialEq for Signal {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Signal::Volts(poly1), Signal::Volts(poly2)) => poly1 == poly2,
+            (Signal::Volts(v1), Signal::Volts(v2)) => v1 == v2,
             (
                 Signal::Cable {
                     module: module_1,
                     module_ptr: module_ptr_1,
                     port: port_1,
+                    channel: channel_1,
                 },
                 Signal::Cable {
                     module: module_2,
                     module_ptr: module_ptr_2,
                     port: port_2,
+                    channel: channel_2,
                 },
             ) => {
                 module_ptr_1.upgrade() == module_ptr_2.upgrade()
                     && port_1 == port_2
                     && module_1 == module_2
+                    && channel_1 == channel_2
             }
             (Signal::Disconnected, Signal::Disconnected) => true,
             _ => false,
@@ -537,12 +593,15 @@ pub struct OutputSchema {
     pub description: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub default: bool,
+    /// Whether this output is polyphonic (PolyOutput) or monophonic (f32/f64)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub polyphonic: bool,
 }
 
 pub trait OutputStruct: Default + Send + Sync + 'static {
     fn copy_from(&mut self, other: &Self);
     /// Get polyphonic sample output for a port.
-    fn get_poly_sample(&self, port: &str) -> Option<PolySignal>;
+    fn get_poly_sample(&self, port: &str) -> Option<PolyOutput>;
     fn schemas() -> Vec<OutputSchema>
     where
         Self: Sized;
@@ -604,6 +663,15 @@ pub struct ModuleSchema {
     pub params_schema: SchemaContainer,
     pub outputs: Vec<OutputSchema>,
     pub positional_args: Vec<PositionalArg>,
+    /// If set, this module always produces exactly this many channels (no inference needed)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channels: Option<u8>,
+    /// If set, the name of the parameter that controls channel count
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channels_param: Option<String>,
+    /// If set, the default value for the channels param when not explicitly set
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channels_param_default: Option<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -688,7 +756,7 @@ mod tests {
     fn test_signal_deserialization_volts() {
         let s: Signal = from_str("0.5").unwrap();
         match s {
-            Signal::Volts(poly) => assert_eq!(poly.get(0), 0.5),
+            Signal::Volts(v) => assert_eq!(v, 0.5),
             _ => panic!("Expected Volts"),
         }
     }
@@ -698,14 +766,14 @@ mod tests {
         // 55Hz is 0V
         let s: Signal = from_str("\"55hz\"").unwrap();
         match s {
-            Signal::Volts(poly) => assert!((poly.get(0) - 0.0).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - 0.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
         // 110Hz is 1V (one octave up)
         let s: Signal = from_str("\"110hz\"").unwrap();
         match s {
-            Signal::Volts(poly) => assert!((poly.get(0) - 1.0).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - 1.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
     }
@@ -715,14 +783,14 @@ mod tests {
         // MIDI 33 (A0) is 0V
         let s: Signal = from_str("\"33m\"").unwrap();
         match s {
-            Signal::Volts(poly) => assert!((poly.get(0) - 0.0).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - 0.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
         // MIDI 45 (A1) is 1V
         let s: Signal = from_str("\"45m\"").unwrap();
         match s {
-            Signal::Volts(poly) => assert!((poly.get(0) - 1.0).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - 1.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
     }
@@ -732,28 +800,28 @@ mod tests {
         // A0 is 0V
         let s: Signal = from_str("\"A0\"").unwrap();
         match s {
-            Signal::Volts(poly) => assert!((poly.get(0) - 0.0).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - 0.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
         // A-1 is -1V
         let s: Signal = from_str("\"A-1\"").unwrap();
         match s {
-            Signal::Volts(poly) => assert!((poly.get(0) + 1.0).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v + 1.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
         // A1 is 1V
         let s: Signal = from_str("\"A1\"").unwrap();
         match s {
-            Signal::Volts(poly) => assert!((poly.get(0) - 1.0).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - 1.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
         // C4 (Middle C) -> MIDI 72 -> (72-33)/12 = 3.25V
         let s: Signal = from_str("\"C4\"").unwrap();
         match s {
-            Signal::Volts(poly) => assert!((poly.get(0) - 3.25).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - 3.25).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
@@ -761,7 +829,7 @@ mod tests {
         // A#0 -> MIDI 34 -> 1/12 V
         let s: Signal = from_str("\"A#0\"").unwrap();
         match s {
-            Signal::Volts(poly) => assert!((poly.get(0) - (1.0 / 12.0)).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - (1.0 / 12.0)).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
     }
@@ -771,28 +839,28 @@ mod tests {
         // 0s(A0:Major) -> treat as root -> A0 -> 0V
         let s: Signal = from_str("\"0s(A0:Major)\"").unwrap();
         match s {
-            Signal::Volts(poly) => assert!((poly.get(0) - 0.0).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - 0.0).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
         // 1s(A0:Major) -> 2nd interval -> B0 -> 2 semitones -> 2/12 V
         let s: Signal = from_str("\"1s(A0:Major)\"").unwrap();
         match s {
-            Signal::Volts(poly) => assert!((poly.get(0) - (2.0 / 12.0)).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - (2.0 / 12.0)).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
         // 2s(A0:Major) -> 3rd interval -> C#0 -> 4 semitones -> 4/12 V
         let s: Signal = from_str("\"2s(A0:Major)\"").unwrap();
         match s {
-            Signal::Volts(poly) => assert!((poly.get(0) - (4.0 / 12.0)).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - (4.0 / 12.0)).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
         // 8s(A0:Major) -> 9th interval -> B1 -> 14 semitones -> 14/12 V
         let s: Signal = from_str("\"8s(A0:Major)\"").unwrap();
         match s {
-            Signal::Volts(poly) => assert!((poly.get(0) - (14.0 / 12.0)).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - (14.0 / 12.0)).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
@@ -800,7 +868,7 @@ mod tests {
         // 1.5s(A0:Major) -> 2nd interval + 50 cents -> 2.5 semitones -> 2.5/12 V
         let s: Signal = from_str("\"1.5s(a0:maj)\"").unwrap();
         match s {
-            Signal::Volts(poly) => assert!((poly.get(0) - (2.5 / 12.0)).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - (2.5 / 12.0)).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
 
@@ -808,7 +876,7 @@ mod tests {
         // -1s(A0:Major) -> G#-1 -> one semitone below A0 -> -1/12 V
         let s: Signal = from_str("\"-1s(A0:Major)\"").unwrap();
         match s {
-            Signal::Volts(poly) => assert!((poly.get(0) - (-1.0 / 12.0)).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - (-1.0 / 12.0)).abs() < 1e-6),
             _ => panic!("Expected Volts"),
         }
     }

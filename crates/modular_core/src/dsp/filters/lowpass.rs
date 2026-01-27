@@ -3,26 +3,25 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    PORT_MAX_CHANNELS, PolySignal,
+    PORT_MAX_CHANNELS, poly::{PolyOutput, PolySignal},
     dsp::utils::changed,
-    types::Signal,
 };
 
 #[derive(Deserialize, Default, JsonSchema, Connect)]
 #[serde(default)]
 struct LowpassFilterParams {
     /// signal input
-    input: Signal,
+    input: PolySignal,
     /// cutoff frequency in v/oct
-    cutoff: Signal,
+    cutoff: PolySignal,
     /// filter resonance (0-5)
-    resonance: Signal,
+    resonance: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
 struct LowpassFilterOutputs {
     #[output("output", "filtered signal", default)]
-    sample: PolySignal,
+    sample: PolyOutput,
 }
 
 #[derive(Default, Module)]
@@ -93,22 +92,20 @@ impl LowpassFilter {
         sample_rate: f32,
     ) {
         if cutoff.is_monophonic() && resonance.is_monophonic() {
-            let c = cutoff.get_or(0, 0.0);
-            let r = resonance.get_or(0, 0.0);
+            let c = cutoff.get_value_or(0, 0.0);
+            let r = resonance.get_value_or(0, 0.0);
 
             if changed(c, self.last_cutoff_mono) || changed(r, self.last_resonance_mono) {
-                println!("channel {} {} {}", channels, c, r);
                 self.coeffs_mono = compute_biquad(c, r, sample_rate);
                 self.last_cutoff_mono = c;
                 self.last_resonance_mono = r;
             }
         } else {
             for i in 0..channels {
-                let c = cutoff.get_or(i, 0.0);
-                let r = resonance.get_or(i, 0.0);
+                let c = cutoff.get_value_or(i, 0.0);
+                let r = resonance.get_value_or(i, 0.0);
 
                 if changed(c, self.last_cutoff[i]) || changed(r, self.last_resonance[i]) {
-                    println!("channel {} {} {}", channels, c, r);
                     self.coeffs[i] = compute_biquad(c, r, sample_rate);
                     self.last_cutoff[i] = c;
                     self.last_resonance[i] = r;
@@ -118,25 +115,41 @@ impl LowpassFilter {
     }
 
     fn update(&mut self, sample_rate: f32) -> () {
-        let input_poly = self.params.input.get_poly_signal();
-        let cutoff_poly = self.params.cutoff.get_poly_signal();
-        let resonance_poly = self.params.resonance.get_poly_signal();
-
-        let channels = PolySignal::max_channels(&[input_poly, cutoff_poly, resonance_poly]);
+        let channels = PolySignal::max_channels(&[
+            &self.params.input,
+            &self.params.cutoff,
+            &self.params.resonance,
+        ]);
 
         self.outputs.sample.set_channels(channels);
 
-        self.update_coeffs(
-            &cutoff_poly,
-            &resonance_poly,
-            channels as usize,
-            sample_rate,
-        );
+        // Update coefficients (borrows cutoff and resonance for reading)
+        if self.params.cutoff.is_monophonic() && self.params.resonance.is_monophonic() {
+            let c = self.params.cutoff.get_value_or(0, 0.0);
+            let r = self.params.resonance.get_value_or(0, 0.0);
+
+            if changed(c, self.last_cutoff_mono) || changed(r, self.last_resonance_mono) {
+                self.coeffs_mono = compute_biquad(c, r, sample_rate);
+                self.last_cutoff_mono = c;
+                self.last_resonance_mono = r;
+            }
+        } else {
+            for i in 0..channels as usize {
+                let c = self.params.cutoff.get_value_or(i, 0.0);
+                let r = self.params.resonance.get_value_or(i, 0.0);
+
+                if changed(c, self.last_cutoff[i]) || changed(r, self.last_resonance[i]) {
+                    self.coeffs[i] = compute_biquad(c, r, sample_rate);
+                    self.last_cutoff[i] = c;
+                    self.last_resonance[i] = r;
+                }
+            }
+        }
 
         for i in 0..channels as usize {
-            let input = input_poly.get_or(i, 0.0);
+            let input = self.params.input.get_value_or(i, 0.0);
 
-            let c = if cutoff_poly.is_monophonic() && resonance_poly.is_monophonic() {
+            let c = if self.params.cutoff.is_monophonic() && self.params.resonance.is_monophonic() {
                 self.coeffs_mono
             } else {
                 self.coeffs[i]
@@ -149,8 +162,6 @@ impl LowpassFilter {
             self.z1[i] = w;
             self.outputs.sample.set(i, y);
         }
-        // Soft clipping to prevent overflow
-        // self.sample = self.sample.clamp(-5.0, 5.0);
     }
 }
 

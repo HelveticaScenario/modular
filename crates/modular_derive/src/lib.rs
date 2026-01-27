@@ -245,6 +245,100 @@ fn unwrap_attr(attrs: &Vec<Attribute>, ident: &str) -> Option<TokenStream2> {
         })
 }
 
+/// Parsed module attribute data
+struct ModuleAttr {
+    name: LitStr,
+    description: Option<LitStr>,
+    channels: Option<u8>,
+    channels_param: Option<LitStr>,
+    channels_param_default: Option<u8>,
+}
+
+/// Parse module attribute tokens into ModuleAttr
+/// Supports:
+/// - #[module("name", "description")]
+/// - #[module("name", "description", channels = N)]
+/// - #[module("name", "description", channels_param = "paramName", channels_param_default = N)]
+fn parse_module_attr(attrs: &Vec<Attribute>) -> ModuleAttr {
+    use syn::Result as SynResult;
+    use syn::parse::{Parse, ParseStream};
+
+    struct ModuleAttrParser {
+        name: LitStr,
+        description: Option<LitStr>,
+        channels: Option<u8>,
+        channels_param: Option<LitStr>,
+        channels_param_default: Option<u8>,
+    }
+
+    impl Parse for ModuleAttrParser {
+        fn parse(input: ParseStream) -> SynResult<Self> {
+            // Parse first string literal (name)
+            let name: LitStr = input.parse()?;
+
+            let mut description: Option<LitStr> = None;
+            let mut channels: Option<u8> = None;
+            let mut channels_param: Option<LitStr> = None;
+            let mut channels_param_default: Option<u8> = None;
+
+            // Parse remaining optional elements
+            while input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+                
+                if input.is_empty() {
+                    break;
+                }
+
+                // Check if it's a string literal (description) or identifier (attribute)
+                if input.peek(LitStr) {
+                    description = Some(input.parse()?);
+                } else {
+                    // Try to parse an identifier
+                    let ident: Ident = input.parse()?;
+                    
+                    if ident == "channels" {
+                        input.parse::<Token![=]>()?;
+                        let lit: syn::LitInt = input.parse()?;
+                        channels = Some(lit.base10_parse()?);
+                    } else if ident == "channels_param" {
+                        input.parse::<Token![=]>()?;
+                        let lit: LitStr = input.parse()?;
+                        channels_param = Some(lit);
+                    } else if ident == "channels_param_default" {
+                        input.parse::<Token![=]>()?;
+                        let lit: syn::LitInt = input.parse()?;
+                        channels_param_default = Some(lit.base10_parse()?);
+                    } else {
+                        return Err(syn::Error::new(
+                            ident.span(),
+                            format!("Unknown module attribute '{}'. Expected 'channels', 'channels_param', or 'channels_param_default'", ident),
+                        ));
+                    }
+                }
+            }
+
+            Ok(ModuleAttrParser {
+                name,
+                description,
+                channels,
+                channels_param,
+                channels_param_default,
+            })
+        }
+    }
+
+    let tokens = unwrap_attr(attrs, "module").expect("Missing #[module(...)] attribute");
+    let parsed = syn::parse2::<ModuleAttrParser>(tokens).expect("Failed to parse module attribute");
+
+    ModuleAttr {
+        name: parsed.name,
+        description: parsed.description,
+        channels: parsed.channels,
+        channels_param: parsed.channels_param,
+        channels_param_default: parsed.channels_param_default,
+    }
+}
+
 fn unwrap_name_description(
     attrs: &Vec<Attribute>,
     ident: &str,
@@ -349,7 +443,6 @@ pub fn module_macro_derive(input: TokenStream) -> TokenStream {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum OutputPrecision {
     F32,
-    F64,
     PolySignal,
 }
 
@@ -387,7 +480,7 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
                         }
                     };
 
-                    // Detect field precision (f32, f64, or PolySignal)
+                    // Detect field precision (f32 or PolySignal)
                     let precision = match &f.ty {
                         Type::Path(tp) => {
                             let type_name = tp
@@ -397,12 +490,11 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
                                 .map(|seg| seg.ident.to_string());
                             match type_name.as_deref() {
                                 Some("f32") => OutputPrecision::F32,
-                                Some("f64") => OutputPrecision::F64,
-                                Some("PolySignal") => OutputPrecision::PolySignal,
+                                Some("PolyOutput") => OutputPrecision::PolySignal,
                                 _ => {
                                     return syn::Error::new(
                                         f.ty.span(),
-                                        "Output fields must have type f32, f64, or PolySignal",
+                                        "Output fields must have type f32 or PolyOutput",
                                     )
                                     .to_compile_error()
                                     .into();
@@ -412,7 +504,7 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
                         _ => {
                             return syn::Error::new(
                                 f.ty.span(),
-                                "Output fields must have type f32, f64, or PolySignal",
+                                "Output fields must have type f32, or PolyOutput",
                             )
                             .to_compile_error()
                             .into();
@@ -474,13 +566,13 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
         .map(|o| {
             let field_name = &o.field_name;
             match o.precision {
-                OutputPrecision::F32 | OutputPrecision::F64 => quote! { #field_name: 0.0 },
-                OutputPrecision::PolySignal => quote! { #field_name: crate::poly::PolySignal::default() },
+                OutputPrecision::F32 => quote! { #field_name: 0.0 },
+                OutputPrecision::PolySignal => quote! { #field_name: crate::poly::PolyOutput::default() },
             }
         })
         .collect();
 
-    // Generate get_poly_sample match arms (returns PolySignal)
+    // Generate get_poly_sample match arms (returns PolyOutput)
     let poly_sample_match_arms: Vec<_> = outputs
         .iter()
         .map(|o| {
@@ -488,10 +580,7 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
             let field_name = &o.field_name;
             match o.precision {
                 OutputPrecision::F32 => quote! {
-                    #output_name => Some(crate::poly::PolySignal::mono(self.#field_name)),
-                },
-                OutputPrecision::F64 => quote! {
-                    #output_name => Some(crate::poly::PolySignal::mono(self.#field_name as f32)),
+                    #output_name => Some(crate::poly::PolyOutput::mono(self.#field_name)),
                 },
                 OutputPrecision::PolySignal => quote! {
                     #output_name => Some(self.#field_name),
@@ -506,11 +595,13 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
             let output_name = &o.output_name;
             let description = &o.description;
             let is_default = o.is_default;
+            let is_polyphonic = o.precision == OutputPrecision::PolySignal;
             quote! {
                 crate::types::OutputSchema {
                     name: #output_name.to_string(),
                     description: #description,
                     default: #is_default,
+                    polyphonic: #is_polyphonic,
                 }
             }
         })
@@ -540,7 +631,7 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
                 #(#copy_stmts)*
             }
 
-            fn get_poly_sample(&self, port: &str) -> Option<crate::poly::PolySignal> {
+            fn get_poly_sample(&self, port: &str) -> Option<crate::poly::PolyOutput> {
                 match port {
                     #(#poly_sample_match_arms)*
                     _ => None,
@@ -577,7 +668,8 @@ fn contains_signal(ty: &Type) -> bool {
                 None => return false,
             };
 
-            if last.ident == "Signal" {
+            // Match both Signal and PolySignal types
+            if last.ident == "Signal" || last.ident == "PolySignal" {
                 return true;
             }
 
@@ -662,6 +754,13 @@ fn gen_connect_stmts(
             };
 
             if last.ident == "Signal" {
+                return quote_spanned! {span=>
+                    crate::types::Connect::connect(&mut #place_expr, patch);
+                };
+            }
+
+            // PolySignal also implements Connect
+            if last.ident == "PolySignal" {
                 return quote_spanned! {span=>
                     crate::types::Connect::connect(&mut #place_expr, patch);
                 };
@@ -815,7 +914,21 @@ impl syn::parse::Parse for ArgAttr {
 
 fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     let name = &ast.ident;
-    let (module_name, module_description) = unwrap_name_description(&ast.attrs, "module");
+    let module_attr = parse_module_attr(&ast.attrs);
+    let module_name = module_attr.name;
+    let module_description = module_attr.description;
+    let module_channels = match module_attr.channels {
+        Some(n) => quote! { Some(#n) },
+        None => quote! { None },
+    };
+    let module_channels_param = match &module_attr.channels_param {
+        Some(s) => quote! { Some(#s.to_string()) },
+        None => quote! { None },
+    };
+    let module_channels_param_default = match module_attr.channels_param_default {
+        Some(n) => quote! { Some(#n) },
+        None => quote! { None },
+    };
 
     let args_tokens = unwrap_attr(&ast.attrs, "args");
     let positional_args_exprs = if let Some(tokens) = args_tokens {
@@ -962,7 +1075,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 }
             }
 
-            fn get_poly_sample(&self, port: &String) -> napi::Result<crate::poly::PolySignal> {
+            fn get_poly_sample(&self, port: &String) -> napi::Result<crate::poly::PolyOutput> {
                 self.update();
                 let outputs = self.outputs.try_read_for(core::time::Duration::from_millis(10)).unwrap();
                 crate::types::OutputStruct::get_poly_sample(&*outputs, port.as_str()).ok_or_else(|| {
@@ -1073,6 +1186,9 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                     positional_args: vec![
                         #(#positional_args_exprs),*
                     ],
+                    channels: #module_channels,
+                    channels_param: #module_channels_param,
+                    channels_param_default: #module_channels_param_default,
                 }
             }
         }

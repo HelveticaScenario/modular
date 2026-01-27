@@ -234,18 +234,79 @@ type BuildTrackingResult = {
 };
 
 /**
+ * Replace JavaScript comments with spaces (preserving string length for offset calculations).
+ * Handles single-line (//) and block (/* * /) comments, but not inside strings.
+ */
+function stripCommentsPreservingOffsets(code: string): string {
+    let result = '';
+    let i = 0;
+    
+    while (i < code.length) {
+        // Check for string literals - don't strip comments inside them
+        if (code[i] === '"' || code[i] === "'" || code[i] === '`') {
+            const quote = code[i];
+            result += code[i++];
+            
+            while (i < code.length) {
+                if (code[i] === '\\' && i + 1 < code.length) {
+                    // Escaped character
+                    result += code[i++];
+                    result += code[i++];
+                } else if (code[i] === quote) {
+                    result += code[i++];
+                    break;
+                } else {
+                    result += code[i++];
+                }
+            }
+        }
+        // Single-line comment
+        else if (code[i] === '/' && code[i + 1] === '/') {
+            while (i < code.length && code[i] !== '\n') {
+                result += ' ';
+                i++;
+            }
+        }
+        // Block comment
+        else if (code[i] === '/' && code[i + 1] === '*') {
+            while (i < code.length) {
+                if (code[i] === '*' && code[i + 1] === '/') {
+                    result += '  ';
+                    i += 2;
+                    break;
+                }
+                // Preserve newlines for line number accuracy
+                result += code[i] === '\n' ? '\n' : ' ';
+                i++;
+            }
+        }
+        else {
+            result += code[i++];
+        }
+    }
+    
+    return result;
+}
+
+/**
  * Find all seq() calls in the code and return their pattern info.
  */
 function findSeqCalls(code: string): SeqCallInfo[] {
+    // Strip comments (preserving offsets) so we don't match seq() in comments
+    const codeWithoutComments = stripCommentsPreservingOffsets(code);
     const regex = /seq\s*\(\s*(['"`])((?:(?!\1)[\s\S])*)\1/g;
     const results: SeqCallInfo[] = [];
     let match;
     let seqIndex = 1;
 
-    while ((match = regex.exec(code)) !== null) {
+    // Match against code without comments, but extract patterns from original code
+    // (offsets are preserved so we can use match.index directly)
+    while ((match = regex.exec(codeWithoutComments)) !== null) {
         const quoteChar = match[1];
-        const sourcePattern = match[2];
+        // Extract the pattern from the original code using the preserved offsets
         const patternOffset = match.index + match[0].indexOf(quoteChar) + 1;
+        const patternLength = match[2].length;
+        const sourcePattern = code.slice(patternOffset, patternOffset + patternLength);
         const hasInterpolations = quoteChar === '`' && sourcePattern.includes('${');
         
         results.push({

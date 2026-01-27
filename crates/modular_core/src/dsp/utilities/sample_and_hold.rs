@@ -39,8 +39,8 @@ impl Default for SampleAndHold {
 
 impl SampleAndHold {
     pub fn update(&mut self, _sample_rate: f32) {
-        let input = self.params.input.get_poly_signal().get(0);
-        let trigger = self.params.trigger.get_poly_signal().get(0);
+        let input = self.params.input.get_value();
+        let trigger = self.params.trigger.get_value();
 
         if trigger > 0.1 && self.last_trigger <= 0.1 {
             self.held_value = input;
@@ -89,8 +89,8 @@ impl Default for TrackAndHold {
 
 impl TrackAndHold {
     pub fn update(&mut self, _sample_rate: f32) {
-        let input = self.params.input.get_poly_signal().get(0);
-        let gate = self.params.gate.get_poly_signal().get(0);
+        let input = self.params.input.get_value();
+        let gate = self.params.gate.get_value();
 
         if gate > 2.5 {
             if self.last_gate <= 2.5 {

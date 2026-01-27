@@ -6,6 +6,7 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+use crate::poly::PolySignal;
 use crate::types::Signal;
 
 /// Mixing mode for combining channels
@@ -27,10 +28,10 @@ pub enum MixMode {
 #[serde(default)]
 struct PolyMixParams {
     /// Polyphonic input to mix down
-    input: Signal,
+    input: PolySignal,
     /// Mixing mode
     mode: MixMode,
-    /// Output gain/attenuation
+    /// Output gain/attenuation (mono)
     gain: Signal,
 }
 
@@ -54,9 +55,9 @@ pub struct PolyMix {
 
 impl PolyMix {
     fn update(&mut self, _sample_rate: f32) {
-        let poly = self.params.input.get_poly_signal();
+        let poly = &self.params.input;
         let channels = poly.channels();
-        let gain = self.params.gain.get_poly_signal().get_or(0, 1.0);
+        let gain = self.params.gain.get_value_or(1.0);
 
         if channels == 0 {
             self.outputs.sample = 0.0;
@@ -64,18 +65,22 @@ impl PolyMix {
             return;
         }
 
-        let voltages = poly.voltages();
+        // Collect all channel values
+        let voltages: Vec<f32> = (0..channels as usize)
+            .map(|i| poly.get_value(i))
+            .collect();
+
         let result = match self.params.mode {
             MixMode::Sum => voltages.iter().sum::<f32>(),
             MixMode::Average => voltages.iter().sum::<f32>() / channels as f32,
             MixMode::Max => voltages
                 .iter()
-                .max_by(|a, b| a.abs().partial_cmp(&b.abs()).unwrap())
+                .max_by(|a: &&f32, b: &&f32| a.abs().partial_cmp(&b.abs()).unwrap())
                 .copied()
                 .unwrap_or(0.0),
             MixMode::Min => voltages
                 .iter()
-                .min_by(|a, b| a.abs().partial_cmp(&b.abs()).unwrap())
+                .min_by(|a: &&f32, b: &&f32| a.abs().partial_cmp(&b.abs()).unwrap())
                 .copied()
                 .unwrap_or(0.0),
         };
@@ -96,9 +101,9 @@ mod tests {
     fn test_poly_mix_sum() {
         let mut mixer = PolyMix {
             params: PolyMixParams {
-                input: Signal::Volts(PolySignal::poly(&[1.0, 2.0, 3.0])),
+                input: PolySignal::poly(&[Signal::Volts(1.0), Signal::Volts(2.0), Signal::Volts(3.0)]),
                 mode: MixMode::Sum,
-                gain: Signal::Volts(PolySignal::mono(1.0)),
+                gain: Signal::Volts(1.0),
             },
             ..Default::default()
         };
@@ -111,9 +116,9 @@ mod tests {
     fn test_poly_mix_average() {
         let mut mixer = PolyMix {
             params: PolyMixParams {
-                input: Signal::Volts(PolySignal::poly(&[1.0, 2.0, 3.0])),
+                input: PolySignal::poly(&[Signal::Volts(1.0), Signal::Volts(2.0), Signal::Volts(3.0)]),
                 mode: MixMode::Average,
-                gain: Signal::Volts(PolySignal::mono(1.0)),
+                gain: Signal::Volts(1.0),
             },
             ..Default::default()
         };
@@ -125,9 +130,9 @@ mod tests {
     fn test_poly_mix_max() {
         let mut mixer = PolyMix {
             params: PolyMixParams {
-                input: Signal::Volts(PolySignal::poly(&[1.0, -5.0, 3.0])),
+                input: PolySignal::poly(&[Signal::Volts(1.0), Signal::Volts(-5.0), Signal::Volts(3.0)]),
                 mode: MixMode::Max,
-                gain: Signal::Volts(PolySignal::mono(1.0)),
+                gain: Signal::Volts(1.0),
             },
             ..Default::default()
         };
@@ -139,9 +144,9 @@ mod tests {
     fn test_poly_mix_gain() {
         let mut mixer = PolyMix {
             params: PolyMixParams {
-                input: Signal::Volts(PolySignal::poly(&[1.0, 2.0])),
+                input: PolySignal::poly(&[Signal::Volts(1.0), Signal::Volts(2.0)]),
                 mode: MixMode::Sum,
-                gain: Signal::Volts(PolySignal::mono(0.5)),
+                gain: Signal::Volts(0.5),
             },
             ..Default::default()
         };

@@ -3,8 +3,8 @@
 //! This module sequences pitch values using mini notation patterns with support for:
 //! - MIDI note numbers (with cents precision)
 //! - Musical notes (c4, bb3, etc.) with optional octave (defaults to 4)
-//! - Module signals via `module(id:port)` syntax
-//! - Sample-and-hold signals via `module(id:port)=` suffix
+//! - Module signals via `module(id:port:channel)` syntax
+//! - Sample-and-hold signals via `module(id:port:channel)=` suffix
 //! - Scale snapping via the `scale` operator
 //!
 //! The sequencer queries the pattern at the current playhead position and outputs:
@@ -17,10 +17,10 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    dsp::utils::{midi_to_voct_f64, TempGate, TempGateState},
+    Patch, PolySignal,
+    dsp::utils::{TempGate, TempGateState, midi_to_voct_f64},
     pattern_system::DspHap,
     types::{Connect, Signal},
-    Patch,
 };
 
 use super::seq_operators::CachedOperator;
@@ -56,7 +56,7 @@ impl CachedHap {
                 sample_and_hold: true,
             } => {
                 // Sample the signal now and convert to MIDI
-                let voct = signal.get_poly_signal().get(0) as f64;
+                let voct = signal.get_value() as f64;
                 Some(voct * 12.0 + 33.0) // V/Oct to MIDI
             }
             _ => None,
@@ -89,7 +89,7 @@ impl CachedHap {
                     self.sampled_midi
                 } else {
                     // Read signal continuously and convert to MIDI
-                    let voct = signal.get_poly_signal().get(0) as f64;
+                    let voct = signal.get_value() as f64;
                     let mut midi = voct * 12.0 + 33.0;
 
                     // Apply operators
@@ -119,8 +119,8 @@ impl CachedHap {
 struct SeqParams {
     /// Strudel/tidalcycles style pattern string
     pattern: SeqPatternParam,
-    /// playhead control signal
-    playhead: Signal,
+    /// 2 channel control signal, sums the first 2 channels
+    playhead: PolySignal,
 }
 
 impl<'de> Deserialize<'de> for SeqParams {
@@ -132,14 +132,14 @@ impl<'de> Deserialize<'de> for SeqParams {
         #[serde(default)]
         struct SeqParamsHelper {
             pattern: SeqPatternParam,
-            playhead: Signal,
+            playhead: PolySignal,
         }
 
         impl Default for SeqParamsHelper {
             fn default() -> Self {
                 Self {
                     pattern: SeqPatternParam::default(),
-                    playhead: Signal::default(),
+                    playhead: PolySignal::default(),
                 }
             }
         }
@@ -196,7 +196,8 @@ impl Default for Seq {
 
 impl Seq {
     fn update(&mut self, _sample_rate: f32) {
-        let playhead = self.params.playhead.get_poly_signal().get(0) as f64;
+        let playhead = self.params.playhead.get(0).get_value() as f64
+            + self.params.playhead.get(1).get_value() as f64;
 
         // Check if we're still within the cached hap
         if let Some(ref cached) = self.cached_hap {
@@ -227,13 +228,11 @@ impl Seq {
 
             // Set gate/trigger states for new note onset
             if !cached.is_rest() {
-                self.gate
-                    .set_state(TempGateState::Low, TempGateState::High);
+                self.gate.set_state(TempGateState::Low, TempGateState::High);
                 self.trigger
                     .set_state(TempGateState::High, TempGateState::Low);
             } else {
-                self.gate
-                    .set_state(TempGateState::Low, TempGateState::Low);
+                self.gate.set_state(TempGateState::Low, TempGateState::Low);
                 self.trigger
                     .set_state(TempGateState::Low, TempGateState::Low);
             }
@@ -243,8 +242,7 @@ impl Seq {
         } else {
             // No hap at this time - output silence
             self.cached_hap = None;
-            self.gate
-                .set_state(TempGateState::Low, TempGateState::Low);
+            self.gate.set_state(TempGateState::Low, TempGateState::Low);
             self.trigger
                 .set_state(TempGateState::Low, TempGateState::Low);
             self.outputs.cv = 0.0;

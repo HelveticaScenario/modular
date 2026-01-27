@@ -1615,7 +1615,7 @@ fn parse_value(pair: pest::iterators::Pair<Rule>) -> Result<AtomValue, ParseErro
 
     match inner.as_rule() {
         Rule::module_ref => {
-            // module(id:port) or module(id:port)=
+            // module(id:port:channel) or module(id:port:channel)=
             let s = inner.as_str();
             let sample_and_hold = s.ends_with('=');
             
@@ -1628,18 +1628,21 @@ fn parse_value(pair: pest::iterators::Pair<Rule>) -> Result<AtomValue, ParseErro
             };
             let inner_str = &s[start..end];
             
-            // Split by ':' to get module_id and port
-            let parts: Vec<&str> = inner_str.splitn(2, ':').collect();
-            if parts.len() != 2 {
+            // Split by ':' to get module_id, port, and channel
+            let parts: Vec<&str> = inner_str.splitn(3, ':').collect();
+            if parts.len() != 3 {
                 return Err(ParseError {
-                    message: format!("Invalid module reference: expected 'id:port', got '{}'", inner_str),
+                    message: format!("Invalid module reference: expected 'id:port:channel', got '{}'", inner_str),
                     span: Some(SourceSpan::new(inner.as_span().start(), inner.as_span().end())),
                 });
             }
             
+            let channel: usize = parts[2].parse().unwrap_or(0);
+            
             Ok(AtomValue::ModuleRef {
                 module_id: parts[0].to_string(),
                 port: parts[1].to_string(),
+                channel,
                 sample_and_hold,
             })
         }
@@ -2534,13 +2537,14 @@ mod tests {
 
     #[test]
     fn test_parse_module_ref() {
-        // Test basic module reference: module(id:port)
-        let result = parse("module(sine-1:sample)");
-        assert!(result.is_ok(), "Failed to parse module(sine-1:sample): {:?}", result);
+        // Test basic module reference: module(id:port:channel)
+        let result = parse("module(sine-1:sample:0)");
+        assert!(result.is_ok(), "Failed to parse module(sine-1:sample:0): {:?}", result);
         let ast = result.unwrap();
-        if let MiniAST::Pure(Located { node: AtomValue::ModuleRef { module_id, port, sample_and_hold }, .. }) = ast {
+        if let MiniAST::Pure(Located { node: AtomValue::ModuleRef { module_id, port, channel, sample_and_hold }, .. }) = ast {
             assert_eq!(module_id, "sine-1");
             assert_eq!(port, "sample");
+            assert_eq!(channel, 0);
             assert!(!sample_and_hold);
         } else {
             panic!("Expected ModuleRef, got {:?}", ast);
@@ -2549,13 +2553,14 @@ mod tests {
 
     #[test]
     fn test_parse_module_ref_sample_and_hold() {
-        // Test module reference with sample-and-hold: module(id:port)=
-        let result = parse("module(lfo-1:output)=");
-        assert!(result.is_ok(), "Failed to parse module(lfo-1:output)=: {:?}", result);
+        // Test module reference with sample-and-hold: module(id:port:channel)=
+        let result = parse("module(lfo-1:output:0)=");
+        assert!(result.is_ok(), "Failed to parse module(lfo-1:output:0)=: {:?}", result);
         let ast = result.unwrap();
-        if let MiniAST::Pure(Located { node: AtomValue::ModuleRef { module_id, port, sample_and_hold }, .. }) = ast {
+        if let MiniAST::Pure(Located { node: AtomValue::ModuleRef { module_id, port, channel, sample_and_hold }, .. }) = ast {
             assert_eq!(module_id, "lfo-1");
             assert_eq!(port, "output");
+            assert_eq!(channel, 0);
             assert!(sample_and_hold);
         } else {
             panic!("Expected ModuleRef with sample_and_hold, got {:?}", ast);
@@ -2564,16 +2569,17 @@ mod tests {
 
     #[test]
     fn test_parse_module_ref_in_sequence() {
-        // Test module reference in a sequence: c4 module(osc:out) e4
-        let result = parse("c4 module(osc:out) e4");
+        // Test module reference in a sequence: c4 module(osc:out:0) e4
+        let result = parse("c4 module(osc:out:0) e4");
         assert!(result.is_ok(), "Failed to parse sequence with module ref: {:?}", result);
         let ast = result.unwrap();
         if let MiniAST::Sequence(elements) = ast {
             assert_eq!(elements.len(), 3);
             // Second element should be the module ref
-            if let (MiniAST::Pure(Located { node: AtomValue::ModuleRef { module_id, port, sample_and_hold }, .. }), _) = &elements[1] {
+            if let (MiniAST::Pure(Located { node: AtomValue::ModuleRef { module_id, port, channel, sample_and_hold }, .. }), _) = &elements[1] {
                 assert_eq!(module_id, "osc");
                 assert_eq!(port, "out");
+                assert_eq!(*channel, 0);
                 assert!(!sample_and_hold);
             } else {
                 panic!("Expected ModuleRef in second position, got {:?}", elements[1]);

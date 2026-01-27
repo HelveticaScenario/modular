@@ -58,8 +58,8 @@ c4 ~ d4 ~       // Note, rest, note, rest
 ### Module References
 Reference another module's output:
 ```
-module(lfo-1:out)             // Use LFO output as CV.
-\`${sine('1hz')}\`            // Syntax in JS
+module(lfo-1:out:0)           // Use LFO output channel 0 as CV.
+\`${sine('1hz')}\`            // Syntax in JS (automatically includes channel)
 ```
 
 ## Pattern Structures

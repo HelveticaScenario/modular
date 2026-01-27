@@ -30,13 +30,12 @@ pub struct Track {
 
 impl Track {
     fn update(&mut self, _sample_rate: f32) {
-        let playhead_poly = self.params.playhead.get_poly_signal();
-        if playhead_poly.is_disconnected() {
+        if self.params.playhead.is_disconnected() {
             self.outputs.sample = 0.0;
             return;
         }
 
-        let playhead_value = playhead_poly.get(0);
+        let playhead_value = self.params.playhead.get_value();
         if self.params.keyframes.is_empty() {
             self.outputs.sample = 0.0;
             return;
@@ -46,19 +45,19 @@ impl Track {
 
         // Single keyframe: always return its value
         if self.params.keyframes.len() == 1 {
-            self.outputs.sample = self.params.keyframes[0].0.get_poly_signal().get_or(0, 0.0);
+            self.outputs.sample = self.params.keyframes[0].0.get_value_or(0.0);
             return;
         }
 
         // Clamp to first/last keyframe times
         let first = &self.params.keyframes[0];
         if t <= first.1 {
-            self.outputs.sample = first.0.get_poly_signal().get_or(0, 0.0);
+            self.outputs.sample = first.0.get_value_or(0.0);
             return;
         }
         let last = self.params.keyframes.last().unwrap();
         if t >= last.1 {
-            self.outputs.sample = last.0.get_poly_signal().get_or(0, 0.0);
+            self.outputs.sample = last.0.get_value_or(0.0);
             return;
         }
 
@@ -77,8 +76,8 @@ impl Track {
         let curr = &self.params.keyframes[idx];
         let next = &self.params.keyframes[idx + 1];
 
-        let curr_value = curr.0.get_poly_signal().get_or(0, 0.0);
-        let next_value = next.0.get_poly_signal().get_or(0, 0.0);
+        let curr_value = curr.0.get_value_or(0.0);
+        let next_value = next.0.get_value_or(0.0);
 
             let time_range = (next.1 - curr.1).max(f32::EPSILON);
             let mut local_t = (t - curr.1) / time_range;

@@ -7,7 +7,7 @@ use crate::types::Signal;
 #[derive(Deserialize, Default, JsonSchema, Connect)]
 #[serde(default)]
 struct MixParams {
-    /// signals to mix
+    /// signals to mix (each signal is mono)
     signals: Vec<Signal>,
 }
 
@@ -18,7 +18,7 @@ struct MixOutputs {
 }
 
 #[derive(Default, Module)]
-#[module("mix", "A mixer that sums all input signals and their channels")]
+#[module("mix", "A mixer that sums and averages all input signals")]
 #[args(signals)]
 pub struct Mix {
     outputs: MixOutputs,
@@ -31,7 +31,7 @@ impl Mix {
             .params
             .signals
             .iter()
-            .filter(|input| **input != Signal::Disconnected)
+            .filter(|input| !input.is_disconnected())
             .collect();
 
         if inputs.is_empty() {
@@ -39,25 +39,17 @@ impl Mix {
             return;
         }
 
-        // Sum all channels of all polyphonic inputs
+        // Sum all mono signals
         let mut total = 0.0f32;
-        let mut channel_count = 0usize;
+        let count = inputs.len();
 
         for signal in inputs {
-            let poly = signal.get_poly_signal();
-            let channels = poly.channels() as usize;
-            if channels == 0 {
-                continue;
-            }
-            for ch in 0..channels {
-                total += poly.get(ch);
-                channel_count += 1;
-            }
+            total += signal.get_value();
         }
 
-        // Average all channels
-        self.outputs.sample = if channel_count > 0 {
-            total / channel_count as f32
+        // Average all signals
+        self.outputs.sample = if count > 0 {
+            total / count as f32
         } else {
             0.0
         };

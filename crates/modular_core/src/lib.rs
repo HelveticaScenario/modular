@@ -25,9 +25,9 @@ pub mod types;
 // Re-export commonly used items
 pub use patch::Patch;
 
-pub use poly::{CycleGet, PolyChannels, PolySignal, PORT_MAX_CHANNELS, deserialize_poly};
+pub use poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
 
 pub use types::{
     Module, ModuleSchema, ModuleState, PatchGraph, ROOT_ID, ROOT_OUTPUT_PORT, Sampleable,
-    SampleableConstructor, SampleableMap, SignalParamSchema,
+    SampleableConstructor, SampleableMap, Signal, SignalParamSchema,
 };

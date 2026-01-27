@@ -847,12 +847,13 @@ fn atom_to_string(atom: &AtomValue) -> String {
         AtomValue::ModuleRef {
             module_id,
             port,
+            channel,
             sample_and_hold,
         } => {
             if *sample_and_hold {
-                format!("module({}:{})=", module_id, port)
+                format!("module({}:{}:{})=", module_id, port, channel)
             } else {
-                format!("module({}:{})", module_id, port)
+                format!("module({}:{}:{})", module_id, port, channel)
             }
         }
     }

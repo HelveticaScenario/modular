@@ -496,12 +496,14 @@ mod tests {
             module: "sine".into(),
             module_ptr: Weak::new(),
             port: "output".into(),
+            channel: 0,
         };
 
         let sig2 = Signal::Cable {
             module: "sine".into(),
             module_ptr: Weak::new(),
             port: "output".into(),
+            channel: 0,
         };
 
         let pat = slowcat(
