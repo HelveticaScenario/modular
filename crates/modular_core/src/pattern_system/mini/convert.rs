@@ -7,7 +7,7 @@ use super::ast::{AtomValue, Located, MiniAST, MiniASTF64, MiniASTI32, MiniASTU32
 use super::parser::ParseError;
 use crate::pattern_system::{
     Fraction, Pattern,
-    combinators::{fastcat, slowcat, timecat},
+    combinators::{fastcat, slowcat, stack, timecat},
     constructors,
     constructors::pure_with_span,
     random::choose,
@@ -254,7 +254,7 @@ fn eval_f64(ast: &MiniASTF64) -> f64 {
             elements.first().map(|(e, _)| eval_f64(e)).unwrap_or(0.0)
         }
         MiniASTF64::SlowCat(elements) => elements.first().map(|e| eval_f64(e)).unwrap_or(0.0),
-        MiniASTF64::RandomChoice(elements) => {
+        MiniASTF64::RandomChoice(elements) | MiniASTF64::Stack(elements) => {
             // For deterministic evaluation, just take first
             elements.first().map(|e| eval_f64(e)).unwrap_or(0.0)
         }
@@ -331,6 +331,11 @@ fn convert_f64_pattern(ast: &MiniASTF64) -> Pattern<Fraction> {
         MiniASTF64::RandomChoice(elements) => {
             let pats: Vec<Pattern<Fraction>> = elements.iter().map(convert_f64_pattern).collect();
             choose(pats).bind(|p| p.clone())
+        }
+
+        MiniASTF64::Stack(elements) => {
+            let pats: Vec<Pattern<Fraction>> = elements.iter().map(convert_f64_pattern).collect();
+            stack(pats)
         }
 
         MiniASTF64::Fast(pattern, factor) => {
@@ -427,6 +432,11 @@ fn convert_u32_pattern(ast: &MiniASTU32) -> Pattern<u32> {
             choose(pats).bind(|p| p.clone())
         }
 
+        MiniASTU32::Stack(elements) => {
+            let pats: Vec<Pattern<u32>> = elements.iter().map(convert_u32_pattern).collect();
+            stack(pats)
+        }
+
         MiniASTU32::Fast(pattern, factor) => {
             let pat = convert_u32_pattern(pattern);
             let factor_pat = convert_f64_pattern(factor);
@@ -518,6 +528,11 @@ fn convert_i32_pattern(ast: &MiniASTI32) -> Pattern<i32> {
             choose(pats).bind(|p| p.clone())
         }
 
+        MiniASTI32::Stack(elements) => {
+            let pats: Vec<Pattern<i32>> = elements.iter().map(convert_i32_pattern).collect();
+            stack(pats)
+        }
+
         MiniASTI32::Fast(pattern, factor) => {
             let pat = convert_i32_pattern(pattern);
             let factor_pat = convert_f64_pattern(factor);
@@ -554,7 +569,7 @@ fn eval_u32(ast: &MiniASTU32) -> u32 {
         MiniASTU32::List(Located { node, .. }) => node.first().map(|e| eval_u32(e)).unwrap_or(0),
         MiniASTU32::Sequence(elements) => elements.first().map(|(e, _)| eval_u32(e)).unwrap_or(0),
         MiniASTU32::SlowCat(elements) => elements.first().map(|e| eval_u32(e)).unwrap_or(0),
-        MiniASTU32::RandomChoice(elements) => elements.first().map(|e| eval_u32(e)).unwrap_or(0),
+        MiniASTU32::RandomChoice(elements) | MiniASTU32::Stack(elements) => elements.first().map(|e| eval_u32(e)).unwrap_or(0),
         MiniASTU32::Fast(pattern, _) => eval_u32(pattern),
         MiniASTU32::Slow(pattern, _) => eval_u32(pattern),
         MiniASTU32::Replicate(pattern, _count) => eval_u32(pattern),
@@ -571,7 +586,7 @@ fn eval_i32(ast: &MiniASTI32) -> i32 {
         MiniASTI32::List(Located { node, .. }) => node.first().map(|e| eval_i32(e)).unwrap_or(0),
         MiniASTI32::Sequence(elements) => elements.first().map(|(e, _)| eval_i32(e)).unwrap_or(0),
         MiniASTI32::SlowCat(elements) => elements.first().map(|e| eval_i32(e)).unwrap_or(0),
-        MiniASTI32::RandomChoice(elements) => elements.first().map(|e| eval_i32(e)).unwrap_or(0),
+        MiniASTI32::RandomChoice(elements) | MiniASTI32::Stack(elements) => elements.first().map(|e| eval_i32(e)).unwrap_or(0),
         MiniASTI32::Fast(pattern, _) => eval_i32(pattern),
         MiniASTI32::Slow(pattern, _) => eval_i32(pattern),
         MiniASTI32::Replicate(pattern, _count) => eval_i32(pattern),
@@ -723,6 +738,14 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
                 .collect::<Result<_, _>>()?;
             // Use choose for random selection
             Ok(choose(converted).bind(|p| p.clone()))
+        }
+
+        MiniAST::Stack(patterns) => {
+            let converted: Vec<Pattern<T>> = patterns
+                .iter()
+                .map(convert_inner)
+                .collect::<Result<_, _>>()?;
+            Ok(stack(converted))
         }
 
         MiniAST::Fast(pattern, factor) => {

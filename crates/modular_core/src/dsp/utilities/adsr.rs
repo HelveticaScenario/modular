@@ -1,5 +1,6 @@
-use crate::types::{Clickless, Signal};
-use napi::{Result, sys::ThreadsafeFunctionReleaseMode::release};
+use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
+use crate::types::Clickless;
+use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -7,17 +8,17 @@ use serde::Deserialize;
 #[serde(default)]
 struct AdsrParams {
     /// gate input (expects >0V for on)
-    gate: Signal,
+    gate: PolySignal,
     /// attack time in seconds
-    attack: Signal,
+    attack: PolySignal,
     /// decay time in seconds
-    decay: Signal,
+    decay: PolySignal,
     /// sustain level in volts (0-5)
-    sustain: Signal,
+    sustain: PolySignal,
     /// release time in seconds
-    release: Signal,
+    release: PolySignal,
 
-    range: (Signal, Signal),
+    range: (PolySignal, PolySignal),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -35,11 +36,9 @@ impl Default for EnvelopeStage {
     }
 }
 
-#[derive(Module)]
-#[module("adsr", "ADSR envelope generator")]
-#[args(gate)]
-pub struct Adsr {
-    outputs: AdsrOutputs,
+/// Per-channel envelope state
+#[derive(Clone, Copy)]
+struct ChannelState {
     stage: EnvelopeStage,
     current_level: f32,
     gate_was_high: bool,
@@ -47,19 +46,11 @@ pub struct Adsr {
     decay: Clickless,
     release: Clickless,
     sustain: Clickless,
-    params: AdsrParams,
 }
 
-#[derive(Outputs, JsonSchema)]
-struct AdsrOutputs {
-    #[output("output", "envelope output", default)]
-    sample: f32,
-}
-
-impl Default for Adsr {
+impl Default for ChannelState {
     fn default() -> Self {
         Self {
-            outputs: AdsrOutputs::default(),
             stage: EnvelopeStage::Idle,
             current_level: 0.0,
             gate_was_high: false,
@@ -67,96 +58,139 @@ impl Default for Adsr {
             decay: 0.1.into(),
             release: 0.1.into(),
             sustain: 3.5.into(),
+        }
+    }
+}
+
+#[derive(Module)]
+#[module("adsr", "ADSR envelope generator")]
+#[args(gate)]
+pub struct Adsr {
+    outputs: AdsrOutputs,
+    channels: [ChannelState; PORT_MAX_CHANNELS],
+    params: AdsrParams,
+}
+
+#[derive(Outputs, JsonSchema)]
+struct AdsrOutputs {
+    #[output("output", "envelope output", default)]
+    sample: PolyOutput,
+}
+
+impl Default for Adsr {
+    fn default() -> Self {
+        Self {
+            outputs: AdsrOutputs::default(),
+            channels: std::array::from_fn(|_| ChannelState::default()),
             params: AdsrParams::default(),
         }
     }
 }
 
 impl Adsr {
-    fn update(&mut self, sample_rate: f32) -> () {
-        // Smooth parameter targets to avoid clicks when values change (times in seconds)
-        self.attack
-            .update(self.params.attack.get_value_or(0.01).max(0.001));
-        self.decay
-            .update(self.params.decay.get_value_or(0.1).max(0.001));
-        self.release
-            .update(self.params.release.get_value_or(0.1).max(0.001));
-        self.sustain
-            .update(self.params.sustain.get_value_or(5.).max(0.0));
+    fn update(&mut self, sample_rate: f32) {
+        // Determine channel count from gate input
+        let num_channels = self.params.gate.channels().max(1) as usize;
 
-        let attack = *self.attack;
-        let decay = *self.decay;
-        let release_var = *self.release;
+        let mut output = PolyOutput::default();
+        output.set_channels(num_channels as u8);
 
-        let gate_on = self.params.gate.get_value() > 2.5;
+        for ch in 0..num_channels {
+            let state = &mut self.channels[ch];
 
-        if gate_on && !self.gate_was_high {
-            self.stage = EnvelopeStage::Attack;
-        } else if !gate_on && self.gate_was_high {
-            self.stage = EnvelopeStage::Release;
+            // Smooth parameter targets to avoid clicks when values change (times in seconds)
+            state
+                .attack
+                .update(self.params.attack.get_value_or(ch, 0.01).max(0.001));
+            state
+                .decay
+                .update(self.params.decay.get_value_or(ch, 0.1).max(0.001));
+            state
+                .release
+                .update(self.params.release.get_value_or(ch, 0.1).max(0.001));
+            state
+                .sustain
+                .update(self.params.sustain.get_value_or(ch, 5.).max(0.0));
+
+            let attack = *state.attack;
+            let decay = *state.decay;
+            let release_var = *state.release;
+
+            let gate_on = self.params.gate.get_value(ch) > 2.5;
+
+            if gate_on && !state.gate_was_high {
+                state.stage = EnvelopeStage::Attack;
+            } else if !gate_on && state.gate_was_high {
+                state.stage = EnvelopeStage::Release;
+            }
+            state.gate_was_high = gate_on;
+
+            let sustain_level = (*state.sustain / 5.0).clamp(0.0, 1.0);
+
+            match state.stage {
+                EnvelopeStage::Idle => {
+                    state.current_level = 0.0;
+                }
+                EnvelopeStage::Attack => {
+                    if attack < 0.0001 {
+                        state.current_level = 1.0;
+                        state.stage = EnvelopeStage::Decay;
+                    } else {
+                        let step = 1.0 / (attack * sample_rate);
+                        state.current_level += step;
+                        if state.current_level >= 1.0 {
+                            state.current_level = 1.0;
+                            state.stage = EnvelopeStage::Decay;
+                        }
+                    }
+                }
+                EnvelopeStage::Decay => {
+                    if decay <= 0.0001 || state.current_level <= sustain_level {
+                        state.current_level = sustain_level;
+                        state.stage = EnvelopeStage::Sustain;
+                    } else {
+                        let step = (1.0 - sustain_level) / (decay * sample_rate);
+                        state.current_level = (state.current_level - step).max(sustain_level);
+                        if state.current_level <= sustain_level {
+                            state.current_level = sustain_level;
+                            state.stage = EnvelopeStage::Sustain;
+                        }
+                    }
+                }
+                EnvelopeStage::Sustain => {
+                    state.current_level = sustain_level;
+                    if !gate_on {
+                        state.stage = EnvelopeStage::Release;
+                    }
+                }
+                EnvelopeStage::Release => {
+                    if release_var <= 0.0001 {
+                        state.current_level = 0.0;
+                        state.stage = EnvelopeStage::Idle;
+                    } else {
+                        let step = state.current_level / (release_var * sample_rate);
+                        state.current_level = (state.current_level - step).max(0.0);
+                        if state.current_level <= 0.00001 {
+                            state.current_level = 0.0;
+                            state.stage = if gate_on {
+                                EnvelopeStage::Attack
+                            } else {
+                                EnvelopeStage::Idle
+                            };
+                        }
+                    }
+                }
+            }
+
+            let min = self.params.range.0.get_value_or(ch, 0.0);
+            let max = self.params.range.1.get_value_or(ch, 5.0);
+            output.set(
+                ch,
+                crate::dsp::utils::map_range(state.current_level, 0.0, 1.0, min, max),
+            );
         }
-        self.gate_was_high = gate_on;
 
-        let sustain_level = (*self.sustain / 5.0).clamp(0.0, 1.0);
-
-        match self.stage {
-            EnvelopeStage::Idle => {
-                self.current_level = 0.0;
-            }
-            EnvelopeStage::Attack => {
-                if attack < 0.0001 {
-                    self.current_level = 1.0;
-                    self.stage = EnvelopeStage::Decay;
-                } else {
-                    let step = 1.0 / (attack * sample_rate);
-                    self.current_level += step;
-                    if self.current_level >= 1.0 {
-                        self.current_level = 1.0;
-                        self.stage = EnvelopeStage::Decay;
-                    }
-                }
-            }
-            EnvelopeStage::Decay => {
-                if decay <= 0.0001 || self.current_level <= sustain_level {
-                    self.current_level = sustain_level;
-                    self.stage = EnvelopeStage::Sustain;
-                } else {
-                    let step = (1.0 - sustain_level) / (decay * sample_rate);
-                    self.current_level = (self.current_level - step).max(sustain_level);
-                    if self.current_level <= sustain_level {
-                        self.current_level = sustain_level;
-                        self.stage = EnvelopeStage::Sustain;
-                    }
-                }
-            }
-            EnvelopeStage::Sustain => {
-                self.current_level = sustain_level;
-                if !gate_on {
-                    self.stage = EnvelopeStage::Release;
-                }
-            }
-            EnvelopeStage::Release => {
-                if release_var <= 0.0001 {
-                    self.current_level = 0.0;
-                    self.stage = EnvelopeStage::Idle;
-                } else {
-                    let step = self.current_level / (release_var * sample_rate);
-                    self.current_level = (self.current_level - step).max(0.0);
-                    if self.current_level <= 0.00001 {
-                        self.current_level = 0.0;
-                        self.stage = if gate_on {
-                            EnvelopeStage::Attack
-                        } else {
-                            EnvelopeStage::Idle
-                        };
-                    }
-                }
-            }
-        }
-
-        let min = self.params.range.0.get_value_or(0.0);
-        let max = self.params.range.1.get_value_or(5.0);
-        self.outputs.sample = crate::dsp::utils::map_range(self.current_level, 0.0, 1.0, min, max);
+        self.outputs.sample = output;
     }
 }
 

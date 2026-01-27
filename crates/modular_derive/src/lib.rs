@@ -429,7 +429,7 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
     }
 }
 
-#[proc_macro_derive(Module, attributes(output, module, args, stateful))]
+#[proc_macro_derive(Module, attributes(output, module, args, stateful, patch_update))]
 pub fn module_macro_derive(input: TokenStream) -> TokenStream {
     // Construct a representation of Rust code as a syntax tree
     // that we can manipulate
@@ -1046,6 +1046,22 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         quote! { None }
     };
 
+    // Check for #[patch_update] attribute - if present, call the module's on_patch_update
+    let has_patch_update = ast.attrs.iter().any(|attr| attr.path().is_ident("patch_update"));
+    let on_patch_update_impl = if has_patch_update {
+        quote! {
+            fn on_patch_update(&self) {
+                use crate::types::PatchUpdateHandler;
+                let mut module = self.module.lock();
+                PatchUpdateHandler::on_patch_update(&mut *module);
+            }
+        }
+    } else {
+        quote! {
+            fn on_patch_update(&self) {}
+        }
+    };
+
     let generated = quote! {
         #[derive(Default)]
         struct #struct_name {
@@ -1108,6 +1124,8 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 let mut module = self.module.lock();
                 crate::types::Connect::connect(&mut module.params, patch);
             }
+
+            #on_patch_update_impl
 
             fn get_state(&self) -> Option<serde_json::Value> {
                 #get_state_impl

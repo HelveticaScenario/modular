@@ -39,6 +39,9 @@ pub enum MiniASTI32 {
     /// Slow subsequence (one item per cycle).
     SlowCat(Vec<MiniASTI32>),
 
+    /// Stack: comma-separated patterns play simultaneously.
+    Stack(Vec<MiniASTI32>),
+
     /// Random choice between values.
     RandomChoice(Vec<MiniASTI32>),
 
@@ -81,6 +84,9 @@ pub enum MiniASTU32 {
 
     /// Slow subsequence (one item per cycle).
     SlowCat(Vec<MiniASTU32>),
+
+    /// Stack: comma-separated patterns play simultaneously.
+    Stack(Vec<MiniASTU32>),
 
     /// Random choice between values.
     RandomChoice(Vec<MiniASTU32>),
@@ -125,6 +131,9 @@ pub enum MiniASTF64 {
     /// Slow subsequence (one item per cycle).
     SlowCat(Vec<MiniASTF64>),
 
+    /// Stack: comma-separated patterns play simultaneously.
+    Stack(Vec<MiniASTF64>),
+
     /// Random choice between values.
     RandomChoice(Vec<MiniASTF64>),
 
@@ -167,6 +176,9 @@ pub enum MiniAST {
 
     /// Slow subsequence (one item per cycle).
     SlowCat(Vec<MiniAST>),
+
+    /// Stack: comma-separated patterns play simultaneously.
+    Stack(Vec<MiniAST>),
 
     /// Random choice between values.
     RandomChoice(Vec<MiniAST>),
@@ -521,7 +533,7 @@ fn collect_leaf_spans_recursive(ast: &MiniAST, spans: &mut Vec<(usize, usize)>) 
                 collect_leaf_spans_recursive(child, spans);
             }
         }
-        MiniAST::SlowCat(items) | MiniAST::RandomChoice(items) => {
+        MiniAST::SlowCat(items) | MiniAST::RandomChoice(items) | MiniAST::Stack(items) => {
             for child in items {
                 collect_leaf_spans_recursive(child, spans);
             }
@@ -571,7 +583,7 @@ fn collect_f64_spans(ast: &MiniASTF64, spans: &mut Vec<(usize, usize)>) {
                 collect_f64_spans(child, spans);
             }
         }
-        MiniASTF64::SlowCat(items) | MiniASTF64::RandomChoice(items) => {
+        MiniASTF64::SlowCat(items) | MiniASTF64::RandomChoice(items) | MiniASTF64::Stack(items) => {
             for child in items {
                 collect_f64_spans(child, spans);
             }
@@ -620,7 +632,7 @@ fn collect_u32_spans(ast: &MiniASTU32, spans: &mut Vec<(usize, usize)>) {
                 collect_u32_spans(child, spans);
             }
         }
-        MiniASTU32::SlowCat(items) | MiniASTU32::RandomChoice(items) => {
+        MiniASTU32::SlowCat(items) | MiniASTU32::RandomChoice(items) | MiniASTU32::Stack(items) => {
             for child in items {
                 collect_u32_spans(child, spans);
             }
@@ -669,7 +681,7 @@ fn collect_i32_spans(ast: &MiniASTI32, spans: &mut Vec<(usize, usize)>) {
                 collect_i32_spans(child, spans);
             }
         }
-        MiniASTI32::SlowCat(items) | MiniASTI32::RandomChoice(items) => {
+        MiniASTI32::SlowCat(items) | MiniASTI32::RandomChoice(items) | MiniASTI32::Stack(items) => {
             for child in items {
                 collect_i32_spans(child, spans);
             }

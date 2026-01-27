@@ -12,6 +12,7 @@
 //! - Gate: High while note is active
 //! - Trig: Short pulse at note onset
 
+use mi_plaits_dsp::fm::voice;
 use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -20,7 +21,8 @@ use crate::{
     Patch, PolySignal,
     dsp::utils::{TempGate, TempGateState, midi_to_voct_f64},
     pattern_system::DspHap,
-    types::{Connect, Signal},
+    poly::{PORT_MAX_CHANNELS, PolyOutput},
+    types::Connect,
 };
 
 use super::seq_operators::CachedOperator;
@@ -114,6 +116,37 @@ impl CachedHap {
     }
 }
 
+/// Per-voice state for polyphonic sequencer.
+#[derive(Clone)]
+struct VoiceState {
+    /// Cached hap for this voice's current playhead position.
+    cached_hap: Option<CachedHap>,
+    /// Gate generator for this voice.
+    gate: TempGate,
+    /// Trigger generator for this voice.
+    trigger: TempGate,
+    /// Whether this voice is currently active (playing a note).
+    active: bool,
+    /// Timestamp when this voice was last assigned (for LRU stealing).
+    last_assigned: f64,
+}
+
+impl Default for VoiceState {
+    fn default() -> Self {
+        Self {
+            cached_hap: None,
+            gate: TempGate::new(TempGateState::Low, 0.0, 5.0),
+            trigger: TempGate::new(TempGateState::Low, 0.0, 1.0),
+            active: false,
+            last_assigned: 0.0,
+        }
+    }
+}
+
+fn default_channels() -> usize {
+    4
+}
+
 #[derive(Default, JsonSchema)]
 #[serde(default)]
 struct SeqParams {
@@ -121,6 +154,9 @@ struct SeqParams {
     pattern: SeqPatternParam,
     /// 2 channel control signal, sums the first 2 channels
     playhead: PolySignal,
+    /// Number of polyphonic voices (1-16, default 4)
+    #[serde(default = "default_channels")]
+    channels: usize,
 }
 
 impl<'de> Deserialize<'de> for SeqParams {
@@ -133,6 +169,8 @@ impl<'de> Deserialize<'de> for SeqParams {
         struct SeqParamsHelper {
             pattern: SeqPatternParam,
             playhead: PolySignal,
+            #[serde(default = "default_channels")]
+            channels: usize,
         }
 
         impl Default for SeqParamsHelper {
@@ -140,6 +178,7 @@ impl<'de> Deserialize<'de> for SeqParams {
                 Self {
                     pattern: SeqPatternParam::default(),
                     playhead: PolySignal::default(),
+                    channels: default_channels(),
                 }
             }
         }
@@ -148,6 +187,7 @@ impl<'de> Deserialize<'de> for SeqParams {
         Ok(SeqParams {
             pattern: helper.pattern,
             playhead: helper.playhead,
+            channels: helper.channels.clamp(1, PORT_MAX_CHANNELS),
         })
     }
 }
@@ -162,24 +202,34 @@ impl Connect for SeqParams {
 #[derive(Outputs, JsonSchema)]
 struct SeqOutputs {
     #[output("cv", "control voltage output", default)]
-    cv: f32,
+    cv: PolyOutput,
     #[output("gate", "gate output")]
-    gate: f32,
+    gate: PolyOutput,
     #[output("trig", "trigger output")]
-    trig: f32,
+    trig: PolyOutput,
 }
 
 #[derive(Module)]
-#[module("seq", "A strudel/tidalcycles style sequencer")]
-#[args(pattern, playhead?)]
+#[module(
+    "seq",
+    "A strudel/tidalcycles style sequencer",
+    channels_param = "channels",
+    channels_param_default = 4
+)]
+#[args(pattern, playhead?, channels?)]
 #[stateful]
+#[patch_update]
 pub struct Seq {
     outputs: SeqOutputs,
     params: SeqParams,
-    trigger: TempGate,
-    gate: TempGate,
-    /// Cached hap for the current playhead position.
-    cached_hap: Option<CachedHap>,
+    /// Per-voice state array
+    voices: [VoiceState; PORT_MAX_CHANNELS],
+    /// Round-robin voice index for allocation
+    next_voice: usize,
+    /// Cached cycle number (integer part of playhead)
+    cached_cycle: Option<i64>,
+    /// Cached haps for the current cycle (all haps intersecting the cycle)
+    cached_haps: Vec<DspHap<SeqValue>>,
 }
 
 impl Default for Seq {
@@ -187,96 +237,204 @@ impl Default for Seq {
         Self {
             outputs: SeqOutputs::default(),
             params: SeqParams::default(),
-            trigger: TempGate::new(TempGateState::Low, 0.0, 1.0),
-            gate: TempGate::new(TempGateState::Low, 0.0, 5.0),
-            cached_hap: None,
+            voices: std::array::from_fn(|_| VoiceState::default()),
+            next_voice: 0,
+            cached_cycle: None,
+            cached_haps: Vec::new(),
         }
     }
 }
 
 impl Seq {
+    /// Invalidate the cycle cache, forcing a refresh on next update.
+    fn invalidate_cache(&mut self) {
+        self.cached_cycle = None;
+        self.cached_haps.clear();
+    }
+
+    /// Refresh the cycle cache for the given cycle.
+    fn refresh_cache(&mut self, cycle: i64) {
+        if let Some(pattern) = self.params.pattern.pattern() {
+            self.cached_haps = pattern.query_cycle_all(cycle);
+            self.cached_cycle = Some(cycle);
+        } else {
+            self.cached_haps.clear();
+            self.cached_cycle = None;
+        }
+    }
+
     fn update(&mut self, _sample_rate: f32) {
         let playhead = self.params.playhead.get(0).get_value() as f64
             + self.params.playhead.get(1).get_value() as f64;
 
-        // Check if we're still within the cached hap
-        if let Some(ref cached) = self.cached_hap {
-            if cached.contains(playhead) {
-                // Use cached value
-                self.process_cached_hap(playhead);
-                return;
+        let num_channels = self.params.channels.clamp(1, PORT_MAX_CHANNELS);
+
+        // Set output channel counts
+        self.outputs.cv.set_channels(num_channels as u8);
+        self.outputs.gate.set_channels(num_channels as u8);
+        self.outputs.trig.set_channels(num_channels as u8);
+
+        // Release voices whose haps have ended
+        self.release_ended_voices(playhead, num_channels);
+
+        // Get pattern - if no pattern, output silence
+        if self.params.pattern.pattern().is_none() {
+            for ch in 0..num_channels {
+                self.outputs.cv.set(ch, 0.0);
+                self.outputs.gate.set(ch, self.voices[ch].gate.process());
+                self.outputs.trig.set(ch, self.voices[ch].trigger.process());
             }
+            return;
         }
 
-        // Need to query the pattern for a new hap
-        let pattern = match self.params.pattern.pattern() {
-            Some(p) => p,
-            None => {
-                // No pattern - output silence
-                self.outputs.cv = 0.0;
-                self.outputs.gate = 0.0;
-                self.outputs.trig = 0.0;
-                return;
-            }
-        };
+        // Check if we need to refresh the cache (cycle boundary crossed or cache invalid)
+        let current_cycle = playhead.floor() as i64;
+        if self.cached_cycle != Some(current_cycle) {
+            self.refresh_cache(current_cycle);
+        }
 
-        // Query pattern at playhead
-        if let Some(dsp_hap) = pattern.query_at_dsp_cached(playhead) {
-            // Create cached hap with operators
-            let operators = self.params.pattern.operators.clone();
-            let cached = CachedHap::new(dsp_hap, operators);
-
-            // Set gate/trigger states for new note onset
-            if !cached.is_rest() {
-                self.gate.set_state(TempGateState::Low, TempGateState::High);
-                self.trigger
-                    .set_state(TempGateState::High, TempGateState::Low);
-            } else {
-                self.gate.set_state(TempGateState::Low, TempGateState::Low);
-                self.trigger
-                    .set_state(TempGateState::Low, TempGateState::Low);
+        // Process new onsets
+        let operators = self.params.pattern.operators.clone();
+        for hap in self.cached_haps.iter() {
+            if !hap.has_onset() || !hap.part_contains(playhead) {
+                continue;
             }
 
-            self.cached_hap = Some(cached);
-            self.process_cached_hap(playhead);
-        } else {
-            // No hap at this time - output silence
-            self.cached_hap = None;
-            self.gate.set_state(TempGateState::Low, TempGateState::Low);
-            self.trigger
-                .set_state(TempGateState::Low, TempGateState::Low);
-            self.outputs.cv = 0.0;
-            self.outputs.gate = self.gate.process();
-            self.outputs.trig = self.trigger.process();
+            // Convert DspHap to CachedHap for voice assignment
+            let cached = CachedHap::new(hap.clone(), operators.clone());
+
+            if cached.is_rest() {
+                continue; // Don't allocate voices for rests
+            }
+
+            // Check if this exact hap is already assigned to a voice
+            let already_assigned = (0..num_channels).any(|i| {
+                if let Some(ref existing) = self.voices[i].cached_hap {
+                    // Compare by timing - same whole span means same event
+                    (existing.hap.whole_begin - cached.hap.whole_begin).abs() < 1e-9
+                        && (existing.hap.whole_end - cached.hap.whole_end).abs() < 1e-9
+                } else {
+                    false
+                }
+            });
+
+            if already_assigned {
+                continue;
+            }
+
+            let mut allocate_voice = || {
+                // First pass: look for inactive voices starting from next_voice
+                for i in 0..num_channels {
+                    let voice_idx = (self.next_voice + i) % num_channels;
+                    if !self.voices[voice_idx].active {
+                        self.next_voice = (voice_idx + 1) % num_channels;
+                        self.voices[voice_idx].last_assigned = playhead;
+                        return voice_idx;
+                    }
+                }
+
+                // All voices active - steal the oldest (LRU)
+                let mut oldest_idx = 0;
+                let mut oldest_time = f64::MAX;
+                for i in 0..num_channels {
+                    if self.voices[i].last_assigned < oldest_time {
+                        oldest_time = self.voices[i].last_assigned;
+                        oldest_idx = i;
+                    }
+                }
+
+                // Reset the stolen voice
+                self.voices[oldest_idx].active = false;
+                self.voices[oldest_idx].cached_hap = None;
+                self.voices[oldest_idx].last_assigned = playhead;
+                self.next_voice = (oldest_idx + 1) % num_channels;
+
+                oldest_idx
+            };
+
+            // Find the next available voice using round-robin with LRU voice stealing.
+            let voice_idx = allocate_voice();
+            let voice = &mut self.voices[voice_idx];
+
+            voice.cached_hap = Some(cached);
+            voice.active = true;
+            voice
+                .gate
+                .set_state(TempGateState::Low, TempGateState::High);
+            voice
+                .trigger
+                .set_state(TempGateState::High, TempGateState::Low);
+        }
+
+        // Process all voices and update outputs
+        for ch in 0..num_channels {
+            let voice = &mut self.voices[ch];
+
+            if let Some(ref cached) = voice.cached_hap {
+                if let Some(cv) = cached.get_cv(playhead) {
+                    self.outputs.cv.set(ch, cv as f32);
+                }
+            }
+
+            self.outputs.gate.set(ch, voice.gate.process());
+            self.outputs.trig.set(ch, voice.trigger.process());
         }
     }
 
-    /// Process the cached hap and update outputs.
-    fn process_cached_hap(&mut self, playhead: f64) {
-        let cached = self.cached_hap.as_ref().unwrap();
-
-        if let Some(cv) = cached.get_cv(playhead) {
-            self.outputs.cv = cv as f32;
+    /// Check for notes that have ended and mark voices as inactive.
+    fn release_ended_voices(&mut self, playhead: f64, num_channels: usize) {
+        for i in 0..num_channels {
+            if let Some(ref cached) = self.voices[i].cached_hap {
+                if !cached.contains(playhead) {
+                    self.voices[i].active = false;
+                    self.voices[i].cached_hap = None;
+                    // Gate goes low
+                    self.voices[i]
+                        .gate
+                        .set_state(TempGateState::Low, TempGateState::Low);
+                }
+            }
         }
-
-        self.outputs.gate = self.gate.process();
-        self.outputs.trig = self.trigger.process();
     }
 }
 
 impl crate::types::StatefulModule for Seq {
     fn get_state(&self) -> Option<serde_json::Value> {
-        self.cached_hap.as_ref().map(|cached| {
-            serde_json::json!({
-                "active_hap": {
-                    "begin": cached.hap.whole_begin,
-                    "end": cached.hap.whole_end,
-                    "is_rest": cached.is_rest(),
-                },
-                "source_spans": cached.hap.get_active_spans(),
+        let num_channels = self.params.channels.clamp(1, PORT_MAX_CHANNELS);
+        
+        // Collect all source spans from all active voices
+        let mut all_source_spans: Vec<(usize, usize)> = Vec::new();
+        let mut any_non_rest = false;
+        
+        for voice in self.voices.iter().take(num_channels) {
+            if let Some(ref cached) = voice.cached_hap {
+                if !cached.is_rest() {
+                    any_non_rest = true;
+                    all_source_spans.extend(cached.hap.get_active_spans());
+                }
+            }
+        }
+
+        if all_source_spans.is_empty() && !any_non_rest {
+            None
+        } else {
+            // Deduplicate spans (same span could be in multiple voices for stacked patterns)
+            all_source_spans.sort();
+            all_source_spans.dedup();
+            
+            Some(serde_json::json!({
+                "source_spans": all_source_spans,
                 "pattern_source": self.params.pattern.source(),
-            })
-        })
+                "num_channels": num_channels,
+            }))
+        }
+    }
+}
+
+impl crate::types::PatchUpdateHandler for Seq {
+    fn on_patch_update(&mut self) {
+        // Invalidate cache so it refreshes on next update with new pattern
+        self.invalidate_cache();
     }
 }
 

@@ -559,6 +559,10 @@ impl AudioState {
       sampleable.connect(&patch_lock);
     }
 
+    for sampleable in patch_lock.sampleables.values() {
+      sampleable.on_patch_update();
+    }
+
     Ok(())
   }
 

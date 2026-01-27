@@ -46,6 +46,15 @@ pub trait StatefulModule {
     }
 }
 
+/// Trait for modules that need to perform work after the patch is updated.
+/// Modules that need custom behavior should implement this trait and use the
+/// `#[patch_update]` attribute on their Module derive.
+pub trait PatchUpdateHandler {
+    /// Called after the patch is updated and all modules are connected.
+    /// Override to refresh caches or perform other post-update work.
+    fn on_patch_update(&mut self);
+}
+
 pub trait Sampleable: MessageHandler + Send + Sync {
     fn get_id(&self) -> &String;
     fn tick(&self) -> ();
@@ -55,6 +64,9 @@ pub trait Sampleable: MessageHandler + Send + Sync {
     fn get_module_type(&self) -> String;
     fn try_update_params(&self, params: serde_json::Value) -> Result<()>;
     fn connect(&self, patch: &Patch);
+    /// Called after the patch is updated and all modules are connected.
+    /// Modules can override this to refresh caches or perform other post-update work.
+    fn on_patch_update(&self) {}
     fn get_state(&self) -> Option<serde_json::Value> {
         None
     }

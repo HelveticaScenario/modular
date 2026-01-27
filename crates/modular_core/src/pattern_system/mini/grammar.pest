@@ -1,9 +1,12 @@
 // Mini notation grammar for Strudel-style patterns
 // Simplified: sequences, subsequences, modifiers, random choice
-// Removed: stacks, polymeter, $ operator() syntax, range, "-" rest
+// Removed: polymeter, $ operator() syntax, range, "-" rest
 
-// Entry point: a pattern expression
-program = { SOI ~ pattern_expr ~ EOI }
+// Entry point: pattern with optional stack
+program = { SOI ~ stack_expr ~ EOI }
+
+// Stack: comma-separated patterns play simultaneously
+stack_expr = { pattern_expr ~ ("," ~ pattern_expr)* }
 
 // Pattern expressions - sequence of elements
 pattern_expr = { sequence_expr }
@@ -18,16 +21,12 @@ element = { element_base ~ modifier* ~ (":" ~ tail_element)* ~ WHITESPACE* }
 element_base = {
     fast_sub |
     slow_sub |
-    group |
     atom
 }
 
-// Grouping
-group = { "(" ~ WHITESPACE* ~ pattern_expr ~ WHITESPACE* ~ ")" }
-
-// Subsequences
-fast_sub = { "[" ~ WHITESPACE* ~ pattern_expr ~ WHITESPACE* ~ "]" }
-slow_sub = { "<" ~ WHITESPACE* ~ pattern_expr ~ WHITESPACE* ~ ">" }
+// Subsequences - allow stacks inside
+fast_sub = { "[" ~ WHITESPACE* ~ stack_expr ~ WHITESPACE* ~ "]" }
+slow_sub = { "<" ~ WHITESPACE* ~ stack_expr ~ WHITESPACE* ~ ">" }
 
 // Modifiers (applied to atoms) - weight is now a modifier like in Strudel
 modifier = {
@@ -40,7 +39,7 @@ modifier = {
 }
 
 // Modifier operands can be numbers, fast subsequences, or slow subsequences
-mod_operand = { number | fast_sub | slow_sub | group }
+mod_operand = { number | fast_sub | slow_sub }
 
 // Weight modifier (@n) - like Strudel's op_weight
 weight = { "@" ~ number? }
@@ -67,7 +66,7 @@ choice_element = { rest | value }
 random_choice = { choice_element ~ (WHITESPACE* ~ "|" ~ WHITESPACE* ~ choice_element)+ }
 
 // Tail element for list syntax: allows values or subpatterns after :
-tail_element = { fast_sub | slow_sub | group | value }
+tail_element = { fast_sub | slow_sub | value }
 
 // Values - various atom types
 value = {

@@ -314,6 +314,13 @@ impl<T: Clone> DspHap<T> {
         t >= self.whole_begin && t < self.whole_end
     }
 
+    /// True if this hap includes its onset (start of whole == start of part).
+    /// A fragment (hap that started in a previous cycle) will return false.
+    #[inline]
+    pub fn has_onset(&self) -> bool {
+        self.has_whole && (self.whole_begin - self.part_begin).abs() < 1e-9
+    }
+
     /// Check if this hap has its onset (start of whole) at time t.
     #[inline]
     pub fn has_onset_at(&self, t: f64, epsilon: f64) -> bool {

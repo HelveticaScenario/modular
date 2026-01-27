@@ -410,6 +410,21 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
             .map(|h| h.to_dsp_hap())
             .collect()
     }
+
+    /// Get ALL events in a cycle as DspHaps (including fragments without onsets).
+    ///
+    /// Unlike `query_cycle_dsp`, this returns all haps that *intersect* the cycle,
+    /// not just those with onsets. This is useful for caching where you need to
+    /// handle haps that span across cycle boundaries.
+    pub fn query_cycle_all(&self, cycle: i64) -> Vec<DspHap<T>> {
+        let begin = cycle as f64;
+        let end = (cycle + 1) as f64;
+
+        self.query_arc_f64(begin, end)
+            .into_iter()
+            .map(|h| h.to_dsp_hap())
+            .collect()
+    }
 }
 
 // ===== HasRest-specific methods for DSP caching =====
@@ -707,6 +722,18 @@ mod tests {
         let events = pat.query_cycle_dsp(0);
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].value, 42);
+    }
+
+    #[test]
+    fn test_query_cycle_all_includes_fragments() {
+        // query_cycle_all should include all haps intersecting the cycle,
+        // including fragments (haps without onsets that started in a prior cycle)
+        let pat = pure(42);
+        let events = pat.query_cycle_all(0);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].value, 42);
+        // The hap should have an onset since it starts in this cycle
+        assert!(events[0].has_onset());
     }
 
     #[test]
