@@ -318,11 +318,29 @@ fn parse_slow_sub(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseErr
     let inner = pair.into_inner().next().unwrap();
     let ast = parse_pattern_expr(inner)?;
 
-    // Slow subsequence means slowcat
+    // Slow subsequence means slowcat.
+    // When there's a stack inside <>, each stack element should be slowcatted separately,
+    // then stacked together. This matches Strudel's polymeter_slowcat behavior.
+    // e.g., <a b, e f> becomes stack(slowcat(a, b), slowcat(e, f))
     match ast {
         MiniAST::Sequence(elements) => {
             let patterns: Vec<MiniAST> = elements.into_iter().map(|(p, _)| p).collect();
             Ok(MiniAST::SlowCat(patterns))
+        }
+        MiniAST::Stack(stack_elements) => {
+            // Stack inside <>: apply slowcat to each stack element, then stack them
+            let slowcat_elements: Vec<MiniAST> = stack_elements
+                .into_iter()
+                .map(|elem| match elem {
+                    MiniAST::Sequence(seq_elements) => {
+                        let patterns: Vec<MiniAST> =
+                            seq_elements.into_iter().map(|(p, _)| p).collect();
+                        MiniAST::SlowCat(patterns)
+                    }
+                    other => MiniAST::SlowCat(vec![other]),
+                })
+                .collect();
+            Ok(MiniAST::Stack(slowcat_elements))
         }
         other => Ok(MiniAST::SlowCat(vec![other])),
     }
@@ -677,10 +695,25 @@ fn parse_slow_sub_f64(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTF64, P
     let inner = pair.into_inner().next().unwrap();
     let ast = parse_pattern_expr_f64(inner)?;
 
+    // Stack inside <>: each element slowcatted separately, then stacked
     match ast {
         MiniASTF64::Sequence(elements) => {
             let patterns: Vec<MiniASTF64> = elements.into_iter().map(|(p, _)| p).collect();
             Ok(MiniASTF64::SlowCat(patterns))
+        }
+        MiniASTF64::Stack(stack_elements) => {
+            let slowcat_elements: Vec<MiniASTF64> = stack_elements
+                .into_iter()
+                .map(|elem| match elem {
+                    MiniASTF64::Sequence(seq_elements) => {
+                        let patterns: Vec<MiniASTF64> =
+                            seq_elements.into_iter().map(|(p, _)| p).collect();
+                        MiniASTF64::SlowCat(patterns)
+                    }
+                    other => MiniASTF64::SlowCat(vec![other]),
+                })
+                .collect();
+            Ok(MiniASTF64::Stack(slowcat_elements))
         }
         other => Ok(MiniASTF64::SlowCat(vec![other])),
     }
@@ -1035,10 +1068,25 @@ fn parse_slow_sub_u32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTU32, P
     let inner = pair.into_inner().next().unwrap();
     let ast = parse_pattern_expr_u32(inner)?;
 
+    // Stack inside <>: each element slowcatted separately, then stacked
     match ast {
         MiniASTU32::Sequence(elements) => {
             let patterns: Vec<MiniASTU32> = elements.into_iter().map(|(p, _)| p).collect();
             Ok(MiniASTU32::SlowCat(patterns))
+        }
+        MiniASTU32::Stack(stack_elements) => {
+            let slowcat_elements: Vec<MiniASTU32> = stack_elements
+                .into_iter()
+                .map(|elem| match elem {
+                    MiniASTU32::Sequence(seq_elements) => {
+                        let patterns: Vec<MiniASTU32> =
+                            seq_elements.into_iter().map(|(p, _)| p).collect();
+                        MiniASTU32::SlowCat(patterns)
+                    }
+                    other => MiniASTU32::SlowCat(vec![other]),
+                })
+                .collect();
+            Ok(MiniASTU32::Stack(slowcat_elements))
         }
         other => Ok(MiniASTU32::SlowCat(vec![other])),
     }
@@ -1393,10 +1441,25 @@ fn parse_slow_sub_i32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTI32, P
     let inner = pair.into_inner().next().unwrap();
     let ast = parse_pattern_expr_i32(inner)?;
 
+    // Stack inside <>: each element slowcatted separately, then stacked
     match ast {
         MiniASTI32::Sequence(elements) => {
             let patterns: Vec<MiniASTI32> = elements.into_iter().map(|(p, _)| p).collect();
             Ok(MiniASTI32::SlowCat(patterns))
+        }
+        MiniASTI32::Stack(stack_elements) => {
+            let slowcat_elements: Vec<MiniASTI32> = stack_elements
+                .into_iter()
+                .map(|elem| match elem {
+                    MiniASTI32::Sequence(seq_elements) => {
+                        let patterns: Vec<MiniASTI32> =
+                            seq_elements.into_iter().map(|(p, _)| p).collect();
+                        MiniASTI32::SlowCat(patterns)
+                    }
+                    other => MiniASTI32::SlowCat(vec![other]),
+                })
+                .collect();
+            Ok(MiniASTI32::Stack(slowcat_elements))
         }
         other => Ok(MiniASTI32::SlowCat(vec![other])),
     }
@@ -2591,21 +2654,53 @@ mod tests {
     #[test]
     fn test_parse_stack_in_slow_sub() {
         // Stacks inside slow subs: <c4, e4, g4>
-        // slow_sub wraps its content in SlowCat, so we get SlowCat([Stack([...])])
-        // A single-element SlowCat is semantically equivalent to its content
+        // With polymeter_slowcat semantics, this becomes Stack of SlowCats:
+        // Each stack element is slowcatted separately, then they're stacked.
+        // <c4, e4, g4> = stack(slowcat(c4), slowcat(e4), slowcat(g4))
         let result = parse("<c4, e4, g4>");
         assert!(result.is_ok(), "Failed to parse stack in slow_sub: {:?}", result);
         let ast = result.unwrap();
-        // Should be SlowCat containing a Stack
-        if let MiniAST::SlowCat(elements) = ast {
-            assert_eq!(elements.len(), 1, "Expected 1 element in SlowCat");
-            if let MiniAST::Stack(patterns) = &elements[0] {
-                assert_eq!(patterns.len(), 3, "Expected 3 patterns in stack");
-            } else {
-                panic!("Expected Stack inside SlowCat, got {:?}", elements[0]);
+        // Should be Stack containing SlowCats
+        if let MiniAST::Stack(patterns) = ast {
+            assert_eq!(patterns.len(), 3, "Expected 3 patterns in stack");
+            // Each should be a SlowCat with one element
+            for (i, pat) in patterns.iter().enumerate() {
+                if let MiniAST::SlowCat(elements) = pat {
+                    assert_eq!(elements.len(), 1, "Expected 1 element in SlowCat {}", i);
+                } else {
+                    panic!("Expected SlowCat at position {}, got {:?}", i, pat);
+                }
             }
         } else {
-            panic!("Expected SlowCat from slow_sub, got {:?}", ast);
+            panic!("Expected Stack from slow_sub, got {:?}", ast);
+        }
+    }
+
+    #[test]
+    fn test_parse_stack_in_slow_sub_with_sequences() {
+        // <a b, e f> should become stack(slowcat(a, b), slowcat(e, f))
+        // This ensures both sequences play simultaneously but each element
+        // in the sequence plays one per cycle.
+        let result = parse("<a b, e f>");
+        assert!(result.is_ok(), "Failed to parse stack with sequences in slow_sub: {:?}", result);
+        let ast = result.unwrap();
+        // Should be Stack containing two SlowCats
+        if let MiniAST::Stack(patterns) = ast {
+            assert_eq!(patterns.len(), 2, "Expected 2 patterns in stack");
+            // First should be SlowCat([a, b])
+            if let MiniAST::SlowCat(elements) = &patterns[0] {
+                assert_eq!(elements.len(), 2, "Expected 2 elements in first SlowCat");
+            } else {
+                panic!("Expected SlowCat at position 0, got {:?}", patterns[0]);
+            }
+            // Second should be SlowCat([e, f])
+            if let MiniAST::SlowCat(elements) = &patterns[1] {
+                assert_eq!(elements.len(), 2, "Expected 2 elements in second SlowCat");
+            } else {
+                panic!("Expected SlowCat at position 1, got {:?}", patterns[1]);
+            }
+        } else {
+            panic!("Expected Stack from slow_sub, got {:?}", ast);
         }
     }
 
