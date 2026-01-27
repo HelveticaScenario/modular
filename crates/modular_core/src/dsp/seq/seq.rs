@@ -39,6 +39,10 @@ struct CachedHap {
     /// The underlying hap with timing and value.
     hap: DspHap<SeqValue>,
 
+    /// Index of this hap in the cached_haps vector.
+    /// Used to uniquely identify hap instances for voice assignment.
+    hap_index: usize,
+
     /// Pre-sampled MIDI value for sample-and-hold signals.
     /// None for continuous signals (read each tick) or non-signal values.
     sampled_midi: Option<f64>,
@@ -46,11 +50,14 @@ struct CachedHap {
     /// Operators to apply at runtime (for signal values).
     /// Cloned from the pattern param, with dynamic scale roots resolved.
     operators: Vec<CachedOperator>,
+    
+    /// The cycle this hap was cached for.
+    cached_cycle: i64,
 }
 
 impl CachedHap {
     /// Create a new cached hap from a DspHap.
-    fn new(hap: DspHap<SeqValue>, operators: Vec<CachedOperator>) -> Self {
+    fn new(hap: DspHap<SeqValue>, hap_index: usize, cached_cycle: i64, operators: Vec<CachedOperator>) -> Self {
         // Sample S&H signals at creation time
         let sampled_midi = match &hap.value {
             SeqValue::Signal {
@@ -66,8 +73,10 @@ impl CachedHap {
 
         Self {
             hap,
+            hap_index,
             sampled_midi,
             operators,
+            cached_cycle,
         }
     }
 
@@ -295,38 +304,24 @@ impl Seq {
 
         // Process new onsets
         let operators = self.params.pattern.operators.clone();
-        for hap in self.cached_haps.iter() {
+        for (hap_index, hap) in self.cached_haps.iter().enumerate() {
             if !hap.has_onset() || !hap.part_contains(playhead) {
                 continue;
             }
 
             // Convert DspHap to CachedHap for voice assignment
-            let cached = CachedHap::new(hap.clone(), operators.clone());
+            let cached = CachedHap::new(hap.clone(), hap_index, current_cycle, operators.clone());
 
             if cached.is_rest() {
                 continue; // Don't allocate voices for rests
             }
 
-            // Check if this exact hap is already assigned to a voice
-            // Compare both timing AND value - for chords (stacks), notes have same timing but different values
-            let cached_cv = cached.get_cv(playhead);
+            // Check if this exact hap instance is already assigned to a voice
+            // Use hap_index + cycle to uniquely identify each hap instance
+            // This allows identical notes in chords (e.g., 'g,g,g') to each get their own voice
             let already_assigned = (0..num_channels).any(|i| {
                 if let Some(ref existing) = self.voices[i].cached_hap {
-                    // Compare by timing
-                    let same_timing = (existing.hap.whole_begin - cached.hap.whole_begin).abs() < 1e-9
-                        && (existing.hap.whole_end - cached.hap.whole_end).abs() < 1e-9;
-                    
-                    if !same_timing {
-                        return false;
-                    }
-                    
-                    // Also compare by value (CV) to distinguish chord notes
-                    let existing_cv = existing.get_cv(playhead);
-                    match (existing_cv, cached_cv) {
-                        (Some(e), Some(c)) => (e - c).abs() < 1e-9,
-                        (None, None) => true, // Both rests or no CV
-                        _ => false,
-                    }
+                    existing.hap_index == cached.hap_index && existing.cached_cycle == cached.cached_cycle
                 } else {
                     false
                 }
