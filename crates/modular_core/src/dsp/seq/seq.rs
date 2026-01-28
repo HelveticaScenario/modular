@@ -161,7 +161,7 @@ struct SeqOutputs {
     channels_param = "channels",
     channels_param_default = 4
 )]
-#[args(pattern, playhead?, channels?)]
+#[args(pattern)]
 #[stateful]
 #[patch_update]
 pub struct Seq {

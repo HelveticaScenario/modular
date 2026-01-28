@@ -25,7 +25,7 @@ struct TrackOutputs {
 
 #[derive(Default, Module)]
 #[module("track", "A sequencer track")]
-#[args(keyframes, playhead, interpolationType?)]
+#[args(keyframes)]
 pub struct Track {
     outputs: TrackOutputs,
     params: TrackParams,
