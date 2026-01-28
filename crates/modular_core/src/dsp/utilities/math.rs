@@ -1,3 +1,4 @@
+use crate::dsp::utils::{hz_to_voct_f64, voct_to_hz_f64};
 use crate::types::{ClockMessages, Connect, Signal};
 use fasteval::eval_compiled;
 use fasteval::{Compiler, Evaler, ExpressionI, Instruction, parser};
@@ -12,6 +13,7 @@ use std::sync::Weak;
 #[serde(transparent)]
 #[schemars(transparent)]
 struct MathExpressionParam {
+    #[allow(dead_code)]
     source: String,
 
     #[serde(skip)]
@@ -88,7 +90,7 @@ impl Connect for MathExpressionParam {
     }
 }
 
-#[derive(Deserialize,  Default, JsonSchema, ChannelCount)]
+#[derive(Deserialize, Default, JsonSchema, ChannelCount)]
 #[serde(default)]
 struct MathParams {
     expression: MathExpressionParam,
@@ -182,10 +184,8 @@ impl Math {
                 return Some(*val);
             }
             match name {
-                "vToHz" => args
-                    .get(0)
-                    .and_then(|v| Some(55.0f64 * 2.0f64.powf(*v as f64))),
-                "hzToV" => args.get(0).and_then(|v| Some((v / 55.0f64).log2())),
+                "vToHz" => args.get(0).and_then(|v| Some(voct_to_hz_f64(*v))),
+                "hzToV" => args.get(0).and_then(|v| Some(hz_to_voct_f64(*v))),
 
                 // A wildcard to handle all undefined names:
                 _ => None,

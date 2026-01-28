@@ -3,9 +3,10 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
+    PORT_MAX_CHANNELS,
+    dsp::utils::voct_to_hz,
     poly::{PolyOutput, PolySignal},
     types::Clickless,
-    PORT_MAX_CHANNELS,
 };
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
@@ -61,12 +62,12 @@ impl PulseOscillator {
 
             state
                 .freq
-                .update(self.params.freq.get_value_or(ch, 4.0).clamp(-10.0, 10.0));
+                .update(self.params.freq.get_value_or(ch, 0.0).clamp(-10.0, 10.0));
             let base_width = self.params.width.get_value_or(ch, 2.5);
             let pwm = self.params.pwm.get_value_or(ch, 0.0);
             state.width.update((base_width + pwm).clamp(0.0, 5.0));
 
-            let frequency = 55.0f32 * 2.0f32.powf(*state.freq);
+            let frequency = voct_to_hz(*state.freq);
             let phase_increment = frequency / sample_rate;
 
             // Pulse width (0.0 to 1.0, 0.5 is square wave)

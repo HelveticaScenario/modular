@@ -177,45 +177,47 @@ impl TempGate {
 }
 
 // ============ Pitch Conversion Functions ============
+// Convention: 0V = C4 = MIDI 60 = ~261.626 Hz
+// C4 = A4 / 2^(9/12) where A4 = 440 Hz
+pub const C4_HZ_F64: f64 = 261.6255653005986; // 440.0 / 2^(9/12)
+pub const C4_HZ_F32: f32 = 261.6255653005986; // 440.0 / 2^(9/12)
 
 pub fn hz_to_voct_f64(frequency_hz: f64) -> f64 {
-    // Matches src/dsl/factories.ts hz(): log2(f / 55)
-    (frequency_hz / 55.0).log2()
+    (frequency_hz / C4_HZ_F64).log2()
 }
 
-/// Convert MIDI note number to V/Oct (A0 = 0V = MIDI 33)
+/// Convert MIDI note number to V/Oct (C4 = 0V = MIDI 60)
 pub fn midi_to_voct_f64(midi: f64) -> f64 {
-    (midi - 33.0) / 12.0
+    (midi - 60.0) / 12.0
 }
 
 /// Convert V/Oct to MIDI note number
 pub fn voct_to_midi_f64(voct: f64) -> f64 {
-    voct * 12.0 + 33.0
+    voct * 12.0 + 60.0
 }
 
 /// Convert V/Oct to frequency in Hz
 pub fn voct_to_hz_f64(voct: f64) -> f64 {
-    55.0 * 2.0.powf(voct)
+    C4_HZ_F64 * 2.0.powf(voct)
 }
 
 pub fn hz_to_voct(frequency_hz: f32) -> f32 {
-    // Matches src/dsl/factories.ts hz(): log2(f / 55)
-    (frequency_hz / 55.0).log2()
+    (frequency_hz / C4_HZ_F32).log2()
 }
 
-/// Convert MIDI note number to V/Oct (A0 = 0V = MIDI 33)
+/// Convert MIDI note number to V/Oct (C4 = 0V = MIDI 60)
 pub fn midi_to_voct(midi: f32) -> f32 {
-    (midi - 33.0) / 12.0
+    (midi - 60.0) / 12.0
 }
 
 /// Convert V/Oct to MIDI note number
 pub fn voct_to_midi(voct: f32) -> f32 {
-    voct * 12.0 + 33.0
+    voct * 12.0 + 60.0
 }
 
 /// Convert V/Oct to frequency in Hz
 pub fn voct_to_hz(voct: f32) -> f32 {
-    55.0 * 2.0.powf(voct)
+    C4_HZ_F32 * 2.0.powf(voct)
 }
 
 #[cfg(test)]
@@ -414,41 +416,41 @@ mod tests {
 
     #[test]
     fn test_pitch_expected_anchors_f64() {
-        // A0 = MIDI 33 = 0V = 55 Hz
-        let voct_a0 = midi_to_voct_f64(33.0);
-        assert!((voct_a0 - 0.0).abs() < 1e-12);
-        let hz_a0 = voct_to_hz_f64(0.0);
-        assert!((hz_a0 - 55.0).abs() < 1e-12);
+        // C4 = MIDI 60 = 0V = C4_HZ_F64 Hz
+        let voct_c4 = midi_to_voct_f64(60.0);
+        assert!((voct_c4 - 0.0).abs() < 1e-12);
+        let hz_c4 = voct_to_hz_f64(0.0);
+        assert!((hz_c4 - C4_HZ_F64).abs() < 1e-12);
 
-        // A3 = MIDI 69 = 3V = 440 Hz
-        let voct_a3 = midi_to_voct_f64(69.0);
-        assert!((voct_a3 - 3.0).abs() < 1e-12);
-        let hz_a3 = voct_to_hz_f64(3.0);
-        assert!((hz_a3 - 440.0).abs() < 1e-9);
+        // A4 = MIDI 69 = 0.75V = 440 Hz (9 semitones above C4)
+        let voct_a4 = midi_to_voct_f64(69.0);
+        assert!((voct_a4 - 0.75).abs() < 1e-12);
+        let hz_a4 = voct_to_hz_f64(0.75);
+        assert!((hz_a4 - 440.0).abs() < 1e-9);
     }
 
     #[test]
     fn test_pitch_expected_anchors_f32() {
-        // A0 = MIDI 33 = 0V = 55 Hz
-        let voct_a0 = midi_to_voct(33.0);
-        assert!((voct_a0 - 0.0).abs() < 1e-6);
-        let hz_a0 = voct_to_hz(0.0);
-        assert!((hz_a0 - 55.0).abs() < 1e-6);
+        // C4 = MIDI 60 = 0V = C4_HZ_F32 Hz
+        let voct_c4 = midi_to_voct(60.0);
+        assert!((voct_c4 - 0.0).abs() < 1e-6);
+        let hz_c4 = voct_to_hz(0.0);
+        assert!((hz_c4 - C4_HZ_F32).abs() < 1e-4);
 
-        // A3 = MIDI 69 = 3V = 440 Hz
-        let voct_a3 = midi_to_voct(69.0);
-        assert!((voct_a3 - 3.0).abs() < 1e-6);
-        let hz_a3 = voct_to_hz(3.0);
-        assert!((hz_a3 - 440.0).abs() < 1e-4);
+        // A4 = MIDI 69 = 0.75V = 440 Hz (9 semitones above C4)
+        let voct_a4 = midi_to_voct(69.0);
+        assert!((voct_a4 - 0.75).abs() < 1e-6);
+        let hz_a4 = voct_to_hz(0.75);
+        assert!((hz_a4 - 440.0).abs() < 1e-4);
     }
 
     #[test]
     fn test_pitch_arbitrary_cents_f64() {
-        // A3 plus/minus cents
+        // A4 = 440Hz = 0.75V, plus/minus cents
         let cases = [
-            (25.0, 3.0 + 25.0 / 1200.0),
-            (-37.0, 3.0 - 37.0 / 1200.0),
-            (123.0, 3.0 + 123.0 / 1200.0),
+            (25.0, 0.75 + 25.0 / 1200.0),
+            (-37.0, 0.75 - 37.0 / 1200.0),
+            (123.0, 0.75 + 123.0 / 1200.0),
         ];
         for (cents, expected_voct) in cases {
             let freq = 440.0 * 2.0_f64.powf(cents / 1200.0);
@@ -474,10 +476,11 @@ mod tests {
 
     #[test]
     fn test_pitch_arbitrary_cents_f32() {
+        // A4 = 440Hz = 0.75V, plus/minus cents
         let cases = [
-            (25.0_f32, 3.0_f32 + 25.0_f32 / 1200.0_f32),
-            (-37.0_f32, 3.0_f32 - 37.0_f32 / 1200.0_f32),
-            (123.0_f32, 3.0_f32 + 123.0_f32 / 1200.0_f32),
+            (25.0_f32, 0.75_f32 + 25.0_f32 / 1200.0_f32),
+            (-37.0_f32, 0.75_f32 - 37.0_f32 / 1200.0_f32),
+            (123.0_f32, 0.75_f32 + 123.0_f32 / 1200.0_f32),
         ];
         for (cents, expected_voct) in cases {
             let freq = 440.0_f32 * 2.0_f32.powf(cents / 1200.0_f32);
@@ -503,10 +506,11 @@ mod tests {
 
     #[test]
     fn test_pitch_arbitrary_fractional_midi_f64() {
+        // C4 = MIDI 60 = 0V
         let cases = [
-            (69.5, 3.0 + 0.5 / 12.0),
-            (60.25, 2.25 + 0.25 / 12.0),
-            (33.75, 0.75 / 12.0),
+            (69.5, 0.75 + 0.5 / 12.0),     // A4 + 50 cents
+            (60.25, 0.25 / 12.0),          // C4 + 25 cents
+            (72.0, 1.0),                   // C5 = 1V
         ];
         for (midi, expected_voct) in cases {
             let voct = midi_to_voct_f64(midi);
@@ -519,10 +523,11 @@ mod tests {
 
     #[test]
     fn test_pitch_arbitrary_fractional_midi_f32() {
+        // C4 = MIDI 60 = 0V
         let cases = [
-            (69.5_f32, 3.0_f32 + 0.5_f32 / 12.0_f32),
-            (60.25_f32, 2.25_f32 + 0.25_f32 / 12.0_f32),
-            (33.75_f32, 0.75_f32 / 12.0_f32),
+            (69.5_f32, 0.75_f32 + 0.5_f32 / 12.0_f32),  // A4 + 50 cents
+            (60.25_f32, 0.25_f32 / 12.0_f32),          // C4 + 25 cents
+            (72.0_f32, 1.0_f32),                       // C5 = 1V
         ];
         for (midi, expected_voct) in cases {
             let voct = midi_to_voct(midi);

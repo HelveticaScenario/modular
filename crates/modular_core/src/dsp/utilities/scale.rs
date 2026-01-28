@@ -277,17 +277,17 @@ impl ScaleSnapper {
     /// Snap a V/Oct voltage to the nearest scale degree.
     ///
     /// # Arguments
-    /// * `voct` - V/Oct voltage (A0 = 0V)
+    /// * `voct` - V/Oct voltage (C4 = 0V)
     ///
     /// # Returns
     /// The snapped V/Oct voltage.
     pub fn snap_voct(&self, voct: f64) -> f64 {
         // Convert V/Oct to MIDI
-        let midi = voct * 12.0 + 33.0;
+        let midi = voct * 12.0 + 60.0;
         // Snap in MIDI domain
         let snapped_midi = self.snap_midi(midi);
         // Convert back to V/Oct
-        (snapped_midi - 33.0) / 12.0
+        (snapped_midi - 60.0) / 12.0
     }
 
     /// Check if a MIDI note is in the scale.
@@ -423,8 +423,8 @@ mod tests {
         let root = FixedRoot::parse("c").unwrap();
         let snapper = ScaleSnapper::new(&root, "major").unwrap();
 
-        // C4 = MIDI 60 = V/Oct 2.25
-        let c4_voct = (60.0 - 33.0) / 12.0;
+        // C4 = MIDI 60 = V/Oct 0.0
+        let c4_voct = (60.0 - 60.0) / 12.0;
         let snapped = snapper.snap_voct(c4_voct);
         assert!((snapped - c4_voct).abs() < 0.001);
     }

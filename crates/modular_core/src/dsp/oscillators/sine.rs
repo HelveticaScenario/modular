@@ -1,15 +1,14 @@
-use napi::Result;
-use schemars::JsonSchema;
-use serde::Deserialize;
-
 use crate::{
     dsp::{
         consts::{LUT_SINE, LUT_SINE_SIZE},
-        utils::{interpolate, wrap},
+        utils::{interpolate, voct_to_hz, wrap},
     },
     poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal},
     types::Clickless,
 };
+use napi::Result;
+use schemars::JsonSchema;
+use serde::Deserialize;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
@@ -75,9 +74,9 @@ impl SineOscillator {
                 output.set(ch, sine);
             } else {
                 // Frequency mode - get freq for this channel with cycling
-                let freq_val = self.params.freq.get_value_or(ch, 4.0).clamp(-10.0, 10.0);
+                let freq_val = self.params.freq.get_value_or(ch, 0.0).clamp(-10.0, 10.0);
                 state.freq.update(freq_val);
-                let frequency = 55.0f32 * 2.0f32.powf(*state.freq) / sample_rate;
+                let frequency = voct_to_hz(*state.freq) / sample_rate;
                 state.phase += frequency;
                 while state.phase >= 1.0 {
                     state.phase -= 1.0;

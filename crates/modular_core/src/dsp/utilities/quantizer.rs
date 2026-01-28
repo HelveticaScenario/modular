@@ -292,13 +292,13 @@ mod tests {
         let scale = ScaleParam::parse("C(major)").unwrap();
         let snapper = scale.snapper().unwrap();
         
-        // C4 = MIDI 60 = V/Oct 2.25, should stay C
-        let c4_voct = (60.0 - 33.0) / 12.0;
+        // C4 = MIDI 60 = V/Oct 0.0, should stay C
+        let c4_voct = (60.0 - 60.0) / 12.0;
         let snapped = snapper.snap_voct(c4_voct);
         assert!((snapped - c4_voct).abs() < 0.001);
         
-        // C#4 = MIDI 61 = V/Oct 2.333, should snap to C
-        let cs4_voct = (61.0 - 33.0) / 12.0;
+        // C#4 = MIDI 61 = V/Oct 0.0833, should snap to C
+        let cs4_voct = (61.0 - 60.0) / 12.0;
         let snapped = snapper.snap_voct(cs4_voct);
         assert!((snapped - c4_voct).abs() < 0.001);
     }

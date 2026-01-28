@@ -30,7 +30,7 @@ Key areas:
   3) rebuild N-API for updated TS types
   4) adjust DSL factories in `src/dsl/factories.ts` if needed
 - Real-time safety in audio callback: avoid allocations/logging; validate on main thread.
-- Voltage convention: use 1v/oct (0v is a0) for frequency; output attenuation `AUDIO_OUTPUT_ATTENUATION` in `crates/modular/src/audio.rs`.
+- Voltage convention: use 1v/oct (0v is c4 ~261.63Hz) for frequency; output attenuation `AUDIO_OUTPUT_ATTENUATION` in `crates/modular/src/audio.rs`.
 - Prefer Electron APIs over web/React APIs when either could solve a task (see `src/**/*.ts`).
 
 ## File I/O + patches

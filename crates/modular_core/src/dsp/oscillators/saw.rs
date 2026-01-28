@@ -3,6 +3,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
+    dsp::utils::voct_to_hz,
     poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal},
     types::Clickless,
 };
@@ -82,10 +83,10 @@ impl SawOscillator {
                 (wrapped_phase, phase_inc)
             } else {
                 // Normal frequency-driven oscillation
-                let freq_val = self.params.freq.get_value_or(ch, 4.0).clamp(-10.0, 10.0);
+                let freq_val = self.params.freq.get_value_or(ch, 0.0).clamp(-10.0, 10.0);
                 state.freq.update(freq_val);
 
-                let frequency = 55.0f32 * 2.0f32.powf(*state.freq);
+                let frequency = voct_to_hz(*state.freq);
                 let phase_increment = frequency * inv_sample_rate;
 
                 state.phase += phase_increment;

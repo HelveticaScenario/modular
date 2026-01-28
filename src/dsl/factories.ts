@@ -201,13 +201,16 @@ export class DSLContext {
 
 /**
  * Helper function to convert Hz to V/oct
- * V/oct = log2(Hz / 55)
+ * V/oct = log2(Hz / C4) where C4 = 261.6255653005986 Hz
+ * Convention: 0V = C4 = MIDI 60 = ~261.626 Hz
  */
+const C4_HZ = 261.6255653005986; // 440 / 2^(9/12)
+
 export function hz(frequency: number): number {
   if (frequency <= 0) {
     throw new Error('Frequency must be positive');
   }
-  return Math.log2(frequency / 55);
+  return Math.log2(frequency / C4_HZ);
 }
 
 /**
@@ -239,9 +242,9 @@ export function note(noteName: string): number {
     semitone -= 1;
   }
 
-  // Calculate frequency: A0 = 55 Hz
-  const semitonesFromA0 = octave * 12 + semitone - 9;
-  const frequency = 55 * Math.pow(2, semitonesFromA0 / 12);
+  // Calculate frequency: C4 = 261.6255653005986 Hz (middle C)
+  const semitonesFromC4 = (octave - 4) * 12 + semitone;
+  const frequency = C4_HZ * Math.pow(2, semitonesFromC4 / 12);
 
   return hz(frequency);
 }
