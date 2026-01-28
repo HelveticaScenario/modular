@@ -15,8 +15,6 @@ struct SawOscillatorParams {
     freq: PolySignal,
     /// waveform shape: 0=saw, 2.5=triangle, 5=ramp
     shape: PolySignal,
-    /// the phase of the oscillator, overrides freq if present
-    phase: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -29,7 +27,6 @@ struct SawOscillatorOutputs {
 #[derive(Default, Clone, Copy)]
 struct ChannelState {
     phase: f32,
-    last_phase: f32,
     freq: Clickless,
     shape: Clickless,
 }
@@ -70,36 +67,19 @@ impl SawOscillator {
             let shape_val = self.params.shape.get_value_or(ch, 0.0).clamp(0.0, 5.0);
             state.shape.update(shape_val);
 
-            // Compute current phase and phase increment
-            let (current_phase, phase_increment) = if !self.params.phase.is_disconnected() {
-                let phase_input = self.params.phase.get_value(ch);
-                let wrapped_phase = crate::dsp::utils::wrap(0.0..1.0, phase_input);
-                // Calculate phase increment from phase change for PolyBLEP
-                let phase_inc = if wrapped_phase >= state.last_phase {
-                    wrapped_phase - state.last_phase
-                } else {
-                    wrapped_phase + (1.0 - state.last_phase)
-                };
-                (wrapped_phase, phase_inc)
-            } else {
-                // Normal frequency-driven oscillation
-                let freq_val = self.params.freq.get_value_or(ch, 0.0).clamp(-10.0, 10.0);
-                state.freq.update(freq_val);
+            // Frequency-driven oscillation
+            let freq_val = self.params.freq.get_value_or(ch, 0.0).clamp(-10.0, 10.0);
+            state.freq.update(freq_val);
 
-                let frequency = voct_to_hz(*state.freq);
-                let phase_increment = frequency * inv_sample_rate;
+            let frequency = voct_to_hz(*state.freq);
+            let phase_increment = frequency * inv_sample_rate;
 
-                state.phase += phase_increment;
+            state.phase += phase_increment;
 
-                // Wrap phase
-                if state.phase >= 1.0 {
-                    state.phase -= 1.0;
-                }
-
-                (state.phase, phase_increment)
-            };
-
-            state.last_phase = current_phase;
+            // Wrap phase
+            if state.phase >= 1.0 {
+                state.phase -= 1.0;
+            }
 
             // Shape parameter: 0 = saw, 2.5 = triangle, 5 = ramp (reversed saw)
             let shape_norm = *state.shape * 0.2; // /5.0 -> *0.2 for performance
@@ -107,14 +87,14 @@ impl SawOscillator {
             let raw_output = if shape_norm < 0.5 {
                 // Blend from saw (0.0) to triangle (0.5)
                 let blend = shape_norm * 2.0;
-                let saw = generate_saw(current_phase, phase_increment);
-                let triangle = generate_triangle(current_phase, phase_increment);
+                let saw = generate_saw(state.phase, phase_increment);
+                let triangle = generate_triangle(state.phase, phase_increment);
                 saw + (triangle - saw) * blend
             } else {
                 // Blend from triangle (0.5) to ramp (1.0)
                 let blend = (shape_norm - 0.5) * 2.0;
-                let triangle = generate_triangle(current_phase, phase_increment);
-                let ramp = generate_ramp(current_phase, phase_increment);
+                let triangle = generate_triangle(state.phase, phase_increment);
+                let ramp = generate_ramp(state.phase, phase_increment);
                 triangle + (ramp - triangle) * blend
             };
             output.set(ch, raw_output);
