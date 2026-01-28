@@ -91,7 +91,6 @@ export interface ModuleState {
 export interface OutputSchema {
   name: string
   description: string
-  default: boolean
   /** Whether this output is polyphonic (PolyOutput) or monophonic (f32/f64) */
   polyphonic: boolean
 }

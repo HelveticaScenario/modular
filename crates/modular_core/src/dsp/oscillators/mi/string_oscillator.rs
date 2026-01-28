@@ -20,7 +20,7 @@ struct StringOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct StringOscillatorOutputs {
-    #[output("output", "signal output", default)]
+    #[output("output", "signal output")]
     sample: f32,
     #[output("aux", "raw exciter signal")]
     aux: f32,

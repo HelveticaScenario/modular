@@ -92,7 +92,7 @@ pub struct Noise {
 
 #[derive(Outputs, JsonSchema)]
 struct NoiseOutputs {
-    #[output("output", "signal output", default)]
+    #[output("output", "signal output")]
     sample: f32,
 }
 

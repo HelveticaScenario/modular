@@ -29,7 +29,7 @@ struct BassDrumOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct BassDrumOscillatorOutputs {
-    #[output("output", "bridged T-network signal", default)]
+    #[output("output", "bridged T-network signal")]
     sample: f32,
     #[output("aux", "FM triangle VCO signal")]
     aux: f32,

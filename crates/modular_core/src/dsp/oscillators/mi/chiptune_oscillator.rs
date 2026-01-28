@@ -29,7 +29,7 @@ struct ChiptuneOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct ChiptuneOscillatorOutputs {
-    #[output("output", "square wave voices", default)]
+    #[output("output", "square wave voices")]
     sample: f32,
     #[output("aux", "NES triangle voice")]
     aux: f32,

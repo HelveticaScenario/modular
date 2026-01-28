@@ -108,7 +108,7 @@ impl Connect for MathParams {
 
 #[derive(Outputs, JsonSchema)]
 struct MathOutputs {
-    #[output("output", "result of the expression", default)]
+    #[output("output", "result of the expression")]
     output: f32,
 }
 

@@ -42,7 +42,7 @@ struct PolyMixParams {
 #[derive(Outputs, JsonSchema)]
 struct PolyMixOutputs {
     /// Mixed mono output
-    #[output("output", "mono mixed output", default)]
+    #[output("output", "mono mixed output")]
     sample: f32,
     /// Number of channels that were mixed
     #[output("channels", "number of input channels")]

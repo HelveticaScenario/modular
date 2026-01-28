@@ -12,9 +12,10 @@ const PORT_MAX_CHANNELS = 16;
 // Extend Array prototype for ModuleOutput arrays
 declare global {
     interface Array<T> {
-        gain(this: ModuleOutput[], factor: Value): ModuleNode;
-        offset(this: ModuleOutput[], offset: Value): ModuleNode;
-        out(this: ModuleOutput[], mode?: 'm'): ModuleOutput[];
+        gain(this: T extends ModuleOutput ? T[] : never, factor: Value): ModuleOutput[];
+        offset(this: T extends ModuleOutput ? T[] : never, offset: Value): ModuleOutput[];
+        out(this: T extends ModuleOutput ? T[] : never, mode?: 'm'): T[];
+        scope(this: T extends ModuleOutput ? T[] : never, msPerFrame?: number, triggerThreshold?: number): T[];
     }
 }
 
@@ -130,7 +131,8 @@ export class GraphBuilder {
             this.setParam(sumModule.id, 'signals', this.outModules);
 
             // Connect the sum output to the root signal's source
-            rootSignal._setParam('source', sumModule);
+            const sumOutput = sumModule._output('output', false) as ModuleOutput;
+            rootSignal._setParam('source', sumOutput);
         }
         // console.log('modules', new Map(this.modules.entries()));
         const ret = {
@@ -155,25 +157,18 @@ export class GraphBuilder {
     }
 
     /**
-     * Register a module or output to be sent to speakers
+     * Register a module output to be sent to speakers
      */
-    addOut(value: ModuleOutput | ModuleOutput[] | ModuleNode): void {
-        let output: ModuleOutput | ModuleOutput[];
-        if (value instanceof ModuleNode) {
-            output = value.o;
+    addOut(value: ModuleOutput | ModuleOutput[]): void {
+        if (Array.isArray(value)) {
+            this.outModules.push(...value);
         } else {
-            output = value;
-        }
-
-        if (Array.isArray(output)) {
-            this.outModules.push(...output);
-        } else {
-            this.outModules.push(output);
+            this.outModules.push(value);
         }
     }
 
     addScope(
-        value: ModuleOutput | ModuleOutput[] | ModuleNode,
+        value: ModuleOutput | ModuleOutput[],
         msPerFrame: number = 500,
         triggerThreshold?: number,
     ) {
@@ -181,10 +176,7 @@ export class GraphBuilder {
             ? triggerThreshold * 1000
             : undefined;
         let output: ModuleOutput;
-        if (value instanceof ModuleNode) {
-            const o = value.o;
-            output = Array.isArray(o) ? o[0] : o;
-        } else if (Array.isArray(value)) {
+        if (Array.isArray(value)) {
             output = value[0];
         } else {
             output = value;
@@ -226,13 +218,10 @@ function getChannelCount(value: unknown): number {
 }
 
 /**
- * ModuleNode represents a module instance in the DSL with fluent API
+ * ModuleNode represents a module instance in the DSL (internal use only)
+ * Users interact with ModuleOutput directly, not ModuleNode
  */
 export class ModuleNode {
-    // Dynamic parameter methods will be added via Proxy
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    [key: string]: any;
-
     readonly builder: GraphBuilder;
     readonly id: string;
     readonly moduleType: string;
@@ -256,55 +245,6 @@ export class ModuleNode {
                 .filter((p) => p.kind === 'polySignal')
                 .map((p) => p.name),
         );
-        // Create a proxy to intercept parameter method calls
-        const proxy = new Proxy(this, {
-            get(target, prop: string) {
-                // Check if it's a param name (derived from schemars JSON schema)
-                const param = target.schema.paramsByName[prop];
-                if (param && Object.hasOwn(target.schema.paramsByName, prop)) {
-                    return (...args: unknown[]) => {
-                        if (args.length > 1) {
-                            target._setParam(prop, args);
-                        } else {
-                            target._setParam(prop, args[0]);
-                        }
-                        return proxy;
-                    };
-                }
-
-                // Check if it's an output name
-                const outputSchema =
-                    target.schema.outputs.find((o) => o.name === prop) ??
-                    (prop === 'output'
-                        ? (target.schema.outputs.find((o) => o.default) ??
-                            target.schema.outputs[0])
-                        : undefined);
-                if (outputSchema) {
-                    return target._output(outputSchema.name, outputSchema.polyphonic ?? false);
-                }
-
-                if (prop in target) {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const thing = (target as any)[prop];
-                    if (typeof thing === 'function') {
-                        return thing.bind(proxy);
-                    }
-                    return thing;
-                }
-
-                return undefined;
-            },
-        });
-
-        return proxy as unknown as ModuleNode;
-    }
-
-    get o(): ModuleOutput | ModuleOutput[] {
-        const defaultOutput = this.schema.outputs.find((o) => o.default);
-        if (!defaultOutput) {
-            throw new Error(`Module ${this.moduleType} has no default output`);
-        }
-        return this._output(defaultOutput.name, defaultOutput.polyphonic ?? false);
     }
 
     /**
@@ -333,32 +273,6 @@ export class ModuleNode {
         }
         // Fall back to inferred channel count from inputs
         return this._channelCount;
-    }
-
-    gain(factor: Value | Value[]): ModuleNode {
-        const scaleNode = this.builder.addModule('scaleAndShift');
-        scaleNode._setParam('input', this);
-        scaleNode._setParam('scale', factor);
-        return scaleNode;
-    }
-
-    shift(factor: Value | Value[]): ModuleNode {
-        const scaleNode = this.builder.addModule('scaleAndShift');
-        scaleNode._setParam('input', this);
-        scaleNode._setParam('shift', factor);
-        return scaleNode;
-    }
-
-    scope(msPerFrame: number = 500, triggerThreshold?: number): this {
-        this.builder.addScope(this, msPerFrame, triggerThreshold);
-        return this;
-    }
-
-    out(mode?: 'm'): this {
-        if (mode !== 'm') {
-            this.builder.addOut(this);
-        }
-        return this;
     }
 
     _setParam(paramName: string, value: unknown): this {
@@ -397,10 +311,6 @@ export class ModuleNode {
         }
         return new ModuleOutput(this.builder, this.id, portName);
     }
-
-    toString(): string {
-        return this.o.toString();
-    }
 }
 
 /**
@@ -422,21 +332,21 @@ export class ModuleOutput {
     /**
      * Scale this output by a factor
      */
-    gain(factor: Value): ModuleNode {
+    gain(factor: Value): ModuleOutput {
         const scaleNode = this.builder.addModule('scaleAndShift');
         scaleNode._setParam('input', this);
         scaleNode._setParam('scale', factor);
-        return scaleNode;
+        return scaleNode._output('output', false) as ModuleOutput;
     }
 
     /**
      * Shift this output by an offset
      */
-    shift(offset: Value): ModuleNode {
+    shift(offset: Value): ModuleOutput {
         const shiftNode = this.builder.addModule('scaleAndShift');
         shiftNode._setParam('input', this);
         shiftNode._setParam('shift', offset);
-        return shiftNode;
+        return shiftNode._output('output', false) as ModuleOutput;
     }
 
     scope(msPerFrame: number = 500, triggerThreshold?: number): this {
@@ -458,18 +368,18 @@ export class ModuleOutput {
 
 // Add Array prototype methods for ModuleOutput arrays
 // These need to be added after ModuleOutput is defined
-Array.prototype.gain = function (this: ModuleOutput[], factor: Value): ModuleNode {
+Array.prototype.gain = function (this: ModuleOutput[], factor: Value): ModuleOutput[] {
     const scaleNode = this[0].builder.addModule('scaleAndShift');
     scaleNode._setParam('input', this);
     scaleNode._setParam('scale', factor);
-    return scaleNode;
+    return scaleNode._output('output', true) as ModuleOutput[];
 };
 
-Array.prototype.offset = function (this: ModuleOutput[], offset: Value): ModuleNode {
+Array.prototype.offset = function (this: ModuleOutput[], offset: Value): ModuleOutput[] {
     const shiftNode = this[0].builder.addModule('scaleAndShift');
     shiftNode._setParam('input', this);
     shiftNode._setParam('shift', offset);
-    return shiftNode;
+    return shiftNode._output('output', true) as ModuleOutput[];
 };
 
 Array.prototype.out = function (this: ModuleOutput[], mode?: 'm'): ModuleOutput[] {
@@ -516,8 +426,8 @@ export function replaceValues(input: unknown, replacer: Replacer): unknown {
 
 function replaceSignals(input: unknown): unknown {
     return replaceValues(input, (_key, value) => {
-        // Replace Signal instances with their JSON representation
-        if (value instanceof ModuleNode || value instanceof ModuleOutput) {
+        // Replace ModuleOutput instances with their JSON representation
+        if (value instanceof ModuleOutput) {
             return valueToSignal(value);
         } else {
             return value;
@@ -525,27 +435,9 @@ function replaceSignals(input: unknown): unknown {
     });
 }
 
-type SignalValue = number | ModuleOutput | ModuleNode;
+type SignalValue = number | ModuleOutput;
 
 function valueToSignal(value: SignalValue): unknown {
-    if (value instanceof ModuleNode) {
-        const out = value.o;
-        if (Array.isArray(out)) {
-            // For poly outputs, create an array of cables (one per channel)
-            return out.map((o) => ({
-                type: 'cable',
-                module: o.moduleId,
-                port: o.portName,
-                channel: o.channel,
-            }));
-        }
-        return {
-            type: 'cable',
-            module: out.moduleId,
-            port: out.portName,
-            channel: 0,
-        };
-    }
     if (value instanceof ModuleOutput) {
         return {
             type: 'cable',

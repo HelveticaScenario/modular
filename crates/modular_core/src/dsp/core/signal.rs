@@ -13,7 +13,7 @@ struct SignalParams {
 
 #[derive(Outputs, JsonSchema)]
 struct SignalOutputs {
-    #[output("output", "signal output", default)]
+    #[output("output", "signal output")]
     sample: PolyOutput,
 }
 

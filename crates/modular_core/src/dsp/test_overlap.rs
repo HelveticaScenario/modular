@@ -23,7 +23,7 @@ pub struct TestOverlap {
 
 #[derive(Outputs, JsonSchema)]
 struct TestOverlapOutputs {
-    #[output("output", "this conflicts with the param name", default)]
+    #[output("output", "this conflicts with the param name")]
     output: f32,
 }
 

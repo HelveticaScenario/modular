@@ -138,7 +138,6 @@ pub fn message_handlers(input: TokenStream) -> TokenStream {
 struct OutputAttr {
     name: LitStr,
     description: Option<LitStr>,
-    is_default: bool,
 }
 
 #[proc_macro_derive(Outputs, attributes(output))]
@@ -359,7 +358,6 @@ fn unwrap_name_description(
 /// Parse output attribute tokens into OutputAttr
 /// Supports:
 /// - #[output("name", "description")]
-/// - #[output("name", "description", default)]
 fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
     use syn::Result as SynResult;
     use syn::parse::{Parse, ParseStream};
@@ -367,7 +365,6 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
     struct OutputAttrParser {
         name: LitStr,
         description: Option<LitStr>,
-        is_default: bool,
     }
 
     impl Parse for OutputAttrParser {
@@ -389,33 +386,12 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
 
             input.parse::<Token![,]>()?;
 
-            // Try to parse second element - description (string)
-            // It's a description string
+            // Parse description string
             let description: LitStr = input.parse()?;
-
-            // Check if there's another comma
-            if !input.peek(Token![,]) {
-                return Ok(OutputAttrParser {
-                    name,
-                    description: Some(description),
-                    is_default: false,
-                });
-            }
-            input.parse::<Token![,]>()?;
-
-            // Parse the 'default' keyword
-            let default_ident: Ident = input.parse()?;
-            if default_ident != "default" {
-                return Err(syn::Error::new(
-                    default_ident.span(),
-                    format!("Expected 'default', found '{}'", default_ident),
-                ));
-            }
 
             Ok(OutputAttrParser {
                 name,
                 description: Some(description),
-                is_default: true,
             })
         }
     }
@@ -425,7 +401,6 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
     OutputAttr {
         name: parsed.name,
         description: parsed.description,
-        is_default: parsed.is_default,
     }
 }
 
@@ -449,7 +424,6 @@ enum OutputPrecision {
 /// Parsed output field data
 struct OutputField {
     field_name: Ident,
-    is_default: bool,
     output_name: LitStr,
     precision: OutputPrecision,
     description: TokenStream2,
@@ -518,11 +492,9 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
                         .as_ref()
                         .map(|d| quote!(#d.to_string()))
                         .unwrap_or(quote!("".to_string()));
-                    let is_default = output_attr.is_default;
 
                     out.push(OutputField {
                         field_name,
-                        is_default,
                         output_name,
                         precision,
                         description,
@@ -545,18 +517,6 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
                 .into();
         }
     };
-
-    // Validate that at most one output is marked as default.
-    let default_count = outputs.iter().filter(|o| o.is_default).count();
-    if default_count > 1 {
-        let error_msg = format!(
-            "Outputs struct '{}' has {} outputs marked as default, but only one is allowed",
-            name, default_count
-        );
-        return syn::Error::new(Span::call_site(), error_msg)
-            .to_compile_error()
-            .into();
-    }
 
     let _field_idents: Vec<_> = outputs.iter().map(|o| &o.field_name).collect();
     
@@ -594,13 +554,11 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
         .map(|o| {
             let output_name = &o.output_name;
             let description = &o.description;
-            let is_default = o.is_default;
             let is_polyphonic = o.precision == OutputPrecision::PolySignal;
             quote! {
                 crate::types::OutputSchema {
                     name: #output_name.to_string(),
                     description: #description,
-                    default: #is_default,
                     polyphonic: #is_polyphonic,
                 }
             }

@@ -32,7 +32,7 @@ struct VirtualAnalogOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct VirtualAnalogOscillatorOutputs {
-    #[output("output", "signal output", default)]
+    #[output("output", "signal output")]
     sample: f32,
     #[output("aux", "auxiliary hardsync output")]
     aux: f32,

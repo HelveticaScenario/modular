@@ -27,7 +27,7 @@ struct SineOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct SineOscillatorOutputs {
-    #[output("output", "signal output", default)]
+    #[output("output", "signal output")]
     sample: PolyOutput,
     #[output("phaseOut", "current phase output")]
     phase_out: PolyOutput,

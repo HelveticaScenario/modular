@@ -23,7 +23,7 @@ struct SawOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct SawOscillatorOutputs {
-    #[output("output", "signal output", default)]
+    #[output("output", "signal output")]
     sample: PolyOutput,
 }
 

@@ -779,8 +779,6 @@ pub struct SignalParamSchema {
 pub struct OutputSchema {
     pub name: String,
     pub description: String,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub default: bool,
     /// Whether this output is polyphonic (PolyOutput) or monophonic (f32/f64)
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub polyphonic: bool,

@@ -26,7 +26,7 @@ struct PhaseDistortionOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct PhaseDistortionOscillatorOutputs {
-    #[output("output", "carrier sync'd (phase distortion)", default)]
+    #[output("output", "carrier sync'd (phase distortion)")]
     sample: f32,
     #[output("aux", "carrier free-running (phase modulation)")]
     aux: f32,

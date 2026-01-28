@@ -17,7 +17,7 @@ struct FallingEdgeDetectorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct EdgeDetectorOutputs {
-    #[output("output", "gate", default)]
+    #[output("output", "gate")]
     output: f32,
 }
 

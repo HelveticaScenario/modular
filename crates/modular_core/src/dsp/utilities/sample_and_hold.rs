@@ -12,7 +12,7 @@ struct SampleAndHoldParams {
 
 #[derive(Outputs, JsonSchema)]
 struct SampleAndHoldOutputs {
-    #[output("output", "output", default)]
+    #[output("output", "output")]
     sample: f32,
 }
 
@@ -62,7 +62,7 @@ struct TrackAndHoldParams {
 
 #[derive(Outputs, JsonSchema)]
 struct TrackAndHoldOutputs {
-    #[output("output", "output", default)]
+    #[output("output", "output")]
     sample: f32,
 }
 

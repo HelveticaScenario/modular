@@ -19,7 +19,7 @@ struct TrackParams {
 
 #[derive(Outputs, JsonSchema)]
 struct TrackOutputs {
-    #[output("output", "signal output", default)]
+    #[output("output", "signal output")]
     sample: f32,
 }
 

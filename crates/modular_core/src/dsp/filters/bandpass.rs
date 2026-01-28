@@ -17,7 +17,7 @@ struct BandpassFilterParams {
 
 #[derive(Outputs, JsonSchema)]
 struct BandpassFilterOutputs {
-    #[output("output", "filtered signal", default)]
+    #[output("output", "filtered signal")]
     sample: f32,
 }
 

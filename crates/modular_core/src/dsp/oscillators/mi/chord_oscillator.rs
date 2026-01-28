@@ -30,7 +30,7 @@ struct ChordOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct ChordOscillatorOutputs {
-    #[output("output", "signal output", default)]
+    #[output("output", "signal output")]
     sample: f32,
     #[output("aux", "root note of the chord")]
     aux: f32,

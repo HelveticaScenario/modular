@@ -13,7 +13,7 @@ struct MixParams {
 
 #[derive(Outputs, JsonSchema)]
 struct MixOutputs {
-    #[output("output", "signal output", default)]
+    #[output("output", "signal output")]
     sample: f32,
 }
 

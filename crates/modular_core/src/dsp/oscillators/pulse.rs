@@ -21,7 +21,7 @@ struct PulseOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct PulseOscillatorOutputs {
-    #[output("output", "signal output", default)]
+    #[output("output", "signal output")]
     sample: f32,
 }
 

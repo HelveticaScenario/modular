@@ -32,7 +32,7 @@ struct WavetableOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct WavetableOscillatorOutputs {
-    #[output("output", "signal output", default)]
+    #[output("output", "signal output")]
     sample: f32,
     #[output("aux", "low-fi (5-bit) output")]
     aux: f32,

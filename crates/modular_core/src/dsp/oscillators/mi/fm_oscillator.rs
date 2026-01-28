@@ -27,7 +27,7 @@ struct FmOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct FmOscillatorOutputs {
-    #[output("output", "signal output", default)]
+    #[output("output", "signal output")]
     sample: f32,
     #[output("aux", "sub-oscillator output")]
     aux: f32,

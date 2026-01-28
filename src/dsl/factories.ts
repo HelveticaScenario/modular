@@ -2,7 +2,13 @@
 import { ModuleSchema, getPatternPolyphony } from '@modular/core';
 import { GraphBuilder, ModuleNode, ModuleOutput } from './GraphBuilder';
 
-type FactoryFunction = (...args: any[]) => ModuleNode;
+// Return type for module factories - varies by output configuration
+type SingleOutput = ModuleOutput;
+type PolyOutput = ModuleOutput[];
+type MultiOutput = Record<string, ModuleOutput | ModuleOutput[]>;
+type ModuleReturn = SingleOutput | PolyOutput | MultiOutput;
+
+type FactoryFunction = (...args: any[]) => ModuleReturn;
 
 type NamespaceTree = {
   [key: string]: NamespaceTree | FactoryFunction;
@@ -17,6 +23,13 @@ function sanitizeIdentifier(name: string): string {
     id = `_${id}`;
   }
   return id || '_';
+}
+
+/**
+ * Convert snake_case to camelCase
+ */
+function toCamelCase(str: string): string {
+  return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
 }
 
 /**
@@ -90,12 +103,13 @@ export class DSLContext {
   }
 
   /**
-   * Create a module factory function
+   * Create a module factory function that returns outputs directly
    */
   private createFactory(schema: ModuleSchema) {
     const isSeqModule = schema.name === 'seq';
+    const outputs = schema.outputs || [];
     
-    return (...args: any[]): ModuleNode => {
+    return (...args: any[]): ModuleReturn => {
       // @ts-ignore
       const positionalArgs = schema.positionalArgs || [];
       const params: Record<string, any> = {};
@@ -142,16 +156,33 @@ export class DSLContext {
           }
       }
       
+      // Create the module node internally
       const node = this.builder.addModule(schema.name, id);
       
-      // Set params
+      // Set all params
       for (const [key, value] of Object.entries(params)) {
           if (value !== undefined) {
               node._setParam(key, value);
           }
       }
       
-      return node;
+      // Return based on output configuration
+      if (outputs.length === 0) {
+        // No outputs - return empty object (shouldn't happen in practice)
+        return {} as MultiOutput;
+      } else if (outputs.length === 1) {
+        // Single output - return ModuleOutput or ModuleOutput[]
+        const output = outputs[0];
+        return node._output(output.name, output.polyphonic ?? false);
+      } else {
+        // Multiple outputs - return object with camelCased property names
+        const result: MultiOutput = {};
+        for (const output of outputs) {
+          const camelName = toCamelCase(output.name);
+          result[camelName] = node._output(output.name, output.polyphonic ?? false);
+        }
+        return result;
+      }
     };
   }
 
@@ -162,9 +193,9 @@ export class DSLContext {
     return this.builder;
   }
 
-  scope(target: ModuleNode | ModuleOutput, msPerFrame: number = 500, triggerThreshold?: number) {
+  scope(target: ModuleOutput | ModuleOutput[], msPerFrame: number = 500, triggerThreshold?: number) {
     this.builder.addScope(target, msPerFrame, triggerThreshold);
-    return target
+    return target;
   }
 }
 

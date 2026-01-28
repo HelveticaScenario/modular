@@ -17,7 +17,7 @@ struct HighpassFilterParams {
 
 #[derive(Outputs, JsonSchema)]
 struct HighpassFilterOutputs {
-    #[output("output", "filtered signal", default)]
+    #[output("output", "filtered signal")]
     sample: f32,
 }
 

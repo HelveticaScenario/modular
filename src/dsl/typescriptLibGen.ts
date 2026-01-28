@@ -206,40 +206,18 @@ type Scale = \`\${number}s(\${Note}:\${ModeString})\`
 type OrArray<T> = T | T[];
 
 // Core DSL types used by the generated declarations
-type Signal = number | Note | HZ | MidiNote | Scale | ModuleOutput | ModuleNode;
+type Signal = number | Note | HZ | MidiNote | Scale | ModuleOutput;
 
-type PolySignal = OrArray<Signal> | PolyModuleNode;
+type PolySignal = OrArray<Signal>;
 
 interface ModuleOutput {
   readonly moduleId: string;
   readonly portName: string;
   readonly channel: number;
-  gain(factor: Signal): ModuleNode;
-  shift(offset: Signal): ModuleNode;
+  gain(factor: Signal): ModuleOutput;
+  shift(offset: Signal): ModuleOutput;
   scope(msPerFrame?: number, triggerThreshold?: number): this;
   out(mode?: 'm'): this;
-}
-
-// Base interface for all module nodes
-interface ModuleNodeBase {
-  readonly id: string;
-  readonly moduleType: string;
-  scope(msPerFrame?: number, triggerThreshold?: number): this;
-  out(mode?: 'm'): this;
-}
-
-// Interface for modules with monophonic default output
-interface ModuleNode extends ModuleNodeBase {
-  readonly o: ModuleOutput;
-  gain(value: Signal): ModuleNode;
-  shift(value: Signal): ModuleNode;
-}
-
-// Interface for modules with polyphonic default output
-interface PolyModuleNode extends ModuleNodeBase {
-  readonly o: ModuleOutput[];
-  gain(value: PolySignal): PolyModuleNode;
-  shift(value: PolySignal): PolyModuleNode;
 }
 
 // Helper functions exposed by the DSL runtime
@@ -248,9 +226,10 @@ declare function note(noteName: string): number;
 declare function bpm(beatsPerMinute: number): number;
 
 interface Array<T> {
-    gain(this: T extends ModuleOutput[] ? T : never, factor: Value): PolyModuleNode;
-    offset(this: T extends ModuleOutput[] ? T : never, offset: Value): PolyModuleNode;
-    out(this: T extends ModuleOutput[] ? T : never, mode?: 'm'): ModuleOutput[];
+    gain(this: T extends ModuleOutput ? T[] : never, factor: Signal): ModuleOutput[];
+    offset(this: T extends ModuleOutput ? T[] : never, offset: Signal): ModuleOutput[];
+    out(this: T extends ModuleOutput ? T[] : never, mode?: 'm'): T[];
+    scope(this: T extends ModuleOutput ? T[] : never, msPerFrame?: number, triggerThreshold?: number): T[];
 }
 `;
 
@@ -603,13 +582,41 @@ function renderParamsInterface(
     return lines;
 }
 
+/**
+ * Convert snake_case to camelCase
+ */
+function toCamelCase(str: string): string {
+    return str.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+}
+
+/**
+ * Get the return type for a module factory based on its outputs
+ */
+function getFactoryReturnType(moduleSchema: ModuleSchema): string {
+    const outputs = moduleSchema.outputs || [];
+    
+    if (outputs.length === 0) {
+        return 'void';
+    } else if (outputs.length === 1) {
+        const output = outputs[0];
+        return output.polyphonic ? 'ModuleOutput[]' : 'ModuleOutput';
+    } else {
+        // Multiple outputs - generate object type
+        const props = outputs.map(o => {
+            const camelName = toCamelCase(o.name);
+            const type = o.polyphonic ? 'ModuleOutput[]' : 'ModuleOutput';
+            return `${camelName}: ${type}`;
+        });
+        return `{ ${props.join('; ')} }`;
+    }
+}
+
 function renderFactoryFunction(
     moduleSchema: ModuleSchema,
-    interfaceName: string,
+    _interfaceName: string,
     indent: string,
 ): string[] {
     const functionName = moduleSchema.name.split('.').pop()!;
-    const paramsInterfaceName = `${capitalizeName(functionName)}Params`;
 
     let args: string[] = [];
     // @ts-ignore
@@ -687,6 +694,9 @@ function renderFactoryFunction(
         docLines.push(`@param config - Configuration object`);
     }
 
+    // Get return type based on outputs
+    const returnType = getFactoryReturnType(moduleSchema);
+
     const lines: string[] = [];
     if (docLines.length > 0) {
         lines.push(`${indent}/**`);
@@ -696,7 +706,7 @@ function renderFactoryFunction(
         lines.push(`${indent} */`);
     }
     lines.push(
-        `${indent}export function ${functionName}(${args.join(', ')}): ${interfaceName};`,
+        `${indent}export function ${functionName}(${args.join(', ')}): ${returnType};`,
     );
 
     return lines;
@@ -722,58 +732,9 @@ function renderInterface(
 ): string[] {
     const lines: string[] = [];
 
-    lines.push(...renderParamsInterface(baseName, classSpec, indent));
-    lines.push('');
-
-    lines.push(...renderDocComment(classSpec.description, indent));
-    const interfaceName = renderNodeInterfaceName(capitalizeName(baseName));
-
-    // Determine if the default output is polyphonic
-    const defaultOutput = classSpec.moduleSchema.outputs?.find((o: any) => o.default) ?? classSpec.moduleSchema.outputs?.[0];
-    const hasPolyDefaultOutput = defaultOutput?.polyphonic === true;
-    const baseInterface = hasPolyDefaultOutput ? 'PolyModuleNode' : 'ModuleNode';
-
+    // Just render the factory function - no interface needed since we return outputs directly
     lines.push(
-        `${indent}export interface ${interfaceName} extends ${baseInterface} {`,
-    );
-
-    const seenOutputNames = new Set<string>();
-    for (const output of classSpec.outputs) {
-        if (!output.name) continue;
-        if (output.name === 'o') continue; // already exists on base interface
-        if (seenOutputNames.has(output.name)) continue;
-        seenOutputNames.add(output.name);
-
-        // Check if this specific output is polyphonic
-        const outputSchema = classSpec.moduleSchema.outputs?.find((o: any) => o.name === output.name);
-        const isPoly = outputSchema?.polyphonic === true;
-        const outputType = isPoly ? 'ModuleOutput[]' : 'ModuleOutput';
-
-        lines.push('');
-        lines.push(...renderDocComment(output.description, indent + '  '));
-        lines.push(
-            `${indent}  readonly ${renderReadonlyPropertyKey(output.name)}: ${outputType};`,
-        );
-    }
-
-    for (const prop of classSpec.properties) {
-        lines.push('');
-        lines.push(...renderDocComment(prop.description, indent + '  '));
-        const args = getMethodArgsForProperty(
-            prop.schema,
-            classSpec.rootSchema,
-            prop.description,
-        );
-        const argList = args.map((a) => `${a.name}: ${a.type}`).join(', ');
-        lines.push(
-            `${indent}  ${renderPropertyKey(prop.name)}(${argList}): this;`,
-        );
-    }
-
-    lines.push(`${indent}}`);
-    lines.push('');
-    lines.push(
-        ...renderFactoryFunction(classSpec.moduleSchema, interfaceName, indent),
+        ...renderFactoryFunction(classSpec.moduleSchema, '', indent),
     );
     return lines;
 }
@@ -817,8 +778,9 @@ export function generateDSL(schemas: ModuleSchema[]): string {
     if (clockSchema) {
         lines.push('');
         lines.push('/** Default clock module running at 120 BPM. */');
+        const clockReturnType = getFactoryReturnType(clockSchema);
         lines.push(
-            `export declare const rootClock: ${getQualifiedNodeInterfaceType(clockSchema.name)};`,
+            `export declare const rootClock: ${clockReturnType};`,
         );
     }
 

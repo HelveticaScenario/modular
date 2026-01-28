@@ -26,7 +26,7 @@ struct SixOpFmOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct SixOpFmOscillatorOutputs {
-    #[output("output", "signal output", default)]
+    #[output("output", "signal output")]
     sample: f32,
     #[output("aux", "auxiliary output")]
     aux: f32,

@@ -13,7 +13,7 @@ struct ClockDividerParams {
 
 #[derive(Outputs, JsonSchema)]
 struct ClockDividerOutputs {
-    #[output("output", "divided clock output", default)]
+    #[output("output", "divided clock output")]
     pub output: f32,
 }
 

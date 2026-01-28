@@ -13,7 +13,7 @@ struct LagProcessorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct LagProcessorOutputs {
-    #[output("output", "output", default)]
+    #[output("output", "output")]
     sample: f32,
 }
 

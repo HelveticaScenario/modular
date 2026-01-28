@@ -146,7 +146,7 @@ struct SeqParams {
 
 #[derive(Outputs, JsonSchema)]
 struct SeqOutputs {
-    #[output("cv", "control voltage output", default)]
+    #[output("cv", "control voltage output")]
     cv: PolyOutput,
     #[output("gate", "gate output")]
     gate: PolyOutput,

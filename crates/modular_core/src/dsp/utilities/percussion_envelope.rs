@@ -16,7 +16,7 @@ struct PercussionEnvelopeParams {
 
 #[derive(Outputs, JsonSchema)]
 struct PercussionEnvelopeOutputs {
-    #[output("output", "envelope output", default)]
+    #[output("output", "envelope output")]
     sample: PolyOutput,
 }
 

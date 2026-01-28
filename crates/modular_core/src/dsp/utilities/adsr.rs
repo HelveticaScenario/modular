@@ -73,7 +73,7 @@ pub struct Adsr {
 
 #[derive(Outputs, JsonSchema)]
 struct AdsrOutputs {
-    #[output("output", "envelope output", default)]
+    #[output("output", "envelope output")]
     sample: PolyOutput,
 }
 

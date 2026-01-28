@@ -25,7 +25,7 @@ struct ParticleOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct ParticleOscillatorOutputs {
-    #[output("output", "signal output", default)]
+    #[output("output", "signal output")]
     sample: f32,
     #[output("aux", "auxiliary output")]
     aux: f32,

@@ -20,7 +20,7 @@ struct LowpassFilterParams {
 
 #[derive(Outputs, JsonSchema)]
 struct LowpassFilterOutputs {
-    #[output("output", "filtered signal", default)]
+    #[output("output", "filtered signal")]
     sample: PolyOutput,
 }
 

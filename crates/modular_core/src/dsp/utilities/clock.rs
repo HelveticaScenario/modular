@@ -31,7 +31,7 @@ pub struct Clock {
 
 #[derive(Outputs, JsonSchema)]
 struct ClockOutputs {
-    #[output("playhead", "how many bars have elapsed. 2 channel output with phase and loop index", default)]
+    #[output("playhead", "how many bars have elapsed. 2 channel output with phase and loop index")]
     playhead: PolyOutput,
     #[output("barTrigger", "trigger output every bar")]
     bar_trigger: f32,

@@ -30,7 +30,7 @@ struct GrainOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct GrainOscillatorOutputs {
-    #[output("output", "signal output", default)]
+    #[output("output", "signal output")]
     sample: f32,
     #[output("aux", "filtered waveform simulation")]
     aux: f32,

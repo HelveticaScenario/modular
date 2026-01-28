@@ -29,7 +29,7 @@ struct WaveshapingOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct WaveshapingOscillatorOutputs {
-    #[output("output", "signal output", default)]
+    #[output("output", "signal output")]
     sample: f32,
     #[output("aux", "alternative wavefolder curve")]
     aux: f32,

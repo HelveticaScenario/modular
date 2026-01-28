@@ -29,7 +29,7 @@ struct AdditiveOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct AdditiveOscillatorOutputs {
-    #[output("output", "signal output", default)]
+    #[output("output", "signal output")]
     sample: f32,
     #[output("aux", "Hammond organ drawbar harmonics")]
     aux: f32,
