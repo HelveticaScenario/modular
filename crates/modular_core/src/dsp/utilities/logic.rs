@@ -1,4 +1,7 @@
-use crate::types::Signal;
+use crate::{
+    poly::{PolyOutput, PolySignal},
+    PORT_MAX_CHANNELS,
+};
 use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -6,19 +9,24 @@ use serde::Deserialize;
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct RisingEdgeDetectorParams {
-    input: Signal,
+    input: PolySignal,
 }
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct FallingEdgeDetectorParams {
-    input: Signal,
+    input: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
 struct EdgeDetectorOutputs {
     #[output("output", "gate")]
-    output: f32,
+    output: PolyOutput,
+}
+
+#[derive(Default, Clone, Copy)]
+struct EdgeChannelState {
+    last_input: f32,
 }
 
 #[derive(Module)]
@@ -27,27 +35,33 @@ struct EdgeDetectorOutputs {
 pub struct RisingEdgeDetector {
     outputs: EdgeDetectorOutputs,
     params: RisingEdgeDetectorParams,
-    last_input: f32,
+    channels: [EdgeChannelState; PORT_MAX_CHANNELS],
 }
 
 impl Default for RisingEdgeDetector {
     fn default() -> Self {
         Self {
-            outputs: EdgeDetectorOutputs { output: 0.0 },
+            outputs: Default::default(),
             params: Default::default(),
-            last_input: 0.0,
+            channels: [EdgeChannelState::default(); PORT_MAX_CHANNELS],
         }
     }
 }
 
 impl RisingEdgeDetector {
     pub fn update(&mut self, _sample_rate: f32) {
-        let input = self.params.input.get_value();
+        let num_channels = self.channel_count();
+        self.outputs.output.set_channels(num_channels as u8);
 
-        let output = if input > self.last_input { 5.0 } else { 0.0 };
+        for ch in 0..num_channels {
+            let state = &mut self.channels[ch];
+            let input = self.params.input.get_value_or(ch, 0.0);
 
-        self.last_input = input;
-        self.outputs.output = output;
+            let output = if input > state.last_input { 5.0 } else { 0.0 };
+
+            state.last_input = input;
+            self.outputs.output.set(ch, output);
+        }
     }
 }
 
@@ -59,27 +73,33 @@ message_handlers!(impl RisingEdgeDetector {});
 pub struct FallingEdgeDetector {
     outputs: EdgeDetectorOutputs,
     params: FallingEdgeDetectorParams,
-    last_input: f32,
+    channels: [EdgeChannelState; PORT_MAX_CHANNELS],
 }
 
 impl Default for FallingEdgeDetector {
     fn default() -> Self {
         Self {
-            outputs: EdgeDetectorOutputs { output: 0.0 },
+            outputs: Default::default(),
             params: Default::default(),
-            last_input: 0.0,
+            channels: [EdgeChannelState::default(); PORT_MAX_CHANNELS],
         }
     }
 }
 
 impl FallingEdgeDetector {
     pub fn update(&mut self, _sample_rate: f32) {
-        let input = self.params.input.get_value();
+        let num_channels = self.channel_count();
+        self.outputs.output.set_channels(num_channels as u8);
 
-        let output = if input < self.last_input { 5.0 } else { 0.0 };
+        for ch in 0..num_channels {
+            let state = &mut self.channels[ch];
+            let input = self.params.input.get_value_or(ch, 0.0);
 
-        self.last_input = input;
-        self.outputs.output = output;
+            let output = if input < state.last_input { 5.0 } else { 0.0 };
+
+            state.last_input = input;
+            self.outputs.output.set(ch, output);
+        }
     }
 }
 

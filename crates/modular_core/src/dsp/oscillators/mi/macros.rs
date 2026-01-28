@@ -3,8 +3,12 @@
 //! All MI engine modules share nearly identical structure. This macro generates
 //! the params struct, outputs struct, main module struct, and implementation
 //! from a concise declaration.
+//!
+//! These modules are **polyphonic**: they support up to 16 voices, with each
+//! voice having its own engine instance, render buffers, and trigger state.
+//! The voice count is determined by the maximum channel count of the inputs.
 
-/// Generates a complete MI engine wrapper module.
+/// Generates a complete polyphonic MI engine wrapper module.
 ///
 /// # Syntax
 ///
@@ -287,7 +291,7 @@ macro_rules! mi_engine_module {
     };
 }
 
-/// Internal implementation macro - generates the actual code
+/// Internal implementation macro - generates the actual polyphonic code
 #[macro_export]
 macro_rules! mi_engine_module_impl {
     // NO LIFETIME variant
@@ -318,7 +322,8 @@ macro_rules! mi_engine_module_impl {
 
             use crate::{
                 dsp::utils::voct_to_midi,
-                types::{Clickless, Signal},
+                poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal},
+                types::Clickless,
             };
             use mi_plaits_dsp::engine::{Engine, EngineParameters, TriggerState};
             use $engine_path;
@@ -329,95 +334,142 @@ macro_rules! mi_engine_module_impl {
             #[serde(default)]
             struct [<$struct_name Params>] {
                 #[doc = $freq_doc]
-                freq: Signal,
+                freq: PolySignal,
                 #[doc = $timbre_doc]
-                timbre: Signal,
+                timbre: PolySignal,
                 #[doc = $morph_doc]
-                morph: Signal,
+                morph: PolySignal,
                 #[doc = $harmonics_doc]
-                harmonics: Signal,
+                harmonics: PolySignal,
                 #[doc = $sync_doc]
-                sync: Signal,
+                sync: PolySignal,
             }
 
             #[derive(Outputs, JsonSchema)]
             struct [<$struct_name Outputs>] {
                 #[output("main", $output_doc, range = ($out_min, $out_max))]
-                sample: f32,
+                sample: PolyOutput,
                 #[output("aux", $aux_doc, range = ($aux_min, $aux_max))]
-                aux: f32,
+                aux: PolyOutput,
             }
 
-            #[doc = $module_doc]
-            #[derive(Default, Module)]
-            #[module($module_name, $module_doc)]
-            #[args(freq)]
-            pub struct $struct_name {
-                outputs: [<$struct_name Outputs>],
-                engine: Option<$engine_type>,
-                buffer_out: Vec<f32>,
-                buffer_aux: Vec<f32>,
-                buffer_pos: usize,
+            /// Per-channel state for a single voice
+            struct [<$struct_name ChannelState>] {
+                engine: $engine_type,
+                buffer_out: [f32; BLOCK_SIZE],
+                buffer_aux: [f32; BLOCK_SIZE],
                 last_sync: f32,
-                sample_rate: f32,
                 freq: Clickless,
                 timbre: Clickless,
                 morph: Clickless,
                 harmonics: Clickless,
+            }
+
+            impl Default for [<$struct_name ChannelState>] {
+                fn default() -> Self {
+                    Self {
+                        engine: $constructor,
+                        buffer_out: [0.0; BLOCK_SIZE],
+                        buffer_aux: [0.0; BLOCK_SIZE],
+                        last_sync: 0.0,
+                        freq: Clickless::default(),
+                        timbre: Clickless::default(),
+                        morph: Clickless::default(),
+                        harmonics: Clickless::default(),
+                    }
+                }
+            }
+
+            #[doc = $module_doc]
+            #[derive(Module)]
+            #[module($module_name, $module_doc)]
+            #[args(freq)]
+            pub struct $struct_name {
+                outputs: [<$struct_name Outputs>],
+                channels: [[<$struct_name ChannelState>]; PORT_MAX_CHANNELS],
+                buffer_pos: usize,
+                sample_rate: f32,
                 params: [<$struct_name Params>],
+            }
+
+            impl Default for $struct_name {
+                fn default() -> Self {
+                    Self {
+                        outputs: [<$struct_name Outputs>]::default(),
+                        channels: std::array::from_fn(|_| [<$struct_name ChannelState>]::default()),
+                        buffer_pos: BLOCK_SIZE, // Start exhausted to trigger initial render
+                        sample_rate: 0.0,
+                        params: [<$struct_name Params>]::default(),
+                    }
+                }
             }
 
             impl $struct_name {
                 fn update(&mut self, sample_rate: f32) {
-                    if self.engine.is_none() || (self.sample_rate - sample_rate).abs() > 0.1 {
-                        let mut engine = $constructor;
-                        engine.init(sample_rate);
-                        self.engine = Some(engine);
+                    let num_channels = self.channel_count().max(1);
+
+                    // Initialize engines if sample rate changed
+                    if (self.sample_rate - sample_rate).abs() > 0.1 {
+                        for state in self.channels.iter_mut() {
+                            state.engine.init(sample_rate);
+                        }
                         self.sample_rate = sample_rate;
-                        self.buffer_out = vec![0.0; BLOCK_SIZE];
-                        self.buffer_aux = vec![0.0; BLOCK_SIZE];
-                        self.buffer_pos = BLOCK_SIZE;
+                        self.buffer_pos = BLOCK_SIZE; // Force re-render
                     }
 
+                    // Render all active voices when buffer is exhausted
                     if self.buffer_pos >= BLOCK_SIZE {
-                        self.render_block(sample_rate);
+                        self.render_block(sample_rate, num_channels);
                         self.buffer_pos = 0;
                     }
 
-                    self.outputs.sample = self.buffer_out[self.buffer_pos];
-                    self.outputs.aux = self.buffer_aux[self.buffer_pos];
+                    // Copy current samples to outputs
+                    let mut output = PolyOutput::default();
+                    let mut aux_output = PolyOutput::default();
+                    output.set_channels(num_channels as u8);
+                    aux_output.set_channels(num_channels as u8);
+
+                    for ch in 0..num_channels {
+                        let state = &self.channels[ch];
+                        output.set(ch, state.buffer_out[self.buffer_pos]);
+                        aux_output.set(ch, state.buffer_aux[self.buffer_pos]);
+                    }
+
+                    self.outputs.sample = output;
+                    self.outputs.aux = aux_output;
 
                     self.buffer_pos += 1;
                 }
 
-                fn render_block(&mut self, sample_rate: f32) {
-                    if let Some(ref mut engine) = self.engine {
-                        self.freq
-                            .update(self.params.freq.get_value_or(4.0).clamp(-10.0, 10.0));
-                        self.timbre
-                            .update(self.params.timbre.get_value_or(2.5).clamp(0.0, 5.0));
-                        self.morph
-                            .update(self.params.morph.get_value_or(2.5).clamp(0.0, 5.0));
-                        self.harmonics
-                            .update(self.params.harmonics.get_value_or(2.5).clamp(0.0, 5.0));
+                fn render_block(&mut self, sample_rate: f32, num_channels: usize) {
+                    for ch in 0..num_channels {
+                        let state = &mut self.channels[ch];
 
-                        let midi_note = voct_to_midi(*self.freq);
+                        // Get per-voice parameters with cycling
+                        state.freq.update(self.params.freq.get_value_or(ch, 4.0).clamp(-10.0, 10.0));
+                        state.timbre.update(self.params.timbre.get_value_or(ch, 2.5).clamp(0.0, 5.0));
+                        state.morph.update(self.params.morph.get_value_or(ch, 2.5).clamp(0.0, 5.0));
+                        state.harmonics.update(self.params.harmonics.get_value_or(ch, 2.5).clamp(0.0, 5.0));
 
-                        let timbre_norm = (*self.timbre) / 5.0;
-                        let morph_norm = (*self.morph) / 5.0;
-                        let harmonics_norm = (*self.harmonics) / 5.0;
+                        let midi_note = voct_to_midi(*state.freq);
 
-                        let trigger_state = if self.params.sync == Signal::Disconnected {
+                        let timbre_norm = (*state.timbre) / 5.0;
+                        let morph_norm = (*state.morph) / 5.0;
+                        let harmonics_norm = (*state.harmonics) / 5.0;
+
+                        // Per-voice trigger detection
+                        let trigger_state = if self.params.sync.is_disconnected() {
                             TriggerState::Unpatched
                         } else {
-                            let sync_val = self.params.sync.get_value_or(0.0);
-                            if sync_val > 0.0 && self.last_sync <= 0.0 {
-                                self.last_sync = sync_val;
+                            let sync_val = self.params.sync.get_value_or(ch, 0.0);
+                            if sync_val > 0.0 && state.last_sync <= 0.0 {
+                                state.last_sync = sync_val;
                                 TriggerState::RisingEdge
                             } else if sync_val > 0.0 {
+                                state.last_sync = sync_val;
                                 TriggerState::High
                             } else {
-                                self.last_sync = sync_val;
+                                state.last_sync = sync_val;
                                 TriggerState::Low
                             }
                         };
@@ -433,10 +485,10 @@ macro_rules! mi_engine_module_impl {
                         };
 
                         let mut already_enveloped = false;
-                        engine.render(
+                        state.engine.render(
                             &engine_params,
-                            &mut self.buffer_out,
-                            &mut self.buffer_aux,
+                            &mut state.buffer_out,
+                            &mut state.buffer_aux,
                             &mut already_enveloped,
                         );
                     }
@@ -475,7 +527,8 @@ macro_rules! mi_engine_module_impl {
 
             use crate::{
                 dsp::utils::voct_to_midi,
-                types::{Clickless, Signal},
+                poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal},
+                types::Clickless,
             };
             use mi_plaits_dsp::engine::{Engine, EngineParameters, TriggerState};
             use $engine_path;
@@ -486,95 +539,142 @@ macro_rules! mi_engine_module_impl {
             #[serde(default)]
             struct [<$struct_name Params>] {
                 #[doc = $freq_doc]
-                freq: Signal,
+                freq: PolySignal,
                 #[doc = $timbre_doc]
-                timbre: Signal,
+                timbre: PolySignal,
                 #[doc = $morph_doc]
-                morph: Signal,
+                morph: PolySignal,
                 #[doc = $harmonics_doc]
-                harmonics: Signal,
+                harmonics: PolySignal,
                 #[doc = $sync_doc]
-                sync: Signal,
+                sync: PolySignal,
             }
 
             #[derive(Outputs, JsonSchema)]
             struct [<$struct_name Outputs>] {
                 #[output("output", $output_doc, range = ($out_min, $out_max))]
-                sample: f32,
+                sample: PolyOutput,
                 #[output("aux", $aux_doc, range = ($aux_min, $aux_max))]
-                aux: f32,
+                aux: PolyOutput,
             }
 
-            #[doc = $module_doc]
-            #[derive(Default, Module)]
-            #[module($module_name, $module_doc)]
-            #[args(freq)]
-            pub struct $struct_name {
-                outputs: [<$struct_name Outputs>],
-                engine: Option<$engine_type<'static>>,
-                buffer_out: Vec<f32>,
-                buffer_aux: Vec<f32>,
-                buffer_pos: usize,
+            /// Per-channel state for a single voice
+            struct [<$struct_name ChannelState>] {
+                engine: $engine_type<'static>,
+                buffer_out: [f32; BLOCK_SIZE],
+                buffer_aux: [f32; BLOCK_SIZE],
                 last_sync: f32,
-                sample_rate: f32,
                 freq: Clickless,
                 timbre: Clickless,
                 morph: Clickless,
                 harmonics: Clickless,
+            }
+
+            impl Default for [<$struct_name ChannelState>] {
+                fn default() -> Self {
+                    Self {
+                        engine: $constructor,
+                        buffer_out: [0.0; BLOCK_SIZE],
+                        buffer_aux: [0.0; BLOCK_SIZE],
+                        last_sync: 0.0,
+                        freq: Clickless::default(),
+                        timbre: Clickless::default(),
+                        morph: Clickless::default(),
+                        harmonics: Clickless::default(),
+                    }
+                }
+            }
+
+            #[doc = $module_doc]
+            #[derive(Module)]
+            #[module($module_name, $module_doc)]
+            #[args(freq)]
+            pub struct $struct_name {
+                outputs: [<$struct_name Outputs>],
+                channels: [[<$struct_name ChannelState>]; PORT_MAX_CHANNELS],
+                buffer_pos: usize,
+                sample_rate: f32,
                 params: [<$struct_name Params>],
+            }
+
+            impl Default for $struct_name {
+                fn default() -> Self {
+                    Self {
+                        outputs: [<$struct_name Outputs>]::default(),
+                        channels: std::array::from_fn(|_| [<$struct_name ChannelState>]::default()),
+                        buffer_pos: BLOCK_SIZE, // Start exhausted to trigger initial render
+                        sample_rate: 0.0,
+                        params: [<$struct_name Params>]::default(),
+                    }
+                }
             }
 
             impl $struct_name {
                 fn update(&mut self, sample_rate: f32) {
-                    if self.engine.is_none() || (self.sample_rate - sample_rate).abs() > 0.1 {
-                        let mut engine = $constructor;
-                        engine.init(sample_rate);
-                        self.engine = Some(engine);
+                    let num_channels = self.channel_count().max(1);
+
+                    // Initialize engines if sample rate changed
+                    if (self.sample_rate - sample_rate).abs() > 0.1 {
+                        for state in self.channels.iter_mut() {
+                            state.engine.init(sample_rate);
+                        }
                         self.sample_rate = sample_rate;
-                        self.buffer_out = vec![0.0; BLOCK_SIZE];
-                        self.buffer_aux = vec![0.0; BLOCK_SIZE];
-                        self.buffer_pos = BLOCK_SIZE;
+                        self.buffer_pos = BLOCK_SIZE; // Force re-render
                     }
 
+                    // Render all active voices when buffer is exhausted
                     if self.buffer_pos >= BLOCK_SIZE {
-                        self.render_block(sample_rate);
+                        self.render_block(sample_rate, num_channels);
                         self.buffer_pos = 0;
                     }
 
-                    self.outputs.sample = self.buffer_out[self.buffer_pos];
-                    self.outputs.aux = self.buffer_aux[self.buffer_pos];
+                    // Copy current samples to outputs
+                    let mut output = PolyOutput::default();
+                    let mut aux_output = PolyOutput::default();
+                    output.set_channels(num_channels as u8);
+                    aux_output.set_channels(num_channels as u8);
+
+                    for ch in 0..num_channels {
+                        let state = &self.channels[ch];
+                        output.set(ch, state.buffer_out[self.buffer_pos]);
+                        aux_output.set(ch, state.buffer_aux[self.buffer_pos]);
+                    }
+
+                    self.outputs.sample = output;
+                    self.outputs.aux = aux_output;
 
                     self.buffer_pos += 1;
                 }
 
-                fn render_block(&mut self, sample_rate: f32) {
-                    if let Some(ref mut engine) = self.engine {
-                        self.freq
-                            .update(self.params.freq.get_value_or(4.0).clamp(-10.0, 10.0));
-                        self.timbre
-                            .update(self.params.timbre.get_value_or(2.5).clamp(0.0, 5.0));
-                        self.morph
-                            .update(self.params.morph.get_value_or(2.5).clamp(0.0, 5.0));
-                        self.harmonics
-                            .update(self.params.harmonics.get_value_or(2.5).clamp(0.0, 5.0));
+                fn render_block(&mut self, sample_rate: f32, num_channels: usize) {
+                    for ch in 0..num_channels {
+                        let state = &mut self.channels[ch];
 
-                        let midi_note = voct_to_midi(*self.freq);
+                        // Get per-voice parameters with cycling
+                        state.freq.update(self.params.freq.get_value_or(ch, 4.0).clamp(-10.0, 10.0));
+                        state.timbre.update(self.params.timbre.get_value_or(ch, 2.5).clamp(0.0, 5.0));
+                        state.morph.update(self.params.morph.get_value_or(ch, 2.5).clamp(0.0, 5.0));
+                        state.harmonics.update(self.params.harmonics.get_value_or(ch, 2.5).clamp(0.0, 5.0));
 
-                        let timbre_norm = (*self.timbre) / 5.0;
-                        let morph_norm = (*self.morph) / 5.0;
-                        let harmonics_norm = (*self.harmonics) / 5.0;
+                        let midi_note = voct_to_midi(*state.freq);
 
-                        let trigger_state = if self.params.sync == Signal::Disconnected {
+                        let timbre_norm = (*state.timbre) / 5.0;
+                        let morph_norm = (*state.morph) / 5.0;
+                        let harmonics_norm = (*state.harmonics) / 5.0;
+
+                        // Per-voice trigger detection
+                        let trigger_state = if self.params.sync.is_disconnected() {
                             TriggerState::Unpatched
                         } else {
-                            let sync_val = self.params.sync.get_value_or(0.0);
-                            if sync_val > 0.0 && self.last_sync <= 0.0 {
-                                self.last_sync = sync_val;
+                            let sync_val = self.params.sync.get_value_or(ch, 0.0);
+                            if sync_val > 0.0 && state.last_sync <= 0.0 {
+                                state.last_sync = sync_val;
                                 TriggerState::RisingEdge
                             } else if sync_val > 0.0 {
+                                state.last_sync = sync_val;
                                 TriggerState::High
                             } else {
-                                self.last_sync = sync_val;
+                                state.last_sync = sync_val;
                                 TriggerState::Low
                             }
                         };
@@ -590,10 +690,10 @@ macro_rules! mi_engine_module_impl {
                         };
 
                         let mut already_enveloped = false;
-                        engine.render(
+                        state.engine.render(
                             &engine_params,
-                            &mut self.buffer_out,
-                            &mut self.buffer_aux,
+                            &mut state.buffer_out,
+                            &mut state.buffer_aux,
                             &mut already_enveloped,
                         );
                     }
@@ -632,7 +732,8 @@ macro_rules! mi_engine_module_impl {
 
             use crate::{
                 dsp::utils::voct_to_midi,
-                types::{Clickless, Signal},
+                poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal},
+                types::Clickless,
             };
             use mi_plaits_dsp::engine::{Engine, EngineParameters, TriggerState};
             use $engine_path;
@@ -643,95 +744,142 @@ macro_rules! mi_engine_module_impl {
             #[serde(default)]
             struct [<$struct_name Params>] {
                 #[doc = $freq_doc]
-                freq: Signal,
+                freq: PolySignal,
                 #[doc = $timbre_doc]
-                timbre: Signal,
+                timbre: PolySignal,
                 #[doc = $morph_doc]
-                morph: Signal,
+                morph: PolySignal,
                 #[doc = $harmonics_doc]
-                harmonics: Signal,
+                harmonics: PolySignal,
                 #[doc = $sync_doc]
-                sync: Signal,
+                sync: PolySignal,
             }
 
             #[derive(Outputs, JsonSchema)]
             struct [<$struct_name Outputs>] {
                 #[output("output", $output_doc, range = ($out_min, $out_max))]
-                sample: f32,
+                sample: PolyOutput,
                 #[output("aux", $aux_doc, range = ($aux_min, $aux_max))]
-                aux: f32,
+                aux: PolyOutput,
             }
 
-            #[doc = $module_doc]
-            #[derive(Default, Module)]
-            #[module($module_name, $module_doc)]
-            #[args(freq)]
-            pub struct $struct_name<'a> {
-                outputs: [<$struct_name Outputs>],
-                engine: Option<$engine_type<'a>>,
-                buffer_out: Vec<f32>,
-                buffer_aux: Vec<f32>,
-                buffer_pos: usize,
+            /// Per-channel state for a single voice
+            struct [<$struct_name ChannelState>]<'a> {
+                engine: $engine_type<'a>,
+                buffer_out: [f32; BLOCK_SIZE],
+                buffer_aux: [f32; BLOCK_SIZE],
                 last_sync: f32,
-                sample_rate: f32,
                 freq: Clickless,
                 timbre: Clickless,
                 morph: Clickless,
                 harmonics: Clickless,
+            }
+
+            impl<'a> Default for [<$struct_name ChannelState>]<'a> {
+                fn default() -> Self {
+                    Self {
+                        engine: $constructor,
+                        buffer_out: [0.0; BLOCK_SIZE],
+                        buffer_aux: [0.0; BLOCK_SIZE],
+                        last_sync: 0.0,
+                        freq: Clickless::default(),
+                        timbre: Clickless::default(),
+                        morph: Clickless::default(),
+                        harmonics: Clickless::default(),
+                    }
+                }
+            }
+
+            #[doc = $module_doc]
+            #[derive(Module)]
+            #[module($module_name, $module_doc)]
+            #[args(freq)]
+            pub struct $struct_name<'a> {
+                outputs: [<$struct_name Outputs>],
+                channels: [[<$struct_name ChannelState>]<'a>; PORT_MAX_CHANNELS],
+                buffer_pos: usize,
+                sample_rate: f32,
                 params: [<$struct_name Params>],
+            }
+
+            impl<'a> Default for $struct_name<'a> {
+                fn default() -> Self {
+                    Self {
+                        outputs: [<$struct_name Outputs>]::default(),
+                        channels: std::array::from_fn(|_| [<$struct_name ChannelState>]::default()),
+                        buffer_pos: BLOCK_SIZE, // Start exhausted to trigger initial render
+                        sample_rate: 0.0,
+                        params: [<$struct_name Params>]::default(),
+                    }
+                }
             }
 
             impl<'a> $struct_name<'a> {
                 fn update(&mut self, sample_rate: f32) {
-                    if self.engine.is_none() || (self.sample_rate - sample_rate).abs() > 0.1 {
-                        let mut engine = $constructor;
-                        engine.init(sample_rate);
-                        self.engine = Some(engine);
+                    let num_channels = self.channel_count().max(1);
+
+                    // Initialize engines if sample rate changed
+                    if (self.sample_rate - sample_rate).abs() > 0.1 {
+                        for state in self.channels.iter_mut() {
+                            state.engine.init(sample_rate);
+                        }
                         self.sample_rate = sample_rate;
-                        self.buffer_out = vec![0.0; BLOCK_SIZE];
-                        self.buffer_aux = vec![0.0; BLOCK_SIZE];
-                        self.buffer_pos = BLOCK_SIZE;
+                        self.buffer_pos = BLOCK_SIZE; // Force re-render
                     }
 
+                    // Render all active voices when buffer is exhausted
                     if self.buffer_pos >= BLOCK_SIZE {
-                        self.render_block(sample_rate);
+                        self.render_block(sample_rate, num_channels);
                         self.buffer_pos = 0;
                     }
 
-                    self.outputs.sample = self.buffer_out[self.buffer_pos];
-                    self.outputs.aux = self.buffer_aux[self.buffer_pos];
+                    // Copy current samples to outputs
+                    let mut output = PolyOutput::default();
+                    let mut aux_output = PolyOutput::default();
+                    output.set_channels(num_channels as u8);
+                    aux_output.set_channels(num_channels as u8);
+
+                    for ch in 0..num_channels {
+                        let state = &self.channels[ch];
+                        output.set(ch, state.buffer_out[self.buffer_pos]);
+                        aux_output.set(ch, state.buffer_aux[self.buffer_pos]);
+                    }
+
+                    self.outputs.sample = output;
+                    self.outputs.aux = aux_output;
 
                     self.buffer_pos += 1;
                 }
 
-                fn render_block(&mut self, sample_rate: f32) {
-                    if let Some(ref mut engine) = self.engine {
-                        self.freq
-                            .update(self.params.freq.get_value_or(4.0).clamp(-10.0, 10.0));
-                        self.timbre
-                            .update(self.params.timbre.get_value_or(2.5).clamp(0.0, 5.0));
-                        self.morph
-                            .update(self.params.morph.get_value_or(2.5).clamp(0.0, 5.0));
-                        self.harmonics
-                            .update(self.params.harmonics.get_value_or(2.5).clamp(0.0, 5.0));
+                fn render_block(&mut self, sample_rate: f32, num_channels: usize) {
+                    for ch in 0..num_channels {
+                        let state = &mut self.channels[ch];
 
-                        let midi_note = voct_to_midi(*self.freq);
+                        // Get per-voice parameters with cycling
+                        state.freq.update(self.params.freq.get_value_or(ch, 4.0).clamp(-10.0, 10.0));
+                        state.timbre.update(self.params.timbre.get_value_or(ch, 2.5).clamp(0.0, 5.0));
+                        state.morph.update(self.params.morph.get_value_or(ch, 2.5).clamp(0.0, 5.0));
+                        state.harmonics.update(self.params.harmonics.get_value_or(ch, 2.5).clamp(0.0, 5.0));
 
-                        let timbre_norm = (*self.timbre) / 5.0;
-                        let morph_norm = (*self.morph) / 5.0;
-                        let harmonics_norm = (*self.harmonics) / 5.0;
+                        let midi_note = voct_to_midi(*state.freq);
 
-                        let trigger_state = if self.params.sync == Signal::Disconnected {
+                        let timbre_norm = (*state.timbre) / 5.0;
+                        let morph_norm = (*state.morph) / 5.0;
+                        let harmonics_norm = (*state.harmonics) / 5.0;
+
+                        // Per-voice trigger detection
+                        let trigger_state = if self.params.sync.is_disconnected() {
                             TriggerState::Unpatched
                         } else {
-                            let sync_val = self.params.sync.get_value_or(0.0);
-                            if sync_val > 0.0 && self.last_sync <= 0.0 {
-                                self.last_sync = sync_val;
+                            let sync_val = self.params.sync.get_value_or(ch, 0.0);
+                            if sync_val > 0.0 && state.last_sync <= 0.0 {
+                                state.last_sync = sync_val;
                                 TriggerState::RisingEdge
                             } else if sync_val > 0.0 {
+                                state.last_sync = sync_val;
                                 TriggerState::High
                             } else {
-                                self.last_sync = sync_val;
+                                state.last_sync = sync_val;
                                 TriggerState::Low
                             }
                         };
@@ -747,10 +895,10 @@ macro_rules! mi_engine_module_impl {
                         };
 
                         let mut already_enveloped = false;
-                        engine.render(
+                        state.engine.render(
                             &engine_params,
-                            &mut self.buffer_out,
-                            &mut self.buffer_aux,
+                            &mut state.buffer_out,
+                            &mut state.buffer_aux,
                             &mut already_enveloped,
                         );
                     }

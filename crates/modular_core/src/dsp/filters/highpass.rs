@@ -2,79 +2,146 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::types::{Clickless, Signal};
+use crate::{
+    dsp::utils::changed,
+    poly::{PolyOutput, PolySignal},
+    PORT_MAX_CHANNELS,
+};
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct HighpassFilterParams {
     /// signal input
-    input: Signal,
+    input: PolySignal,
     /// cutoff frequency in v/oct
-    cutoff: Signal,
+    cutoff: PolySignal,
     /// filter resonance (0-5)
-    resonance: Signal,
+    resonance: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
 struct HighpassFilterOutputs {
     #[output("output", "filtered signal")]
-    sample: f32,
+    sample: PolyOutput,
 }
 
-#[derive(Default, Module)]
+#[derive(Clone, Copy, Default)]
+struct BiquadCoeffs {
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
+}
+
+#[derive(Default, Clone, Copy)]
+struct HpfChannelState {
+    z1: f32,
+    z2: f32,
+    coeffs: BiquadCoeffs,
+    last_cutoff: f32,
+    last_resonance: f32,
+}
+
+fn compute_hpf_biquad(cutoff: f32, resonance: f32, sample_rate: f32) -> BiquadCoeffs {
+    let freq = 55.0 * 2.0f32.powf(cutoff);
+    let freq = freq.min(sample_rate * 0.45).max(20.0);
+
+    let omega = 2.0 * std::f32::consts::PI * freq / sample_rate;
+    let sin_omega = omega.sin();
+    let cos_omega = omega.cos();
+    let q = (resonance / 5.0 * 9.0 + 0.5).max(0.5);
+    let alpha = sin_omega / (2.0 * q);
+
+    let b0 = (1.0 + cos_omega) / 2.0;
+    let b1 = -(1.0 + cos_omega);
+    let b2 = (1.0 + cos_omega) / 2.0;
+    let a0 = 1.0 + alpha;
+    let a1 = -2.0 * cos_omega;
+    let a2 = 1.0 - alpha;
+
+    BiquadCoeffs {
+        b0: b0 / a0,
+        b1: b1 / a0,
+        b2: b2 / a0,
+        a1: a1 / a0,
+        a2: a2 / a0,
+    }
+}
+
+#[derive(Module)]
 #[module("hpf", "12dB/octave highpass filter with resonance")]
 #[args(input, cutoff, resonance?)]
 pub struct HighpassFilter {
     outputs: HighpassFilterOutputs,
-    // State variables for 2-pole (12dB/oct) filter
-    z1: f32,
-    z2: f32,
-    cutoff: Clickless,
-    resonance: Clickless,
+    channels: [HpfChannelState; PORT_MAX_CHANNELS],
+    // For mono optimization
+    coeffs_mono: BiquadCoeffs,
+    last_cutoff_mono: f32,
+    last_resonance_mono: f32,
     params: HighpassFilterParams,
+}
+
+impl Default for HighpassFilter {
+    fn default() -> Self {
+        Self {
+            outputs: Default::default(),
+            channels: [HpfChannelState::default(); PORT_MAX_CHANNELS],
+            coeffs_mono: BiquadCoeffs::default(),
+            last_cutoff_mono: 0.0,
+            last_resonance_mono: 0.0,
+            params: Default::default(),
+        }
+    }
 }
 
 impl HighpassFilter {
     fn update(&mut self, sample_rate: f32) -> () {
-        let input = self.params.input.get_value();
+        let num_channels = self.channel_count();
+        self.outputs.sample.set_channels(num_channels as u8);
 
-        self.cutoff.update(self.params.cutoff.get_value_or(4.0));
-        self.resonance
-            .update(self.params.resonance.get_value_or(0.0));
+        // Update coefficients
+        if self.params.cutoff.is_monophonic() && self.params.resonance.is_monophonic() {
+            let c = self.params.cutoff.get_value_or(0, 4.0);
+            let r = self.params.resonance.get_value_or(0, 0.0);
 
-        // Convert v/oct to frequency
-        let freq = 55.0f32 * 2.0f32.powf(*self.cutoff);
-        let freq_clamped = freq.min(sample_rate * 0.45).max(20.0);
+            if changed(c, self.last_cutoff_mono) || changed(r, self.last_resonance_mono) {
+                self.coeffs_mono = compute_hpf_biquad(c, r, sample_rate);
+                self.last_cutoff_mono = c;
+                self.last_resonance_mono = r;
+            }
+        } else {
+            for i in 0..num_channels {
+                let c = self.params.cutoff.get_value_or(i, 4.0);
+                let r = self.params.resonance.get_value_or(i, 0.0);
 
-        // Calculate filter coefficients
-        let omega = 2.0 * std::f32::consts::PI * freq_clamped / sample_rate;
-        let sin_omega = omega.sin();
-        let cos_omega = omega.cos();
-        let q = (*self.resonance / 5.0 * 9.0 + 0.5).max(0.5);
-        let alpha = sin_omega / (2.0 * q);
+                if changed(c, self.channels[i].last_cutoff)
+                    || changed(r, self.channels[i].last_resonance)
+                {
+                    self.channels[i].coeffs = compute_hpf_biquad(c, r, sample_rate);
+                    self.channels[i].last_cutoff = c;
+                    self.channels[i].last_resonance = r;
+                }
+            }
+        }
 
-        let b0 = (1.0 + cos_omega) / 2.0;
-        let b1 = -(1.0 + cos_omega);
-        let b2 = (1.0 + cos_omega) / 2.0;
-        let a0 = 1.0 + alpha;
-        let a1 = -2.0 * cos_omega;
-        let a2 = 1.0 - alpha;
+        for i in 0..num_channels {
+            let input = self.params.input.get_value_or(i, 0.0);
 
-        // Normalize coefficients
-        let b0_norm = b0 / a0;
-        let b1_norm = b1 / a0;
-        let b2_norm = b2 / a0;
-        let a1_norm = a1 / a0;
-        let a2_norm = a2 / a0;
+            let c = if self.params.cutoff.is_monophonic() && self.params.resonance.is_monophonic() {
+                self.coeffs_mono
+            } else {
+                self.channels[i].coeffs
+            };
 
-        // Process sample (Direct Form II)
-        let w = input - a1_norm * self.z1 - a2_norm * self.z2;
-        self.outputs.sample = b0_norm * w + b1_norm * self.z1 + b2_norm * self.z2;
-        self.z2 = self.z1;
-        self.z1 = w;
+            let state = &mut self.channels[i];
+            let w = input - c.a1 * state.z1 - c.a2 * state.z2;
+            let y = c.b0 * w + c.b1 * state.z1 + c.b2 * state.z2;
 
-        // Soft clipping to prevent overflow
-        // self.sample = self.sample.clamp(-5.0, 5.0);
+            state.z2 = state.z1;
+            state.z1 = w;
+            self.outputs.sample.set(i, y);
+        }
     }
 }
 

@@ -50,7 +50,7 @@ struct PolyMixOutputs {
 }
 
 #[derive(Default, Module)]
-#[module("poly_mix", "Mix polyphonic signal to mono")]
+#[module("mixdown", "Mix polyphonic signal to mono")]
 #[args(input)]
 pub struct PolyMix {
     outputs: PolyMixOutputs,

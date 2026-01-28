@@ -2,77 +2,146 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::types::{Clickless, Signal};
+use crate::{
+    dsp::utils::changed,
+    poly::{PolyOutput, PolySignal},
+    PORT_MAX_CHANNELS,
+};
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct BandpassFilterParams {
     /// signal input
-    input: Signal,
+    input: PolySignal,
     /// center frequency in v/oct
-    center: Signal,
+    center: PolySignal,
     /// filter Q (bandwidth control, 0-5)
-    resonance: Signal,
+    resonance: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
 struct BandpassFilterOutputs {
     #[output("output", "filtered signal")]
-    sample: f32,
+    sample: PolyOutput,
 }
 
-#[derive(Default, Module)]
+#[derive(Clone, Copy, Default)]
+struct BiquadCoeffs {
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
+}
+
+#[derive(Default, Clone, Copy)]
+struct BpfChannelState {
+    z1: f32,
+    z2: f32,
+    coeffs: BiquadCoeffs,
+    last_center: f32,
+    last_q: f32,
+}
+
+fn compute_bpf_biquad(center: f32, resonance: f32, sample_rate: f32) -> BiquadCoeffs {
+    let freq = 55.0 * 2.0f32.powf(center);
+    let freq = freq.min(sample_rate * 0.45).max(20.0);
+
+    let omega = 2.0 * std::f32::consts::PI * freq / sample_rate;
+    let sin_omega = omega.sin();
+    let cos_omega = omega.cos();
+    let q = (resonance / 5.0 * 9.0 + 0.5).max(0.5);
+    let alpha = sin_omega / (2.0 * q);
+
+    let b0 = alpha;
+    let b1 = 0.0;
+    let b2 = -alpha;
+    let a0 = 1.0 + alpha;
+    let a1 = -2.0 * cos_omega;
+    let a2 = 1.0 - alpha;
+
+    BiquadCoeffs {
+        b0: b0 / a0,
+        b1: b1 / a0,
+        b2: b2 / a0,
+        a1: a1 / a0,
+        a2: a2 / a0,
+    }
+}
+
+#[derive(Module)]
 #[module("bpf", "12dB/octave bandpass filter")]
 #[args(input, center, resonance?)]
 pub struct BandpassFilter {
     outputs: BandpassFilterOutputs,
-    // State variables for 2-pole filter
-    z1: f32,
-    z2: f32,
-    center: Clickless,
-    q: Clickless,
+    channels: [BpfChannelState; PORT_MAX_CHANNELS],
+    // For mono optimization
+    coeffs_mono: BiquadCoeffs,
+    last_center_mono: f32,
+    last_q_mono: f32,
     params: BandpassFilterParams,
+}
+
+impl Default for BandpassFilter {
+    fn default() -> Self {
+        Self {
+            outputs: Default::default(),
+            channels: [BpfChannelState::default(); PORT_MAX_CHANNELS],
+            coeffs_mono: BiquadCoeffs::default(),
+            last_center_mono: 0.0,
+            last_q_mono: 0.0,
+            params: Default::default(),
+        }
+    }
 }
 
 impl BandpassFilter {
     fn update(&mut self, sample_rate: f32) -> () {
-        let input = self.params.input.get_value();
-        self.center.update(self.params.center.get_value_or(4.0));
-        self.q.update(self.params.resonance.get_value_or(1.0));
+        let num_channels = self.channel_count();
+        self.outputs.sample.set_channels(num_channels as u8);
 
-        // Convert v/oct to frequency
-        let freq = 55.0f32 * 2.0f32.powf(*self.center);
-        let freq_clamped = freq.min(sample_rate * 0.45).max(20.0);
+        // Update coefficients
+        if self.params.center.is_monophonic() && self.params.resonance.is_monophonic() {
+            let c = self.params.center.get_value_or(0, 4.0);
+            let r = self.params.resonance.get_value_or(0, 1.0);
 
-        // Calculate filter coefficients
-        let omega = 2.0 * std::f32::consts::PI * freq_clamped / sample_rate;
-        let sin_omega = omega.sin();
-        let cos_omega = omega.cos();
-        let q = (*self.q / 5.0 * 9.0 + 0.5).max(0.5);
-        let alpha = sin_omega / (2.0 * q);
+            if changed(c, self.last_center_mono) || changed(r, self.last_q_mono) {
+                self.coeffs_mono = compute_bpf_biquad(c, r, sample_rate);
+                self.last_center_mono = c;
+                self.last_q_mono = r;
+            }
+        } else {
+            for i in 0..num_channels {
+                let c = self.params.center.get_value_or(i, 4.0);
+                let r = self.params.resonance.get_value_or(i, 1.0);
 
-        let b0 = alpha;
-        let b1 = 0.0;
-        let b2 = -alpha;
-        let a0 = 1.0 + alpha;
-        let a1 = -2.0 * cos_omega;
-        let a2 = 1.0 - alpha;
+                if changed(c, self.channels[i].last_center)
+                    || changed(r, self.channels[i].last_q)
+                {
+                    self.channels[i].coeffs = compute_bpf_biquad(c, r, sample_rate);
+                    self.channels[i].last_center = c;
+                    self.channels[i].last_q = r;
+                }
+            }
+        }
 
-        // Normalize coefficients
-        let b0_norm = b0 / a0;
-        let b1_norm = b1 / a0;
-        let b2_norm = b2 / a0;
-        let a1_norm = a1 / a0;
-        let a2_norm = a2 / a0;
+        for i in 0..num_channels {
+            let input = self.params.input.get_value_or(i, 0.0);
 
-        // Process sample (Direct Form II)
-        let w = input - a1_norm * self.z1 - a2_norm * self.z2;
-        self.outputs.sample = b0_norm * w + b1_norm * self.z1 + b2_norm * self.z2;
-        self.z2 = self.z1;
-        self.z1 = w;
+            let c = if self.params.center.is_monophonic() && self.params.resonance.is_monophonic() {
+                self.coeffs_mono
+            } else {
+                self.channels[i].coeffs
+            };
 
-        // Soft clipping to prevent overflow
-        // self.sample = self.sample.clamp(-5.0, 5.0);
+            let state = &mut self.channels[i];
+            let w = input - c.a1 * state.z1 - c.a2 * state.z2;
+            let y = c.b0 * w + c.b1 * state.z1 + c.b2 * state.z2;
+
+            state.z2 = state.z1;
+            state.z1 = w;
+            self.outputs.sample.set(i, y);
+        }
     }
 }
 

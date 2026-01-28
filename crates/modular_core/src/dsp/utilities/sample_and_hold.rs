@@ -1,4 +1,8 @@
-use crate::{dsp::utils::SchmittTrigger, types::Signal};
+use crate::{
+    poly::{PolyOutput, PolySignal},
+    types::Signal,
+    PORT_MAX_CHANNELS,
+};
 use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -6,14 +10,20 @@ use serde::Deserialize;
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct SampleAndHoldParams {
-    input: Signal,
-    trigger: Signal,
+    input: PolySignal,
+    trigger: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
 struct SampleAndHoldOutputs {
     #[output("output", "output")]
-    sample: f32,
+    sample: PolyOutput,
+}
+
+#[derive(Default, Clone, Copy)]
+struct SahChannelState {
+    last_trigger: f32,
+    held_value: f32,
 }
 
 #[derive(Module)]
@@ -22,32 +32,36 @@ struct SampleAndHoldOutputs {
 pub struct SampleAndHold {
     outputs: SampleAndHoldOutputs,
     params: SampleAndHoldParams,
-    last_trigger: f32,
-    held_value: f32,
+    channels: [SahChannelState; PORT_MAX_CHANNELS],
 }
 
 impl Default for SampleAndHold {
     fn default() -> Self {
         Self {
-            outputs: SampleAndHoldOutputs { sample: 0.0 },
+            outputs: Default::default(),
             params: Default::default(),
-            last_trigger: 0.0,
-            held_value: 0.0,
+            channels: [SahChannelState::default(); PORT_MAX_CHANNELS],
         }
     }
 }
 
 impl SampleAndHold {
     pub fn update(&mut self, _sample_rate: f32) {
-        let input = self.params.input.get_value();
-        let trigger = self.params.trigger.get_value();
+        let num_channels = self.channel_count();
+        self.outputs.sample.set_channels(num_channels as u8);
 
-        if trigger > 0.1 && self.last_trigger <= 0.1 {
-            self.held_value = input;
+        for ch in 0..num_channels {
+            let state = &mut self.channels[ch];
+            let input = self.params.input.get_value_or(ch, 0.0);
+            let trigger = self.params.trigger.get_value_or(ch, 0.0);
+
+            if trigger > 0.1 && state.last_trigger <= 0.1 {
+                state.held_value = input;
+            }
+            state.last_trigger = trigger;
+
+            self.outputs.sample.set(ch, state.held_value);
         }
-        self.last_trigger = trigger;
-
-        self.outputs.sample = self.held_value;
     }
 }
 
