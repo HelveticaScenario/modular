@@ -2,6 +2,10 @@ use std::collections::HashMap;
 
 use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
 
+// Macro for generating MI engine wrappers
+#[macro_use]
+pub mod macros;
+
 // mi-plaits-dsp-rs engine wrappers
 pub mod additive_oscillator;
 pub mod bass_drum_oscillator;

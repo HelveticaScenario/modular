@@ -950,6 +950,7 @@ dependencies = [
  "napi-derive",
  "num",
  "parking_lot",
+ "paste",
  "pest",
  "pest_derive",
  "regex",
@@ -1334,6 +1335,12 @@ checksum = "905787a434a2c721408e7c9a252e85f3d93ca0f118a5283022636c0e05a7ea49"
 dependencies = [
  "nom",
 ]
+
+[[package]]
+name = "paste"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pest"
