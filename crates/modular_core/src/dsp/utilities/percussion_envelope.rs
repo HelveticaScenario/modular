@@ -11,12 +11,11 @@ struct PercussionEnvelopeParams {
     trigger: PolySignal,
     /// decay time in seconds
     decay: PolySignal,
-    range: (PolySignal, PolySignal),
 }
 
 #[derive(Outputs, JsonSchema)]
 struct PercussionEnvelopeOutputs {
-    #[output("output", "envelope output")]
+    #[output("output", "envelope output", range = (0.0, 1.0))]
     sample: PolyOutput,
 }
 
@@ -88,13 +87,7 @@ impl PercussionEnvelope {
                 state.current_level = 0.0;
             }
 
-            // Output 0-5V
-            let min = self.params.range.0.get_value_or(ch, 0.0);
-            let max = self.params.range.1.get_value_or(ch, 5.0);
-            output.set(
-                ch,
-                crate::dsp::utils::map_range(state.current_level, 0.0, 1.0, min, max),
-            );
+            output.set(ch, state.current_level);
         }
 
         self.outputs.sample = output;

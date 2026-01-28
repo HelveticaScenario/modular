@@ -16,14 +16,11 @@ struct SawOscillatorParams {
     shape: PolySignal,
     /// the phase of the oscillator, overrides freq if present
     phase: PolySignal,
-    /// @param min - minimum output value
-    /// @param max - maximum output value
-    range: (PolySignal, PolySignal),
 }
 
 #[derive(Outputs, JsonSchema)]
 struct SawOscillatorOutputs {
-    #[output("output", "signal output")]
+    #[output("output", "signal output", range = (-1.0, 1.0))]
     sample: PolyOutput,
 }
 
@@ -119,12 +116,7 @@ impl SawOscillator {
                 let ramp = generate_ramp(current_phase, phase_increment);
                 triangle + (ramp - triangle) * blend
             };
-            let min = self.params.range.0.get_value_or(ch, -5.0);
-            let max = self.params.range.1.get_value_or(ch, 5.0);
-            let range_scale = (max - min) * 0.5;
-            let range_offset = (max + min) * 0.5;
-            // Optimized map_range: output = raw * scale + offset
-            output.set(ch, raw_output * range_scale + range_offset);
+            output.set(ch, raw_output);
         }
 
         self.outputs.sample = output;

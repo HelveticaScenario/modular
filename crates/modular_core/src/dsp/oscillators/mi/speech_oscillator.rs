@@ -18,14 +18,13 @@ struct SpeechOscillatorParams {
     morph: Signal,
     harmonics: Signal,
     sync: Signal,
-    range: (Signal, Signal),
 }
 
 #[derive(Outputs, JsonSchema)]
 struct SpeechOscillatorOutputs {
-    #[output("output", "signal output")]
+    #[output("output", "signal output", range = (-2.0, 2.0))]
     sample: f32,
-    #[output("aux", "auxiliary output")]
+    #[output("aux", "auxiliary output", range = (-2.0, 2.0))]
     aux: f32,
 }
 
@@ -62,12 +61,8 @@ impl<'a> SpeechOscillator<'a> {
             self.render_block(sample_rate);
             self.buffer_pos = 0;
         }
-        let min = self.params.range.0.get_value_or(-5.0);
-        let max = self.params.range.1.get_value_or(5.0);
-        self.outputs.sample =
-            crate::dsp::utils::map_range(self.buffer_out[self.buffer_pos], -2.0, 2.0, min, max);
-        self.outputs.aux =
-            crate::dsp::utils::map_range(self.buffer_aux[self.buffer_pos], -2.0, 2.0, min, max);
+        self.outputs.sample = self.buffer_out[self.buffer_pos];
+        self.outputs.aux = self.buffer_aux[self.buffer_pos];
         self.buffer_pos += 1;
     }
 

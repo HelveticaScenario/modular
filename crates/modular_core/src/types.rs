@@ -773,7 +773,7 @@ pub struct SignalParamSchema {
     pub description: String,
 }
 
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[napi(object)]
 pub struct OutputSchema {
@@ -782,6 +782,12 @@ pub struct OutputSchema {
     /// Whether this output is polyphonic (PolyOutput) or monophonic (f32/f64)
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub polyphonic: bool,
+    /// The minimum value of the raw output range (before any remapping)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_value: Option<f64>,
+    /// The maximum value of the raw output range (before any remapping)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_value: Option<f64>,
 }
 
 pub trait OutputStruct: Default + Send + Sync + 'static {

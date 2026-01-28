@@ -10,6 +10,7 @@ pub mod logic;
 pub mod math;
 pub mod percussion_envelope;
 pub mod quantizer;
+pub mod remap;
 pub mod sample_and_hold;
 pub mod scale;
 
@@ -25,6 +26,7 @@ pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     logic::RisingEdgeDetector::install_constructor(map);
     logic::FallingEdgeDetector::install_constructor(map);
     math::Math::install_constructor(map);
+    remap::Remap::install_constructor(map);
     sample_and_hold::SampleAndHold::install_constructor(map);
     sample_and_hold::TrackAndHold::install_constructor(map);
     percussion_envelope::PercussionEnvelope::install_constructor(map);
@@ -39,6 +41,7 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     logic::RisingEdgeDetector::install_params_validator(map);
     logic::FallingEdgeDetector::install_params_validator(map);
     math::Math::install_params_validator(map);
+    remap::Remap::install_params_validator(map);
     sample_and_hold::SampleAndHold::install_params_validator(map);
     sample_and_hold::TrackAndHold::install_params_validator(map);
     percussion_envelope::PercussionEnvelope::install_params_validator(map);
@@ -54,6 +57,7 @@ pub fn schemas() -> Vec<ModuleSchema> {
         logic::RisingEdgeDetector::get_schema(),
         logic::FallingEdgeDetector::get_schema(),
         math::Math::get_schema(),
+        remap::Remap::get_schema(),
         sample_and_hold::SampleAndHold::get_schema(),
         sample_and_hold::TrackAndHold::get_schema(),
         percussion_envelope::PercussionEnvelope::get_schema(),

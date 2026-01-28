@@ -20,16 +20,13 @@ struct SineOscillatorParams {
     phase: PolySignal,
     /// sync input (expects >0V to trigger)
     sync: PolySignal,
-    /// @param min - minimum output value
-    /// @param max - maximum output value
-    range: (PolySignal, PolySignal),
 }
 
 #[derive(Outputs, JsonSchema)]
 struct SineOscillatorOutputs {
-    #[output("output", "signal output")]
+    #[output("output", "signal output", range = (-1.0, 1.0))]
     sample: PolyOutput,
-    #[output("phaseOut", "current phase output")]
+    #[output("phaseOut", "current phase output", range = (0.0, 1.0))]
     phase_out: PolyOutput,
 }
 
@@ -70,14 +67,12 @@ impl SineOscillator {
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
-            let min = self.params.range.0.get_value_or(ch, -5.0);
-            let max = self.params.range.1.get_value_or(ch, 5.0);
 
             if !self.params.phase.is_disconnected() {
                 // Phase override mode - read phase directly with cycling
                 state.phase = wrap(0.0..1.0, self.params.phase.get_value(ch));
                 let sine = interpolate(LUT_SINE, state.phase, LUT_SINE_SIZE);
-                output.set(ch, crate::dsp::utils::map_range(sine, -1.0, 1.0, min, max));
+                output.set(ch, sine);
             } else {
                 // Frequency mode - get freq for this channel with cycling
                 let freq_val = self.params.freq.get_value_or(ch, 4.0).clamp(-10.0, 10.0);
@@ -88,7 +83,7 @@ impl SineOscillator {
                     state.phase -= 1.0;
                 }
                 let sine = interpolate(LUT_SINE, state.phase, LUT_SINE_SIZE);
-                output.set(ch, crate::dsp::utils::map_range(sine, -1.0, 1.0, min, max));
+                output.set(ch, sine);
             }
 
             phase_out.set(ch, state.phase);

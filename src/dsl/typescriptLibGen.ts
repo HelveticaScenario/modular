@@ -214,10 +214,16 @@ interface ModuleOutput {
   readonly moduleId: string;
   readonly portName: string;
   readonly channel: number;
-  gain(factor: Signal): ModuleOutput;
-  shift(offset: Signal): ModuleOutput;
+  gain(factor: PolySignal): ModuleOutput;
+  shift(offset: PolySignal): ModuleOutput;
   scope(msPerFrame?: number, triggerThreshold?: number): this;
   out(mode?: 'm'): this;
+}
+
+interface ModuleOutputWithRange extends ModuleOutput {
+  readonly minValue: number;
+  readonly maxValue: number;
+  range(outMin: PolySignal, outMax: PolySignal): ModuleOutput;
 }
 
 // Helper functions exposed by the DSL runtime
@@ -226,10 +232,11 @@ declare function note(noteName: string): number;
 declare function bpm(beatsPerMinute: number): number;
 
 interface Array<T> {
-    gain(this: T extends ModuleOutput ? T[] : never, factor: Signal): ModuleOutput[];
-    offset(this: T extends ModuleOutput ? T[] : never, offset: Signal): ModuleOutput[];
+    gain(this: T extends ModuleOutput ? T[] : never, factor: PolySignal): ModuleOutput[];
+    offset(this: T extends ModuleOutput ? T[] : never, offset: PolySignal): ModuleOutput[];
     out(this: T extends ModuleOutput ? T[] : never, mode?: 'm'): T[];
     scope(this: T extends ModuleOutput ? T[] : never, msPerFrame?: number, triggerThreshold?: number): T[];
+    range(this: T extends ModuleOutputWithRange ? T[] : never, outMin: PolySignal, outMax: PolySignal): ModuleOutput[];
 }
 `;
 
@@ -598,13 +605,18 @@ function getFactoryReturnType(moduleSchema: ModuleSchema): string {
     if (outputs.length === 0) {
         return 'void';
     } else if (outputs.length === 1) {
-        const output = outputs[0];
-        return output.polyphonic ? 'ModuleOutput[]' : 'ModuleOutput';
+        const output = outputs[0] as { polyphonic?: boolean; minValue?: number; maxValue?: number };
+        const hasRange = output.minValue !== undefined && output.maxValue !== undefined;
+        const baseType = hasRange ? 'ModuleOutputWithRange' : 'ModuleOutput';
+        return output.polyphonic ? `${baseType}[]` : baseType;
     } else {
         // Multiple outputs - generate object type
         const props = outputs.map(o => {
             const camelName = toCamelCase(o.name);
-            const type = o.polyphonic ? 'ModuleOutput[]' : 'ModuleOutput';
+            const outputWithMeta = o as { polyphonic?: boolean; minValue?: number; maxValue?: number };
+            const hasRange = outputWithMeta.minValue !== undefined && outputWithMeta.maxValue !== undefined;
+            const baseType = hasRange ? 'ModuleOutputWithRange' : 'ModuleOutput';
+            const type = outputWithMeta.polyphonic ? `${baseType}[]` : baseType;
             return `${camelName}: ${type}`;
         });
         return `{ ${props.join('; ')} }`;

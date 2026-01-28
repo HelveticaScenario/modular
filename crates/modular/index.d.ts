@@ -93,6 +93,10 @@ export interface OutputSchema {
   description: string
   /** Whether this output is polyphonic (PolyOutput) or monophonic (f32/f64) */
   polyphonic: boolean
+  /** The minimum value of the raw output range (before any remapping) */
+  minValue?: number
+  /** The maximum value of the raw output range (before any remapping) */
+  maxValue?: number
 }
 
 export interface PatchGraph {

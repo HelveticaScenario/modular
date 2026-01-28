@@ -138,6 +138,7 @@ pub fn message_handlers(input: TokenStream) -> TokenStream {
 struct OutputAttr {
     name: LitStr,
     description: Option<LitStr>,
+    range: Option<(f64, f64)>,
 }
 
 #[proc_macro_derive(Outputs, attributes(output))]
@@ -358,6 +359,7 @@ fn unwrap_name_description(
 /// Parse output attribute tokens into OutputAttr
 /// Supports:
 /// - #[output("name", "description")]
+/// - #[output("name", "description", range = (-1.0, 1.0))]
 fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
     use syn::Result as SynResult;
     use syn::parse::{Parse, ParseStream};
@@ -365,6 +367,7 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
     struct OutputAttrParser {
         name: LitStr,
         description: Option<LitStr>,
+        range: Option<(f64, f64)>,
     }
 
     impl Parse for OutputAttrParser {
@@ -389,9 +392,36 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
             // Parse description string
             let description: LitStr = input.parse()?;
 
+            // Parse optional range attribute
+            let mut range: Option<(f64, f64)> = None;
+            while input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+                
+                if input.is_empty() {
+                    break;
+                }
+
+                let ident: Ident = input.parse()?;
+                if ident == "range" {
+                    input.parse::<Token![=]>()?;
+                    let content;
+                    syn::parenthesized!(content in input);
+                    let min: syn::LitFloat = content.parse()?;
+                    content.parse::<Token![,]>()?;
+                    let max: syn::LitFloat = content.parse()?;
+                    range = Some((min.base10_parse()?, max.base10_parse()?));
+                } else {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        format!("Unknown output attribute '{}'. Expected 'range'", ident),
+                    ));
+                }
+            }
+
             Ok(OutputAttrParser {
                 name,
                 description: Some(description),
+                range,
             })
         }
     }
@@ -401,6 +431,7 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
     OutputAttr {
         name: parsed.name,
         description: parsed.description,
+        range: parsed.range,
     }
 }
 
@@ -427,6 +458,7 @@ struct OutputField {
     output_name: LitStr,
     precision: OutputPrecision,
     description: TokenStream2,
+    range: Option<(f64, f64)>,
 }
 
 fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
@@ -498,6 +530,7 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
                         output_name,
                         precision,
                         description,
+                        range: output_attr.range,
                     });
                 }
                 out
@@ -555,11 +588,21 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
             let output_name = &o.output_name;
             let description = &o.description;
             let is_polyphonic = o.precision == OutputPrecision::PolySignal;
+            let min_value = match o.range {
+                Some((min, _)) => quote! { Some(#min) },
+                None => quote! { None },
+            };
+            let max_value = match o.range {
+                Some((_, max)) => quote! { Some(#max) },
+                None => quote! { None },
+            };
             quote! {
                 crate::types::OutputSchema {
                     name: #output_name.to_string(),
                     description: #description,
                     polyphonic: #is_polyphonic,
+                    min_value: #min_value,
+                    max_value: #max_value,
                 }
             }
         })

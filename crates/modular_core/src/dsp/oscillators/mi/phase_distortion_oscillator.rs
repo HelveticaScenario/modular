@@ -21,14 +21,13 @@ struct PhaseDistortionOscillatorParams {
     morph: Signal,
     harmonics: Signal,
     sync: Signal,
-    range: (Signal, Signal),
 }
 
 #[derive(Outputs, JsonSchema)]
 struct PhaseDistortionOscillatorOutputs {
-    #[output("output", "carrier sync'd (phase distortion)")]
+    #[output("output", "carrier sync'd (phase distortion)", range = (-1.0, 1.0))]
     sample: f32,
-    #[output("aux", "carrier free-running (phase modulation)")]
+    #[output("aux", "carrier free-running (phase modulation)", range = (-1.0, 1.0))]
     aux: f32,
 }
 
@@ -65,12 +64,8 @@ impl PhaseDistortionOscillator {
             self.render_block(sample_rate);
             self.buffer_pos = 0;
         }
-        let min = self.params.range.0.get_value_or(-5.0);
-        let max = self.params.range.1.get_value_or(5.0);
-        self.outputs.sample =
-            crate::dsp::utils::map_range(self.buffer_out[self.buffer_pos], -1.0, 1.0, min, max);
-        self.outputs.aux =
-            crate::dsp::utils::map_range(self.buffer_aux[self.buffer_pos], -1.0, 1.0, min, max);
+        self.outputs.sample = self.buffer_out[self.buffer_pos];
+        self.outputs.aux = self.buffer_aux[self.buffer_pos];
         self.buffer_pos += 1;
     }
 

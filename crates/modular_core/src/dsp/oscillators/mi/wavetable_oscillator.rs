@@ -25,16 +25,13 @@ struct WavetableOscillatorParams {
     harmonics: Signal,
     /// sync input (expects >0V to trigger)
     sync: Signal,
-    /// @param min - minimum output value
-    /// @param max - maximum output value
-    range: (Signal, Signal),
 }
 
 #[derive(Outputs, JsonSchema)]
 struct WavetableOscillatorOutputs {
-    #[output("output", "signal output")]
+    #[output("output", "signal output", range = (-1.0, 1.0))]
     sample: f32,
-    #[output("aux", "low-fi (5-bit) output")]
+    #[output("aux", "low-fi (5-bit) output", range = (-1.0, 1.0))]
     aux: f32,
 }
 
@@ -80,14 +77,8 @@ impl WavetableOscillator {
         }
 
         // Output current sample from buffer
-        let min = self.params.range.0.get_value_or(-5.0);
-        let max = self.params.range.1.get_value_or(5.0);
-
-        let out_sample = self.buffer_out[self.buffer_pos];
-        let aux_sample = self.buffer_aux[self.buffer_pos];
-
-        self.outputs.sample = crate::dsp::utils::map_range(out_sample, -1.0, 1.0, min, max);
-        self.outputs.aux = crate::dsp::utils::map_range(aux_sample, -1.0, 1.0, min, max);
+        self.outputs.sample = self.buffer_out[self.buffer_pos];
+        self.outputs.aux = self.buffer_aux[self.buffer_pos];
 
         self.buffer_pos += 1;
     }

@@ -9,6 +9,15 @@ import { processSchemas } from './paramsSchema';
 
 const PORT_MAX_CHANNELS = 16;
 
+// Extended OutputSchema interface that includes optional range
+interface OutputSchemaWithRange {
+    name: string;
+    description: string;
+    polyphonic?: boolean;
+    minValue?: number;
+    maxValue?: number;
+}
+
 // Extend Array prototype for ModuleOutput arrays
 declare global {
     interface Array<T> {
@@ -16,6 +25,7 @@ declare global {
         offset(this: T extends ModuleOutput ? T[] : never, offset: Value): ModuleOutput[];
         out(this: T extends ModuleOutput ? T[] : never, mode?: 'm'): T[];
         scope(this: T extends ModuleOutput ? T[] : never, msPerFrame?: number, triggerThreshold?: number): T[];
+        range(this: T extends ModuleOutputWithRange ? T[] : never, outMin: Value, outMax: Value): ModuleOutput[];
     }
 }
 
@@ -291,23 +301,41 @@ export class ModuleNode {
     /**
      * Get an output port of this module
      */
-    _output(portName: string, polyphonic: boolean = false): ModuleOutput | ModuleOutput[] {
+    _output(portName: string, polyphonic: boolean = false): ModuleOutput | ModuleOutput[] | ModuleOutputWithRange | ModuleOutputWithRange[] {
         // Verify output exists
         const outputSchema = this.schema.outputs.find(
             (o) => o.name === portName,
-        );
+        ) as OutputSchemaWithRange | undefined;
         if (!outputSchema) {
             throw new Error(
                 `Module ${this.moduleType} does not have output: ${portName}`,
             );
         }
+        
+        // Check if this output has range metadata
+        const hasRange = outputSchema.minValue !== undefined && outputSchema.maxValue !== undefined;
+        
         if (polyphonic) {
-            // Return array of ModuleOutput for each channel (based on derived channel count)
-            const outputs: ModuleOutput[] = [];
+            // Return array of ModuleOutput(WithRange) for each channel (based on derived channel count)
+            const outputs: (ModuleOutput | ModuleOutputWithRange)[] = [];
             for (let i = 0; i < this.channelCount; i++) {
-                outputs.push(new ModuleOutput(this.builder, this.id, portName, i));
+                if (hasRange) {
+                    outputs.push(new ModuleOutputWithRange(
+                        this.builder, this.id, portName, i,
+                        outputSchema.minValue!, outputSchema.maxValue!
+                    ));
+                } else {
+                    outputs.push(new ModuleOutput(this.builder, this.id, portName, i));
+                }
             }
             return outputs;
+        }
+        
+        if (hasRange) {
+            return new ModuleOutputWithRange(
+                this.builder, this.id, portName, 0,
+                outputSchema.minValue!, outputSchema.maxValue!
+            );
         }
         return new ModuleOutput(this.builder, this.id, portName);
     }
@@ -366,6 +394,42 @@ export class ModuleOutput {
     }
 }
 
+/**
+ * ModuleOutputWithRange extends ModuleOutput with known output range metadata.
+ * Provides .range() method to easily remap the output to a new range.
+ */
+export class ModuleOutputWithRange extends ModuleOutput {
+    readonly minValue: number;
+    readonly maxValue: number;
+
+    constructor(
+        builder: GraphBuilder,
+        moduleId: string,
+        portName: string,
+        channel: number = 0,
+        minValue: number,
+        maxValue: number
+    ) {
+        super(builder, moduleId, portName, channel);
+        this.minValue = minValue;
+        this.maxValue = maxValue;
+    }
+
+    /**
+     * Remap this output from its known range to a new range.
+     * Creates a remap module internally.
+     */
+    range(outMin: Value, outMax: Value): ModuleOutput {
+        const remapNode = this.builder.addModule('remap');
+        remapNode._setParam('input', this);
+        remapNode._setParam('inMin', this.minValue);
+        remapNode._setParam('inMax', this.maxValue);
+        remapNode._setParam('outMin', outMin);
+        remapNode._setParam('outMax', outMax);
+        return remapNode._output('output', false) as ModuleOutput;
+    }
+}
+
 // Add Array prototype methods for ModuleOutput arrays
 // These need to be added after ModuleOutput is defined
 Array.prototype.gain = function (this: ModuleOutput[], factor: Value): ModuleOutput[] {
@@ -387,6 +451,30 @@ Array.prototype.out = function (this: ModuleOutput[], mode?: 'm'): ModuleOutput[
         output.out(mode);
     }
     return this;
+};
+
+// Add Array prototype method for range remapping on ModuleOutputWithRange arrays
+Array.prototype.range = function (this: ModuleOutputWithRange[], outMin: Value, outMax: Value): ModuleOutput[] {
+    if (this.length === 0) {
+        return [];
+    }
+    
+    // Create a single remap module with poly inputs
+    const remapNode = this[0].builder.addModule('remap');
+    
+    // Pass the array of outputs to input
+    remapNode._setParam('input', this);
+    
+    // Collect the min/max values from each output's known range
+    const inMins = this.map(o => o.minValue);
+    const inMaxs = this.map(o => o.maxValue);
+    
+    remapNode._setParam('inMin', inMins);
+    remapNode._setParam('inMax', inMaxs);
+    remapNode._setParam('outMin', outMin);
+    remapNode._setParam('outMax', outMax);
+    
+    return remapNode._output('output', true) as ModuleOutput[];
 };
 
 type Replacer = (key: string, value: unknown) => unknown;

@@ -22,16 +22,13 @@ struct AdditiveOscillatorParams {
     harmonics: Signal,
     /// sync input (expects >0V to trigger)
     sync: Signal,
-    /// @param min - minimum output value
-    /// @param max - maximum output value
-    range: (Signal, Signal),
 }
 
 #[derive(Outputs, JsonSchema)]
 struct AdditiveOscillatorOutputs {
-    #[output("output", "signal output")]
+    #[output("output", "signal output", range = (-1.0, 1.0))]
     sample: f32,
-    #[output("aux", "Hammond organ drawbar harmonics")]
+    #[output("aux", "Hammond organ drawbar harmonics", range = (-1.0, 1.0))]
     aux: f32,
 }
 
@@ -74,13 +71,8 @@ impl AdditiveOscillator {
             self.buffer_pos = 0;
         }
 
-        let min = self.params.range.0.get_value_or(-5.0);
-        let max = self.params.range.1.get_value_or(5.0);
-
-        self.outputs.sample =
-            crate::dsp::utils::map_range(self.buffer_out[self.buffer_pos], -1.0, 1.0, min, max);
-        self.outputs.aux =
-            crate::dsp::utils::map_range(self.buffer_aux[self.buffer_pos], -1.0, 1.0, min, max);
+        self.outputs.sample = self.buffer_out[self.buffer_pos];
+        self.outputs.aux = self.buffer_aux[self.buffer_pos];
 
         self.buffer_pos += 1;
     }

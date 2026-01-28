@@ -23,16 +23,13 @@ struct ChordOscillatorParams {
     harmonics: Signal,
     /// sync input (expects >0V to trigger)
     sync: Signal,
-    /// @param min - minimum output value
-    /// @param max - maximum output value
-    range: (Signal, Signal),
 }
 
 #[derive(Outputs, JsonSchema)]
 struct ChordOscillatorOutputs {
-    #[output("output", "signal output")]
+    #[output("output", "signal output", range = (-2.0, 2.0))]
     sample: f32,
-    #[output("aux", "root note of the chord")]
+    #[output("aux", "root note of the chord", range = (-3.0, 3.0))]
     aux: f32,
 }
 
@@ -75,13 +72,8 @@ impl ChordOscillator {
             self.buffer_pos = 0;
         }
 
-        let min = self.params.range.0.get_value_or(-5.0);
-        let max = self.params.range.1.get_value_or(5.0);
-
-        self.outputs.sample =
-            crate::dsp::utils::map_range(self.buffer_out[self.buffer_pos], -2.0, 2.0, min, max);
-        self.outputs.aux =
-            crate::dsp::utils::map_range(self.buffer_aux[self.buffer_pos], -3.0, 3.0, min, max);
+        self.outputs.sample = self.buffer_out[self.buffer_pos];
+        self.outputs.aux = self.buffer_aux[self.buffer_pos];
 
         self.buffer_pos += 1;
     }

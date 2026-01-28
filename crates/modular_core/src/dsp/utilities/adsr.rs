@@ -17,8 +17,6 @@ struct AdsrParams {
     sustain: PolySignal,
     /// release time in seconds
     release: PolySignal,
-
-    range: (PolySignal, PolySignal),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -73,7 +71,7 @@ pub struct Adsr {
 
 #[derive(Outputs, JsonSchema)]
 struct AdsrOutputs {
-    #[output("output", "envelope output")]
+    #[output("output", "envelope output", range = (0.0, 1.0))]
     sample: PolyOutput,
 }
 
@@ -181,12 +179,7 @@ impl Adsr {
                 }
             }
 
-            let min = self.params.range.0.get_value_or(ch, 0.0);
-            let max = self.params.range.1.get_value_or(ch, 5.0);
-            output.set(
-                ch,
-                crate::dsp::utils::map_range(state.current_level, 0.0, 1.0, min, max),
-            );
+            output.set(ch, state.current_level);
         }
 
         self.outputs.sample = output;
