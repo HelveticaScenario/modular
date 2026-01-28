@@ -31,6 +31,17 @@ export interface UpdatePatchResult {
 }
 
 /**
+ * Result from DSL execution in main process
+ */
+export interface DSLExecuteResult {
+    success: boolean;
+    errors?: ApplyPatchError[];
+    appliedPatch?: PatchGraph;
+    moduleIdRemap?: Record<string, string>;
+    errorMessage?: string;
+}
+
+/**
  * File system types
  */
 export interface FileTreeEntry {
@@ -73,6 +84,10 @@ export interface ContextMenuAction {
 export const IPC_CHANNELS = {
     // Schema operations
     GET_SCHEMAS: 'modular:get-schemas',
+
+    // DSL operations
+    DSL_EXECUTE: 'modular:dsl:execute',
+    GET_DSL_LIB_SOURCE: 'modular:dsl:get-lib-source',
 
     // Synthesizer operations
     SYNTH_GET_SAMPLE_RATE: 'modular:synth:get-sample-rate',
@@ -131,6 +146,10 @@ export const MENU_CHANNELS = {
 export interface IPCHandlers {
     // Schema operations
     [IPC_CHANNELS.GET_SCHEMAS]: typeof getSchemas;
+
+    // DSL operations
+    [IPC_CHANNELS.DSL_EXECUTE]: (source: string, sourceId?: string) => DSLExecuteResult;
+    [IPC_CHANNELS.GET_DSL_LIB_SOURCE]: () => string;
 
     // Synthesizer operations
     [IPC_CHANNELS.SYNTH_GET_SAMPLE_RATE]: typeof Synthesizer.prototype.sampleRate;

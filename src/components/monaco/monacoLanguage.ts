@@ -1,9 +1,8 @@
-import type { ModuleSchema } from '@modular/core';
 import type { Monaco } from '../../hooks/useCustomMonaco';
 import { applyDslLibToMonaco } from './monacoHelpers';
 import { findSliderCalls } from './sliderWidgets';
 
-export function setupMonacoJavascript(monaco: Monaco, schemas: ModuleSchema[]) {
+export function setupMonacoJavascript(monaco: Monaco, libSource: string) {
     const ts = monaco.typescript;
     console.log('Monaco TS version:', ts);
     const jsDefaults = ts.javascriptDefaults;
@@ -26,7 +25,7 @@ export function setupMonacoJavascript(monaco: Monaco, schemas: ModuleSchema[]) {
 
     jsDefaults.setEagerModelSync(true);
 
-    const extraLib = applyDslLibToMonaco(monaco, schemas);
+    const extraLib = applyDslLibToMonaco(monaco, libSource);
     const inlayHints = monaco.languages.registerInlayHintsProvider(
         'javascript',
         {

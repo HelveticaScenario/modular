@@ -1,5 +1,5 @@
 
-import { ModuleSchema } from '@modular/core';
+import { ModuleSchema, getPatternPolyphony } from '@modular/core';
 import { GraphBuilder, ModuleNode, ModuleOutput } from './GraphBuilder';
 
 type FactoryFunction = (...args: any[]) => ModuleNode;
@@ -93,6 +93,8 @@ export class DSLContext {
    * Create a module factory function
    */
   private createFactory(schema: ModuleSchema) {
+    const isSeqModule = schema.name === 'seq';
+    
     return (...args: any[]): ModuleNode => {
       // @ts-ignore
       const positionalArgs = schema.positionalArgs || [];
@@ -123,6 +125,20 @@ export class DSLContext {
                       params[key] = config[key];
                   }
               }
+          }
+      }
+      
+      // Auto-set channels for seq module based on pattern polyphony analysis
+      if (isSeqModule && params.channels === undefined && params.pattern !== undefined) {
+          try {
+              const patternStr = String(params.pattern);
+              const polyphony = getPatternPolyphony(patternStr);
+              params.channels = polyphony;
+              console.log(`[seq] Auto-detected polyphony: ${polyphony} for pattern "${patternStr.substring(0, 50)}..."`);
+          } catch (e) {
+              // Fall back to default (4) on error
+              params.channels = 4;
+              console.warn(`[seq] Failed to analyze pattern polyphony, using default 4:`, e);
           }
       }
       

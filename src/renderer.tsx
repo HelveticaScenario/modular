@@ -31,7 +31,6 @@ import './index.css';
 import { StrictMode } from 'react';
 import App from './App';
 import { HelpWindow } from './components/HelpWindow';
-import { SchemasProvider } from './SchemaContext';
 import { ThemeProvider } from './themes/ThemeContext';
 import monaco from 'monaco-editor/esm/vs/editor/editor.main';
 
@@ -48,9 +47,7 @@ const isHelpWindow = window.location.hash === '#help';
 createRoot(root).render(
     <StrictMode>
         <ThemeProvider>
-            <SchemasProvider>
-                {isHelpWindow ? <HelpWindow /> : <App />}
-            </SchemasProvider>
+            {isHelpWindow ? <HelpWindow /> : <App />}
         </ThemeProvider>
     </StrictMode>,
 );

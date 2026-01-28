@@ -46,6 +46,14 @@ export interface AudioThreadHealthSnapshot {
  */
 export declare function getMiniLeafSpans(source: string): Array<Array<number>>
 
+/**
+ * Analyze a mini notation pattern and return the maximum polyphony needed.
+ *
+ * Queries 300 cycles (10 min at 120 BPM) and counts the maximum number of simultaneous haps,
+ * capping at 16 (the poly voice limit). Logs timing for profiling.
+ */
+export declare function getPatternPolyphony(source: string): number
+
 export declare function getSchemas(): Array<ModuleSchema>
 
 /** Detailed validation error for patch validation */

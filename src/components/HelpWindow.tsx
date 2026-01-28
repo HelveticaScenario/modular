@@ -1,5 +1,6 @@
-import React, { useState, useContext, useMemo } from 'react';
-import { SchemasContext } from '../SchemaContext';
+import React, { useState, useMemo, useEffect } from 'react';
+import { ModuleSchema } from '@modular/core';
+import electronAPI from '../electronAPI';
 import './HelpWindow.css';
 
 type Page = 'hotkeys' | 'syntax' | 'math' | 'signals' | 'output' | 'clock' | 'reference';
@@ -7,7 +8,18 @@ type Page = 'hotkeys' | 'syntax' | 'math' | 'signals' | 'output' | 'clock' | 're
 export const HelpWindow: React.FC = () => {
     const [activePage, setActivePage] = useState<Page>('hotkeys');
     const [searchQuery, setSearchQuery] = useState('');
-    const { schemas } = useContext(SchemasContext);
+    const [schemas, setSchemas] = useState<Record<string, ModuleSchema>>({});
+    
+    // Fetch schemas once at mount
+    useEffect(() => {
+        electronAPI.getSchemas().then((schemaList) => {
+            const schemaMap: Record<string, ModuleSchema> = {};
+            for (const s of schemaList) {
+                schemaMap[s.name] = s;
+            }
+            setSchemas(schemaMap);
+        }).catch(console.error);
+    }, []);
 
     const filteredModules = useMemo(() => {
         if (!schemas) return [];

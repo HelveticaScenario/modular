@@ -1,7 +1,7 @@
 // See the Electron documentation for details on how to use preload scripts:
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 import { contextBridge, ipcRenderer } from 'electron/renderer';
-import { IPC_CHANNELS, IPCHandlers, IPCRequest, IPCResponse, Promisify, MENU_CHANNELS, ContextMenuOptions, ContextMenuAction, AppConfig } from './ipcTypes';
+import { IPC_CHANNELS, IPCHandlers, IPCRequest, IPCResponse, Promisify, MENU_CHANNELS, ContextMenuOptions, ContextMenuAction, AppConfig, DSLExecuteResult } from './ipcTypes';
 
 
 
@@ -27,6 +27,11 @@ export interface ElectronAPI {
     // Schema operations
     getSchemas: Promisify<IPCHandlers[typeof IPC_CHANNELS.GET_SCHEMAS]>;
     getMiniLeafSpans: Promisify<IPCHandlers[typeof IPC_CHANNELS.GET_MINI_LEAF_SPANS]>;
+    
+    // DSL operations
+    executeDSL: (source: string, sourceId?: string) => Promise<DSLExecuteResult>;
+    getDslLibSource: () => Promise<string>;
+    
     // Synthesizer operations
     synthesizer: {
         getSampleRate: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_SAMPLE_RATE]>;
@@ -85,6 +90,12 @@ const electronAPI: ElectronAPI = {
         invokeIPC('GET_SCHEMAS', ...args),
     getMiniLeafSpans: (...args) =>
         invokeIPC('GET_MINI_LEAF_SPANS', ...args),
+
+    // DSL operations
+    executeDSL: (source, sourceId) =>
+        invokeIPC('DSL_EXECUTE', source, sourceId),
+    getDslLibSource: () =>
+        invokeIPC('GET_DSL_LIB_SOURCE'),
 
     // Window operations
     openHelpWindow: () => invokeIPC('OPEN_HELP_WINDOW'),

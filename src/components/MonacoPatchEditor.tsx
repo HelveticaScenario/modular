@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { editor } from 'monaco-editor';
 import { useTheme } from '../themes/ThemeContext';
-import { useSchemas } from '../SchemaContext';
 import { findScopeCallEndLines } from '../utils/findScopeCallEndLines';
 import { useCustomMonaco } from '../hooks/useCustomMonaco';
 import { configSchema } from '../configSchema';
@@ -21,6 +20,7 @@ import {
     buildSequenceTracking,
     startActiveStepPolling,
 } from './monaco/sequenceTracking';
+import electronAPI from '../electronAPI';
 
 export interface PatchEditorProps {
     value: string;
@@ -45,10 +45,11 @@ export function MonacoPatchEditor({
     lastSubmittedCode,
     runningBufferId,
 }: PatchEditorProps) {
-    const { schemas: contextSchemasMap } = useSchemas();
-    const schemas = useMemo(() => {
-        return Object.values(contextSchemasMap);
-    }, [contextSchemasMap]);
+    // Fetch DSL lib source once at mount for Monaco autocomplete
+    const [libSource, setLibSource] = useState<string | null>(null);
+    useEffect(() => {
+        electronAPI.getDslLibSource().then(setLibSource).catch(console.error);
+    }, []);
 
     const monaco = useCustomMonaco();
     const [editor, setEditor] = useState<editor.IStandaloneCodeEditor | null>(
@@ -131,9 +132,9 @@ export function MonacoPatchEditor({
     };
 
     useEffect(() => {
-        if (!monaco) return;
-        return setupMonacoJavascript(monaco, schemas);
-    }, [monaco, schemas]);
+        if (!monaco || !libSource) return;
+        return setupMonacoJavascript(monaco, libSource);
+    }, [monaco, libSource]);
 
     useEffect(() => {
         if (!monaco) return;

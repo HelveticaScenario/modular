@@ -132,7 +132,7 @@ export class GraphBuilder {
             // Connect the sum output to the root signal's source
             rootSignal._setParam('source', sumModule);
         }
-        console.log('modules', new Map(this.modules.entries()));
+        // console.log('modules', new Map(this.modules.entries()));
         const ret = {
             modules: Array.from(this.modules.values()).map((m) => ({
                 ...m,

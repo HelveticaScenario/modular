@@ -9,14 +9,14 @@ export function executePatchScript(
     schemas: ModuleSchema[],
 ): PatchGraph {
     // Create DSL context
-    console.log('Executing DSL script with schemas:', schemas);
+    // console.log('Executing DSL script with schemas:', schemas);
     const context = new DSLContext(schemas);
 
     // Create default clock module that runs at 120 BPM
     const rootClock = (context.namespaceTree.clock as any)(bpm(120), {
         id: 'root_clock',
     });
-    console.log('Created clock module:', rootClock);
+    // console.log('Created clock module:', rootClock);
 
     // Create the execution environment with all DSL functions
     const dslGlobals = {
@@ -29,7 +29,7 @@ export function executePatchScript(
         rootClock,
     };
 
-    console.log(dslGlobals);
+    // console.log(dslGlobals);
 
     // Build the function body
     const functionBody = `
@@ -48,7 +48,7 @@ export function executePatchScript(
 
         // Build and return the patch
         const patch = context.getBuilder().toPatch();
-        console.log(patch);
+        // console.log(patch);
         return patch;
     } catch (error) {
         if (error instanceof Error) {

@@ -19,8 +19,11 @@ import {
     FileTreeEntry,
     MENU_CHANNELS,
     ContextMenuOptions,
+    DSLExecuteResult,
 } from './ipcTypes';
 import { reconcilePatchBySimilarity } from './patchSimilarityRemap';
+import { executePatchScript } from './dsl/executor';
+import { buildLibSource } from './dsl/typescriptLibGen';
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
@@ -276,6 +279,99 @@ function registerIPCHandler<T extends keyof typeof IPC_CHANNELS>(
 // Register all IPC handlers
 registerIPCHandler('GET_SCHEMAS', () => {
     return getSchemas();
+});
+
+// DSL lib source for Monaco autocomplete - cached since schemas don't change at runtime
+let cachedLibSource: string | null = null;
+registerIPCHandler('GET_DSL_LIB_SOURCE', () => {
+    if (!cachedLibSource) {
+        cachedLibSource = buildLibSource(getSchemas());
+    }
+    return cachedLibSource;
+});
+
+// DSL execution in main process with direct N-API access
+registerIPCHandler('DSL_EXECUTE', (source, sourceId): DSLExecuteResult => {
+    try {
+        const schemas = getSchemas();
+        const patch = executePatchScript(source, schemas);
+        patch.moduleIdRemaps = [];
+
+        // Requirement: assume a full change when a different file/buffer is evaluated.
+        const shouldReconcile = !!sourceId && lastAppliedSourceId === sourceId;
+
+        if (DEBUG_LOG) {
+            if (!sourceId) {
+                console.log('[patch-remap] no sourceId; reconciliation disabled');
+            } else if (!shouldReconcile) {
+                console.log(
+                    `[patch-remap] source changed (${lastAppliedSourceId ?? 'none'} -> ${sourceId}); reconciliation disabled`,
+                );
+            } else {
+                console.log(`[patch-remap] reconciling for sourceId=${sourceId}`);
+            }
+        }
+
+        const { moduleIdRemap } = reconcilePatchBySimilarity(
+            patch,
+            shouldReconcile ? lastAppliedPatchGraph : null,
+            {
+                matchThreshold: PATCH_REMAP_THRESHOLD,
+                ambiguityMargin: PATCH_REMAP_MARGIN,
+                debugLog: DEBUG_LOG ? (message) => console.log(message) : undefined,
+            },
+        );
+
+        if (DEBUG_LOG) {
+            const remapCount = Object.keys(moduleIdRemap).length;
+            const thresholdInfo =
+                PATCH_REMAP_THRESHOLD !== undefined
+                    ? PATCH_REMAP_THRESHOLD.toFixed(4)
+                    : 'default';
+            const marginInfo =
+                PATCH_REMAP_MARGIN !== undefined
+                    ? PATCH_REMAP_MARGIN.toFixed(4)
+                    : 'default';
+            console.log(
+                `[patch-remap] summary shouldReconcile=${shouldReconcile} remaps=${remapCount} threshold=${thresholdInfo} margin=${marginInfo}`,
+            );
+        }
+
+        // Send remap hints along with the desired patch
+        patch.moduleIdRemaps = Object.entries(moduleIdRemap).map(([from, to]) => ({
+            from,
+            to,
+        }));
+
+        const errors = synth.updatePatch(patch);
+
+        if (errors.length === 0) {
+            lastAppliedPatchGraph = patch;
+            lastAppliedSourceId = sourceId ?? null;
+        }
+
+        if (errors.length > 0) {
+            return {
+                success: false,
+                errors,
+                appliedPatch: patch,
+                moduleIdRemap,
+            };
+        }
+
+        return {
+            success: true,
+            errors: [],
+            appliedPatch: patch,
+            moduleIdRemap,
+        };
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return {
+            success: false,
+            errorMessage,
+        };
+    }
 });
 
 registerIPCHandler('SYNTH_GET_SAMPLE_RATE', () => {

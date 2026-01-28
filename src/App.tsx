@@ -2,15 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { MonacoPatchEditor as PatchEditor } from './components/MonacoPatchEditor';
 import { AudioControls } from './components/AudioControls';
 import { ErrorDisplay } from './components/ErrorDisplay';
-import { executePatchScript } from './dsl';
-import { useSchemas } from './SchemaContext';
 import './App.css';
 import type { editor } from 'monaco-editor';
 import { findScopeCallEndLines } from './utils/findScopeCallEndLines';
 import { getErrorMessage } from './utils/errorUtils';
 import { FileExplorer } from './components/FileExplorer';
 import electronAPI from './electronAPI';
-import { ModuleSchema, ValidationError } from '@modular/core';
+import { ValidationError } from '@modular/core';
 import type { FileTreeEntry } from './ipcTypes';
 import type { EditorBuffer, ScopeView } from './types/editor';
 import { getBufferId } from './app/buffers';
@@ -60,7 +58,6 @@ function App() {
         ValidationError[] | null
     >(null);
 
-    const { schemas: schemasMap } = useSchemas();
     const [scopeViews, setScopeViews] = useState<ScopeView[]>([]);
     const [runningBufferId, setRunningBufferId] = useState<string | null>(null);
 
@@ -235,11 +232,6 @@ function App() {
         scopeCanvasMapRef.current.delete(key);
     }, []);
 
-    const schemaRef = useRef<ModuleSchema[]>([]);
-    useEffect(() => {
-        schemaRef.current = Object.values(schemasMap);
-    }, [schemasMap]);
-
     const patchCodeRef = useRef<string>(patchCode);
     useEffect(() => {
         patchCodeRef.current = patchCode;
@@ -312,23 +304,28 @@ function App() {
         handleSubmitRef.current = async () => {
             if (!activeBufferId) return;
             try {
-                const schemasValue = schemaRef.current;
                 const patchCodeValue = patchCodeRef.current;
-                const patch = executePatchScript(patchCodeValue, schemasValue);
-                patch.moduleIdRemaps = [];
-                const { errors, appliedPatch } =
-                    await electronAPI.synthesizer.updatePatch(
-                        patch,
-                        activeBufferId,
-                    );
-                if (errors.length > 0) {
-                    setValidationErrors(errors.flatMap((e) => e.errors || []));
-                    setError(
-                        errors.map((e) => e.message).join('\n') ||
-                            'Failed to apply patch.',
-                    );
+                
+                // Execute DSL in main process (has direct N-API access)
+                const result = await electronAPI.executeDSL(
+                    patchCodeValue,
+                    activeBufferId,
+                );
+                
+                if (!result.success) {
+                    if (result.errorMessage) {
+                        setError(result.errorMessage);
+                        setValidationErrors(null);
+                    } else if (result.errors && result.errors.length > 0) {
+                        setValidationErrors(result.errors.flatMap((e) => e.errors || []));
+                        setError(
+                            result.errors.map((e) => e.message).join('\n') ||
+                                'Failed to apply patch.',
+                        );
+                    }
                     return;
                 }
+                
                 setIsClockRunning(true);
                 setRunningBufferId(activeBufferId);
                 setLastSubmittedCode(patchCodeValue);
@@ -337,8 +334,8 @@ function App() {
 
                 const scopeCalls = findScopeCallEndLines(patchCodeValue);
                 console.log('Found scope calls:', scopeCalls);
-                console.log('Patch scopes:', patch.scopes);
-                const views: ScopeView[] = patch.scopes
+                console.log('Patch scopes:', result.appliedPatch?.scopes);
+                const views: ScopeView[] = (result.appliedPatch?.scopes || [])
                     .map((scope, idx) => {
                         const call = scopeCalls[idx];
                         if (!call) return null;
