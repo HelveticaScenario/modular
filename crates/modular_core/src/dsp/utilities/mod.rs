@@ -9,10 +9,13 @@ pub mod lag;
 pub mod logic;
 pub mod math;
 pub mod percussion_envelope;
+pub mod quantizer;
 pub mod sample_and_hold;
+pub mod scale;
 
 // Re-export useful types
 pub use crate::dsp::utils::SchmittTrigger;
+pub use scale::{FixedRoot, ScaleSnapper, KNOWN_SCALE_TYPES, validate_scale_type};
 
 pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     adsr::Adsr::install_constructor(map);
@@ -25,6 +28,7 @@ pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     sample_and_hold::SampleAndHold::install_constructor(map);
     sample_and_hold::TrackAndHold::install_constructor(map);
     percussion_envelope::PercussionEnvelope::install_constructor(map);
+    quantizer::Quantizer::install_constructor(map);
 }
 
 pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
@@ -38,6 +42,7 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     sample_and_hold::SampleAndHold::install_params_validator(map);
     sample_and_hold::TrackAndHold::install_params_validator(map);
     percussion_envelope::PercussionEnvelope::install_params_validator(map);
+    quantizer::Quantizer::install_params_validator(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {
@@ -52,5 +57,6 @@ pub fn schemas() -> Vec<ModuleSchema> {
         sample_and_hold::SampleAndHold::get_schema(),
         sample_and_hold::TrackAndHold::get_schema(),
         percussion_envelope::PercussionEnvelope::get_schema(),
+        quantizer::Quantizer::get_schema(),
     ]
 }

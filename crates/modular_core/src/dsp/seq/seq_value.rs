@@ -1,8 +1,7 @@
 //! SeqValue enum and SeqPatternParam for the new pattern-based sequencer.
 //!
 //! SeqValue represents the different value types that can appear in a sequence:
-//! - MIDI note numbers (f64 for cents precision)
-//! - Musical notes (letter + accidental + optional octave)
+//! - Voltage values (V/Oct, pre-converted at parse time)
 //! - Signals from other modules (with optional sample-and-hold)
 //! - Rests
 
@@ -19,28 +18,17 @@ use crate::{
     Patch,
 };
 
-use super::seq_operators::CachedOperator;
-
 /// A value in a sequence pattern.
 ///
 /// Represents the different types of values that can be sequenced:
-/// - MIDI notes (with cents precision via f64)
-/// - Musical notes parsed from notation like "c4" or "bb"
+/// - Voltage (V/Oct, pre-converted from MIDI/note at parse time)
 /// - Signals from other modules, optionally sample-and-held
 /// - Rests (silence/no output)
 #[derive(Clone, Debug)]
 pub enum SeqValue {
-    /// MIDI note number (supports fractional for cents: 60.5 = C4 + 50 cents)
-    Midi(f64),
-
-    /// Musical note with optional octave (defaults to 4 if not specified)
-    Note {
-        letter: char,
-        /// Accidental: '#' for sharp, 'b' for flat
-        accidental: Option<char>,
-        /// Octave number. If None, defaults to 4 during conversion.
-        octave: Option<i32>,
-    },
+    /// Pre-converted V/Oct voltage value.
+    /// This replaces both Midi and Note variants - conversion happens at parse time.
+    Voltage(f64),
 
     /// Signal from another module, with optional sample-and-hold.
     /// When `sample_and_hold` is true, the signal is sampled once at hap onset.
@@ -58,46 +46,14 @@ pub enum SeqValue {
 }
 
 impl SeqValue {
-    /// Convert this value to a MIDI note number.
+    /// Get the voltage (V/Oct) value.
     /// Returns None for Rest and Signal variants.
-    pub fn to_midi(&self) -> Option<f64> {
+    pub fn to_voltage(&self) -> Option<f64> {
         match self {
-            SeqValue::Midi(m) => Some(*m),
-            SeqValue::Note {
-                letter,
-                accidental,
-                octave,
-            } => {
-                let base = match letter.to_ascii_lowercase() {
-                    'c' => 0,
-                    'd' => 2,
-                    'e' => 4,
-                    'f' => 5,
-                    'g' => 7,
-                    'a' => 9,
-                    'b' => 11,
-                    _ => return None,
-                };
-
-                let acc_offset = match accidental {
-                    Some('#') => 1,
-                    Some('b') => -1,
-                    _ => 0,
-                };
-
-                // Default octave to 4 if not specified
-                let oct = octave.unwrap_or(4);
-                Some(((oct + 1) * 12 + base + acc_offset) as f64)
-            }
+            SeqValue::Voltage(v) => Some(*v),
             SeqValue::Signal { .. } => None,
             SeqValue::Rest => None,
         }
-    }
-
-    /// Convert this value to V/Oct.
-    /// Returns None for Rest and Signal variants.
-    pub fn to_voct(&self) -> Option<f64> {
-        self.to_midi().map(midi_to_voct_f64)
     }
 
     /// Check if this is a rest value.
@@ -114,62 +70,69 @@ impl SeqValue {
     pub fn is_sample_and_hold(&self) -> bool {
         matches!(self, SeqValue::Signal { sample_and_hold: true, .. })
     }
+}
 
-    /// Apply MIDI offset (for add operator on static values).
-    pub fn add_midi(&self, offset: f64) -> SeqValue {
-        match self {
-            SeqValue::Midi(m) => SeqValue::Midi(m + offset),
-            SeqValue::Note { .. } => {
-                if let Some(midi) = self.to_midi() {
-                    SeqValue::Midi(midi + offset)
-                } else {
-                    self.clone()
-                }
-            }
-            _ => self.clone(),
-        }
-    }
+/// Convert a note letter, accidental, and octave to MIDI note number.
+fn note_to_midi(letter: char, accidental: Option<char>, octave: Option<i32>) -> Option<f64> {
+    let base = match letter.to_ascii_lowercase() {
+        'c' => 0,
+        'd' => 2,
+        'e' => 4,
+        'f' => 5,
+        'g' => 7,
+        'a' => 9,
+        'b' => 11,
+        _ => return None,
+    };
 
-    /// Apply MIDI multiplication (for mul operator on static values).
-    pub fn mul_midi(&self, factor: f64) -> SeqValue {
-        match self {
-            SeqValue::Midi(m) => SeqValue::Midi(m * factor),
-            SeqValue::Note { .. } => {
-                if let Some(midi) = self.to_midi() {
-                    SeqValue::Midi(midi * factor)
-                } else {
-                    self.clone()
-                }
-            }
-            _ => self.clone(),
-        }
-    }
+    let acc_offset = match accidental {
+        Some('#') => 1,
+        Some('b') => -1,
+        _ => 0,
+    };
+
+    // Default octave to 4 if not specified
+    let oct = octave.unwrap_or(4);
+    Some(((oct + 1) * 12 + base + acc_offset) as f64)
 }
 
 impl FromMiniAtom for SeqValue {
     fn from_atom(atom: &AtomValue) -> Result<Self, ConvertError> {
         match atom {
-            AtomValue::Number(n) => Ok(SeqValue::Midi(*n)),
-            AtomValue::Midi(m) => Ok(SeqValue::Midi(*m as f64)),
+            AtomValue::Number(n) => {
+                // Treat number as MIDI note, convert to voltage at parse time
+                Ok(SeqValue::Voltage(midi_to_voct_f64(*n)))
+            }
+            AtomValue::Midi(m) => {
+                // Convert MIDI to voltage at parse time
+                Ok(SeqValue::Voltage(midi_to_voct_f64(*m as f64)))
+            }
             AtomValue::Hz(hz) => {
-                // Convert Hz to MIDI: MIDI = 12 * log2(f / 440) + 69
+                // Convert Hz to MIDI then to voltage
                 let midi = 12.0 * (hz / 440.0).log2() + 69.0;
-                Ok(SeqValue::Midi(midi))
+                Ok(SeqValue::Voltage(midi_to_voct_f64(midi)))
             }
             AtomValue::Volts(v) => {
-                // Convert V/Oct to MIDI: MIDI = voct * 12 + 33
-                let midi = v * 12.0 + 33.0;
-                Ok(SeqValue::Midi(midi))
+                // Direct voltage value
+                Ok(SeqValue::Voltage(*v))
             }
             AtomValue::Note {
                 letter,
                 accidental,
                 octave,
-            } => Ok(SeqValue::Note {
-                letter: *letter,
-                accidental: accidental.clone(),
-                octave: *octave,
-            }),
+            } => {
+                // Convert note to voltage at parse time
+                if let Some(midi) = note_to_midi(*letter, accidental.clone(), *octave) {
+                    Ok(SeqValue::Voltage(midi_to_voct_f64(midi)))
+                } else {
+                    Err(ConvertError::InvalidAtom(format!(
+                        "Invalid note: {}{}{}",
+                        letter,
+                        accidental.as_ref().map(|s| s.to_string()).unwrap_or_default(),
+                        octave.map(|o| o.to_string()).unwrap_or_default()
+                    )))
+                }
+            }
             AtomValue::ModuleRef {
                 module_id,
                 port,
@@ -193,11 +156,9 @@ impl FromMiniAtom for SeqValue {
                 if s.len() == 1 {
                     let c = s.chars().next().unwrap().to_ascii_lowercase();
                     if ('a'..='g').contains(&c) {
-                        return Ok(SeqValue::Note {
-                            letter: c,
-                            accidental: None,
-                            octave: None,
-                        });
+                        if let Some(midi) = note_to_midi(c, None, None) {
+                            return Ok(SeqValue::Voltage(midi_to_voct_f64(midi)));
+                        }
                     }
                 }
                 Err(ConvertError::InvalidAtom(format!(
@@ -315,11 +276,6 @@ pub struct SeqPatternParam {
     #[serde(skip, default)]
     #[schemars(skip)]
     pub(crate) signals: Vec<*mut Signal>,
-
-    /// Cached operators to apply at runtime for signal values.
-    #[serde(skip, default)]
-    #[schemars(skip)]
-    pub(crate) operators: Vec<CachedOperator>,
 }
 
 // SAFETY: SeqPatternParam is Send because:
@@ -343,7 +299,6 @@ impl SeqPatternParam {
             source: source.to_string(),
             pattern: Some(pattern),
             signals: Vec::new(),
-            operators: Vec::new(),
         })
     }
 
@@ -388,32 +343,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_seq_value_to_midi() {
-        assert_eq!(SeqValue::Midi(60.0).to_midi(), Some(60.0));
-        assert_eq!(SeqValue::Midi(60.5).to_midi(), Some(60.5));
+    fn test_seq_value_to_voltage() {
+        // C4 = MIDI 60 -> voltage = (60 - 33) / 12 = 2.25
+        let c4_voltage = midi_to_voct_f64(60.0);
+        assert!((SeqValue::Voltage(c4_voltage).to_voltage().unwrap() - c4_voltage).abs() < 0.001);
 
-        let c4 = SeqValue::Note {
-            letter: 'c',
-            accidental: None,
-            octave: Some(4),
-        };
-        assert_eq!(c4.to_midi(), Some(60.0));
+        // C4 + 50 cents = MIDI 60.5 -> voltage = (60.5 - 33) / 12 = 2.2917
+        let c4_50_cents_voltage = midi_to_voct_f64(60.5);
+        assert!((SeqValue::Voltage(c4_50_cents_voltage).to_voltage().unwrap() - c4_50_cents_voltage).abs() < 0.001);
 
-        let c_no_oct = SeqValue::Note {
-            letter: 'c',
-            accidental: None,
-            octave: None,
-        };
-        assert_eq!(c_no_oct.to_midi(), Some(60.0)); // Defaults to octave 4
+        assert_eq!(SeqValue::Rest.to_voltage(), None);
+    }
 
-        let cs4 = SeqValue::Note {
-            letter: 'c',
-            accidental: Some('#'),
-            octave: Some(4),
-        };
-        assert_eq!(cs4.to_midi(), Some(61.0));
-
-        assert_eq!(SeqValue::Rest.to_midi(), None);
+    #[test]
+    fn test_note_to_midi_helper() {
+        // C4 = MIDI 60
+        assert_eq!(note_to_midi('c', None, Some(4)), Some(60.0));
+        // C (default octave 4) = MIDI 60
+        assert_eq!(note_to_midi('c', None, None), Some(60.0));
+        // C#4 = MIDI 61
+        assert_eq!(note_to_midi('c', Some('#'), Some(4)), Some(61.0));
+        // A0 = MIDI 21
+        assert_eq!(note_to_midi('a', None, Some(0)), Some(21.0));
+        // A1 = MIDI 33 (our 0V reference)
+        assert_eq!(note_to_midi('a', None, Some(1)), Some(33.0));
     }
 
     #[test]
@@ -439,23 +392,20 @@ mod tests {
 
     #[test]
     fn test_from_atom() {
+        // Number is treated as MIDI and converted to voltage
         let n = SeqValue::from_atom(&AtomValue::Number(60.0)).unwrap();
-        assert!(matches!(n, SeqValue::Midi(m) if m == 60.0));
+        let expected_voltage = midi_to_voct_f64(60.0);
+        assert!(matches!(n, SeqValue::Voltage(v) if (v - expected_voltage).abs() < 0.001));
 
+        // Note is converted to voltage at parse time
         let note = SeqValue::from_atom(&AtomValue::Note {
             letter: 'a',
             accidental: None,
             octave: Some(4),
         })
         .unwrap();
-        assert!(matches!(
-            note,
-            SeqValue::Note {
-                letter: 'a',
-                octave: Some(4),
-                ..
-            }
-        ));
+        let expected_a4_voltage = midi_to_voct_f64(69.0); // A4 = MIDI 69
+        assert!(matches!(note, SeqValue::Voltage(v) if (v - expected_a4_voltage).abs() < 0.001));
     }
 
     #[test]
@@ -463,7 +413,7 @@ mod tests {
         use crate::pattern_system::mini::parse;
         use crate::pattern_system::Fraction;
 
-        // Parse "a1 a2 a3 a4" and check each note has different octave
+        // Parse "a1 a2 a3 a4" and check each note has different voltage
         let pattern: crate::pattern_system::Pattern<SeqValue> =
             parse("a1 a2 a3 a4").expect("Should parse");
 
@@ -471,16 +421,22 @@ mod tests {
 
         assert_eq!(haps.len(), 4, "Should have 4 haps");
 
-        let midis: Vec<f64> = haps
+        let voltages: Vec<f64> = haps
             .iter()
-            .filter_map(|h| h.value.to_midi())
+            .filter_map(|h| h.value.to_voltage())
             .collect();
 
-        // a1 = 33, a2 = 45, a3 = 57, a4 = 69
-        assert_eq!(midis[0], 33.0, "a1 should be MIDI 33");
-        assert_eq!(midis[1], 45.0, "a2 should be MIDI 45");
-        assert_eq!(midis[2], 57.0, "a3 should be MIDI 57");
-        assert_eq!(midis[3], 69.0, "a4 should be MIDI 69");
+        // a1 = MIDI 33 = 0V, a2 = MIDI 45 = 1V, a3 = MIDI 57 = 2V, a4 = MIDI 69 = 3V
+        let expected = [
+            midi_to_voct_f64(33.0),  // a1
+            midi_to_voct_f64(45.0),  // a2
+            midi_to_voct_f64(57.0),  // a3
+            midi_to_voct_f64(69.0),  // a4
+        ];
+        
+        for (i, (actual, expected)) in voltages.iter().zip(expected.iter()).enumerate() {
+            assert!((actual - expected).abs() < 0.001, "a{} voltage mismatch", i + 1);
+        }
     }
 
     #[test]

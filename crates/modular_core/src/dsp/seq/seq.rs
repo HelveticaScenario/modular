@@ -1,11 +1,9 @@
 //! Seq module - A Strudel/TidalCycles style sequencer using the new pattern system.
 //!
 //! This module sequences pitch values using mini notation patterns with support for:
-//! - MIDI note numbers (with cents precision)
-//! - Musical notes (c4, bb3, etc.) with optional octave (defaults to 4)
+//! - V/Oct voltage values (pre-converted from MIDI/notes at parse time)
 //! - Module signals via `module(id:port:channel)` syntax
 //! - Sample-and-hold signals via `module(id:port:channel)=` suffix
-//! - Scale snapping via the `scale` operator
 //!
 //! The sequencer queries the pattern at the current playhead position and outputs:
 //! - CV: V/Oct pitch (A0 = 0V)
@@ -18,20 +16,18 @@ use serde::Deserialize;
 
 use crate::{
     PolySignal,
-    dsp::utils::{TempGate, TempGateState, midi_to_voct_f64},
+    dsp::utils::{TempGate, TempGateState},
     pattern_system::DspHap,
     poly::{PORT_MAX_CHANNELS, PolyOutput},
 };
 
-use super::seq_operators::CachedOperator;
 use super::seq_value::{SeqPatternParam, SeqValue};
 
-/// Cached hap with pre-sampled values and resolved operators.
+/// Cached hap with pre-sampled values.
 ///
 /// This caches the current hap being played, including:
 /// - The DspHap from the pattern query
-/// - Pre-sampled value for S&H signals
-/// - Resolved operators (with dynamic scale roots evaluated at onset)
+/// - Pre-sampled voltage value for S&H signals
 #[derive(Clone, Debug)]
 struct CachedHap {
     /// The underlying hap with timing and value.
@@ -41,13 +37,9 @@ struct CachedHap {
     /// Used to uniquely identify hap instances for voice assignment.
     hap_index: usize,
 
-    /// Pre-sampled MIDI value for sample-and-hold signals.
+    /// Pre-sampled voltage for sample-and-hold signals.
     /// None for continuous signals (read each tick) or non-signal values.
-    sampled_midi: Option<f64>,
-
-    /// Operators to apply at runtime (for signal values).
-    /// Cloned from the pattern param, with dynamic scale roots resolved.
-    operators: Vec<CachedOperator>,
+    sampled_voltage: Option<f64>,
     
     /// The cycle this hap was cached for.
     cached_cycle: i64,
@@ -55,16 +47,15 @@ struct CachedHap {
 
 impl CachedHap {
     /// Create a new cached hap from a DspHap.
-    fn new(hap: DspHap<SeqValue>, hap_index: usize, cached_cycle: i64, operators: Vec<CachedOperator>) -> Self {
+    fn new(hap: DspHap<SeqValue>, hap_index: usize, cached_cycle: i64) -> Self {
         // Sample S&H signals at creation time
-        let sampled_midi = match &hap.value {
+        let sampled_voltage = match &hap.value {
             SeqValue::Signal {
                 signal,
                 sample_and_hold: true,
             } => {
-                // Sample the signal now and convert to MIDI
-                let voct = signal.get_value() as f64;
-                Some(voct * 12.0 + 33.0) // V/Oct to MIDI
+                // Sample the signal voltage directly
+                Some(signal.get_value() as f64)
             }
             _ => None,
         };
@@ -72,8 +63,7 @@ impl CachedHap {
         Self {
             hap,
             hap_index,
-            sampled_midi,
-            operators,
+            sampled_voltage,
             cached_cycle,
         }
     }
@@ -83,38 +73,25 @@ impl CachedHap {
         playhead >= self.hap.whole_begin && playhead < self.hap.whole_end
     }
 
-    /// Get the CV output for this hap at the given playhead time.
-    /// Applies cached operators to signal values.
-    fn get_cv(&self, playhead: f64) -> Option<f64> {
-        let midi = match &self.hap.value {
-            SeqValue::Midi(m) => Some(*m),
-            SeqValue::Note { .. } => self.hap.value.to_midi(),
+    /// Get the CV output for this hap.
+    /// Returns voltage directly (no MIDI conversion needed).
+    fn get_cv(&self) -> Option<f64> {
+        match &self.hap.value {
+            SeqValue::Voltage(v) => Some(*v),
             SeqValue::Signal {
                 signal,
                 sample_and_hold,
             } => {
                 if *sample_and_hold {
-                    // Use pre-sampled value
-                    self.sampled_midi
+                    // Use pre-sampled voltage
+                    self.sampled_voltage
                 } else {
-                    // Read signal continuously and convert to MIDI
-                    let voct = signal.get_value() as f64;
-                    let mut midi = voct * 12.0 + 33.0;
-
-                    // Apply operators
-                    for op in &self.operators {
-                        midi = op.apply(midi, playhead);
-                    }
-
-                    Some(midi)
+                    // Read signal voltage continuously
+                    Some(signal.get_value() as f64)
                 }
             }
             SeqValue::Rest => None,
-        }?;
-
-        // For non-signal values, operators were already applied at parse time
-        // Convert MIDI to V/Oct
-        Some(midi_to_voct_f64(midi))
+        }
     }
 
     /// Check if this is a rest hap.
@@ -262,14 +239,13 @@ impl Seq {
         }
 
         // Process new onsets
-        let operators = self.params.pattern.operators.clone();
         for (hap_index, hap) in self.cached_haps.iter().enumerate() {
             if !hap.has_onset() || !hap.part_contains(playhead) {
                 continue;
             }
 
             // Convert DspHap to CachedHap for voice assignment
-            let cached = CachedHap::new(hap.clone(), hap_index, current_cycle, operators.clone());
+            let cached = CachedHap::new(hap.clone(), hap_index, current_cycle);
 
             if cached.is_rest() {
                 continue; // Don't allocate voices for rests
@@ -339,7 +315,7 @@ impl Seq {
             let voice = &mut self.voices[ch];
 
             if let Some(ref cached) = voice.cached_hap {
-                if let Some(cv) = cached.get_cv(playhead) {
+                if let Some(cv) = cached.get_cv() {
                     self.outputs.cv.set(ch, cv as f32);
                 }
             }
