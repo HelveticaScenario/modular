@@ -16,7 +16,7 @@ pub mod scale;
 
 // Re-export useful types
 pub use crate::dsp::utils::SchmittTrigger;
-pub use scale::{FixedRoot, ScaleSnapper, KNOWN_SCALE_TYPES, validate_scale_type};
+pub use scale::{FixedRoot, ScaleSnapper, validate_scale_type};
 
 pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     adsr::Adsr::install_constructor(map);

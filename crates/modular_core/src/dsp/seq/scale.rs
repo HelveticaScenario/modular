@@ -6,7 +6,7 @@
 
 // Re-export from utilities for backwards compatibility
 pub use crate::dsp::utilities::scale::{
-    FixedRoot, ScaleSnapper, KNOWN_SCALE_TYPES, validate_scale_type,
+    FixedRoot, ScaleSnapper, validate_scale_type,
 };
 
 use crate::pattern_system::Pattern;

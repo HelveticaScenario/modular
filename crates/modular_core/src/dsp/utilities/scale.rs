@@ -304,34 +304,20 @@ impl ScaleSnapper {
     }
 }
 
-/// Known scale type names for validation.
-pub const KNOWN_SCALE_TYPES: &[&str] = &[
-    "chromatic",
-    "major",
-    "minor",
-    "ionian",
-    "dorian",
-    "phrygian",
-    "lydian",
-    "mixolydian",
-    "aeolian",
-    "locrian",
-    "harmonic minor",
-    "melodic minor",
-    "pentatonic major",
-    "pentatonic minor",
-    "blues",
-    "whole tone",
-    "diminished",
-    "augmented",
-];
-
-/// Validate that a scale type name is known.
+/// Validate that a scale type name is recognized by rust_music_theory.
+///
+/// This uses `Scale::from_regex` to validate the scale name. Supported scales include:
+/// - Diatonic modes: major/ionian, minor/aeolian, dorian, phrygian, lydian, mixolydian, locrian
+/// - Other scales: harmonic minor, melodic minor, pentatonic major/minor, blues, chromatic, whole tone
+/// - Abbreviations: maj, min, pent maj, pent min, har minor, mel minor, wholetone, etc.
 pub fn validate_scale_type(name: &str) -> bool {
-    let normalized = name.to_lowercase();
-    KNOWN_SCALE_TYPES
-        .iter()
-        .any(|&known| known == normalized || known.replace(' ', "") == normalized)
+    // Handle "chromatic" specially since it bypasses Scale::from_regex in ScaleSnapper::new
+    if name.to_lowercase() == "chromatic" {
+        return true;
+    }
+    
+    // Try to parse with a C root - if it works, the scale type is valid
+    Scale::from_regex(&format!("C {}", name)).is_ok()
 }
 
 #[cfg(test)]
@@ -431,12 +417,41 @@ mod tests {
 
     #[test]
     fn test_validate_scale_type() {
+        // Standard scale names
         assert!(validate_scale_type("major"));
         assert!(validate_scale_type("Minor"));
         assert!(validate_scale_type("dorian"));
         assert!(validate_scale_type("harmonic minor"));
         assert!(validate_scale_type("harmonicminor"));
         assert!(validate_scale_type("chromatic"));
+        
+        // Diatonic modes
+        assert!(validate_scale_type("ionian"));
+        assert!(validate_scale_type("phrygian"));
+        assert!(validate_scale_type("lydian"));
+        assert!(validate_scale_type("mixolydian"));
+        assert!(validate_scale_type("aeolian"));
+        assert!(validate_scale_type("locrian"));
+        
+        // Additional scale types
+        assert!(validate_scale_type("melodic minor"));
+        assert!(validate_scale_type("pentatonic major"));
+        assert!(validate_scale_type("pentatonic minor"));
+        assert!(validate_scale_type("blues"));
+        assert!(validate_scale_type("whole tone"));
+        
+        // Abbreviations supported by rust_music_theory
+        assert!(validate_scale_type("maj"));
+        assert!(validate_scale_type("min"));
+        assert!(validate_scale_type("pent maj"));
+        assert!(validate_scale_type("pent min"));
+        assert!(validate_scale_type("har minor"));
+        assert!(validate_scale_type("mel minor"));
+        assert!(validate_scale_type("wholetone"));
+        
+        // Invalid scale types should fail
         assert!(!validate_scale_type("unknown_scale"));
+        assert!(!validate_scale_type("fake_mode"));
+        assert!(!validate_scale_type(""));
     }
 }

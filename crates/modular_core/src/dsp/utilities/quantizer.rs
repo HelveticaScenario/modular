@@ -17,7 +17,7 @@ use crate::{
     Patch,
 };
 
-use super::scale::{FixedRoot, ScaleSnapper, KNOWN_SCALE_TYPES};
+use super::scale::{FixedRoot, ScaleSnapper, validate_scale_type};
 
 /// Scale parameter that parses scale notation.
 ///
@@ -106,10 +106,7 @@ impl ScaleParam {
 
 /// Check if a string is a known scale type name.
 fn is_known_scale_type(name: &str) -> bool {
-    let normalized = name.to_lowercase();
-    KNOWN_SCALE_TYPES
-        .iter()
-        .any(|&known| known == normalized || known.replace(' ', "") == normalized)
+    validate_scale_type(name)
 }
 
 impl schemars::JsonSchema for ScaleParam {
