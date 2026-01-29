@@ -1,6 +1,7 @@
 #![deny(clippy::all)]
 
 mod audio;
+mod midi;
 mod validation;
 
 use chrono::format;
@@ -13,16 +14,30 @@ use napi::Result;
 use napi_derive::napi;
 use parking_lot::Mutex;
 
-use crate::audio::{ApplyPatchError, AudioBudgetSnapshot, AudioState, get_host_by_preference};
-use crate::audio::make_stream;
+use crate::audio::{ApplyPatchError, AudioBudgetSnapshot, AudioDeviceInfo, AudioState, get_host_by_preference};
+use crate::audio::{make_stream, make_input_stream, list_output_devices, list_input_devices, SharedInputBuffer, InputRingBuffer};
+use crate::midi::{MidiInputManager, MidiPortInfo};
+
+/// Information about a MIDI input port (for N-API)
+#[napi(object)]
+pub struct MidiInputInfo {
+    pub name: String,
+    pub index: u32,
+}
 
 #[napi(js_name = "Synthesizer")]
 pub struct Synthesizer {
   state: Arc<AudioState>,
-  _stream: cpal::Stream,
+  _output_stream: cpal::Stream,
+  _input_stream: Option<cpal::Stream>,
+  input_buffer: Option<SharedInputBuffer>,
+  midi_manager: Arc<MidiInputManager>,
   sample_rate: f32,
   channels: u16,
+  input_channels: u16,
   is_recording: bool,
+  output_device_name: Option<String>,
+  input_device_name: Option<String>,
 }
 
 #[napi]
@@ -35,6 +50,7 @@ impl Synthesizer {
     let device = host
       .default_output_device()
       .ok_or_else(|| napi::Error::from_reason(format!("No audio output device found")))?;
+    let output_device_name = device.name().ok();
     let config = device.default_output_config().map_err(|err| {
       napi::Error::from_reason(format!("Failed to get default output config: {}", err))
     })?;
@@ -42,18 +58,18 @@ impl Synthesizer {
     let channels = config.channels();
 
     let state = Arc::new(AudioState::new(
-      Arc::new(Mutex::new(Patch::new(HashMap::new()))),
+      Arc::new(Mutex::new(Patch::new())),
       sample_rate,
       channels,
     ));
 
-    println!("Audio: {} Hz, {} channels", sample_rate, channels);
+    println!("Audio output: {} Hz, {} channels", sample_rate, channels);
 
     let stream = match config.sample_format() {
-      cpal::SampleFormat::I8 => make_stream::<i8>(&device, &config.into(), &state.clone()),
-      cpal::SampleFormat::I16 => make_stream::<i16>(&device, &config.into(), &state.clone()),
-      cpal::SampleFormat::I32 => make_stream::<i32>(&device, &config.into(), &state.clone()),
-      cpal::SampleFormat::F32 => make_stream::<f32>(&device, &config.into(), &state.clone()),
+      cpal::SampleFormat::I8 => make_stream::<i8>(&device, &config.into(), &state.clone(), None),
+      cpal::SampleFormat::I16 => make_stream::<i16>(&device, &config.into(), &state.clone(), None),
+      cpal::SampleFormat::I32 => make_stream::<i32>(&device, &config.into(), &state.clone(), None),
+      cpal::SampleFormat::F32 => make_stream::<f32>(&device, &config.into(), &state.clone(), None),
       _ => Err(napi::Error::from_reason(format!(
         "Unsupported sample format: {:?}",
         config.sample_format()
@@ -65,13 +81,23 @@ impl Synthesizer {
       .play()
       .map_err(|e| napi::Error::from_reason(format!("Failed to start audio stream: {}", e)))?;
 
-    println!("Audio stream started.");
+    println!("Audio output stream started.");
+
+    // Create MIDI manager
+    let midi_manager = Arc::new(MidiInputManager::new());
+
     Ok(Self {
       state,
-      _stream: stream,
+      _output_stream: stream,
+      _input_stream: None,
+      input_buffer: None,
+      midi_manager,
       sample_rate,
       channels,
+      input_channels: 0,
       is_recording: false,
+      output_device_name,
+      input_device_name: None,
     })
   }
 
@@ -93,6 +119,11 @@ impl Synthesizer {
   #[napi]
   pub fn channels(&self) -> u16 {
     self.channels
+  }
+
+  #[napi]
+  pub fn input_channels(&self) -> u16 {
+    self.input_channels
   }
 
   #[napi]
@@ -150,6 +181,214 @@ impl Synthesizer {
   #[napi]
   pub fn get_module_states(&self) -> HashMap<String, serde_json::Value> {
     self.state.get_module_states()
+  }
+
+  // =========================================================================
+  // Audio Device Management
+  // =========================================================================
+
+  /// List all available audio output devices
+  #[napi]
+  pub fn list_audio_output_devices(&self) -> Vec<AudioDeviceInfo> {
+    list_output_devices()
+  }
+
+  /// List all available audio input devices
+  #[napi]
+  pub fn list_audio_input_devices(&self) -> Vec<AudioDeviceInfo> {
+    list_input_devices()
+  }
+
+  /// Get the current output device name
+  #[napi]
+  pub fn get_output_device_name(&self) -> Option<String> {
+    self.output_device_name.clone()
+  }
+
+  /// Get the current input device name
+  #[napi]
+  pub fn get_input_device_name(&self) -> Option<String> {
+    self.input_device_name.clone()
+  }
+
+  /// Set the audio output device by name
+  /// This will stop and recreate the audio stream
+  #[napi]
+  pub fn set_audio_devices(&mut self, input_device_name: String, output_device_name: String) -> Result<()> {
+    Ok(())
+  }
+
+  pub fn set_audio_output_device(&mut self, device_name: String, patch: Arc<Mutex<Patch>>) -> Result<()> {
+    use crate::audio::find_output_device;
+    
+    let host = get_host_by_preference();
+    
+    // Find the device
+    let device = if device_name == "default" {
+      host.default_output_device()
+        .ok_or_else(|| napi::Error::from_reason("No default output device found".to_string()))?
+    } else {
+      host.output_devices()
+        .map_err(|e| napi::Error::from_reason(format!("Failed to enumerate devices: {}", e)))?
+        .find(|d| d.name().ok().as_deref() == Some(&device_name))
+        .ok_or_else(|| napi::Error::from_reason(format!("Device '{}' not found", device_name)))?
+    };
+
+    let config = device.default_output_config()
+      .map_err(|e| napi::Error::from_reason(format!("Failed to get device config: {}", e)))?;
+    
+    let new_sample_rate = config.sample_rate() as f32;
+    let new_channels = config.channels();
+
+
+    // Create new state with updated config
+    let new_state = Arc::new(AudioState::new(
+      patch,
+      new_sample_rate,
+      new_channels,
+    ));
+
+    // Create new stream
+    let stream = match config.sample_format() {
+      cpal::SampleFormat::I8 => make_stream::<i8>(&device, &config.into(), &new_state, self.input_buffer.clone()),
+      cpal::SampleFormat::I16 => make_stream::<i16>(&device, &config.into(), &new_state, self.input_buffer.clone()),
+      cpal::SampleFormat::I32 => make_stream::<i32>(&device, &config.into(), &new_state, self.input_buffer.clone()),
+      cpal::SampleFormat::F32 => make_stream::<f32>(&device, &config.into(), &new_state, self.input_buffer.clone()),
+      _ => Err(napi::Error::from_reason(format!(
+        "Unsupported sample format: {:?}",
+        config.sample_format()
+      )))?,
+    }?;
+
+    stream.play()
+      .map_err(|e| napi::Error::from_reason(format!("Failed to start stream: {}", e)))?;
+
+    // Update self
+    self._output_stream = stream;
+    self.state = new_state;
+    self.sample_rate = new_sample_rate;
+    self.channels = new_channels;
+    self.output_device_name = device.name().ok();
+
+    println!("Audio output device changed to: {} ({} Hz, {} channels)",
+      self.output_device_name.as_deref().unwrap_or("unknown"),
+      self.sample_rate,
+      self.channels
+    );
+
+    Ok(())
+  }
+
+  /// Set the audio input device by name
+  /// This will stop and recreate the input stream
+  #[napi]
+  pub fn set_audio_input_device(&mut self, device_name: Option<String>) -> Result<()> {
+    // If None, disable input
+    if device_name.is_none() {
+      self._input_stream = None;
+      self.input_buffer = None;
+      self.input_device_name = None;
+      self.input_channels = 0;
+      println!("Audio input disabled");
+      return Ok(());
+    }
+
+    let device_name = device_name.unwrap();
+    let host = get_host_by_preference();
+
+    // Find the device
+    let device = if device_name == "default" {
+      host.default_input_device()
+        .ok_or_else(|| napi::Error::from_reason("No default input device found".to_string()))?
+    } else {
+      host.input_devices()
+        .map_err(|e| napi::Error::from_reason(format!("Failed to enumerate devices: {}", e)))?
+        .find(|d| d.name().ok().as_deref() == Some(&device_name))
+        .ok_or_else(|| napi::Error::from_reason(format!("Device '{}' not found", device_name)))?
+    };
+
+    let config = device.default_input_config()
+      .map_err(|e| napi::Error::from_reason(format!("Failed to get device config: {}", e)))?;
+
+    let input_channels = config.channels() as usize;
+    let input_buffer = Arc::new(InputRingBuffer::new());
+
+    // Create input stream
+    let stream = match config.sample_format() {
+      cpal::SampleFormat::I8 => make_input_stream::<i8>(&device, &config.into(), input_buffer.clone(), input_channels),
+      cpal::SampleFormat::I16 => make_input_stream::<i16>(&device, &config.into(), input_buffer.clone(), input_channels),
+      cpal::SampleFormat::I32 => make_input_stream::<i32>(&device, &config.into(), input_buffer.clone(), input_channels),
+      cpal::SampleFormat::F32 => make_input_stream::<f32>(&device, &config.into(), input_buffer.clone(), input_channels),
+      _ => Err(napi::Error::from_reason(format!(
+        "Unsupported sample format: {:?}",
+        config.sample_format()
+      )))?,
+    }?;
+
+    stream.play()
+      .map_err(|e| napi::Error::from_reason(format!("Failed to start input stream: {}", e)))?;
+
+    self._input_stream = Some(stream);
+    self.input_buffer = Some(input_buffer);
+    self.input_device_name = device.name().ok();
+    self.input_channels = input_channels as u16;
+
+    println!("Audio input device set to: {} ({} channels)",
+      self.input_device_name.as_deref().unwrap_or("unknown"),
+      self.input_channels
+    );
+
+    Ok(())
+  }
+
+  // =========================================================================
+  // MIDI Device Management
+  // =========================================================================
+
+  /// List all available MIDI input ports
+  #[napi]
+  pub fn list_midi_inputs(&self) -> Vec<MidiInputInfo> {
+    MidiInputManager::list_ports()
+      .into_iter()
+      .map(|p| MidiInputInfo {
+        name: p.name,
+        index: p.index as u32,
+      })
+      .collect()
+  }
+
+  /// Get the currently connected MIDI input port name
+  #[napi]
+  pub fn get_midi_input_name(&self) -> Option<String> {
+    self.midi_manager.connected_port()
+  }
+
+  /// Connect to a MIDI input port by name
+  #[napi]
+  pub fn set_midi_input(&self, port_name: Option<String>) -> Result<()> {
+    match port_name {
+      None => {
+        self.midi_manager.disconnect();
+        println!("MIDI input disconnected");
+        Ok(())
+      }
+      Some(name) => {
+        self.midi_manager.connect(&name)
+          .map_err(|e| napi::Error::from_reason(e))?;
+        println!("MIDI input connected to: {}", name);
+        Ok(())
+      }
+    }
+  }
+
+  /// Poll MIDI input and dispatch messages to the audio thread.
+  /// Call this periodically (e.g., on each animation frame or timer tick).
+  #[napi]
+  pub fn poll_midi(&self) {
+    let messages = self.midi_manager.take_messages();
+    if !messages.is_empty() {
+      self.state.queue_midi_messages(messages);
+    }
   }
 }
 

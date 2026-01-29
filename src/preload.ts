@@ -46,6 +46,33 @@ export interface ElectronAPI {
         stop: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_STOP]>;
         isStopped: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_IS_STOPPED]>;
     };
+    // Audio device operations
+    audio: {
+        refreshDeviceList: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_REFRESH_DEVICE_LIST]>;
+        listOutputDevices: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_LIST_OUTPUT_DEVICES]>;
+        listInputDevices: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_LIST_INPUT_DEVICES]>;
+        getOutputDevice: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_GET_OUTPUT_DEVICE]>;
+        getInputDevice: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_GET_INPUT_DEVICE]>;
+        setOutputDevice: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_SET_OUTPUT_DEVICE]>;
+        setInputDevice: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_SET_INPUT_DEVICE]>;
+        getInputChannels: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_GET_INPUT_CHANNELS]>;
+        // Slot-based I/O operations
+        getIoConfig: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_GET_IO_CONFIG]>;
+        getSlotStates: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_GET_SLOT_STATES]>;
+        setInputSlot: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_SET_INPUT_SLOT]>;
+        setOutputSlot: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_SET_OUTPUT_SLOT]>;
+        clearSlot: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_CLEAR_SLOT]>;
+        validateIoConfig: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_VALIDATE_IO_CONFIG]>;
+        refreshSlotStates: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_REFRESH_SLOT_STATES]>;
+        applyIoConfig: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_APPLY_IO_CONFIG]>;
+    };
+    // MIDI device operations
+    midi: {
+        listInputs: Promisify<IPCHandlers[typeof IPC_CHANNELS.MIDI_LIST_INPUTS]>;
+        getInput: Promisify<IPCHandlers[typeof IPC_CHANNELS.MIDI_GET_INPUT]>;
+        setInput: Promisify<IPCHandlers[typeof IPC_CHANNELS.MIDI_SET_INPUT]>;
+        poll: Promisify<IPCHandlers[typeof IPC_CHANNELS.MIDI_POLL]>;
+    };
     // Filesystem operations
     filesystem: {
         selectWorkspace: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_SELECT_WORKSPACE]>;
@@ -134,6 +161,73 @@ const electronAPI: ElectronAPI = {
 
         isStopped: (...args) =>
             invokeIPC('SYNTH_IS_STOPPED', ...args),
+    },
+
+    // Audio device operations
+    audio: {
+        refreshDeviceList: (...args) =>
+            invokeIPC('AUDIO_REFRESH_DEVICE_LIST', ...args),
+
+        listOutputDevices: (...args) =>
+            invokeIPC('AUDIO_LIST_OUTPUT_DEVICES', ...args),
+
+        listInputDevices: (...args) =>
+            invokeIPC('AUDIO_LIST_INPUT_DEVICES', ...args),
+
+        getOutputDevice: (...args) =>
+            invokeIPC('AUDIO_GET_OUTPUT_DEVICE', ...args),
+
+        getInputDevice: (...args) =>
+            invokeIPC('AUDIO_GET_INPUT_DEVICE', ...args),
+
+        setOutputDevice: (...args) =>
+            invokeIPC('AUDIO_SET_OUTPUT_DEVICE', ...args),
+
+        setInputDevice: (...args) =>
+            invokeIPC('AUDIO_SET_INPUT_DEVICE', ...args),
+
+        getInputChannels: (...args) =>
+            invokeIPC('AUDIO_GET_INPUT_CHANNELS', ...args),
+
+        // Slot-based I/O operations
+        getIoConfig: (...args) =>
+            invokeIPC('AUDIO_GET_IO_CONFIG', ...args),
+
+        getSlotStates: (...args) =>
+            invokeIPC('AUDIO_GET_SLOT_STATES', ...args),
+
+        setInputSlot: (...args) =>
+            invokeIPC('AUDIO_SET_INPUT_SLOT', ...args),
+
+        setOutputSlot: (...args) =>
+            invokeIPC('AUDIO_SET_OUTPUT_SLOT', ...args),
+
+        clearSlot: (...args) =>
+            invokeIPC('AUDIO_CLEAR_SLOT', ...args),
+
+        validateIoConfig: (...args) =>
+            invokeIPC('AUDIO_VALIDATE_IO_CONFIG', ...args),
+
+        refreshSlotStates: (...args) =>
+            invokeIPC('AUDIO_REFRESH_SLOT_STATES', ...args),
+
+        applyIoConfig: (...args) =>
+            invokeIPC('AUDIO_APPLY_IO_CONFIG', ...args),
+    },
+
+    // MIDI device operations
+    midi: {
+        listInputs: (...args) =>
+            invokeIPC('MIDI_LIST_INPUTS', ...args),
+
+        getInput: (...args) =>
+            invokeIPC('MIDI_GET_INPUT', ...args),
+
+        setInput: (...args) =>
+            invokeIPC('MIDI_SET_INPUT', ...args),
+
+        poll: (...args) =>
+            invokeIPC('MIDI_POLL', ...args),
     },
 
     // Filesystem operations

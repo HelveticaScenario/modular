@@ -86,7 +86,7 @@ pub struct Noise {
 
 #[derive(Outputs, JsonSchema)]
 struct NoiseOutputs {
-    #[output("output", "signal output", range = (-1.0, 1.0))]
+    #[output("output", "signal output", default, range = (-1.0, 1.0))]
     sample: f32,
 }
 

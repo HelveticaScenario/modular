@@ -17,6 +17,7 @@ use std::{
     sync::{self, Arc},
 };
 
+use crate::dsp::utils::hz_to_voct;
 use crate::patch::Patch;
 use crate::poly::PolyOutput;
 
@@ -28,54 +29,61 @@ use crate::poly::PolyOutput;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WellKnownModule {
     /// The root output module
-    Root,
+    RootOutput,
     /// The root clock module (provides playhead)
     RootClock,
+    /// The signal exposed to the dsl
+    RootInput,
+    /// The instance of AudioIn thats connected to AudioIn but hidden from the user
+    HiddenAudioIn,
 }
 
 impl WellKnownModule {
     /// Get the module ID string
     pub fn id(&self) -> &'static str {
         match self {
-            WellKnownModule::Root => "root",
-            WellKnownModule::RootClock => "root_clock",
+            WellKnownModule::RootOutput => "ROOT_OUTPUT",
+            WellKnownModule::RootClock => "ROOT_CLOCK",
+            WellKnownModule::RootInput => "ROOT_INPUT",
+            WellKnownModule::HiddenAudioIn => "HIDDEN_AUDIO_IN",
         }
     }
 
     /// Get the default output port name for this module
     pub fn default_port(&self) -> &'static str {
         match self {
-            WellKnownModule::Root => "output",
+            WellKnownModule::RootOutput => "output",
             WellKnownModule::RootClock => "playhead",
+            WellKnownModule::RootInput => "output",
+            WellKnownModule::HiddenAudioIn => "input", // doesn't actually matter, only one port
         }
     }
 
     /// Create a Cable signal pointing to this module's default port at the given channel
-    pub fn to_cable(&self, channel: usize) -> Signal {
+    pub fn to_cable(&self, channel: usize, port: &str) -> Signal {
         Signal::Cable {
             module: self.id().into(),
             module_ptr: std::sync::Weak::new(),
-            port: self.default_port().into(),
+            port: port.into(),
             channel,
         }
     }
 
     /// Create a PolySignal with cables to this module's default port for the given channels
-    pub fn to_poly_signal(&self, channels: &[usize]) -> crate::poly::PolySignal {
+    pub fn to_poly_signal(&self, channels: &[usize], port: &str) -> crate::poly::PolySignal {
         crate::poly::PolySignal::poly(
             &channels
                 .iter()
-                .map(|&ch| self.to_cable(ch))
+                .map(|&ch| self.to_cable(ch, port))
                 .collect::<Vec<_>>(),
         )
     }
 }
 
 lazy_static! {
-    pub static ref ROOT_ID: String = WellKnownModule::Root.id().into();
-    pub static ref ROOT_OUTPUT_PORT: String = WellKnownModule::Root.default_port().into();
+    pub static ref ROOT_ID: String = WellKnownModule::RootOutput.id().into();
+    pub static ref ROOT_OUTPUT_PORT: &'static str = WellKnownModule::RootOutput.default_port();
     pub static ref ROOT_CLOCK_ID: String = WellKnownModule::RootClock.id().into();
-    pub static ref ROOT_CLOCK_PORT: String = WellKnownModule::RootClock.default_port().into();
     static ref RE_HZ: Regex = Regex::new(r"^(-?\d*\.?\d+)hz$").unwrap();
     static ref RE_MIDI: Regex = Regex::new(r"^(-?\d*\.?\d+)m$").unwrap();
     static ref RE_SCALE: Regex = Regex::new(r"^(-?\d*\.?\d+)s\(([^:]+):([^)]+)\)$").unwrap();
@@ -108,12 +116,12 @@ pub trait PatchUpdateHandler {
 }
 
 pub trait Sampleable: MessageHandler + Send + Sync {
-    fn get_id(&self) -> &String;
+    fn get_id(&self) -> &str;
     fn tick(&self) -> ();
     fn update(&self) -> ();
     /// Get polyphonic sample output for a port.
-    fn get_poly_sample(&self, port: &String) -> Result<PolyOutput>;
-    fn get_module_type(&self) -> String;
+    fn get_poly_sample(&self, port: &str) -> Result<PolyOutput>;
+    fn get_module_type(&self) -> &str;
     fn try_update_params(&self, params: serde_json::Value) -> Result<()>;
     fn connect(&self, patch: &Patch);
     /// Called after the patch is updated and all modules are connected.
@@ -402,7 +410,7 @@ fn parse_signal_string(s: &str) -> StdResult<f32, String> {
         if hz <= 0.0 {
             return Err("Frequency must be positive".to_string());
         }
-        let volts = (hz / 55.0).log2();
+        let volts = hz_to_voct(hz);
         return Ok(volts);
     }
 
@@ -477,7 +485,7 @@ fn parse_signal_string(s: &str) -> StdResult<f32, String> {
 }
 
 /// A single-channel signal value.
-/// 
+///
 /// This represents either a constant voltage, a cable connection to a specific
 /// channel of another module's output, or a disconnected input.
 #[derive(Clone, Debug, Default)]
@@ -664,9 +672,7 @@ impl Connect for Signal {
     fn connect(&mut self, patch: &Patch) {
         match self {
             Signal::Cable {
-                module,
-                module_ptr,
-                ..
+                module, module_ptr, ..
             } => {
                 if let Some(sampleable) = patch.sampleables.get(module) {
                     *module_ptr = Arc::downgrade(sampleable);
@@ -782,6 +788,9 @@ pub struct OutputSchema {
     /// Whether this output is polyphonic (PolyOutput) or monophonic (f32/f64)
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub polyphonic: bool,
+    /// Whether this is the default output for the module
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub default: bool,
     /// The minimum value of the raw output range (before any remapping)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_value: Option<f64>,
@@ -926,6 +935,53 @@ pub enum ClockMessages {
     Stop,
 }
 
+/// MIDI note on message
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MidiNoteOn {
+    pub channel: u8,
+    pub note: u8,
+    pub velocity: u8,
+}
+
+/// MIDI note off message
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MidiNoteOff {
+    pub channel: u8,
+    pub note: u8,
+    pub velocity: u8,
+}
+
+/// MIDI control change message
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MidiControlChange {
+    pub channel: u8,
+    pub cc: u8,
+    pub value: u8,
+}
+
+/// MIDI pitch bend message
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MidiPitchBend {
+    pub channel: u8,
+    /// Pitch bend value: -8192 to 8191 (center = 0)
+    pub value: i16,
+}
+
+/// MIDI channel pressure (aftertouch) message
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MidiChannelPressure {
+    pub channel: u8,
+    pub pressure: u8,
+}
+
+/// MIDI polyphonic key pressure message
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MidiPolyPressure {
+    pub channel: u8,
+    pub note: u8,
+    pub pressure: u8,
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumTag, Serialize, Deserialize)]
 #[serde(
     tag = "type",
@@ -935,8 +991,14 @@ pub enum ClockMessages {
 )]
 pub enum Message {
     Clock(ClockMessages),
-    MidiNote(u8, bool), // (note number, on/off)
-    MidiCC(u8, u8),     // (cc number, value)
+    MidiNoteOn(MidiNoteOn),
+    MidiNoteOff(MidiNoteOff),
+    MidiCC(MidiControlChange),
+    MidiPitchBend(MidiPitchBend),
+    MidiChannelPressure(MidiChannelPressure),
+    MidiPolyPressure(MidiPolyPressure),
+    /// MIDI panic - all notes off
+    MidiPanic,
 }
 
 #[cfg(test)]

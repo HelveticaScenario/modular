@@ -13,7 +13,7 @@ struct SumParams {
 
 #[derive(Outputs, JsonSchema)]
 struct SumOutputs {
-    #[output("output", "signal output")]
+    #[output("output", "signal output", default)]
     sample: f32,
 }
 

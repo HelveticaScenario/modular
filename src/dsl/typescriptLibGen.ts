@@ -378,7 +378,24 @@ function schemaToTypeExpr(schema: JSONSchema, rootSchema: JSONSchema): string {
         return 'any';
     }
     if (Array.isArray(schema.type)) {
-        throw new Error('Unsupported schema: union type array');
+        // Handle union type arrays like ["integer", "null"] or ["string", "null"]
+        const types = schema.type as string[];
+        const nonNullTypes = types.filter((t) => t !== 'null');
+        if (nonNullTypes.length === 1) {
+            // This is a nullable type, treat it as the non-null type (optional in TS)
+            const singleType = nonNullTypes[0];
+            if (singleType === 'integer' || singleType === 'number') return 'number';
+            if (singleType === 'string') return 'string';
+            if (singleType === 'boolean') return 'boolean';
+        }
+        // Fall back to union of all non-null types
+        const mapped = nonNullTypes.map((t) => {
+            if (t === 'integer' || t === 'number') return 'number';
+            if (t === 'string') return 'string';
+            if (t === 'boolean') return 'boolean';
+            return 'any';
+        });
+        return mapped.length > 0 ? mapped.join(' | ') : 'any';
     }
 
     if (schema.$ref) {

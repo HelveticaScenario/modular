@@ -137,7 +137,7 @@ struct SeqParams {
     /// Strudel/tidalcycles style pattern string
     pattern: SeqPatternParam,
     /// 2 channel control signal, sums the first 2 channels
-    #[default_connection(id = "root_clock", port = "playhead", channels = [0, 1])]
+    #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
     playhead: PolySignal,
     /// Number of polyphonic voices (1-16, default 4)
     #[serde(default = "default_channels")]
@@ -146,7 +146,7 @@ struct SeqParams {
 
 #[derive(Outputs, JsonSchema)]
 struct SeqOutputs {
-    #[output("cv", "control voltage output")]
+    #[output("cv", "control voltage output", default)]
     cv: PolyOutput,
     #[output("gate", "gate output")]
     gate: PolyOutput,

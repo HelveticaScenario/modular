@@ -3,6 +3,22 @@
  * Used by Monaco editor for validation and autocomplete.
  */
 
+const audioSlotMappingSchema = {
+    type: "object",
+    properties: {
+        device: {
+            type: "string",
+            description: "Device name"
+        },
+        channel: {
+            type: "number",
+            description: "Channel index (0-based)"
+        }
+    },
+    required: ["device", "channel"],
+    additionalProperties: false
+};
+
 export const configSchema = {
     $schema: "http://json-schema.org/draft-07/schema#",
     title: "Modular Configuration",
@@ -38,6 +54,28 @@ export const configSchema = {
         lastOpenedFolder: {
             type: "string",
             description: "Path to the last opened workspace folder (managed automatically)"
+        },
+        audioInputSlots: {
+            type: "array",
+            description: "Audio input slot mappings (16 slots, null for empty)",
+            items: {
+                oneOf: [
+                    { type: "null" },
+                    audioSlotMappingSchema
+                ]
+            },
+            maxItems: 16
+        },
+        audioOutputSlots: {
+            type: "array",
+            description: "Audio output slot mappings (16 slots, null for empty)",
+            items: {
+                oneOf: [
+                    { type: "null" },
+                    audioSlotMappingSchema
+                ]
+            },
+            maxItems: 16
         }
     },
     additionalProperties: false

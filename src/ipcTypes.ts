@@ -11,17 +11,44 @@ import type {
     PatchGraph,
     ApplyPatchError,
     AudioThreadHealthSnapshot,
+    AudioDeviceInfo,
+    MidiInputInfo,
+    AudioIoConfig,
+    AudioSlotMapping,
+    AudioSlotState,
+    AudioSlotStates,
+    SlotConfigError,
     getSchemas,
     getMiniLeafSpans,
     Synthesizer
 } from '@modular/core';
 
-export type { PatchGraph, ApplyPatchError };
+export type { 
+    PatchGraph, 
+    ApplyPatchError, 
+    AudioDeviceInfo, 
+    MidiInputInfo,
+    AudioIoConfig,
+    AudioSlotMapping,
+    AudioSlotState,
+    AudioSlotStates,
+    SlotConfigError,
+};
+
+// Re-export with common naming convention alias
+export type AudioIOConfig = AudioIoConfig;
+
+export interface AudioSlotMappingConfig {
+    device: string;
+    channel: number;
+}
 
 export interface AppConfig {
     theme?: string;
     cursorStyle?: 'line' | 'block' | 'underline' | 'line-thin' | 'block-outline' | 'underline-thin';
     lastOpenedFolder?: string;
+    audioInputSlots?: Array<AudioSlotMappingConfig | null>;
+    audioOutputSlots?: Array<AudioSlotMappingConfig | null>;
 }
 
 export interface UpdatePatchResult {
@@ -103,6 +130,32 @@ export const IPC_CHANNELS = {
     SYNTH_STOP: 'modular:synth:stop',
     SYNTH_IS_STOPPED: 'modular:synth:is-stopped',
 
+    // Audio device operations
+    AUDIO_REFRESH_DEVICE_LIST: 'modular:audio:refresh-device-list',
+    AUDIO_LIST_OUTPUT_DEVICES: 'modular:audio:list-output-devices',
+    AUDIO_LIST_INPUT_DEVICES: 'modular:audio:list-input-devices',
+    AUDIO_GET_OUTPUT_DEVICE: 'modular:audio:get-output-device',
+    AUDIO_GET_INPUT_DEVICE: 'modular:audio:get-input-device',
+    AUDIO_SET_OUTPUT_DEVICE: 'modular:audio:set-output-device',
+    AUDIO_SET_INPUT_DEVICE: 'modular:audio:set-input-device',
+    AUDIO_GET_INPUT_CHANNELS: 'modular:audio:get-input-channels',
+
+    // Audio slot-based I/O operations
+    AUDIO_GET_IO_CONFIG: 'modular:audio:get-io-config',
+    AUDIO_GET_SLOT_STATES: 'modular:audio:get-slot-states',
+    AUDIO_SET_INPUT_SLOT: 'modular:audio:set-input-slot',
+    AUDIO_SET_OUTPUT_SLOT: 'modular:audio:set-output-slot',
+    AUDIO_CLEAR_SLOT: 'modular:audio:clear-slot',
+    AUDIO_VALIDATE_IO_CONFIG: 'modular:audio:validate-io-config',
+    AUDIO_REFRESH_SLOT_STATES: 'modular:audio:refresh-slot-states',
+    AUDIO_APPLY_IO_CONFIG: 'modular:audio:apply-io-config',
+
+    // MIDI device operations
+    MIDI_LIST_INPUTS: 'modular:midi:list-inputs',
+    MIDI_GET_INPUT: 'modular:midi:get-input',
+    MIDI_SET_INPUT: 'modular:midi:set-input',
+    MIDI_POLL: 'modular:midi:poll',
+
     // Filesystem operations
     FS_SELECT_WORKSPACE: 'modular:fs:select-workspace',
     FS_GET_WORKSPACE: 'modular:fs:get-workspace',
@@ -175,6 +228,32 @@ export interface IPCHandlers {
     [IPC_CHANNELS.SYNTH_STOP]: typeof Synthesizer.prototype.stop;
 
     [IPC_CHANNELS.SYNTH_IS_STOPPED]: typeof Synthesizer.prototype.isStopped;
+
+    // Audio device operations
+    [IPC_CHANNELS.AUDIO_REFRESH_DEVICE_LIST]: typeof Synthesizer.prototype.refreshDeviceList;
+    [IPC_CHANNELS.AUDIO_LIST_OUTPUT_DEVICES]: typeof Synthesizer.prototype.listAudioOutputDevices;
+    [IPC_CHANNELS.AUDIO_LIST_INPUT_DEVICES]: typeof Synthesizer.prototype.listAudioInputDevices;
+    [IPC_CHANNELS.AUDIO_GET_OUTPUT_DEVICE]: typeof Synthesizer.prototype.getOutputDeviceName;
+    [IPC_CHANNELS.AUDIO_GET_INPUT_DEVICE]: typeof Synthesizer.prototype.getInputDeviceName;
+    [IPC_CHANNELS.AUDIO_SET_OUTPUT_DEVICE]: typeof Synthesizer.prototype.setAudioOutputDevice;
+    [IPC_CHANNELS.AUDIO_SET_INPUT_DEVICE]: typeof Synthesizer.prototype.setAudioInputDevice;
+    [IPC_CHANNELS.AUDIO_GET_INPUT_CHANNELS]: typeof Synthesizer.prototype.inputChannels;
+
+    // Audio slot-based I/O operations
+    [IPC_CHANNELS.AUDIO_GET_IO_CONFIG]: typeof Synthesizer.prototype.getIoConfig;
+    [IPC_CHANNELS.AUDIO_GET_SLOT_STATES]: typeof Synthesizer.prototype.getSlotStates;
+    [IPC_CHANNELS.AUDIO_SET_INPUT_SLOT]: typeof Synthesizer.prototype.setInputSlot;
+    [IPC_CHANNELS.AUDIO_SET_OUTPUT_SLOT]: typeof Synthesizer.prototype.setOutputSlot;
+    [IPC_CHANNELS.AUDIO_CLEAR_SLOT]: typeof Synthesizer.prototype.clearSlot;
+    [IPC_CHANNELS.AUDIO_VALIDATE_IO_CONFIG]: typeof Synthesizer.prototype.validateIoConfigPreview;
+    [IPC_CHANNELS.AUDIO_REFRESH_SLOT_STATES]: typeof Synthesizer.prototype.refreshSlotStates;
+    [IPC_CHANNELS.AUDIO_APPLY_IO_CONFIG]: typeof Synthesizer.prototype.applyIoConfig;
+
+    // MIDI device operations
+    [IPC_CHANNELS.MIDI_LIST_INPUTS]: typeof Synthesizer.prototype.listMidiInputs;
+    [IPC_CHANNELS.MIDI_GET_INPUT]: typeof Synthesizer.prototype.getMidiInputName;
+    [IPC_CHANNELS.MIDI_SET_INPUT]: typeof Synthesizer.prototype.setMidiInput;
+    [IPC_CHANNELS.MIDI_POLL]: typeof Synthesizer.prototype.pollMidi;
 
     // Filesystem operations (IPC automatically promisifies all handlers)
     [IPC_CHANNELS.FS_SELECT_WORKSPACE]: () => WorkspaceFolder | null;

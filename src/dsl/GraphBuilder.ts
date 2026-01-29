@@ -21,13 +21,14 @@ interface OutputSchemaWithRange {
 // Extend Array prototype for ModuleOutput arrays
 declare global {
     interface Array<T> {
-        gain(this: T extends ModuleOutput ? T[] : never, factor: Value): ModuleOutput[];
-        offset(this: T extends ModuleOutput ? T[] : never, offset: Value): ModuleOutput[];
-        out(this: T extends ModuleOutput ? T[] : never, mode?: 'm'): T[];
-        scope(this: T extends ModuleOutput ? T[] : never, msPerFrame?: number, triggerThreshold?: number): T[];
-        range(this: T extends ModuleOutputWithRange ? T[] : never, outMin: Value, outMax: Value): ModuleOutput[];
+        gain(this: ModuleOutput[], factor: Value): ModuleOutput[];
+        offset(this: ModuleOutput[], offset: Value): ModuleOutput[];
+        out(this: ModuleOutput[], mode?: 'm'): this;
+        scope(this: ModuleOutput[], msPerFrame?: number, triggerThreshold?: number): this;
+        range(this: ModuleOutputWithRange[], outMin: Value, outMax: Value): ModuleOutput[];
     }
 }
+
 
 
 /**
@@ -131,7 +132,7 @@ export class GraphBuilder {
      */
     toPatch(): PatchGraph {
         // Create the root signal module that will receive the final output
-        const rootSignal = this.addModule('signal', 'root');
+        const rootSignal = this.addModule('signal', 'ROOT_OUTPUT');
 
         // If there are any modules registered with out(), create a sum module
         if (this.outModules.length > 0) {
@@ -311,10 +312,10 @@ export class ModuleNode {
                 `Module ${this.moduleType} does not have output: ${portName}`,
             );
         }
-        
+
         // Check if this output has range metadata
         const hasRange = outputSchema.minValue !== undefined && outputSchema.maxValue !== undefined;
-        
+
         if (polyphonic) {
             // Return array of ModuleOutput(WithRange) for each channel (based on derived channel count)
             const outputs: (ModuleOutput | ModuleOutputWithRange)[] = [];
@@ -330,7 +331,7 @@ export class ModuleNode {
             }
             return outputs;
         }
-        
+
         if (hasRange) {
             return new ModuleOutputWithRange(
                 this.builder, this.id, portName, 0,
@@ -458,22 +459,22 @@ Array.prototype.range = function (this: ModuleOutputWithRange[], outMin: Value, 
     if (this.length === 0) {
         return [];
     }
-    
+
     // Create a single remap module with poly inputs
     const remapNode = this[0].builder.addModule('remap');
-    
+
     // Pass the array of outputs to input
     remapNode._setParam('input', this);
-    
+
     // Collect the min/max values from each output's known range
     const inMins = this.map(o => o.minValue);
     const inMaxs = this.map(o => o.maxValue);
-    
+
     remapNode._setParam('inMin', inMins);
     remapNode._setParam('inMax', inMaxs);
     remapNode._setParam('outMin', outMin);
     remapNode._setParam('outMax', outMax);
-    
+
     return remapNode._output('output', true) as ModuleOutput[];
 };
 

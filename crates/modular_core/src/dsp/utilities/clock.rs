@@ -3,8 +3,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    PolyOutput,
-    types::{Clickless, ClockMessages, Signal},
+    PolyOutput, dsp::utils::{hz_to_voct, voct_to_hz_f64}, types::{Clickless, ClockMessages, Signal}
 };
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
@@ -31,7 +30,7 @@ pub struct Clock {
 
 #[derive(Outputs, JsonSchema)]
 struct ClockOutputs {
-    #[output("playhead", "how many bars have elapsed. 2 channel output with phase and loop index")]
+    #[output("playhead", "how many bars have elapsed. 2 channel output with phase and loop index", default)]
     playhead: PolyOutput,
     #[output("barTrigger", "trigger output every bar")]
     bar_trigger: f32,
@@ -61,14 +60,18 @@ message_handlers!(impl Clock {
     Clock(m) => Clock::on_clock_message,
 });
 
+lazy_static!(
+    static ref BPM_120_VOCT: f32 = hz_to_voct(120.0 / 60.0);
+);
+
 impl Clock {
     fn update(&mut self, sample_rate: f32) {
         // Smooth frequency parameter to avoid clicks
         self.freq
-            .update(self.params.tempo.get_value_or(0.0).clamp(-10.0, 10.0));
+            .update(self.params.tempo.get_value_or(*BPM_120_VOCT));
 
         // Convert V/Oct to Hz (use f64 for precision)
-        let frequency_hz = 55.0 * 2.0_f64.powf(*self.freq as f64);
+        let frequency_hz = voct_to_hz_f64(*self.freq as f64);
 
         // Calculate phase increment per sample
         // For a clock, we want the phase to go from 0 to 1 over one bar

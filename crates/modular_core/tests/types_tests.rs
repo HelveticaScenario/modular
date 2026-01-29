@@ -5,11 +5,10 @@ use napi::Result;
 use serde::Deserialize;
 use serde_json::json;
 
-use modular_core::SampleableMap;
 use modular_core::patch::Patch;
 use modular_core::types::{
-    ClockMessages, Connect, Message, MessageHandler,
-    MessageTag, Sampleable, Signal,
+    ClockMessages, Connect, Message, MessageHandler, MessageTag, MidiControlChange, MidiNoteOn,
+    Sampleable, Signal,
 };
 
 // The proc-macro expands to `crate::types::...`; provide that module in this integration test crate.
@@ -39,7 +38,7 @@ impl DummySampleable {
 }
 
 impl Sampleable for DummySampleable {
-    fn get_id(&self) -> &String {
+    fn get_id(&self) -> &str {
         &self.id
     }
 
@@ -47,20 +46,20 @@ impl Sampleable for DummySampleable {
 
     fn update(&self) {}
 
-    fn get_poly_sample(&self, port: &String) -> Result<modular_core::poly::PolyOutput> {
+    fn get_poly_sample(&self, port: &str) -> Result<modular_core::poly::PolyOutput> {
         Ok(modular_core::poly::PolyOutput::mono(
-            *self.outputs.get(port).unwrap_or(&0.0)
+            *self.outputs.get(port).unwrap_or(&0.0),
         ))
     }
 
-    fn get_module_type(&self) -> String {
-        self.module_type.clone()
+    fn get_module_type(&self) -> &str {
+        &self.module_type
     }
 
     fn try_update_params(&self, _params: serde_json::Value) -> Result<()> {
         Ok(())
     }
-    fn connect(&self, patch: &Patch) {
+    fn connect(&self, _patch: &Patch) {
         println!("Connecting DummySampleable {}", self.id);
     }
 }
@@ -68,14 +67,16 @@ impl Sampleable for DummySampleable {
 impl MessageHandler for DummySampleable {}
 
 fn make_empty_patch() -> Patch {
-    Patch::new(HashMap::new())
+    Patch::new()
 }
 
 fn make_patch_with_sampleable(sampleable: Arc<Box<dyn Sampleable>>) -> Patch {
-    let mut sampleables: SampleableMap = HashMap::new();
-    let id = sampleable.get_id().clone();
-    sampleables.insert(id, sampleable);
-    Patch::new(sampleables)
+    let mut patch = Patch::new();
+    patch
+        .sampleables
+        .insert(sampleable.get_id().to_owned(), sampleable);
+
+    patch
 }
 
 /*
@@ -244,11 +245,11 @@ fn message_listener_macro_infers_tags_from_match() {
             Ok(())
         }
 
-        fn on_midi_note(&mut self, _note: &u8, _on: &bool) -> napi::Result<()> {
+        fn on_midi_note(&mut self, _msg: &MidiNoteOn) -> napi::Result<()> {
             Ok(())
         }
 
-        fn on_midi_cc(&mut self, _cc: &u8, _value: &u8) -> napi::Result<()> {
+        fn on_midi_cc(&mut self, _msg: &MidiControlChange) -> napi::Result<()> {
             Ok(())
         }
     }
@@ -259,8 +260,8 @@ fn message_listener_macro_infers_tags_from_match() {
 
     modular_derive::message_handlers!(impl L {
         Clock(m) => L::on_clock,
-        MidiNote(note, on) => L::on_midi_note,
-        MidiCC(cc, value) => L::on_midi_cc,
+        MidiNoteOn(msg) => L::on_midi_note,
+        MidiCC(msg) => L::on_midi_cc,
     });
 
     let s = LSampleable {
@@ -269,7 +270,11 @@ fn message_listener_macro_infers_tags_from_match() {
 
     assert_eq!(
         s.handled_message_tags(),
-        &[MessageTag::Clock, MessageTag::MidiNote, MessageTag::MidiCC,]
+        &[
+            MessageTag::Clock,
+            MessageTag::MidiNoteOn,
+            MessageTag::MidiCC,
+        ]
     );
 
     // Dispatch should call the appropriate handler and return Ok.

@@ -347,7 +347,7 @@ macro_rules! mi_engine_module_impl {
 
             #[derive(Outputs, JsonSchema)]
             struct [<$struct_name Outputs>] {
-                #[output("main", $output_doc, range = ($out_min, $out_max))]
+                #[output("main", $output_doc, default, range = ($out_min, $out_max))]
                 sample: PolyOutput,
                 #[output("aux", $aux_doc, range = ($aux_min, $aux_max))]
                 aux: PolyOutput,
@@ -552,7 +552,7 @@ macro_rules! mi_engine_module_impl {
 
             #[derive(Outputs, JsonSchema)]
             struct [<$struct_name Outputs>] {
-                #[output("output", $output_doc, range = ($out_min, $out_max))]
+                #[output("output", $output_doc, default, range = ($out_min, $out_max))]
                 sample: PolyOutput,
                 #[output("aux", $aux_doc, range = ($aux_min, $aux_max))]
                 aux: PolyOutput,
@@ -757,7 +757,7 @@ macro_rules! mi_engine_module_impl {
 
             #[derive(Outputs, JsonSchema)]
             struct [<$struct_name Outputs>] {
-                #[output("output", $output_doc, range = ($out_min, $out_max))]
+                #[output("output", $output_doc, default, range = ($out_min, $out_max))]
                 sample: PolyOutput,
                 #[output("aux", $aux_doc, range = ($aux_min, $aux_max))]
                 aux: PolyOutput,

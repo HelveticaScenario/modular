@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { MonacoPatchEditor as PatchEditor } from './components/MonacoPatchEditor';
 import { AudioControls } from './components/AudioControls';
 import { ErrorDisplay } from './components/ErrorDisplay';
+import { AudioSettings } from './components/AudioSettings';
 import './App.css';
 import type { editor } from 'monaco-editor';
 import { findScopeCallEndLines } from './utils/findScopeCallEndLines';
@@ -53,6 +54,7 @@ function App() {
     // Audio state
     const [isClockRunning, setIsClockRunning] = useState(true);
     const [isRecording, setIsRecording] = useState(false);
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [validationErrors, setValidationErrors] = useState<
         ValidationError[] | null
@@ -245,6 +247,9 @@ function App() {
     useEffect(() => {
         if (isClockRunningRef.current) {
             const tick = () => {
+                // Poll MIDI input (fire-and-forget, don't await)
+                electronAPI.midi.poll().catch(() => {});
+
                 electronAPI.synthesizer
                     .getScopes()
                     .then((scopes) => {
@@ -430,31 +435,8 @@ function App() {
         });
 
         // Handle opening settings from menu (Cmd+,)
-        const cleanupOpenSettings = electronAPI.onMenuOpenSettings(async () => {
-            try {
-                const configPath = await electronAPI.config.getPath();
-                const content =
-                    await electronAPI.filesystem.readFile(configPath);
-                const existingBuffer = buffers.find(
-                    (b) => b.kind === 'file' && b.filePath === configPath,
-                );
-                if (existingBuffer) {
-                    setActiveBufferId(getBufferId(existingBuffer));
-                } else {
-                    const newBuffer: EditorBuffer = {
-                        kind: 'file',
-                        id: configPath,
-                        filePath: configPath,
-                        content,
-                        dirty: false,
-                        isPreview: false,
-                    };
-                    setBuffers((prev) => [...prev, newBuffer]);
-                    setActiveBufferId(configPath);
-                }
-            } catch (err) {
-                console.error('Failed to open settings:', err);
-            }
+        const cleanupOpenSettings = electronAPI.onMenuOpenSettings(() => {
+            setIsSettingsOpen(true);
         });
 
         return () => {
@@ -491,6 +473,11 @@ function App() {
                 error={error}
                 errors={validationErrors}
                 onDismiss={dismissError}
+            />
+
+            <AudioSettings
+                isOpen={isSettingsOpen}
+                onClose={() => setIsSettingsOpen(false)}
             />
 
             <main className="app-main">

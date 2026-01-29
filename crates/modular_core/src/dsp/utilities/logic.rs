@@ -20,7 +20,7 @@ struct FallingEdgeDetectorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct EdgeDetectorOutputs {
-    #[output("output", "gate")]
+    #[output("output", "gate", default)]
     output: PolyOutput,
 }
 

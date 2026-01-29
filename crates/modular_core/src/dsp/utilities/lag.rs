@@ -18,7 +18,7 @@ struct LagProcessorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct LagProcessorOutputs {
-    #[output("output", "output")]
+    #[output("output", "output", default)]
     sample: PolyOutput,
 }
 

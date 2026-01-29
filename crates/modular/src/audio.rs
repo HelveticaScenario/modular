@@ -1,10 +1,13 @@
 use cpal::FromSample;
 use cpal::Host;
 use cpal::HostId;
+use cpal::Sample;
 use cpal::SizedSample;
-use cpal::traits::{DeviceTrait, HostTrait};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
+use core::num;
 use hound::{WavSpec, WavWriter};
+use modular_core::PORT_MAX_CHANNELS;
 use modular_core::PatchGraph;
 use modular_core::dsp::get_constructors;
 use modular_core::dsp::schema;
@@ -12,6 +15,7 @@ use modular_core::dsp::utils::SchmittTrigger;
 use modular_core::types::ClockMessages;
 use modular_core::types::Message;
 use modular_core::types::Scope;
+use modular_core::types::WellKnownModule;
 use napi::Result;
 use napi::bindgen_prelude::Float32Array;
 use napi_derive::napi;
@@ -21,6 +25,7 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::AtomicU64;
@@ -29,6 +34,220 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use modular_core::patch::Patch;
 use modular_core::types::{ROOT_OUTPUT_PORT, ScopeItem};
 use std::time::Instant;
+
+// ============================================================================
+// Audio Device Information
+// ============================================================================
+
+/// Information about an audio device
+#[derive(Debug, Clone)]
+#[napi(object)]
+pub struct AudioDeviceInfo {
+  /// Stable Device ID
+  pub id: String,
+  /// Device name
+  pub name: String,
+  /// Number of input channels (0 if output-only)
+  pub input_channels: u16,
+  /// Number of output channels (0 if input-only)
+  pub output_channels: u16,
+  /// Whether this is the default device
+  pub is_default: bool,
+}
+
+/// List all available audio output devices
+pub fn list_output_devices() -> Vec<AudioDeviceInfo> {
+  let host = get_host_by_preference();
+  let default_device_id = host.default_output_device().and_then(|d| d.id().ok());
+
+  host
+    .devices()
+    .map(|devices| {
+      devices
+        .filter_map(|device| {
+          let id = device.id().ok()?;
+          let config = device.default_output_config().ok()?;
+          Some(AudioDeviceInfo {
+            is_default: default_device_id.as_ref() == Some(&id),
+
+            id: id.to_string(),
+            name: device.description().ok()?.name().to_owned(),
+            input_channels: 0,
+            output_channels: config.channels(),
+          })
+        })
+        .collect()
+    })
+    .unwrap_or_default()
+}
+
+/// List all available audio input devices
+pub fn list_input_devices() -> Vec<AudioDeviceInfo> {
+  let host = get_host_by_preference();
+  let default_device_id = host.default_input_device().and_then(|d| d.id().ok());
+
+  host
+    .input_devices()
+    .map(|devices| {
+      devices
+        .filter_map(|device| {
+          let id = device.id().ok()?;
+          let config = device.default_input_config().ok()?;
+          Some(AudioDeviceInfo {
+            is_default: default_device_id.as_ref() == Some(&id),
+            id: id.to_string(),
+            name: device.description().ok()?.name().to_owned(),
+            input_channels: config.channels(),
+            output_channels: 0,
+          })
+        })
+        .collect()
+    })
+    .unwrap_or_default()
+}
+
+/// Find an output device by id
+pub fn find_output_device(id: &str) -> Option<cpal::Device> {
+  let host = get_host_by_preference();
+  host
+    .output_devices()
+    .ok()?
+    .find(|d| d.id().ok() == cpal::DeviceId::from_str(id).ok())
+}
+
+/// Find an input device by id
+pub fn find_input_device(id: &str) -> Option<cpal::Device> {
+  let host = get_host_by_preference();
+  host
+    .input_devices()
+    .ok()?
+    .find(|d| d.id().ok() == cpal::DeviceId::from_str(id).ok())
+}
+
+// ============================================================================
+// Audio Input Ring Buffer
+// ============================================================================
+
+/// Ring buffer size for audio input (in samples per channel)
+const INPUT_RING_BUFFER_SIZE: usize = 4096;
+
+/// Total size of the flat audio input buffer
+const INPUT_BUFFER_TOTAL_SIZE: usize = INPUT_RING_BUFFER_SIZE * PORT_MAX_CHANNELS;
+
+/// Thread-safe ring buffer for audio input
+/// Buffer layout: flat array [sample_0_ch_0, sample_0_ch_1, ..., sample_1_ch_0, ...]
+pub struct InputRingBuffer {
+  /// Flat buffer data: sample_idx * PORT_MAX_CHANNELS + channel
+  buffer: Mutex<[f32; INPUT_BUFFER_TOTAL_SIZE]>,
+  /// Write position in frames
+  write_pos: Mutex<usize>,
+}
+
+impl InputRingBuffer {
+  pub fn new() -> Self {
+    Self {
+      buffer: Mutex::new([0.0; INPUT_BUFFER_TOTAL_SIZE]),
+      write_pos: Mutex::new(0),
+    }
+  }
+
+  /// Write samples from input callback (interleaved)
+  /// `channels` specifies how many channels are in the interleaved data
+  pub fn write_interleaved(&mut self, data: &[f32], channels: usize) {
+    if channels == 0 {
+      return;
+    }
+
+    let frames = data.len() / channels;
+    let mut buffer = self.buffer.lock();
+    let mut write_pos = self.write_pos.lock();
+
+    for frame_idx in 0..frames {
+      let buf_idx = *write_pos % INPUT_RING_BUFFER_SIZE;
+      let base_offset = buf_idx * PORT_MAX_CHANNELS;
+      let channels_to_write = channels.min(PORT_MAX_CHANNELS);
+
+      buffer[base_offset..][..channels_to_write]
+        .copy_from_slice(&data[frame_idx * channels..][..channels_to_write]);
+      buffer[base_offset + channels_to_write..][..PORT_MAX_CHANNELS - channels_to_write].fill(0.0);
+
+      *write_pos += 1;
+    }
+  }
+
+  /// Read the most recent sample frame (all channels)
+  pub fn read_latest(&self) -> [f32; PORT_MAX_CHANNELS] {
+    let buffer = self.buffer.lock();
+    let write_pos = self.write_pos.lock();
+    let pos = *write_pos;
+    let idx = if pos == 0 { 0 } else { (pos - 1) % INPUT_RING_BUFFER_SIZE };
+    let base_offset = idx * PORT_MAX_CHANNELS;
+
+    let mut result = [0.0; PORT_MAX_CHANNELS];
+    result.copy_from_slice(&buffer[base_offset..][..PORT_MAX_CHANNELS]);
+    result
+  }
+}
+
+/// Shared input buffer type
+pub type SharedInputBuffer = Arc<InputRingBuffer>;
+
+
+// ============================================================================
+// Multi-Channel Output Buffer
+// ============================================================================
+
+/// Output buffer for multi-channel audio
+/// Each DSP module can write to specific channels
+pub struct OutputBuffer {
+  /// Sample values per channel for current frame
+  samples: [f32; PORT_MAX_CHANNELS],
+  /// Number of active channels
+  channels: u16,
+}
+
+impl OutputBuffer {
+  pub fn new(channels: u16) -> Self {
+    Self {
+      samples: [0.0; PORT_MAX_CHANNELS],
+      channels,
+    }
+  }
+
+  /// Clear all samples to zero
+  pub fn clear(&mut self) {
+    for s in &mut self.samples[..self.channels as usize] {
+      *s = 0.0;
+    }
+  }
+
+  /// Add a sample to a specific channel (mixing)
+  pub fn add(&mut self, channel: usize, value: f32) {
+    if channel < self.channels as usize {
+      self.samples[channel] += value;
+    }
+  }
+
+  /// Set a sample for a specific channel (replacing)
+  pub fn set(&mut self, channel: usize, value: f32) {
+    if channel < self.channels as usize {
+      self.samples[channel] = value;
+    }
+  }
+
+  /// Get sample for a channel
+  pub fn get(&self, channel: usize) -> f32 {
+    if channel < self.channels as usize {
+      self.samples[channel]
+    } else {
+      0.0
+    }
+  }
+
+  pub fn channels(&self) -> u16 {
+    self.channels
+  }
+}
 
 fn apply_patch_debug_enabled() -> bool {
   static ENABLED: OnceLock<bool> = OnceLock::new();
@@ -185,6 +404,8 @@ pub struct AudioState {
   scope_collection: Arc<Mutex<HashMap<ScopeItem, ScopeBuffer>>>,
   recording_writer: Arc<Mutex<Option<WavWriter<BufWriter<File>>>>>,
   recording_path: Arc<Mutex<Option<PathBuf>>>,
+  /// Pending MIDI messages to dispatch
+  midi_messages: Arc<Mutex<Vec<Message>>>,
   sample_rate: f32,
   channels: u16,
   audio_budget_meter: AudioBudgetMeter,
@@ -209,9 +430,38 @@ impl AudioState {
       scope_collection: Arc::new(Mutex::new(HashMap::new())),
       recording_writer: Arc::new(Mutex::new(None)),
       recording_path: Arc::new(Mutex::new(None)),
+      midi_messages: Arc::new(Mutex::new(Vec::with_capacity(256))),
       sample_rate,
       channels,
       audio_budget_meter: AudioBudgetMeter::default(),
+    }
+  }
+
+  /// Queue MIDI messages to be dispatched on the audio thread
+  pub fn queue_midi_messages(&self, messages: Vec<Message>) {
+    if messages.is_empty() {
+      return;
+    }
+    let mut midi = self.midi_messages.lock();
+    midi.extend(messages);
+  }
+
+  /// Dispatch pending MIDI messages to the patch (called from audio thread)
+  fn dispatch_midi_messages(&self) {
+    // Take messages with minimal lock time
+    let messages: Vec<Message> = {
+      let mut midi = self.midi_messages.lock();
+      std::mem::take(&mut *midi)
+    };
+
+    if messages.is_empty() {
+      return;
+    }
+
+    // Dispatch to patch
+    let mut patch = self.patch.lock();
+    for msg in messages {
+      let _ = patch.dispatch_message(&msg);
     }
   }
 
@@ -323,11 +573,19 @@ impl AudioState {
       // Phase 1: remove all sources (`from`) we plan to rename.
       for remap in &module_id_remaps {
         // Never touch reserved ids.
-        if remap.from == "root" || remap.from == "root_clock" {
+        if remap.from == WellKnownModule::RootOutput.id()
+          || remap.from == WellKnownModule::RootClock.id()
+          || remap.from == WellKnownModule::RootInput.id()
+          || remap.from == WellKnownModule::HiddenAudioIn.id()
+        {
           remap_skipped_reserved += 1;
           continue;
         }
-        if remap.to == "root" || remap.to == "root_clock" {
+        if remap.to == WellKnownModule::RootOutput.id()
+          || remap.to == WellKnownModule::RootClock.id()
+          || remap.to == WellKnownModule::RootInput.id()
+          || remap.to == WellKnownModule::HiddenAudioIn.id()
+        {
           remap_skipped_reserved += 1;
           continue;
         }
@@ -356,7 +614,11 @@ impl AudioState {
       // So we *remove any existing `to`* first (unless reserved), then insert.
       if moved.len() != 0 {
         for to_id in moved.keys() {
-          if to_id == "root" || to_id == "root_clock" {
+          if to_id == WellKnownModule::RootOutput.id()
+            || to_id == WellKnownModule::RootClock.id()
+            || to_id == WellKnownModule::RootInput.id()
+            || to_id == WellKnownModule::HiddenAudioIn.id()
+          {
             continue;
           }
           if patch_lock.sampleables.remove(to_id).is_some() {
@@ -401,7 +663,12 @@ impl AudioState {
     // Find modules to delete (in current but not in desired), excluding root
     let mut to_delete: Vec<String> = current_ids
       .difference(&desired_ids)
-      .filter(|id| *id != "root" && *id != "root_clock")
+      .filter(|id| {
+        *id != WellKnownModule::RootOutput.id()
+          && *id != WellKnownModule::RootClock.id()
+          && *id != WellKnownModule::RootInput.id()
+          && *id != WellKnownModule::HiddenAudioIn.id()
+      })
       .cloned()
       .collect();
     if apply_patch_debug_enabled() {
@@ -419,13 +686,17 @@ impl AudioState {
     // These need to be deleted and recreated
     let mut to_recreate: Vec<String> = Vec::new();
     for id in current_ids.intersection(&desired_ids) {
-      if id == "root" || id == "root_clock" {
-        continue; // Never recreate root or root_clock
+      if id == WellKnownModule::RootOutput.id()
+        || id == WellKnownModule::RootClock.id()
+        || id == WellKnownModule::RootInput.id()
+        || id == WellKnownModule::HiddenAudioIn.id()
+      {
+        continue; // Never recreate root_output, root_clock, root_input, or hidden_audio_in
       }
       if let (Some(current_module), Some(desired_module)) =
         (patch_lock.sampleables.get(id), desired_modules.get(id))
       {
-        if current_module.get_module_type() != desired_module.module_type {
+        if current_module.get_module_type() != &desired_module.module_type {
           to_recreate.push(id.clone());
           to_delete.push(id.clone());
         }
@@ -621,12 +892,13 @@ pub fn make_stream<T>(
   device: &cpal::Device,
   config: &cpal::StreamConfig,
   audio_state: &Arc<AudioState>,
+  input_buffer: Option<SharedInputBuffer>,
 ) -> Result<cpal::Stream>
 where
   T: SizedSample + FromSample<f32> + hound::Sample,
 {
   let num_channels = config.channels as usize;
-  let sample_rate_hz = config.sample_rate as f64;
+  let _sample_rate_hz = config.sample_rate as f64;
 
   let err_fn = |err| eprintln!("Error building output sound stream: {err}");
 
@@ -634,7 +906,7 @@ where
   println!("Time at start: {time_at_start:?}");
   let audio_state = audio_state.clone();
 
-  let mut final_state_processor = FinalStateProcessor::new();
+  let mut final_state_processor = FinalStateProcessor::new(num_channels);
 
   let stream = device
     .build_output_stream(
@@ -642,17 +914,39 @@ where
       move |output: &mut [T], _info: &cpal::OutputCallbackInfo| {
         let callback_start = Instant::now();
 
-        for frame in output.chunks_mut(num_channels) {
-          let output_sample = T::from_sample(final_state_processor.process_frame(&audio_state));
+        // Dispatch any pending MIDI messages to the patch
+        audio_state.dispatch_midi_messages();
 
-          for s in frame.iter_mut() {
-            *s = output_sample;
+        for frame in output.chunks_mut(num_channels) {
+          {
+            let patch = audio_state.patch.lock();
+            let mut audio_in = patch.audio_in.lock();
+            let input_samples = input_buffer
+              .as_ref()
+              .map(|ib| ib.read_latest())
+              .unwrap_or([0f32; PORT_MAX_CHANNELS]);
+            for i in 0..num_channels.min(PORT_MAX_CHANNELS) {
+              audio_in.set(i, input_samples[i]);
+            }
+          }
+
+          // Process frame and get multi-channel output
+          let samples =
+            final_state_processor.process_frame_multichannel(&audio_state, num_channels);
+
+          for (ch, s) in frame.iter_mut().enumerate() {
+            if ch < samples.len() {
+              *s = T::from_sample(samples[ch]);
+            } else {
+              *s = T::from_sample(0.0);
+            }
           }
 
           // Record if enabled (use try_lock to avoid blocking audio)
+          // For multi-channel, record first channel (mono mix could be added later)
           if let Some(mut writer_guard) = audio_state.recording_writer.try_lock() {
             if let Some(ref mut writer) = *writer_guard {
-              let _ = writer.write_sample(output_sample);
+              let _ = writer.write_sample(T::from_sample(samples[0]));
             }
           }
         }
@@ -662,7 +956,6 @@ where
         audio_state
           .audio_budget_meter
           .record_chunk(output.len() as u64, elapsed_ns);
-        // meter.record_chunk(samples, elapsed_ns);
       },
       err_fn,
       None,
@@ -670,6 +963,87 @@ where
     .map_err(|e| napi::Error::from_reason(format!("Failed to build output stream: {}", e)))?;
 
   Ok(stream)
+}
+
+/// Build an input stream that writes to a shared ring buffer
+pub fn make_input_stream<T>(
+  device: &cpal::Device,
+  config: &cpal::StreamConfig,
+  input_buffer: SharedInputBuffer,
+  channels: usize,
+) -> Result<cpal::Stream>
+where
+  T: SizedSample + cpal::Sample,
+  f32: FromSample<T>,
+{
+  let err_fn = |err| eprintln!("Error building input sound stream: {err}");
+
+  let stream = device
+    .build_input_stream(
+      config,
+      move |data: &[T], _info: &cpal::InputCallbackInfo| {
+        // Convert to f32 and write to ring buffer
+        let f32_data: Vec<f32> = data.iter().map(|&s| f32::from_sample(s)).collect();
+        input_buffer.write_interleaved(&f32_data, channels);
+      },
+      err_fn,
+      None,
+    )
+    .map_err(|e| napi::Error::from_reason(format!("Failed to build input stream: {}", e)))?;
+
+  Ok(stream)
+}
+
+/// Process a single frame and return samples for all output channels
+fn process_frame_multichannel(
+  audio_state: &Arc<AudioState>,
+  num_channels: usize,
+) -> [f32; PORT_MAX_CHANNELS] {
+  use modular_core::poly::PORT_MAX_CHANNELS;
+  use modular_core::types::ROOT_ID;
+
+  let mut output = [0.0f32; PORT_MAX_CHANNELS];
+
+  let patch_guard = audio_state.patch.lock();
+
+  // Update sampleables
+  for (_, module) in patch_guard.sampleables.iter() {
+    module.update();
+  }
+
+  // Tick sampleables
+  for (_, module) in patch_guard.sampleables.iter() {
+    module.tick();
+  }
+
+  // Capture audio for scopes
+  for (scope, scope_buffer) in audio_state.scope_collection.lock().iter_mut() {
+    match scope {
+      ScopeItem::ModuleOutput {
+        module_id,
+        port_name,
+        ..
+      } => {
+        if let Some(module) = patch_guard.sampleables.get(module_id) {
+          if let Ok(poly) = module.get_poly_sample(&port_name) {
+            scope_buffer.push(poly.get(0));
+          }
+        }
+      }
+    }
+  }
+
+  // Get output from root module
+  if let Some(root) = patch_guard.sampleables.get(&*ROOT_ID) {
+    if let Ok(poly) = root.get_poly_sample(&ROOT_OUTPUT_PORT) {
+      // Multi-channel: map poly channels to output channels
+      for ch in 0..num_channels.min(PORT_MAX_CHANNELS) {
+        output[ch] = poly.get(ch) * AUDIO_OUTPUT_ATTENUATION;
+      }
+    }
+  }
+
+  output
 }
 
 fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
@@ -718,9 +1092,10 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
 
   // Get output sample before dropping lock
   let output_sample = if let Some(root) = patch_guard.sampleables.get(&*ROOT_ID) {
-    root.get_poly_sample(&ROOT_OUTPUT_PORT)
-        .map(|p| p.get(0))
-        .unwrap_or(0.0)
+    root
+      .get_poly_sample(&ROOT_OUTPUT_PORT)
+      .map(|p| p.get(0))
+      .unwrap_or(0.0)
   } else {
     0.0
   };
@@ -792,18 +1167,25 @@ struct FinalStateProcessor {
   attenuation_factor: f32,
   volume_change: VolumeChange,
   prev_is_stopped: bool,
+  num_channels: usize,
 }
 
 impl FinalStateProcessor {
-  fn new() -> Self {
+  fn new(num_channels: usize) -> Self {
     Self {
       attenuation_factor: 0.0,
       volume_change: VolumeChange::None,
       prev_is_stopped: true,
+      num_channels,
     }
   }
 
-  fn process_frame(&mut self, audio_state: &Arc<AudioState>) -> f32 {
+  /// Process frame and return multi-channel output
+  fn process_frame_multichannel(
+    &mut self,
+    audio_state: &Arc<AudioState>,
+    num_channels: usize,
+  ) -> [f32; PORT_MAX_CHANNELS] {
     let is_stopped = audio_state.is_stopped();
     match (self.prev_is_stopped, is_stopped) {
       (true, false) => {
@@ -828,20 +1210,32 @@ impl FinalStateProcessor {
       VolumeChange::None => {}
     }
 
-    if self.attenuation_factor < f32::EPSILON {
-      0.0
-    } else {
-      let sample =
-        (process_frame(audio_state) * AUDIO_OUTPUT_ATTENUATION * self.attenuation_factor).tanh();
+    let mut output = [0.0f32; PORT_MAX_CHANNELS];
 
-      if is_stopped && sample.abs() < 0.0005 {
-        self.attenuation_factor = 0.0;
-        self.volume_change = VolumeChange::None;
-        0.0
-      } else {
-        sample
+    if self.attenuation_factor < f32::EPSILON {
+      return output;
+    }
+
+    let raw_output = process_frame_multichannel(audio_state, num_channels);
+
+    // Apply attenuation and soft clipping to all channels
+    let mut any_audible = false;
+    for ch in 0..num_channels.min(PORT_MAX_CHANNELS) {
+      let sample = (raw_output[ch] * self.attenuation_factor).tanh();
+      output[ch] = sample;
+      if sample.abs() >= 0.0005 {
+        any_audible = true;
       }
     }
+
+    // When stopped and all channels are silent, fully mute
+    if is_stopped && !any_audible {
+      self.attenuation_factor = 0.0;
+      self.volume_change = VolumeChange::None;
+      return [0.0f32; PORT_MAX_CHANNELS];
+    }
+
+    output
   }
 }
 
@@ -976,7 +1370,7 @@ mod tests {
 
   #[test]
   fn test_stopped_state() {
-    let patch = Arc::new(Mutex::new(Patch::new(HashMap::new())));
+    let patch = Arc::new(Mutex::new(Patch::new()));
     let state = AudioState::new(patch, 48000.0, 2);
 
     // Initially stopped
@@ -989,7 +1383,7 @@ mod tests {
 
   #[test]
   fn test_apply_patch_module_id_remaps_reuse_instance() {
-    let patch = Arc::new(Mutex::new(Patch::new(HashMap::new())));
+    let patch = Arc::new(Mutex::new(Patch::new()));
     let state = AudioState::new(patch.clone(), 48000.0, 2);
 
     state
@@ -1050,7 +1444,7 @@ mod tests {
 
   #[test]
   fn test_apply_patch_module_id_remaps_chain_reuse_instances() {
-    let patch = Arc::new(Mutex::new(Patch::new(HashMap::new())));
+    let patch = Arc::new(Mutex::new(Patch::new()));
     let state = AudioState::new(patch.clone(), 48000.0, 2);
 
     state
@@ -1145,7 +1539,7 @@ mod tests {
 
   #[test]
   fn test_apply_patch_module_id_remaps_shift_down_drops_destination_instance() {
-    let patch = Arc::new(Mutex::new(Patch::new(HashMap::new())));
+    let patch = Arc::new(Mutex::new(Patch::new()));
     let state = AudioState::new(patch.clone(), 48000.0, 2);
 
     state

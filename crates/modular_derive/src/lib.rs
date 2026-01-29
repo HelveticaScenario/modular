@@ -100,20 +100,20 @@ pub fn message_handlers(input: TokenStream) -> TokenStream {
     for arm in &parsed.arms {
         let variant = &arm.variant;
         let handler = &arm.handler;
-        if arm.bindings.is_empty() {
-            return syn::Error::new(
-                variant.span(),
-                "message_handlers arms must bind the message fields: use `Variant(x) => handler` or `Variant(x, y) => handler`",
-            )
-            .to_compile_error()
-            .into();
-        }
 
         let bindings = &arm.bindings;
 
-        match_arms.push(quote! {
-            crate::types::Message::#variant( #( #bindings ),* ) => #handler(&mut *module, #( #bindings ),* )
-        });
+        if bindings.is_empty() {
+            // Unit variant - no bindings, handler takes only &mut self
+            match_arms.push(quote! {
+                crate::types::Message::#variant => #handler(&mut *module)
+            });
+        } else {
+            // Tuple variant - destructure and pass bindings to handler
+            match_arms.push(quote! {
+                crate::types::Message::#variant( #( #bindings ),* ) => #handler(&mut *module, #( #bindings ),* )
+            });
+        }
     }
 
     quote! {
@@ -138,6 +138,7 @@ pub fn message_handlers(input: TokenStream) -> TokenStream {
 struct OutputAttr {
     name: LitStr,
     description: Option<LitStr>,
+    is_default: bool,
     range: Option<(f64, f64)>,
 }
 
@@ -284,7 +285,7 @@ fn parse_module_attr(attrs: &Vec<Attribute>) -> ModuleAttr {
             // Parse remaining optional elements
             while input.peek(Token![,]) {
                 input.parse::<Token![,]>()?;
-                
+
                 if input.is_empty() {
                     break;
                 }
@@ -295,7 +296,7 @@ fn parse_module_attr(attrs: &Vec<Attribute>) -> ModuleAttr {
                 } else {
                     // Try to parse an identifier
                     let ident: Ident = input.parse()?;
-                    
+
                     if ident == "channels" {
                         input.parse::<Token![=]>()?;
                         let lit: syn::LitInt = input.parse()?;
@@ -311,7 +312,10 @@ fn parse_module_attr(attrs: &Vec<Attribute>) -> ModuleAttr {
                     } else {
                         return Err(syn::Error::new(
                             ident.span(),
-                            format!("Unknown module attribute '{}'. Expected 'channels', 'channels_param', or 'channels_param_default'", ident),
+                            format!(
+                                "Unknown module attribute '{}'. Expected 'channels', 'channels_param', or 'channels_param_default'",
+                                ident
+                            ),
                         ));
                     }
                 }
@@ -359,7 +363,9 @@ fn unwrap_name_description(
 /// Parse output attribute tokens into OutputAttr
 /// Supports:
 /// - #[output("name", "description")]
+/// - #[output("name", "description", default)]
 /// - #[output("name", "description", range = (-1.0, 1.0))]
+/// - #[output("name", "description", default, range = (-1.0, 1.0))]
 fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
     use syn::Result as SynResult;
     use syn::parse::{Parse, ParseStream};
@@ -367,6 +373,7 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
     struct OutputAttrParser {
         name: LitStr,
         description: Option<LitStr>,
+        is_default: bool,
         range: Option<(f64, f64)>,
     }
 
@@ -392,35 +399,45 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
             // Parse description string
             let description: LitStr = input.parse()?;
 
-            // Parse optional range attribute
+            // Parse optional attributes (default, range)
+            let mut is_default = false;
             let mut range: Option<(f64, f64)> = None;
             while input.peek(Token![,]) {
                 input.parse::<Token![,]>()?;
-                
+
                 if input.is_empty() {
                     break;
                 }
 
-                let ident: Ident = input.parse()?;
-                if ident == "range" {
-                    input.parse::<Token![=]>()?;
-                    let content;
-                    syn::parenthesized!(content in input);
-                    let min: syn::LitFloat = content.parse()?;
-                    content.parse::<Token![,]>()?;
-                    let max: syn::LitFloat = content.parse()?;
-                    range = Some((min.base10_parse()?, max.base10_parse()?));
-                } else {
-                    return Err(syn::Error::new(
-                        ident.span(),
-                        format!("Unknown output attribute '{}'. Expected 'range'", ident),
-                    ));
+                // Check for `default` keyword
+                if input.peek(syn::Ident) {
+                    let ident: Ident = input.parse()?;
+                    if ident == "default" {
+                        is_default = true;
+                    } else if ident == "range" {
+                        input.parse::<Token![=]>()?;
+                        let content;
+                        syn::parenthesized!(content in input);
+                        let min: syn::LitFloat = content.parse()?;
+                        content.parse::<Token![,]>()?;
+                        let max: syn::LitFloat = content.parse()?;
+                        range = Some((min.base10_parse()?, max.base10_parse()?));
+                    } else {
+                        return Err(syn::Error::new(
+                            ident.span(),
+                            format!(
+                                "Unknown output attribute '{}'. Expected 'default' or 'range'",
+                                ident
+                            ),
+                        ));
+                    }
                 }
             }
 
             Ok(OutputAttrParser {
                 name,
                 description: Some(description),
+                is_default,
                 range,
             })
         }
@@ -431,6 +448,7 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
     OutputAttr {
         name: parsed.name,
         description: parsed.description,
+        is_default: parsed.is_default,
         range: parsed.range,
     }
 }
@@ -458,6 +476,7 @@ struct OutputField {
     output_name: LitStr,
     precision: OutputPrecision,
     description: TokenStream2,
+    is_default: bool,
     range: Option<(f64, f64)>,
 }
 
@@ -489,11 +508,8 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
                     // Detect field precision (f32 or PolySignal)
                     let precision = match &f.ty {
                         Type::Path(tp) => {
-                            let type_name = tp
-                                .path
-                                .segments
-                                .last()
-                                .map(|seg| seg.ident.to_string());
+                            let type_name =
+                                tp.path.segments.last().map(|seg| seg.ident.to_string());
                             match type_name.as_deref() {
                                 Some("f32") => OutputPrecision::F32,
                                 Some("PolyOutput") => OutputPrecision::PolySignal,
@@ -530,6 +546,7 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
                         output_name,
                         precision,
                         description,
+                        is_default: output_attr.is_default,
                         range: output_attr.range,
                     });
                 }
@@ -551,8 +568,40 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
         }
     };
 
+    // Validate that exactly one output is marked as default
+    let default_outputs: Vec<_> = outputs.iter().filter(|o| o.is_default).collect();
+    if default_outputs.is_empty() {
+        return syn::Error::new(
+            Span::call_site(),
+            format!(
+                "Outputs struct '{}' must have exactly one output marked as `default`. \
+                 Add `default` to one of the #[output(...)] attributes.",
+                name
+            ),
+        )
+        .to_compile_error()
+        .into();
+    }
+    if default_outputs.len() > 1 {
+        let names: Vec<_> = default_outputs
+            .iter()
+            .map(|o| o.output_name.value())
+            .collect();
+        return syn::Error::new(
+            Span::call_site(),
+            format!(
+                "Outputs struct '{}' has {} outputs marked as `default` ({:?}), but only one is allowed.",
+                name,
+                default_outputs.len(),
+                names
+            ),
+        )
+        .to_compile_error()
+        .into();
+    }
+
     let _field_idents: Vec<_> = outputs.iter().map(|o| &o.field_name).collect();
-    
+
     // Generate default value expressions for each field type
     let field_defaults: Vec<_> = outputs
         .iter()
@@ -560,7 +609,9 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
             let field_name = &o.field_name;
             match o.precision {
                 OutputPrecision::F32 => quote! { #field_name: 0.0 },
-                OutputPrecision::PolySignal => quote! { #field_name: crate::poly::PolyOutput::default() },
+                OutputPrecision::PolySignal => {
+                    quote! { #field_name: crate::poly::PolyOutput::default() }
+                }
             }
         })
         .collect();
@@ -588,6 +639,7 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
             let output_name = &o.output_name;
             let description = &o.description;
             let is_polyphonic = o.precision == OutputPrecision::PolySignal;
+            let is_default = o.is_default;
             let min_value = match o.range {
                 Some((min, _)) => quote! { Some(#min) },
                 None => quote! { None },
@@ -601,6 +653,7 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
                     name: #output_name.to_string(),
                     description: #description,
                     polyphonic: #is_polyphonic,
+                    default: #is_default,
                     min_value: #min_value,
                     max_value: #max_value,
                 }
@@ -658,7 +711,7 @@ pub fn connect_macro_derive(input: TokenStream) -> TokenStream {
 
 /// Parsed `#[default_connection(...)]` attribute data
 struct DefaultConnectionAttr {
-    id: String,
+    module: Ident,
     port: String,
     /// For Signal: single channel. For PolySignal: multiple channels.
     channels: Vec<usize>,
@@ -667,14 +720,14 @@ struct DefaultConnectionAttr {
 /// Parse `#[default_connection(id = "...", port = "...", channel = N)]` for Signal
 /// or `#[default_connection(id = "...", port = "...", channels = [N, M, ...])]` for PolySignal
 fn parse_default_connection_attr(attr: &Attribute) -> syn::Result<DefaultConnectionAttr> {
-    let mut id: Option<String> = None;
+    let mut module: Option<Ident> = None;
     let mut port: Option<String> = None;
     let mut channels: Vec<usize> = Vec::new();
 
     attr.parse_nested_meta(|meta| {
-        if meta.path.is_ident("id") {
-            let value: LitStr = meta.value()?.parse()?;
-            id = Some(value.value());
+        if meta.path.is_ident("module") {
+            let value: Ident = meta.value()?.parse()?;
+            module = Some(value);
             Ok(())
         } else if meta.path.is_ident("port") {
             let value: LitStr = meta.value()?.parse()?;
@@ -696,11 +749,12 @@ fn parse_default_connection_attr(attr: &Attribute) -> syn::Result<DefaultConnect
                 .collect::<syn::Result<Vec<usize>>>()?;
             Ok(())
         } else {
-            Err(meta.error("expected `id`, `port`, `channel`, or `channels`"))
+            Err(meta.error("expected `module`, `port`, `channel`, or `channels`"))
         }
     })?;
 
-    let id = id.ok_or_else(|| syn::Error::new(attr.span(), "missing `id` in default_connection"))?;
+    let module =
+        module.ok_or_else(|| syn::Error::new(attr.span(), "missing `module` in default_connection"))?;
     let port =
         port.ok_or_else(|| syn::Error::new(attr.span(), "missing `port` in default_connection"))?;
     if channels.is_empty() {
@@ -710,7 +764,7 @@ fn parse_default_connection_attr(attr: &Attribute) -> syn::Result<DefaultConnect
         ));
     }
 
-    Ok(DefaultConnectionAttr { id, port, channels })
+    Ok(DefaultConnectionAttr { module, port, channels })
 }
 
 /// Check if a type is exactly PolySignal (for default_connection code generation)
@@ -745,7 +799,7 @@ fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
                         if attr.path().is_ident("default_connection") {
                             match parse_default_connection_attr(attr) {
                                 Ok(dc) => {
-                                    let id = &dc.id;
+                                    let module = &dc.module;
                                     let port = &dc.port;
                                     let is_poly = is_poly_signal_type(&field.ty);
 
@@ -756,12 +810,7 @@ fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
                                             .iter()
                                             .map(|ch| {
                                                 quote! {
-                                                    crate::types::Signal::Cable {
-                                                        module: #id.into(),
-                                                        module_ptr: std::sync::Weak::new(),
-                                                        port: #port.into(),
-                                                        channel: #ch,
-                                                    }
+                                                    crate::types::WellKnownModule::#module.to_cable(#ch, #port)
                                                 }
                                             })
                                             .collect();
@@ -777,12 +826,7 @@ fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
                                         let ch = dc.channels.first().copied().unwrap_or(0);
                                         default_stmts.extend(quote_spanned! {field.span()=>
                                             if self.#field_ident.is_disconnected() {
-                                                self.#field_ident = crate::types::Signal::Cable {
-                                                    module: #id.into(),
-                                                    module_ptr: std::sync::Weak::new(),
-                                                    port: #port.into(),
-                                                    channel: #ch,
-                                                };
+                                                self.#field_ident = crate::types::WellKnownModule::#module.to_cable(#ch, #port);
                                             }
                                         });
                                     }
@@ -841,18 +885,18 @@ fn impl_channel_count_macro(ast: &DeriveInput) -> TokenStream {
 
     let poly_signal_field_refs: Vec<TokenStream2> = match &ast.data {
         Data::Struct(data) => match &data.fields {
-            Fields::Named(fields) => {
-                fields.named.iter()
-                    .filter_map(|field| {
-                        let field_ident = field.ident.as_ref()?;
-                        if is_poly_signal(&field.ty) {
-                            Some(quote! { &self.#field_ident })
-                        } else {
-                            None
-                        }
-                    })
-                    .collect()
-            }
+            Fields::Named(fields) => fields
+                .named
+                .iter()
+                .filter_map(|field| {
+                    let field_ident = field.ident.as_ref()?;
+                    if is_poly_signal(&field.ty) {
+                        Some(quote! { &self.#field_ident })
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
             Fields::Unnamed(_) | Fields::Unit => {
                 return syn::Error::new(
                     ast.span(),
@@ -917,12 +961,12 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     let module_attr = parse_module_attr(&ast.attrs);
     let module_name = module_attr.name;
     let module_description = module_attr.description;
-    
+
     // Store channels info for channel_count generation
     let hardcoded_channels = module_attr.channels;
     let channels_param_name = module_attr.channels_param.clone();
     let channels_param_default_val = module_attr.channels_param_default;
-    
+
     let module_channels = match module_attr.channels {
         Some(n) => quote! { Some(#n) },
         None => quote! { None },
@@ -941,17 +985,19 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         let args = Punctuated::<ArgAttr, Token![,]>::parse_terminated
             .parse2(tokens)
             .expect("Failed to parse args attribute");
-        
-        args.into_iter().map(|arg| {
-            let name = arg.name.to_string();
-            let optional = arg.optional;
-            quote! {
-                crate::types::PositionalArg {
-                    name: #name.to_string(),
-                    optional: #optional,
+
+        args.into_iter()
+            .map(|arg| {
+                let name = arg.name.to_string();
+                let optional = arg.optional;
+                quote! {
+                    crate::types::PositionalArg {
+                        name: #name.to_string(),
+                        optional: #optional,
+                    }
                 }
-            }
-        }).collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
     } else {
         Vec::new()
     };
@@ -1021,8 +1067,11 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     // For the wrapper struct, we need to replace all lifetime parameters with 'static
     // since Sampleable requires 'static. Build a static version of ty_generics.
     let static_ty_generics = {
-        let params = ast.generics.params.iter().map(|p| {
-            match p {
+        let params = ast
+            .generics
+            .params
+            .iter()
+            .map(|p| match p {
                 syn::GenericParam::Lifetime(_) => quote!('static),
                 syn::GenericParam::Type(t) => {
                     let ident = &t.ident;
@@ -1032,8 +1081,8 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                     let ident = &c.ident;
                     quote!(#ident)
                 }
-            }
-        }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
         if params.is_empty() {
             quote!()
         } else {
@@ -1041,7 +1090,10 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         }
     };
 
-    let is_stateful = ast.attrs.iter().any(|attr| attr.path().is_ident("stateful"));
+    let is_stateful = ast
+        .attrs
+        .iter()
+        .any(|attr| attr.path().is_ident("stateful"));
     let get_state_impl = if is_stateful {
         quote! {
             use crate::types::StatefulModule;
@@ -1053,7 +1105,10 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     };
 
     // Check for #[patch_update] attribute - if present, call the module's on_patch_update
-    let has_patch_update = ast.attrs.iter().any(|attr| attr.path().is_ident("patch_update"));
+    let has_patch_update = ast
+        .attrs
+        .iter()
+        .any(|attr| attr.path().is_ident("patch_update"));
     let on_patch_update_impl = if has_patch_update {
         quote! {
             fn on_patch_update(&self) {
@@ -1070,7 +1125,11 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
 
     // Generate channel_count() method body based on module attributes
     // Priority: 1. hardcoded channels, 2. channels_param (with default), 3. max of PolySignal inputs
-    let channel_count_impl = match (hardcoded_channels, &channels_param_name, channels_param_default_val) {
+    let channel_count_impl = match (
+        hardcoded_channels,
+        &channels_param_name,
+        channels_param_default_val,
+    ) {
         // 1. Hardcoded channel count from #[module(..., channels = N)]
         (Some(n), _, _) => {
             let n = n as usize;
@@ -1120,7 +1179,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 #channel_count_impl
             }
         }
-        
+
         #[derive(Default)]
         struct #struct_name {
             id: String,
@@ -1149,10 +1208,10 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 }
             }
 
-            fn get_poly_sample(&self, port: &String) -> napi::Result<crate::poly::PolyOutput> {
+            fn get_poly_sample(&self, port: &str) -> napi::Result<crate::poly::PolyOutput> {
                 self.update();
                 let outputs = self.outputs.try_read_for(core::time::Duration::from_millis(10)).unwrap();
-                crate::types::OutputStruct::get_poly_sample(&*outputs, port.as_str()).ok_or_else(|| {
+                crate::types::OutputStruct::get_poly_sample(&*outputs, port).ok_or_else(|| {
                     napi::Error::from_reason(
                         format!(
                             "{} with id {} does not have port {}",
@@ -1164,8 +1223,8 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 })
             }
 
-            fn get_module_type(&self) -> String {
-                #module_name.to_owned()
+            fn get_module_type(&self) -> &str {
+                #module_name
             }
 
             fn try_update_params(&self, params: serde_json::Value) -> Result<()> {
@@ -1174,7 +1233,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 Ok(())
             }
 
-            fn get_id(&self) -> &String {
+            fn get_id(&self) -> &str {
                 &self.id
             }
 

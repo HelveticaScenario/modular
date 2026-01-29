@@ -10,7 +10,7 @@ use crate::poly::PolySignal;
 #[serde(default, rename_all = "camelCase")]
 struct TrackParams {
     /// Playhead input - sums channels 0 and 1 for position
-    #[default_connection(id = "root_clock", port = "playhead", channels = [0, 1])]
+    #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
     playhead: PolySignal,
     /// Keyframes as (signal, time) tuples. Must be sorted by time.
     keyframes: Vec<(Signal, f32)>,
@@ -19,7 +19,7 @@ struct TrackParams {
 
 #[derive(Outputs, JsonSchema)]
 struct TrackOutputs {
-    #[output("output", "signal output")]
+    #[output("output", "signal output", default)]
     sample: f32,
 }
 

@@ -4,6 +4,11 @@
 //! connected audio modules. The patch contains sampleable modules and tracks
 //! that can be processed to generate audio.
 
+use napi::De;
+use parking_lot::Mutex;
+
+use crate::PolyOutput;
+use crate::dsp::core::audio_in::AudioIn;
 use crate::types::{Message, MessageTag, ROOT_ID, ROOT_OUTPUT_PORT, Sampleable, SampleableMap};
 
 use std::collections::HashMap;
@@ -17,14 +22,24 @@ struct MessageListenerRef {
 
 /// The core patch structure containing the DSP graph
 pub struct Patch {
+    pub audio_in: Arc<Mutex<PolyOutput>>,
     pub sampleables: SampleableMap,
     message_listeners: HashMap<MessageTag, Vec<MessageListenerRef>>,
 }
 
 impl Patch {
     /// Create a new empty patch
-    pub fn new(sampleables: SampleableMap) -> Self {
+    pub fn new() -> Self {
+        let mut sampleables: SampleableMap = Default::default();
+        let audio_in_sampleable: AudioIn = Default::default();
+        let audio_in = audio_in_sampleable.input.clone();
+
+        sampleables.insert(
+            audio_in_sampleable.get_id().to_string(),
+            Arc::new(Box::new(audio_in_sampleable)),
+        );
         let mut patch = Patch {
+            audio_in,
             sampleables,
             message_listeners: HashMap::new(),
         };
@@ -94,20 +109,19 @@ impl Patch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     use crate::types::MessageHandler;
     use napi::Result;
 
     #[test]
     fn test_patch_new_empty() {
-        let patch = Patch::new(HashMap::new());
+        let patch = Patch::new();
         assert!(patch.sampleables.is_empty());
     }
 
     #[test]
     fn test_patch_get_output_no_root() {
-        let patch = Patch::new(HashMap::new());
+        let patch = Patch::new();
         let output = patch.get_output();
         assert!(
             (output - 0.0).abs() < 0.0001,
@@ -120,7 +134,7 @@ mod tests {
     }
 
     impl Sampleable for DummyMessageSampleable {
-        fn get_id(&self) -> &String {
+        fn get_id(&self) -> &str {
             &self.id
         }
 
@@ -128,12 +142,12 @@ mod tests {
 
         fn update(&self) {}
 
-        fn get_poly_sample(&self, _port: &String) -> Result<crate::poly::PolyOutput> {
+        fn get_poly_sample(&self, _port: &str) -> Result<crate::poly::PolyOutput> {
             Ok(crate::poly::PolyOutput::default())
         }
 
-        fn get_module_type(&self) -> String {
-            "dummy".to_string()
+        fn get_module_type(&self) -> &str {
+            "dummy"
         }
 
         fn try_update_params(&self, _params: serde_json::Value) -> Result<()> {
@@ -145,7 +159,7 @@ mod tests {
 
     impl MessageHandler for DummyMessageSampleable {
         fn handled_message_tags(&self) -> &'static [MessageTag] {
-            &[MessageTag::MidiNote]
+            &[MessageTag::MidiNoteOn]
         }
 
         fn handle_message(&self, _message: &Message) -> Result<()> {
@@ -159,17 +173,16 @@ mod tests {
             id: "m1".to_string(),
         }));
 
-        let mut sampleables: SampleableMap = HashMap::new();
-        sampleables.insert("m1".to_string(), Arc::clone(&s));
-        let mut patch = Patch::new(sampleables);
+        let mut patch = Patch::new();
+        patch.sampleables.insert("m1".to_string(), Arc::clone(&s));
 
         // Index should include it.
-        assert_eq!(patch.message_listeners_for(MessageTag::MidiNote).len(), 1);
+        assert_eq!(patch.message_listeners_for(MessageTag::MidiNoteOn).len(), 1);
 
         // Remove from patch but keep an external strong ref (`s`).
         patch.sampleables.remove("m1");
 
         // Rebuild/prune and ensure it is not returned.
-        assert_eq!(patch.message_listeners_for(MessageTag::MidiNote).len(), 0);
+        assert_eq!(patch.message_listeners_for(MessageTag::MidiNoteOn).len(), 0);
     }
 }

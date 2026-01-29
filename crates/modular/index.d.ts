@@ -7,6 +7,7 @@ export declare class Synthesizer {
   isStopped(): boolean
   sampleRate(): number
   channels(): number
+  inputChannels(): number
   getScopes(): Array<[ScopeItem, Float32Array]>
   updatePatch(patch: PatchGraph): Array<ApplyPatchError>
   startRecording(path?: string | undefined | null): string
@@ -14,6 +15,58 @@ export declare class Synthesizer {
   isRecording(): boolean
   getHealth(): AudioBudgetSnapshot
   getModuleStates(): Record<string, any>
+  /** Force refresh the device cache (call when user clicks "Refresh Devices") */
+  refreshDeviceList(): void
+  /** List all available audio output devices */
+  listAudioOutputDevices(): Array<AudioDeviceInfo>
+  /** List all available audio input devices */
+  listAudioInputDevices(): Array<AudioDeviceInfo>
+  /** Get the current output device name */
+  getOutputDeviceName(): string | null
+  /** Get the current input device name */
+  getInputDeviceName(): string | null
+  /**
+   * Set the audio output device by name
+   * This will stop and recreate the audio stream
+   */
+  setAudioOutputDevice(deviceName: string): void
+  /**
+   * Set the audio input device by name
+   * This will stop and recreate the input stream
+   */
+  setAudioInputDevice(deviceName?: string | undefined | null): void
+  /** Get the current I/O slot configuration */
+  getIoConfig(): AudioIoConfig
+  /** Get the current state of all slots (empty, mapped, orphaned) */
+  getSlotStates(): AudioSlotStates
+  /** Set an input slot mapping */
+  setInputSlot(slot: number, deviceName: string, channel: number): void
+  /** Set an output slot mapping */
+  setOutputSlot(slot: number, deviceName: string, channel: number): void
+  /** Clear a slot mapping (input or output) */
+  clearSlot(isInput: boolean, slot: number): void
+  /** Validate the current slot configuration */
+  validateIoConfig(): Array<SlotConfigError>
+  /** Validate a provided slot configuration (for preview before applying) */
+  validateIoConfigPreview(config: AudioIoConfig): Array<SlotConfigError>
+  /**
+   * Refresh slot states by checking device availability.
+   * Marks slots as Orphaned if their device is no longer available.
+   */
+  refreshSlotStates(): void
+  /** Apply a complete I/O configuration (used for restoring from saved config) */
+  applyIoConfig(config: AudioIoConfig): Array<SlotConfigError>
+  /** List all available MIDI input ports */
+  listMidiInputs(): Array<MidiInputInfo>
+  /** Get the currently connected MIDI input port name */
+  getMidiInputName(): string | null
+  /** Connect to a MIDI input port by name */
+  setMidiInput(portName?: string | undefined | null): void
+  /**
+   * Poll MIDI input and dispatch messages to the audio thread.
+   * Call this periodically (e.g., on each animation frame or timer tick).
+   */
+  pollMidi(): void
 }
 
 export interface ApplyPatchError {
@@ -32,6 +85,52 @@ export interface AudioBudgetSnapshot {
   peakNsPerSample: number
   /** Worst-case real-time usage (1.0 == real-time) */
   peakUsage: number
+}
+
+/** Information about an audio device */
+export interface AudioDeviceInfo {
+  /** Device name */
+  name: string
+  /** Number of input channels (0 if output-only) */
+  inputChannels: number
+  /** Number of output channels (0 if input-only) */
+  outputChannels: number
+  /** Whether this is the default device */
+  isDefault: boolean
+  /** Default sample rate in Hz */
+  sampleRate: number
+}
+
+/** Configuration for all audio I/O slots */
+export interface AudioIoConfig {
+  /** Input slot mappings (index = slot number) */
+  inputSlots: Array<AudioSlotMapping | undefined | null>
+  /** Output slot mappings (index = slot number) */
+  outputSlots: Array<AudioSlotMapping | undefined | null>
+}
+
+/** Mapping of a slot to a specific device channel */
+export interface AudioSlotMapping {
+  /** Device name */
+  deviceName: string
+  /** Channel index on the device (0-based) */
+  channel: number
+}
+
+/** State of an audio slot */
+export type AudioSlotState = /** Slot has no mapping assigned */
+'Empty'|
+/** Slot is mapped to an available device+channel */
+'Mapped'|
+/** Slot mapping refers to a device that is currently unavailable */
+'Orphaned';
+
+/** States for all slots */
+export interface AudioSlotStates {
+  /** State of each input slot */
+  input: Array<AudioSlotState>
+  /** State of each output slot */
+  output: Array<AudioSlotState>
 }
 
 export interface AudioThreadHealthSnapshot {
@@ -55,6 +154,17 @@ export declare function getMiniLeafSpans(source: string): Array<Array<number>>
 export declare function getPatternPolyphony(source: string): number
 
 export declare function getSchemas(): Array<ModuleSchema>
+
+/** Information about a MIDI input port (for N-API) */
+export interface MidiInputInfo {
+  name: string
+  index: number
+}
+
+/** Error type for slot configuration validation */
+export interface SlotConfigError {
+  message: string
+}
 
 /** Detailed validation error for patch validation */
 export interface ValidationError {
@@ -93,6 +203,8 @@ export interface OutputSchema {
   description: string
   /** Whether this output is polyphonic (PolyOutput) or monophonic (f32/f64) */
   polyphonic: boolean
+  /** Whether this is the default output for the module */
+  default: boolean
   /** The minimum value of the raw output range (before any remapping) */
   minValue?: number
   /** The maximum value of the raw output range (before any remapping) */

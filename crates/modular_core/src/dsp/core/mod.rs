@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
 
+pub mod audio_in;
 pub mod mix;
 pub mod poly_mix;
 pub mod scale_and_shift;

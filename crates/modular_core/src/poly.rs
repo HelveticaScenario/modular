@@ -103,6 +103,10 @@ impl PolyOutput {
     pub fn channels(&self) -> u8 {
         self.channels
     }
+
+    pub fn set_all(&mut self, voltages: &[f32; PORT_MAX_CHANNELS]) {
+        self.voltages = *voltages;
+    }
 }
 
 // === Serialization ===
@@ -211,8 +215,6 @@ impl PolySignal {
         ps.channels = channels as u8;
         ps
     }
-
-
 
     // === Accessors ===
 

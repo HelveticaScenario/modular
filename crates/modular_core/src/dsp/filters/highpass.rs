@@ -3,9 +3,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    dsp::utils::changed,
-    poly::{PolyOutput, PolySignal},
-    PORT_MAX_CHANNELS,
+    PORT_MAX_CHANNELS, dsp::utils::{changed, voct_to_hz}, poly::{PolyOutput, PolySignal}
 };
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
@@ -21,7 +19,7 @@ struct HighpassFilterParams {
 
 #[derive(Outputs, JsonSchema)]
 struct HighpassFilterOutputs {
-    #[output("output", "filtered signal")]
+    #[output("output", "filtered signal", default)]
     sample: PolyOutput,
 }
 
@@ -44,7 +42,7 @@ struct HpfChannelState {
 }
 
 fn compute_hpf_biquad(cutoff: f32, resonance: f32, sample_rate: f32) -> BiquadCoeffs {
-    let freq = 55.0 * 2.0f32.powf(cutoff);
+    let freq = voct_to_hz(cutoff);
     let freq = freq.min(sample_rate * 0.45).max(20.0);
 
     let omega = 2.0 * std::f32::consts::PI * freq / sample_rate;

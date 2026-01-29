@@ -14,7 +14,7 @@ export function executePatchScript(
 
     // Create default clock module that runs at 120 BPM
     const rootClock = (context.namespaceTree.clock as any)(bpm(120), {
-        id: 'root_clock',
+        id: 'ROOT_CLOCK',
     });
     // console.log('Created clock module:', rootClock);
 

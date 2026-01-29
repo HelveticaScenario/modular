@@ -18,7 +18,7 @@ struct ScaleAndShiftParams {
 
 #[derive(Outputs, JsonSchema)]
 struct ScaleAndShiftOutputs {
-    #[output("output", "signal output")]
+    #[output("output", "signal output", default)]
     sample: PolyOutput,
 }
 

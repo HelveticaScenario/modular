@@ -151,7 +151,7 @@ struct QuantizerParams {
 
 #[derive(Outputs, JsonSchema)]
 struct QuantizerOutputs {
-    #[output("output", "quantized V/Oct output")]
+    #[output("output", "quantized V/Oct output", default)]
     output: PolyOutput,
     #[output("gate", "gate high when note changes (single sample pulse)")]
     gate: PolyOutput,

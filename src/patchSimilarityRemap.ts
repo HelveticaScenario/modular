@@ -2,7 +2,7 @@ import type { PatchGraph } from './ipcTypes';
 
 type ModuleState = PatchGraph['modules'][number];
 
-const RESERVED_MODULE_IDS = new Set(['root', 'root_clock']);
+const RESERVED_MODULE_IDS = new Set(['ROOT_OUTPUT', 'ROOT_CLOCK', 'ROOT_INPUT', 'HIDDEN_AUDIO_IN']);
 
 const DEFAULT_MATCH_THRESHOLD = 0.65;
 const DEFAULT_AMBIGUITY_MARGIN = 0.05;

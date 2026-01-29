@@ -19,7 +19,7 @@ struct SineOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct SineOscillatorOutputs {
-    #[output("output", "signal output", range = (-1.0, 1.0))]
+    #[output("output", "signal output", default, range = (-1.0, 1.0))]
     sample: PolyOutput,
 }
 

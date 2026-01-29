@@ -9,6 +9,7 @@ pub mod filters;
 pub mod utilities;
 pub mod utils;
 pub mod seq;
+pub mod midi;
 
 // #[cfg(test)]
 mod test_overlap;
@@ -20,6 +21,7 @@ pub fn get_constructors() -> HashMap<String, SampleableConstructor> {
     filters::install_constructors(&mut map);
     utilities::install_constructors(&mut map);
     seq::install_constructors(&mut map);
+    midi::install_constructors(&mut map);
     return map;
 }
 
@@ -34,6 +36,7 @@ pub fn get_param_validators() -> HashMap<String, ParamsValidator> {
     filters::install_param_validators(&mut map);
     utilities::install_param_validators(&mut map);
     seq::install_param_validators(&mut map);
+    midi::install_param_validators(&mut map);
     map
 }
 
@@ -44,6 +47,7 @@ pub fn schema() -> Vec<ModuleSchema> {
         filters::schemas(),
         utilities::schemas(),
         seq::schemas(),
+        midi::schemas(),
     ]
     .concat()
 }

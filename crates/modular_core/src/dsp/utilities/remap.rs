@@ -26,7 +26,7 @@ struct RemapParams {
 
 #[derive(Outputs, JsonSchema)]
 struct RemapOutputs {
-    #[output("output", "remapped signal output")]
+    #[output("output", "remapped signal output", default)]
     sample: PolyOutput,
 }
 

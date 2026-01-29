@@ -60,7 +60,7 @@ fn get_sample(patch: &Patch, module_id: &str, port: &str) -> f32 {
     patch
         .sampleables
         .get(module_id)
-        .and_then(|m| m.get_poly_sample(&port.to_string()).ok())
+        .and_then(|m| m.get_poly_sample(port).ok())
         .map(|p| p.get(0) as f32)
         .unwrap_or(0.0)
 }
