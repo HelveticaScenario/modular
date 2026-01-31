@@ -7,9 +7,7 @@ crate::mi_engine_module! {
     engine_type: SixOpEngine<'a>,
     engine_path: mi_plaits_dsp::engine2::six_op_engine::SixOpEngine,
     constructor: new(BLOCK_SIZE),
-    output_range: (-1.0, 1.0),
     output_doc: "6-operator FM signal output",
-    aux_range: (-1.0, 1.0),
     aux_doc: "auxiliary FM output",
     params: {
         freq: "frequency in v/oct",

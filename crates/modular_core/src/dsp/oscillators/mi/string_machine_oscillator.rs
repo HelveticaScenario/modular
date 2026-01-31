@@ -7,9 +7,7 @@ crate::mi_engine_module! {
     engine_type: StringMachineEngine,
     engine_path: mi_plaits_dsp::engine2::string_machine_engine::StringMachineEngine,
     constructor: new(),
-    output_range: (-1.0, 1.0),
     output_doc: "voices 1 & 3 predominantly",
-    aux_range: (-1.0, 1.0),
     aux_doc: "voices 2 & 4 predominantly",
     params: {
         freq: "frequency in v/oct",

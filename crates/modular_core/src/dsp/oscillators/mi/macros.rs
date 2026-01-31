@@ -20,9 +20,7 @@
 ///     engine_type: EngineName,           // plain type, EngineName<'static>, or EngineName<'a> for lifetime
 ///     engine_path: mi_plaits_dsp::engine::engine_module::EngineName,
 ///     constructor: new(),                // or new(BLOCK_SIZE)
-///     output_range: (-1.0, 1.0),
 ///     output_doc: "main output description",
-///     aux_range: (-1.0, 1.0),
 ///     aux_doc: "auxiliary output description",
 ///     params: {
 ///         freq: "frequency in v/oct",
@@ -46,9 +44,7 @@ macro_rules! mi_engine_module {
         engine_type: $engine_type:ident<'a>,
         engine_path: $engine_path:path,
         constructor: new(),
-        output_range: ($out_min:expr, $out_max:expr),
         output_doc: $output_doc:literal,
-        aux_range: ($aux_min:expr, $aux_max:expr),
         aux_doc: $aux_doc:literal,
         params: {
             freq: $freq_doc:literal,
@@ -66,9 +62,7 @@ macro_rules! mi_engine_module {
             engine_type: $engine_type,
             engine_path: $engine_path,
             constructor: { $engine_type::new() },
-            output_range: ($out_min, $out_max),
             output_doc: $output_doc,
-            aux_range: ($aux_min, $aux_max),
             aux_doc: $aux_doc,
             params: {
                 freq: $freq_doc,
@@ -88,9 +82,7 @@ macro_rules! mi_engine_module {
         engine_type: $engine_type:ident<'a>,
         engine_path: $engine_path:path,
         constructor: new(BLOCK_SIZE),
-        output_range: ($out_min:expr, $out_max:expr),
         output_doc: $output_doc:literal,
-        aux_range: ($aux_min:expr, $aux_max:expr),
         aux_doc: $aux_doc:literal,
         params: {
             freq: $freq_doc:literal,
@@ -108,9 +100,7 @@ macro_rules! mi_engine_module {
             engine_type: $engine_type,
             engine_path: $engine_path,
             constructor: { $engine_type::new(BLOCK_SIZE) },
-            output_range: ($out_min, $out_max),
             output_doc: $output_doc,
-            aux_range: ($aux_min, $aux_max),
             aux_doc: $aux_doc,
             params: {
                 freq: $freq_doc,
@@ -130,9 +120,7 @@ macro_rules! mi_engine_module {
         engine_type: $engine_type:ident<'static>,
         engine_path: $engine_path:path,
         constructor: new(),
-        output_range: ($out_min:expr, $out_max:expr),
         output_doc: $output_doc:literal,
-        aux_range: ($aux_min:expr, $aux_max:expr),
         aux_doc: $aux_doc:literal,
         params: {
             freq: $freq_doc:literal,
@@ -150,9 +138,7 @@ macro_rules! mi_engine_module {
             engine_type: $engine_type,
             engine_path: $engine_path,
             constructor: { $engine_type::new() },
-            output_range: ($out_min, $out_max),
             output_doc: $output_doc,
-            aux_range: ($aux_min, $aux_max),
             aux_doc: $aux_doc,
             params: {
                 freq: $freq_doc,
@@ -172,9 +158,7 @@ macro_rules! mi_engine_module {
         engine_type: $engine_type:ident<'static>,
         engine_path: $engine_path:path,
         constructor: new(BLOCK_SIZE),
-        output_range: ($out_min:expr, $out_max:expr),
         output_doc: $output_doc:literal,
-        aux_range: ($aux_min:expr, $aux_max:expr),
         aux_doc: $aux_doc:literal,
         params: {
             freq: $freq_doc:literal,
@@ -192,9 +176,7 @@ macro_rules! mi_engine_module {
             engine_type: $engine_type,
             engine_path: $engine_path,
             constructor: { $engine_type::new(BLOCK_SIZE) },
-            output_range: ($out_min, $out_max),
             output_doc: $output_doc,
-            aux_range: ($aux_min, $aux_max),
             aux_doc: $aux_doc,
             params: {
                 freq: $freq_doc,
@@ -214,9 +196,7 @@ macro_rules! mi_engine_module {
         engine_type: $engine_type:ty,
         engine_path: $engine_path:path,
         constructor: new(),
-        output_range: ($out_min:expr, $out_max:expr),
         output_doc: $output_doc:literal,
-        aux_range: ($aux_min:expr, $aux_max:expr),
         aux_doc: $aux_doc:literal,
         params: {
             freq: $freq_doc:literal,
@@ -234,9 +214,7 @@ macro_rules! mi_engine_module {
             engine_type: $engine_type,
             engine_path: $engine_path,
             constructor: { <$engine_type>::new() },
-            output_range: ($out_min, $out_max),
             output_doc: $output_doc,
-            aux_range: ($aux_min, $aux_max),
             aux_doc: $aux_doc,
             params: {
                 freq: $freq_doc,
@@ -256,9 +234,7 @@ macro_rules! mi_engine_module {
         engine_type: $engine_type:ty,
         engine_path: $engine_path:path,
         constructor: new(BLOCK_SIZE),
-        output_range: ($out_min:expr, $out_max:expr),
         output_doc: $output_doc:literal,
-        aux_range: ($aux_min:expr, $aux_max:expr),
         aux_doc: $aux_doc:literal,
         params: {
             freq: $freq_doc:literal,
@@ -276,9 +252,7 @@ macro_rules! mi_engine_module {
             engine_type: $engine_type,
             engine_path: $engine_path,
             constructor: { <$engine_type>::new(BLOCK_SIZE) },
-            output_range: ($out_min, $out_max),
             output_doc: $output_doc,
-            aux_range: ($aux_min, $aux_max),
             aux_doc: $aux_doc,
             params: {
                 freq: $freq_doc,
@@ -303,9 +277,7 @@ macro_rules! mi_engine_module_impl {
         engine_type: $engine_type:ty,
         engine_path: $engine_path:path,
         constructor: { $constructor:expr },
-        output_range: ($out_min:expr, $out_max:expr),
         output_doc: $output_doc:literal,
-        aux_range: ($aux_min:expr, $aux_max:expr),
         aux_doc: $aux_doc:literal,
         params: {
             freq: $freq_doc:literal,
@@ -347,9 +319,9 @@ macro_rules! mi_engine_module_impl {
 
             #[derive(Outputs, JsonSchema)]
             struct [<$struct_name Outputs>] {
-                #[output("main", $output_doc, default, range = ($out_min, $out_max))]
+                #[output("main", $output_doc, default)]
                 sample: PolyOutput,
-                #[output("aux", $aux_doc, range = ($aux_min, $aux_max))]
+                #[output("aux", $aux_doc)]
                 aux: PolyOutput,
             }
 
@@ -508,9 +480,7 @@ macro_rules! mi_engine_module_impl {
         engine_type: $engine_type:ident,
         engine_path: $engine_path:path,
         constructor: { $constructor:expr },
-        output_range: ($out_min:expr, $out_max:expr),
         output_doc: $output_doc:literal,
-        aux_range: ($aux_min:expr, $aux_max:expr),
         aux_doc: $aux_doc:literal,
         params: {
             freq: $freq_doc:literal,
@@ -552,9 +522,9 @@ macro_rules! mi_engine_module_impl {
 
             #[derive(Outputs, JsonSchema)]
             struct [<$struct_name Outputs>] {
-                #[output("output", $output_doc, default, range = ($out_min, $out_max))]
+                #[output("output", $output_doc, default)]
                 sample: PolyOutput,
-                #[output("aux", $aux_doc, range = ($aux_min, $aux_max))]
+                #[output("aux", $aux_doc)]
                 aux: PolyOutput,
             }
 
@@ -713,9 +683,7 @@ macro_rules! mi_engine_module_impl {
         engine_type: $engine_type:ident,
         engine_path: $engine_path:path,
         constructor: { $constructor:expr },
-        output_range: ($out_min:expr, $out_max:expr),
         output_doc: $output_doc:literal,
-        aux_range: ($aux_min:expr, $aux_max:expr),
         aux_doc: $aux_doc:literal,
         params: {
             freq: $freq_doc:literal,
@@ -757,9 +725,9 @@ macro_rules! mi_engine_module_impl {
 
             #[derive(Outputs, JsonSchema)]
             struct [<$struct_name Outputs>] {
-                #[output("output", $output_doc, default, range = ($out_min, $out_max))]
+                #[output("output", $output_doc, default)]
                 sample: PolyOutput,
-                #[output("aux", $aux_doc, range = ($aux_min, $aux_max))]
+                #[output("aux", $aux_doc)]
                 aux: PolyOutput,
             }
 

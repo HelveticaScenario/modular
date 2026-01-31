@@ -7,9 +7,7 @@ crate::mi_engine_module! {
     engine_type: GrainEngine,
     engine_path: mi_plaits_dsp::engine::grain_engine::GrainEngine,
     constructor: new(),
-    output_range: (-2.5, 2.5),
     output_doc: "granular formant signal output",
-    aux_range: (-1.0, 1.0),
     aux_doc: "simulation of filtered waveforms by windowed sine waves (Braids' Z*** models) - harmonics controls filter type (peaking, LP, BP, HP)",
     params: {
         freq: "frequency in v/oct",

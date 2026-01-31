@@ -7,9 +7,7 @@ crate::mi_engine_module! {
     engine_type: FmEngine,
     engine_path: mi_plaits_dsp::engine::fm_engine::FmEngine,
     constructor: new(),
-    output_range: (-1.0, 1.0),
     output_doc: "FM synthesis signal output",
-    aux_range: (-1.0, 1.0),
     aux_doc: "sub-oscillator",
     params: {
         freq: "frequency in v/oct",

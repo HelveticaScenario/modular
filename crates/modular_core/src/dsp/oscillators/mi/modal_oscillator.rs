@@ -7,9 +7,7 @@ crate::mi_engine_module! {
     engine_type: ModalEngine,
     engine_path: mi_plaits_dsp::engine::modal_engine::ModalEngine,
     constructor: new(BLOCK_SIZE),
-    output_range: (-1.0, 1.0),
     output_doc: "modal resonator signal output",
-    aux_range: (-1.0, 1.0),
     aux_doc: "raw exciter signal",
     params: {
         freq: "frequency in v/oct",

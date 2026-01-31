@@ -7,9 +7,7 @@ crate::mi_engine_module! {
     engine_type: NoiseEngine,
     engine_path: mi_plaits_dsp::engine::noise_engine::NoiseEngine,
     constructor: new(BLOCK_SIZE),
-    output_range: (-1.0, 1.0),
     output_doc: "clocked noise signal output",
-    aux_range: (-1.0, 1.0),
     aux_doc: "auxiliary noise output",
     params: {
         freq: "frequency in v/oct - controls the noise clock rate",

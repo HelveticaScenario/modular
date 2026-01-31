@@ -7,9 +7,7 @@ crate::mi_engine_module! {
     engine_type: ChiptuneEngine,
     engine_path: mi_plaits_dsp::engine2::chiptune_engine::ChiptuneEngine,
     constructor: new(),
-    output_range: (-1.0, 1.0),
     output_doc: "square wave voices",
-    aux_range: (-1.0, 1.0),
     aux_doc: "NES triangle voice",
     params: {
         freq: "frequency in v/oct",

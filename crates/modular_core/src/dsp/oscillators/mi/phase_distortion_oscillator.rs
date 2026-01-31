@@ -7,9 +7,7 @@ crate::mi_engine_module! {
     engine_type: PhaseDistortionEngine,
     engine_path: mi_plaits_dsp::engine2::phase_distortion_engine::PhaseDistortionEngine,
     constructor: new(BLOCK_SIZE),
-    output_range: (-1.0, 1.0),
     output_doc: "carrier is sync'd (phase distortion)",
-    aux_range: (-1.0, 1.0),
     aux_doc: "carrier is free-running (phase modulation)",
     params: {
         freq: "frequency in v/oct",

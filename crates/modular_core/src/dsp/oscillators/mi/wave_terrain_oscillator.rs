@@ -7,9 +7,7 @@ crate::mi_engine_module! {
     engine_type: WaveTerrainEngine<'a>,
     engine_path: mi_plaits_dsp::engine2::wave_terrain_engine::WaveTerrainEngine,
     constructor: new(BLOCK_SIZE),
-    output_range: (-1.0, 1.0),
     output_doc: "direct terrain height (z)",
-    aux_range: (-1.0, 1.0),
     aux_doc: "terrain height interpreted as phase distortion (sin(y+z))",
     params: {
         freq: "frequency in v/oct",

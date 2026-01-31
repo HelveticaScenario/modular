@@ -7,9 +7,7 @@ crate::mi_engine_module! {
     engine_type: BassDrumEngine,
     engine_path: mi_plaits_dsp::engine::bass_drum_engine::BassDrumEngine,
     constructor: new(),
-    output_range: (-1.0, 1.0),
     output_doc: "bridged T-network excited by a nicely shaped pulse",
-    aux_range: (-1.0, 1.0),
     aux_doc: "frequency-modulated triangle VCO, turned into a sine with diodes, shaped by a dirty VCA",
     params: {
         freq: "frequency in v/oct",

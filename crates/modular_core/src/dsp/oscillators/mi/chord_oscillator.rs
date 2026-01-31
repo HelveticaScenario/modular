@@ -7,9 +7,7 @@ crate::mi_engine_module! {
     engine_type: ChordEngine<'static>,
     engine_path: mi_plaits_dsp::engine::chord_engine::ChordEngine,
     constructor: new(),
-    output_range: (-2.0, 2.0),
     output_doc: "four-voice chord signal output",
-    aux_range: (-3.0, 3.0),
     aux_doc: "root note of the chord",
     params: {
         freq: "frequency in v/oct",

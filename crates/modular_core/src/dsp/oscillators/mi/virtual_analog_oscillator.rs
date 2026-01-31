@@ -7,9 +7,7 @@ crate::mi_engine_module! {
     engine_type: VirtualAnalogEngine,
     engine_path: mi_plaits_dsp::engine::virtual_analog_engine::VirtualAnalogEngine,
     constructor: new(BLOCK_SIZE),
-    output_range: (-1.0, 1.0),
     output_doc: "crossfaded variable square and saw waveforms",
-    aux_range: (-1.0, 1.0),
     aux_doc: "sum of two hardsync'd waveforms, shape controlled by morph, detuning by harmonics",
     params: {
         freq: "frequency in v/oct",

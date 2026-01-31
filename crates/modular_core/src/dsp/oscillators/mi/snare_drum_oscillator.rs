@@ -7,9 +7,7 @@ crate::mi_engine_module! {
     engine_type: SnareDrumEngine,
     engine_path: mi_plaits_dsp::engine::snare_drum_engine::SnareDrumEngine,
     constructor: new(),
-    output_range: (-1.0, 1.0),
     output_doc: "snare drum signal output",
-    aux_range: (-1.0, 1.0),
     aux_doc: "auxiliary snare output (noise component)",
     params: {
         freq: "frequency in v/oct - tunes the snare body",

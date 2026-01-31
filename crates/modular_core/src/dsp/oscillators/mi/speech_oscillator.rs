@@ -7,9 +7,7 @@ crate::mi_engine_module! {
     engine_type: SpeechEngine<'a>,
     engine_path: mi_plaits_dsp::engine::speech_engine::SpeechEngine,
     constructor: new(BLOCK_SIZE),
-    output_range: (-2.0, 2.0),
     output_doc: "speech synthesis signal output",
-    aux_range: (-2.0, 2.0),
     aux_doc: "unfiltered vocal cords' signal",
     params: {
         freq: "frequency in v/oct - pitch of the speech",

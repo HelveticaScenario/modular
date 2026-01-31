@@ -7,9 +7,7 @@ crate::mi_engine_module! {
     engine_type: VirtualAnalogVcfEngine,
     engine_path: mi_plaits_dsp::engine2::virtual_analog_vcf_engine::VirtualAnalogVcfEngine,
     constructor: new(),
-    output_range: (-1.0, 1.0),
     output_doc: "low-pass filter output",
-    aux_range: (-1.0, 1.0),
     aux_doc: "12dB/octave high-pass filter output",
     params: {
         freq: "frequency in v/oct",

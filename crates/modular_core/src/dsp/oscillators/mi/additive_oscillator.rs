@@ -7,9 +7,7 @@ crate::mi_engine_module! {
     engine_type: AdditiveEngine,
     engine_path: mi_plaits_dsp::engine::additive_engine::AdditiveEngine,
     constructor: new(),
-    output_range: (-1.0, 1.0),
     output_doc: "additive harmonic signal output",
-    aux_range: (-1.0, 1.0),
     aux_doc: "Hammond organ drawbar harmonics variant (frequency ratios 1, 2, 3, 4, 6, 8, 10, 12)",
     params: {
         freq: "frequency in v/oct",

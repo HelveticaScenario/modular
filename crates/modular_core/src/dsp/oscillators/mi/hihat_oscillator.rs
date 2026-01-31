@@ -7,9 +7,7 @@ crate::mi_engine_module! {
     engine_type: HihatEngine,
     engine_path: mi_plaits_dsp::engine::hihat_engine::HihatEngine,
     constructor: new(BLOCK_SIZE),
-    output_range: (-2.2, 2.2),
     output_doc: "6 square oscillators and a dirty transistor VCA",
-    aux_range: (-2.0, 2.0),
     aux_doc: "three pairs of square oscillators ring-modulating each other with a clean, linear VCA",
     params: {
         freq: "frequency in v/oct",
