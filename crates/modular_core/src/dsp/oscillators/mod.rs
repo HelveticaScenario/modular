@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
+use crate::types::{ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor};
 
 pub mod d_pulse;
 pub mod d_saw;
@@ -32,6 +32,17 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     noise::Noise::install_params_validator(map);
 
     mi::install_param_validators(map);
+}
+
+pub fn install_channel_count_derivers(map: &mut HashMap<String, ChannelCountDeriver>) {
+    sine::SineOscillator::install_channel_count_deriver(map);
+    saw::SawOscillator::install_channel_count_deriver(map);
+    pulse::PulseOscillator::install_channel_count_deriver(map);
+    d_sine::DSineOscillator::install_channel_count_deriver(map);
+    d_saw::DSawOscillator::install_channel_count_deriver(map);
+    d_pulse::DPulseOscillator::install_channel_count_deriver(map);
+    noise::Noise::install_channel_count_deriver(map);
+    mi::install_channel_count_derivers(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {

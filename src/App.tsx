@@ -10,11 +10,56 @@ import { getErrorMessage } from './utils/errorUtils';
 import { FileExplorer } from './components/FileExplorer';
 import electronAPI from './electronAPI';
 import { ValidationError } from '@modular/core';
-import type { FileTreeEntry } from './ipcTypes';
+import type { FileTreeEntry, SourceLocationInfo } from './ipcTypes';
 import type { EditorBuffer, ScopeView } from './types/editor';
 import { getBufferId } from './app/buffers';
 import { drawOscilloscope, scopeKeyFromSubscription } from './app/oscilloscope';
 import { useEditorBuffers } from './app/hooks/useEditorBuffers';
+
+/**
+ * Transform validation errors to use source line numbers instead of module IDs
+ * for auto-generated modules (where the ID is meaningless to the user).
+ */
+function transformErrorsWithSourceLocations(
+    errors: ValidationError[],
+    sourceLocationMap?: Record<string, SourceLocationInfo>
+): ValidationError[] {
+    if (!sourceLocationMap) {
+        return errors;
+    }
+
+    return errors.map((err) => {
+        // The location field contains module ID like "sine-1" or user's explicit ID
+        if (!err.location) {
+            return err;
+        }
+
+        // Parse the location - it's either:
+        // - "'myModule'" for explicit IDs (from format_module_location in Rust)
+        // - "moduleName(...)" for auto-generated IDs
+        const explicitIdMatch = err.location.match(/^'([^']+)'$/);
+        if (explicitIdMatch) {
+            // User explicitly named this module - keep showing the ID
+            return err;
+        }
+
+        // For auto-generated module locations like "sine(...)", 
+        // try to find source line from the map
+        // The moduleType(...) format is produced by Rust, but we need the actual moduleId
+        // to look up in the map. Let's check all entries in the map.
+        for (const [moduleId, loc] of Object.entries(sourceLocationMap)) {
+            if (!loc.idIsExplicit && err.location.includes(moduleId.split('-')[0])) {
+                // Found a match - replace location with line number
+                return {
+                    ...err,
+                    location: `line ${loc.line}`,
+                };
+            }
+        }
+
+        return err;
+    });
+}
 
 
 function App() {
@@ -322,7 +367,13 @@ function App() {
                         setError(result.errorMessage);
                         setValidationErrors(null);
                     } else if (result.errors && result.errors.length > 0) {
-                        setValidationErrors(result.errors.flatMap((e) => e.errors || []));
+                        // Extract and transform validation errors to show source lines
+                        const rawErrors = result.errors.flatMap((e) => e.errors || []);
+                        const transformedErrors = transformErrorsWithSourceLocations(
+                            rawErrors,
+                            result.sourceLocationMap
+                        );
+                        setValidationErrors(transformedErrors);
                         setError(
                             result.errors.map((e) => e.message).join('\n') ||
                                 'Failed to apply patch.',

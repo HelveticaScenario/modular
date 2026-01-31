@@ -135,6 +135,14 @@ export interface CurrentAudioState {
   fallbackWarning?: string
 }
 
+/**
+ * Derive the output channel count for a module from its params JSON.
+ *
+ * Returns the derived channel count, or null if the module type is unknown
+ * or the channel count cannot be determined from the params.
+ */
+export declare function deriveChannelCount(moduleType: string, params: any): number | null
+
 /** N-API compatible structure for the full device cache */
 export interface DeviceCacheSnapshot {
   /** All hosts with their devices grouped together */
@@ -186,6 +194,10 @@ export interface ValidationError {
   field: string
   message: string
   location?: string
+  /** Human-readable description of expected input type */
+  expectedType?: string
+  /** JSON snippet of the actual value that failed */
+  actualValue?: string
 }
 export interface ModuleIdRemap {
   from: string

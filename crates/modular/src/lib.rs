@@ -800,6 +800,28 @@ pub fn get_schemas() -> Result<Vec<modular_core::types::ModuleSchema>> {
   Ok(schema())
 }
 
+// Static registry for channel count derivers
+use std::sync::OnceLock;
+use modular_core::types::ChannelCountDeriver;
+
+static CHANNEL_COUNT_DERIVERS: OnceLock<HashMap<String, ChannelCountDeriver>> = OnceLock::new();
+
+fn get_channel_count_derivers() -> &'static HashMap<String, ChannelCountDeriver> {
+  CHANNEL_COUNT_DERIVERS.get_or_init(|| modular_core::dsp::get_channel_count_derivers())
+}
+
+/// Derive the output channel count for a module from its params JSON.
+/// 
+/// Returns the derived channel count, or null if the module type is unknown
+/// or the channel count cannot be determined from the params.
+#[napi]
+pub fn derive_channel_count(module_type: String, params: serde_json::Value) -> Option<u32> {
+  get_channel_count_derivers()
+    .get(&module_type)
+    .and_then(|deriver| deriver(&params))
+    .map(|n| n as u32)
+}
+
 /// Parse a mini notation pattern and return all leaf spans.
 /// 
 /// This is used by the Monaco editor to create tracked decorations

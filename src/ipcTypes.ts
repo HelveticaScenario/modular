@@ -59,6 +59,18 @@ export interface UpdatePatchResult {
 }
 
 /**
+ * Source location for mapping validation errors back to DSL code.
+ */
+export interface SourceLocationInfo {
+    /** 1-based line number in the DSL source */
+    line: number;
+    /** 1-based column number in the DSL source */
+    column: number;
+    /** Whether the module ID was explicitly set by the user */
+    idIsExplicit: boolean;
+}
+
+/**
  * Result from DSL execution in main process
  */
 export interface DSLExecuteResult {
@@ -67,6 +79,8 @@ export interface DSLExecuteResult {
     appliedPatch?: PatchGraph;
     moduleIdRemap?: Record<string, string>;
     errorMessage?: string;
+    /** Map from module ID to source location for error reporting */
+    sourceLocationMap?: Record<string, SourceLocationInfo>;
 }
 
 /**

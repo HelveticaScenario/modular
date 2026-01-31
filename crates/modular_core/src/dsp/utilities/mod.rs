@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
+use crate::types::{ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor};
 
 pub mod adsr;
 pub mod clock;
@@ -49,6 +49,22 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     percussion_envelope::PercussionEnvelope::install_params_validator(map);
     quantizer::Quantizer::install_params_validator(map);
     stereo_mixer::StereoMixer::install_params_validator(map);
+}
+
+pub fn install_channel_count_derivers(map: &mut HashMap<String, ChannelCountDeriver>) {
+    adsr::Adsr::install_channel_count_deriver(map);
+    clock::Clock::install_channel_count_deriver(map);
+    clock_divider::ClockDivider::install_channel_count_deriver(map);
+    lag::LagProcessor::install_channel_count_deriver(map);
+    logic::RisingEdgeDetector::install_channel_count_deriver(map);
+    logic::FallingEdgeDetector::install_channel_count_deriver(map);
+    math::Math::install_channel_count_deriver(map);
+    remap::Remap::install_channel_count_deriver(map);
+    sample_and_hold::SampleAndHold::install_channel_count_deriver(map);
+    sample_and_hold::TrackAndHold::install_channel_count_deriver(map);
+    percussion_envelope::PercussionEnvelope::install_channel_count_deriver(map);
+    quantizer::Quantizer::install_channel_count_deriver(map);
+    stereo_mixer::StereoMixer::install_channel_count_deriver(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {

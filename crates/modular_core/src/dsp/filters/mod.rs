@@ -1,4 +1,4 @@
-use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
+use crate::types::{ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor};
 use std::collections::HashMap;
 
 pub mod bandpass;
@@ -15,6 +15,12 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     lowpass::LowpassFilter::install_params_validator(map);
     highpass::HighpassFilter::install_params_validator(map);
     bandpass::BandpassFilter::install_params_validator(map);
+}
+
+pub fn install_channel_count_derivers(map: &mut HashMap<String, ChannelCountDeriver>) {
+    lowpass::LowpassFilter::install_channel_count_deriver(map);
+    highpass::HighpassFilter::install_channel_count_deriver(map);
+    bandpass::BandpassFilter::install_channel_count_deriver(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {

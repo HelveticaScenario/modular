@@ -19,12 +19,19 @@ export function ErrorDisplay({ error, errors, onDismiss }: ErrorDisplayProps) {
                         <ul className="validation-errors">
                             {errors.map((err, i) => (
                                 <li key={i} className="validation-error">
-                                    <strong>{err.field}</strong>: {err.message}
-                                    {err.location && (
-                                        <span className="error-location">
-                                            {' '}
-                                            at {err.location}
-                                        </span>
+                                    <div className="validation-error-main">
+                                        <strong>{err.message}</strong>
+                                        {err.location && (
+                                            <span className="error-location">
+                                                {' '}
+                                                at {err.location}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {err.expectedType && (
+                                        <div className="validation-error-expected">
+                                            Expected: {err.expectedType}
+                                        </div>
                                     )}
                                 </li>
                             ))}

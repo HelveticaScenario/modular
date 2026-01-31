@@ -23,7 +23,7 @@ struct StereoMixerParams {
 #[derive(Outputs, JsonSchema)]
 struct StereoMixerOutputs {
     /// Stereo output (channel 0 = left, channel 1 = right)
-    #[output("output", "stereo output", default, range = (-5.0, 5.0))]
+    #[output("output", "stereo output", default)]
     sample: PolyOutput,
 }
 

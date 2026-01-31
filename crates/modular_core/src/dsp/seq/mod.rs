@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
+use crate::types::{ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor};
 
 pub mod scale;
 pub mod seq;
@@ -20,6 +20,10 @@ pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
 
 pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     seq::Seq::install_params_validator(map);
+}
+
+pub fn install_channel_count_derivers(map: &mut HashMap<String, ChannelCountDeriver>) {
+    seq::Seq::install_channel_count_deriver(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {

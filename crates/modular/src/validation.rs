@@ -12,11 +12,171 @@ pub struct ValidationError {
   pub field: String,
   pub message: String,
   pub location: Option<String>,
+  /// Human-readable description of expected input type
+  pub expected_type: Option<String>,
+  /// JSON snippet of the actual value that failed
+  pub actual_value: Option<String>,
+}
+
+/// Translate serde deserialization errors into user-friendly messages.
+///
+/// Maps cryptic Rust/serde error messages to DSL-oriented explanations.
+fn translate_serde_error(raw: &str, module_type: &str) -> (String, Option<String>) {
+  // Pattern: "data did not match any variant of untagged enum PolySignalDe"
+  if raw.contains("untagged enum PolySignalDe") {
+    return (
+      format!("invalid input for '{}' parameter", module_type),
+      Some("a signal: number, string (e.g. '440hz', 'c4'), or module output".to_string()),
+    );
+  }
+
+  // Pattern: "data did not match any variant of untagged enum SignalDe"
+  if raw.contains("untagged enum SignalDe") {
+    return (
+      format!("invalid input for '{}' parameter", module_type),
+      Some("a signal: number, string (e.g. '440hz', 'c4'), or module output".to_string()),
+    );
+  }
+
+  // Pattern: "invalid type: map, expected a sequence"
+  if raw.contains("invalid type: map, expected a sequence") {
+    return (
+      "expected an array of signals, got a single object".to_string(),
+      Some("an array like [signal1, signal2, ...]".to_string()),
+    );
+  }
+
+  // Pattern: "invalid type: sequence, expected a map"
+  if raw.contains("invalid type: sequence, expected a map") {
+    return (
+      "expected a single signal, got an array".to_string(),
+      Some("a single signal (number, string, or module output)".to_string()),
+    );
+  }
+
+  // Pattern: "invalid type: X, expected Y"
+  if let Some(caps) = extract_type_mismatch(raw) {
+    return (
+      format!("expected {}, got {}", caps.1, caps.0),
+      Some(format!("{}", caps.1)),
+    );
+  }
+
+  // Pattern: "missing field `fieldName`"
+  if raw.contains("missing field") {
+    if let Some(field) = extract_field_name(raw, "missing field") {
+      return (
+        format!("missing required parameter: {}", field),
+        None,
+      );
+    }
+  }
+
+  // Pattern: "unknown field `fieldName`"
+  if raw.contains("unknown field") {
+    if let Some(field) = extract_field_name(raw, "unknown field") {
+      return (
+        format!("unknown parameter: {}", field),
+        None,
+      );
+    }
+  }
+
+  // Pattern: "invalid value: X, expected Y"
+  if raw.contains("invalid value:") {
+    if let Some(caps) = extract_invalid_value(raw) {
+      return (
+        format!("invalid value: {}, expected {}", caps.0, caps.1),
+        Some(caps.1),
+      );
+    }
+  }
+
+  // Pattern: "expected X at line Y column Z" (JSON path errors)
+  if raw.contains("expected") && (raw.contains("at line") || raw.contains("at column")) {
+    // Strip the position info which isn't useful to DSL users
+    let cleaned = raw
+      .split(" at line")
+      .next()
+      .unwrap_or(raw)
+      .to_string();
+    return (cleaned, None);
+  }
+
+  // Fallback: return original message cleaned up
+  (raw.to_string(), None)
+}
+
+/// Extract "invalid type: X, expected Y" components
+fn extract_type_mismatch(raw: &str) -> Option<(String, String)> {
+  let prefix = "invalid type: ";
+  if let Some(start) = raw.find(prefix) {
+    let rest = &raw[start + prefix.len()..];
+    if let Some(comma_pos) = rest.find(", expected ") {
+      let actual = rest[..comma_pos].trim().to_string();
+      let expected = rest[comma_pos + ", expected ".len()..].trim().to_string();
+      return Some((actual, expected));
+    }
+  }
+  None
+}
+
+/// Extract "invalid value: X, expected Y" components  
+fn extract_invalid_value(raw: &str) -> Option<(String, String)> {
+  let prefix = "invalid value: ";
+  if let Some(start) = raw.find(prefix) {
+    let rest = &raw[start + prefix.len()..];
+    if let Some(comma_pos) = rest.find(", expected ") {
+      let actual = rest[..comma_pos].trim().to_string();
+      let expected = rest[comma_pos + ", expected ".len()..].trim().to_string();
+      return Some((actual, expected));
+    }
+  }
+  None
+}
+
+/// Extract field name from "missing field `X`" or "unknown field `X`"
+fn extract_field_name(raw: &str, prefix: &str) -> Option<String> {
+  if let Some(start) = raw.find(prefix) {
+    let rest = &raw[start + prefix.len()..];
+    // Look for backtick-quoted field name
+    if let Some(tick_start) = rest.find('`') {
+      let after_tick = &rest[tick_start + 1..];
+      if let Some(tick_end) = after_tick.find('`') {
+        return Some(after_tick[..tick_end].to_string());
+      }
+    }
+  }
+  None
+}
+
+/// Format module location for error messages.
+/// 
+/// For explicitly named modules, returns the user's ID (e.g., "myOscillator").
+/// For auto-generated IDs, returns None so the error can be tied to source line instead.
+fn format_module_location(module: &ModuleState) -> String {
+  if module.id_is_explicit == Some(true) {
+    // User explicitly set this ID, show it
+    format!("'{}'", module.id)
+  } else {
+    // Auto-generated ID - this will be replaced by source line in TypeScript
+    // For now, show module type as a hint
+    format!("{}(...)", module.module_type)
+  }
+}
+
+/// Truncate JSON value for error display (max ~100 chars)
+fn truncate_json(value: &serde_json::Value) -> String {
+  let s = value.to_string();
+  if s.len() > 100 {
+    format!("{}...", &s[..97])
+  } else {
+    s
+  }
 }
 
 impl std::fmt::Display for ValidationError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    println!("{:?}", self);
     if let Some(ref location) = self.location {
       write!(f, "{}: {} (at {})", self.field, self.message, location)
     } else {
@@ -156,6 +316,8 @@ fn validate_signal_reference(
           field: field.to_string(),
           message: format!("Module '{}' not found for cable source", src_module),
           location: Some(location.to_string()),
+          expected_type: None,
+          actual_value: None,
         });
         return;
       };
@@ -168,6 +330,8 @@ fn validate_signal_reference(
             src_state.module_type, src_module
           ),
           location: Some(location.to_string()),
+          expected_type: None,
+          actual_value: None,
         });
         return;
       };
@@ -180,6 +344,8 @@ fn validate_signal_reference(
             src_port, src_module
           ),
           location: Some(location.to_string()),
+          expected_type: None,
+          actual_value: None,
         });
       }
     }
@@ -275,12 +441,17 @@ pub fn validate_patch(
   // === Module validation ===
   // Validate each module instance in the patch.
   for module in &patch.modules {
+    // Format location: show module ID only if explicitly set by user
+    let location_str = format_module_location(module);
+
     // 1) Module type must exist in our schema registry.
     let Some(schema) = schema_map.get(module.module_type.as_str()).copied() else {
       errors.push(ValidationError {
         field: "moduleType".to_string(),
         message: format!("Unknown module type '{}'", module.module_type),
-        location: Some(module.id.clone()),
+        location: Some(location_str.clone()),
+        expected_type: None,
+        actual_value: None,
       });
       continue;
     };
@@ -297,7 +468,9 @@ pub fn validate_patch(
         errors.push(ValidationError {
           field: "params".to_string(),
           message: "Module params must be a JSON object".to_string(),
-          location: Some(module.id.clone()),
+          location: Some(location_str.clone()),
+          expected_type: Some("an object with parameter values".to_string()),
+          actual_value: Some(truncate_json(&module.params)),
         });
       }
       continue;
@@ -310,15 +483,14 @@ pub fn validate_patch(
     // tolerate `null` elsewhere, and we don't want a redundant parse failure in that case.
     if let Some(validate) = param_validators.get(module.module_type.as_str()) {
       if let Err(err) = validate(&module.params) {
-        println!("{:?}", err);
-        println!("{:?}", module.params);
+        let raw_error = err.to_string();
+        let (translated_message, expected_type) = translate_serde_error(&raw_error, &module.module_type);
         errors.push(ValidationError {
           field: "params".to_string(),
-          message: format!(
-            "Params failed to parse for module type '{}': {}",
-            module.module_type, err
-          ),
-          location: Some(module.id.clone()),
+          message: translated_message,
+          location: Some(location_str.clone()),
+          expected_type,
+          actual_value: Some(truncate_json(&module.params)),
         });
       }
     }
@@ -335,10 +507,12 @@ pub fn validate_patch(
         errors.push(ValidationError {
           field: format!("params.{}", param_name),
           message: format!(
-            "Param '{}' not found on module type '{}'",
+            "Unknown parameter '{}' for module type '{}'",
             param_name, module.module_type
           ),
-          location: Some(module.id.clone()),
+          location: Some(location_str.clone()),
+          expected_type: None,
+          actual_value: None,
         });
         continue;
       };
@@ -352,7 +526,7 @@ pub fn validate_patch(
       validate_signals_in_json_value(
         param_value,
         &field,
-        &module.id,
+        &location_str,
         &module_by_id,
         &schema_map,
         &mut errors,
@@ -376,6 +550,8 @@ pub fn validate_patch(
             field: "scopes".to_string(),
             message: format!("Scope references missing module '{}'", module_id),
             location: None,
+            expected_type: None,
+            actual_value: None,
           });
           continue;
         };
@@ -389,6 +565,8 @@ pub fn validate_patch(
               module_id, module.module_type
             ),
             location: None,
+            expected_type: None,
+            actual_value: None,
           });
           continue;
         };
@@ -402,6 +580,8 @@ pub fn validate_patch(
               port_name, module_id
             ),
             location: None,
+            expected_type: None,
+            actual_value: None,
           });
         }
       }
@@ -436,7 +616,7 @@ mod tests {
         module_type: "sine".to_string(),
         id_is_explicit: None,
         params: json!({
-            "freq": {"type": "volts", "value": 4.0}
+            "freq": 4.0
         }),
       }],
       module_id_remaps: None,
@@ -490,7 +670,7 @@ mod tests {
     assert!(result.is_err());
     let errors = result.unwrap_err();
     assert_eq!(errors.len(), 1);
-    assert!(errors[0].message.contains("not found on module type"));
+    assert!(errors[0].message.contains("Unknown parameter"));
   }
 
   #[test]
@@ -527,7 +707,7 @@ mod tests {
           module_type: "sine".to_string(),
           id_is_explicit: None,
           params: json!({
-              "freq": {"type": "volts", "value": 4.0}
+              "freq": 4.0
           }),
         },
         ModuleState {
@@ -561,10 +741,10 @@ mod tests {
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "nested-1".to_string(),
-        module_type: "sum".to_string(),
+        module_type: "mix".to_string(),
         id_is_explicit: None,
         params: json!({
-            "signals": [
+            "inputs": [
               {"type": "cable", "module": "nonexistent", "port": "output"}
             ]
         }),
@@ -578,8 +758,9 @@ mod tests {
     assert!(result.is_err());
     let errors = result.unwrap_err();
     assert!(errors.iter().any(|e| {
-      e.location.as_deref() == Some("nested-1")
-        && e.field == "params.signals"
+      // Location is now formatted as "moduleName(...)" for auto-generated IDs
+      e.location.as_deref() == Some("mix(...)")
+        && e.field == "params.inputs"
         && e.message.contains("not found for cable source")
     }));
   }
@@ -594,15 +775,15 @@ mod tests {
           module_type: "sine".to_string(),
           id_is_explicit: None,
           params: json!({
-              "freq": {"type": "volts", "value": 4.0}
+              "freq": 4.0
           }),
         },
         ModuleState {
           id: "nested-1".to_string(),
-          module_type: "sum".to_string(),
+          module_type: "mix".to_string(),
           id_is_explicit: None,
           params: json!({
-              "signals": [
+              "inputs": [
                 {"type": "cable", "module": "sine-1", "port": "output"}
               ]
           }),
@@ -626,7 +807,7 @@ mod tests {
           module_type: "sine".to_string(),
           id_is_explicit: None,
           params: json!({
-              "freq": {"type": "volts", "value": 4.0}
+              "freq": 4.0
           }),
         },
         ModuleState {
@@ -655,8 +836,8 @@ mod tests {
         module_type: "sine".to_string(),
         id_is_explicit: None,
         params: json!({
-            "unknown1": {"type": "volts", "value": 1.0},
-            "unknown2": {"type": "volts", "value": 2.0}
+            "unknown1": 1.0,
+            "unknown2": 2.0
         }),
       }],
       module_id_remaps: None,
@@ -688,16 +869,15 @@ mod tests {
     // Use the real schemas (and real typed validators) from modular_core.
     let schemas = modular_core::dsp::schema();
 
-    // Ensure typed params validation fails by providing an invalid `Signal`.
-    // `gain` expects a valid Signal; this Cable omits `port`.
+    // Ensure typed params validation fails by providing an invalid enum variant.
+    // `color` expects one of white/pink/brown (lowercase).
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "noise-1".to_string(),
         module_type: "noise".to_string(),
         id_is_explicit: None,
         params: json!({
-            "color": "White",
-            "gain": {"type": "cable", "module": "m1"}
+            "color": "invalid_color"
         }),
       }],
       module_id_remaps: None,
@@ -709,10 +889,11 @@ mod tests {
     assert!(result.is_err());
     let errors = result.unwrap_err();
 
+    // Location is formatted as "noise(...)" for auto-generated IDs
     assert!(errors.iter().any(|e| {
       e.field == "params"
-        && e.location.as_deref() == Some("noise-1")
-        && e.message.contains("failed to parse")
+        && e.location.as_deref() == Some("noise(...)")
+        && e.message.contains("unknown variant")
     }));
   }
 

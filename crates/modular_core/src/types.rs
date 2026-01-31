@@ -149,12 +149,81 @@ pub trait Module {
     ///
     /// This is intended for server-side patch validation before applying the patch.
     fn validate_params_json(params: &serde_json::Value) -> napi::Result<()>;
+
+    /// Register this module's channel count deriver in the provided map.
+    ///
+    /// The key is the module type string (e.g. "mix"). The value is a function
+    /// that derives the output channel count from a JSON params object.
+    fn install_channel_count_deriver(map: &mut HashMap<String, ChannelCountDeriver>) {
+        // Default implementation: register the standard derive_channel_count
+        let schema = Self::get_schema();
+        map.insert(schema.name, Self::derive_channel_count);
+    }
+
+    /// Derive the output channel count from a JSON params object.
+    ///
+    /// Returns the derived channel count, or None if it cannot be determined
+    /// from the params alone. The default implementation handles:
+    /// 1. Hardcoded channels (from schema)
+    /// 2. channels_param value (from params JSON)
+    /// 3. Max of PolySignal input array lengths (inferred from JSON arrays)
+    fn derive_channel_count(params: &serde_json::Value) -> Option<usize>;
 }
 
 /// Function pointer type used to validate a module's `ModuleState.params`.
 ///
 /// The validator should return Ok if deserialization into the module's concrete params type succeeds.
 pub type ParamsValidator = fn(&serde_json::Value) -> napi::Result<()>;
+
+/// Function pointer type used to derive a module's output channel count from its params.
+///
+/// Returns the derived channel count, or None if it cannot be determined.
+pub type ChannelCountDeriver = fn(&serde_json::Value) -> Option<usize>;
+
+/// Helper function to derive channel count from JSON params by finding max array length.
+///
+/// This is used by the default `derive_channel_count` implementation to infer channel count
+/// from PolySignal inputs. PolySignal serializes as an array of Signals, so we look for
+/// arrays and return the maximum length found.
+pub fn derive_channel_count_from_json(params: &serde_json::Value) -> Option<usize> {
+    use crate::poly::PORT_MAX_CHANNELS;
+
+    fn max_array_len(value: &serde_json::Value) -> usize {
+        match value {
+            serde_json::Value::Array(arr) => {
+                // Check if this looks like a PolySignal (array of signals)
+                // A signal is either a number, string, or object with "type" field
+                let is_poly_signal = arr.iter().all(|v| {
+                    matches!(
+                        v,
+                        serde_json::Value::Number(_) | serde_json::Value::String(_)
+                    ) || (v.is_object() && v.get("type").is_some())
+                });
+
+                if is_poly_signal && !arr.is_empty() {
+                    // This array is a PolySignal - its length is the channel count
+                    arr.len()
+                } else {
+                    // This might be an array of PolySignals (like Vec<PolySignal>)
+                    // or nested structures - recurse into each element
+                    arr.iter().map(max_array_len).max().unwrap_or(0)
+                }
+            }
+            serde_json::Value::Object(obj) => {
+                // Recurse into object values
+                obj.values().map(max_array_len).max().unwrap_or(0)
+            }
+            _ => 0,
+        }
+    }
+
+    let max_len = max_array_len(params);
+    if max_len > 0 {
+        Some(max_len.clamp(1, PORT_MAX_CHANNELS))
+    } else {
+        Some(1) // Default to 1 channel if no arrays found
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
@@ -677,10 +746,7 @@ impl Connect for Signal {
             Signal::Cable {
                 module, module_ptr, ..
             } => {
-                println!("Connecting Signal Cable to module: {:?}", module);
-                println!("Available sampleables: {:?}", patch.sampleables.keys());
                 if let Some(sampleable) = patch.sampleables.get(module) {
-                    println!("Found sampleable for module: {:?}", module);
                     *module_ptr = Arc::downgrade(sampleable);
                 }
             }
@@ -1092,7 +1158,11 @@ mod tests {
         // C#4 -> MIDI 61 -> 1/12 V
         let s: Signal = from_str("\"C#4\"").unwrap();
         match s {
-            Signal::Volts(v) => assert!((v - (1.0 / 12.0)).abs() < 1e-6, "C#4 should be 1/12V, got {}", v),
+            Signal::Volts(v) => assert!(
+                (v - (1.0 / 12.0)).abs() < 1e-6,
+                "C#4 should be 1/12V, got {}",
+                v
+            ),
             _ => panic!("Expected Volts"),
         }
     }
@@ -1109,21 +1179,33 @@ mod tests {
         // 1s(C4:Major) -> 2nd interval -> D4 -> 2 semitones -> 2/12 V
         let s: Signal = from_str("\"1s(C4:Major)\"").unwrap();
         match s {
-            Signal::Volts(v) => assert!((v - (2.0 / 12.0)).abs() < 1e-6, "1s(C4:Major) should be 2/12V, got {}", v),
+            Signal::Volts(v) => assert!(
+                (v - (2.0 / 12.0)).abs() < 1e-6,
+                "1s(C4:Major) should be 2/12V, got {}",
+                v
+            ),
             _ => panic!("Expected Volts"),
         }
 
         // 2s(C4:Major) -> 3rd interval -> E4 -> 4 semitones -> 4/12 V
         let s: Signal = from_str("\"2s(C4:Major)\"").unwrap();
         match s {
-            Signal::Volts(v) => assert!((v - (4.0 / 12.0)).abs() < 1e-6, "2s(C4:Major) should be 4/12V, got {}", v),
+            Signal::Volts(v) => assert!(
+                (v - (4.0 / 12.0)).abs() < 1e-6,
+                "2s(C4:Major) should be 4/12V, got {}",
+                v
+            ),
             _ => panic!("Expected Volts"),
         }
 
         // 7s(C4:Major) -> 8th interval (octave) -> C5 -> 12 semitones -> 1V
         let s: Signal = from_str("\"7s(C4:Major)\"").unwrap();
         match s {
-            Signal::Volts(v) => assert!((v - 1.0).abs() < 1e-6, "7s(C4:Major) should be 1V, got {}", v),
+            Signal::Volts(v) => assert!(
+                (v - 1.0).abs() < 1e-6,
+                "7s(C4:Major) should be 1V, got {}",
+                v
+            ),
             _ => panic!("Expected Volts"),
         }
 
@@ -1131,7 +1213,11 @@ mod tests {
         // 1.5s(C4:Major) -> 2nd interval + 50 cents -> 2.5 semitones -> 2.5/12 V
         let s: Signal = from_str("\"1.5s(c4:maj)\"").unwrap();
         match s {
-            Signal::Volts(v) => assert!((v - (2.5 / 12.0)).abs() < 1e-6, "1.5s(C4:Major) should be 2.5/12V, got {}", v),
+            Signal::Volts(v) => assert!(
+                (v - (2.5 / 12.0)).abs() < 1e-6,
+                "1.5s(C4:Major) should be 2.5/12V, got {}",
+                v
+            ),
             _ => panic!("Expected Volts"),
         }
 
@@ -1139,7 +1225,11 @@ mod tests {
         // -1s(C4:Major) -> B3 -> one semitone below C4 -> -1/12 V
         let s: Signal = from_str("\"-1s(C4:Major)\"").unwrap();
         match s {
-            Signal::Volts(v) => assert!((v - (-1.0 / 12.0)).abs() < 1e-6, "-1s(C4:Major) should be -1/12V, got {}", v),
+            Signal::Volts(v) => assert!(
+                (v - (-1.0 / 12.0)).abs() < 1e-6,
+                "-1s(C4:Major) should be -1/12V, got {}",
+                v
+            ),
             _ => panic!("Expected Volts"),
         }
     }

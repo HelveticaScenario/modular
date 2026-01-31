@@ -253,6 +253,9 @@ struct ModuleAttr {
     channels: Option<u8>,
     channels_param: Option<LitStr>,
     channels_param_default: Option<u8>,
+    /// Custom function to derive channel count from params struct.
+    /// The function must have signature: fn(&ParamsStruct) -> Option<usize>
+    channels_derive: Option<syn::Path>,
 }
 
 /// Parse module attribute tokens into ModuleAttr
@@ -260,6 +263,7 @@ struct ModuleAttr {
 /// - #[module("name", "description")]
 /// - #[module("name", "description", channels = N)]
 /// - #[module("name", "description", channels_param = "paramName", channels_param_default = N)]
+/// - #[module("name", "description", channels_derive = my_derive_fn)]
 fn parse_module_attr(attrs: &Vec<Attribute>) -> ModuleAttr {
     use syn::Result as SynResult;
     use syn::parse::{Parse, ParseStream};
@@ -270,6 +274,7 @@ fn parse_module_attr(attrs: &Vec<Attribute>) -> ModuleAttr {
         channels: Option<u8>,
         channels_param: Option<LitStr>,
         channels_param_default: Option<u8>,
+        channels_derive: Option<syn::Path>,
     }
 
     impl Parse for ModuleAttrParser {
@@ -281,6 +286,7 @@ fn parse_module_attr(attrs: &Vec<Attribute>) -> ModuleAttr {
             let mut channels: Option<u8> = None;
             let mut channels_param: Option<LitStr> = None;
             let mut channels_param_default: Option<u8> = None;
+            let mut channels_derive: Option<syn::Path> = None;
 
             // Parse remaining optional elements
             while input.peek(Token![,]) {
@@ -309,11 +315,15 @@ fn parse_module_attr(attrs: &Vec<Attribute>) -> ModuleAttr {
                         input.parse::<Token![=]>()?;
                         let lit: syn::LitInt = input.parse()?;
                         channels_param_default = Some(lit.base10_parse()?);
+                    } else if ident == "channels_derive" {
+                        input.parse::<Token![=]>()?;
+                        let path: syn::Path = input.parse()?;
+                        channels_derive = Some(path);
                     } else {
                         return Err(syn::Error::new(
                             ident.span(),
                             format!(
-                                "Unknown module attribute '{}'. Expected 'channels', 'channels_param', or 'channels_param_default'",
+                                "Unknown module attribute '{}'. Expected 'channels', 'channels_param', 'channels_param_default', or 'channels_derive'",
                                 ident
                             ),
                         ));
@@ -327,6 +337,7 @@ fn parse_module_attr(attrs: &Vec<Attribute>) -> ModuleAttr {
                 channels,
                 channels_param,
                 channels_param_default,
+                channels_derive,
             })
         }
     }
@@ -340,6 +351,7 @@ fn parse_module_attr(attrs: &Vec<Attribute>) -> ModuleAttr {
         channels: parsed.channels,
         channels_param: parsed.channels_param,
         channels_param_default: parsed.channels_param_default,
+        channels_derive: parsed.channels_derive,
     }
 }
 
@@ -370,6 +382,45 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
     use syn::Result as SynResult;
     use syn::parse::{Parse, ParseStream};
 
+    /// Reserved output names that conflict with ModuleOutput, Collection, or CollectionWithRange
+    /// methods/properties in the TypeScript DSL. These names cannot be used as output names.
+    ///
+    /// IMPORTANT: When adding new methods to any type that a factory function could return
+    /// (ModuleOutput, ModuleOutputWithRange, BaseCollection, Collection, CollectionWithRange),
+    /// the method name MUST be added to this list. Keep in sync with:
+    /// - src/dsl/factories.ts (RESERVED_OUTPUT_NAMES)
+    /// - src/dsl/typescriptLibGen.ts (RESERVED_OUTPUT_NAMES)
+    const RESERVED_OUTPUT_NAMES: &[&str] = &[
+        // ModuleOutput properties
+        "builder",
+        "moduleId",
+        "module_id",
+        "portName",
+        "port_name",
+        "channel",
+        // ModuleOutput methods
+        "gain",
+        "shift",
+        "scope",
+        "out",
+        "o",
+        "toString",
+        "to_string",
+        // ModuleOutputWithRange properties
+        "minValue",
+        "min_value",
+        "maxValue",
+        "max_value",
+        "range",
+        // Collection/CollectionWithRange properties
+        "items",
+        "length",
+        // JavaScript built-ins
+        "constructor",
+        "prototype",
+        "__proto__",
+    ];
+
     struct OutputAttrParser {
         name: LitStr,
         description: Option<LitStr>,
@@ -381,16 +432,17 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
         fn parse(input: ParseStream) -> SynResult<Self> {
             // Parse first string literal (name)
             let name: LitStr = input.parse()?;
-            if name.value() == "o" {
+            let name_value = name.value();
+            
+            // Check against reserved names
+            if RESERVED_OUTPUT_NAMES.contains(&name_value.as_str()) {
                 return Err(syn::Error::new(
                     name.span(),
-                    "Output name cannot be 'o' as it is a reserved keyword",
-                ));
-            }
-            if name.value() == "out" {
-                return Err(syn::Error::new(
-                    name.span(),
-                    "Output name cannot be 'out' as it is a reserved keyword",
+                    format!(
+                        "Output name '{}' is reserved. Reserved names are: {:?}",
+                        name_value,
+                        RESERVED_OUTPUT_NAMES
+                    ),
                 ));
             }
 
@@ -966,6 +1018,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     let hardcoded_channels = module_attr.channels;
     let channels_param_name = module_attr.channels_param.clone();
     let channels_param_default_val = module_attr.channels_param_default;
+    let channels_derive_fn = module_attr.channels_derive;
 
     let module_channels = match module_attr.channels {
         Some(n) => quote! { Some(#n) },
@@ -1123,60 +1176,95 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         }
     };
 
-    // Generate channel_count() method body based on module attributes
-    // Priority: 1. hardcoded channels, 2. channels_param (with default), 3. max of PolySignal inputs
-    let channel_count_impl = match (
-        hardcoded_channels,
-        &channels_param_name,
-        channels_param_default_val,
-    ) {
-        // 1. Hardcoded channel count from #[module(..., channels = N)]
-        (Some(n), _, _) => {
-            let n = n as usize;
-            quote! {
-                #n
+    // Generate the channel count derivation function name
+    let channel_count_fn_name = format_ident!("__{}_derive_channel_count", name.to_string().to_case(Case::Snake));
+
+    // Generate the core channel count implementation that works with typed params.
+    // If channels_derive is specified, use that custom function.
+    // Otherwise, generate a default implementation based on schema attributes.
+    let channel_count_fn_impl = if let Some(ref custom_fn) = channels_derive_fn {
+        // Custom function provided - just call it directly
+        // The custom function must have signature: fn(&ParamsStruct) -> usize
+        quote! {
+            /// Core channel count derivation function for this module.
+            /// Called by both `channel_count(&self)` and `derive_channel_count(json)`.
+            #[inline]
+            fn #channel_count_fn_name(params: &#params_struct_name) -> usize {
+                #custom_fn(params)
             }
         }
-        // 2. channels_param specified - read from params field, with optional default
-        (None, Some(param_name), default_val) => {
-            let param_ident = Ident::new(&param_name.value(), param_name.span());
-            match default_val {
-                Some(default) => {
-                    let default = default as usize;
-                    quote! {
-                        let param_value = self.params.#param_ident;
-                        if param_value > 0 {
-                            param_value.clamp(1, crate::poly::PORT_MAX_CHANNELS)
-                        } else {
-                            #default
+    } else {
+        // Generate default implementation based on schema attributes
+        match (
+            hardcoded_channels,
+            &channels_param_name,
+            channels_param_default_val,
+        ) {
+            // 1. Hardcoded channel count from #[module(..., channels = N)]
+            (Some(n), _, _) => {
+                let n = n as usize;
+                quote! {
+                    #[inline]
+                    fn #channel_count_fn_name(_params: &#params_struct_name) -> usize {
+                        #n
+                    }
+                }
+            }
+            // 2. channels_param specified - read from params field, with optional default
+            (None, Some(param_name), default_val) => {
+                let param_ident = Ident::new(&param_name.value(), param_name.span());
+                match default_val {
+                    Some(default) => {
+                        let default = default as usize;
+                        quote! {
+                            #[inline]
+                            fn #channel_count_fn_name(params: &#params_struct_name) -> usize {
+                                let param_value = params.#param_ident;
+                                if param_value > 0 {
+                                    param_value.clamp(1, crate::poly::PORT_MAX_CHANNELS)
+                                } else {
+                                    #default
+                                }
+                            }
+                        }
+                    }
+                    None => {
+                        quote! {
+                            #[inline]
+                            fn #channel_count_fn_name(params: &#params_struct_name) -> usize {
+                                params.#param_ident.clamp(1, crate::poly::PORT_MAX_CHANNELS)
+                            }
                         }
                     }
                 }
-                None => {
-                    quote! {
-                        self.params.#param_ident.clamp(1, crate::poly::PORT_MAX_CHANNELS)
+            }
+            // 3. Infer from PolySignal inputs
+            (None, None, _) => {
+                quote! {
+                    #[inline]
+                    fn #channel_count_fn_name(params: &#params_struct_name) -> usize {
+                        use crate::types::PolySignalFields;
+                        let fields = params.poly_signal_fields();
+                        let refs: Vec<&crate::poly::PolySignal> = fields.into_iter().collect();
+                        crate::poly::PolySignal::max_channels(&refs).max(1) as usize
                     }
                 }
-            }
-        }
-        // 3. Infer from PolySignal inputs
-        (None, None, _) => {
-            quote! {
-                use crate::types::PolySignalFields;
-                let fields = self.params.poly_signal_fields();
-                let refs: Vec<&crate::poly::PolySignal> = fields.into_iter().collect();
-                crate::poly::PolySignal::max_channels(&refs).max(1) as usize
             }
         }
     };
 
     let generated = quote! {
+        // Generated core channel count function that both self.channel_count() and 
+        // derive_channel_count(json) call.
+        #channel_count_fn_impl
+
         // Generated channel_count method for the module
         impl #impl_generics #name #ty_generics #where_clause {
             /// Get the channel count for this module.
             /// Priority: 1. hardcoded channels, 2. channels_param value/default, 3. max of PolySignal inputs
+            #[inline]
             pub fn channel_count(&self) -> usize {
-                #channel_count_impl
+                #channel_count_fn_name(&self.params)
             }
         }
 
@@ -1227,7 +1315,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 #module_name
             }
 
-            fn try_update_params(&self, params: serde_json::Value) -> Result<()> {
+            fn try_update_params(&self, params: serde_json::Value) -> napi::Result<()> {
                 let mut module = self.module.lock();
                 module.params = serde_json::from_value(params)?;
                 Ok(())
@@ -1249,7 +1337,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             }
         }
 
-        fn #constructor_name(id: &String, sample_rate: f32) -> Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
+        fn #constructor_name(id: &String, sample_rate: f32) -> napi::Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
             Ok(std::sync::Arc::new(Box::new(#struct_name {
                 id: id.clone(),
                 sample_rate,
@@ -1272,6 +1360,12 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 // with what the DSP module expects.
                 let _parsed: #params_struct_name = serde_json::from_value(params.clone())?;
                 Ok(())
+            }
+
+            fn derive_channel_count(params: &serde_json::Value) -> Option<usize> {
+                // Deserialize JSON to typed params struct and call the shared implementation.
+                let parsed: #params_struct_name = serde_json::from_value(params.clone()).ok()?;
+                Some(#channel_count_fn_name(&parsed))
             }
 
             fn get_schema() -> crate::types::ModuleSchema {

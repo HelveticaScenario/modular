@@ -10,6 +10,9 @@ export const mainConfig: Configuration = {
    */
   entry: './src/main.ts',
   // Put your normal webpack config below here
+  externals: {
+    '@modular/core': 'commonjs @modular/core',
+  },
   module: {
     rules: [
       ...rules,

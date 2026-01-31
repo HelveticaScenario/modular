@@ -32,11 +32,11 @@ pub struct Clock {
 struct ClockOutputs {
     #[output("playhead", "how many bars have elapsed. 2 channel output with phase and loop index", default)]
     playhead: PolyOutput,
-    #[output("barTrigger", "trigger output every bar")]
+    #[output("barTrigger", "trigger output every bar", range = (0.0, 5.0))]
     bar_trigger: f32,
-    #[output("ramp", "ramp from 0 to 5V every bar")]
+    #[output("ramp", "ramp from 0 to 5V every bar", range = (0.0, 5.0))]
     ramp: f32,
-    #[output("ppqTrigger", "trigger output at 48 PPQ")]
+    #[output("ppqTrigger", "trigger output at 48 PPQ", range = (0.0, 5.0))]
     ppq_trigger: f32,
 }
 

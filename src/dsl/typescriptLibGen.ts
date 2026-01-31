@@ -208,7 +208,7 @@ type OrArray<T> = T | T[];
 // Core DSL types used by the generated declarations
 type Signal = number | Note | HZ | MidiNote | Scale | ModuleOutput;
 
-type PolySignal = OrArray<Signal>;
+type PolySignal = OrArray<Signal> | Iterable<ModuleOutput>;
 
 interface ModuleOutput {
   readonly moduleId: string;
@@ -226,18 +226,52 @@ interface ModuleOutputWithRange extends ModuleOutput {
   range(outMin: PolySignal, outMax: PolySignal): ModuleOutput;
 }
 
+/**
+ * Collection of ModuleOutput instances with chainable DSP methods.
+ * Supports iteration, indexing, and spreading.
+ */
+interface Collection extends Iterable<ModuleOutput> {
+  readonly length: number;
+  readonly [index: number]: ModuleOutput;
+  [Symbol.iterator](): Iterator<ModuleOutput>;
+  gain(factor: PolySignal): Collection;
+  shift(offset: PolySignal): Collection;
+  scope(msPerFrame?: number, triggerThreshold?: number): this;
+  out(mode?: 'm'): this;
+  range(inMin: PolySignal, inMax: PolySignal, outMin: PolySignal, outMax: PolySignal): Collection;
+}
+
+/**
+ * Collection of ModuleOutputWithRange instances.
+ * Use .range(outMin, outMax) to remap using stored min/max values.
+ */
+interface CollectionWithRange extends Iterable<ModuleOutputWithRange> {
+  readonly length: number;
+  readonly [index: number]: ModuleOutputWithRange;
+  [Symbol.iterator](): Iterator<ModuleOutputWithRange>;
+  gain(factor: PolySignal): Collection;
+  shift(offset: PolySignal): Collection;
+  scope(msPerFrame?: number, triggerThreshold?: number): this;
+  out(mode?: 'm'): this;
+  range(outMin: PolySignal, outMax: PolySignal): Collection;
+}
+
 // Helper functions exposed by the DSL runtime
 declare function hz(frequency: number): number;
 declare function note(noteName: string): number;
 declare function bpm(beatsPerMinute: number): number;
 
-interface Array<T> {
-    gain(this: T extends ModuleOutput ? T[] : never, factor: PolySignal): ModuleOutput[];
-    offset(this: T extends ModuleOutput ? T[] : never, offset: PolySignal): ModuleOutput[];
-    out(this: T extends ModuleOutput ? T[] : never, mode?: 'm'): T[];
-    scope(this: T extends ModuleOutput ? T[] : never, msPerFrame?: number, triggerThreshold?: number): T[];
-    range(this: T extends ModuleOutputWithRange ? T[] : never, outMin: PolySignal, outMax: PolySignal): ModuleOutput[];
-}
+/**
+ * Create a Collection from ModuleOutput instances.
+ * @example $(osc1, osc2).gain(0.5).out()
+ */
+declare function $(...args: ModuleOutput[]): Collection;
+
+/**
+ * Create a CollectionWithRange from ModuleOutputWithRange instances.
+ * @example $r(...lfo).range(note('c3'), note('c5'))
+ */
+declare function $r(...args: ModuleOutputWithRange[]): CollectionWithRange;
 `;
 
 export function buildLibSource(schemas: ModuleSchema[]): string {
@@ -614,6 +648,110 @@ function toCamelCase(str: string): string {
 }
 
 /**
+ * Reserved property names that conflict with ModuleOutput, Collection, or CollectionWithRange methods/properties.
+ * Output names matching these will be suffixed with an underscore.
+ *
+ * IMPORTANT: When adding new methods to any type that a factory function could return
+ * (ModuleOutput, ModuleOutputWithRange, BaseCollection, Collection, CollectionWithRange),
+ * the method name MUST be added to this list. Keep in sync with:
+ * - crates/modular_derive/src/lib.rs (RESERVED_OUTPUT_NAMES)
+ * - src/dsl/factories.ts (RESERVED_OUTPUT_NAMES)
+ */
+const RESERVED_OUTPUT_NAMES = new Set([
+    // ModuleOutput properties
+    'builder',
+    'moduleId',
+    'portName',
+    'channel',
+    // ModuleOutput methods
+    'gain',
+    'shift',
+    'scope',
+    'out',
+    'toString',
+    // ModuleOutputWithRange properties
+    'minValue',
+    'maxValue',
+    'range',
+    // Collection/CollectionWithRange properties
+    'items',
+    'length',
+    // JavaScript built-ins
+    'constructor',
+    'prototype',
+    '__proto__',
+]);
+
+/**
+ * Sanitize output name to avoid conflicts with reserved properties/methods.
+ * Appends underscore if the camelCase name is reserved.
+ */
+function sanitizeOutputName(name: string): string {
+    const camelName = toCamelCase(name);
+    return RESERVED_OUTPUT_NAMES.has(camelName) ? `${camelName}_` : camelName;
+}
+
+/**
+ * Get the output type for a single output definition
+ */
+function getOutputType(output: { polyphonic?: boolean; minValue?: number; maxValue?: number }): string {
+    const hasRange = output.minValue !== undefined && output.maxValue !== undefined;
+    if (output.polyphonic) {
+        return hasRange ? 'CollectionWithRange' : 'Collection';
+    }
+    return hasRange ? 'ModuleOutputWithRange' : 'ModuleOutput';
+}
+
+/**
+ * Generate interface name for multi-output modules
+ */
+function getMultiOutputInterfaceName(moduleSchema: ModuleSchema): string {
+    const parts = moduleSchema.name.split('.').filter((p: string) => p.length > 0);
+    const baseName = parts[parts.length - 1];
+    return `${capitalizeName(baseName)}Outputs`;
+}
+
+/**
+ * Generate interface definition for multi-output modules.
+ * The interface extends from the default output's type and includes properties for other outputs.
+ */
+function generateMultiOutputInterface(moduleSchema: ModuleSchema, indent: string): string[] {
+    const outputs = moduleSchema.outputs || [];
+    if (outputs.length <= 1) return [];
+
+    // Find the default output
+    const defaultOutput = outputs.find((o: any) => o.default) || outputs[0];
+    const defaultOutputMeta = defaultOutput as { polyphonic?: boolean; minValue?: number; maxValue?: number };
+    const baseType = getOutputType(defaultOutputMeta);
+    
+    const interfaceName = getMultiOutputInterfaceName(moduleSchema);
+    
+    const lines: string[] = [];
+    lines.push(`${indent}/**`);
+    lines.push(`${indent} * Output type for ${moduleSchema.name} module.`);
+    lines.push(`${indent} * Extends ${baseType} (default output: ${defaultOutput.name})`);
+    lines.push(`${indent} */`);
+    lines.push(`${indent}export interface ${interfaceName} extends ${baseType} {`);
+    
+    // Add properties for non-default outputs
+    for (const output of outputs) {
+        if (output.name === defaultOutput.name) continue;
+        
+        const outputMeta = output as { polyphonic?: boolean; minValue?: number; maxValue?: number; description?: string };
+        const outputType = getOutputType(outputMeta);
+        const safeName = sanitizeOutputName(output.name);
+        
+        if (output.description) {
+            lines.push(`${indent}  /** ${output.description} */`);
+        }
+        lines.push(`${indent}  readonly ${safeName}: ${outputType};`);
+    }
+    
+    lines.push(`${indent}}`);
+    return lines;
+}
+
+/**
  * Get the return type for a module factory based on its outputs
  */
 function getFactoryReturnType(moduleSchema: ModuleSchema): string {
@@ -623,20 +761,10 @@ function getFactoryReturnType(moduleSchema: ModuleSchema): string {
         return 'void';
     } else if (outputs.length === 1) {
         const output = outputs[0] as { polyphonic?: boolean; minValue?: number; maxValue?: number };
-        const hasRange = output.minValue !== undefined && output.maxValue !== undefined;
-        const baseType = hasRange ? 'ModuleOutputWithRange' : 'ModuleOutput';
-        return output.polyphonic ? `${baseType}[]` : baseType;
+        return getOutputType(output);
     } else {
-        // Multiple outputs - generate object type
-        const props = outputs.map(o => {
-            const camelName = toCamelCase(o.name);
-            const outputWithMeta = o as { polyphonic?: boolean; minValue?: number; maxValue?: number };
-            const hasRange = outputWithMeta.minValue !== undefined && outputWithMeta.maxValue !== undefined;
-            const baseType = hasRange ? 'ModuleOutputWithRange' : 'ModuleOutput';
-            const type = outputWithMeta.polyphonic ? `${baseType}[]` : baseType;
-            return `${camelName}: ${type}`;
-        });
-        return `{ ${props.join('; ')} }`;
+        // Multiple outputs - return the generated interface name
+        return getMultiOutputInterfaceName(moduleSchema);
     }
 }
 
@@ -761,7 +889,14 @@ function renderInterface(
 ): string[] {
     const lines: string[] = [];
 
-    // Just render the factory function - no interface needed since we return outputs directly
+    // Generate multi-output interface if needed
+    const multiOutputInterface = generateMultiOutputInterface(classSpec.moduleSchema, indent);
+    if (multiOutputInterface.length > 0) {
+        lines.push(...multiOutputInterface);
+        lines.push('');
+    }
+
+    // Render the factory function
     lines.push(
         ...renderFactoryFunction(classSpec.moduleSchema, '', indent),
     );

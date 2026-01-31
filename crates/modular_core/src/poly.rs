@@ -352,6 +352,8 @@ impl JsonSchema for PolySignal {
 
 #[cfg(test)]
 mod tests {
+    use crate::dsp::utils::hz_to_voct;
+
     use super::*;
 
     #[test]
@@ -368,10 +370,11 @@ mod tests {
 
         let value = result.get_value(0);
         println!("Value at channel 0: {}", value);
-        // 440hz = log2(440/55) = 3.0 v/oct
+        let target = hz_to_voct(440.0);
         assert!(
-            (value - 3.0).abs() < 0.01,
-            "Value should be ~3.0 v/oct, got {}",
+            (value - target).abs() < 0.01,
+            "Value should be {} v/oct, got {}",
+            target,
             value
         );
     }

@@ -20,7 +20,10 @@ use napi::Result;
 use napi::bindgen_prelude::Float32Array;
 use napi_derive::napi;
 use parking_lot::Mutex;
-use ringbuf::{HeapRb, traits::{Consumer, Producer, Split}};
+use ringbuf::{
+  HeapRb,
+  traits::{Consumer, Producer, Split},
+};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs::File;
@@ -127,7 +130,7 @@ impl AudioDeviceCache {
 
     for host_id in cpal::available_hosts() {
       let host_id_str = format!("{:?}", host_id);
-      
+
       self.hosts.push(HostInfo {
         id: host_id_str.clone(),
         name: host_id_str.clone(),
@@ -136,7 +139,9 @@ impl AudioDeviceCache {
       if let Ok(host) = cpal::host_from_id(host_id) {
         // Get output devices for this host
         let output_devices = enumerate_output_devices(&host, &host_id_str);
-        self.output_devices.insert(host_id_str.clone(), output_devices);
+        self
+          .output_devices
+          .insert(host_id_str.clone(), output_devices);
 
         // Get input devices for this host
         let input_devices = enumerate_input_devices(&host, &host_id_str);
@@ -157,28 +162,36 @@ impl AudioDeviceCache {
 
   /// Find an output device by ID
   pub fn find_output_device(&self, device_id: &str) -> Option<&AudioDeviceInfo> {
-    self.output_devices.values()
+    self
+      .output_devices
+      .values()
       .flatten()
       .find(|d| d.id == device_id)
   }
 
   /// Find an input device by ID
   pub fn find_input_device(&self, device_id: &str) -> Option<&AudioDeviceInfo> {
-    self.input_devices.values()
+    self
+      .input_devices
+      .values()
       .flatten()
       .find(|d| d.id == device_id)
   }
 
   /// Get output devices for a specific host
   pub fn output_devices_for_host(&self, host_id: &str) -> Vec<AudioDeviceInfo> {
-    self.output_devices.get(host_id)
+    self
+      .output_devices
+      .get(host_id)
       .map(|v| v.clone())
       .unwrap_or_default()
   }
 
   /// Get input devices for a specific host
   pub fn input_devices_for_host(&self, host_id: &str) -> Vec<AudioDeviceInfo> {
-    self.input_devices.get(host_id)
+    self
+      .input_devices
+      .get(host_id)
       .map(|v| v.clone())
       .unwrap_or_default()
   }
@@ -277,7 +290,7 @@ fn enumerate_output_devices(host: &Host, host_id: &str) -> Vec<AudioDeviceInfo> 
         .filter_map(|device| {
           let id = device.id().ok()?;
           let config = device.default_output_config().ok()?;
-          
+
           // Get supported configurations
           let (supported_sample_rates, buffer_size_range) = device
             .supported_output_configs()
@@ -312,7 +325,7 @@ fn enumerate_input_devices(host: &Host, host_id: &str) -> Vec<AudioDeviceInfo> {
         .filter_map(|device| {
           let id = device.id().ok()?;
           let config = device.default_input_config().ok()?;
-          
+
           // Get supported configurations
           let (supported_sample_rates, buffer_size_range) = device
             .supported_input_configs()
@@ -441,24 +454,24 @@ impl InputBufferReader {
   /// Read one frame of input audio (up to PORT_MAX_CHANNELS samples)
   pub fn read_frame(&mut self) -> [f32; PORT_MAX_CHANNELS] {
     let mut result = [0.0f32; PORT_MAX_CHANNELS];
-    
+
     if self.channels == 0 {
       return result;
     }
-    
+
     let samples_to_read = self.channels.min(PORT_MAX_CHANNELS);
-    
+
     for i in 0..samples_to_read {
       if let Some(sample) = self.consumer.try_pop() {
         result[i] = sample;
       }
     }
-    
+
     // Skip extra channels if input has more than PORT_MAX_CHANNELS
     for _ in samples_to_read..self.channels {
       let _ = self.consumer.try_pop();
     }
-    
+
     result
   }
 }
@@ -473,7 +486,6 @@ pub fn create_input_ring_buffer(channels: usize) -> (InputBufferWriter, InputBuf
     InputBufferReader { consumer, channels },
   )
 }
-
 
 // ============================================================================
 // Multi-Channel Output Buffer
@@ -609,7 +621,6 @@ fn calculate_skip_rate(total_samples: u32) -> u32 {
 
 impl ScopeBuffer {
   pub fn new(scope: &Scope, sample_rate: f32) -> Self {
-    println!("KJAHSKJDAKJSHD {}", AUDIO_INPUT_GAIN);
     let mut sb = Self {
       buffer: [0.0; SCOPE_CAPACITY as usize],
       sample_counter: 0,
@@ -1315,10 +1326,6 @@ fn process_frame_multichannel(
   // Capture audio for scopes
   {
     let mut scope_lock = audio_state.scope_collection.lock();
-    static SCOPE_LOG_COUNTER: OnceLock<std::sync::atomic::AtomicUsize> = OnceLock::new();
-    let scope_log_counter = SCOPE_LOG_COUNTER.get_or_init(|| std::sync::atomic::AtomicUsize::new(0));
-    let scope_count = scope_log_counter.fetch_add(1, Ordering::Relaxed);
-    
     for (scope, scope_buffer) in scope_lock.iter_mut() {
       match scope {
         ScopeItem::ModuleOutput {
@@ -1330,18 +1337,10 @@ fn process_frame_multichannel(
             if let Ok(poly) = module.get_poly_sample(&port_name) {
               let val = poly.get(*channel as usize);
               scope_buffer.push(val);
-              if scope_count % 44100 == 0 {
-                println!("[Scope] module={} port={} ch={} val={}", module_id, port_name, channel, val);
-              }
             }
-          } else if scope_count % 44100 == 0 {
-            println!("[Scope] module {} NOT FOUND!", module_id);
           }
         }
       }
-    }
-    if scope_count % 44100 == 0 && scope_lock.is_empty() {
-      println!("[Scope] No scopes registered!");
     }
   }
 
@@ -1352,20 +1351,6 @@ fn process_frame_multichannel(
       for ch in 0..num_channels.min(PORT_MAX_CHANNELS) {
         output[ch] = poly.get(ch) * AUDIO_OUTPUT_ATTENUATION;
       }
-      // Debug output
-      static OUTPUT_LOG_COUNTER: OnceLock<std::sync::atomic::AtomicUsize> = OnceLock::new();
-      let output_log_counter = OUTPUT_LOG_COUNTER.get_or_init(|| std::sync::atomic::AtomicUsize::new(0));
-      let output_count = output_log_counter.fetch_add(1, Ordering::Relaxed);
-      if output_count % 44100 == 0 {
-        println!("[Output] ROOT_OUTPUT ch0={} poly.channels={}", poly.get(0), poly.channels());
-      }
-    }
-  } else {
-    static ROOT_MISSING_LOG: OnceLock<std::sync::atomic::AtomicUsize> = OnceLock::new();
-    let root_missing_log = ROOT_MISSING_LOG.get_or_init(|| std::sync::atomic::AtomicUsize::new(0));
-    let count = root_missing_log.fetch_add(1, Ordering::Relaxed);
-    if count % 44100 == 0 {
-      println!("[Output] ROOT_OUTPUT module NOT FOUND!");
     }
   }
 

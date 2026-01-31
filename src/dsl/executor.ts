@@ -1,13 +1,24 @@
 import { ModuleSchema, PatchGraph } from '@modular/core';
-import { DSLContext, hz, note, bpm } from './factories';
+import { DSLContext, hz, note, bpm, setDSLWrapperLineOffset } from './factories';
+import { $, $r, SourceLocation } from './GraphBuilder';
 
 /**
- * Execute a DSL script and return the resulting PatchGraph
+ * Result of executing a DSL script.
+ */
+export interface DSLExecutionResult {
+    /** The generated patch graph */
+    patch: PatchGraph;
+    /** Map from module ID to source location in DSL code */
+    sourceLocationMap: Map<string, SourceLocation>;
+}
+
+/**
+ * Execute a DSL script and return the resulting PatchGraph with source locations.
  */
 export function executePatchScript(
     source: string,
     schemas: ModuleSchema[],
-): PatchGraph {
+): DSLExecutionResult {
     // Create DSL context
     // console.log('Executing DSL script with schemas:', schemas);
     const context = new DSLContext(schemas);
@@ -49,6 +60,9 @@ export function executePatchScript(
         hz,
         note,
         bpm,
+        // Collection helpers
+        $,
+        $r,
         // Built-in modules
         rootClock,
         input: rootInput,
@@ -56,7 +70,13 @@ export function executePatchScript(
 
     // console.log(dslGlobals);
 
-    // Build the function body
+    // Build the function body - count wrapper lines for source mapping
+    // When new Function() executes code, line numbers in stack traces are relative
+    // to the function body string. The template literal structure plus new Function's
+    // own wrapper results in user code starting at line 5 in stack traces.
+    const wrapperLineCount = 4;
+    setDSLWrapperLineOffset(wrapperLineCount);
+    
     const functionBody = `
     'use strict';
     ${source}
@@ -71,10 +91,12 @@ export function executePatchScript(
         const fn = new Function(...paramNames, functionBody);
         fn(...paramValues);
 
-        // Build and return the patch
-        const patch = context.getBuilder().toPatch();
-        // console.log(patch);
-        return patch;
+        // Build and return the patch with source locations
+        const builder = context.getBuilder();
+        const patch = builder.toPatch();
+        const sourceLocationMap = builder.getSourceLocationMap();
+        
+        return { patch, sourceLocationMap };
     } catch (error) {
         if (error instanceof Error) {
             throw new Error(`DSL execution error: ${error.message}`);

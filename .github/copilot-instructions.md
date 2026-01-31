@@ -32,6 +32,10 @@ Key areas:
 - Real-time safety in audio callback: avoid allocations/logging; validate on main thread.
 - Voltage convention: use 1v/oct (0v is c4 ~261.63Hz) for frequency; output attenuation `AUDIO_OUTPUT_ATTENUATION` in `crates/modular/src/audio.rs`.
 - Prefer Electron APIs over web/React APIs when either could solve a task (see `src/**/*.ts`).
+- Reserved output names: when adding methods to `ModuleOutput`, `ModuleOutputWithRange`, `BaseCollection`, `Collection`, or `CollectionWithRange`, add the method name to `RESERVED_OUTPUT_NAMES` in all three locations:
+  - `crates/modular_derive/src/lib.rs` (Rust compile-time check)
+  - `src/dsl/factories.ts` (runtime sanitization)
+  - `src/dsl/typescriptLibGen.ts` (type generation)
 
 ## File I/O + patches
 - Main process handles workspace selection and `.mjs` patch read/write in `src/main.ts`.

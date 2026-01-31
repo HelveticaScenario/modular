@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::types::{ModuleSchema, ParamsValidator, SampleableConstructor};
+use crate::types::{ChannelCountDeriver, ModuleSchema, ParamsValidator, SampleableConstructor};
 
 pub mod consts;
 pub mod core;
@@ -37,6 +37,20 @@ pub fn get_param_validators() -> HashMap<String, ParamsValidator> {
     utilities::install_param_validators(&mut map);
     seq::install_param_validators(&mut map);
     midi::install_param_validators(&mut map);
+    map
+}
+
+/// Returns a map of `module_type` -> channel count deriver function.
+///
+/// A channel count deriver derives the output channel count from a module's params JSON.
+pub fn get_channel_count_derivers() -> HashMap<String, ChannelCountDeriver> {
+    let mut map = HashMap::new();
+    core::install_channel_count_derivers(&mut map);
+    oscillators::install_channel_count_derivers(&mut map);
+    filters::install_channel_count_derivers(&mut map);
+    utilities::install_channel_count_derivers(&mut map);
+    seq::install_channel_count_derivers(&mut map);
+    midi::install_channel_count_derivers(&mut map);
     map
 }
 

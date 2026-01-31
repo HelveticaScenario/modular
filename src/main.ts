@@ -363,8 +363,14 @@ registerIPCHandler('GET_DSL_LIB_SOURCE', () => {
 registerIPCHandler('DSL_EXECUTE', (source, sourceId): DSLExecuteResult => {
     try {
         const schemas = getSchemas();
-        const patch = executePatchScript(source, schemas);
+        const { patch, sourceLocationMap } = executePatchScript(source, schemas);
         patch.moduleIdRemaps = [];
+
+        // Convert Map to Record for IPC serialization
+        const sourceLocationRecord: Record<string, { line: number; column: number; idIsExplicit: boolean }> = {};
+        for (const [moduleId, loc] of sourceLocationMap) {
+            sourceLocationRecord[moduleId] = loc;
+        }
 
         // Requirement: assume a full change when a different file/buffer is evaluated.
         const shouldReconcile = !!sourceId && lastAppliedSourceId === sourceId;
@@ -425,6 +431,7 @@ registerIPCHandler('DSL_EXECUTE', (source, sourceId): DSLExecuteResult => {
                 errors,
                 appliedPatch: patch,
                 moduleIdRemap,
+                sourceLocationMap: sourceLocationRecord,
             };
         }
 
@@ -433,6 +440,7 @@ registerIPCHandler('DSL_EXECUTE', (source, sourceId): DSLExecuteResult => {
             errors: [],
             appliedPatch: patch,
             moduleIdRemap,
+            sourceLocationMap: sourceLocationRecord,
         };
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);

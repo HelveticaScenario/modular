@@ -10,14 +10,18 @@
 //! - Gate: High while note is active
 //! - Trig: Short pulse at note onset
 
-use napi::Result;
+use std::{
+    cmp::Ordering,
+    sync::{OnceLock, atomic::AtomicU64},
+};
+
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
     PolySignal,
     dsp::utils::{TempGate, TempGateState},
-    pattern_system::DspHap,
+    pattern_system::{DspHap, Fraction},
     poly::{PORT_MAX_CHANNELS, PolyOutput},
 };
 
@@ -40,7 +44,7 @@ struct CachedHap {
     /// Pre-sampled voltage for sample-and-hold signals.
     /// None for continuous signals (read each tick) or non-signal values.
     sampled_voltage: Option<f64>,
-    
+
     /// The cycle this hap was cached for.
     cached_cycle: i64,
 }
@@ -131,9 +135,9 @@ fn default_channels() -> usize {
     4
 }
 
-#[derive(Deserialize, Default, ChannelCount, JsonSchema, Connect)]
+#[derive(Deserialize, Default, ChannelCount, JsonSchema, Connect, Debug)]
 #[serde(default)]
-struct SeqParams {
+pub struct SeqParams {
     /// Strudel/tidalcycles style pattern string
     pattern: SeqPatternParam,
     /// 2 channel control signal, sums the first 2 channels
@@ -141,7 +145,79 @@ struct SeqParams {
     playhead: PolySignal,
     /// Number of polyphonic voices (1-16, default 4)
     #[serde(default = "default_channels")]
-    channels: usize,
+    pub channels: usize,
+    /// The pattern string (used for serialization)
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub pattern_source: String,
+}
+
+/// Channel count derivation for Seq.
+///
+/// Analyzes the pattern to determine maximum polyphony by running 300 cycles
+/// of the pattern and counting maximum simultaneous haps.
+///
+/// This is called by TypeScript to derive channel count from params.
+/// Inside Seq::update(), we read params.channels directly (which TypeScript
+/// will have already set based on this analysis, or user explicitly set).
+pub fn seq_derive_channel_count(params: &SeqParams) -> usize {
+    // If channels was explicitly set (non-default), use that
+    if params.channels != default_channels() {
+        println!("Using explicit channels for seq pattern, skipping derivation");
+        return params.channels.clamp(1, PORT_MAX_CHANNELS);
+    }
+
+    // Otherwise, analyze pattern polyphony
+    let Some(pattern) = params.pattern.pattern() else {
+        return default_channels();
+    };
+
+    const NUM_CYCLES: i64 = 300;
+    const MAX_POLYPHONY: usize = 16;
+
+    // Query all cycles at once
+    let haps = pattern.query_arc(
+        Fraction::from_integer(0),
+        Fraction::from_integer(NUM_CYCLES),
+    );
+
+    // Sweep line algorithm: create +1 events at start, -1 events at end
+    let mut events: Vec<(Fraction, i32)> = Vec::with_capacity(haps.len() * 2);
+
+    for hap in &haps {
+        if hap.value.is_rest() {
+            continue;
+        }
+        events.push((hap.part.begin.clone(), 1)); // +1 at start
+        events.push((hap.part.end.clone(), -1)); // -1 at end
+    }
+
+    // Sort by time, with ends (-1) before starts (+1) at same time
+    events.sort_by(|a, b| {
+        match a.0.cmp(&b.0) {
+            Ordering::Equal => a.1.cmp(&b.1), // -1 comes before +1
+            other => other,
+        }
+    });
+
+    // Sweep through events tracking current and max polyphony
+    let mut current: usize = 0;
+    let mut max_simultaneous: usize = 0;
+
+    for (_time, delta) in events {
+        if delta > 0 {
+            current += 1;
+            max_simultaneous = max_simultaneous.max(current);
+            // Early exit if we hit the cap
+            if max_simultaneous >= MAX_POLYPHONY {
+                return MAX_POLYPHONY;
+            }
+        } else {
+            current = current.saturating_sub(1);
+        }
+    }
+    println!("Derived seq polyphony: {}", max_simultaneous);
+    max_simultaneous.max(1) // At least 1 channel
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -158,8 +234,7 @@ struct SeqOutputs {
 #[module(
     "seq",
     "A strudel/tidalcycles style sequencer",
-    channels_param = "channels",
-    channels_param_default = 4
+    channels_derive = seq_derive_channel_count
 )]
 #[args(pattern)]
 #[stateful]
@@ -212,8 +287,9 @@ impl Seq {
         let playhead = self.params.playhead.get(0).get_value() as f64
             + self.params.playhead.get(1).get_value() as f64;
 
-        let num_channels = self.channel_count();
-
+        // Use params.channels directly - TypeScript will have already set this
+        // based on pattern analysis or explicit user value
+        let num_channels = self.params.channels.clamp(1, PORT_MAX_CHANNELS);
         // Set output channel counts
         self.outputs.cv.set_channels(num_channels as u8);
         self.outputs.gate.set_channels(num_channels as u8);
@@ -256,7 +332,8 @@ impl Seq {
             // This allows identical notes in chords (e.g., 'g,g,g') to each get their own voice
             let already_assigned = (0..num_channels).any(|i| {
                 if let Some(ref existing) = self.voices[i].cached_hap {
-                    existing.hap_index == cached.hap_index && existing.cached_cycle == cached.cached_cycle
+                    existing.hap_index == cached.hap_index
+                        && existing.cached_cycle == cached.cached_cycle
                 } else {
                     false
                 }
@@ -344,8 +421,7 @@ impl Seq {
 
 impl crate::types::StatefulModule for Seq {
     fn get_state(&self) -> Option<serde_json::Value> {
-        let num_channels = self.channel_count();
-
+        let num_channels = self.params.channels.clamp(1, PORT_MAX_CHANNELS);
         // Collect all source spans from all active voices
         let mut all_source_spans: Vec<(usize, usize)> = Vec::new();
         let mut any_non_rest = false;

@@ -9,7 +9,9 @@ use parking_lot::Mutex;
 
 use crate::PolyOutput;
 use crate::dsp::core::audio_in::AudioIn;
-use crate::types::{Message, MessageTag, ROOT_ID, ROOT_OUTPUT_PORT, Sampleable, SampleableMap, WellKnownModule};
+use crate::types::{
+    Message, MessageTag, ROOT_ID, ROOT_OUTPUT_PORT, Sampleable, SampleableMap, WellKnownModule,
+};
 
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
@@ -55,12 +57,8 @@ impl Patch {
             input: self.audio_in.clone(),
         };
         let id = WellKnownModule::HiddenAudioIn.id().to_string();
-        println!("[Patch] insert_audio_in: inserting {}", id);
-        self.sampleables.insert(
-            id,
-            Arc::new(Box::new(audio_in_sampleable)),
-        );
-        println!("[Patch] sampleables now: {:?}", self.sampleables.keys().collect::<Vec<_>>());
+        self.sampleables
+            .insert(id, Arc::new(Box::new(audio_in_sampleable)));
     }
 
     pub fn rebuild_message_listeners(&mut self) {
@@ -133,7 +131,11 @@ mod tests {
     fn test_patch_new_has_hidden_audio_in() {
         let patch = Patch::new();
         // Patch::new() inserts HIDDEN_AUDIO_IN which is managed internally
-        assert!(patch.sampleables.contains_key(WellKnownModule::HiddenAudioIn.id()));
+        assert!(
+            patch
+                .sampleables
+                .contains_key(WellKnownModule::HiddenAudioIn.id())
+        );
         assert_eq!(patch.sampleables.len(), 1);
     }
 

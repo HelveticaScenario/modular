@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
+use crate::types::{ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor};
 
 // Macro for generating MI engine wrappers
 #[macro_use]
@@ -78,6 +78,31 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     wave_terrain_oscillator::WaveTerrainOscillator::install_params_validator(map);
     waveshaping_oscillator::WaveshapingOscillator::install_params_validator(map);
     wavetable_oscillator::WavetableOscillator::install_params_validator(map);
+}
+
+pub fn install_channel_count_derivers(map: &mut HashMap<String, ChannelCountDeriver>) {
+    additive_oscillator::AdditiveOscillator::install_channel_count_deriver(map);
+    bass_drum_oscillator::BassDrumOscillator::install_channel_count_deriver(map);
+    chiptune_oscillator::ChiptuneOscillator::install_channel_count_deriver(map);
+    chord_oscillator::ChordOscillator::install_channel_count_deriver(map);
+    clocked_noise_oscillator::ClockedNoiseOscillator::install_channel_count_deriver(map);
+    fm_oscillator::FmOscillator::install_channel_count_deriver(map);
+    grain_oscillator::GrainOscillator::install_channel_count_deriver(map);
+    hihat_oscillator::HihatOscillator::install_channel_count_deriver(map);
+    modal_oscillator::ModalOscillator::install_channel_count_deriver(map);
+    particle_oscillator::ParticleOscillator::install_channel_count_deriver(map);
+    phase_distortion_oscillator::PhaseDistortionOscillator::install_channel_count_deriver(map);
+    six_op_fm_oscillator::SixOpFmOscillator::install_channel_count_deriver(map);
+    snare_drum_oscillator::SnareDrumOscillator::install_channel_count_deriver(map);
+    speech_oscillator::SpeechOscillator::install_channel_count_deriver(map);
+    string_machine_oscillator::StringMachineOscillator::install_channel_count_deriver(map);
+    string_oscillator::StringOscillator::install_channel_count_deriver(map);
+    swarm_oscillator::SwarmOscillator::install_channel_count_deriver(map);
+    vcf_oscillator::VcfOscillator::install_channel_count_deriver(map);
+    virtual_analog_oscillator::VirtualAnalogOscillator::install_channel_count_deriver(map);
+    wave_terrain_oscillator::WaveTerrainOscillator::install_channel_count_deriver(map);
+    waveshaping_oscillator::WaveshapingOscillator::install_channel_count_deriver(map);
+    wavetable_oscillator::WavetableOscillator::install_channel_count_deriver(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {
