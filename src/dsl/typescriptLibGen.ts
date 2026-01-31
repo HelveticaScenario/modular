@@ -210,6 +210,16 @@ type Signal = number | Note | HZ | MidiNote | Scale | ModuleOutput;
 
 type PolySignal = OrArray<Signal> | Iterable<ModuleOutput>;
 
+/** Options for stereo output routing */
+interface StereoOutOptions {
+  /** Output gain. If set, a scaleAndShift module is added after the stereo mix */
+  gain?: PolySignal;
+  /** Pan position (-5 = left, 0 = center, +5 = right). Default 0 */
+  pan?: PolySignal;
+  /** Stereo width/spread (0 = no spread, 5 = full spread). Default 0 */
+  width?: Signal;
+}
+
 interface ModuleOutput {
   readonly moduleId: string;
   readonly portName: string;
@@ -217,7 +227,18 @@ interface ModuleOutput {
   gain(factor: PolySignal): ModuleOutput;
   shift(offset: PolySignal): ModuleOutput;
   scope(msPerFrame?: number, triggerThreshold?: number): this;
-  out(mode?: 'm'): this;
+  /**
+   * Send this output to speakers as stereo
+   * @param baseChannel - Base output channel (0-15, default 0). Left plays on baseChannel, right on baseChannel+1
+   * @param options - Stereo output options (gain, pan, width)
+   */
+  out(baseChannel?: number, options?: StereoOutOptions): this;
+  /**
+   * Send this output to speakers as mono
+   * @param channel - Output channel (0-15, default 0)
+   * @param gain - Output gain (optional)
+   */
+  outMono(channel?: number, gain?: PolySignal): this;
 }
 
 interface ModuleOutputWithRange extends ModuleOutput {
@@ -237,7 +258,18 @@ interface Collection extends Iterable<ModuleOutput> {
   gain(factor: PolySignal): Collection;
   shift(offset: PolySignal): Collection;
   scope(msPerFrame?: number, triggerThreshold?: number): this;
-  out(mode?: 'm'): this;
+  /**
+   * Send all outputs to speakers as stereo
+   * @param baseChannel - Base output channel (0-14, default 0). Left plays on baseChannel, right on baseChannel+1
+   * @param options - Stereo output options (gain, pan, width)
+   */
+  out(baseChannel?: number, options?: StereoOutOptions): this;
+  /**
+   * Send all outputs to speakers as mono
+   * @param channel - Output channel (0-15, default 0)
+   * @param gain - Output gain (optional)
+   */
+  outMono(channel?: number, gain?: PolySignal): this;
   range(inMin: PolySignal, inMax: PolySignal, outMin: PolySignal, outMax: PolySignal): Collection;
 }
 
@@ -252,7 +284,18 @@ interface CollectionWithRange extends Iterable<ModuleOutputWithRange> {
   gain(factor: PolySignal): Collection;
   shift(offset: PolySignal): Collection;
   scope(msPerFrame?: number, triggerThreshold?: number): this;
-  out(mode?: 'm'): this;
+  /**
+   * Send all outputs to speakers as stereo
+   * @param baseChannel - Base output channel (0-14, default 0). Left plays on baseChannel, right on baseChannel+1
+   * @param options - Stereo output options (gain, pan, width)
+   */
+  out(baseChannel?: number, options?: StereoOutOptions): this;
+  /**
+   * Send all outputs to speakers as mono
+   * @param channel - Output channel (0-15, default 0)
+   * @param gain - Output gain (optional)
+   */
+  outMono(channel?: number, gain?: PolySignal): this;
   range(outMin: PolySignal, outMax: PolySignal): Collection;
 }
 
@@ -668,6 +711,7 @@ const RESERVED_OUTPUT_NAMES = new Set([
     'shift',
     'scope',
     'out',
+    'outMono',
     'toString',
     // ModuleOutputWithRange properties
     'minValue',

@@ -23,6 +23,44 @@ type OrArray<T> = T | T[];
 type Signal = number | string | ModuleOutput;
 type PolySignal = OrArray<Signal> | Iterable<ModuleOutput>;
 
+/** Options for stereo output routing */
+export interface StereoOutOptions {
+    /** Base output channel (0-14, default 0). Left plays on baseChannel, right on baseChannel+1 */
+    baseChannel?: number;
+    /** Output gain. If set, a scaleAndShift module is added after the stereo mix */
+    gain?: PolySignal;
+    /** Pan position (-5 = left, 0 = center, +5 = right). Default 0 */
+    pan?: PolySignal;
+    /** Stereo width/spread (0 = no spread, 5 = full spread). Default 0 */
+    width?: Signal;
+}
+
+/** Options for mono output routing */
+export interface MonoOutOptions {
+    /** Output channel (0-15, default 0) */
+    channel?: number;
+    /** Output gain. If set, a scaleAndShift module is added after the mix */
+    gain?: PolySignal;
+}
+
+/** Internal storage for a stereo output group */
+interface StereoOutGroup {
+    type: 'stereo';
+    outputs: ModuleOutput[];
+    gain?: PolySignal;
+    pan?: PolySignal;
+    width?: PolySignal;
+}
+
+/** Internal storage for a mono output group */
+interface MonoOutGroup {
+    type: 'mono';
+    outputs: ModuleOutput[];
+    gain?: PolySignal;
+}
+
+type OutGroup = StereoOutGroup | MonoOutGroup;
+
 /**
  * BaseCollection provides iterable, indexable container for ModuleOutput arrays
  * with chainable DSP methods (gain, shift, scope, out).
@@ -81,11 +119,27 @@ class BaseCollection<T extends ModuleOutput> {
     }
 
     /**
-     * Send all outputs to speakers
+     * Send all outputs to speakers as stereo
+     * @param baseChannel - Base output channel (0-15, default 0)
+     * @param options.gain - Output gain (adds scaleAndShift after stereo mix)
+     * @param options.pan - Pan position (-5 = left, 0 = center, +5 = right)
+     * @param options.width - Stereo width/spread (0 = no spread, 5 = full spread)
      */
-    out(mode?: 'm'): this {
-        if (this.items.length > 0 && mode !== 'm') {
-            this.items[0].builder.addOut([...this.items]);
+    out(baseChannel: number = 0, options: StereoOutOptions = {}): this {
+        if (this.items.length > 0) {
+            this.items[0].builder.addOut([...this.items], { ...options, baseChannel });
+        }
+        return this;
+    }
+
+    /**
+     * Send all outputs to speakers as mono
+     * @param channel - Output channel (0-15, default 0)
+     * @param gain - Output gain
+     */
+    outMono(channel: number = 0, gain?: PolySignal): this {
+        if (this.items.length > 0) {
+            this.items[0].builder.addOutMono([...this.items], { channel, gain });
         }
         return this;
     }
@@ -187,7 +241,8 @@ export class GraphBuilder {
     private schemas: ProcessedModuleSchema[] = [];
     private schemaByName: Map<string, ProcessedModuleSchema> = new Map();
     private scopes: Scope[] = [];
-    private outModules: ModuleOutput[] = [];
+    /** Output groups keyed by baseChannel */
+    private outGroups: Map<number, OutGroup[]> = new Map();
     private factoryRegistry: Map<string, FactoryFunction> = new Map();
     private sourceLocationMap: Map<string, SourceLocation> = new Map();
 
@@ -307,27 +362,83 @@ export class GraphBuilder {
      * which adds overhead from channel count derivation on every patch build.
      */
     toPatch(): PatchGraph {
-        // If there are any modules registered with out(), create a mix module
-        // and connect to root signal
-        if (this.outModules.length > 0) {
-            const mixFactory = this.getFactory('mix');
-            const signalFactory = this.getFactory('signal');
+        const signalFactory = this.getFactory('signal');
+        const mixFactory = this.getFactory('mix');
+        const stereoMixerFactory = this.getFactory('stereoMixer');
+        const scaleAndShiftFactory = this.getFactory('scaleAndShift');
 
-            if (!mixFactory || !signalFactory) {
-                throw new Error('Factory for mix or signal not registered');
+        if (!signalFactory || !mixFactory || !stereoMixerFactory || !scaleAndShiftFactory) {
+            throw new Error('Required factories (signal, mix, stereoMixer, scaleAndShift) not registered');
+        }
+
+        // Process output groups and build channel collections
+        if (this.outGroups.size > 0) {
+            // Collect all channel collections to mix together
+            const allChannelCollections: (ModuleOutput | undefined)[][] = [];
+
+            // Sort by baseChannel for deterministic processing
+            const sortedChannels = [...this.outGroups.keys()].sort((a, b) => a - b);
+
+            for (const baseChannel of sortedChannels) {
+                const groups = this.outGroups.get(baseChannel)!;
+
+                for (const group of groups) {
+                    let outputSignals: ModuleOutput[];
+
+                    if (group.type === 'stereo') {
+                        // Create stereoMixer with the outputs
+                        const stereoOut = stereoMixerFactory(
+                            group.outputs, {
+                            pan: group.pan ?? 0,
+                            width: group.width ?? 0,
+                        }
+                        ) as Collection;
+
+                        // Apply gain if specified
+                        if (group.gain !== undefined) {
+                            const gained = scaleAndShiftFactory([...stereoOut], group.gain) as Collection;
+                            outputSignals = [...gained];
+                        } else {
+                            outputSignals = [...stereoOut];
+                        }
+                    } else {
+                        // Mono: use mix module
+                        const mixOut = (stereoMixerFactory(group.outputs, { pan: -5, width: 0 }) as Collection)[0];
+
+                        // Apply gain if specified
+                        let finalOut: ModuleOutput;
+                        if (group.gain !== undefined) {
+                            finalOut = scaleAndShiftFactory(mixOut, group.gain) as ModuleOutput;
+                        } else {
+                            finalOut = mixOut;
+                        }
+                        outputSignals = [finalOut];
+                    }
+
+                    // Build channel collection with baseChannel silent channels prepended
+                    const channelCollection: (ModuleOutput | undefined)[] = [];
+
+                    // Add silent/disconnected channels for baseChannel offset
+                    for (let i = 0; i < baseChannel; i++) {
+                        // Create a signal module with disconnected input (outputs silence)
+                        channelCollection.push(undefined);
+                    }
+
+                    // Add the actual output signals
+                    channelCollection.push(...outputSignals);
+
+                    allChannelCollections.push(channelCollection);
+                }
             }
+            console.log('allChannelCollections:', allChannelCollections);
+            // Mix all channel collections together using poly mix
+            // Each collection contributes to corresponding output channels
+            const finalMix = mixFactory(allChannelCollections) as Collection;
 
-            // Create mix module with inputs
-            const mixOutput = mixFactory(this.outModules) as ModuleOutput;
-
-            // Create root signal module with the mix output as source
-            signalFactory(mixOutput, { id: 'ROOT_OUTPUT' });
+            // Create root signal module with the final mix
+            signalFactory(finalMix, { id: 'ROOT_OUTPUT' });
         } else {
             // No outputs registered - create empty root signal
-            const signalFactory = this.getFactory('signal');
-            if (!signalFactory) {
-                throw new Error('Factory for signal not registered');
-            }
             signalFactory(undefined, { id: 'ROOT_OUTPUT' });
         }
 
@@ -338,7 +449,7 @@ export class GraphBuilder {
             })),
             scopes: Array.from(this.scopes),
         };
-
+        console.log('Built PatchGraph:', ret);
         return ret;
     }
 
@@ -349,7 +460,7 @@ export class GraphBuilder {
         this.modules.clear();
         this.scopes = [];
         this.counters.clear();
-        this.outModules = [];
+        this.outGroups.clear();
         this.sourceLocationMap.clear();
     }
 
@@ -362,14 +473,47 @@ export class GraphBuilder {
     }
 
     /**
-     * Register a module output to be sent to speakers
+     * Register module output(s) for stereo output routing
      */
-    addOut(value: ModuleOutput | ModuleOutput[]): void {
-        if (Array.isArray(value)) {
-            this.outModules.push(...value);
-        } else {
-            this.outModules.push(value);
+    addOut(value: ModuleOutput | ModuleOutput[], options: StereoOutOptions = {}): void {
+        const baseChannel = options.baseChannel ?? 0;
+        if (baseChannel < 0 || baseChannel > 14) {
+            throw new Error(`baseChannel must be 0-14, got ${baseChannel}`);
         }
+
+        const outputs = Array.isArray(value) ? [...value] : [value];
+        const group: StereoOutGroup = {
+            type: 'stereo',
+            outputs,
+            gain: options.gain,
+            pan: options.pan,
+            width: options.width,
+        };
+
+        const existing = this.outGroups.get(baseChannel) ?? [];
+        existing.push(group);
+        this.outGroups.set(baseChannel, existing);
+    }
+
+    /**
+     * Register module output(s) for mono output routing
+     */
+    addOutMono(value: ModuleOutput | ModuleOutput[], options: MonoOutOptions = {}): void {
+        const channel = options.channel ?? 0;
+        if (channel < 0 || channel > 15) {
+            throw new Error(`channel must be 0-15, got ${channel}`);
+        }
+
+        const outputs = Array.isArray(value) ? [...value] : [value];
+        const group: MonoOutGroup = {
+            type: 'mono',
+            outputs,
+            gain: options.gain,
+        };
+
+        const existing = this.outGroups.get(channel) ?? [];
+        existing.push(group);
+        this.outGroups.set(channel, existing);
     }
 
     addScope(
@@ -569,10 +713,25 @@ export class ModuleOutput {
         return this;
     }
 
-    out(mode?: 'm'): this {
-        if (mode !== 'm') {
-            this.builder.addOut(this);
-        }
+    /**
+     * Send this output to speakers as stereo
+     * @param baseChannel - Base output channel (0-15, default 0)
+     * @param options.gain - Output gain (adds scaleAndShift after stereo mix)
+     * @param options.pan - Pan position (-5 = left, 0 = center, +5 = right)
+     * @param options.width - Stereo width/spread (0 = no spread, 5 = full spread)
+     */
+    out(baseChannel: number = 0, options: StereoOutOptions = {}): this {
+        this.builder.addOut(this, { ...options, baseChannel });
+        return this;
+    }
+
+    /**
+     * Send this output to speakers as mono
+     * @param channel - Output channel (0-15, default 0)
+     * @param gain - Output gain
+     */
+    outMono(channel: number = 0, gain?: PolySignal): this {
+        this.builder.addOutMono(this, { channel, gain });
         return this;
     }
 
@@ -655,24 +814,20 @@ export function replaceValues(input: unknown, replacer: Replacer): unknown {
     return walk('', input);
 }
 
-function replaceSignals(input: unknown): unknown {
+export function replaceSignals(input: unknown): unknown {
     return replaceValues(input, (_key, value) => {
         // Replace Collection instances with their items array
         if (value instanceof Collection || value instanceof CollectionWithRange) {
             return [...value];
         }
-        // Replace ModuleOutput instances with their JSON representation
-        if (value instanceof ModuleOutput) {
-            return valueToSignal(value);
-        } else {
-            return value;
-        }
+
+        return valueToSignal(value);
+
     });
 }
 
-type SignalValue = number | ModuleOutput;
 
-function valueToSignal(value: SignalValue): unknown {
+function valueToSignal(value: unknown): unknown {
     if (value instanceof ModuleOutput) {
         return {
             type: 'cable',
@@ -680,6 +835,8 @@ function valueToSignal(value: SignalValue): unknown {
             port: value.portName,
             channel: value.channel,
         };
+    } else if (value === null || value === undefined) {
+        return { type: 'disconnected' };
     }
     // It's a number
     return value;

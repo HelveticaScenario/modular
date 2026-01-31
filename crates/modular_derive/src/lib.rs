@@ -403,6 +403,8 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
         "shift",
         "scope",
         "out",
+        "outMono",
+        "out_mono",
         "o",
         "toString",
         "to_string",

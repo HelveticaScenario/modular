@@ -137,6 +137,7 @@ const RESERVED_OUTPUT_NAMES = new Set([
     'shift',
     'scope',
     'out',
+    'outMono',
     'toString',
     // ModuleOutputWithRange properties
     'minValue',

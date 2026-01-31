@@ -1532,7 +1532,7 @@ impl FinalStateProcessor {
     // Apply attenuation and soft clipping to all channels
     let mut any_audible = false;
     for ch in 0..num_channels.min(PORT_MAX_CHANNELS) {
-      let sample = (raw_output[ch] * self.attenuation_factor).tanh();
+      let sample = (raw_output[ch] * self.attenuation_factor);//.tanh();
       output[ch] = sample;
       if sample.abs() >= 0.0005 {
         any_audible = true;
