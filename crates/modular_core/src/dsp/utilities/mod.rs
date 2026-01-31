@@ -13,6 +13,7 @@ pub mod quantizer;
 pub mod remap;
 pub mod sample_and_hold;
 pub mod scale;
+pub mod stereo_mixer;
 
 // Re-export useful types
 pub use crate::dsp::utils::SchmittTrigger;
@@ -31,6 +32,7 @@ pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     sample_and_hold::TrackAndHold::install_constructor(map);
     percussion_envelope::PercussionEnvelope::install_constructor(map);
     quantizer::Quantizer::install_constructor(map);
+    stereo_mixer::StereoMixer::install_constructor(map);
 }
 
 pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
@@ -46,6 +48,7 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     sample_and_hold::TrackAndHold::install_params_validator(map);
     percussion_envelope::PercussionEnvelope::install_params_validator(map);
     quantizer::Quantizer::install_params_validator(map);
+    stereo_mixer::StereoMixer::install_params_validator(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {
@@ -62,5 +65,6 @@ pub fn schemas() -> Vec<ModuleSchema> {
         sample_and_hold::TrackAndHold::get_schema(),
         percussion_envelope::PercussionEnvelope::get_schema(),
         quantizer::Quantizer::get_schema(),
+        stereo_mixer::StereoMixer::get_schema(),
     ]
 }
