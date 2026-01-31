@@ -18,7 +18,7 @@ struct DSawOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct DSawOscillatorOutputs {
-    #[output("output", "signal output", default, range = (-1.0, 1.0))]
+    #[output("output", "signal output", default, range = (-5.0, 5.0))]
     sample: PolyOutput,
 }
 
@@ -51,8 +51,7 @@ impl DSawOscillator {
     fn update(&mut self, _sample_rate: f32) {
         let num_channels = self.channel_count();
 
-        let mut output = PolyOutput::default();
-        output.set_channels(num_channels as u8);
+        self.outputs.sample.set_channels(num_channels as u8);
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
@@ -79,10 +78,8 @@ impl DSawOscillator {
                 let ramp = generate_ramp(phase);
                 triangle + (ramp - triangle) * blend
             };
-            output.set(ch, raw_output);
+            self.outputs.sample.set(ch, raw_output * 5.0);
         }
-
-        self.outputs.sample = output;
     }
 }
 

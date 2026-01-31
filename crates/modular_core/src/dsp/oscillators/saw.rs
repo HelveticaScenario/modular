@@ -19,7 +19,7 @@ struct SawOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct SawOscillatorOutputs {
-    #[output("output", "signal output", default, range = (-1.0, 1.0))]
+    #[output("output", "signal output", default, range = (-5.0, 5.0))]
     sample: PolyOutput,
 }
 
@@ -54,8 +54,7 @@ impl SawOscillator {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
 
-        let mut output = PolyOutput::default();
-        output.set_channels(num_channels as u8);
+        self.outputs.sample.set_channels(num_channels as u8);
 
         // Pre-compute inverse sample rate for frequency calculation
         let inv_sample_rate = 1.0 / sample_rate;
@@ -97,10 +96,8 @@ impl SawOscillator {
                 let ramp = generate_ramp(state.phase, phase_increment);
                 triangle + (ramp - triangle) * blend
             };
-            output.set(ch, raw_output);
+            self.outputs.sample.set(ch, raw_output * 5.0);
         }
-
-        self.outputs.sample = output;
     }
 }
 

@@ -86,7 +86,7 @@ pub struct Noise {
 
 #[derive(Outputs, JsonSchema)]
 struct NoiseOutputs {
-    #[output("output", "signal output", default, range = (-1.0, 1.0))]
+    #[output("output", "signal output", default, range = (-5.0, 5.0))]
     sample: f32,
 }
 
@@ -129,7 +129,7 @@ impl Noise {
             NoiseKind::Brown => self.process_brown(white),
         };
 
-        self.outputs.sample = colored.clamp(-1.0, 1.0);
+        self.outputs.sample = colored.clamp(-1.0, 1.0) * 5.0;
     }
 }
 

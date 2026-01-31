@@ -22,7 +22,7 @@ struct PulseOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct PulseOscillatorOutputs {
-    #[output("output", "signal output", default, range = (-1.0, 1.0))]
+    #[output("output", "signal output", default, range = (-5.0, 5.0))]
     sample: PolyOutput,
 }
 
@@ -96,7 +96,7 @@ impl PulseOscillator {
                 phase_increment,
             );
 
-            self.outputs.sample.set(ch, naive_pulse);
+            self.outputs.sample.set(ch, naive_pulse * 5.0);
         }
     }
 }

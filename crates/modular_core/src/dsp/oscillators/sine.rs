@@ -19,7 +19,7 @@ struct SineOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct SineOscillatorOutputs {
-    #[output("output", "signal output", default, range = (-1.0, 1.0))]
+    #[output("output", "signal output", default, range = (-5.0, 5.0))]
     sample: PolyOutput,
 }
 
@@ -53,8 +53,7 @@ impl SineOscillator {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
 
-        let mut output = PolyOutput::default();
-        output.set_channels(num_channels as u8);
+        self.outputs.sample.set_channels(num_channels as u8);
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
@@ -67,10 +66,8 @@ impl SineOscillator {
                 state.phase -= 1.0;
             }
             let sine = interpolate(LUT_SINE, state.phase, LUT_SINE_SIZE);
-            output.set(ch, sine);
+            self.outputs.sample.set(ch, sine * 5.0);
         }
-
-        self.outputs.sample = output;
     }
 }
 

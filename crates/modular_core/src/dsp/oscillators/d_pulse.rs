@@ -20,7 +20,7 @@ struct DPulseOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct DPulseOscillatorOutputs {
-    #[output("output", "signal output", default, range = (-1.0, 1.0))]
+    #[output("output", "signal output", default, range = (-5.0, 5.0))]
     sample: PolyOutput,
 }
 
@@ -53,8 +53,7 @@ impl DPulseOscillator {
     fn update(&mut self, _sample_rate: f32) {
         let num_channels = self.channel_count();
 
-        let mut output = PolyOutput::default();
-        output.set_channels(num_channels as u8);
+        self.outputs.sample.set_channels(num_channels as u8);
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
@@ -71,10 +70,8 @@ impl DPulseOscillator {
             // Naive pulse wave (no anti-aliasing)
             let pulse = if phase < pulse_width { 1.0 } else { -1.0 };
 
-            output.set(ch, pulse);
+            self.outputs.sample.set(ch, pulse * 5.0);
         }
-
-        self.outputs.sample = output;
     }
 }
 

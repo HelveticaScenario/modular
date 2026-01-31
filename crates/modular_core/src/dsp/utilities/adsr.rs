@@ -1,4 +1,4 @@
-use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
+use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
 use crate::types::Clickless;
 use napi::Result;
 use schemars::JsonSchema;
@@ -71,7 +71,7 @@ pub struct Adsr {
 
 #[derive(Outputs, JsonSchema)]
 struct AdsrOutputs {
-    #[output("output", "envelope output", default, range = (0.0, 1.0))]
+    #[output("output", "envelope output", default, range = (0.0, 5.0))]
     sample: PolyOutput,
 }
 
@@ -89,8 +89,7 @@ impl Adsr {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
 
-        let mut output = PolyOutput::default();
-        output.set_channels(num_channels as u8);
+        self.outputs.sample.set_channels(num_channels as u8);
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
@@ -179,10 +178,8 @@ impl Adsr {
                 }
             }
 
-            output.set(ch, state.current_level);
+            self.outputs.sample.set(ch, state.current_level * 5.0);
         }
-
-        self.outputs.sample = output;
     }
 }
 

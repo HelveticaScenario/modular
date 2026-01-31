@@ -18,7 +18,7 @@ struct DSineOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 struct DSineOscillatorOutputs {
-    #[output("output", "signal output", default, range = (-1.0, 1.0))]
+    #[output("output", "signal output", default, range = (-5.0, 5.0))]
     sample: PolyOutput,
 }
 
@@ -43,16 +43,13 @@ impl DSineOscillator {
     fn update(&mut self, _sample_rate: f32) {
         let num_channels = self.channel_count();
 
-        let mut output = PolyOutput::default();
-        output.set_channels(num_channels as u8);
+        self.outputs.sample.set_channels(num_channels as u8);
 
         for ch in 0..num_channels {
             let phase = wrap(0.0..1.0, self.params.phase.get_value(ch));
             let sine = interpolate(LUT_SINE, phase, LUT_SINE_SIZE);
-            output.set(ch, sine);
+            self.outputs.sample.set(ch, sine * 5.0);
         }
-
-        self.outputs.sample = output;
     }
 }
 
