@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 
 use crate::PolyOutput;
 use crate::dsp::core::audio_in::AudioIn;
-use crate::types::{Message, MessageTag, ROOT_ID, ROOT_OUTPUT_PORT, Sampleable, SampleableMap};
+use crate::types::{Message, MessageTag, ROOT_ID, ROOT_OUTPUT_PORT, Sampleable, SampleableMap, WellKnownModule};
 
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
@@ -38,6 +38,7 @@ impl Patch {
             audio_in_sampleable.get_id().to_string(),
             Arc::new(Box::new(audio_in_sampleable)),
         );
+        println!("sampleables {:?}", sampleables.keys());
         let mut patch = Patch {
             audio_in,
             sampleables,
@@ -45,6 +46,21 @@ impl Patch {
         };
         patch.rebuild_message_listeners();
         patch
+    }
+
+    /// Re-insert the AudioIn module into sampleables.
+    /// Called after sampleables.clear() to restore the hidden audio input module.
+    pub fn insert_audio_in(&mut self) {
+        let audio_in_sampleable = AudioIn {
+            input: self.audio_in.clone(),
+        };
+        let id = WellKnownModule::HiddenAudioIn.id().to_string();
+        println!("[Patch] insert_audio_in: inserting {}", id);
+        self.sampleables.insert(
+            id,
+            Arc::new(Box::new(audio_in_sampleable)),
+        );
+        println!("[Patch] sampleables now: {:?}", self.sampleables.keys().collect::<Vec<_>>());
     }
 
     pub fn rebuild_message_listeners(&mut self) {
@@ -114,9 +130,11 @@ mod tests {
     use napi::Result;
 
     #[test]
-    fn test_patch_new_empty() {
+    fn test_patch_new_has_hidden_audio_in() {
         let patch = Patch::new();
-        assert!(patch.sampleables.is_empty());
+        // Patch::new() inserts HIDDEN_AUDIO_IN which is managed internally
+        assert!(patch.sampleables.contains_key(WellKnownModule::HiddenAudioIn.id()));
+        assert_eq!(patch.sampleables.len(), 1);
     }
 
     #[test]
@@ -175,6 +193,7 @@ mod tests {
 
         let mut patch = Patch::new();
         patch.sampleables.insert("m1".to_string(), Arc::clone(&s));
+        patch.rebuild_message_listeners();
 
         // Index should include it.
         assert_eq!(patch.message_listeners_for(MessageTag::MidiNoteOn).len(), 1);

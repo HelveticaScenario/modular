@@ -26,10 +26,6 @@
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
-.audio-settings-panel-wide {
-    width: 900px;
-}
-
 .audio-settings-header {
     display: flex;
     justify-content: space-between;
@@ -78,6 +74,14 @@
     background: rgba(255, 100, 100, 0.1);
     border-bottom: 1px solid rgba(255, 100, 100, 0.3);
     color: #ff6b6b;
+    font-size: 13px;
+}
+
+.audio-settings-warning {
+    padding: 12px 20px;
+    background: rgba(255, 200, 100, 0.1);
+    border-bottom: 1px solid rgba(255, 200, 100, 0.3);
+    color: #ffcc66;
     font-size: 13px;
 }
 
@@ -145,115 +149,6 @@
 
 .settings-actions .action-spacer {
     flex: 1;
-}
-
-.audio-settings-validation-errors {
-    padding: 12px 20px;
-    background: rgba(255, 100, 100, 0.1);
-    border-bottom: 1px solid rgba(255, 100, 100, 0.3);
-}
-
-.audio-settings-validation-errors .validation-error {
-    color: #ff6b6b;
-    font-size: 13px;
-    margin: 4px 0;
-}
-
-/* I/O Routing Container */
-.io-routing-container {
-    display: flex;
-    gap: 24px;
-    margin-bottom: 24px;
-}
-
-.slots-column {
-    flex: 1;
-    min-width: 0;
-}
-
-.slots-column h3 {
-    margin: 0 0 12px 0;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-color, #cccccc);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.slots-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    max-height: 400px;
-    overflow-y: auto;
-}
-
-/* Slot Row */
-.slot-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 8px;
-    background: var(--input-background, #2d2d2d);
-    border-radius: 4px;
-    border: 1px solid transparent;
-}
-
-.slot-row.mapped {
-    border-color: var(--accent-color, #007acc);
-}
-
-.slot-row.orphaned {
-    border-color: #f0ad4e;
-    background: rgba(240, 173, 78, 0.1);
-}
-
-.slot-number {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-muted, #808080);
-    width: 24px;
-    text-align: center;
-}
-
-.slot-device-select {
-    flex: 1;
-    min-width: 0;
-    padding: 4px 8px;
-    background: var(--editor-background, #1e1e1e);
-    border: 1px solid var(--border-color, #3c3c3c);
-    border-radius: 3px;
-    color: var(--text-color, #cccccc);
-    font-size: 12px;
-}
-
-.slot-channel-select {
-    width: 70px;
-    padding: 4px 8px;
-    background: var(--editor-background, #1e1e1e);
-    border: 1px solid var(--border-color, #3c3c3c);
-    border-radius: 3px;
-    color: var(--text-color, #cccccc);
-    font-size: 12px;
-}
-
-.slot-device-select:disabled,
-.slot-channel-select:disabled {
-    opacity: 0.5;
-}
-
-.slot-state-indicator {
-    width: 16px;
-    font-size: 10px;
-    text-align: center;
-}
-
-.slot-state-indicator.mapped {
-    color: var(--accent-color, #007acc);
-}
-
-.slot-state-indicator.orphaned {
-    color: #f0ad4e;
 }
 
 /* MIDI Section */

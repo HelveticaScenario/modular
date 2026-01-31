@@ -813,5 +813,15 @@ export function generateDSL(schemas: ModuleSchema[]): string {
         );
     }
 
+    const signalSchema = schemas.find((s) => s.name === 'signal');
+    if (signalSchema) {
+        lines.push('');
+        lines.push('/** Input signals. */');
+        const signalReturnType = getFactoryReturnType(signalSchema);
+        lines.push(
+            `export declare const input: readonly ${signalReturnType};`,
+        );
+    }
+
     return lines.join('\n') + '\n';
 }

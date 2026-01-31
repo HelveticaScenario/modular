@@ -24,12 +24,18 @@ declare global {
         gain(this: ModuleOutput[], factor: Value): ModuleOutput[];
         offset(this: ModuleOutput[], offset: Value): ModuleOutput[];
         out(this: ModuleOutput[], mode?: 'm'): this;
-        scope(this: ModuleOutput[], msPerFrame?: number, triggerThreshold?: number): this;
-        range(this: ModuleOutputWithRange[], outMin: Value, outMax: Value): ModuleOutput[];
+        scope(
+            this: ModuleOutput[],
+            msPerFrame?: number,
+            triggerThreshold?: number,
+        ): this;
+        range(
+            this: ModuleOutputWithRange[],
+            outMin: Value,
+            outMax: Value,
+        ): ModuleOutput[];
     }
 }
-
-
 
 /**
  * GraphBuilder manages the construction of a PatchGraph from DSL code.
@@ -142,7 +148,10 @@ export class GraphBuilder {
             this.setParam(sumModule.id, 'signals', this.outModules);
 
             // Connect the sum output to the root signal's source
-            const sumOutput = sumModule._output('output', false) as ModuleOutput;
+            const sumOutput = sumModule._output(
+                'output',
+                false,
+            ) as ModuleOutput;
             rootSignal._setParam('source', sumOutput);
         }
         // console.log('modules', new Map(this.modules.entries()));
@@ -183,9 +192,10 @@ export class GraphBuilder {
         msPerFrame: number = 500,
         triggerThreshold?: number,
     ) {
-        let realTriggerThreshold: number | undefined = triggerThreshold !== undefined
-            ? triggerThreshold * 1000
-            : undefined;
+        let realTriggerThreshold: number | undefined =
+            triggerThreshold !== undefined
+                ? triggerThreshold * 1000
+                : undefined;
         let output: ModuleOutput;
         if (Array.isArray(value)) {
             output = value[0];
@@ -197,6 +207,7 @@ export class GraphBuilder {
                 type: 'ModuleOutput',
                 moduleId: output.moduleId,
                 portName: output.portName,
+                channel: output.channel,
             },
             msPerFrame,
             triggerThreshold: realTriggerThreshold,
@@ -302,7 +313,14 @@ export class ModuleNode {
     /**
      * Get an output port of this module
      */
-    _output(portName: string, polyphonic: boolean = false): ModuleOutput | ModuleOutput[] | ModuleOutputWithRange | ModuleOutputWithRange[] {
+    _output(
+        portName: string,
+        polyphonic: boolean = false,
+    ):
+        | ModuleOutput
+        | ModuleOutput[]
+        | ModuleOutputWithRange
+        | ModuleOutputWithRange[] {
         // Verify output exists
         const outputSchema = this.schema.outputs.find(
             (o) => o.name === portName,
@@ -314,19 +332,29 @@ export class ModuleNode {
         }
 
         // Check if this output has range metadata
-        const hasRange = outputSchema.minValue !== undefined && outputSchema.maxValue !== undefined;
+        const hasRange =
+            outputSchema.minValue !== undefined &&
+            outputSchema.maxValue !== undefined;
 
         if (polyphonic) {
             // Return array of ModuleOutput(WithRange) for each channel (based on derived channel count)
             const outputs: (ModuleOutput | ModuleOutputWithRange)[] = [];
             for (let i = 0; i < this.channelCount; i++) {
                 if (hasRange) {
-                    outputs.push(new ModuleOutputWithRange(
-                        this.builder, this.id, portName, i,
-                        outputSchema.minValue!, outputSchema.maxValue!
-                    ));
+                    outputs.push(
+                        new ModuleOutputWithRange(
+                            this.builder,
+                            this.id,
+                            portName,
+                            i,
+                            outputSchema.minValue!,
+                            outputSchema.maxValue!,
+                        ),
+                    );
                 } else {
-                    outputs.push(new ModuleOutput(this.builder, this.id, portName, i));
+                    outputs.push(
+                        new ModuleOutput(this.builder, this.id, portName, i),
+                    );
                 }
             }
             return outputs;
@@ -334,8 +362,12 @@ export class ModuleNode {
 
         if (hasRange) {
             return new ModuleOutputWithRange(
-                this.builder, this.id, portName, 0,
-                outputSchema.minValue!, outputSchema.maxValue!
+                this.builder,
+                this.id,
+                portName,
+                0,
+                outputSchema.minValue!,
+                outputSchema.maxValue!,
             );
         }
         return new ModuleOutput(this.builder, this.id, portName);
@@ -351,7 +383,12 @@ export class ModuleOutput {
     readonly portName: string;
     readonly channel: number = 0;
 
-    constructor(builder: GraphBuilder, moduleId: string, portName: string, channel: number = 0) {
+    constructor(
+        builder: GraphBuilder,
+        moduleId: string,
+        portName: string,
+        channel: number = 0,
+    ) {
         this.builder = builder;
         this.moduleId = moduleId;
         this.portName = portName;
@@ -409,7 +446,7 @@ export class ModuleOutputWithRange extends ModuleOutput {
         portName: string,
         channel: number = 0,
         minValue: number,
-        maxValue: number
+        maxValue: number,
     ) {
         super(builder, moduleId, portName, channel);
         this.minValue = minValue;
@@ -433,21 +470,30 @@ export class ModuleOutputWithRange extends ModuleOutput {
 
 // Add Array prototype methods for ModuleOutput arrays
 // These need to be added after ModuleOutput is defined
-Array.prototype.gain = function (this: ModuleOutput[], factor: Value): ModuleOutput[] {
+Array.prototype.gain = function (
+    this: ModuleOutput[],
+    factor: Value,
+): ModuleOutput[] {
     const scaleNode = this[0].builder.addModule('scaleAndShift');
     scaleNode._setParam('input', this);
     scaleNode._setParam('scale', factor);
     return scaleNode._output('output', true) as ModuleOutput[];
 };
 
-Array.prototype.offset = function (this: ModuleOutput[], offset: Value): ModuleOutput[] {
+Array.prototype.offset = function (
+    this: ModuleOutput[],
+    offset: Value,
+): ModuleOutput[] {
     const shiftNode = this[0].builder.addModule('scaleAndShift');
     shiftNode._setParam('input', this);
     shiftNode._setParam('shift', offset);
     return shiftNode._output('output', true) as ModuleOutput[];
 };
 
-Array.prototype.out = function (this: ModuleOutput[], mode?: 'm'): ModuleOutput[] {
+Array.prototype.out = function (
+    this: ModuleOutput[],
+    mode?: 'm',
+): ModuleOutput[] {
     for (const output of this) {
         output.out(mode);
     }
@@ -455,7 +501,11 @@ Array.prototype.out = function (this: ModuleOutput[], mode?: 'm'): ModuleOutput[
 };
 
 // Add Array prototype method for range remapping on ModuleOutputWithRange arrays
-Array.prototype.range = function (this: ModuleOutputWithRange[], outMin: Value, outMax: Value): ModuleOutput[] {
+Array.prototype.range = function (
+    this: ModuleOutputWithRange[],
+    outMin: Value,
+    outMax: Value,
+): ModuleOutput[] {
     if (this.length === 0) {
         return [];
     }
@@ -467,8 +517,8 @@ Array.prototype.range = function (this: ModuleOutputWithRange[], outMin: Value, 
     remapNode._setParam('input', this);
 
     // Collect the min/max values from each output's known range
-    const inMins = this.map(o => o.minValue);
-    const inMaxs = this.map(o => o.maxValue);
+    const inMins = this.map((o) => o.minValue);
+    const inMaxs = this.map((o) => o.maxValue);
 
     remapNode._setParam('inMin', inMins);
     remapNode._setParam('inMax', inMaxs);

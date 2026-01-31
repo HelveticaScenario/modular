@@ -17,7 +17,7 @@ use std::{
     sync::{self, Arc},
 };
 
-use crate::dsp::utils::hz_to_voct;
+use crate::dsp::utils::{hz_to_voct, midi_to_voct};
 use crate::patch::Patch;
 use crate::poly::PolyOutput;
 
@@ -45,6 +45,7 @@ impl WellKnownModule {
             WellKnownModule::RootOutput => "ROOT_OUTPUT",
             WellKnownModule::RootClock => "ROOT_CLOCK",
             WellKnownModule::RootInput => "ROOT_INPUT",
+            // We also use this for the module type string
             WellKnownModule::HiddenAudioIn => "HIDDEN_AUDIO_IN",
         }
     }
@@ -418,7 +419,7 @@ fn parse_signal_string(s: &str) -> StdResult<f32, String> {
         let midi: f32 = caps[1]
             .parse()
             .map_err(|_| "Invalid MIDI number".to_string())?;
-        let volts = (midi - 33.0) / 12.0;
+        let volts = midi_to_voct(midi);
         return Ok(volts);
     }
 
@@ -467,17 +468,19 @@ fn parse_signal_string(s: &str) -> StdResult<f32, String> {
 
         let pc_val = base_note.pitch.into_u8();
 
-        let midi = (target_octave as f32 + 2.0) * 12.0 + (pc_val as f32);
+        // Standard MIDI: (octave + 1) * 12 + pitch_class, where C4 = MIDI 60
+        let midi = (target_octave as f32 + 1.0) * 12.0 + (pc_val as f32);
         let midi_with_cents = midi + (cents / 100.0);
 
-        let volts = (midi_with_cents - 33.0) / 12.0;
+        let volts = midi_to_voct(midi_with_cents);
         return Ok(volts);
     }
 
     if let Ok(note) = parse_note_str(s) {
         let pc_val = note.pitch.into_u8();
-        let midi = (note.octave as f32 + 2.0) * 12.0 + (pc_val as f32);
-        let volts = (midi - 33.0) / 12.0;
+        // Standard MIDI: (octave + 1) * 12 + pitch_class, where C4 = MIDI 60
+        let midi = (note.octave as f32 + 1.0) * 12.0 + (pc_val as f32);
+        let volts = midi_to_voct(midi);
         return Ok(volts);
     }
 
@@ -674,7 +677,10 @@ impl Connect for Signal {
             Signal::Cable {
                 module, module_ptr, ..
             } => {
+                println!("Connecting Signal Cable to module: {:?}", module);
+                println!("Available sampleables: {:?}", patch.sampleables.keys());
                 if let Some(sampleable) = patch.sampleables.get(module) {
+                    println!("Found sampleable for module: {:?}", module);
                     *module_ptr = Arc::downgrade(sampleable);
                 }
             }
@@ -897,6 +903,9 @@ pub enum ScopeItem {
     ModuleOutput {
         module_id: String,
         port_name: String,
+        /// Which channel of the output to read (0-indexed, default 0)
+        #[serde(default)]
+        channel: u32,
     },
 }
 
@@ -1017,120 +1026,120 @@ mod tests {
 
     #[test]
     fn test_signal_deserialization_hz() {
-        // 55Hz is 0V
-        let s: Signal = from_str("\"55hz\"").unwrap();
+        // C4 (~261.63Hz) is 0V
+        let s: Signal = from_str("\"261.6255653005986hz\"").unwrap();
         match s {
-            Signal::Volts(v) => assert!((v - 0.0).abs() < 1e-6),
+            Signal::Volts(v) => assert!(v.abs() < 1e-5, "C4 should be 0V, got {}", v),
             _ => panic!("Expected Volts"),
         }
 
-        // 110Hz is 1V (one octave up)
-        let s: Signal = from_str("\"110hz\"").unwrap();
+        // C5 (~523.25Hz) is 1V (one octave up)
+        let s: Signal = from_str("\"523.2511306011972hz\"").unwrap();
         match s {
-            Signal::Volts(v) => assert!((v - 1.0).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - 1.0).abs() < 1e-5, "C5 should be 1V, got {}", v),
             _ => panic!("Expected Volts"),
         }
     }
 
     #[test]
     fn test_signal_deserialization_midi() {
-        // MIDI 33 (A0) is 0V
-        let s: Signal = from_str("\"33m\"").unwrap();
+        // MIDI 60 (C4) is 0V
+        let s: Signal = from_str("\"60m\"").unwrap();
         match s {
-            Signal::Volts(v) => assert!((v - 0.0).abs() < 1e-6),
+            Signal::Volts(v) => assert!(v.abs() < 1e-6, "MIDI 60 should be 0V, got {}", v),
             _ => panic!("Expected Volts"),
         }
 
-        // MIDI 45 (A1) is 1V
-        let s: Signal = from_str("\"45m\"").unwrap();
+        // MIDI 72 (C5) is 1V
+        let s: Signal = from_str("\"72m\"").unwrap();
         match s {
-            Signal::Volts(v) => assert!((v - 1.0).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - 1.0).abs() < 1e-6, "MIDI 72 should be 1V, got {}", v),
             _ => panic!("Expected Volts"),
         }
     }
 
     #[test]
     fn test_signal_deserialization_note() {
-        // A0 is 0V
-        let s: Signal = from_str("\"A0\"").unwrap();
-        match s {
-            Signal::Volts(v) => assert!((v - 0.0).abs() < 1e-6),
-            _ => panic!("Expected Volts"),
-        }
-
-        // A-1 is -1V
-        let s: Signal = from_str("\"A-1\"").unwrap();
-        match s {
-            Signal::Volts(v) => assert!((v + 1.0).abs() < 1e-6),
-            _ => panic!("Expected Volts"),
-        }
-
-        // A1 is 1V
-        let s: Signal = from_str("\"A1\"").unwrap();
-        match s {
-            Signal::Volts(v) => assert!((v - 1.0).abs() < 1e-6),
-            _ => panic!("Expected Volts"),
-        }
-
-        // C4 (Middle C) -> MIDI 72 -> (72-33)/12 = 3.25V
+        // C4 (Middle C) is 0V
         let s: Signal = from_str("\"C4\"").unwrap();
         match s {
-            Signal::Volts(v) => assert!((v - 3.25).abs() < 1e-6),
+            Signal::Volts(v) => assert!(v.abs() < 1e-6, "C4 should be 0V, got {}", v),
+            _ => panic!("Expected Volts"),
+        }
+
+        // C3 is -1V
+        let s: Signal = from_str("\"C3\"").unwrap();
+        match s {
+            Signal::Volts(v) => assert!((v + 1.0).abs() < 1e-6, "C3 should be -1V, got {}", v),
+            _ => panic!("Expected Volts"),
+        }
+
+        // C5 is 1V
+        let s: Signal = from_str("\"C5\"").unwrap();
+        match s {
+            Signal::Volts(v) => assert!((v - 1.0).abs() < 1e-6, "C5 should be 1V, got {}", v),
+            _ => panic!("Expected Volts"),
+        }
+
+        // A4 (440Hz) -> MIDI 69 -> (69-60)/12 = 0.75V
+        let s: Signal = from_str("\"A4\"").unwrap();
+        match s {
+            Signal::Volts(v) => assert!((v - 0.75).abs() < 1e-6, "A4 should be 0.75V, got {}", v),
             _ => panic!("Expected Volts"),
         }
 
         // Sharps/Flats
-        // A#0 -> MIDI 34 -> 1/12 V
-        let s: Signal = from_str("\"A#0\"").unwrap();
+        // C#4 -> MIDI 61 -> 1/12 V
+        let s: Signal = from_str("\"C#4\"").unwrap();
         match s {
-            Signal::Volts(v) => assert!((v - (1.0 / 12.0)).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - (1.0 / 12.0)).abs() < 1e-6, "C#4 should be 1/12V, got {}", v),
             _ => panic!("Expected Volts"),
         }
     }
 
     #[test]
     fn test_signal_deserialization_scale() {
-        // 0s(A0:Major) -> treat as root -> A0 -> 0V
-        let s: Signal = from_str("\"0s(A0:Major)\"").unwrap();
+        // 0s(C4:Major) -> treat as root -> C4 -> 0V
+        let s: Signal = from_str("\"0s(C4:Major)\"").unwrap();
         match s {
-            Signal::Volts(v) => assert!((v - 0.0).abs() < 1e-6),
+            Signal::Volts(v) => assert!(v.abs() < 1e-6, "0s(C4:Major) should be 0V, got {}", v),
             _ => panic!("Expected Volts"),
         }
 
-        // 1s(A0:Major) -> 2nd interval -> B0 -> 2 semitones -> 2/12 V
-        let s: Signal = from_str("\"1s(A0:Major)\"").unwrap();
+        // 1s(C4:Major) -> 2nd interval -> D4 -> 2 semitones -> 2/12 V
+        let s: Signal = from_str("\"1s(C4:Major)\"").unwrap();
         match s {
-            Signal::Volts(v) => assert!((v - (2.0 / 12.0)).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - (2.0 / 12.0)).abs() < 1e-6, "1s(C4:Major) should be 2/12V, got {}", v),
             _ => panic!("Expected Volts"),
         }
 
-        // 2s(A0:Major) -> 3rd interval -> C#0 -> 4 semitones -> 4/12 V
-        let s: Signal = from_str("\"2s(A0:Major)\"").unwrap();
+        // 2s(C4:Major) -> 3rd interval -> E4 -> 4 semitones -> 4/12 V
+        let s: Signal = from_str("\"2s(C4:Major)\"").unwrap();
         match s {
-            Signal::Volts(v) => assert!((v - (4.0 / 12.0)).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - (4.0 / 12.0)).abs() < 1e-6, "2s(C4:Major) should be 4/12V, got {}", v),
             _ => panic!("Expected Volts"),
         }
 
-        // 8s(A0:Major) -> 9th interval -> B1 -> 14 semitones -> 14/12 V
-        let s: Signal = from_str("\"8s(A0:Major)\"").unwrap();
+        // 7s(C4:Major) -> 8th interval (octave) -> C5 -> 12 semitones -> 1V
+        let s: Signal = from_str("\"7s(C4:Major)\"").unwrap();
         match s {
-            Signal::Volts(v) => assert!((v - (14.0 / 12.0)).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - 1.0).abs() < 1e-6, "7s(C4:Major) should be 1V, got {}", v),
             _ => panic!("Expected Volts"),
         }
 
         // Cents
-        // 1.5s(A0:Major) -> 2nd interval + 50 cents -> 2.5 semitones -> 2.5/12 V
-        let s: Signal = from_str("\"1.5s(a0:maj)\"").unwrap();
+        // 1.5s(C4:Major) -> 2nd interval + 50 cents -> 2.5 semitones -> 2.5/12 V
+        let s: Signal = from_str("\"1.5s(c4:maj)\"").unwrap();
         match s {
-            Signal::Volts(v) => assert!((v - (2.5 / 12.0)).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - (2.5 / 12.0)).abs() < 1e-6, "1.5s(C4:Major) should be 2.5/12V, got {}", v),
             _ => panic!("Expected Volts"),
         }
 
         // Negative degrees wrap to lower octave
-        // -1s(A0:Major) -> G#-1 -> one semitone below A0 -> -1/12 V
-        let s: Signal = from_str("\"-1s(A0:Major)\"").unwrap();
+        // -1s(C4:Major) -> B3 -> one semitone below C4 -> -1/12 V
+        let s: Signal = from_str("\"-1s(C4:Major)\"").unwrap();
         match s {
-            Signal::Volts(v) => assert!((v - (-1.0 / 12.0)).abs() < 1e-6),
+            Signal::Volts(v) => assert!((v - (-1.0 / 12.0)).abs() < 1e-6, "-1s(C4:Major) should be -1/12V, got {}", v),
             _ => panic!("Expected Volts"),
         }
     }

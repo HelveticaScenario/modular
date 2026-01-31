@@ -20,6 +20,7 @@ use napi::Result;
 use napi::bindgen_prelude::Float32Array;
 use napi_derive::napi;
 use parking_lot::Mutex;
+use ringbuf::{HeapRb, traits::{Consumer, Producer, Split}};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs::File;
@@ -36,8 +37,30 @@ use modular_core::types::{ROOT_OUTPUT_PORT, ScopeItem};
 use std::time::Instant;
 
 // ============================================================================
+// Audio Host Information
+// ============================================================================
+
+/// Information about an audio host
+#[derive(Debug, Clone)]
+#[napi(object)]
+pub struct HostInfo {
+  /// Host identifier (e.g., "CoreAudio", "WASAPI", "ALSA")
+  pub id: String,
+  /// Human-readable host name
+  pub name: String,
+}
+
+// ============================================================================
 // Audio Device Information
 // ============================================================================
+
+/// Buffer size range for an audio device
+#[derive(Debug, Clone)]
+#[napi(object)]
+pub struct BufferSizeRange {
+  pub min: u32,
+  pub max: u32,
+}
 
 /// Information about an audio device
 #[derive(Debug, Clone)]
@@ -45,19 +68,206 @@ use std::time::Instant;
 pub struct AudioDeviceInfo {
   /// Stable Device ID
   pub id: String,
+  /// Host ID this device belongs to
+  pub host_id: String,
   /// Device name
   pub name: String,
   /// Number of input channels (0 if output-only)
   pub input_channels: u16,
   /// Number of output channels (0 if input-only)
   pub output_channels: u16,
-  /// Whether this is the default device
+  /// Whether this is the default device for this host
   pub is_default: bool,
+  /// Default sample rate in Hz
+  pub sample_rate: u32,
+  /// Supported sample rates (common rates that the device supports)
+  pub supported_sample_rates: Vec<u32>,
+  /// Buffer size range (min/max), or None if unknown
+  pub buffer_size_range: Option<BufferSizeRange>,
 }
 
-/// List all available audio output devices
-pub fn list_output_devices() -> Vec<AudioDeviceInfo> {
-  let host = get_host_by_preference();
+/// Common sample rates to check for support
+const COMMON_SAMPLE_RATES: &[u32] = &[44100, 48000, 88200, 96000, 176400, 192000];
+
+// ============================================================================
+// Device Cache
+// ============================================================================
+
+/// Cached information about a device (includes cpal Device handle)
+#[derive(Clone)]
+pub struct CachedDevice {
+  pub info: AudioDeviceInfo,
+  // Note: cpal::Device doesn't implement Clone, so we store just the info
+  // and look up the device by ID when needed
+}
+
+/// Cache of all available audio hosts and devices
+#[derive(Default)]
+pub struct AudioDeviceCache {
+  /// All available hosts
+  pub hosts: Vec<HostInfo>,
+  /// Output devices keyed by host_id
+  pub output_devices: HashMap<String, Vec<AudioDeviceInfo>>,
+  /// Input devices keyed by host_id
+  pub input_devices: HashMap<String, Vec<AudioDeviceInfo>>,
+}
+
+impl AudioDeviceCache {
+  pub fn new() -> Self {
+    let mut cache = Self::default();
+    cache.refresh();
+    cache
+  }
+
+  /// Refresh the cache by enumerating all hosts and their devices
+  pub fn refresh(&mut self) {
+    self.hosts.clear();
+    self.output_devices.clear();
+    self.input_devices.clear();
+
+    for host_id in cpal::available_hosts() {
+      let host_id_str = format!("{:?}", host_id);
+      
+      self.hosts.push(HostInfo {
+        id: host_id_str.clone(),
+        name: host_id_str.clone(),
+      });
+
+      if let Ok(host) = cpal::host_from_id(host_id) {
+        // Get output devices for this host
+        let output_devices = enumerate_output_devices(&host, &host_id_str);
+        self.output_devices.insert(host_id_str.clone(), output_devices);
+
+        // Get input devices for this host
+        let input_devices = enumerate_input_devices(&host, &host_id_str);
+        self.input_devices.insert(host_id_str, input_devices);
+      }
+    }
+  }
+
+  /// Get all output devices across all hosts
+  pub fn all_output_devices(&self) -> Vec<AudioDeviceInfo> {
+    self.output_devices.values().flatten().cloned().collect()
+  }
+
+  /// Get all input devices across all hosts
+  pub fn all_input_devices(&self) -> Vec<AudioDeviceInfo> {
+    self.input_devices.values().flatten().cloned().collect()
+  }
+
+  /// Find an output device by ID
+  pub fn find_output_device(&self, device_id: &str) -> Option<&AudioDeviceInfo> {
+    self.output_devices.values()
+      .flatten()
+      .find(|d| d.id == device_id)
+  }
+
+  /// Find an input device by ID
+  pub fn find_input_device(&self, device_id: &str) -> Option<&AudioDeviceInfo> {
+    self.input_devices.values()
+      .flatten()
+      .find(|d| d.id == device_id)
+  }
+
+  /// Get output devices for a specific host
+  pub fn output_devices_for_host(&self, host_id: &str) -> Vec<AudioDeviceInfo> {
+    self.output_devices.get(host_id)
+      .map(|v| v.clone())
+      .unwrap_or_default()
+  }
+
+  /// Get input devices for a specific host
+  pub fn input_devices_for_host(&self, host_id: &str) -> Vec<AudioDeviceInfo> {
+    self.input_devices.get(host_id)
+      .map(|v| v.clone())
+      .unwrap_or_default()
+  }
+
+  /// Get all host IDs
+  pub fn host_ids(&self) -> Vec<String> {
+    self.hosts.iter().map(|h| h.id.clone()).collect()
+  }
+}
+
+/// Per-host device info for the cache snapshot
+#[derive(Debug, Clone)]
+#[napi(object)]
+pub struct HostDeviceInfo {
+  pub host_id: String,
+  pub host_name: String,
+  pub output_devices: Vec<AudioDeviceInfo>,
+  pub input_devices: Vec<AudioDeviceInfo>,
+}
+
+/// N-API compatible structure for the full device cache
+#[derive(Debug, Clone)]
+#[napi(object)]
+pub struct DeviceCacheSnapshot {
+  /// All hosts with their devices grouped together
+  pub hosts: Vec<HostDeviceInfo>,
+}
+
+/// Current audio state information
+#[derive(Debug, Clone)]
+#[napi(object)]
+pub struct CurrentAudioState {
+  pub host_id: String,
+  pub output_device_id: Option<String>,
+  pub output_device_name: Option<String>,
+  pub input_device_id: Option<String>,
+  pub input_device_name: Option<String>,
+  pub sample_rate: u32,
+  pub buffer_size: Option<u32>,
+  pub output_channels: u16,
+  pub input_channels: u16,
+  pub fallback_warning: Option<String>,
+}
+
+/// Extract supported sample rates and buffer size range from device configs
+fn get_device_capabilities(
+  configs: impl Iterator<Item = cpal::SupportedStreamConfigRange>,
+) -> (Vec<u32>, Option<BufferSizeRange>) {
+  let mut supported_rates = std::collections::HashSet::new();
+  let mut min_buffer = u32::MAX;
+  let mut max_buffer = 0u32;
+
+  for config in configs {
+    // Check which common sample rates are supported
+    let min_rate = config.min_sample_rate();
+    let max_rate = config.max_sample_rate();
+    for &rate in COMMON_SAMPLE_RATES {
+      if rate >= min_rate && rate <= max_rate {
+        supported_rates.insert(rate);
+      }
+    }
+
+    // Extract buffer size range
+    match config.buffer_size() {
+      cpal::SupportedBufferSize::Range { min, max } => {
+        min_buffer = min_buffer.min(*min);
+        max_buffer = max_buffer.max(*max);
+      }
+      cpal::SupportedBufferSize::Unknown => {}
+    }
+  }
+
+  let mut rates: Vec<u32> = supported_rates.into_iter().collect();
+  rates.sort();
+
+  let buffer_range = if min_buffer <= max_buffer && max_buffer > 0 {
+    Some(BufferSizeRange {
+      min: min_buffer,
+      max: max_buffer,
+    })
+  } else {
+    None
+  };
+
+  (rates, buffer_range)
+}
+
+/// Enumerate output devices for a specific host
+fn enumerate_output_devices(host: &Host, host_id: &str) -> Vec<AudioDeviceInfo> {
   let default_device_id = host.default_output_device().and_then(|d| d.id().ok());
 
   host
@@ -67,13 +277,23 @@ pub fn list_output_devices() -> Vec<AudioDeviceInfo> {
         .filter_map(|device| {
           let id = device.id().ok()?;
           let config = device.default_output_config().ok()?;
+          
+          // Get supported configurations
+          let (supported_sample_rates, buffer_size_range) = device
+            .supported_output_configs()
+            .map(|configs| get_device_capabilities(configs))
+            .unwrap_or_default();
+
           Some(AudioDeviceInfo {
             is_default: default_device_id.as_ref() == Some(&id),
-
             id: id.to_string(),
+            host_id: host_id.to_string(),
             name: device.description().ok()?.name().to_owned(),
             input_channels: 0,
             output_channels: config.channels(),
+            sample_rate: config.sample_rate(),
+            supported_sample_rates,
+            buffer_size_range,
           })
         })
         .collect()
@@ -81,9 +301,8 @@ pub fn list_output_devices() -> Vec<AudioDeviceInfo> {
     .unwrap_or_default()
 }
 
-/// List all available audio input devices
-pub fn list_input_devices() -> Vec<AudioDeviceInfo> {
-  let host = get_host_by_preference();
+/// Enumerate input devices for a specific host
+fn enumerate_input_devices(host: &Host, host_id: &str) -> Vec<AudioDeviceInfo> {
   let default_device_id = host.default_input_device().and_then(|d| d.id().ok());
 
   host
@@ -93,17 +312,58 @@ pub fn list_input_devices() -> Vec<AudioDeviceInfo> {
         .filter_map(|device| {
           let id = device.id().ok()?;
           let config = device.default_input_config().ok()?;
+          
+          // Get supported configurations
+          let (supported_sample_rates, buffer_size_range) = device
+            .supported_input_configs()
+            .map(|configs| get_device_capabilities(configs))
+            .unwrap_or_default();
+
           Some(AudioDeviceInfo {
             is_default: default_device_id.as_ref() == Some(&id),
             id: id.to_string(),
+            host_id: host_id.to_string(),
             name: device.description().ok()?.name().to_owned(),
             input_channels: config.channels(),
             output_channels: 0,
+            sample_rate: config.sample_rate(),
+            supported_sample_rates,
+            buffer_size_range,
           })
         })
         .collect()
     })
     .unwrap_or_default()
+}
+
+// Legacy functions for backward compatibility (now use cache internally)
+
+/// List all available audio hosts
+pub fn list_available_hosts() -> Vec<HostInfo> {
+  cpal::available_hosts()
+    .into_iter()
+    .map(|host_id| {
+      let name = format!("{:?}", host_id);
+      HostInfo {
+        id: format!("{:?}", host_id),
+        name,
+      }
+    })
+    .collect()
+}
+
+/// List all available audio output devices (legacy - enumerates fresh)
+pub fn list_output_devices() -> Vec<AudioDeviceInfo> {
+  let host = get_host_by_preference();
+  let host_id = format!("{:?}", host.id());
+  enumerate_output_devices(&host, &host_id)
+}
+
+/// List all available audio input devices (legacy - enumerates fresh)
+pub fn list_input_devices() -> Vec<AudioDeviceInfo> {
+  let host = get_host_by_preference();
+  let host_id = format!("{:?}", host.id());
+  enumerate_input_devices(&host, &host_id)
 }
 
 /// Find an output device by id
@@ -124,73 +384,95 @@ pub fn find_input_device(id: &str) -> Option<cpal::Device> {
     .find(|d| d.id().ok() == cpal::DeviceId::from_str(id).ok())
 }
 
-// ============================================================================
-// Audio Input Ring Buffer
-// ============================================================================
-
-/// Ring buffer size for audio input (in samples per channel)
-const INPUT_RING_BUFFER_SIZE: usize = 4096;
-
-/// Total size of the flat audio input buffer
-const INPUT_BUFFER_TOTAL_SIZE: usize = INPUT_RING_BUFFER_SIZE * PORT_MAX_CHANNELS;
-
-/// Thread-safe ring buffer for audio input
-/// Buffer layout: flat array [sample_0_ch_0, sample_0_ch_1, ..., sample_1_ch_0, ...]
-pub struct InputRingBuffer {
-  /// Flat buffer data: sample_idx * PORT_MAX_CHANNELS + channel
-  buffer: Mutex<[f32; INPUT_BUFFER_TOTAL_SIZE]>,
-  /// Write position in frames
-  write_pos: Mutex<usize>,
+/// Find an output device by id in a specific host
+pub fn find_output_device_in_host(host: &Host, id: &str) -> Option<cpal::Device> {
+  host
+    .output_devices()
+    .ok()?
+    .find(|d| d.id().ok() == cpal::DeviceId::from_str(id).ok())
 }
 
-impl InputRingBuffer {
-  pub fn new() -> Self {
-    Self {
-      buffer: Mutex::new([0.0; INPUT_BUFFER_TOTAL_SIZE]),
-      write_pos: Mutex::new(0),
+/// Find an input device by id in a specific host
+pub fn find_input_device_in_host(host: &Host, id: &str) -> Option<cpal::Device> {
+  host
+    .input_devices()
+    .ok()?
+    .find(|d| d.id().ok() == cpal::DeviceId::from_str(id).ok())
+}
+
+// ============================================================================
+// Audio Input Ring Buffer (using ringbuf crate)
+// ============================================================================
+
+/// Ring buffer size for audio input (in frames, where each frame has PORT_MAX_CHANNELS samples)
+const INPUT_RING_BUFFER_FRAMES: usize = 4096;
+
+/// Total size of the ring buffer in samples
+const INPUT_RING_BUFFER_SIZE: usize = INPUT_RING_BUFFER_FRAMES * PORT_MAX_CHANNELS;
+
+/// Producer half of the input ring buffer (used by input stream callback)
+pub type InputBufferProducer = ringbuf::HeapProd<f32>;
+
+/// Consumer half of the input ring buffer (used by output stream callback)
+pub type InputBufferConsumer = ringbuf::HeapCons<f32>;
+
+/// Writer for input audio - owns the producer, moved into input stream closure
+pub struct InputBufferWriter {
+  producer: InputBufferProducer,
+}
+
+impl InputBufferWriter {
+  /// Write interleaved samples to the ring buffer
+  pub fn write(&mut self, data: &[f32]) {
+    for &sample in data {
+      // Drop samples if buffer is full (better than blocking)
+      let _ = self.producer.try_push(sample);
     }
   }
+}
 
-  /// Write samples from input callback (interleaved)
-  /// `channels` specifies how many channels are in the interleaved data
-  pub fn write_interleaved(&mut self, data: &[f32], channels: usize) {
-    if channels == 0 {
-      return;
+/// Reader for input audio - owns the consumer + channel count, moved into output stream closure
+pub struct InputBufferReader {
+  consumer: InputBufferConsumer,
+  channels: usize,
+}
+
+impl InputBufferReader {
+  /// Read one frame of input audio (up to PORT_MAX_CHANNELS samples)
+  pub fn read_frame(&mut self) -> [f32; PORT_MAX_CHANNELS] {
+    let mut result = [0.0f32; PORT_MAX_CHANNELS];
+    
+    if self.channels == 0 {
+      return result;
     }
-
-    let frames = data.len() / channels;
-    let mut buffer = self.buffer.lock();
-    let mut write_pos = self.write_pos.lock();
-
-    for frame_idx in 0..frames {
-      let buf_idx = *write_pos % INPUT_RING_BUFFER_SIZE;
-      let base_offset = buf_idx * PORT_MAX_CHANNELS;
-      let channels_to_write = channels.min(PORT_MAX_CHANNELS);
-
-      buffer[base_offset..][..channels_to_write]
-        .copy_from_slice(&data[frame_idx * channels..][..channels_to_write]);
-      buffer[base_offset + channels_to_write..][..PORT_MAX_CHANNELS - channels_to_write].fill(0.0);
-
-      *write_pos += 1;
+    
+    let samples_to_read = self.channels.min(PORT_MAX_CHANNELS);
+    
+    for i in 0..samples_to_read {
+      if let Some(sample) = self.consumer.try_pop() {
+        result[i] = sample;
+      }
     }
-  }
-
-  /// Read the most recent sample frame (all channels)
-  pub fn read_latest(&self) -> [f32; PORT_MAX_CHANNELS] {
-    let buffer = self.buffer.lock();
-    let write_pos = self.write_pos.lock();
-    let pos = *write_pos;
-    let idx = if pos == 0 { 0 } else { (pos - 1) % INPUT_RING_BUFFER_SIZE };
-    let base_offset = idx * PORT_MAX_CHANNELS;
-
-    let mut result = [0.0; PORT_MAX_CHANNELS];
-    result.copy_from_slice(&buffer[base_offset..][..PORT_MAX_CHANNELS]);
+    
+    // Skip extra channels if input has more than PORT_MAX_CHANNELS
+    for _ in samples_to_read..self.channels {
+      let _ = self.consumer.try_pop();
+    }
+    
     result
   }
 }
 
-/// Shared input buffer type
-pub type SharedInputBuffer = Arc<InputRingBuffer>;
+/// Create input ring buffer writer and reader
+/// Pass writer to input stream, reader to output stream
+pub fn create_input_ring_buffer(channels: usize) -> (InputBufferWriter, InputBufferReader) {
+  let rb = HeapRb::<f32>::new(INPUT_RING_BUFFER_SIZE);
+  let (producer, consumer) = rb.split();
+  (
+    InputBufferWriter { producer },
+    InputBufferReader { consumer, channels },
+  )
+}
 
 
 // ============================================================================
@@ -299,6 +581,11 @@ use crate::validation::validate_patch;
 /// This factor brings the output into a reasonable range for audio output.
 const AUDIO_OUTPUT_ATTENUATION: f32 = 0.2;
 
+/// Gain factor applied to audio input.
+/// Audio input from cpal is in the range [-1, 1]. This factor brings it into
+/// the [-5, 5] volt range used by DSP modules (inverse of AUDIO_OUTPUT_ATTENUATION).
+const AUDIO_INPUT_GAIN: f32 = 1.0 / AUDIO_OUTPUT_ATTENUATION;
+
 const SCOPE_CAPACITY: u32 = 1024;
 
 // Adapted from https://github.com/VCVRack/Fundamental/blob/e819498fd388755efcb876b37d1e33fddf4a29ac/src/Scope.cpp
@@ -322,6 +609,7 @@ fn calculate_skip_rate(total_samples: u32) -> u32 {
 
 impl ScopeBuffer {
   pub fn new(scope: &Scope, sample_rate: f32) -> Self {
+    println!("KJAHSKJDAKJSHD {}", AUDIO_INPUT_GAIN);
     let mut sb = Self {
       buffer: [0.0; SCOPE_CAPACITY as usize],
       sample_counter: 0,
@@ -477,6 +765,11 @@ impl AudioState {
 
   pub fn is_stopped(&self) -> bool {
     self.stopped.load(Ordering::SeqCst)
+  }
+
+  /// Get a clone of the patch Arc for device switching
+  pub fn get_patch(&self) -> Arc<Mutex<Patch>> {
+    self.patch.clone()
   }
 
   pub fn start_recording(&self, filename: Option<String>) -> Result<String> {
@@ -852,6 +1145,8 @@ impl AudioState {
       {
         let mut patch_lock = self.patch.lock();
         patch_lock.sampleables.clear();
+        // Re-insert the hidden AudioIn module (created internally, not from DSL)
+        patch_lock.insert_audio_in();
         patch_lock.rebuild_message_listeners();
       }
 
@@ -892,7 +1187,7 @@ pub fn make_stream<T>(
   device: &cpal::Device,
   config: &cpal::StreamConfig,
   audio_state: &Arc<AudioState>,
-  input_buffer: Option<SharedInputBuffer>,
+  mut input_reader: InputBufferReader,
 ) -> Result<cpal::Stream>
 where
   T: SizedSample + FromSample<f32> + hound::Sample,
@@ -921,12 +1216,14 @@ where
           {
             let patch = audio_state.patch.lock();
             let mut audio_in = patch.audio_in.lock();
-            let input_samples = input_buffer
-              .as_ref()
-              .map(|ib| ib.read_latest())
-              .unwrap_or([0f32; PORT_MAX_CHANNELS]);
-            for i in 0..num_channels.min(PORT_MAX_CHANNELS) {
-              audio_in.set(i, input_samples[i]);
+            // Read from the input buffer
+            let input_samples = input_reader.read_frame();
+
+            // Set channel count so that get() returns values instead of 0.0
+            audio_in.set_channels(PORT_MAX_CHANNELS as u8);
+            for i in 0..PORT_MAX_CHANNELS {
+              // Apply gain to bring input from [-1, 1] to [-5, 5] volt range
+              audio_in.set(i, input_samples[i] * AUDIO_INPUT_GAIN);
             }
           }
 
@@ -965,12 +1262,11 @@ where
   Ok(stream)
 }
 
-/// Build an input stream that writes to a shared ring buffer
+/// Build an input stream that writes to the input buffer
 pub fn make_input_stream<T>(
   device: &cpal::Device,
   config: &cpal::StreamConfig,
-  input_buffer: SharedInputBuffer,
-  channels: usize,
+  mut input_writer: InputBufferWriter,
 ) -> Result<cpal::Stream>
 where
   T: SizedSample + cpal::Sample,
@@ -984,7 +1280,7 @@ where
       move |data: &[T], _info: &cpal::InputCallbackInfo| {
         // Convert to f32 and write to ring buffer
         let f32_data: Vec<f32> = data.iter().map(|&s| f32::from_sample(s)).collect();
-        input_buffer.write_interleaved(&f32_data, channels);
+        input_writer.write(&f32_data);
       },
       err_fn,
       None,
@@ -1007,7 +1303,7 @@ fn process_frame_multichannel(
   let patch_guard = audio_state.patch.lock();
 
   // Update sampleables
-  for (_, module) in patch_guard.sampleables.iter() {
+  for (id, module) in patch_guard.sampleables.iter() {
     module.update();
   }
 
@@ -1017,19 +1313,35 @@ fn process_frame_multichannel(
   }
 
   // Capture audio for scopes
-  for (scope, scope_buffer) in audio_state.scope_collection.lock().iter_mut() {
-    match scope {
-      ScopeItem::ModuleOutput {
-        module_id,
-        port_name,
-        ..
-      } => {
-        if let Some(module) = patch_guard.sampleables.get(module_id) {
-          if let Ok(poly) = module.get_poly_sample(&port_name) {
-            scope_buffer.push(poly.get(0));
+  {
+    let mut scope_lock = audio_state.scope_collection.lock();
+    static SCOPE_LOG_COUNTER: OnceLock<std::sync::atomic::AtomicUsize> = OnceLock::new();
+    let scope_log_counter = SCOPE_LOG_COUNTER.get_or_init(|| std::sync::atomic::AtomicUsize::new(0));
+    let scope_count = scope_log_counter.fetch_add(1, Ordering::Relaxed);
+    
+    for (scope, scope_buffer) in scope_lock.iter_mut() {
+      match scope {
+        ScopeItem::ModuleOutput {
+          module_id,
+          port_name,
+          channel,
+        } => {
+          if let Some(module) = patch_guard.sampleables.get(module_id) {
+            if let Ok(poly) = module.get_poly_sample(&port_name) {
+              let val = poly.get(*channel as usize);
+              scope_buffer.push(val);
+              if scope_count % 44100 == 0 {
+                println!("[Scope] module={} port={} ch={} val={}", module_id, port_name, channel, val);
+              }
+            }
+          } else if scope_count % 44100 == 0 {
+            println!("[Scope] module {} NOT FOUND!", module_id);
           }
         }
       }
+    }
+    if scope_count % 44100 == 0 && scope_lock.is_empty() {
+      println!("[Scope] No scopes registered!");
     }
   }
 
@@ -1040,6 +1352,20 @@ fn process_frame_multichannel(
       for ch in 0..num_channels.min(PORT_MAX_CHANNELS) {
         output[ch] = poly.get(ch) * AUDIO_OUTPUT_ATTENUATION;
       }
+      // Debug output
+      static OUTPUT_LOG_COUNTER: OnceLock<std::sync::atomic::AtomicUsize> = OnceLock::new();
+      let output_log_counter = OUTPUT_LOG_COUNTER.get_or_init(|| std::sync::atomic::AtomicUsize::new(0));
+      let output_count = output_log_counter.fetch_add(1, Ordering::Relaxed);
+      if output_count % 44100 == 0 {
+        println!("[Output] ROOT_OUTPUT ch0={} poly.channels={}", poly.get(0), poly.channels());
+      }
+    }
+  } else {
+    static ROOT_MISSING_LOG: OnceLock<std::sync::atomic::AtomicUsize> = OnceLock::new();
+    let root_missing_log = ROOT_MISSING_LOG.get_or_init(|| std::sync::atomic::AtomicUsize::new(0));
+    let count = root_missing_log.fetch_add(1, Ordering::Relaxed);
+    if count % 44100 == 0 {
+      println!("[Output] ROOT_OUTPUT module NOT FOUND!");
     }
   }
 
@@ -1079,11 +1405,11 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
       ScopeItem::ModuleOutput {
         module_id,
         port_name,
-        ..
+        channel,
       } => {
         if let Some(module) = patch_guard.sampleables.get(module_id) {
           if let Ok(poly) = module.get_poly_sample(&port_name) {
-            scope_buffer.push(poly.get(0));
+            scope_buffer.push(poly.get(*channel as usize));
           }
         }
       }

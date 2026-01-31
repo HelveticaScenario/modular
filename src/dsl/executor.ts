@@ -12,11 +12,35 @@ export function executePatchScript(
     // console.log('Executing DSL script with schemas:', schemas);
     const context = new DSLContext(schemas);
 
+    const clock = context.namespaceTree['clock'];
+    if (typeof clock !== 'function') {
+        throw new Error(
+            'DSL execution error: "clock" module not found in schemas',
+        );
+    }
+
+    const signal = context.namespaceTree['signal'];
+    if (typeof signal !== 'function') {
+        throw new Error(
+            'DSL execution error: "signal" module not found in schemas',
+        );
+    }
+
     // Create default clock module that runs at 120 BPM
-    const rootClock = (context.namespaceTree.clock as any)(bpm(120), {
+    const rootClock = clock(bpm(120), {
         id: 'ROOT_CLOCK',
     });
     // console.log('Created clock module:', rootClock);
+
+    const rootInput = signal(
+        Array.from({ length: 16 }, (_, i) => ({
+            type: 'cable',
+            module: 'HIDDEN_AUDIO_IN',
+            port: 'input',
+            channel: i,
+        })),
+        { id: 'ROOT_INPUT' },
+    );
 
     // Create the execution environment with all DSL functions
     const dslGlobals = {
@@ -27,6 +51,7 @@ export function executePatchScript(
         bpm,
         // Built-in modules
         rootClock,
+        input: rootInput,
     };
 
     // console.log(dslGlobals);

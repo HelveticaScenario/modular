@@ -1,5 +1,5 @@
 use modular_core::dsp::get_param_validators;
-use modular_core::types::{ModuleSchema, ModuleState, PatchGraph, ScopeItem, Signal};
+use modular_core::types::{ModuleSchema, ModuleState, PatchGraph, ScopeItem, Signal, WellKnownModule};
 use napi_derive::napi;
 use schemars::Schema;
 use serde::{Deserialize, Serialize};
@@ -145,6 +145,12 @@ fn validate_signal_reference(
       port: src_port,
       ..
     } => {
+      // HiddenAudioIn is created internally by Rust and has no schema.
+      // It's the only module of its kind - skip validation for connections to it.
+      if src_module == WellKnownModule::HiddenAudioIn.id() {
+        return;
+      }
+
       let Some(src_state) = module_by_id.get(src_module.as_str()).copied() else {
         errors.push(ValidationError {
           field: field.to_string(),

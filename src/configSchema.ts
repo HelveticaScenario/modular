@@ -3,19 +3,31 @@
  * Used by Monaco editor for validation and autocomplete.
  */
 
-const audioSlotMappingSchema = {
+const audioConfigSchema = {
     type: "object",
+    description: "Audio device configuration",
     properties: {
-        device: {
+        hostId: {
             type: "string",
-            description: "Device name"
+            description: "Audio host identifier (e.g., 'CoreAudio', 'WASAPI')"
         },
-        channel: {
+        inputDeviceId: {
+            type: ["string", "null"],
+            description: "Input device ID, or null for no input"
+        },
+        outputDeviceId: {
+            type: "string",
+            description: "Output device ID"
+        },
+        sampleRate: {
             type: "number",
-            description: "Channel index (0-based)"
+            description: "Sample rate in Hz (e.g., 44100, 48000)"
+        },
+        bufferSize: {
+            type: "number",
+            description: "Buffer size in samples (e.g., 256, 512)"
         }
     },
-    required: ["device", "channel"],
     additionalProperties: false
 };
 
@@ -55,28 +67,7 @@ export const configSchema = {
             type: "string",
             description: "Path to the last opened workspace folder (managed automatically)"
         },
-        audioInputSlots: {
-            type: "array",
-            description: "Audio input slot mappings (16 slots, null for empty)",
-            items: {
-                oneOf: [
-                    { type: "null" },
-                    audioSlotMappingSchema
-                ]
-            },
-            maxItems: 16
-        },
-        audioOutputSlots: {
-            type: "array",
-            description: "Audio output slot mappings (16 slots, null for empty)",
-            items: {
-                oneOf: [
-                    { type: "null" },
-                    audioSlotMappingSchema
-                ]
-            },
-            maxItems: 16
-        }
+        audioConfig: audioConfigSchema
     },
     additionalProperties: false
 };

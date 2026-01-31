@@ -12,6 +12,7 @@ import {
     getMiniLeafSpans,
     PatchGraph,
     Synthesizer,
+    AudioConfigOptions,
 } from '@modular/core';
 import {
     IPC_CHANNELS,
@@ -58,88 +59,8 @@ if (!gotTheLock) {
     });
 }
 
-// Initialize the synthesizer instance
-console.log('Initializing Synthesizer...');
-const synth = new Synthesizer();
-
-// Restore audio slot configuration from saved config
-function restoreAudioSlotConfig() {
-    try {
-        const config = loadConfig();
-        
-        // Build AudioIOConfig from saved slots
-        const ioConfig: import('./ipcTypes').AudioIOConfig = {
-            inputSlots: Array.from({ length: 16 }, (_, i) => {
-                const saved = config.audioInputSlots?.[i];
-                if (saved) {
-                    return { deviceName: saved.device, channel: saved.channel };
-                }
-                return null;
-            }),
-            outputSlots: Array.from({ length: 16 }, (_, i) => {
-                const saved = config.audioOutputSlots?.[i];
-                if (saved) {
-                    return { deviceName: saved.device, channel: saved.channel };
-                }
-                return null;
-            }),
-        };
-
-        // Check if we have any saved config
-        const hasInputConfig = config.audioInputSlots?.some(s => s !== null);
-        const hasOutputConfig = config.audioOutputSlots?.some(s => s !== null);
-        
-        if (hasInputConfig || hasOutputConfig) {
-            console.log('Restoring audio slot configuration from saved config...');
-            const errors = synth.applyIoConfig(ioConfig);
-            if (errors.length > 0) {
-                console.warn('Audio slot config restore warnings:', errors);
-            } else {
-                console.log('Audio slot configuration restored successfully');
-            }
-        }
-    } catch (error) {
-        console.error('Error restoring audio slot config:', error);
-    }
-}
-
-// Save audio slot configuration to config file
-function saveAudioSlotConfig() {
-    try {
-        const config = loadConfig();
-        const ioConfig = synth.getIoConfig();
-
-        config.audioInputSlots = ioConfig.inputSlots.map(slot => {
-            if (slot) {
-                return { device: slot.deviceName, channel: slot.channel };
-            }
-            return null;
-        });
-
-        config.audioOutputSlots = ioConfig.outputSlots.map(slot => {
-            if (slot) {
-                return { device: slot.deviceName, channel: slot.channel };
-            }
-            return null;
-        });
-
-        saveConfig(config);
-        console.log('Audio slot configuration saved');
-    } catch (error) {
-        console.error('Error saving audio slot config:', error);
-    }
-}
-
-setInterval(() => {
-    // Keep the audio thread alive
-    console.log('health:', synth.getHealth());
-}, 10000);
-
-// Workspace root state
-let currentWorkspaceRoot: string | null = null;
-
+// Config persistence - defined early so we can load before synth creation
 let CONFIG_FILE: string;
-// Config persistence
 try {
     CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
 } catch (error) {
@@ -160,25 +81,16 @@ const AppConfigSchema = z.object({
         ])
         .optional(),
     lastOpenedFolder: z.string().optional(),
-    audioInputSlots: z.array(
-        z.object({
-            device: z.string(),
-            channel: z.number(),
-        }).nullable()
-    ).optional(),
-    audioOutputSlots: z.array(
-        z.object({
-            device: z.string(),
-            channel: z.number(),
-        }).nullable()
-    ).optional(),
+    audioConfig: z.object({
+        hostId: z.string().optional(),
+        inputDeviceId: z.string().nullable().optional(),
+        outputDeviceId: z.string().optional(),
+        sampleRate: z.number().optional(),
+        bufferSize: z.number().optional(),
+    }).optional(),
 });
 
 type AppConfig = z.infer<typeof AppConfigSchema>;
-
-// File watcher for config changes
-let configWatcher: fs.FSWatcher | null = null;
-let mainWindow: BrowserWindow | null = null;
 
 function loadConfig(): AppConfig {
     try {
@@ -205,6 +117,83 @@ function saveConfig(config: AppConfig) {
         console.error('Error saving config:', error);
     }
 }
+
+// Load saved config to pass to synthesizer
+const savedConfig = loadConfig();
+const audioConfigOptions: AudioConfigOptions | undefined = savedConfig.audioConfig ? {
+    hostId: savedConfig.audioConfig.hostId ?? undefined,
+    outputDeviceId: savedConfig.audioConfig.outputDeviceId ?? undefined,
+    inputDeviceId: savedConfig.audioConfig.inputDeviceId ?? undefined,
+    sampleRate: savedConfig.audioConfig.sampleRate ?? undefined,
+    bufferSize: savedConfig.audioConfig.bufferSize ?? undefined,
+} : undefined;
+
+// Initialize the synthesizer instance with saved config
+console.log('Initializing Synthesizer with config:', audioConfigOptions);
+const synth = new Synthesizer(audioConfigOptions);
+
+// Get the actual audio state after construction (may have fallen back to defaults)
+const actualAudioState = synth.getCurrentAudioState();
+console.log('Actual audio state after construction:', actualAudioState);
+
+// Check for fallback warning and update saved config if devices changed
+if (actualAudioState.fallbackWarning) {
+    console.warn('Audio device fallback occurred:', actualAudioState.fallbackWarning);
+}
+
+// Update saved config with actual devices used (in case of fallback)
+const actualConfig = loadConfig();
+const configNeedsUpdate = 
+    actualConfig.audioConfig?.hostId !== actualAudioState.hostId ||
+    actualConfig.audioConfig?.outputDeviceId !== actualAudioState.outputDeviceId ||
+    actualConfig.audioConfig?.inputDeviceId !== actualAudioState.inputDeviceId ||
+    actualConfig.audioConfig?.sampleRate !== actualAudioState.sampleRate ||
+    actualConfig.audioConfig?.bufferSize !== actualAudioState.bufferSize;
+
+if (configNeedsUpdate) {
+    actualConfig.audioConfig = {
+        hostId: actualAudioState.hostId,
+        outputDeviceId: actualAudioState.outputDeviceId ?? undefined,
+        inputDeviceId: actualAudioState.inputDeviceId ?? null,
+        sampleRate: actualAudioState.sampleRate,
+        bufferSize: actualAudioState.bufferSize ?? undefined,
+    };
+    saveConfig(actualConfig);
+    console.log('Saved updated audio config after fallback');
+}
+
+// Save audio configuration to config file
+function saveAudioConfig() {
+    try {
+        const config = loadConfig();
+        const state = synth.getCurrentAudioState();
+        
+        config.audioConfig = {
+            hostId: state.hostId,
+            outputDeviceId: state.outputDeviceId ?? undefined,
+            inputDeviceId: state.inputDeviceId ?? null,
+            sampleRate: state.sampleRate,
+            bufferSize: state.bufferSize ?? undefined,
+        };
+
+        saveConfig(config);
+        console.log('Audio configuration saved');
+    } catch (error) {
+        console.error('Error saving audio config:', error);
+    }
+}
+
+setInterval(() => {
+    // Keep the audio thread alive
+    console.log('health:', synth.getHealth());
+}, 10000);
+
+// Workspace root state
+let currentWorkspaceRoot: string | null = null;
+
+// File watcher for config changes
+let configWatcher: fs.FSWatcher | null = null;
+let mainWindow: BrowserWindow | null = null;
 
 function ensureConfigExists() {
     if (!fs.existsSync(CONFIG_FILE)) {
@@ -556,9 +545,36 @@ registerIPCHandler('SYNTH_IS_STOPPED', () => {
     return synth.isStopped();
 });
 
-// Audio device operations
+// Audio device operations - new API
+registerIPCHandler('AUDIO_REFRESH_DEVICE_CACHE', () => {
+    synth.refreshDeviceCache();
+});
+
+registerIPCHandler('AUDIO_GET_DEVICE_CACHE', () => {
+    return synth.getDeviceCache();
+});
+
+registerIPCHandler('AUDIO_GET_CURRENT_STATE', () => {
+    return synth.getCurrentAudioState();
+});
+
+registerIPCHandler('AUDIO_RECREATE_STREAMS', (
+    outputDeviceId: string,
+    sampleRate: number,
+    bufferSize: number | null,
+    inputDeviceId: string | null,
+) => {
+    synth.recreateStreams(outputDeviceId, sampleRate, bufferSize ?? undefined, inputDeviceId ?? undefined);
+    saveAudioConfig();
+});
+
+// Legacy audio device operations (for backward compatibility)
 registerIPCHandler('AUDIO_REFRESH_DEVICE_LIST', () => {
     synth.refreshDeviceList();
+});
+
+registerIPCHandler('AUDIO_LIST_HOSTS', () => {
+    return synth.listAudioHosts();
 });
 
 registerIPCHandler('AUDIO_LIST_OUTPUT_DEVICES', () => {
@@ -570,61 +586,25 @@ registerIPCHandler('AUDIO_LIST_INPUT_DEVICES', () => {
 });
 
 registerIPCHandler('AUDIO_GET_OUTPUT_DEVICE', () => {
-    return synth.getOutputDeviceName();
+    return synth.getOutputDeviceId();
 });
 
 registerIPCHandler('AUDIO_GET_INPUT_DEVICE', () => {
-    return synth.getInputDeviceName();
+    return synth.getInputDeviceId();
 });
 
-registerIPCHandler('AUDIO_SET_OUTPUT_DEVICE', (deviceName: string) => {
-    synth.setAudioOutputDevice(deviceName);
+registerIPCHandler('AUDIO_SET_OUTPUT_DEVICE', (deviceId: string) => {
+    synth.setAudioOutputDevice(deviceId);
+    saveAudioConfig();
 });
 
-registerIPCHandler('AUDIO_SET_INPUT_DEVICE', (deviceName: string | null) => {
-    synth.setAudioInputDevice(deviceName ?? undefined);
+registerIPCHandler('AUDIO_SET_INPUT_DEVICE', (deviceId: string | null) => {
+    synth.setAudioInputDevice(deviceId ?? undefined);
+    saveAudioConfig();
 });
 
 registerIPCHandler('AUDIO_GET_INPUT_CHANNELS', () => {
     return synth.inputChannels();
-});
-
-// Audio slot-based I/O operations
-registerIPCHandler('AUDIO_GET_IO_CONFIG', () => {
-    return synth.getIoConfig();
-});
-
-registerIPCHandler('AUDIO_GET_SLOT_STATES', () => {
-    return synth.getSlotStates();
-});
-
-// Individual slot setters - no auto-save, require explicit Save & Apply
-registerIPCHandler('AUDIO_SET_INPUT_SLOT', (slot: number, deviceName: string, channel: number) => {
-    synth.setInputSlot(slot, deviceName, channel);
-});
-
-registerIPCHandler('AUDIO_SET_OUTPUT_SLOT', (slot: number, deviceName: string, channel: number) => {
-    synth.setOutputSlot(slot, deviceName, channel);
-});
-
-registerIPCHandler('AUDIO_CLEAR_SLOT', (isInput: boolean, slot: number) => {
-    synth.clearSlot(isInput, slot);
-});
-
-registerIPCHandler('AUDIO_VALIDATE_IO_CONFIG', (config: import('./ipcTypes').AudioIOConfig) => {
-    return synth.validateIoConfigPreview(config);
-});
-
-registerIPCHandler('AUDIO_REFRESH_SLOT_STATES', () => {
-    synth.refreshSlotStates();
-});
-
-registerIPCHandler('AUDIO_APPLY_IO_CONFIG', (config: import('./ipcTypes').AudioIOConfig) => {
-    const errors = synth.applyIoConfig(config);
-    if (errors.length === 0) {
-        saveAudioSlotConfig(); // Persist only after explicit Save & Apply
-    }
-    return errors;
 });
 
 // MIDI device operations
@@ -1245,8 +1225,8 @@ app.on('ready', () => {
         console.log('Restored last opened folder:', currentWorkspaceRoot);
     }
 
-    // Restore audio slot configuration from saved config
-    restoreAudioSlotConfig();
+    // Audio configuration is already restored during Synthesizer initialization
+    // (the config is passed to the constructor)
 
     createWindow();
     createMenu();
