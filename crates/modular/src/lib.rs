@@ -9,7 +9,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use napi::bindgen_prelude::Float32Array;
 use std::{collections::HashMap, sync::Arc};
 
-use modular_core::{Patch, PatchGraph, dsp::schema, types::ScopeItem};
+use modular_core::{Patch, PatchGraph, dsp::schema, types::{ScopeItem, ScopeStats}};
 use napi::Result;
 use napi_derive::napi;
 use parking_lot::Mutex;
@@ -454,7 +454,7 @@ impl Synthesizer {
   }
 
   #[napi]
-  pub fn get_scopes(&self) -> Vec<(ScopeItem, Float32Array)> {
+  pub fn get_scopes(&self) -> Vec<(ScopeItem, Vec<Float32Array>, ScopeStats)> {
     self.state.get_audio_buffers()
   }
 

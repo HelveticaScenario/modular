@@ -51,21 +51,23 @@ export function createScopeViewZones({
 
     const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
     const layoutInfo = editor.getLayoutInfo();
+    const scopeHeight = 80; // Increased height for legend and stats
 
     const zones = views.map((view) => {
         const container = document.createElement('div');
         container.className = 'scope-view-zone';
-        container.style.height = `60px`;
+        container.style.height = `${scopeHeight}px`;
         container.style.width = '100%';
         container.style.display = 'flex';
 
         const canvas = document.createElement('canvas');
         canvas.style.width = '100%';
-        canvas.style.height = '60px';
+        canvas.style.height = `${scopeHeight}px`;
         canvas.dataset.scopeKey = view.key;
+        canvas.dataset.scopeScale = String(view.scale);
 
         const pixelWidth = Math.max(1, Math.floor(layoutInfo.contentWidth * dpr));
-        const pixelHeight = Math.floor(60 * dpr);
+        const pixelHeight = Math.floor(scopeHeight * dpr);
         canvas.width = pixelWidth;
         canvas.height = pixelHeight;
 
@@ -82,7 +84,7 @@ export function createScopeViewZones({
             viewZoneIds.push(
                 accessor.addZone({
                     afterLineNumber: Math.max(1, view.lineNumber),
-                    heightInPx: 60,
+                    heightInPx: scopeHeight,
                     domNode: container,
                     marginDomNode: undefined,
                 }),
@@ -96,7 +98,7 @@ export function createScopeViewZones({
             typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
         scopeCanvasMap.forEach((canvas) => {
             canvas.width = Math.max(1, Math.floor(info.contentWidth * nextDpr));
-            canvas.height = Math.floor(60 * nextDpr);
+            canvas.height = Math.floor(scopeHeight * nextDpr);
         });
     };
 

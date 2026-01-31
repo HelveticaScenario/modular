@@ -375,13 +375,12 @@ export class DSLContext {
 
     scope<T extends ModuleOutput | Collection | CollectionWithRange>(
         target: T,
-        msPerFrame: number = 500,
-        triggerThreshold?: number,
+        config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number },
     ): T {
         if (target instanceof Collection || target instanceof CollectionWithRange) {
-            this.builder.addScope([...target], msPerFrame, triggerThreshold);
+            this.builder.addScope([...target], config);
         } else {
-            this.builder.addScope(target, msPerFrame, triggerThreshold);
+            this.builder.addScope(target, config);
         }
         return target;
     }

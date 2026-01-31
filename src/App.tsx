@@ -298,13 +298,14 @@ function App() {
                 electronAPI.synthesizer
                     .getScopes()
                     .then((scopes) => {
-                        for (const [scopeItem, samples] of scopes) {
+                        for (const [scopeItem, channels, stats] of scopes) {
                             const scopeKey =
                                 scopeKeyFromSubscription(scopeItem);
                             const scopedCanvas =
                                 scopeCanvasMapRef.current.get(scopeKey);
                             if (scopedCanvas) {
-                                drawOscilloscope(samples, scopedCanvas);
+                                const scale = parseFloat(scopedCanvas.dataset.scopeScale || '5');
+                                drawOscilloscope(channels, scopedCanvas, { scale, stats });
                             }
                         }
                         if (isClockRunningRef.current) {
@@ -400,6 +401,7 @@ function App() {
                             key: `:module:${moduleId}:${portName}`,
                             lineNumber: call.endLine,
                             file: activeBufferId,
+                            scale: scope.scale ?? 5,
                         };
                     })
                     .filter((v): v is ScopeView => v !== null);

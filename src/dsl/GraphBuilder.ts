@@ -111,9 +111,9 @@ class BaseCollection<T extends ModuleOutput> {
     /**
      * Add scope visualization for the first output in the collection
      */
-    scope(msPerFrame: number = 500, triggerThreshold?: number): this {
+    scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this {
         if (this.items.length > 0) {
-            this.items[0].builder.addScope(this.items[0], msPerFrame, triggerThreshold);
+            this.items[0].builder.addScope(this.items[0], config);
         }
         return this;
     }
@@ -518,9 +518,9 @@ export class GraphBuilder {
 
     addScope(
         value: ModuleOutput | ModuleOutput[],
-        msPerFrame: number = 500,
-        triggerThreshold?: number,
+        config: { msPerFrame?: number; triggerThreshold?: number; scale?: number } = {},
     ) {
+        const { msPerFrame = 500, triggerThreshold, scale = 5 } = config;
         let realTriggerThreshold: number | undefined =
             triggerThreshold !== undefined
                 ? triggerThreshold * 1000
@@ -536,10 +536,10 @@ export class GraphBuilder {
                 type: 'ModuleOutput',
                 moduleId: output.moduleId,
                 portName: output.portName,
-                channel: output.channel,
             },
             msPerFrame,
             triggerThreshold: realTriggerThreshold,
+            scale,
         });
     }
 }
@@ -708,8 +708,8 @@ export class ModuleOutput {
         return factory(this, undefined, offset) as ModuleOutput;
     }
 
-    scope(msPerFrame: number = 500, triggerThreshold?: number): this {
-        this.builder.addScope(this, msPerFrame, triggerThreshold);
+    scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this {
+        this.builder.addScope(this, config);
         return this;
     }
 

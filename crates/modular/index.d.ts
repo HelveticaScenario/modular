@@ -12,7 +12,7 @@ export declare class Synthesizer {
   sampleRate(): number
   channels(): number
   inputChannels(): number
-  getScopes(): Array<[ScopeItem, Float32Array]>
+  getScopes(): Array<[ScopeItem, Array<Float32Array>, ScopeStats]>
   updatePatch(patch: PatchGraph): Array<ApplyPatchError>
   startRecording(path?: string | undefined | null): string
   stopRecording(): string | null
@@ -253,8 +253,16 @@ export interface Scope {
   item: ScopeItem
   msPerFrame: number
   triggerThreshold?: number
+  /** Voltage scale for display (default 5.0). The scope displays from -scale to +scale. */
+  scale: number
 }
 
 export type ScopeItem =
-  | { type: 'ModuleOutput', moduleId: string, portName: string, /** Which channel of the output to read (0-indexed, default 0) */
-channel: number }
+  | { type: 'ModuleOutput', moduleId: string, portName: string }
+
+/** Statistics computed from scope buffer data */
+export interface ScopeStats {
+  min: number
+  max: number
+  peakToPeak: number
+}

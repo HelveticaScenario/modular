@@ -969,18 +969,31 @@ pub enum ScopeItem {
     ModuleOutput {
         module_id: String,
         port_name: String,
-        /// Which channel of the output to read (0-indexed, default 0)
-        #[serde(default)]
-        channel: u32,
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Statistics computed from scope buffer data
+#[derive(Debug, Clone, Copy, Default)]
+#[napi(object)]
+pub struct ScopeStats {
+    pub min: f64,
+    pub max: f64,
+    pub peak_to_peak: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[napi(object)]
 pub struct Scope {
     pub item: ScopeItem,
     pub ms_per_frame: u32,
     pub trigger_threshold: Option<i32>,
+    /// Voltage scale for display (default 5.0). The scope displays from -scale to +scale.
+    #[serde(default = "default_scope_scale")]
+    pub scale: f64,
+}
+
+fn default_scope_scale() -> f64 {
+    5.0
 }
 
 #[derive(Debug, Clone, PartialEq)]

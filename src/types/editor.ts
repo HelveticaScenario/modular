@@ -32,4 +32,5 @@ export type ScopeView = {
     key: string;
     lineNumber: number;
     file: string;
+    scale: number;
 };

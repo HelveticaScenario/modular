@@ -226,7 +226,14 @@ interface ModuleOutput {
   readonly channel: number;
   gain(factor: PolySignal): ModuleOutput;
   shift(offset: PolySignal): ModuleOutput;
-  scope(msPerFrame?: number, triggerThreshold?: number): this;
+  /**
+   * Add scope visualization for this output
+   * @param config - Scope configuration options
+   * @param config.msPerFrame - Time window in milliseconds (default 500)
+   * @param config.triggerThreshold - Trigger threshold in volts (optional)
+   * @param config.scale - Voltage scale for display, shows -scale to +scale (default 5)
+   */
+  scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this;
   /**
    * Send this output to speakers as stereo
    * @param baseChannel - Base output channel (0-15, default 0). Left plays on baseChannel, right on baseChannel+1
@@ -257,7 +264,14 @@ interface Collection extends Iterable<ModuleOutput> {
   [Symbol.iterator](): Iterator<ModuleOutput>;
   gain(factor: PolySignal): Collection;
   shift(offset: PolySignal): Collection;
-  scope(msPerFrame?: number, triggerThreshold?: number): this;
+  /**
+   * Add scope visualization for the first output in the collection
+   * @param config - Scope configuration options
+   * @param config.msPerFrame - Time window in milliseconds (default 500)
+   * @param config.triggerThreshold - Trigger threshold in volts (optional)
+   * @param config.scale - Voltage scale for display, shows -scale to +scale (default 5)
+   */
+  scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this;
   /**
    * Send all outputs to speakers as stereo
    * @param baseChannel - Base output channel (0-14, default 0). Left plays on baseChannel, right on baseChannel+1
@@ -283,7 +297,14 @@ interface CollectionWithRange extends Iterable<ModuleOutputWithRange> {
   [Symbol.iterator](): Iterator<ModuleOutputWithRange>;
   gain(factor: PolySignal): Collection;
   shift(offset: PolySignal): Collection;
-  scope(msPerFrame?: number, triggerThreshold?: number): this;
+  /**
+   * Add scope visualization for the first output in the collection
+   * @param config - Scope configuration options
+   * @param config.msPerFrame - Time window in milliseconds (default 500)
+   * @param config.triggerThreshold - Trigger threshold in volts (optional)
+   * @param config.scale - Voltage scale for display, shows -scale to +scale (default 5)
+   */
+  scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this;
   /**
    * Send all outputs to speakers as stereo
    * @param baseChannel - Base output channel (0-14, default 0). Left plays on baseChannel, right on baseChannel+1

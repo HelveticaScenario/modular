@@ -600,14 +600,19 @@ const AUDIO_INPUT_GAIN: f32 = 1.0 / AUDIO_OUTPUT_ATTENUATION;
 
 const SCOPE_CAPACITY: u32 = 1024;
 
+use modular_core::types::ScopeStats;
+
 // Adapted from https://github.com/VCVRack/Fundamental/blob/e819498fd388755efcb876b37d1e33fddf4a29ac/src/Scope.cpp
 pub struct ScopeBuffer {
   sample_counter: u32,
   skip_rate: u32,
   trigger_threshold: Option<f32>,
   trigger: SchmittTrigger,
-  buffer: [f32; SCOPE_CAPACITY as usize],
+  /// Multi-channel buffers: one buffer per channel
+  buffers: Vec<[f32; SCOPE_CAPACITY as usize]>,
   buffer_idx: usize,
+  /// Current number of channels being captured
+  num_channels: u8,
 }
 
 fn ms_to_samples(ms: u32, sample_rate: f32) -> u32 {
@@ -622,12 +627,13 @@ fn calculate_skip_rate(total_samples: u32) -> u32 {
 impl ScopeBuffer {
   pub fn new(scope: &Scope, sample_rate: f32) -> Self {
     let mut sb = Self {
-      buffer: [0.0; SCOPE_CAPACITY as usize],
+      buffers: vec![[0.0; SCOPE_CAPACITY as usize]; 1], // Start with 1 channel
       sample_counter: 0,
       skip_rate: 0,
       trigger_threshold: None,
       trigger: SchmittTrigger::new(0.0, 0.0),
       buffer_idx: 0,
+      num_channels: 1,
     };
 
     sb.update(scope, sample_rate);
@@ -652,14 +658,30 @@ impl ScopeBuffer {
     self.skip_rate = calculate_skip_rate(ms_to_samples(ms_per_frame, sample_rate));
   }
 
-  pub fn push(&mut self, value: f32) {
+  /// Push samples for all channels at once
+  pub fn push_poly(&mut self, values: &[f32], num_channels: u8) {
+    // Dynamically resize buffers if channel count changes
+    if num_channels != self.num_channels {
+      let new_count = num_channels as usize;
+      if new_count > self.buffers.len() {
+        // Add new channel buffers
+        for _ in self.buffers.len()..new_count {
+          self.buffers.push([0.0; SCOPE_CAPACITY as usize]);
+        }
+      }
+      self.num_channels = num_channels;
+    }
+
+    // Use first channel for triggering
+    let trigger_value = values.first().copied().unwrap_or(0.0);
+
     if self.buffer_idx >= SCOPE_CAPACITY as usize {
       let mut triggered = false;
 
       if self.trigger_threshold.is_none() {
         triggered = true;
       } else {
-        if self.trigger.process(value) {
+        if self.trigger.process(trigger_value) {
           triggered = true;
         }
       }
@@ -672,7 +694,12 @@ impl ScopeBuffer {
 
     if self.buffer_idx < SCOPE_CAPACITY as usize {
       if self.sample_counter == 0 {
-        self.buffer[self.buffer_idx] = value;
+        // Store all channel values
+        for (ch, &val) in values.iter().enumerate().take(self.num_channels as usize) {
+          if ch < self.buffers.len() {
+            self.buffers[ch][self.buffer_idx] = val;
+          }
+        }
         if (self.buffer_idx + 1) <= SCOPE_CAPACITY as usize {
           self.buffer_idx += 1;
         }
@@ -688,11 +715,47 @@ impl ScopeBuffer {
     self.update_trigger_threshold(scope.trigger_threshold);
     self.update_skip_rate(scope.ms_per_frame, sample_rate);
   }
-}
 
-impl From<&ScopeBuffer> for Float32Array {
-  fn from(scope_buffer: &ScopeBuffer) -> Self {
-    Float32Array::new(scope_buffer.buffer.to_vec())
+  /// Get buffers for all active channels
+  pub fn get_channel_buffers(&self) -> Vec<Float32Array> {
+    self.buffers
+      .iter()
+      .take(self.num_channels as usize)
+      .map(|buf| Float32Array::new(buf.to_vec()))
+      .collect()
+  }
+
+  /// Compute statistics across all channels
+  pub fn compute_stats(&self) -> ScopeStats {
+    let mut min = f32::MAX;
+    let mut max = f32::MIN;
+
+    for ch in 0..self.num_channels as usize {
+      if ch < self.buffers.len() {
+        for &val in self.buffers[ch].iter() {
+          if val < min {
+            min = val;
+          }
+          if val > max {
+            max = val;
+          }
+        }
+      }
+    }
+
+    // Handle case where no data
+    if min == f32::MAX {
+      min = 0.0;
+    }
+    if max == f32::MIN {
+      max = 0.0;
+    }
+
+    ScopeStats {
+      min: min as f64,
+      max: max as f64,
+      peak_to_peak: (max - min) as f64,
+    }
   }
 }
 
@@ -814,7 +877,7 @@ impl AudioState {
 
     Ok(path.map(|p| p.to_string_lossy().to_string()))
   }
-  pub fn get_audio_buffers(&self) -> Vec<(ScopeItem, Float32Array)> {
+  pub fn get_audio_buffers(&self) -> Vec<(ScopeItem, Vec<Float32Array>, ScopeStats)> {
     // Skip emitting audio buffers entirely when stopped
     if self.is_stopped() {
       return Vec::new();
@@ -826,7 +889,11 @@ impl AudioState {
     };
     scope_collection
       .iter()
-      .map(|(scope_item, scope_buffer)| (scope_item.clone(), Float32Array::from(scope_buffer)))
+      .map(|(scope_item, scope_buffer)| {
+        let channels = scope_buffer.get_channel_buffers();
+        let stats = scope_buffer.compute_stats();
+        (scope_item.clone(), channels, stats)
+      })
       .collect()
   }
 
@@ -1331,12 +1398,14 @@ fn process_frame_multichannel(
         ScopeItem::ModuleOutput {
           module_id,
           port_name,
-          channel,
         } => {
           if let Some(module) = patch_guard.sampleables.get(module_id) {
             if let Ok(poly) = module.get_poly_sample(&port_name) {
-              let val = poly.get(*channel as usize);
-              scope_buffer.push(val);
+              let num_channels = poly.channels();
+              let values: Vec<f32> = (0..num_channels as usize)
+                .map(|ch| poly.get(ch))
+                .collect();
+              scope_buffer.push_poly(&values, num_channels);
             }
           }
         }
@@ -1390,11 +1459,14 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
       ScopeItem::ModuleOutput {
         module_id,
         port_name,
-        channel,
       } => {
         if let Some(module) = patch_guard.sampleables.get(module_id) {
           if let Ok(poly) = module.get_poly_sample(&port_name) {
-            scope_buffer.push(poly.get(*channel as usize));
+            let num_channels = poly.channels();
+            let values: Vec<f32> = (0..num_channels as usize)
+              .map(|ch| poly.get(ch))
+              .collect();
+            scope_buffer.push_poly(&values, num_channels);
           }
         }
       }
