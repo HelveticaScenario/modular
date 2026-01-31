@@ -403,8 +403,8 @@ macro_rules! mi_engine_module_impl {
 
                     for ch in 0..num_channels {
                         let state = &self.channels[ch];
-                        output.set(ch, state.buffer_out[self.buffer_pos]);
-                        aux_output.set(ch, state.buffer_aux[self.buffer_pos]);
+                        output.set(ch, state.buffer_out[self.buffer_pos] * 5.0);
+                        aux_output.set(ch, state.buffer_aux[self.buffer_pos] * 5.0);
                     }
 
                     self.outputs.sample = output;
