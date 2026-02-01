@@ -1185,27 +1185,9 @@ impl AudioProcessor {
     while let Ok(cmd) = self.command_rx.pop() {
       match cmd {
         GraphCommand::PatchUpdate(update) => {
-          println!(
-            "[AudioProcessor] Applying PatchUpdate: inserts={}, deletes={}, remaps={}, param_updates={}",
-            format_id_set_sample(
-              &update.inserts.iter().map(|(id, _)| id.clone()).collect(),
-              5
-            ),
-            format_id_set_sample(&update.deletes.iter().cloned().collect(), 5),
-            format_id_set_sample(&update.remaps.iter().map(|r| r.from.clone()).collect(), 5),
-            format_id_set_sample(
-              &update
-                .param_updates
-                .iter()
-                .map(|(id, _)| id.clone())
-                .collect(),
-              5
-            ),
-          );
           self.apply_patch_update(update);
         }
         GraphCommand::DispatchMessage(msg) => {
-          println!("[AudioProcessor] Dispatching message: {:?}", msg);
           if let Err(e) = self.patch.dispatch_message(&msg) {
             let _ = self.error_tx.push(AudioError::MessageDispatchFailed {
               message: e.to_string(),
@@ -1214,15 +1196,12 @@ impl AudioProcessor {
         }
         GraphCommand::Start => {
           let msg = Message::Clock(ClockMessages::Start);
-          println!("[AudioProcessor] Starting playback");
           let _ = self.patch.dispatch_message(&msg);
         }
         GraphCommand::Stop => {
-          println!("[AudioProcessor] Stopping playback");
           // Stop is handled via the stopped flag
         }
         GraphCommand::ClearPatch => {
-          println!("[AudioProcessor] Clearing patch");
           self.patch.sampleables.clear();
           self.patch.insert_audio_in();
           self.patch.rebuild_message_listeners();
@@ -1281,7 +1260,6 @@ impl AudioProcessor {
 
     // Connect all modules
     for module in self.patch.sampleables.values() {
-      println!("[AudioProcessor] Connecting module {}", module.get_id());
       module.connect(&self.patch);
     }
 

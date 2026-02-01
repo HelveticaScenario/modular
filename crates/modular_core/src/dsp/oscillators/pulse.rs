@@ -60,9 +60,7 @@ impl PulseOscillator {
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
 
-            state
-                .freq
-                .update(self.params.freq.get_value_or(ch, 0.0).clamp(-10.0, 10.0));
+            state.freq.update(self.params.freq.get_value_or(ch, 0.0));
             let base_width = self.params.width.get_value_or(ch, 2.5);
             let pwm = self.params.pwm.get_value_or(ch, 0.0);
             state.width.update((base_width + pwm).clamp(0.0, 5.0));

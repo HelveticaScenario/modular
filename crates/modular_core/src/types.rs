@@ -774,13 +774,11 @@ impl Signal {
 
 impl Connect for Signal {
     fn connect(&mut self, patch: &Patch) {
-        println!("Connecting signal: {:?}", self);
         match self {
             Signal::Cable {
                 module, module_ptr, ..
             } => {
                 if let Some(sampleable) = patch.sampleables.get(module) {
-                    println!("  Found module '{}' for cable", module);
                     *module_ptr = Arc::downgrade(sampleable);
                 }
             }

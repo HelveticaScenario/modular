@@ -58,7 +58,7 @@ impl SineOscillator {
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
 
-            let freq_val = self.params.freq.get_value_or(ch, 0.0).clamp(-10.0, 10.0);
+            let freq_val = self.params.freq.get_value_or(ch, 0.0);
             state.freq.update(freq_val);
             let frequency = voct_to_hz(*state.freq) / sample_rate;
             state.phase += frequency;

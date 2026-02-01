@@ -355,6 +355,7 @@ macro_rules! mi_engine_module_impl {
             #[doc = $module_doc]
             #[derive(Module)]
             #[module($module_name, $module_doc)]
+            #[has_init]
             #[args(freq)]
             pub struct $struct_name {
                 outputs: [<$struct_name Outputs>],
@@ -377,17 +378,16 @@ macro_rules! mi_engine_module_impl {
             }
 
             impl $struct_name {
+                fn init(&mut self, sample_rate: f32) {
+                    for state in self.channels.iter_mut() {
+                        state.engine.init(sample_rate);
+                    }
+                    self.sample_rate = sample_rate;
+                    self.buffer_pos = BLOCK_SIZE; // Force re-render
+                }
+
                 fn update(&mut self, sample_rate: f32) {
                     let num_channels = self.channel_count().max(1);
-
-                    // Initialize engines if sample rate changed
-                    if (self.sample_rate - sample_rate).abs() > 0.1 {
-                        for state in self.channels.iter_mut() {
-                            state.engine.init(sample_rate);
-                        }
-                        self.sample_rate = sample_rate;
-                        self.buffer_pos = BLOCK_SIZE; // Force re-render
-                    }
 
                     // Render all active voices when buffer is exhausted
                     if self.buffer_pos >= BLOCK_SIZE {
@@ -418,7 +418,7 @@ macro_rules! mi_engine_module_impl {
                         let state = &mut self.channels[ch];
 
                         // Get per-voice parameters with cycling
-                        state.freq.update(self.params.freq.get_value_or(ch, 4.0).clamp(-10.0, 10.0));
+                        state.freq.update(self.params.freq.get_value_or(ch, 4.0));
                         state.timbre.update(self.params.timbre.get_value_or(ch, 2.5).clamp(0.0, 5.0));
                         state.morph.update(self.params.morph.get_value_or(ch, 2.5).clamp(0.0, 5.0));
                         state.harmonics.update(self.params.harmonics.get_value_or(ch, 2.5).clamp(0.0, 5.0));
@@ -621,7 +621,7 @@ macro_rules! mi_engine_module_impl {
                         let state = &mut self.channels[ch];
 
                         // Get per-voice parameters with cycling
-                        state.freq.update(self.params.freq.get_value_or(ch, 4.0).clamp(-10.0, 10.0));
+                        state.freq.update(self.params.freq.get_value_or(ch, 4.0));
                         state.timbre.update(self.params.timbre.get_value_or(ch, 2.5).clamp(0.0, 5.0));
                         state.morph.update(self.params.morph.get_value_or(ch, 2.5).clamp(0.0, 5.0));
                         state.harmonics.update(self.params.harmonics.get_value_or(ch, 2.5).clamp(0.0, 5.0));
@@ -824,7 +824,7 @@ macro_rules! mi_engine_module_impl {
                         let state = &mut self.channels[ch];
 
                         // Get per-voice parameters with cycling
-                        state.freq.update(self.params.freq.get_value_or(ch, 4.0).clamp(-10.0, 10.0));
+                        state.freq.update(self.params.freq.get_value_or(ch, 4.0));
                         state.timbre.update(self.params.timbre.get_value_or(ch, 2.5).clamp(0.0, 5.0));
                         state.morph.update(self.params.morph.get_value_or(ch, 2.5).clamp(0.0, 5.0));
                         state.harmonics.update(self.params.harmonics.get_value_or(ch, 2.5).clamp(0.0, 5.0));

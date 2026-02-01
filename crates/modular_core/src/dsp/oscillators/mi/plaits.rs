@@ -248,6 +248,7 @@ impl Default for PlaitsChannelState {
     "Mutable Instruments Plaits - Full macro-oscillator with 24 engines, LPG, and modulation"
 )]
 #[args(freq, engine)]
+#[has_init]
 pub struct Plaits {
     outputs: PlaitsOutputs,
     channels: Vec<PlaitsChannelState>,
@@ -258,13 +259,9 @@ pub struct Plaits {
 
 impl Default for Plaits {
     fn default() -> Self {
-        let mut channels = Vec::with_capacity(PORT_MAX_CHANNELS as usize);
-        for _ in 0..PORT_MAX_CHANNELS {
-            channels.push(PlaitsChannelState::default());
-        }
         Self {
             outputs: PlaitsOutputs::default(),
-            channels,
+            channels: Vec::new(), // Will be initialized in init()
             buffer_pos: BLOCK_SIZE, // Start exhausted to trigger initial render
             params: PlaitsParams::default(),
             sample_rate: 0.0,
@@ -273,17 +270,23 @@ impl Default for Plaits {
 }
 
 impl Plaits {
-    fn update(&mut self, sample_rate: f32) {
-        // Initialize engines if sample rate changed
-        if (self.sample_rate - sample_rate).abs() > 0.1 {
-            for state in self.channels.iter_mut() {
-                let mut voice = Voice::new(BLOCK_SIZE, sample_rate);
-                voice.init();
-                state.voice = voice;
-            }
-            self.sample_rate = sample_rate;
-            self.buffer_pos = BLOCK_SIZE; // Force re-render
+    /// Initialize the module with the given sample rate.
+    /// Called once at construction time by the macro-generated constructor.
+    fn init(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
+        self.channels = Vec::with_capacity(PORT_MAX_CHANNELS as usize);
+        for _ in 0..PORT_MAX_CHANNELS {
+            let mut voice = Voice::new(BLOCK_SIZE, sample_rate);
+            voice.init();
+            self.channels.push(PlaitsChannelState {
+                voice,
+                ..PlaitsChannelState::default()
+            });
         }
+    }
+
+    fn update(&mut self, _sample_rate: f32) {
+        // sample_rate is fixed at construction, no need to handle changes
 
         let num_channels = self.channel_count().max(1);
 
@@ -297,7 +300,6 @@ impl Plaits {
             // Detect rising edge (crossed threshold from below)
             const TRIGGER_THRESHOLD: f32 = 0.7; // ~0.7V threshold like VCV
             if trigger_val >= TRIGGER_THRESHOLD && state.last_trigger < TRIGGER_THRESHOLD {
-                println!("Plaits channel {}: Rising edge detected ({} -> {})", ch, state.last_trigger, trigger_val);
                 // Rising edge detected - latch high trigger value
                 state.trigger_latch = 1.0;
             }
@@ -339,7 +341,7 @@ impl Plaits {
             // Update smoothed parameters
             state
                 .freq
-                .update(self.params.freq.get_value_or(ch, 0.0).clamp(-10.0, 10.0));
+                .update(self.params.freq.get_value_or(ch, 0.0));
             state
                 .harmonics
                 .update(self.params.harmonics.get_value_or(ch, 2.5).clamp(0.0, 5.0));

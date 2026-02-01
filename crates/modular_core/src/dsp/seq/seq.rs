@@ -163,7 +163,6 @@ pub struct SeqParams {
 pub fn seq_derive_channel_count(params: &SeqParams) -> usize {
     // If channels was explicitly set (non-default), use that
     if params.channels != default_channels() {
-        println!("Using explicit channels for seq pattern, skipping derivation");
         return params.channels.clamp(1, PORT_MAX_CHANNELS);
     }
 

@@ -186,7 +186,7 @@ function saveAudioConfig() {
 setInterval(() => {
     // Keep the audio thread alive
     console.log('health:', synth.getHealth());
-}, 10000);
+}, 1000);
 
 // Workspace root state
 let currentWorkspaceRoot: string | null = null;

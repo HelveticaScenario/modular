@@ -438,15 +438,14 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
             // Parse first string literal (name)
             let name: LitStr = input.parse()?;
             let name_value = name.value();
-            
+
             // Check against reserved names
             if RESERVED_OUTPUT_NAMES.contains(&name_value.as_str()) {
                 return Err(syn::Error::new(
                     name.span(),
                     format!(
                         "Output name '{}' is reserved. Reserved names are: {:?}",
-                        name_value,
-                        RESERVED_OUTPUT_NAMES
+                        name_value, RESERVED_OUTPUT_NAMES
                     ),
                 ));
             }
@@ -510,7 +509,10 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
     }
 }
 
-#[proc_macro_derive(Module, attributes(output, module, args, stateful, patch_update))]
+#[proc_macro_derive(
+    Module,
+    attributes(output, module, args, stateful, patch_update, has_init)
+)]
 pub fn module_macro_derive(input: TokenStream) -> TokenStream {
     // Construct a representation of Rust code as a syntax tree
     // that we can manipulate
@@ -810,8 +812,8 @@ fn parse_default_connection_attr(attr: &Attribute) -> syn::Result<DefaultConnect
         }
     })?;
 
-    let module =
-        module.ok_or_else(|| syn::Error::new(attr.span(), "missing `module` in default_connection"))?;
+    let module = module
+        .ok_or_else(|| syn::Error::new(attr.span(), "missing `module` in default_connection"))?;
     let port =
         port.ok_or_else(|| syn::Error::new(attr.span(), "missing `port` in default_connection"))?;
     if channels.is_empty() {
@@ -821,7 +823,11 @@ fn parse_default_connection_attr(attr: &Attribute) -> syn::Result<DefaultConnect
         ));
     }
 
-    Ok(DefaultConnectionAttr { module, port, channels })
+    Ok(DefaultConnectionAttr {
+        module,
+        port,
+        channels,
+    })
 }
 
 /// Check if a type is exactly PolySignal (for default_connection code generation)
@@ -872,7 +878,6 @@ fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
                                             })
                                             .collect();
                                         default_stmts.extend(quote_spanned! {field.span()=>
-                                            println!("Checking default connection for field: {}", stringify!(#field_ident));
                                             if self.#field_ident.is_disconnected() {
                                                 self.#field_ident = crate::poly::PolySignal::poly(&[
                                                     #(#cable_exprs),*
@@ -883,7 +888,6 @@ fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
                                         // Generate Signal default (single channel)
                                         let ch = dc.channels.first().copied().unwrap_or(0);
                                         default_stmts.extend(quote_spanned! {field.span()=>
-                                            println!("Checking default connection for field: {}", stringify!(#field_ident));
                                             if self.#field_ident.is_disconnected() {
                                                 self.#field_ident = crate::types::WellKnownModule::#module.to_cable(#ch, #port);
                                             }
@@ -897,7 +901,6 @@ fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
 
                     // Always call connect on every field (no-op impls handle primitives)
                     connect_stmts.extend(quote_spanned! {field.span()=>
-                        println!("Connecting field: {}", stringify!(#field_ident));
                         crate::types::Connect::connect(&mut self.#field_ident, patch);
                     });
                 }
@@ -923,7 +926,6 @@ fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
     let generated = quote! {
         impl crate::types::Connect for #name {
             fn connect(&mut self, patch: &crate::Patch) {
-                println!("Connecting module outputs for {}", stringify!(#name));
                 // Apply default connections for disconnected inputs
                 #default_connection_stmts
                 // Connect all fields
@@ -1167,6 +1169,20 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         quote! { None }
     };
 
+    // Check for #[has_init] attribute - if present, call the module's init(sample_rate) in constructor
+    let has_init = ast
+        .attrs
+        .iter()
+        .any(|attr| attr.path().is_ident("has_init"));
+    let has_init_call = if has_init {
+        quote! {
+            // SAFETY: We just created sampleable, no one else has access yet.
+            unsafe { (*sampleable.module.get()).init(sample_rate); }
+        }
+    } else {
+        quote! {}
+    };
+
     // Check for #[patch_update] attribute - if present, call the module's on_patch_update
     let has_patch_update = ast
         .attrs
@@ -1188,7 +1204,10 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     };
 
     // Generate the channel count derivation function name
-    let channel_count_fn_name = format_ident!("__{}_derive_channel_count", name.to_string().to_case(Case::Snake));
+    let channel_count_fn_name = format_ident!(
+        "__{}_derive_channel_count",
+        name.to_string().to_case(Case::Snake)
+    );
 
     // Generate the core channel count implementation that works with typed params.
     // If channels_derive is specified, use that custom function.
@@ -1265,7 +1284,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     };
 
     let generated = quote! {
-        // Generated core channel count function that both self.channel_count() and 
+        // Generated core channel count function that both self.channel_count() and
         // derive_channel_count(json) call.
         #channel_count_fn_impl
 
@@ -1400,11 +1419,13 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         }
 
         fn #constructor_name(id: &String, sample_rate: f32) -> napi::Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
-            Ok(std::sync::Arc::new(Box::new(#struct_name {
+            let sampleable = #struct_name {
                 id: id.clone(),
                 sample_rate,
                 ..#struct_name::default()
-            })))
+            };
+            #has_init_call
+            Ok(std::sync::Arc::new(Box::new(sampleable)))
         }
 
         impl #impl_generics crate::types::Module for #name #ty_generics #where_clause {

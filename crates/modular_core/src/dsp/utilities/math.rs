@@ -70,8 +70,6 @@ impl<'de> Deserialize<'de> for MathExpressionParam {
             Ok(expression) => expression.from(&slab.ps).compile(&slab.ps, &mut slab.cs),
         };
 
-        println!("Compiled expression: {:?}", instruction);
-
         Ok(MathExpressionParam {
             source,
             signals,
@@ -84,7 +82,6 @@ impl<'de> Deserialize<'de> for MathExpressionParam {
 impl Connect for MathExpressionParam {
     fn connect(&mut self, patch: &crate::Patch) {
         for signal in &mut self.signals {
-            println!("Connecting signal: {:?}", signal);
             signal.connect(patch);
         }
     }
