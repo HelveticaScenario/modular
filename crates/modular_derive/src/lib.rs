@@ -237,9 +237,7 @@ fn impl_enum_tag_macro(ast: &DeriveInput) -> TokenStream {
 
 fn unwrap_attr(attrs: &Vec<Attribute>, ident: &str) -> Option<TokenStream2> {
     attrs
-        .iter()
-        .filter(|attr| attr.path().is_ident(ident))
-        .next()
+        .iter().find(|attr| attr.path().is_ident(ident))
         .and_then(|attr| {
             if let syn::Meta::List(list) = &attr.meta {
                 Some(list.tokens.clone())
@@ -370,8 +368,8 @@ fn unwrap_name_description(
         })
         .unwrap_or_default();
     let mut iter = attr.iter();
-    let name = iter.next().map(|lit| lit.clone());
-    let description = iter.next().map(|lit| lit.clone());
+    let name = iter.next().cloned();
+    let description = iter.next().cloned();
     (name, description)
 }
 
