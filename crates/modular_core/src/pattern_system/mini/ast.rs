@@ -36,6 +36,9 @@ pub enum MiniASTI32 {
     /// Sequence of patterns (space-separated, played in order).
     Sequence(Vec<(MiniASTI32, Option<f64>)>), // (pattern, optional weight)
 
+    /// Fast subsequence from [...] syntax (explicit fastcat).
+    FastCat(Vec<(MiniASTI32, Option<f64>)>), // (pattern, optional weight)
+
     /// Slow subsequence (one item per cycle).
     SlowCat(Vec<MiniASTI32>),
 
@@ -81,6 +84,9 @@ pub enum MiniASTU32 {
 
     /// Sequence of patterns (space-separated, played in order).
     Sequence(Vec<(MiniASTU32, Option<f64>)>), // (pattern, optional weight)
+
+    /// Fast subsequence from [...] syntax (explicit fastcat).
+    FastCat(Vec<(MiniASTU32, Option<f64>)>), // (pattern, optional weight)
 
     /// Slow subsequence (one item per cycle).
     SlowCat(Vec<MiniASTU32>),
@@ -128,6 +134,9 @@ pub enum MiniASTF64 {
     /// Sequence of patterns (space-separated, played in order).
     Sequence(Vec<(MiniASTF64, Option<f64>)>), // (pattern, optional weight)
 
+    /// Fast subsequence from [...] syntax (explicit fastcat).
+    FastCat(Vec<(MiniASTF64, Option<f64>)>), // (pattern, optional weight)
+
     /// Slow subsequence (one item per cycle).
     SlowCat(Vec<MiniASTF64>),
 
@@ -173,6 +182,13 @@ pub enum MiniAST {
 
     /// Sequence of patterns (space-separated, played in order).
     Sequence(Vec<(MiniAST, Option<f64>)>), // (pattern, optional weight)
+
+    /// Fast subsequence from [...] syntax (explicit fastcat).
+    /// Unlike Sequence which is the implicit result of space-separated elements,
+    /// FastCat preserves that this came from explicit [...] grouping.
+    /// This distinction matters for nesting: `<[c e]>` should be slowcat of one fastcat,
+    /// not slowcat of two elements.
+    FastCat(Vec<(MiniAST, Option<f64>)>), // (pattern, optional weight)
 
     /// Slow subsequence (one item per cycle).
     SlowCat(Vec<MiniAST>),
@@ -528,7 +544,7 @@ fn collect_leaf_spans_recursive(ast: &MiniAST, spans: &mut Vec<(usize, usize)>) 
                 collect_leaf_spans_recursive(child, spans);
             }
         }
-        MiniAST::Sequence(items) => {
+        MiniAST::Sequence(items) | MiniAST::FastCat(items) => {
             for (child, _weight) in items {
                 collect_leaf_spans_recursive(child, spans);
             }
@@ -578,7 +594,7 @@ fn collect_f64_spans(ast: &MiniASTF64, spans: &mut Vec<(usize, usize)>) {
                 collect_f64_spans(child, spans);
             }
         }
-        MiniASTF64::Sequence(items) => {
+        MiniASTF64::Sequence(items) | MiniASTF64::FastCat(items) => {
             for (child, _weight) in items {
                 collect_f64_spans(child, spans);
             }
@@ -627,7 +643,7 @@ fn collect_u32_spans(ast: &MiniASTU32, spans: &mut Vec<(usize, usize)>) {
                 collect_u32_spans(child, spans);
             }
         }
-        MiniASTU32::Sequence(items) => {
+        MiniASTU32::Sequence(items) | MiniASTU32::FastCat(items) => {
             for (child, _weight) in items {
                 collect_u32_spans(child, spans);
             }
@@ -676,7 +692,7 @@ fn collect_i32_spans(ast: &MiniASTI32, spans: &mut Vec<(usize, usize)>) {
                 collect_i32_spans(child, spans);
             }
         }
-        MiniASTI32::Sequence(items) => {
+        MiniASTI32::Sequence(items) | MiniASTI32::FastCat(items) => {
             for (child, _weight) in items {
                 collect_i32_spans(child, spans);
             }

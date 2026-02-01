@@ -249,7 +249,7 @@ fn eval_f64(ast: &MiniASTF64) -> f64 {
             // Return first element or 0
             node.first().map(|e| eval_f64(e)).unwrap_or(0.0)
         }
-        MiniASTF64::Sequence(elements) => {
+        MiniASTF64::Sequence(elements) | MiniASTF64::FastCat(elements) => {
             // Return first element or 0
             elements.first().map(|(e, _)| eval_f64(e)).unwrap_or(0.0)
         }
@@ -287,7 +287,7 @@ fn convert_f64_pattern(ast: &MiniASTF64) -> Pattern<Fraction> {
                 .unwrap_or_else(|| constructors::pure(Fraction::from_integer(0)))
         }
 
-        MiniASTF64::Sequence(elements) => {
+        MiniASTF64::Sequence(elements) | MiniASTF64::FastCat(elements) => {
             if elements.is_empty() {
                 return constructors::pure(Fraction::from_integer(0));
             }
@@ -389,7 +389,7 @@ fn convert_u32_pattern(ast: &MiniASTU32) -> Pattern<u32> {
                 .unwrap_or_else(|| pure(0))
         }
 
-        MiniASTU32::Sequence(elements) => {
+        MiniASTU32::Sequence(elements) | MiniASTU32::FastCat(elements) => {
             if elements.is_empty() {
                 return pure(0);
             }
@@ -485,7 +485,7 @@ fn convert_i32_pattern(ast: &MiniASTI32) -> Pattern<i32> {
                 .unwrap_or_else(|| pure(0))
         }
 
-        MiniASTI32::Sequence(elements) => {
+        MiniASTI32::Sequence(elements) | MiniASTI32::FastCat(elements) => {
             if elements.is_empty() {
                 return pure(0);
             }
@@ -567,7 +567,7 @@ fn eval_u32(ast: &MiniASTU32) -> u32 {
         MiniASTU32::Pure(Located { node, .. }) => *node,
         MiniASTU32::Rest(_) => 0, // Rest evaluates to 0
         MiniASTU32::List(Located { node, .. }) => node.first().map(|e| eval_u32(e)).unwrap_or(0),
-        MiniASTU32::Sequence(elements) => elements.first().map(|(e, _)| eval_u32(e)).unwrap_or(0),
+        MiniASTU32::Sequence(elements) | MiniASTU32::FastCat(elements) => elements.first().map(|(e, _)| eval_u32(e)).unwrap_or(0),
         MiniASTU32::SlowCat(elements) => elements.first().map(|e| eval_u32(e)).unwrap_or(0),
         MiniASTU32::RandomChoice(elements) | MiniASTU32::Stack(elements) => elements.first().map(|e| eval_u32(e)).unwrap_or(0),
         MiniASTU32::Fast(pattern, _) => eval_u32(pattern),
@@ -584,7 +584,7 @@ fn eval_i32(ast: &MiniASTI32) -> i32 {
         MiniASTI32::Pure(Located { node, .. }) => *node,
         MiniASTI32::Rest(_) => 0, // Rest evaluates to 0
         MiniASTI32::List(Located { node, .. }) => node.first().map(|e| eval_i32(e)).unwrap_or(0),
-        MiniASTI32::Sequence(elements) => elements.first().map(|(e, _)| eval_i32(e)).unwrap_or(0),
+        MiniASTI32::Sequence(elements) | MiniASTI32::FastCat(elements) => elements.first().map(|(e, _)| eval_i32(e)).unwrap_or(0),
         MiniASTI32::SlowCat(elements) => elements.first().map(|e| eval_i32(e)).unwrap_or(0),
         MiniASTI32::RandomChoice(elements) | MiniASTI32::Stack(elements) => elements.first().map(|e| eval_i32(e)).unwrap_or(0),
         MiniASTI32::Fast(pattern, _) => eval_i32(pattern),
@@ -685,7 +685,7 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
             }
         }
 
-        MiniAST::Sequence(elements) => {
+        MiniAST::Sequence(elements) | MiniAST::FastCat(elements) => {
             let mut patterns = Vec::new();
             let mut weights = Vec::new();
             let mut has_weights = false;
@@ -831,6 +831,22 @@ fn ast_to_string(ast: &MiniAST) -> String {
             })
             .collect::<Vec<_>>()
             .join(" "),
+        MiniAST::FastCat(elements) => {
+            format!(
+                "[{}]",
+                elements
+                    .iter()
+                    .map(|(a, w)| {
+                        let s = ast_to_string(a);
+                        match w {
+                            Some(weight) => format!("{}@{}", s, weight),
+                            None => s,
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            )
+        }
         MiniAST::SlowCat(patterns) => {
             format!(
                 "<{}>",
@@ -918,6 +934,44 @@ mod tests {
         assert_eq!(haps0[0].value, 0.0);
         assert_eq!(haps1[0].value, 1.0);
         assert_eq!(haps2[0].value, 2.0);
+    }
+
+    #[test]
+    fn test_fastcat_inside_slowcat_preserves_grouping() {
+        // Regression test: `<[c e]>` should play both c and e every cycle
+        // (not alternate between c and e like `<c e>` would)
+        // This tests that [c e] grouping is preserved when nested inside <...>
+        
+        // Pattern: <[c e]> should be slowcat of one fastcat element
+        // c=60, e=64
+        let ast = parse("<[c e]>").unwrap();
+        let pat: Pattern<f64> = convert(&ast).unwrap();
+
+        // Every cycle should have BOTH c (60) and e (64)
+        let haps0 = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+        let values0: Vec<f64> = haps0.iter().map(|h| h.value).collect();
+        assert_eq!(values0.len(), 2, "Cycle 0 should have 2 events");
+        assert_eq!(values0[0], 60.0, "Cycle 0 first should be c (60)");
+        assert_eq!(values0[1], 64.0, "Cycle 0 second should be e (64)");
+
+        // Cycle 1 should also have both
+        let haps1 = pat.query_arc(Fraction::from_integer(1), Fraction::from_integer(2));
+        let values1: Vec<f64> = haps1.iter().map(|h| h.value).collect();
+        assert_eq!(values1.len(), 2, "Cycle 1 should have 2 events");
+        assert_eq!(values1[0], 60.0, "Cycle 1 first should be c (60)");
+        assert_eq!(values1[1], 64.0, "Cycle 1 second should be e (64)");
+
+        // For comparison, <c e> should alternate (1 event per cycle)
+        let ast2 = parse("<c e>").unwrap();
+        let pat2: Pattern<f64> = convert(&ast2).unwrap();
+        
+        let haps2_0 = pat2.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+        assert_eq!(haps2_0.len(), 1, "<c e> should have 1 event per cycle");
+        assert_eq!(haps2_0[0].value, 60.0, "<c e> cycle 0 should be c");
+        
+        let haps2_1 = pat2.query_arc(Fraction::from_integer(1), Fraction::from_integer(2));
+        assert_eq!(haps2_1.len(), 1, "<c e> should have 1 event per cycle");
+        assert_eq!(haps2_1[0].value, 64.0, "<c e> cycle 1 should be e");
     }
 
     #[test]
