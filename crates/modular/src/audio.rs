@@ -1489,10 +1489,10 @@ fn process_frame(audio_state: &Arc<AudioState>) -> f32 {
 pub fn get_host_by_preference() -> Host {
   #[cfg(target_os = "windows")]
   {
-    if let Ok(asio_host) = cpal::host_from_id(HostId::Asio) {
-      println!("Using ASIO");
-      return asio_host;
-    }
+    // if let Ok(asio_host) = cpal::host_from_id(HostId::Asio) {
+    //   println!("Using ASIO");
+    //   return asio_host;
+    // }
 
     // Fall back to WASAPI
     if let Ok(wasapi) = cpal::host_from_id(HostId::Wasapi) {

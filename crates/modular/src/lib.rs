@@ -171,11 +171,12 @@ fn resolve_devices(
 /// Parse a host ID string to cpal::HostId
 fn parse_host_id(id: &str) -> Option<cpal::HostId> {
   match id {
+    #[cfg(target_os = "macos")]
     "CoreAudio" => Some(cpal::HostId::CoreAudio),
     #[cfg(target_os = "windows")]
     "Wasapi" | "WASAPI" => Some(cpal::HostId::Wasapi),
-    #[cfg(target_os = "windows")]
-    "Asio" | "ASIO" => Some(cpal::HostId::Asio),
+    // #[cfg(target_os = "windows")]
+    // "Asio" | "ASIO" => Some(cpal::HostId::Asio),
     #[cfg(target_os = "linux")]
     "Alsa" | "ALSA" => Some(cpal::HostId::Alsa),
     #[cfg(target_os = "linux")]
