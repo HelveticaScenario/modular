@@ -307,10 +307,16 @@ fn parse_fast_sub(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseErr
     let inner = pair.into_inner().next().unwrap();
     let ast = parse_pattern_expr(inner)?;
 
-    // Fast subsequence means fastcat (preserves weights for timecat)
+    // Fast subsequence from [...] syntax creates a FastCat to preserve the grouping.
+    // This is important when nested inside <...>: `<[c e]>` should be slowcat of one fastcat,
+    // not slowcat of two elements (which would be the behavior for `<c e>`).
     match ast {
-        MiniAST::Sequence(elements) => Ok(MiniAST::Sequence(elements)),
-        other => Ok(other),
+        MiniAST::Sequence(elements) => Ok(MiniAST::FastCat(elements)),
+        MiniAST::FastCat(elements) => Ok(MiniAST::FastCat(elements)),
+        // Stack from comma-separated patterns: keep as Stack (no need to wrap)
+        MiniAST::Stack(elements) => Ok(MiniAST::Stack(elements)),
+        // Single elements get wrapped in a single-element FastCat to preserve the [...] grouping
+        other => Ok(MiniAST::FastCat(vec![(other, None)])),
     }
 }
 
@@ -684,10 +690,11 @@ fn parse_fast_sub_f64(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTF64, P
     let inner = pair.into_inner().next().unwrap();
     let ast = parse_pattern_expr_f64(inner)?;
 
-    // Fast subsequence means fastcat (preserves weights for timecat)
+    // Fast subsequence from [...] syntax creates a FastCat to preserve the grouping.
     match ast {
-        MiniASTF64::Sequence(elements) => Ok(MiniASTF64::Sequence(elements)),
-        other => Ok(other),
+        MiniASTF64::Sequence(elements) => Ok(MiniASTF64::FastCat(elements)),
+        MiniASTF64::FastCat(elements) => Ok(MiniASTF64::FastCat(elements)),
+        other => Ok(MiniASTF64::FastCat(vec![(other, None)])),
     }
 }
 
@@ -1057,10 +1064,11 @@ fn parse_fast_sub_u32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTU32, P
     let inner = pair.into_inner().next().unwrap();
     let ast = parse_pattern_expr_u32(inner)?;
 
-    // Fast subsequence means fastcat (preserves weights for timecat)
+    // Fast subsequence from [...] syntax creates a FastCat to preserve the grouping.
     match ast {
-        MiniASTU32::Sequence(elements) => Ok(MiniASTU32::Sequence(elements)),
-        other => Ok(other),
+        MiniASTU32::Sequence(elements) => Ok(MiniASTU32::FastCat(elements)),
+        MiniASTU32::FastCat(elements) => Ok(MiniASTU32::FastCat(elements)),
+        other => Ok(MiniASTU32::FastCat(vec![(other, None)])),
     }
 }
 
@@ -1430,10 +1438,11 @@ fn parse_fast_sub_i32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTI32, P
     let inner = pair.into_inner().next().unwrap();
     let ast = parse_pattern_expr_i32(inner)?;
 
-    // Fast subsequence means fastcat (preserves weights for timecat)
+    // Fast subsequence from [...] syntax creates a FastCat to preserve the grouping.
     match ast {
-        MiniASTI32::Sequence(elements) => Ok(MiniASTI32::Sequence(elements)),
-        other => Ok(other),
+        MiniASTI32::Sequence(elements) => Ok(MiniASTI32::FastCat(elements)),
+        MiniASTI32::FastCat(elements) => Ok(MiniASTI32::FastCat(elements)),
+        other => Ok(MiniASTI32::FastCat(vec![(other, None)])),
     }
 }
 
@@ -1774,7 +1783,7 @@ mod tests {
     #[test]
     fn test_parse_fast_sub() {
         let ast = parse("[0 1 2]").unwrap();
-        assert!(matches!(ast, MiniAST::Sequence(_)));
+        assert!(matches!(ast, MiniAST::FastCat(_)));
     }
 
     #[test]
@@ -1875,16 +1884,16 @@ mod tests {
 
     #[test]
     fn test_parse_tail_with_subpattern() {
-        // c:[e f] should parse as List with [Pure(c), Sequence([Pure(e), Pure(f)])]
+        // c:[e f] should parse as List with [Pure(c), FastCat([Pure(e), Pure(f)])]
         let ast = parse("c:[e f]").unwrap();
         if let MiniAST::List(Located { node: elements, .. }) = ast {
             assert_eq!(elements.len(), 2, "Should have 2 elements: c and [e f]");
             // First element is Pure(c)
             assert!(matches!(&elements[0], MiniAST::Pure(_)));
-            // Second element is Sequence([e, f])
-            assert!(matches!(&elements[1], MiniAST::Sequence(_)));
-            if let MiniAST::Sequence(seq_elems) = &elements[1] {
-                assert_eq!(seq_elems.len(), 2, "Sequence should have e and f");
+            // Second element is FastCat([e, f])
+            assert!(matches!(&elements[1], MiniAST::FastCat(_)));
+            if let MiniAST::FastCat(seq_elems) = &elements[1] {
+                assert_eq!(seq_elems.len(), 2, "FastCat should have e and f");
             }
         } else {
             panic!("Expected List, got {:?}", ast);
@@ -1908,12 +1917,12 @@ mod tests {
 
     #[test]
     fn test_parse_subpattern_head_with_tail() {
-        // [c d]:minor should parse as List with [Sequence([c,d]), minor]
+        // [c d]:minor should parse as List with [FastCat([c,d]), minor]
         let ast = parse("[c d]:minor").unwrap();
         if let MiniAST::List(Located { node: elements, .. }) = ast {
             assert_eq!(elements.len(), 2, "Should have 2 elements: [c d] and minor");
-            // First element is Sequence([c, d])
-            assert!(matches!(&elements[0], MiniAST::Sequence(_)), "First element should be Sequence");
+            // First element is FastCat([c, d])
+            assert!(matches!(&elements[0], MiniAST::FastCat(_)), "First element should be FastCat");
             // Second element is Pure(minor)
             assert!(matches!(&elements[1], MiniAST::Pure(_)), "Second element should be Pure");
         } else {
@@ -2192,12 +2201,12 @@ mod tests {
 
     #[test]
     fn test_parse_fast_factor_subsequence_f64() {
-        // Fast with subsequence: [1 2] -> parsed as MiniASTF64::Sequence
+        // Fast with subsequence: [1 2] -> parsed as MiniASTF64::FastCat
         let result = parse("c4*[1 2]");
         assert!(result.is_ok());
         if let MiniAST::Fast(_, factor) = result.unwrap() {
-            assert!(matches!(*factor, MiniASTF64::Sequence(_)));
-            if let MiniASTF64::Sequence(elements) = *factor {
+            assert!(matches!(*factor, MiniASTF64::FastCat(_)));
+            if let MiniASTF64::FastCat(elements) = *factor {
                 assert_eq!(elements.len(), 2);
                 // Check first element is Pure(1.0)
                 if let MiniASTF64::Pure(Located { node, .. }) = &elements[0].0 {
@@ -2309,12 +2318,12 @@ mod tests {
 
     #[test]
     fn test_parse_euclidean_pulses_subsequence_u32() {
-        // Euclidean with subsequence for pulses: [3 5] -> MiniASTU32::Sequence
+        // Euclidean with subsequence for pulses: [3 5] -> MiniASTU32::FastCat
         let result = parse("c4([3 5],8)");
         assert!(result.is_ok());
         if let MiniAST::Euclidean { pulses, steps, .. } = result.unwrap() {
-            assert!(matches!(*pulses, MiniASTU32::Sequence(_)));
-            if let MiniASTU32::Sequence(elements) = *pulses {
+            assert!(matches!(*pulses, MiniASTU32::FastCat(_)));
+            if let MiniASTU32::FastCat(elements) = *pulses {
                 assert_eq!(elements.len(), 2);
                 if let MiniASTU32::Pure(Located { node, .. }) = &elements[0].0 {
                     assert_eq!(*node, 3);
@@ -2353,7 +2362,7 @@ mod tests {
         let result = parse("c4*[1@2 3]");
         assert!(result.is_ok());
         if let MiniAST::Fast(_, factor) = result.unwrap() {
-            if let MiniASTF64::Sequence(elements) = *factor {
+            if let MiniASTF64::FastCat(elements) = *factor {
                 assert_eq!(elements.len(), 2);
                 // First element should have weight 2
                 let (_, weight) = &elements[0];
@@ -2365,7 +2374,7 @@ mod tests {
                 let (_, weight2) = &elements[1];
                 assert!(weight2.is_none());
             } else {
-                panic!("Expected MiniASTF64::Sequence");
+                panic!("Expected MiniASTF64::FastCat");
             }
         } else {
             panic!("Expected Fast");
@@ -2430,10 +2439,10 @@ mod tests {
         let result = parse("c4([3 5],[8 16],[0 2])");
         assert!(result.is_ok());
         if let MiniAST::Euclidean { pulses, steps, rotation, .. } = result.unwrap() {
-            assert!(matches!(*pulses, MiniASTU32::Sequence(_)));
-            assert!(matches!(*steps, MiniASTU32::Sequence(_)));
+            assert!(matches!(*pulses, MiniASTU32::FastCat(_)));
+            assert!(matches!(*steps, MiniASTU32::FastCat(_)));
             if let Some(rot) = rotation {
-                assert!(matches!(*rot, MiniASTI32::Sequence(_)));
+                assert!(matches!(*rot, MiniASTI32::FastCat(_)));
             } else {
                 panic!("Expected rotation");
             }
@@ -2494,8 +2503,8 @@ mod tests {
         if let MiniAST::Degrade(inner, prob) = ast {
             // Default prob is None (which means 0.5)
             assert!(prob.is_none());
-            // Inner should be a Sequence (fastcat)
-            assert!(matches!(*inner, MiniAST::Sequence(_)), "Expected Sequence, got {:?}", inner);
+            // Inner should be a FastCat (fastcat)
+            assert!(matches!(*inner, MiniAST::FastCat(_)), "Expected FastCat, got {:?}", inner);
         } else {
             panic!("Expected Degrade, got {:?}", ast);
         }
@@ -2524,7 +2533,7 @@ mod tests {
         let ast = result.unwrap();
         if let MiniAST::Fast(inner, factor) = ast {
             assert!(matches!(*factor, MiniASTF64::Pure(_)));
-            assert!(matches!(*inner, MiniAST::Sequence(_)), "Expected Sequence, got {:?}", inner);
+            assert!(matches!(*inner, MiniAST::FastCat(_)), "Expected FastCat, got {:?}", inner);
         } else {
             panic!("Expected Fast, got {:?}", ast);
         }
@@ -2643,7 +2652,10 @@ mod tests {
         let result = parse("[c4, e4, g4]");
         assert!(result.is_ok(), "Failed to parse stack in fast_sub: {:?}", result);
         let ast = result.unwrap();
-        // Should be a Stack (the fast_sub contains a stack)
+        // Should be a FastCat wrapping a Stack (the fast_sub contains a stack)
+        // With comma, we get stack of single-element fastcats, which simplifies to stack
+        // Actually with our fix, [c4, e4, g4] = FastCat([Stack([c4, e4, g4])])
+        // But when it's just single elements separated by commas, it becomes Stack directly
         if let MiniAST::Stack(patterns) = ast {
             assert_eq!(patterns.len(), 3, "Expected 3 patterns in stack");
         } else {
@@ -2713,7 +2725,7 @@ mod tests {
         let ast = result.unwrap();
         if let MiniAST::Sequence(elements) = ast {
             assert_eq!(elements.len(), 2, "Expected 2 elements in sequence");
-            // Each element should be a Stack
+            // Each element should be a Stack (comma creates stack inside fast_sub)
             let (first, _) = &elements[0];
             let (second, _) = &elements[1];
             assert!(matches!(first, MiniAST::Stack(_)), "Expected first to be Stack, got {:?}", first);
@@ -2735,11 +2747,11 @@ mod tests {
 
     #[test]
     fn test_parse_fast_sub_no_stack_when_single() {
-        // Single sequence in fast_sub should be Sequence, not Stack
+        // Single sequence in fast_sub should be FastCat, not Stack
         let result = parse("[c4 e4 g4]");
         assert!(result.is_ok(), "Failed to parse fast_sub: {:?}", result);
         let ast = result.unwrap();
-        // Without commas, this should be a Sequence (fast_sub of a sequence)
-        assert!(matches!(ast, MiniAST::Sequence(_)), "Expected Sequence without commas, got {:?}", ast);
+        // Without commas, this should be a FastCat (fast_sub of a sequence)
+        assert!(matches!(ast, MiniAST::FastCat(_)), "Expected FastCat without commas, got {:?}", ast);
     }
 }

@@ -18,7 +18,7 @@ import { rendererConfig } from './webpack.renderer.config';
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
-    executableName: 'Taxi',
+    executableName: 'Switchboard',
     osxSign: {
       identity: 'Developer ID Application: Daniel Lewis (HA98TTLCR7)',
       optionsForFile: () => {
@@ -42,24 +42,24 @@ const config: ForgeConfig = {
   rebuildConfig: {},
   makers: [
     new MakerSquirrel({
-      name: 'Taxi'
+      name: 'Switchboard'
     }),
     new MakerZIP({}, ['darwin']),
     new MakerRpm({
       options: {
-        bin: 'Taxi',
+        bin: 'Switchboard',
       },
     }),
     new MakerDeb({
       options: {
-        bin: 'Taxi',
+        bin: 'Switchboard',
       },
     }),
     // new MakerFlatpak({
     //   // @ts-ignore
     //   options: {
-    //     bin: 'Taxi',
-    //     id: 'com.helveticascenario.taxi',
+    //     bin: 'Switchboard',
+    //     id: 'com.helveticascenario.switchboard',
     //   },
     // }),
   ],
