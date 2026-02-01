@@ -57,36 +57,23 @@ struct MixOutputs {
 pub fn mix_derive_channel_count(params: &MixParams) -> usize {
     // Get max channel count from inputs
     let input_refs: Vec<&PolySignal> = params.inputs.iter().collect();
-    println!(
-        "mix_derive_channel_count: inputs.len() = {}",
-        params.inputs.len()
-    );
+
     let max_input_channels = if params.inputs.is_empty() {
         0usize
     } else {
         PolySignal::max_channels(&input_refs) as usize
     };
-    println!(
-        "mix_derive_channel_count: max_input_channels = {}",
-        max_input_channels
-    );
 
     // Get gain channel count
     let gain_channels = params.gain.channels() as usize;
-    println!(
-        "mix_derive_channel_count: gain_channels = {}",
-        gain_channels
-    );
 
     // Output channels = max(max_input_channels, gain_channels), at least 1 if inputs empty
-    let ret = if params.inputs.is_empty() {
+    if params.inputs.is_empty() {
         gain_channels.max(1)
     } else {
         max_input_channels.max(gain_channels)
     }
-    .min(PORT_MAX_CHANNELS);
-    println!("mix_derive_channel_count: ret = {}", ret);
-    ret
+    .min(PORT_MAX_CHANNELS)
 }
 
 #[derive(Default, Module)]

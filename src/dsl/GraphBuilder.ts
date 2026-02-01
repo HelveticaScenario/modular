@@ -430,7 +430,6 @@ export class GraphBuilder {
                     allChannelCollections.push(channelCollection);
                 }
             }
-            console.log('allChannelCollections:', allChannelCollections);
             // Mix all channel collections together using poly mix
             // Each collection contributes to corresponding output channels
             const finalMix = mixFactory(allChannelCollections) as Collection;
@@ -449,7 +448,6 @@ export class GraphBuilder {
             })),
             scopes: Array.from(this.scopes),
         };
-        console.log('Built PatchGraph:', ret);
         return ret;
     }
 

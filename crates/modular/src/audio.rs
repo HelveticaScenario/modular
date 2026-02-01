@@ -972,7 +972,6 @@ impl AudioState {
   /// Build a PatchUpdate from desired graph and send to audio thread.
   /// This computes the diff using the shadow state and constructs new modules on the main thread.
   pub fn apply_patch(&self, desired_graph: PatchGraph, sample_rate: f32) -> Result<()> {
-    println!("Applying patch {:#?}", desired_graph);
     let PatchGraph {
       modules,
       module_id_remaps,

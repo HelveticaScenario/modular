@@ -248,7 +248,6 @@ export class DSLContext {
      */
     private createFactory(schema: ModuleSchema) {
         const outputs = schema.outputs || [];
-        console.log(`Creating factory for module: ${schema.name} with outputs:`, outputs);
 
         return (...args: any[]): ModuleReturn => {
             // Capture source location from stack trace
@@ -286,7 +285,6 @@ export class DSLContext {
                 }
             }
 
-            console.log(`Instantiating module: ${schema.name} with id: ${id} and params:`, params, 'at source location:', sourceLocation);
 
             // Create the module node internally, passing source location
             const node = this.builder.addModule(schema.name, id, sourceLocation);
@@ -307,19 +305,16 @@ export class DSLContext {
             // (Rust-side pattern polyphony analysis runs 300 cycles)
             if (schema.name === 'seq' && params.pattern !== undefined) {
                 if (params.channels !== undefined) {
-                    console.log('Using explicit channels for seq pattern, skipping derivation');
                     // If channels explicitly set, use it directly
                     derivedChannels = params.channels as number;
                     node._setDerivedChannelCount(derivedChannels);
                 } else {
-                    console.log('Deriving polyphony for seq pattern with caching');
                     const patternStr = String(params.pattern);
                     const cached = getCachedPolyphony(patternStr);
                     if (cached !== undefined) {
                         derivedChannels = cached;
                     } else {
                         derivedChannels = deriveChannelCount(schema.name, node.getParamsSnapshot());
-                        console.log(`Derived polyphony for seq pattern "${patternStr}": ${derivedChannels}`);
                         if (derivedChannels !== null) {
                             cachePolyphony(patternStr, derivedChannels);
                         }
