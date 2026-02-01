@@ -1198,6 +1198,18 @@ const createMenu = (): void => {
                         }
                     },
                 },
+                { type: 'separator' as const },
+                {
+                    label: 'Audio Settings...',
+                    accelerator: isMac ? undefined : 'CmdOrCtrl+,',
+                    click: (_item, focusedWindow) => {
+                        if (focusedWindow) {
+                            BrowserWindow.fromId(
+                                focusedWindow.id,
+                            )?.webContents.send(MENU_CHANNELS.OPEN_SETTINGS);
+                        }
+                    },
+                },
             ],
         },
         // Window menu
