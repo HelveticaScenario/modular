@@ -23,7 +23,7 @@ struct PercussionEnvelopeOutputs {
 struct ChannelState {
     current_level: f32,
     last_trigger: f32,
-    decay: Clickless,
+    decay: f32,
 }
 
 #[derive(Module)]
@@ -43,7 +43,7 @@ impl Default for PercussionEnvelope {
             channels: std::array::from_fn(|_| ChannelState {
                 current_level: 0.0,
                 last_trigger: 0.0,
-                decay: 0.1.into(),
+                decay: 0.1,
             }),
         }
     }
@@ -58,12 +58,8 @@ impl PercussionEnvelope {
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
 
-            // Smooth decay parameter (in seconds)
-            state
-                .decay
-                .update(self.params.decay.get_value_or(ch, 0.1).max(0.001));
 
-            let decay_time = *state.decay;
+            let decay_time = self.params.decay.get_value_or(ch, 0.1).max(0.001);
 
             // Detect rising edge of trigger
             let trigger = self.params.trigger.get_value(ch);

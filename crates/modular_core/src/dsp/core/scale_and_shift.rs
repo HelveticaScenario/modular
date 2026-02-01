@@ -26,8 +26,8 @@ struct ScaleAndShiftOutputs {
 #[args(input, scale?, shift?)]
 pub struct ScaleAndShift {
     outputs: ScaleAndShiftOutputs,
-    scale: [Clickless; PORT_MAX_CHANNELS],
-    shift: [Clickless; PORT_MAX_CHANNELS],
+    scale: [f32; PORT_MAX_CHANNELS],
+    shift: [f32; PORT_MAX_CHANNELS],
     params: ScaleAndShiftParams,
 }
 
@@ -42,12 +42,12 @@ impl ScaleAndShift {
             let scale_val = self.params.scale.get_value_or(i, 5.0);
             let shift_val = self.params.shift.get_value_or(i, 0.0);
 
-            self.scale[i].update(scale_val);
-            self.shift[i].update(shift_val);
+            self.scale[i] = scale_val;
+            self.shift[i] = shift_val;
 
             self.outputs
                 .sample
-                .set(i, input_val * (*self.scale[i] / 5.0) + *self.shift[i]);
+                .set(i, input_val * (self.scale[i] / 5.0) + self.shift[i]);
         }
     }
 }

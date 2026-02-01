@@ -4,7 +4,6 @@ use crate::{
         utils::{interpolate, voct_to_hz},
     },
     poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal},
-    types::Clickless,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -26,7 +25,6 @@ struct SineOscillatorOutputs {
 #[derive(Default, Clone, Copy)]
 struct ChannelState {
     phase: f32,
-    freq: Clickless,
 }
 
 #[derive(Module)]
@@ -57,9 +55,7 @@ impl SineOscillator {
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
 
-            let freq_val = self.params.freq.get_value_or(ch, 0.0);
-            state.freq.update(freq_val);
-            let frequency = voct_to_hz(*state.freq) / sample_rate;
+            let frequency = voct_to_hz(self.params.freq.get_value_or(ch, 0.0)) / sample_rate;
             state.phase += frequency;
             while state.phase >= 1.0 {
                 state.phase -= 1.0;

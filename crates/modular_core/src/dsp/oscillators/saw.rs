@@ -26,7 +26,7 @@ struct SawOscillatorOutputs {
 #[derive(Default, Clone, Copy)]
 struct ChannelState {
     phase: f32,
-    freq: Clickless,
+    freq: f32,
     shape: Clickless,
 }
 
@@ -65,11 +65,7 @@ impl SawOscillator {
             let shape_val = self.params.shape.get_value_or(ch, 0.0).clamp(0.0, 5.0);
             state.shape.update(shape_val);
 
-            // Frequency-driven oscillation
-            let freq_val = self.params.freq.get_value_or(ch, 0.0);
-            state.freq.update(freq_val);
-
-            let frequency = voct_to_hz(*state.freq);
+            let frequency = voct_to_hz(self.params.freq.get_value_or(ch, 0.0));
             let phase_increment = frequency * inv_sample_rate;
 
             state.phase += phase_increment;

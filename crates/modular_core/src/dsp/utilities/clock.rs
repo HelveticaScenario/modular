@@ -3,7 +3,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    PolyOutput, dsp::utils::{hz_to_voct, voct_to_hz_f64}, types::{Clickless, ClockMessages, Signal}
+    PolyOutput,
+    dsp::utils::{hz_to_voct, voct_to_hz_f64},
+    types::{ClockMessages, Signal},
 };
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
@@ -19,7 +21,7 @@ struct ClockParams {
 pub struct Clock {
     outputs: ClockOutputs,
     phase: f64,
-    freq: Clickless,
+    freq: f32,
     ppq_phase: f64,
     last_bar_trigger: bool,
     last_ppq_trigger: bool,
@@ -30,7 +32,11 @@ pub struct Clock {
 
 #[derive(Outputs, JsonSchema)]
 struct ClockOutputs {
-    #[output("playhead", "how many bars have elapsed. 2 channel output with phase and loop index", default)]
+    #[output(
+        "playhead",
+        "how many bars have elapsed. 2 channel output with phase and loop index",
+        default
+    )]
     playhead: PolyOutput,
     #[output("barTrigger", "trigger output every bar", range = (0.0, 5.0))]
     bar_trigger: f32,
@@ -45,7 +51,7 @@ impl Default for Clock {
         Self {
             outputs: ClockOutputs::default(),
             phase: 0.0,
-            freq: Clickless::default(),
+            freq: 0.0,
             ppq_phase: 0.0,
             last_bar_trigger: false,
             last_ppq_trigger: false,
@@ -60,19 +66,17 @@ message_handlers!(impl Clock {
     Clock(m) => Clock::on_clock_message,
 });
 
-lazy_static!(
+lazy_static! {
     static ref BPM_120_VOCT: f32 = hz_to_voct(120.0 / 60.0);
-);
+};
 
 impl Clock {
     fn update(&mut self, sample_rate: f32) {
         // Smooth frequency parameter to avoid clicks
-        self.freq
-            .update(self.params.tempo.get_value_or(*BPM_120_VOCT));
+        self.freq = self.params.tempo.get_value_or(*BPM_120_VOCT);
 
         // Convert V/Oct to Hz (use f64 for precision)
-        let frequency_hz = voct_to_hz_f64(*self.freq as f64);
-
+        let frequency_hz = voct_to_hz_f64(self.freq as f64);
         // Calculate phase increment per sample
         // For a clock, we want the phase to go from 0 to 1 over one bar
         // At 120 BPM = 2 Hz, one bar (4 beats) = 2 seconds = 0.5 Hz

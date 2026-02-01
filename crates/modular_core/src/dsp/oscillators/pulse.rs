@@ -28,7 +28,7 @@ struct PulseOscillatorOutputs {
 #[derive(Default, Clone, Copy)]
 struct PulseChannelState {
     phase: f32,
-    freq: Clickless,
+    freq: f32,
     width: Clickless,
 }
 
@@ -59,12 +59,11 @@ impl PulseOscillator {
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
 
-            state.freq.update(self.params.freq.get_value_or(ch, 0.0));
             let base_width = self.params.width.get_value_or(ch, 2.5);
             let pwm = self.params.pwm.get_value_or(ch, 0.0);
             state.width.update((base_width + pwm).clamp(0.0, 5.0));
 
-            let frequency = voct_to_hz(*state.freq);
+            let frequency = voct_to_hz(self.params.freq.get_value_or(ch, 0.0));
             let phase_increment = frequency / sample_rate;
 
             // Pulse width (0.0 to 1.0, 0.5 is square wave)

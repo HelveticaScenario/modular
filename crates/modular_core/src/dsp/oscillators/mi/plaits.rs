@@ -180,7 +180,6 @@ struct PlaitsChannelState {
     out_buffer: [f32; BLOCK_SIZE],
     aux_buffer: [f32; BLOCK_SIZE],
     // Smoothed parameters
-    freq: Clickless,
     harmonics: Clickless,
     timbre: Clickless,
     morph: Clickless,
@@ -204,7 +203,6 @@ impl Default for PlaitsChannelState {
             voice,
             out_buffer: [0.0; BLOCK_SIZE],
             aux_buffer: [0.0; BLOCK_SIZE],
-            freq: Clickless::default(),
             harmonics: Clickless::default(),
             timbre: Clickless::default(),
             morph: Clickless::default(),
@@ -261,7 +259,7 @@ impl Default for Plaits {
     fn default() -> Self {
         Self {
             outputs: PlaitsOutputs::default(),
-            channels: Vec::new(), // Will be initialized in init()
+            channels: Vec::new(),   // Will be initialized in init()
             buffer_pos: BLOCK_SIZE, // Start exhausted to trigger initial render
             params: PlaitsParams::default(),
             sample_rate: 0.0,
@@ -340,9 +338,6 @@ impl Plaits {
 
             // Update smoothed parameters
             state
-                .freq
-                .update(self.params.freq.get_value_or(ch, 0.0));
-            state
                 .harmonics
                 .update(self.params.harmonics.get_value_or(ch, 2.5).clamp(0.0, 5.0));
             state
@@ -362,7 +357,7 @@ impl Plaits {
             let engine_index = self.params.engine.to_index();
 
             let patch = Patch {
-                note: voct_to_midi(*state.freq),
+                note: voct_to_midi(self.params.freq.get_value_or(ch, 0.0)),
                 harmonics: (*state.harmonics / 5.0).clamp(0.0, 1.0),
                 timbre: (*state.timbre / 5.0).clamp(0.0, 1.0),
                 morph: (*state.morph / 5.0).clamp(0.0, 1.0),
@@ -379,10 +374,6 @@ impl Plaits {
             };
 
             // Build the Modulations struct
-            // Note modulation: V/Oct converted to semitones
-            let freq_input = self.params.freq.get_value_or(ch, 0.0);
-            let note_mod = (freq_input - *state.freq) * 12.0; // V/Oct to semitones
-
             // FM: ±5V range, scaled to ±1.0 then multiplied by ~6 (VCV convention)
             let fm_val = self.params.fm.get_value_or(ch, 0.0);
             let fm_mod = fm_val / 5.0 * 6.0;
@@ -427,7 +418,7 @@ impl Plaits {
 
             let modulations = Modulations {
                 engine: 0.0, // No CV modulation of engine
-                note: note_mod,
+                note: 0.0,   // No additional note modulation
                 frequency: fm_mod,
                 harmonics: harmonics_mod,
                 timbre: timbre_mod,

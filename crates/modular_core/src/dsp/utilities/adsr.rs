@@ -18,8 +18,7 @@ struct AdsrParams {
     release: PolySignal,
 }
 
-#[derive(Clone, Copy, PartialEq)]
-#[derive(Default)]
+#[derive(Clone, Copy, PartialEq, Default)]
 enum EnvelopeStage {
     #[default]
     Idle,
@@ -29,17 +28,16 @@ enum EnvelopeStage {
     Release,
 }
 
-
 /// Per-channel envelope state
 #[derive(Clone, Copy)]
 struct ChannelState {
     stage: EnvelopeStage,
     current_level: f32,
     gate_was_high: bool,
-    attack: Clickless,
-    decay: Clickless,
-    release: Clickless,
-    sustain: Clickless,
+    attack: f32,
+    decay: f32,
+    release: f32,
+    sustain: f32,
 }
 
 impl Default for ChannelState {
@@ -48,10 +46,10 @@ impl Default for ChannelState {
             stage: EnvelopeStage::Idle,
             current_level: 0.0,
             gate_was_high: false,
-            attack: 0.01.into(),
-            decay: 0.1.into(),
-            release: 0.1.into(),
-            sustain: 3.5.into(),
+            attack: 0.01,
+            decay: 0.1,
+            release: 0.1,
+            sustain: 3.5,
         }
     }
 }
@@ -91,22 +89,14 @@ impl Adsr {
             let state = &mut self.channels[ch];
 
             // Smooth parameter targets to avoid clicks when values change (times in seconds)
-            state
-                .attack
-                .update(self.params.attack.get_value_or(ch, 0.01).max(0.001));
-            state
-                .decay
-                .update(self.params.decay.get_value_or(ch, 0.1).max(0.001));
-            state
-                .release
-                .update(self.params.release.get_value_or(ch, 0.1).max(0.001));
-            state
-                .sustain
-                .update(self.params.sustain.get_value_or(ch, 5.).max(0.0));
+            state.attack = self.params.attack.get_value_or(ch, 0.01).max(0.001);
+            state.decay = self.params.decay.get_value_or(ch, 0.1).max(0.001);
+            state.release = self.params.release.get_value_or(ch, 0.1).max(0.001);
+            state.sustain = self.params.sustain.get_value_or(ch, 5.).max(0.0);
 
-            let attack = *state.attack;
-            let decay = *state.decay;
-            let release_var = *state.release;
+            let attack = state.attack;
+            let decay = state.decay;
+            let release_var = state.release;
 
             let gate_on = self.params.gate.get_value(ch) > 2.5;
 
@@ -117,7 +107,7 @@ impl Adsr {
             }
             state.gate_was_high = gate_on;
 
-            let sustain_level = (*state.sustain / 5.0).clamp(0.0, 1.0);
+            let sustain_level = (state.sustain / 5.0).clamp(0.0, 1.0);
 
             match state.stage {
                 EnvelopeStage::Idle => {
