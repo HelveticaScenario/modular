@@ -1,0 +1,458 @@
+//! Full-featured Plaits voice module based on Mutable Instruments Plaits.
+//! Adapted from VCV Rack implementation with additional features.
+//!
+//! This module wraps the complete mi-plaits-dsp Voice struct, providing:
+//! - All 24 synthesis engines with engine selection
+//! - Built-in Low Pass Gate (LPG) with color and decay parameters
+//! - Trigger delay (1ms) for sequencer/MIDI interface timing correction
+//! - Modulation attenuverters for FM, timbre, and morph
+//! - Level input for dynamics/VCA control
+//! - Proper modulation routing matching the original hardware
+
+use mi_plaits_dsp::voice::{Modulations, Patch, Voice};
+use schemars::JsonSchema;
+use serde::Deserialize;
+
+use crate::{
+    dsp::utils::voct_to_midi,
+    patch::Patch as ModularPatch,
+    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal},
+    types::{Clickless, Connect},
+};
+
+/// Block size for rendering - matches VCV Rack's implementation
+const BLOCK_SIZE: usize = 12;
+
+/// Internal sample rate for the Plaits engine (designed for 48kHz)
+const ENGINE_SAMPLE_RATE: f32 = 48000.0;
+
+/// Synthesis engine selection for Plaits
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PlaitsEngine {
+    /// Virtual analog oscillator with VCF - classic subtractive synthesis
+    #[default]
+    VaVcf,
+    /// Phase distortion synthesis
+    PhaseDistortion,
+    /// Six-operator FM synthesis (bank A)
+    SixOpA,
+    /// Six-operator FM synthesis (bank B)
+    SixOpB,
+    /// Six-operator FM synthesis (bank C)
+    SixOpC,
+    /// Wave terrain synthesis
+    WaveTerrain,
+    /// String machine emulation
+    StringMachine,
+    /// Chiptune waveforms with arpeggiator
+    Chiptune,
+    /// Virtual analog dual oscillator
+    VirtualAnalog,
+    /// Waveshaping oscillator
+    Waveshaping,
+    /// Two-operator FM synthesis
+    TwoOpFm,
+    /// Granular formant oscillator
+    GranularFormant,
+    /// Harmonic/additive oscillator
+    Additive,
+    /// Wavetable oscillator
+    Wavetable,
+    /// Chord generator
+    Chords,
+    /// Vowel and speech synthesis
+    Speech,
+    /// Swarm oscillator
+    Swarm,
+    /// Filtered noise
+    FilteredNoise,
+    /// Particle noise
+    ParticleNoise,
+    /// Inharmonic string modeling
+    InharmonicString,
+    /// Modal resonator
+    ModalResonator,
+    /// Analog bass drum
+    BassDrum,
+    /// Analog snare drum
+    SnareDrum,
+    /// Analog hi-hat
+    HiHat,
+}
+
+impl PlaitsEngine {
+    /// Convert engine enum to index used by mi-plaits-dsp
+    fn to_index(self) -> usize {
+        match self {
+            PlaitsEngine::VaVcf => 0,
+            PlaitsEngine::PhaseDistortion => 1,
+            PlaitsEngine::SixOpA => 2,
+            PlaitsEngine::SixOpB => 3,
+            PlaitsEngine::SixOpC => 4,
+            PlaitsEngine::WaveTerrain => 5,
+            PlaitsEngine::StringMachine => 6,
+            PlaitsEngine::Chiptune => 7,
+            PlaitsEngine::VirtualAnalog => 8,
+            PlaitsEngine::Waveshaping => 9,
+            PlaitsEngine::TwoOpFm => 10,
+            PlaitsEngine::GranularFormant => 11,
+            PlaitsEngine::Additive => 12,
+            PlaitsEngine::Wavetable => 13,
+            PlaitsEngine::Chords => 14,
+            PlaitsEngine::Speech => 15,
+            PlaitsEngine::Swarm => 16,
+            PlaitsEngine::FilteredNoise => 17,
+            PlaitsEngine::ParticleNoise => 18,
+            PlaitsEngine::InharmonicString => 19,
+            PlaitsEngine::ModalResonator => 20,
+            PlaitsEngine::BassDrum => 21,
+            PlaitsEngine::SnareDrum => 22,
+            PlaitsEngine::HiHat => 23,
+        }
+    }
+}
+
+impl Connect for PlaitsEngine {
+    fn connect(&mut self, _patch: &ModularPatch) {}
+}
+
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[serde(default)]
+struct PlaitsParams {
+    /// Pitch input in V/Oct (0V = C4)
+    freq: PolySignal,
+
+    /// Synthesis engine selection
+    engine: PlaitsEngine,
+
+    /// Harmonics parameter (0-5V) - function varies per engine
+    harmonics: PolySignal,
+
+    /// Timbre parameter (0-5V) - function varies per engine
+    timbre: PolySignal,
+
+    /// Morph parameter (0-5V) - function varies per engine
+    morph: PolySignal,
+
+    /// FM input (-5V to +5V) - frequency modulation
+    fm: PolySignal,
+
+    /// Timbre CV attenuverter (-5 to 5) - scales timbre modulation
+    #[serde(rename = "timbreAmt")]
+    timbre_amt: PolySignal,
+
+    /// FM CV attenuverter (-5 to 5) - scales frequency modulation
+    #[serde(rename = "fmAmt")]
+    fm_amt: PolySignal,
+
+    /// Morph CV attenuverter (-5 to 5) - scales morph modulation
+    #[serde(rename = "morphAmt")]
+    morph_amt: PolySignal,
+
+    /// Trigger input - gates/triggers the internal envelope
+    trigger: PolySignal,
+
+    /// Level/dynamics input (0-5V) - controls VCA/LPG
+    level: PolySignal,
+
+    /// LPG color (0-5V) - lowpass gate filter response (low = mellow, high = bright)
+    #[serde(rename = "lpgColor")]
+    lpg_color: PolySignal,
+
+    /// LPG decay (0-5V) - lowpass gate envelope decay time
+    #[serde(rename = "lpgDecay")]
+    lpg_decay: PolySignal,
+}
+
+#[derive(Outputs, JsonSchema)]
+struct PlaitsOutputs {
+    #[output("output", "main synthesis output", default)]
+    out: PolyOutput,
+
+    #[output("aux", "auxiliary output - varies per engine")]
+    aux: PolyOutput,
+}
+
+/// Per-channel voice state
+struct PlaitsChannelState {
+    voice: Voice<'static>,
+    out_buffer: [f32; BLOCK_SIZE],
+    aux_buffer: [f32; BLOCK_SIZE],
+    // Smoothed parameters
+    freq: Clickless,
+    harmonics: Clickless,
+    timbre: Clickless,
+    morph: Clickless,
+    lpg_color: Clickless,
+    lpg_decay: Clickless,
+    // Trigger state tracking
+    /// Previous trigger input value for edge detection
+    last_trigger: f32,
+    /// Latched trigger value - captures any trigger that occurred since last block render
+    /// This ensures short triggers (even 1 sample) aren't missed between block boundaries
+    trigger_latch: f32,
+    /// Maximum trigger value seen since last block render
+    trigger_max: f32,
+}
+
+impl Default for PlaitsChannelState {
+    fn default() -> Self {
+        let mut voice = Voice::new(BLOCK_SIZE, ENGINE_SAMPLE_RATE);
+        voice.init();
+        Self {
+            voice,
+            out_buffer: [0.0; BLOCK_SIZE],
+            aux_buffer: [0.0; BLOCK_SIZE],
+            freq: Clickless::default(),
+            harmonics: Clickless::default(),
+            timbre: Clickless::default(),
+            morph: Clickless::default(),
+            lpg_color: Clickless::default(),
+            lpg_decay: Clickless::default(),
+            last_trigger: 0.0,
+            trigger_latch: 0.0,
+            trigger_max: 0.0,
+        }
+    }
+}
+
+/// Full-featured Plaits macro-oscillator with all 24 engines, LPG, and modulation routing.
+///
+/// Engines (selected via `engine` param, 0-23):
+/// - 0: Virtual analog VCF (classic subtractive)
+/// - 1: Phase distortion
+/// - 2-4: Six-op FM (3 banks)
+/// - 5: Wave terrain
+/// - 6: String machine
+/// - 7: Chiptune
+/// - 8: Virtual analog (dual oscillator)
+/// - 9: Waveshaping
+/// - 10: Two-operator FM
+/// - 11: Granular formant
+/// - 12: Harmonic/additive
+/// - 13: Wavetable
+/// - 14: Chords
+/// - 15: Vowel/speech synthesis
+/// - 16: Swarm
+/// - 17: Filtered noise
+/// - 18: Particle noise
+/// - 19: Inharmonic strings
+/// - 20: Modal resonator
+/// - 21: Analog bass drum
+/// - 22: Analog snare drum
+/// - 23: Analog hi-hat
+#[derive(Module)]
+#[module(
+    "plaits",
+    "Mutable Instruments Plaits - Full macro-oscillator with 24 engines, LPG, and modulation"
+)]
+#[args(freq, engine)]
+pub struct Plaits {
+    outputs: PlaitsOutputs,
+    channels: Vec<PlaitsChannelState>,
+    buffer_pos: usize,
+    params: PlaitsParams,
+    sample_rate: f32,
+}
+
+impl Default for Plaits {
+    fn default() -> Self {
+        let mut channels = Vec::with_capacity(PORT_MAX_CHANNELS as usize);
+        for _ in 0..PORT_MAX_CHANNELS {
+            channels.push(PlaitsChannelState::default());
+        }
+        Self {
+            outputs: PlaitsOutputs::default(),
+            channels,
+            buffer_pos: BLOCK_SIZE, // Start exhausted to trigger initial render
+            params: PlaitsParams::default(),
+            sample_rate: 0.0,
+        }
+    }
+}
+
+impl Plaits {
+    fn update(&mut self, sample_rate: f32) {
+        // Initialize engines if sample rate changed
+        if (self.sample_rate - sample_rate).abs() > 0.1 {
+            for state in self.channels.iter_mut() {
+                let mut voice = Voice::new(BLOCK_SIZE, sample_rate);
+                voice.init();
+                state.voice = voice;
+            }
+            self.sample_rate = sample_rate;
+            self.buffer_pos = BLOCK_SIZE; // Force re-render
+        }
+
+        let num_channels = self.channel_count().max(1);
+
+        // Track triggers on every sample to catch short pulses
+        // Triggers can be as short as 1 sample, so we need to detect rising edges
+        // and latch them until the next block render.
+        for ch in 0..num_channels {
+            let state = &mut self.channels[ch];
+            let trigger_val = self.params.trigger.get_value_or(ch, 0.0);
+
+            // Detect rising edge (crossed threshold from below)
+            const TRIGGER_THRESHOLD: f32 = 0.7; // ~0.7V threshold like VCV
+            if trigger_val >= TRIGGER_THRESHOLD && state.last_trigger < TRIGGER_THRESHOLD {
+                println!("Plaits channel {}: Rising edge detected ({} -> {})", ch, state.last_trigger, trigger_val);
+                // Rising edge detected - latch high trigger value
+                state.trigger_latch = 1.0;
+            }
+
+            // Track maximum trigger value for level-sensitive behavior
+            state.trigger_max = state.trigger_max.max(trigger_val);
+
+            state.last_trigger = trigger_val;
+        }
+
+        // Render when buffer is exhausted
+        if self.buffer_pos >= BLOCK_SIZE {
+            self.render_block(num_channels);
+            self.buffer_pos = 0;
+        }
+
+        // Copy current samples to outputs
+        let mut out = PolyOutput::default();
+        let mut aux = PolyOutput::default();
+        out.set_channels(num_channels as u8);
+        aux.set_channels(num_channels as u8);
+
+        for ch in 0..num_channels {
+            let state = &self.channels[ch];
+            // Output scaling: Plaits outputs ±1.0, scale to ±5V (inverted to match hardware)
+            out.set(ch, -state.out_buffer[self.buffer_pos] * 5.0);
+            aux.set(ch, -state.aux_buffer[self.buffer_pos] * 5.0);
+        }
+
+        self.outputs.out = out;
+        self.outputs.aux = aux;
+        self.buffer_pos += 1;
+    }
+
+    fn render_block(&mut self, num_channels: usize) {
+        for ch in 0..num_channels {
+            let state = &mut self.channels[ch];
+
+            // Update smoothed parameters
+            state
+                .freq
+                .update(self.params.freq.get_value_or(ch, 0.0).clamp(-10.0, 10.0));
+            state
+                .harmonics
+                .update(self.params.harmonics.get_value_or(ch, 2.5).clamp(0.0, 5.0));
+            state
+                .timbre
+                .update(self.params.timbre.get_value_or(ch, 2.5).clamp(0.0, 5.0));
+            state
+                .morph
+                .update(self.params.morph.get_value_or(ch, 2.5).clamp(0.0, 5.0));
+            state
+                .lpg_color
+                .update(self.params.lpg_color.get_value_or(ch, 2.5).clamp(0.0, 5.0));
+            state
+                .lpg_decay
+                .update(self.params.lpg_decay.get_value_or(ch, 2.5).clamp(0.0, 5.0));
+
+            // Get engine index from enum
+            let engine_index = self.params.engine.to_index();
+
+            let patch = Patch {
+                note: voct_to_midi(*state.freq),
+                harmonics: (*state.harmonics / 5.0).clamp(0.0, 1.0),
+                timbre: (*state.timbre / 5.0).clamp(0.0, 1.0),
+                morph: (*state.morph / 5.0).clamp(0.0, 1.0),
+                engine: engine_index,
+                decay: (*state.lpg_decay / 5.0).clamp(0.0, 1.0),
+                lpg_colour: (*state.lpg_color / 5.0).clamp(0.0, 1.0),
+                // Modulation amounts (attenuverters)
+                frequency_modulation_amount: (self.params.fm_amt.get_value_or(ch, 0.0) / 5.0)
+                    .clamp(-1.0, 1.0),
+                timbre_modulation_amount: (self.params.timbre_amt.get_value_or(ch, 0.0) / 5.0)
+                    .clamp(-1.0, 1.0),
+                morph_modulation_amount: (self.params.morph_amt.get_value_or(ch, 0.0) / 5.0)
+                    .clamp(-1.0, 1.0),
+            };
+
+            // Build the Modulations struct
+            // Note modulation: V/Oct converted to semitones
+            let freq_input = self.params.freq.get_value_or(ch, 0.0);
+            let note_mod = (freq_input - *state.freq) * 12.0; // V/Oct to semitones
+
+            // FM: ±5V range, scaled to ±1.0 then multiplied by ~6 (VCV convention)
+            let fm_val = self.params.fm.get_value_or(ch, 0.0);
+            let fm_mod = fm_val / 5.0 * 6.0;
+
+            // Harmonics: 0-5V scaled to 0-1
+            let harmonics_cv = self.params.harmonics.get_value_or(ch, 0.0);
+            let harmonics_mod = if self.params.harmonics.is_disconnected() {
+                0.0
+            } else {
+                (harmonics_cv / 5.0) - (*state.harmonics / 5.0)
+            };
+
+            // Timbre: ±5V range (centered around current value)
+            let timbre_cv = self.params.timbre.get_value_or(ch, 0.0);
+            let timbre_mod = if self.params.timbre.is_disconnected() {
+                0.0
+            } else {
+                (timbre_cv - *state.timbre) / 8.0 // VCV uses /8 for ±5V
+            };
+
+            // Morph: ±5V range
+            let morph_cv = self.params.morph.get_value_or(ch, 0.0);
+            let morph_mod = if self.params.morph.is_disconnected() {
+                0.0
+            } else {
+                (morph_cv - *state.morph) / 8.0
+            };
+
+            // Use latched trigger value to ensure short triggers aren't missed
+            // The latch captures any rising edge that occurred since last block render
+            let trigger_mod = if state.trigger_latch > 0.0 {
+                // Use the latched value (normalized for Plaits, which expects ~0-1 range)
+                state.trigger_latch
+            } else {
+                // No trigger edge detected, use max value seen (for gate behavior)
+                state.trigger_max / 3.0
+            };
+
+            // Level: 0-5V scaled to 0-1
+            let level_val = self.params.level.get_value_or(ch, 0.0);
+            let level_mod = (level_val / 8.0).clamp(0.0, 1.0);
+
+            let modulations = Modulations {
+                engine: 0.0, // No CV modulation of engine
+                note: note_mod,
+                frequency: fm_mod,
+                harmonics: harmonics_mod,
+                timbre: timbre_mod,
+                morph: morph_mod,
+                trigger: trigger_mod,
+                level: level_mod,
+                frequency_patched: !self.params.fm.is_disconnected(),
+                timbre_patched: !self.params.timbre.is_disconnected(),
+                morph_patched: !self.params.morph.is_disconnected(),
+                trigger_patched: !self.params.trigger.is_disconnected(),
+                level_patched: !self.params.level.is_disconnected(),
+            };
+
+            // Render the voice
+            state.voice.render(
+                &patch,
+                &modulations,
+                &mut state.out_buffer,
+                &mut state.aux_buffer,
+            );
+
+            // Clear trigger latch and max after rendering
+            // This ensures the trigger is only processed once per event
+            state.trigger_latch = 0.0;
+            state.trigger_max = 0.0;
+        }
+    }
+}
+
+message_handlers!(impl Plaits {});

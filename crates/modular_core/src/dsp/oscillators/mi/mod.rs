@@ -6,6 +6,9 @@ use crate::types::{ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, S
 #[macro_use]
 pub mod macros;
 
+// Full Plaits voice module (uses complete Voice struct with LPG, trigger delay, etc.)
+pub mod plaits;
+
 // mi-plaits-dsp-rs engine wrappers
 pub mod additive_oscillator;
 pub mod bass_drum_oscillator;
@@ -31,6 +34,7 @@ pub mod waveshaping_oscillator;
 pub mod wavetable_oscillator;
 
 pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
+    plaits::Plaits::install_constructor(map);
     additive_oscillator::AdditiveOscillator::install_constructor(map);
     bass_drum_oscillator::BassDrumOscillator::install_constructor(map);
     chiptune_oscillator::ChiptuneOscillator::install_constructor(map);
@@ -56,6 +60,7 @@ pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
 }
 
 pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
+    plaits::Plaits::install_params_validator(map);
     additive_oscillator::AdditiveOscillator::install_params_validator(map);
     bass_drum_oscillator::BassDrumOscillator::install_params_validator(map);
     chiptune_oscillator::ChiptuneOscillator::install_params_validator(map);
@@ -81,6 +86,7 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
 }
 
 pub fn install_channel_count_derivers(map: &mut HashMap<String, ChannelCountDeriver>) {
+    plaits::Plaits::install_channel_count_deriver(map);
     additive_oscillator::AdditiveOscillator::install_channel_count_deriver(map);
     bass_drum_oscillator::BassDrumOscillator::install_channel_count_deriver(map);
     chiptune_oscillator::ChiptuneOscillator::install_channel_count_deriver(map);
@@ -107,6 +113,7 @@ pub fn install_channel_count_derivers(map: &mut HashMap<String, ChannelCountDeri
 
 pub fn schemas() -> Vec<ModuleSchema> {
     vec![
+        plaits::Plaits::get_schema(),
         additive_oscillator::AdditiveOscillator::get_schema(),
         bass_drum_oscillator::BassDrumOscillator::get_schema(),
         chiptune_oscillator::ChiptuneOscillator::get_schema(),

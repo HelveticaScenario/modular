@@ -1,7 +1,7 @@
 use crate::{
+    PORT_MAX_CHANNELS,
     poly::{PolyOutput, PolySignal},
     types::{Clickless, Signal},
-    PORT_MAX_CHANNELS,
 };
 use napi::Result;
 use schemars::JsonSchema;
@@ -39,6 +39,7 @@ pub struct StereoMixer {
     outputs: StereoMixerOutputs,
     params: StereoMixerParams,
     channel_state: [ChannelState; PORT_MAX_CHANNELS],
+    width_buffer: Clickless,
 }
 
 impl Default for StereoMixer {
@@ -47,6 +48,7 @@ impl Default for StereoMixer {
             outputs: Default::default(),
             params: Default::default(),
             channel_state: [ChannelState::default(); PORT_MAX_CHANNELS],
+            width_buffer: Clickless::default(),
         }
     }
 }
@@ -59,7 +61,8 @@ impl StereoMixer {
         self.outputs.sample.set_channels(2);
 
         // Width: 0 = no spread, 5 = full ±5V spread across voices
-        let width = self.params.width.get_value_or(0.0).clamp(0.0, 5.0);
+        self.width_buffer
+            .update(self.params.width.get_value_or(0.0).clamp(0.0, 5.0));
 
         let mut left_sum = 0.0f32;
         let mut right_sum = 0.0f32;
@@ -75,7 +78,7 @@ impl StereoMixer {
             // Voice 0 -> -width, last voice -> +width
             let spread_offset = if input_channels > 1 {
                 let voice_pos = ch as f32 / (input_channels - 1) as f32; // 0.0 to 1.0
-                (voice_pos - 0.5) * 2.0 * width // -width to +width
+                (voice_pos - 0.5) * 2.0 * *self.width_buffer // -width to +width
             } else {
                 0.0 // Single voice stays at base pan
             };

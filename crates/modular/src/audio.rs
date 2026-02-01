@@ -814,6 +814,8 @@ pub struct AudioState {
   channels: u16,
   /// Audio budget meter - written by audio thread, read by main thread
   audio_budget_meter: Arc<AudioBudgetMeter>,
+  /// Module states (e.g., seq current step) - written by audio thread, read by main thread
+  module_states: Arc<Mutex<HashMap<String, serde_json::Value>>>,
 }
 
 #[derive(Default)]
@@ -845,6 +847,7 @@ impl AudioState {
       sample_rate,
       channels,
       audio_budget_meter: Arc::new(AudioBudgetMeter::default()),
+      module_states: Arc::new(Mutex::new(HashMap::new())),
     }
   }
 
@@ -902,6 +905,7 @@ impl AudioState {
       scope_collection: self.scope_collection.clone(),
       recording_writer: self.recording_writer.clone(),
       audio_budget_meter: self.audio_budget_meter.clone(),
+      module_states: self.module_states.clone(),
     }
   }
 
@@ -958,10 +962,11 @@ impl AudioState {
   }
 
   pub fn get_module_states(&self) -> HashMap<String, serde_json::Value> {
-    // NOTE: With the new architecture, module states need to be queried differently.
-    // For now, return empty - this could be implemented via a request/response command
-    // or by having modules periodically push their state to a shared buffer.
-    HashMap::new()
+    // Read module states from shared buffer (written by audio thread)
+    match self.module_states.try_lock() {
+      Some(states) => states.clone(),
+      None => HashMap::new(), // Skip if locked by audio thread
+    }
   }
 
   /// Build a PatchUpdate from desired graph and send to audio thread.
@@ -1117,6 +1122,8 @@ pub struct AudioSharedState {
   pub scope_collection: Arc<Mutex<HashMap<ScopeItem, ScopeBuffer>>>,
   pub recording_writer: Arc<Mutex<Option<WavWriter<BufWriter<File>>>>>,
   pub audio_budget_meter: Arc<AudioBudgetMeter>,
+  /// Module states (e.g., seq current step) - written by audio thread, read by main thread
+  pub module_states: Arc<Mutex<HashMap<String, serde_json::Value>>>,
 }
 
 fn chrono_simple_timestamp() -> String {
@@ -1146,6 +1153,8 @@ struct AudioProcessor {
   recording_writer: Arc<Mutex<Option<WavWriter<BufWriter<File>>>>>,
   /// Shared audio budget meter
   audio_budget_meter: Arc<AudioBudgetMeter>,
+  /// Shared module states (e.g., seq current step)
+  module_states: Arc<Mutex<HashMap<String, serde_json::Value>>>,
   /// Sample rate
   sample_rate: f32,
 }
@@ -1165,6 +1174,7 @@ impl AudioProcessor {
       scope_collection: shared.scope_collection,
       recording_writer: shared.recording_writer,
       audio_budget_meter: shared.audio_budget_meter,
+      module_states: shared.module_states,
       sample_rate,
     }
   }
@@ -1356,6 +1366,20 @@ impl AudioProcessor {
     output
   }
 
+  /// Collect states from modules that implement StatefulModule (e.g., Seq).
+  /// Uses try_lock to avoid blocking the audio thread if the main thread is reading.
+  fn collect_module_states(&self) {
+    // Use try_lock to avoid blocking audio if main thread is reading
+    if let Some(mut states) = self.module_states.try_lock() {
+      states.clear();
+      for (id, module) in &self.patch.sampleables {
+        if let Some(state) = module.get_state() {
+          states.insert(id.clone(), state);
+        }
+      }
+    }
+  }
+
   fn is_stopped(&self) -> bool {
     self.stopped.load(Ordering::SeqCst)
   }
@@ -1441,6 +1465,10 @@ where
             }
           }
         }
+
+        // Collect module states for UI (e.g., seq step highlighting)
+        // Done once per buffer, not per frame, to minimize overhead
+        audio_processor.collect_module_states();
 
         let elapsed_ns = callback_start.elapsed().as_nanos() as u64;
 
@@ -1756,6 +1784,7 @@ mod tests {
       scope_collection: Arc::new(Mutex::new(HashMap::new())),
       recording_writer: Arc::new(Mutex::new(None)),
       audio_budget_meter: Arc::new(AudioBudgetMeter::new()),
+      module_states: Arc::new(Mutex::new(HashMap::new())),
     };
 
     let processor = AudioProcessor::new(cmd_consumer, err_producer, shared, 48000.0);

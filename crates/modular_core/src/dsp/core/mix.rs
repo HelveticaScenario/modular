@@ -8,7 +8,10 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
+use crate::{
+    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal},
+    types::Clickless,
+};
 
 /// Mixing mode for combining channels
 #[derive(Clone, Copy, Debug, Default, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -48,30 +51,40 @@ struct MixOutputs {
 }
 
 /// Custom channel count derivation for Mix.
-/// 
+///
 /// Mix output channels = max(max_input_channels, gain_channels), at least 1.
 /// This matches the runtime behavior in update().
 pub fn mix_derive_channel_count(params: &MixParams) -> usize {
     // Get max channel count from inputs
     let input_refs: Vec<&PolySignal> = params.inputs.iter().collect();
-    println!("mix_derive_channel_count: inputs.len() = {}", params.inputs.len());
+    println!(
+        "mix_derive_channel_count: inputs.len() = {}",
+        params.inputs.len()
+    );
     let max_input_channels = if params.inputs.is_empty() {
         0usize
     } else {
         PolySignal::max_channels(&input_refs) as usize
     };
-    println!("mix_derive_channel_count: max_input_channels = {}", max_input_channels);
-    
+    println!(
+        "mix_derive_channel_count: max_input_channels = {}",
+        max_input_channels
+    );
+
     // Get gain channel count
     let gain_channels = params.gain.channels() as usize;
-    println!("mix_derive_channel_count: gain_channels = {}", gain_channels);
-    
+    println!(
+        "mix_derive_channel_count: gain_channels = {}",
+        gain_channels
+    );
+
     // Output channels = max(max_input_channels, gain_channels), at least 1 if inputs empty
     let ret = if params.inputs.is_empty() {
         gain_channels.max(1)
     } else {
         max_input_channels.max(gain_channels)
-    }.min(PORT_MAX_CHANNELS);
+    }
+    .min(PORT_MAX_CHANNELS);
     println!("mix_derive_channel_count: ret = {}", ret);
     ret
 }
@@ -82,6 +95,7 @@ pub fn mix_derive_channel_count(params: &MixParams) -> usize {
 pub struct Mix {
     outputs: MixOutputs,
     params: MixParams,
+    gain_buffer: [Clickless; PORT_MAX_CHANNELS],
 }
 
 message_handlers!(impl Mix {});
@@ -167,7 +181,8 @@ impl Mix {
         for i in 0..output_channels {
             let pre_gain_index = i % max_input_channels;
             let pre_gain_value = pre_gain_values[pre_gain_index];
-            let gain_value = gain.get_value_or(i, 1.0);
+            self.gain_buffer[i].update(gain.get_value_or(i, 1.0));
+            let gain_value = *self.gain_buffer[i];
             self.outputs.sample.set(i, pre_gain_value * gain_value);
         }
     }
@@ -207,7 +222,11 @@ mod tests {
             params: MixParams {
                 inputs: vec![
                     PolySignal::poly(&[Signal::Volts(1.0), Signal::Volts(2.0)]),
-                    PolySignal::poly(&[Signal::Volts(10.0), Signal::Volts(20.0), Signal::Volts(30.0)]),
+                    PolySignal::poly(&[
+                        Signal::Volts(10.0),
+                        Signal::Volts(20.0),
+                        Signal::Volts(30.0),
+                    ]),
                 ],
                 mode: MixMode::Sum,
                 gain: PolySignal::default(),
@@ -257,7 +276,11 @@ mod tests {
                     PolySignal::poly(&[Signal::Volts(10.0), Signal::Volts(20.0)]),
                 ],
                 mode: MixMode::Sum,
-                gain: PolySignal::poly(&[Signal::Volts(1.0), Signal::Volts(2.0), Signal::Volts(0.5)]),
+                gain: PolySignal::poly(&[
+                    Signal::Volts(1.0),
+                    Signal::Volts(2.0),
+                    Signal::Volts(0.5),
+                ]),
             },
             ..Default::default()
         };
@@ -278,7 +301,11 @@ mod tests {
             params: MixParams {
                 inputs: vec![],
                 mode: MixMode::Sum,
-                gain: PolySignal::poly(&[Signal::Volts(1.0), Signal::Volts(2.0), Signal::Volts(3.0)]),
+                gain: PolySignal::poly(&[
+                    Signal::Volts(1.0),
+                    Signal::Volts(2.0),
+                    Signal::Volts(3.0),
+                ]),
             },
             ..Default::default()
         };
