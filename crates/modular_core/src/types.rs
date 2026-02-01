@@ -276,9 +276,15 @@ pub fn smooth_value(current: f32, target: f32) -> f32 {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Clickless {
     value: f32,
+    initialized: bool,
 }
 impl Clickless {
     pub fn update(&mut self, input: f32) {
+        if !self.initialized {
+            self.value = input;
+            self.initialized = true;
+            return;
+        }
         self.value = smooth_value(self.value, input);
     }
 }
@@ -291,7 +297,7 @@ impl From<Clickless> for f32 {
 
 impl From<f32> for Clickless {
     fn from(value: f32) -> Self {
-        Clickless { value }
+        Clickless { value, initialized: false }
     }
 }
 
