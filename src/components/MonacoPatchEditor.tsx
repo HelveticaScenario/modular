@@ -129,6 +129,25 @@ export function MonacoPatchEditor({
         if (model) {
             model.updateOptions({ tabSize: 2, insertSpaces: true });
         }
+
+        // On Windows, Monaco swallows global accelerators, so we need to
+        // register them as Monaco keybindings that trigger the Electron menu actions.
+        // Ctrl+Enter -> Update Patch
+        ed.addCommand(
+            monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
+            () => {
+                // Trigger the same IPC that the Electron menu sends
+                window.electronAPI.triggerMenuAction('UPDATE_PATCH');
+            },
+        );
+        
+        // Ctrl+. -> Stop Sound
+        ed.addCommand(
+            monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period,
+            () => {
+                window.electronAPI.triggerMenuAction('STOP');
+            },
+        );
     };
 
     useEffect(() => {
