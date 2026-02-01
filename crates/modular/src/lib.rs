@@ -1,6 +1,7 @@
 #![deny(clippy::all)]
 
 mod audio;
+mod commands;
 mod midi;
 mod validation;
 
@@ -17,9 +18,9 @@ use parking_lot::Mutex;
 use crate::audio::{
   ApplyPatchError, AudioBudgetSnapshot, AudioDeviceInfo, AudioState, HostInfo, BufferSizeRange,
   AudioDeviceCache, DeviceCacheSnapshot, CurrentAudioState, HostDeviceInfo,
-  InputBufferReader, InputBufferWriter, create_input_ring_buffer,
+  InputBufferReader, InputBufferWriter, create_input_ring_buffer, create_audio_channels,
   make_stream, make_input_stream, find_output_device_in_host, find_input_device_in_host,
-  get_host_by_preference,
+  get_host_by_preference, AudioSharedState,
 };
 use crate::midi::{MidiInputManager, MidiPortInfo};
 
@@ -190,14 +191,16 @@ fn build_output_stream(
   device: &cpal::Device,
   config: &cpal::StreamConfig,
   sample_format: cpal::SampleFormat,
-  audio_state: &Arc<AudioState>,
+  command_rx: crate::audio::CommandConsumer,
+  error_tx: crate::audio::ErrorProducer,
+  shared: AudioSharedState,
   input_reader: InputBufferReader,
 ) -> Result<cpal::Stream> {
   match sample_format {
-    cpal::SampleFormat::I8 => make_stream::<i8>(device, config, audio_state, input_reader),
-    cpal::SampleFormat::I16 => make_stream::<i16>(device, config, audio_state, input_reader),
-    cpal::SampleFormat::I32 => make_stream::<i32>(device, config, audio_state, input_reader),
-    cpal::SampleFormat::F32 => make_stream::<f32>(device, config, audio_state, input_reader),
+    cpal::SampleFormat::I8 => make_stream::<i8>(device, config, command_rx, error_tx, shared, input_reader),
+    cpal::SampleFormat::I16 => make_stream::<i16>(device, config, command_rx, error_tx, shared, input_reader),
+    cpal::SampleFormat::I32 => make_stream::<i32>(device, config, command_rx, error_tx, shared, input_reader),
+    cpal::SampleFormat::F32 => make_stream::<f32>(device, config, command_rx, error_tx, shared, input_reader),
     _ => Err(napi::Error::from_reason(format!(
       "Unsupported output sample format: {:?}",
       sample_format
@@ -241,7 +244,6 @@ struct StreamSetupParams<'a> {
   output_config: &'a cpal::SupportedStreamConfig,
   sample_rate: u32,
   buffer_size: Option<u32>,
-  patch: Arc<Mutex<Patch>>,
   /// Input device with its config, or None for no input
   input: Option<(&'a cpal::Device, cpal::SupportedStreamConfig, String)>,
 }
@@ -262,12 +264,19 @@ fn setup_streams(params: StreamSetupParams) -> Result<StreamSetupResult> {
     buffer_size: stream_buffer_size,
   };
   
-  // Create audio state
-  let state = Arc::new(AudioState::new(
-    params.patch,
+  // Create command and error queues for audio thread communication
+  let (command_tx, command_rx, error_tx, error_rx) = create_audio_channels();
+  
+  // Create audio state handle (main thread side)
+  let state = Arc::new(AudioState::new_with_channels(
+    command_tx,
+    error_rx,
     params.sample_rate as f32,
     channels,
   ));
+  
+  // Get shared state for audio processor
+  let shared = state.get_shared_state();
   
   // Get input channel count before creating ring buffer
   let input_channels = params.input.as_ref()
@@ -282,7 +291,9 @@ fn setup_streams(params: StreamSetupParams) -> Result<StreamSetupResult> {
     params.output_device,
     &stream_config,
     params.output_config.sample_format(),
-    &state,
+    command_rx,
+    error_tx,
+    shared,
     input_reader,
   )?;
   
@@ -402,7 +413,6 @@ impl Synthesizer {
       output_config: &output_config,
       sample_rate,
       buffer_size: config.buffer_size,
-      patch: Arc::new(Mutex::new(Patch::new())),
       input: input_setup.map(|(d, c, id)| (d, c, id)),
     })?;
 
@@ -602,9 +612,6 @@ impl Synthesizer {
     let output_config = output_device.default_output_config()
       .map_err(|e| napi::Error::from_reason(format!("Failed to get output config: {}", e)))?;
     
-    // Preserve the existing patch
-    let patch = self.state.get_patch();
-    
     // Prepare input device info if requested
     let input_setup = if let Some(ref input_id) = input_device_id {
       if input_id == "none" || input_id.is_empty() {
@@ -654,7 +661,6 @@ impl Synthesizer {
       output_config: &output_config,
       sample_rate,
       buffer_size,
-      patch,
       input: input_setup.as_ref().map(|(d, c, id)| (d, c.clone(), id.clone())),
     })?;
     

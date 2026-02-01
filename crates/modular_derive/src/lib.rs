@@ -123,7 +123,10 @@ pub fn message_handlers(input: TokenStream) -> TokenStream {
             }
 
             fn handle_message(&self, message: &crate::types::Message) -> napi::Result<()> {
-                let mut module = self.module.lock();
+                // SAFETY: Audio thread has exclusive access during message dispatch.
+                // Messages are only dispatched from AudioProcessor::process_commands().
+                // See crate::types module documentation for full safety invariants.
+                let module = unsafe { &mut *self.module.get() };
                 match message {
                     #( #match_arms, )*
                     _ => Ok(()),
@@ -869,6 +872,7 @@ fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
                                             })
                                             .collect();
                                         default_stmts.extend(quote_spanned! {field.span()=>
+                                            println!("Checking default connection for field: {}", stringify!(#field_ident));
                                             if self.#field_ident.is_disconnected() {
                                                 self.#field_ident = crate::poly::PolySignal::poly(&[
                                                     #(#cable_exprs),*
@@ -879,6 +883,7 @@ fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
                                         // Generate Signal default (single channel)
                                         let ch = dc.channels.first().copied().unwrap_or(0);
                                         default_stmts.extend(quote_spanned! {field.span()=>
+                                            println!("Checking default connection for field: {}", stringify!(#field_ident));
                                             if self.#field_ident.is_disconnected() {
                                                 self.#field_ident = crate::types::WellKnownModule::#module.to_cable(#ch, #port);
                                             }
@@ -892,6 +897,7 @@ fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
 
                     // Always call connect on every field (no-op impls handle primitives)
                     connect_stmts.extend(quote_spanned! {field.span()=>
+                        println!("Connecting field: {}", stringify!(#field_ident));
                         crate::types::Connect::connect(&mut self.#field_ident, patch);
                     });
                 }
@@ -917,6 +923,7 @@ fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
     let generated = quote! {
         impl crate::types::Connect for #name {
             fn connect(&mut self, patch: &crate::Patch) {
+                println!("Connecting module outputs for {}", stringify!(#name));
                 // Apply default connections for disconnected inputs
                 #default_connection_stmts
                 // Connect all fields
@@ -1152,7 +1159,8 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     let get_state_impl = if is_stateful {
         quote! {
             use crate::types::StatefulModule;
-            let module = self.module.lock();
+            // SAFETY: Audio thread has exclusive access. See crate::types module documentation.
+            let module = unsafe { &*self.module.get() };
             module.get_state()
         }
     } else {
@@ -1168,8 +1176,9 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         quote! {
             fn on_patch_update(&self) {
                 use crate::types::PatchUpdateHandler;
-                let mut module = self.module.lock();
-                PatchUpdateHandler::on_patch_update(&mut *module);
+                // SAFETY: Audio thread has exclusive access. See crate::types module documentation.
+                let module = unsafe { &mut *self.module.get() };
+                PatchUpdateHandler::on_patch_update(module);
             }
         }
     } else {
@@ -1270,14 +1279,56 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             }
         }
 
-        #[derive(Default)]
+        /// Generated wrapper struct for audio-thread-only module access.
+        ///
+        /// # Safety Model (UnsafeCell)
+        ///
+        /// This struct uses `UnsafeCell` instead of `Mutex`/`RwLock` for interior mutability.
+        /// This is safe because:
+        ///
+        /// 1. **Exclusive Audio Thread Ownership**: After construction, all modules live in
+        ///    `AudioProcessor::patch` which is owned exclusively by the audio thread closure.
+        ///    See `crates/modular/src/audio.rs` `make_stream()`.
+        ///
+        /// 2. **Command Queue Isolation**: The main thread communicates via `PatchUpdate`
+        ///    commands through an `rtrb` SPSC queue. It never directly accesses module state.
+        ///
+        /// 3. **No Escaping References**: Module `Arc`s are stored in `Patch::sampleables` and
+        ///    are never cloned or sent to other threads after being added to the patch.
+        ///
+        /// ## Invariants (DO NOT VIOLATE)
+        ///
+        /// - **NEVER** call Sampleable trait methods from the main thread
+        /// - **NEVER** clone module Arcs and send them across threads
+        /// - **NEVER** access Patch::sampleables from outside AudioProcessor
+        /// - **ALWAYS** use the command queue for main→audio communication
+        ///
+        /// Violating these invariants will cause undefined behavior (data races).
         struct #struct_name {
             id: String,
-            outputs: parking_lot::RwLock<#outputs_ty>,
-            module: parking_lot::Mutex<#name #static_ty_generics>,
+            outputs: std::cell::UnsafeCell<#outputs_ty>,
+            module: std::cell::UnsafeCell<#name #static_ty_generics>,
             processed: core::sync::atomic::AtomicBool,
             sample_rate: f32
         }
+
+        impl Default for #struct_name {
+            fn default() -> Self {
+                Self {
+                    id: String::new(),
+                    outputs: std::cell::UnsafeCell::new(Default::default()),
+                    module: std::cell::UnsafeCell::new(Default::default()),
+                    processed: core::sync::atomic::AtomicBool::new(false),
+                    sample_rate: 0.0,
+                }
+            }
+        }
+
+        // SAFETY: This type is only accessed from the audio thread after construction.
+        // The audio thread has exclusive ownership of all modules in the Patch.
+        // See the struct-level documentation and crates/modular/src/audio.rs AudioProcessor.
+        unsafe impl Send for #struct_name {}
+        unsafe impl Sync for #struct_name {}
 
         impl crate::types::Sampleable for #struct_name {
             fn tick(&self) -> () {
@@ -1291,17 +1342,24 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                     core::sync::atomic::Ordering::Acquire,
                     core::sync::atomic::Ordering::Relaxed,
                 ) {
-                    let mut module = self.module.lock();
-                    module.update(self.sample_rate);
-                    let mut outputs = self.outputs.try_write_for(core::time::Duration::from_millis(10)).unwrap();
-                    crate::types::OutputStruct::copy_from(&mut *outputs, &module.outputs);
+                    // SAFETY: Audio thread has exclusive access to modules.
+                    // The processed flag prevents re-entrant calls within the same frame.
+                    // See struct-level documentation for full safety invariants.
+                    unsafe {
+                        let module = &mut *self.module.get();
+                        module.update(self.sample_rate);
+                        let outputs = &mut *self.outputs.get();
+                        crate::types::OutputStruct::copy_from(outputs, &module.outputs);
+                    }
                 }
             }
 
             fn get_poly_sample(&self, port: &str) -> napi::Result<crate::poly::PolyOutput> {
                 self.update();
-                let outputs = self.outputs.try_read_for(core::time::Duration::from_millis(10)).unwrap();
-                crate::types::OutputStruct::get_poly_sample(&*outputs, port).ok_or_else(|| {
+                // SAFETY: Audio thread has exclusive access. Reading outputs after
+                // update() is complete (processed flag ensures no concurrent mutation).
+                let outputs = unsafe { &*self.outputs.get() };
+                crate::types::OutputStruct::get_poly_sample(outputs, port).ok_or_else(|| {
                     napi::Error::from_reason(
                         format!(
                             "{} with id {} does not have port {}",
@@ -1318,7 +1376,8 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             }
 
             fn try_update_params(&self, params: serde_json::Value) -> napi::Result<()> {
-                let mut module = self.module.lock();
+                // SAFETY: Audio thread has exclusive access. See struct-level documentation.
+                let module = unsafe { &mut *self.module.get() };
                 module.params = serde_json::from_value(params)?;
                 Ok(())
             }
@@ -1328,7 +1387,8 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             }
 
             fn connect(&self, patch: &crate::Patch) {
-                let mut module = self.module.lock();
+                // SAFETY: Audio thread has exclusive access. See struct-level documentation.
+                let module = unsafe { &mut *self.module.get() };
                 crate::types::Connect::connect(&mut module.params, patch);
             }
 

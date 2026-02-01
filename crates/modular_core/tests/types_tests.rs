@@ -255,7 +255,7 @@ fn message_listener_macro_infers_tags_from_match() {
     }
 
     struct LSampleable {
-        module: parking_lot::Mutex<L>,
+        module: std::cell::UnsafeCell<L>,
     }
 
     modular_derive::message_handlers!(impl L {
@@ -265,7 +265,7 @@ fn message_listener_macro_infers_tags_from_match() {
     });
 
     let s = LSampleable {
-        module: parking_lot::Mutex::new(L),
+        module: std::cell::UnsafeCell::new(L),
     };
 
     assert_eq!(
