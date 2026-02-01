@@ -9,6 +9,8 @@ import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-nati
 import { WebpackPlugin } from '@electron-forge/plugin-webpack';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
+import * as fs from 'fs';
+import * as path from 'path';
 
 import { mainConfig } from './webpack.main.config';
 import { rendererConfig } from './webpack.renderer.config';
@@ -17,7 +19,9 @@ import { rendererConfig } from './webpack.renderer.config';
 
 const config: ForgeConfig = {
   packagerConfig: {
-    asar: true,
+    asar: {
+      unpack: '**/*.node'
+    },
     executableName: 'Switchboard',
     osxSign: {
       identity: 'Developer ID Application: Daniel Lewis (HA98TTLCR7)',
@@ -40,6 +44,41 @@ const config: ForgeConfig = {
     } : undefined
   },
   rebuildConfig: {},
+  hooks: {
+    // Copy @modular/core workspace package to node_modules before packaging
+    // This is needed because yarn workspaces use symlinks which don't survive packaging
+    packageAfterCopy: async (_config, buildPath) => {
+      const sourceDir = path.join(__dirname, 'crates', 'modular');
+      const targetDir = path.join(buildPath, 'node_modules', '@modular', 'core');
+      
+      // Ensure target directory exists
+      fs.mkdirSync(targetDir, { recursive: true });
+      
+      // Files to copy from the native module package
+      const filesToCopy = [
+        'index.js',
+        'index.d.ts',
+        'package.json',
+      ];
+      
+      for (const file of filesToCopy) {
+        const src = path.join(sourceDir, file);
+        const dest = path.join(targetDir, file);
+        if (fs.existsSync(src)) {
+          fs.copyFileSync(src, dest);
+        }
+      }
+      
+      // Copy the native .node file for the current platform
+      const nodeFiles = fs.readdirSync(sourceDir).filter(f => f.endsWith('.node'));
+      for (const nodeFile of nodeFiles) {
+        fs.copyFileSync(
+          path.join(sourceDir, nodeFile),
+          path.join(targetDir, nodeFile)
+        );
+      }
+    }
+  },
   makers: [
     new MakerSquirrel({
       name: 'Switchboard'
