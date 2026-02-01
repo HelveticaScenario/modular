@@ -52,6 +52,20 @@ export interface AppConfig {
     audioConfig?: AudioConfig;
 }
 
+/**
+ * Log level for main process logs forwarded to renderer
+ */
+export type MainLogLevel = 'log' | 'info' | 'warn' | 'error' | 'debug';
+
+/**
+ * Log entry from main process
+ */
+export interface MainLogEntry {
+    level: MainLogLevel;
+    timestamp: number;
+    args: unknown[];
+}
+
 export interface UpdatePatchResult {
     errors: ApplyPatchError[];
     appliedPatch: PatchGraph;
@@ -194,6 +208,9 @@ export const IPC_CHANNELS = {
     CONFIG_GET_PATH: 'modular:config:get-path',
     CONFIG_READ: 'modular:config:read',
     CONFIG_ON_CHANGE: 'modular:config:on-change',
+
+    // Main process logging
+    MAIN_LOG: 'modular:main:log',
 } as const;
 
 export const MENU_CHANNELS = {
@@ -290,6 +307,9 @@ export interface IPCHandlers {
     [IPC_CHANNELS.CONFIG_GET_PATH]: () => string;
     [IPC_CHANNELS.CONFIG_READ]: () => AppConfig;
     [IPC_CHANNELS.CONFIG_ON_CHANGE]: (config: AppConfig) => void;
+
+    // Main process logging
+    [IPC_CHANNELS.MAIN_LOG]: (entry: MainLogEntry) => void;
 }
 
 /**

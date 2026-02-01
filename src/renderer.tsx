@@ -37,6 +37,43 @@ import monaco from 'monaco-editor/esm/vs/editor/editor.main';
 // Make monaco available globally
 (window as any).monaco = monaco;
 
+// Set up main process log forwarding to renderer console
+// This allows viewing main process logs in the renderer's DevTools
+window.electronAPI.onMainLog((entry) => {
+    const prefix = '[main]';
+    const args = entry.args.map((arg) => {
+        // Reconstruct Error objects
+        if (arg && typeof arg === 'object' && '__error' in arg) {
+            const errorLike = arg as unknown as { name: string; message: string; stack?: string };
+            const err = new Error(errorLike.message);
+            err.name = errorLike.name;
+            if (errorLike.stack) {
+                err.stack = errorLike.stack;
+            }
+            return err;
+        }
+        return arg;
+    });
+    
+    switch (entry.level) {
+        case 'log':
+            console.log(prefix, ...args);
+            break;
+        case 'info':
+            console.info(prefix, ...args);
+            break;
+        case 'warn':
+            console.warn(prefix, ...args);
+            break;
+        case 'error':
+            console.error(prefix, ...args);
+            break;
+        case 'debug':
+            console.debug(prefix, ...args);
+            break;
+    }
+});
+
 const root = document.getElementById('root');
 if (!root) {
     throw new Error('Failed to find the root element');

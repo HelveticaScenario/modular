@@ -1,7 +1,7 @@
 // See the Electron documentation for details on how to use preload scripts:
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 import { contextBridge, ipcRenderer } from 'electron/renderer';
-import { IPC_CHANNELS, IPCHandlers, IPCRequest, IPCResponse, Promisify, MENU_CHANNELS, ContextMenuOptions, ContextMenuAction, AppConfig, DSLExecuteResult } from './ipcTypes';
+import { IPC_CHANNELS, IPCHandlers, IPCRequest, IPCResponse, Promisify, MENU_CHANNELS, ContextMenuOptions, ContextMenuAction, AppConfig, DSLExecuteResult, MainLogEntry } from './ipcTypes';
 
 
 
@@ -113,6 +113,9 @@ export interface ElectronAPI {
         read: () => Promise<AppConfig>;
         onChange: (callback: (config: AppConfig) => void) => () => void;
     };
+
+    // Main process log forwarding
+    onMainLog: (callback: (entry: MainLogEntry) => void) => () => void;
 }
 
 const electronAPI: ElectronAPI = {
@@ -292,6 +295,9 @@ const electronAPI: ElectronAPI = {
         read: () => invokeIPC('CONFIG_READ'),
         onChange: menuEventHandler(IPC_CHANNELS.CONFIG_ON_CHANGE),
     },
+
+    // Main process log forwarding
+    onMainLog: menuEventHandler(IPC_CHANNELS.MAIN_LOG),
 };
 
 // Expose the API to the renderer process
