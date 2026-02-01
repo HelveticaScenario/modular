@@ -1,4 +1,3 @@
-use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -53,7 +52,7 @@ impl Default for PulseOscillator {
 }
 
 impl PulseOscillator {
-    fn update(&mut self, sample_rate: f32) -> () {
+    fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
         self.outputs.sample.set_channels(num_channels as u8);
 

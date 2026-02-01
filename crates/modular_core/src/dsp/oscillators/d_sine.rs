@@ -5,7 +5,6 @@ use crate::{
     },
     poly::{PolyOutput, PolySignal},
 };
-use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -25,19 +24,12 @@ struct DSineOscillatorOutputs {
 #[derive(Module)]
 #[module("dSine", "A phase-driven sine wave oscillator")]
 #[args(phase)]
+#[derive(Default)]
 pub struct DSineOscillator {
     outputs: DSineOscillatorOutputs,
     params: DSineOscillatorParams,
 }
 
-impl Default for DSineOscillator {
-    fn default() -> Self {
-        Self {
-            outputs: DSineOscillatorOutputs::default(),
-            params: DSineOscillatorParams::default(),
-        }
-    }
-}
 
 impl DSineOscillator {
     fn update(&mut self, _sample_rate: f32) {

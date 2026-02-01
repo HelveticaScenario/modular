@@ -4,7 +4,6 @@
 //! in a configurable scale. This is useful for constraining melodies to a key
 //! or for adding harmonic structure to random/noise sources.
 
-use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::sync::Arc;

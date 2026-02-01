@@ -7,7 +7,7 @@ use std::sync::Arc;
 use napi::Result;
 use parking_lot::Mutex;
 
-use crate::{PORT_MAX_CHANNELS, Sampleable, poly::PolyOutput, types::{MessageHandler, WellKnownModule}};
+use crate::{Sampleable, poly::PolyOutput, types::{MessageHandler, WellKnownModule}};
 
 #[derive(Default)]
 pub struct AudioIn {
@@ -21,7 +21,7 @@ impl Sampleable for AudioIn {
         WellKnownModule::HiddenAudioIn.id()
     }
 
-    fn tick(&self) -> () {}
+    fn tick(&self) {}
 
     fn get_poly_sample(&self, _port: &str) -> Result<PolyOutput> {
         Ok(*self.input.lock())

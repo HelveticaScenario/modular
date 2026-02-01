@@ -274,7 +274,7 @@ impl Plaits {
     /// Called once at construction time by the macro-generated constructor.
     fn init(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
-        self.channels = Vec::with_capacity(PORT_MAX_CHANNELS as usize);
+        self.channels = Vec::with_capacity(PORT_MAX_CHANNELS);
         for _ in 0..PORT_MAX_CHANNELS {
             let mut voice = Voice::new(BLOCK_SIZE, sample_rate);
             voice.init();

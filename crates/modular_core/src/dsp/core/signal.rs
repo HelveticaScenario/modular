@@ -1,4 +1,3 @@
-use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -32,7 +31,7 @@ pub struct Signal {
 }
 
 impl Signal {
-    fn update(&mut self, _sample_rate: f32) -> () {
+    fn update(&mut self, _sample_rate: f32) {
         let channels = self.channel_count() as u8;
         self.outputs.sample.set_channels(channels);
         for i in 0..channels as usize {

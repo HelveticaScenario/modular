@@ -1,6 +1,5 @@
 use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
 use crate::types::Clickless;
-use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 

@@ -311,25 +311,22 @@ impl AtomValue {
         }
 
         // Check for Hz suffix
-        if s.ends_with("hz") || s.ends_with("Hz") {
-            if let Ok(n) = s[..s.len() - 2].parse::<f64>() {
+        if (s.ends_with("hz") || s.ends_with("Hz"))
+            && let Ok(n) = s[..s.len() - 2].parse::<f64>() {
                 return AtomValue::Hz(n);
             }
-        }
 
         // Check for voltage suffix
-        if s.ends_with('v') || s.ends_with('V') {
-            if let Ok(n) = s[..s.len() - 1].parse::<f64>() {
+        if (s.ends_with('v') || s.ends_with('V'))
+            && let Ok(n) = s[..s.len() - 1].parse::<f64>() {
                 return AtomValue::Volts(n);
             }
-        }
 
         // Check for MIDI prefix
-        if s.starts_with('m') || s.starts_with('M') {
-            if let Ok(n) = s[1..].parse::<i32>() {
+        if (s.starts_with('m') || s.starts_with('M'))
+            && let Ok(n) = s[1..].parse::<i32>() {
                 return AtomValue::Midi(n);
             }
-        }
 
         // Try parsing as note
         if let Some(note) = parse_note(s) {

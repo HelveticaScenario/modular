@@ -1,4 +1,3 @@
-use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -11,17 +10,14 @@ struct NoiseParams {
 
 #[derive(Clone, Copy, Deserialize, JsonSchema, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 enum NoiseKind {
+    #[default]
     White,
     Pink,
     Brown,
 }
 
-impl Default for NoiseKind {
-    fn default() -> Self {
-        NoiseKind::White
-    }
-}
 
 impl crate::types::Connect for NoiseKind {
     fn connect(&mut self, _patch: &crate::Patch) {}
@@ -42,7 +38,7 @@ impl PinkFilter {
     fn process(&mut self, white: f32) -> f32 {
         self.b0 = 0.99886 * self.b0 + white * 0.0555179;
         self.b1 = 0.99332 * self.b1 + white * 0.0750759;
-        self.b2 = 0.96900 * self.b2 + white * 0.1538520;
+        self.b2 = 0.96900 * self.b2 + white * 0.153_852;
         self.b3 = 0.86650 * self.b3 + white * 0.3104856;
         self.b4 = 0.55000 * self.b4 + white * 0.5329522;
         self.b5 = -0.7616 * self.b5 - white * 0.0168980;
@@ -119,7 +115,7 @@ impl Noise {
         self.brown
     }
 
-    fn update(&mut self, _sample_rate: f32) -> () {
+    fn update(&mut self, _sample_rate: f32) {
         // self.params
         self.refresh_kind();
         let white = self.generator.next();

@@ -115,7 +115,7 @@ impl FromMiniAtom for f64 {
             // For f64, try averaging the list values
             let values: Vec<f64> = atoms
                 .iter()
-                .map(|a| Self::from_atom(a))
+                .map(Self::from_atom)
                 .collect::<Result<_, _>>()?;
             Ok(values.iter().sum::<f64>() / values.len() as f64)
         }
@@ -125,7 +125,7 @@ impl FromMiniAtom for f64 {
         // For f64, combine by averaging all values
         let mut values: Vec<f64> = head_atoms
             .iter()
-            .map(|a| Self::from_atom(a))
+            .map(Self::from_atom)
             .collect::<Result<_, _>>()?;
         values.push(*tail);
         Ok(values.iter().sum::<f64>() / values.len() as f64)
@@ -143,7 +143,7 @@ impl FromMiniAtom for f32 {
     fn combine_with_head(head_atoms: &[AtomValue], tail: &Self) -> Result<Self, ConvertError> {
         let mut values: Vec<f32> = head_atoms
             .iter()
-            .map(|a| Self::from_atom(a))
+            .map(Self::from_atom)
             .collect::<Result<_, _>>()?;
         values.push(*tail);
         Ok(values.iter().sum::<f32>() / values.len() as f32)
@@ -193,7 +193,7 @@ impl FromMiniAtom for String {
         // Join with colons for string lists
         let strings: Vec<String> = atoms
             .iter()
-            .map(|a| Self::from_atom(a))
+            .map(Self::from_atom)
             .collect::<Result<_, _>>()?;
         Ok(strings.join(":"))
     }
@@ -201,7 +201,7 @@ impl FromMiniAtom for String {
     fn combine_with_head(head_atoms: &[AtomValue], tail: &Self) -> Result<Self, ConvertError> {
         let mut strings: Vec<String> = head_atoms
             .iter()
-            .map(|a| Self::from_atom(a))
+            .map(Self::from_atom)
             .collect::<Result<_, _>>()?;
         strings.push(tail.clone());
         Ok(strings.join(":"))
@@ -247,16 +247,16 @@ fn eval_f64(ast: &MiniASTF64) -> f64 {
         MiniASTF64::Rest(_) => 0.0, // Rest evaluates to 0
         MiniASTF64::List(Located { node, .. }) => {
             // Return first element or 0
-            node.first().map(|e| eval_f64(e)).unwrap_or(0.0)
+            node.first().map(eval_f64).unwrap_or(0.0)
         }
         MiniASTF64::Sequence(elements) | MiniASTF64::FastCat(elements) => {
             // Return first element or 0
             elements.first().map(|(e, _)| eval_f64(e)).unwrap_or(0.0)
         }
-        MiniASTF64::SlowCat(elements) => elements.first().map(|e| eval_f64(e)).unwrap_or(0.0),
+        MiniASTF64::SlowCat(elements) => elements.first().map(eval_f64).unwrap_or(0.0),
         MiniASTF64::RandomChoice(elements) | MiniASTF64::Stack(elements) => {
             // For deterministic evaluation, just take first
-            elements.first().map(|e| eval_f64(e)).unwrap_or(0.0)
+            elements.first().map(eval_f64).unwrap_or(0.0)
         }
         MiniASTF64::Fast(pattern, _) => eval_f64(pattern),
         MiniASTF64::Slow(pattern, _) => eval_f64(pattern),
@@ -319,7 +319,7 @@ fn convert_f64_pattern(ast: &MiniASTF64) -> Pattern<Fraction> {
                 .iter()
                 .flat_map(|p| match p {
                     MiniASTF64::Replicate(inner, count) => {
-                        std::iter::repeat(inner.as_ref()).take(*count as usize).collect::<Vec<_>>()
+                        std::iter::repeat_n(inner.as_ref(), *count as usize).collect::<Vec<_>>()
                     }
                     other => vec![other],
                 })
@@ -418,7 +418,7 @@ fn convert_u32_pattern(ast: &MiniASTU32) -> Pattern<u32> {
                 .iter()
                 .flat_map(|p| match p {
                     MiniASTU32::Replicate(inner, count) => {
-                        std::iter::repeat(inner.as_ref()).take(*count as usize).collect::<Vec<_>>()
+                        std::iter::repeat_n(inner.as_ref(), *count as usize).collect::<Vec<_>>()
                     }
                     other => vec![other],
                 })
@@ -514,7 +514,7 @@ fn convert_i32_pattern(ast: &MiniASTI32) -> Pattern<i32> {
                 .iter()
                 .flat_map(|p| match p {
                     MiniASTI32::Replicate(inner, count) => {
-                        std::iter::repeat(inner.as_ref()).take(*count as usize).collect::<Vec<_>>()
+                        std::iter::repeat_n(inner.as_ref(), *count as usize).collect::<Vec<_>>()
                     }
                     other => vec![other],
                 })
@@ -566,10 +566,10 @@ fn eval_u32(ast: &MiniASTU32) -> u32 {
     match ast {
         MiniASTU32::Pure(Located { node, .. }) => *node,
         MiniASTU32::Rest(_) => 0, // Rest evaluates to 0
-        MiniASTU32::List(Located { node, .. }) => node.first().map(|e| eval_u32(e)).unwrap_or(0),
+        MiniASTU32::List(Located { node, .. }) => node.first().map(eval_u32).unwrap_or(0),
         MiniASTU32::Sequence(elements) | MiniASTU32::FastCat(elements) => elements.first().map(|(e, _)| eval_u32(e)).unwrap_or(0),
-        MiniASTU32::SlowCat(elements) => elements.first().map(|e| eval_u32(e)).unwrap_or(0),
-        MiniASTU32::RandomChoice(elements) | MiniASTU32::Stack(elements) => elements.first().map(|e| eval_u32(e)).unwrap_or(0),
+        MiniASTU32::SlowCat(elements) => elements.first().map(eval_u32).unwrap_or(0),
+        MiniASTU32::RandomChoice(elements) | MiniASTU32::Stack(elements) => elements.first().map(eval_u32).unwrap_or(0),
         MiniASTU32::Fast(pattern, _) => eval_u32(pattern),
         MiniASTU32::Slow(pattern, _) => eval_u32(pattern),
         MiniASTU32::Replicate(pattern, _count) => eval_u32(pattern),
@@ -583,10 +583,10 @@ fn eval_i32(ast: &MiniASTI32) -> i32 {
     match ast {
         MiniASTI32::Pure(Located { node, .. }) => *node,
         MiniASTI32::Rest(_) => 0, // Rest evaluates to 0
-        MiniASTI32::List(Located { node, .. }) => node.first().map(|e| eval_i32(e)).unwrap_or(0),
+        MiniASTI32::List(Located { node, .. }) => node.first().map(eval_i32).unwrap_or(0),
         MiniASTI32::Sequence(elements) | MiniASTI32::FastCat(elements) => elements.first().map(|(e, _)| eval_i32(e)).unwrap_or(0),
-        MiniASTI32::SlowCat(elements) => elements.first().map(|e| eval_i32(e)).unwrap_or(0),
-        MiniASTI32::RandomChoice(elements) | MiniASTI32::Stack(elements) => elements.first().map(|e| eval_i32(e)).unwrap_or(0),
+        MiniASTI32::SlowCat(elements) => elements.first().map(eval_i32).unwrap_or(0),
+        MiniASTI32::RandomChoice(elements) | MiniASTI32::Stack(elements) => elements.first().map(eval_i32).unwrap_or(0),
         MiniASTI32::Fast(pattern, _) => eval_i32(pattern),
         MiniASTI32::Slow(pattern, _) => eval_i32(pattern),
         MiniASTI32::Replicate(pattern, _count) => eval_i32(pattern),
@@ -703,7 +703,7 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
             if has_weights {
                 // timecat expects (Fraction, Pattern) pairs
                 Ok(timecat(
-                    weights.into_iter().zip(patterns.into_iter()).collect(),
+                    weights.into_iter().zip(patterns).collect(),
                 ))
             } else {
                 Ok(fastcat(patterns))
@@ -719,7 +719,7 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
                 .flat_map(|p| match p {
                     MiniAST::Replicate(inner, count) => {
                         // Expand the replicate into multiple references to the inner pattern
-                        std::iter::repeat(inner.as_ref()).take(*count as usize).collect::<Vec<_>>()
+                        std::iter::repeat_n(inner.as_ref(), *count as usize).collect::<Vec<_>>()
                     }
                     other => vec![other],
                 })

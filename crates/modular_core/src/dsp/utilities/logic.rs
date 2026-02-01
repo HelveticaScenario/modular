@@ -2,7 +2,6 @@ use crate::{
     poly::{PolyOutput, PolySignal},
     PORT_MAX_CHANNELS,
 };
-use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 

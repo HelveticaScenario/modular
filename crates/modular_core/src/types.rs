@@ -563,7 +563,7 @@ fn parse_signal_string(s: &str) -> StdResult<f32, String> {
         let (octave_shift, note_idx) = if interval_idx >= 0 {
             ((interval_idx / len), (interval_idx % len) as usize)
         } else {
-            let abs_idx = (-interval_idx - 1) as i64;
+            let abs_idx = -interval_idx - 1;
             let octave_down = (abs_idx / len) + 1;
             let note_from_end = (abs_idx % len) as usize;
             (-octave_down, len as usize - 1 - note_from_end)
@@ -780,16 +780,12 @@ impl Signal {
 
 impl Connect for Signal {
     fn connect(&mut self, patch: &Patch) {
-        match self {
-            Signal::Cable {
+        if let Signal::Cable {
                 module, module_ptr, ..
-            } => {
-                if let Some(sampleable) = patch.sampleables.get(module) {
-                    *module_ptr = Arc::downgrade(sampleable);
-                }
+            } = self
+            && let Some(sampleable) = patch.sampleables.get(module) {
+                *module_ptr = Arc::downgrade(sampleable);
             }
-            _ => {}
-        }
     }
 }
 
@@ -929,12 +925,12 @@ impl ToNapiValue for SchemaContainer {
         val: Self,
     ) -> napi::Result<napi::sys::napi_value> {
         unsafe {
-            return ToNapiValue::to_napi_value(
+            ToNapiValue::to_napi_value(
                 env,
                 serde_json::to_value(val.schema).map_err(|e| {
                     napi::Error::from_reason(format!("Failed to serialize schema: {}", e))
                 })?,
-            );
+            )
         }
     }
 }

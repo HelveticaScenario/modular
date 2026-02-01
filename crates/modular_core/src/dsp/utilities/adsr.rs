@@ -1,6 +1,5 @@
 use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
 use crate::types::Clickless;
-use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -20,7 +19,9 @@ struct AdsrParams {
 }
 
 #[derive(Clone, Copy, PartialEq)]
+#[derive(Default)]
 enum EnvelopeStage {
+    #[default]
     Idle,
     Attack,
     Decay,
@@ -28,11 +29,6 @@ enum EnvelopeStage {
     Release,
 }
 
-impl Default for EnvelopeStage {
-    fn default() -> Self {
-        EnvelopeStage::Idle
-    }
-}
 
 /// Per-channel envelope state
 #[derive(Clone, Copy)]

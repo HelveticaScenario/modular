@@ -22,7 +22,7 @@ pub fn get_constructors() -> HashMap<String, SampleableConstructor> {
     utilities::install_constructors(&mut map);
     seq::install_constructors(&mut map);
     midi::install_constructors(&mut map);
-    return map;
+    map
 }
 
 /// Returns a map of `module_type` -> typed params validator.

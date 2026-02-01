@@ -1,7 +1,6 @@
 use crate::dsp::utils::{hz_to_voct_f64, voct_to_hz_f64};
 use crate::types::{ClockMessages, Connect, Signal};
-use fasteval::eval_compiled;
-use fasteval::{Compiler, Evaler, ExpressionI, Instruction, parser};
+use fasteval::{Compiler, Evaler, Instruction};
 use napi::Result;
 use regex::Regex;
 use schemars::JsonSchema;
@@ -181,8 +180,8 @@ impl Math {
                 return Some(*val);
             }
             match name {
-                "vToHz" => args.get(0).and_then(|v| Some(voct_to_hz_f64(*v))),
-                "hzToV" => args.get(0).and_then(|v| Some(hz_to_voct_f64(*v))),
+                "vToHz" => args.first().map(|v| voct_to_hz_f64(*v)),
+                "hzToV" => args.first().map(|v| hz_to_voct_f64(*v)),
 
                 // A wildcard to handle all undefined names:
                 _ => None,
@@ -195,7 +194,7 @@ impl Math {
             if let fasteval::IConst(c) = evaler {
                 *c
             } else {
-                evaler.eval(&mut self.params.expression.slab, &mut cb)?
+                evaler.eval(&self.params.expression.slab, &mut cb)?
             }
         })
     }

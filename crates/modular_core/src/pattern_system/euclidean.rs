@@ -6,7 +6,7 @@
 //! The Bjorklund algorithm implementation is ported from the Haskell Music
 //! Theory module by Rohan Drape.
 
-use super::{combinators::fastcat, constructors::pure, Fraction, Pattern};
+use super::{combinators::fastcat, constructors::pure, Pattern};
 
 /// Generate a Euclidean rhythm pattern using the Bjorklund algorithm.
 ///
@@ -41,7 +41,7 @@ pub fn bjorklund(pulses: i32, steps: u32) -> Vec<bool> {
     let mut pattern: Vec<bool> = result
         .0
         .into_iter()
-        .chain(result.1.into_iter())
+        .chain(result.1)
         .flat_map(|v| v.into_iter())
         .collect();
 

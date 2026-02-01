@@ -1,4 +1,3 @@
-use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -113,7 +112,7 @@ impl LowpassFilter {
         }
     }
 
-    fn update(&mut self, sample_rate: f32) -> () {
+    fn update(&mut self, sample_rate: f32) {
         let channels = self.channel_count() as u8;
 
         self.outputs.sample.set_channels(channels);

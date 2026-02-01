@@ -288,11 +288,11 @@ macro_rules! mi_engine_module_impl {
         } $(,)?
     ) => {
         paste::paste! {
-            use napi::Result;
+            
             use schemars::JsonSchema;
             use serde::Deserialize;
 
-            use crate::{
+            use $crate::{
                 dsp::utils::voct_to_midi,
                 poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal},
                 types::Clickless,
@@ -491,11 +491,11 @@ macro_rules! mi_engine_module_impl {
         } $(,)?
     ) => {
         paste::paste! {
-            use napi::Result;
+            
             use schemars::JsonSchema;
             use serde::Deserialize;
 
-            use crate::{
+            use $crate::{
                 dsp::utils::voct_to_midi,
                 poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal},
                 types::Clickless,
@@ -694,7 +694,7 @@ macro_rules! mi_engine_module_impl {
         } $(,)?
     ) => {
         paste::paste! {
-            use napi::Result;
+            
             use schemars::JsonSchema;
             use serde::Deserialize;
 

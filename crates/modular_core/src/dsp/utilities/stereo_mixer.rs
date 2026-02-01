@@ -3,7 +3,6 @@ use crate::{
     poly::{PolyOutput, PolySignal},
     types::{Clickless, Signal},
 };
-use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 

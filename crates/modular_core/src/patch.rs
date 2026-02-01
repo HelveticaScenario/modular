@@ -4,7 +4,6 @@
 //! connected audio modules. The patch contains sampleable modules and tracks
 //! that can be processed to generate audio.
 
-use napi::De;
 use parking_lot::Mutex;
 
 use crate::PolyOutput;

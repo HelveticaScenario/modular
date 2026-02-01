@@ -122,7 +122,7 @@ impl FromMiniAtom for SeqValue {
                 octave,
             } => {
                 // Convert note to voltage at parse time
-                if let Some(midi) = note_to_midi(*letter, accidental.clone(), *octave) {
+                if let Some(midi) = note_to_midi(*letter, *accidental, *octave) {
                     Ok(SeqValue::Voltage(midi_to_voct_f64(midi)))
                 } else {
                     Err(ConvertError::InvalidAtom(format!(
@@ -155,11 +155,10 @@ impl FromMiniAtom for SeqValue {
                 // Otherwise treat as note without octave if single letter
                 if s.len() == 1 {
                     let c = s.chars().next().unwrap().to_ascii_lowercase();
-                    if ('a'..='g').contains(&c) {
-                        if let Some(midi) = note_to_midi(c, None, None) {
+                    if ('a'..='g').contains(&c)
+                        && let Some(midi) = note_to_midi(c, None, None) {
                             return Ok(SeqValue::Voltage(midi_to_voct_f64(midi)));
                         }
-                    }
                 }
                 Err(ConvertError::InvalidAtom(format!(
                     "Cannot convert '{}' to SeqValue",
@@ -322,7 +321,7 @@ impl<'de> Deserialize<'de> for SeqPatternParam {
         if source.is_empty() {
             return Ok(Self::default());
         }
-        Self::parse(&source).map_err(|e| serde::de::Error::custom(e))
+        Self::parse(&source).map_err(serde::de::Error::custom)
     }
 }
 

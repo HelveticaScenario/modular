@@ -26,8 +26,8 @@ pub fn semitones_to_ratio(semitones: f32) -> f32 {
     let pitch: f32 = semitones + 128.0;
     let (pitch_integral, pitch_fractional) = make_integral_fractional(pitch);
 
-    return LUT_PITCH_RATIO_HIGH[pitch_integral as usize]
-        * LUT_PITCH_RATIO_LOW[(pitch_fractional * 256.0) as usize];
+    LUT_PITCH_RATIO_HIGH[pitch_integral as usize]
+        * LUT_PITCH_RATIO_LOW[(pitch_fractional * 256.0) as usize]
 }
 
 pub fn interpolate(table: &'static [f32], mut index: f32, size: usize) -> f32 {
@@ -35,7 +35,7 @@ pub fn interpolate(table: &'static [f32], mut index: f32, size: usize) -> f32 {
     let (index_integral, index_fractional) = make_integral_fractional(index);
     let a: f32 = table[index_integral as usize];
     let b: f32 = table[(index_integral + 1) as usize];
-    return a + (b - a) * index_fractional;
+    a + (b - a) * index_fractional
 }
 
 pub fn wrap<T>(range: std::ops::Range<T>, mut val: T) -> T
@@ -180,7 +180,7 @@ impl TempGate {
 // Convention: 0V = C4 = MIDI 60 = ~261.626 Hz
 // C4 = A4 / 2^(9/12) where A4 = 440 Hz
 pub const C4_HZ_F64: f64 = 261.6255653005986; // 440.0 / 2^(9/12)
-pub const C4_HZ_F32: f32 = 261.6255653005986; // 440.0 / 2^(9/12)
+pub const C4_HZ_F32: f32 = 261.625_58; // 440.0 / 2^(9/12)
 
 pub fn hz_to_voct_f64(frequency_hz: f64) -> f64 {
     (frequency_hz / C4_HZ_F64).log2()

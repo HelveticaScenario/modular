@@ -10,10 +10,7 @@
 //! - Gate: High while note is active
 //! - Trig: Short pulse at note onset
 
-use std::{
-    cmp::Ordering,
-    sync::{OnceLock, atomic::AtomicU64},
-};
+use std::cmp::Ordering;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -390,11 +387,10 @@ impl Seq {
         for ch in 0..num_channels {
             let voice = &mut self.voices[ch];
 
-            if let Some(ref cached) = voice.cached_hap {
-                if let Some(cv) = cached.get_cv() {
+            if let Some(ref cached) = voice.cached_hap
+                && let Some(cv) = cached.get_cv() {
                     self.outputs.cv.set(ch, cv as f32);
                 }
-            }
 
             self.outputs.gate.set(ch, voice.gate.process());
             self.outputs.trig.set(ch, voice.trigger.process());
@@ -404,8 +400,8 @@ impl Seq {
     /// Check for notes that have ended and mark voices as inactive.
     fn release_ended_voices(&mut self, playhead: f64, num_channels: usize) {
         for i in 0..num_channels {
-            if let Some(ref cached) = self.voices[i].cached_hap {
-                if !cached.contains(playhead) {
+            if let Some(ref cached) = self.voices[i].cached_hap
+                && !cached.contains(playhead) {
                     self.voices[i].active = false;
                     self.voices[i].cached_hap = None;
                     // Gate goes low
@@ -413,7 +409,6 @@ impl Seq {
                         .gate
                         .set_state(TempGateState::Low, TempGateState::Low);
                 }
-            }
         }
     }
 }
@@ -426,12 +421,11 @@ impl crate::types::StatefulModule for Seq {
         let mut any_non_rest = false;
 
         for voice in self.voices.iter().take(num_channels) {
-            if let Some(ref cached) = voice.cached_hap {
-                if !cached.is_rest() {
+            if let Some(ref cached) = voice.cached_hap
+                && !cached.is_rest() {
                     any_non_rest = true;
                     all_source_spans.extend(cached.hap.get_active_spans());
                 }
-            }
         }
 
         if all_source_spans.is_empty() && !any_non_rest {

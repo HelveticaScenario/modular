@@ -20,7 +20,7 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
         self.bind_whole(
             |outer_whole, inner_whole| {
                 match (outer_whole, inner_whole) {
-                    (Some(o), Some(i)) => o.intersection(&i),
+                    (Some(o), Some(i)) => o.intersection(i),
                     _ => None,
                 }
             },
@@ -124,7 +124,7 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
                 let squeeze_span = outer_hap.whole_or_part();
 
                 // Focus the inner pattern into this span
-                let focused = inner_pat.focus_span(&squeeze_span);
+                let focused = inner_pat.focus_span(squeeze_span);
 
                 // Query the focused pattern at the current state
                 let inner_haps = focused.query(state);
