@@ -5,30 +5,31 @@ mod commands;
 mod midi;
 mod validation;
 
-use chrono::format;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use napi::bindgen_prelude::Float32Array;
 use std::{collections::HashMap, sync::Arc};
 
-use modular_core::{Patch, PatchGraph, dsp::schema, types::{ScopeItem, ScopeStats}};
+use modular_core::{
+  PatchGraph,
+  dsp::schema,
+  types::{ScopeItem, ScopeStats},
+};
 use napi::Result;
 use napi_derive::napi;
-use parking_lot::Mutex;
 
 use crate::audio::{
-  ApplyPatchError, AudioBudgetSnapshot, AudioDeviceInfo, AudioState, HostInfo, BufferSizeRange,
-  AudioDeviceCache, DeviceCacheSnapshot, CurrentAudioState, HostDeviceInfo,
-  InputBufferReader, InputBufferWriter, create_input_ring_buffer, create_audio_channels,
-  make_stream, make_input_stream, find_output_device_in_host, find_input_device_in_host,
-  get_host_by_preference, AudioSharedState,
+  ApplyPatchError, AudioBudgetSnapshot, AudioDeviceCache, AudioDeviceInfo, AudioSharedState,
+  AudioState, CurrentAudioState, DeviceCacheSnapshot, HostDeviceInfo, HostInfo, InputBufferReader,
+  InputBufferWriter, create_audio_channels, create_input_ring_buffer, find_input_device_in_host,
+  find_output_device_in_host, get_host_by_preference, make_input_stream, make_stream,
 };
-use crate::midi::{MidiInputManager, MidiPortInfo};
+use crate::midi::MidiInputManager;
 
 /// Information about a MIDI input port (for N-API)
 #[napi(object)]
 pub struct MidiInputInfo {
-    pub name: String,
-    pub index: u32,
+  pub name: String,
+  pub index: u32,
 }
 
 /// Audio configuration for synthesizer initialization
@@ -62,28 +63,32 @@ pub struct Synthesizer {
 
 /// Resolve devices from config, falling back to defaults if not found
 fn resolve_devices(
-  cache: &AudioDeviceCache,
   config: &AudioConfigOptions,
   fallback_warning: &mut Option<String>,
-) -> (cpal::Host, String, cpal::Device, String, Option<cpal::Device>, Option<String>) {
+) -> (
+  cpal::Host,
+  String,
+  cpal::Device,
+  String,
+  Option<cpal::Device>,
+  Option<String>,
+) {
   // Try to get requested host, fall back to preference
   let (host, host_id) = if let Some(ref requested_host_id) = config.host_id {
     // Try to parse host ID
     match parse_host_id(requested_host_id) {
-      Some(host_id_enum) => {
-        match cpal::host_from_id(host_id_enum) {
-          Ok(host) => (host, requested_host_id.clone()),
-          Err(_) => {
-            *fallback_warning = Some(format!(
-              "Requested host '{}' not available, using default. ",
-              requested_host_id
-            ));
-            let host = get_host_by_preference();
-            let id = format!("{:?}", host.id());
-            (host, id)
-          }
+      Some(host_id_enum) => match cpal::host_from_id(host_id_enum) {
+        Ok(host) => (host, requested_host_id.clone()),
+        Err(_) => {
+          *fallback_warning = Some(format!(
+            "Requested host '{}' not available, using default. ",
+            requested_host_id
+          ));
+          let host = get_host_by_preference();
+          let id = format!("{:?}", host.id());
+          (host, id)
         }
-      }
+      },
       None => {
         *fallback_warning = Some(format!(
           "Unknown host '{}', using default. ",
@@ -101,30 +106,45 @@ fn resolve_devices(
   };
 
   // Try to get requested output device, fall back to default
-  let (output_device, output_device_id) = if let Some(ref requested_device_id) = config.output_device_id {
-    match find_output_device_in_host(&host, requested_device_id) {
-      Some(device) => {
-        let id = device.id().ok().map(|id| id.to_string()).unwrap_or_else(|| requested_device_id.clone());
-        (device, id)
+  let (output_device, output_device_id) =
+    if let Some(ref requested_device_id) = config.output_device_id {
+      match find_output_device_in_host(&host, requested_device_id) {
+        Some(device) => {
+          let id = device
+            .id()
+            .ok()
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| requested_device_id.clone());
+          (device, id)
+        }
+        None => {
+          *fallback_warning = Some(format!(
+            "{}Output device '{}' not found, using default. ",
+            fallback_warning.clone().unwrap_or_default(),
+            requested_device_id
+          ));
+          let device = host
+            .default_output_device()
+            .expect("No default output device available");
+          let id = device
+            .id()
+            .ok()
+            .map(|id| id.to_string())
+            .unwrap_or_default();
+          (device, id)
+        }
       }
-      None => {
-        *fallback_warning = Some(format!(
-          "{}Output device '{}' not found, using default. ",
-          fallback_warning.clone().unwrap_or_default(),
-          requested_device_id
-        ));
-        let device = host.default_output_device()
-          .expect("No default output device available");
-        let id = device.id().ok().map(|id| id.to_string()).unwrap_or_default();
-        (device, id)
-      }
-    }
-  } else {
-    let device = host.default_output_device()
-      .expect("No default output device available");
-    let id = device.id().ok().map(|id| id.to_string()).unwrap_or_default();
-    (device, id)
-  };
+    } else {
+      let device = host
+        .default_output_device()
+        .expect("No default output device available");
+      let id = device
+        .id()
+        .ok()
+        .map(|id| id.to_string())
+        .unwrap_or_default();
+      (device, id)
+    };
 
   // Try to get requested input device (None is valid = no input)
   let (input_device, input_device_id) = match &config.input_device_id {
@@ -135,38 +155,45 @@ fn resolve_devices(
           let id = device.id().ok().map(|id| id.to_string());
           (Some(device), id)
         }
-        None => (None, None)
+        None => (None, None),
       }
     }
-    Some(requested_device_id) if requested_device_id == "none" || requested_device_id.is_empty() => {
+    Some(requested_device_id)
+      if requested_device_id == "none" || requested_device_id.is_empty() =>
+    {
       // Explicitly no input
       (None, None)
     }
-    Some(requested_device_id) => {
-      match find_input_device_in_host(&host, requested_device_id) {
-        Some(device) => {
-          let id = device.id().ok().map(|id| id.to_string());
-          (Some(device), id)
-        }
-        None => {
-          *fallback_warning = Some(format!(
-            "{}Input device '{}' not found, using default. ",
-            fallback_warning.clone().unwrap_or_default(),
-            requested_device_id
-          ));
-          match host.default_input_device() {
-            Some(device) => {
-              let id = device.id().ok().map(|id| id.to_string());
-              (Some(device), id)
-            }
-            None => (None, None)
+    Some(requested_device_id) => match find_input_device_in_host(&host, requested_device_id) {
+      Some(device) => {
+        let id = device.id().ok().map(|id| id.to_string());
+        (Some(device), id)
+      }
+      None => {
+        *fallback_warning = Some(format!(
+          "{}Input device '{}' not found, using default. ",
+          fallback_warning.clone().unwrap_or_default(),
+          requested_device_id
+        ));
+        match host.default_input_device() {
+          Some(device) => {
+            let id = device.id().ok().map(|id| id.to_string());
+            (Some(device), id)
           }
+          None => (None, None),
         }
       }
-    }
+    },
   };
 
-  (host, host_id, output_device, output_device_id, input_device, input_device_id)
+  (
+    host,
+    host_id,
+    output_device,
+    output_device_id,
+    input_device,
+    input_device_id,
+  )
 }
 
 /// Parse a host ID string to cpal::HostId
@@ -197,10 +224,18 @@ fn build_output_stream(
   input_reader: InputBufferReader,
 ) -> Result<cpal::Stream> {
   match sample_format {
-    cpal::SampleFormat::I8 => make_stream::<i8>(device, config, command_rx, error_tx, shared, input_reader),
-    cpal::SampleFormat::I16 => make_stream::<i16>(device, config, command_rx, error_tx, shared, input_reader),
-    cpal::SampleFormat::I32 => make_stream::<i32>(device, config, command_rx, error_tx, shared, input_reader),
-    cpal::SampleFormat::F32 => make_stream::<f32>(device, config, command_rx, error_tx, shared, input_reader),
+    cpal::SampleFormat::I8 => {
+      make_stream::<i8>(device, config, command_rx, error_tx, shared, input_reader)
+    }
+    cpal::SampleFormat::I16 => {
+      make_stream::<i16>(device, config, command_rx, error_tx, shared, input_reader)
+    }
+    cpal::SampleFormat::I32 => {
+      make_stream::<i32>(device, config, command_rx, error_tx, shared, input_reader)
+    }
+    cpal::SampleFormat::F32 => {
+      make_stream::<f32>(device, config, command_rx, error_tx, shared, input_reader)
+    }
     _ => Err(napi::Error::from_reason(format!(
       "Unsupported output sample format: {:?}",
       sample_format
@@ -252,21 +287,22 @@ struct StreamSetupParams<'a> {
 /// This is the shared core logic between `new` and `recreate_streams`.
 fn setup_streams(params: StreamSetupParams) -> Result<StreamSetupResult> {
   let channels = params.output_config.channels();
-  
+
   // Build stream config
-  let stream_buffer_size = params.buffer_size
+  let stream_buffer_size = params
+    .buffer_size
     .map(cpal::BufferSize::Fixed)
     .unwrap_or(cpal::BufferSize::Default);
-  
+
   let stream_config = cpal::StreamConfig {
     channels,
     sample_rate: params.sample_rate,
     buffer_size: stream_buffer_size,
   };
-  
+
   // Create command and error queues for audio thread communication
   let (command_tx, command_rx, error_tx, error_rx) = create_audio_channels();
-  
+
   // Create audio state handle (main thread side)
   let state = Arc::new(AudioState::new_with_channels(
     command_tx,
@@ -274,18 +310,20 @@ fn setup_streams(params: StreamSetupParams) -> Result<StreamSetupResult> {
     params.sample_rate as f32,
     channels,
   ));
-  
+
   // Get shared state for audio processor
   let shared = state.get_shared_state();
-  
+
   // Get input channel count before creating ring buffer
-  let input_channels = params.input.as_ref()
+  let input_channels = params
+    .input
+    .as_ref()
     .map(|(_, config, _)| config.channels() as usize)
     .unwrap_or(0);
-  
+
   // Create ring buffer
   let (input_writer, input_reader) = create_input_ring_buffer(input_channels);
-  
+
   // Create and start output stream
   let output_stream = build_output_stream(
     params.output_device,
@@ -296,33 +334,39 @@ fn setup_streams(params: StreamSetupParams) -> Result<StreamSetupResult> {
     shared,
     input_reader,
   )?;
-  
-  output_stream.play()
+
+  output_stream
+    .play()
     .map_err(|e| napi::Error::from_reason(format!("Failed to start output stream: {}", e)))?;
-  
+
   // Create and start input stream if configured
-  let (input_stream, actual_input_device_id, final_input_channels) = 
+  let (input_stream, actual_input_device_id, final_input_channels) =
     if let Some((input_device, input_config, input_id)) = params.input {
       let input_stream_config = cpal::StreamConfig {
         channels: input_config.channels(),
         sample_rate: params.sample_rate,
         buffer_size: stream_buffer_size,
       };
-      
-      match build_input_stream(input_device, &input_stream_config, input_config.sample_format(), input_writer) {
-        Ok(stream) => {
-          match stream.play() {
-            Ok(()) => {
-              println!("Audio input: {} ({} channels, {} Hz)", 
-                input_id, input_channels, params.sample_rate);
-              (Some(stream), Some(input_id), input_channels as u16)
-            }
-            Err(e) => {
-              eprintln!("Failed to start input stream: {}", e);
-              (None, None, 0)
-            }
+
+      match build_input_stream(
+        input_device,
+        &input_stream_config,
+        input_config.sample_format(),
+        input_writer,
+      ) {
+        Ok(stream) => match stream.play() {
+          Ok(()) => {
+            println!(
+              "Audio input: {} ({} channels, {} Hz)",
+              input_id, input_channels, params.sample_rate
+            );
+            (Some(stream), Some(input_id), input_channels as u16)
           }
-        }
+          Err(e) => {
+            eprintln!("Failed to start input stream: {}", e);
+            (None, None, 0)
+          }
+        },
         Err(e) => {
           eprintln!("Failed to create input stream: {}", e);
           (None, None, 0)
@@ -331,7 +375,7 @@ fn setup_streams(params: StreamSetupParams) -> Result<StreamSetupResult> {
     } else {
       (None, None, 0)
     };
-  
+
   Ok(StreamSetupResult {
     output_stream,
     input_stream,
@@ -351,22 +395,22 @@ impl Synthesizer {
   #[napi(constructor)]
   pub fn new(config: Option<AudioConfigOptions>) -> Result<Self> {
     let config = config.unwrap_or_default();
-    
+
     // Build device cache first
     let device_cache = AudioDeviceCache::new();
-    
+
     // Track any fallback warnings
     let mut fallback_warning: Option<String> = None;
-    
+
     // Try to use requested config, fall back to defaults if invalid
-    let (_host, host_id, output_device, output_device_id, input_device, input_device_id) = 
-      resolve_devices(&device_cache, &config, &mut fallback_warning);
-    
+    let (_host, host_id, output_device, output_device_id, input_device, input_device_id) =
+      resolve_devices(&config, &mut fallback_warning);
+
     // Get output config
     let output_config = output_device.default_output_config().map_err(|err| {
       napi::Error::from_reason(format!("Failed to get default output config: {}", err))
     })?;
-    
+
     // Determine sample rate (use requested if valid, else device default)
     let sample_rate = if let Some(requested_rate) = config.sample_rate {
       // Check if the requested rate is supported
@@ -388,12 +432,14 @@ impl Synthesizer {
     } else {
       output_config.sample_rate()
     };
-    
+
     // Prepare input device info if available
     let input_setup = if let Some(ref input_dev) = input_device {
       match input_dev.default_input_config() {
         Ok(input_config) => {
-          let id = input_device_id.clone().unwrap_or_else(|| "unknown".to_string());
+          let id = input_device_id
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
           Some((input_dev, input_config, id))
         }
         Err(e) => {
@@ -405,7 +451,12 @@ impl Synthesizer {
       None
     };
 
-    println!("Audio output: {} Hz, {} channels, host: {}", sample_rate, output_config.channels(), host_id);
+    println!(
+      "Audio output: {} Hz, {} channels, host: {}",
+      sample_rate,
+      output_config.channels(),
+      host_id
+    );
 
     // Set up streams using shared helper
     let setup_result = setup_streams(StreamSetupParams {
@@ -413,7 +464,7 @@ impl Synthesizer {
       output_config: &output_config,
       sample_rate,
       buffer_size: config.buffer_size,
-      input: input_setup.map(|(d, c, id)| (d, c, id)),
+      input: input_setup,
     })?;
 
     println!("Audio output stream started.");
@@ -534,26 +585,33 @@ impl Synthesizer {
   /// Get the full device cache snapshot
   #[napi]
   pub fn get_device_cache(&self) -> DeviceCacheSnapshot {
-    let hosts = self.device_cache.hosts.iter().map(|h| {
-      HostDeviceInfo {
+    let hosts = self
+      .device_cache
+      .hosts
+      .iter()
+      .map(|h| HostDeviceInfo {
         host_id: h.id.clone(),
         host_name: h.name.clone(),
         output_devices: self.device_cache.output_devices_for_host(&h.id),
         input_devices: self.device_cache.input_devices_for_host(&h.id),
-      }
-    }).collect();
-    
+      })
+      .collect();
+
     DeviceCacheSnapshot { hosts }
   }
 
   /// Get the current audio state (host, devices, sample rate, etc.)
   #[napi]
   pub fn get_current_audio_state(&self) -> CurrentAudioState {
-    let output_device_name = self.output_device_id.as_ref()
+    let output_device_name = self
+      .output_device_id
+      .as_ref()
       .and_then(|id| self.device_cache.find_output_device(id))
       .map(|d| d.name.clone());
-    
-    let input_device_name = self.input_device_id.as_ref()
+
+    let input_device_name = self
+      .input_device_id
+      .as_ref()
       .and_then(|id| self.device_cache.find_input_device(id))
       .map(|d| d.name.clone());
 
@@ -582,48 +640,58 @@ impl Synthesizer {
     input_device_id: Option<String>,
   ) -> Result<()> {
     // Find the host for the output device
-    let output_device_info = self.device_cache.find_output_device(&output_device_id)
-      .ok_or_else(|| napi::Error::from_reason(format!(
-        "Output device '{}' not found in cache. Try refreshing the device cache.",
-        output_device_id
-      )))?;
-    
+    let output_device_info = self
+      .device_cache
+      .find_output_device(&output_device_id)
+      .ok_or_else(|| {
+        napi::Error::from_reason(format!(
+          "Output device '{}' not found in cache. Try refreshing the device cache.",
+          output_device_id
+        ))
+      })?;
+
     let host_id = output_device_info.host_id.clone();
     let host = parse_host_id(&host_id)
       .and_then(|id| cpal::host_from_id(id).ok())
       .ok_or_else(|| napi::Error::from_reason(format!("Failed to get host '{}'", host_id)))?;
-    
+
     // Find output device
-    let output_device = find_output_device_in_host(&host, &output_device_id)
-      .ok_or_else(|| napi::Error::from_reason(format!(
+    let output_device = find_output_device_in_host(&host, &output_device_id).ok_or_else(|| {
+      napi::Error::from_reason(format!(
         "Output device '{}' not found in host '{}'",
         output_device_id, host_id
-      )))?;
-    
+      ))
+    })?;
+
     // Validate sample rate is supported
-    if !output_device_info.supported_sample_rates.contains(&sample_rate) {
+    if !output_device_info
+      .supported_sample_rates
+      .contains(&sample_rate)
+    {
       return Err(napi::Error::from_reason(format!(
         "Sample rate {}Hz not supported by output device",
         sample_rate
       )));
     }
-    
+
     // Get output config
-    let output_config = output_device.default_output_config()
+    let output_config = output_device
+      .default_output_config()
       .map_err(|e| napi::Error::from_reason(format!("Failed to get output config: {}", e)))?;
-    
+
     // Prepare input device info if requested
     let input_setup = if let Some(ref input_id) = input_device_id {
       if input_id == "none" || input_id.is_empty() {
         None
       } else {
         // Validate input device exists
-        let input_device_info = self.device_cache.find_input_device(input_id)
-          .ok_or_else(|| napi::Error::from_reason(format!(
-            "Input device '{}' not found in cache",
-            input_id
-          )))?;
-        
+        let input_device_info = self
+          .device_cache
+          .find_input_device(input_id)
+          .ok_or_else(|| {
+            napi::Error::from_reason(format!("Input device '{}' not found in cache", input_id))
+          })?;
+
         // Validate same host
         if input_device_info.host_id != host_id {
           return Err(napi::Error::from_reason(format!(
@@ -631,39 +699,43 @@ impl Synthesizer {
             input_id, input_device_info.host_id, host_id
           )));
         }
-        
+
         // Validate sample rate
-        if !input_device_info.supported_sample_rates.contains(&sample_rate) {
+        if !input_device_info
+          .supported_sample_rates
+          .contains(&sample_rate)
+        {
           return Err(napi::Error::from_reason(format!(
             "Sample rate {}Hz not supported by input device",
             sample_rate
           )));
         }
-        
-        let input_device = find_input_device_in_host(&host, input_id)
-          .ok_or_else(|| napi::Error::from_reason(format!(
-            "Input device '{}' not found in host",
-            input_id
-          )))?;
-        
-        let input_config = input_device.default_input_config()
+
+        let input_device = find_input_device_in_host(&host, input_id).ok_or_else(|| {
+          napi::Error::from_reason(format!("Input device '{}' not found in host", input_id))
+        })?;
+
+        let input_config = input_device
+          .default_input_config()
           .map_err(|e| napi::Error::from_reason(format!("Failed to get input config: {}", e)))?;
-        
+
         Some((input_device, input_config, input_id.clone()))
       }
     } else {
       None
     };
-    
+
     // Set up streams using shared helper
     let setup_result = setup_streams(StreamSetupParams {
       output_device: &output_device,
       output_config: &output_config,
       sample_rate,
       buffer_size,
-      input: input_setup.as_ref().map(|(d, c, id)| (d, c.clone(), id.clone())),
+      input: input_setup
+        .as_ref()
+        .map(|(d, c, id)| (d, c.clone(), id.clone())),
     })?;
-    
+
     // Update self with new streams and state
     self._output_stream = setup_result.output_stream;
     self._input_stream = setup_result.input_stream;
@@ -676,20 +748,17 @@ impl Synthesizer {
     self.output_device_id = Some(output_device_id.clone());
     self.input_device_id = setup_result.input_device_id;
     self.fallback_warning = None; // Clear any previous fallback warning
-    
-    println!("Audio streams recreated: output={} input={:?} {}Hz {}ch host={}",
-      output_device_id,
-      self.input_device_id,
-      sample_rate,
-      setup_result.channels,
-      host_id
+
+    println!(
+      "Audio streams recreated: output={} input={:?} {}Hz {}ch host={}",
+      output_device_id, self.input_device_id, sample_rate, setup_result.channels, host_id
     );
-    
+
     Ok(())
   }
 
   // Legacy API compatibility methods (now use cache)
-  
+
   /// Force refresh the device cache (legacy - same as refresh_device_cache)
   #[napi]
   pub fn refresh_device_list(&mut self) {
@@ -731,24 +800,32 @@ impl Synthesizer {
   #[napi]
   pub fn set_audio_output_device(&mut self, device_id: String) -> Result<()> {
     // Get device info to find its default sample rate
-    let device_info = self.device_cache.find_output_device(&device_id)
-      .ok_or_else(|| napi::Error::from_reason(format!(
-        "Output device '{}' not found",
-        device_id
-      )))?;
-    
+    let device_info = self
+      .device_cache
+      .find_output_device(&device_id)
+      .ok_or_else(|| {
+        napi::Error::from_reason(format!("Output device '{}' not found", device_id))
+      })?;
+
     let sample_rate = device_info.sample_rate;
-    
+
     self.recreate_streams(device_id, sample_rate, None, self.input_device_id.clone())
   }
 
   /// Set the audio input device (legacy - use recreate_streams instead)
   #[napi]
   pub fn set_audio_input_device(&mut self, device_id: Option<String>) -> Result<()> {
-    let output_device_id = self.output_device_id.clone()
+    let output_device_id = self
+      .output_device_id
+      .clone()
       .ok_or_else(|| napi::Error::from_reason("No output device configured"))?;
-    
-    self.recreate_streams(output_device_id, self.sample_rate as u32, self.buffer_size, device_id)
+
+    self.recreate_streams(
+      output_device_id,
+      self.sample_rate as u32,
+      self.buffer_size,
+      device_id,
+    )
   }
 
   // =========================================================================
@@ -783,8 +860,10 @@ impl Synthesizer {
         Ok(())
       }
       Some(name) => {
-        self.midi_manager.connect(&name)
-          .map_err(|e| napi::Error::from_reason(e))?;
+        self
+          .midi_manager
+          .connect(&name)
+          .map_err(napi::Error::from_reason)?;
         println!("MIDI input connected to: {}", name);
         Ok(())
       }
@@ -808,8 +887,8 @@ pub fn get_schemas() -> Result<Vec<modular_core::types::ModuleSchema>> {
 }
 
 // Static registry for channel count derivers
-use std::sync::OnceLock;
 use modular_core::types::ChannelCountDeriver;
+use std::sync::OnceLock;
 
 static CHANNEL_COUNT_DERIVERS: OnceLock<HashMap<String, ChannelCountDeriver>> = OnceLock::new();
 
@@ -818,7 +897,7 @@ fn get_channel_count_derivers() -> &'static HashMap<String, ChannelCountDeriver>
 }
 
 /// Derive the output channel count for a module from its params JSON.
-/// 
+///
 /// Returns the derived channel count, or null if the module type is unknown
 /// or the channel count cannot be determined from the params.
 #[napi]
@@ -830,63 +909,67 @@ pub fn derive_channel_count(module_type: String, params: serde_json::Value) -> O
 }
 
 /// Parse a mini notation pattern and return all leaf spans.
-/// 
+///
 /// This is used by the Monaco editor to create tracked decorations
 /// that move with text edits.
 #[napi]
 pub fn get_mini_leaf_spans(source: String) -> Result<Vec<Vec<u32>>> {
-  use modular_core::pattern_system::mini::{parse_ast, collect_leaf_spans};
-  
-  let ast = parse_ast(&source)
-    .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-  
+  use modular_core::pattern_system::mini::{collect_leaf_spans, parse_ast};
+
+  let ast = parse_ast(&source).map_err(|e| napi::Error::from_reason(e.to_string()))?;
+
   let spans = collect_leaf_spans(&ast);
-  
+
   // Convert to Vec<Vec<u32>> for N-API (since tuples aren't directly supported)
-  Ok(spans.into_iter().map(|(start, end)| vec![start as u32, end as u32]).collect())
+  Ok(
+    spans
+      .into_iter()
+      .map(|(start, end)| vec![start as u32, end as u32])
+      .collect(),
+  )
 }
 
 /// Analyze a mini notation pattern and return the maximum polyphony needed.
-/// 
+///
 /// Queries 300 cycles (10 min at 120 BPM) and counts the maximum number of simultaneous haps,
 /// capping at 16 (the poly voice limit). Logs timing for profiling.
 #[napi]
 pub fn get_pattern_polyphony(source: String) -> Result<u32> {
-  use modular_core::pattern_system::{Fraction, mini::parse};
   use modular_core::dsp::seq::SeqValue;
-  use std::time::Instant;
+  use modular_core::pattern_system::{Fraction, mini::parse};
   use std::cmp::Ordering;
-  
+  use std::time::Instant;
+
   let start = Instant::now();
-  
+
   // Parse using SeqValue - handles notes, numbers, module references, etc.
-  let pattern: modular_core::pattern_system::Pattern<SeqValue> = parse(&source)
-    .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-  
+  let pattern: modular_core::pattern_system::Pattern<SeqValue> =
+    parse(&source).map_err(|e| napi::Error::from_reason(e.to_string()))?;
+
   let parse_time = start.elapsed();
   let query_start = Instant::now();
-  
+
   const NUM_CYCLES: i64 = 300;
   const MAX_POLYPHONY: u32 = 16;
-  
+
   // Query all cycles at once
   let haps = pattern.query_arc(
     Fraction::from_integer(0),
     Fraction::from_integer(NUM_CYCLES),
   );
-  
+
   // Sweep line algorithm: create +1 events at start, -1 events at end
   // Event: (time, delta) where delta is +1 for start, -1 for end
   let mut events: Vec<(Fraction, i32)> = Vec::with_capacity(haps.len() * 2);
-  
+
   for hap in &haps {
     if hap.value.is_rest() {
       continue;
     }
-    events.push((hap.part.begin.clone(), 1));  // +1 at start
-    events.push((hap.part.end.clone(), -1));   // -1 at end
+    events.push((hap.part.begin.clone(), 1)); // +1 at start
+    events.push((hap.part.end.clone(), -1)); // -1 at end
   }
-  
+
   // Sort by time, with ends (-1) before starts (+1) at same time
   // This ensures a note ending exactly when another starts doesn't count as overlap
   events.sort_by(|a, b| {
@@ -895,11 +978,11 @@ pub fn get_pattern_polyphony(source: String) -> Result<u32> {
       other => other,
     }
   });
-  
+
   // Sweep through events tracking current and max polyphony
   let mut current: u32 = 0;
   let mut max_simultaneous: u32 = 0;
-  
+
   for (_time, delta) in events {
     if delta > 0 {
       current += 1;
@@ -917,12 +1000,15 @@ pub fn get_pattern_polyphony(source: String) -> Result<u32> {
       current = current.saturating_sub(1);
     }
   }
-  
+
   let query_time = query_start.elapsed();
   println!(
     "Pattern polyphony analysis: parse={:?}, query={:?}, haps={}, max_poly={}",
-    parse_time, query_time, haps.len(), max_simultaneous
+    parse_time,
+    query_time,
+    haps.len(),
+    max_simultaneous
   );
-  
+
   Ok(max_simultaneous.max(1)) // At least 1 channel
 }

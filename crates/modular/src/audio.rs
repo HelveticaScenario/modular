@@ -3,7 +3,7 @@ use cpal::Host;
 use cpal::HostId;
 use cpal::Sample;
 use cpal::SizedSample;
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, HostTrait};
 
 use hound::{WavSpec, WavWriter};
 use modular_core::PORT_MAX_CHANNELS;
@@ -187,17 +187,13 @@ impl AudioDeviceCache {
     self
       .output_devices
       .get(host_id)
-      .map(|v| v.clone())
+      .cloned()
       .unwrap_or_default()
   }
 
   /// Get input devices for a specific host
   pub fn input_devices_for_host(&self, host_id: &str) -> Vec<AudioDeviceInfo> {
-    self
-      .input_devices
-      .get(host_id)
-      .map(|v| v.clone())
-      .unwrap_or_default()
+    self.input_devices.get(host_id).cloned().unwrap_or_default()
   }
 
   /// Get all host IDs
@@ -298,7 +294,7 @@ fn enumerate_output_devices(host: &Host, host_id: &str) -> Vec<AudioDeviceInfo> 
           // Get supported configurations
           let (supported_sample_rates, buffer_size_range) = device
             .supported_output_configs()
-            .map(|configs| get_device_capabilities(configs))
+            .map(get_device_capabilities)
             .unwrap_or_default();
 
           Some(AudioDeviceInfo {
@@ -333,7 +329,7 @@ fn enumerate_input_devices(host: &Host, host_id: &str) -> Vec<AudioDeviceInfo> {
           // Get supported configurations
           let (supported_sample_rates, buffer_size_range) = device
             .supported_input_configs()
-            .map(|configs| get_device_capabilities(configs))
+            .map(get_device_capabilities)
             .unwrap_or_default();
 
           Some(AudioDeviceInfo {
@@ -569,7 +565,7 @@ fn format_id_set_sample(set: &HashSet<String>, max: usize) -> String {
   let shown: Vec<&str> = ids.iter().take(max).map(|s| s.as_str()).collect();
 
   if set.len() <= max {
-    format!("{}", shown.join(", "))
+    shown.join(", ").to_string()
   } else {
     format!("{} …(+{})", shown.join(", "), set.len().saturating_sub(max))
   }
@@ -684,10 +680,8 @@ impl ScopeBuffer {
 
       if self.trigger_threshold.is_none() {
         triggered = true;
-      } else {
-        if self.trigger.process(trigger_value) {
-          triggered = true;
-        }
+      } else if self.trigger.process(trigger_value) {
+        triggered = true;
       }
 
       if triggered {
@@ -987,7 +981,6 @@ impl AudioState {
 
     // Build maps for efficient lookup
     let desired_modules: HashMap<String, _> = modules.iter().map(|m| (m.id.clone(), m)).collect();
-    let desired_ids: HashSet<String> = desired_modules.keys().cloned().collect();
 
     // Compute scopes to add/remove/update
     {
@@ -1104,7 +1097,7 @@ impl AudioState {
       }];
     }
 
-    let mut responses: Vec<ApplyPatchError> = vec![];
+    let responses: Vec<ApplyPatchError> = vec![];
 
     // Auto-unmute on SetPatch to match prior imperative flow
     if self.is_stopped() {
@@ -1237,20 +1230,22 @@ impl AudioProcessor {
     // Insert new modules - wrap Box in Arc
     for (id, boxed_module) in update.inserts {
       // Check if module already exists - if so, skip (keep existing instance)
-      if !self.patch.sampleables.contains_key(&id) {
-        self.patch.sampleables.insert(id, Arc::new(boxed_module));
-      }
+      self
+        .patch
+        .sampleables
+        .entry(id)
+        .or_insert_with(|| Arc::new(boxed_module));
     }
 
     // Update params for all modules
     for (id, params) in &update.param_updates {
-      if let Some(module) = self.patch.sampleables.get(id) {
-        if let Err(e) = module.try_update_params(params.clone()) {
-          let _ = self.error_tx.push(AudioError::ParamUpdateFailed {
-            module_id: id.clone(),
-            message: e.to_string(),
-          });
-        }
+      if let Some(module) = self.patch.sampleables.get(id)
+        && let Err(e) = module.try_update_params(params.clone())
+      {
+        let _ = self.error_tx.push(AudioError::ParamUpdateFailed {
+          module_id: id.clone(),
+          message: e.to_string(),
+        });
       }
     }
 
@@ -1318,12 +1313,12 @@ impl AudioProcessor {
             module_id,
             port_name,
           } => {
-            if let Some(module) = self.patch.sampleables.get(module_id) {
-              if let Ok(poly) = module.get_poly_sample(port_name) {
-                let num_channels = poly.channels();
-                let values: Vec<f32> = (0..num_channels as usize).map(|ch| poly.get(ch)).collect();
-                scope_buffer.push_poly(&values, num_channels);
-              }
+            if let Some(module) = self.patch.sampleables.get(module_id)
+              && let Ok(poly) = module.get_poly_sample(port_name)
+            {
+              let num_channels = poly.channels();
+              let values: Vec<f32> = (0..num_channels as usize).map(|ch| poly.get(ch)).collect();
+              scope_buffer.push_poly(&values, num_channels);
             }
           }
         }
@@ -1336,7 +1331,6 @@ impl AudioProcessor {
         for ch in 0..num_channels.min(PORT_MAX_CHANNELS) {
           output[ch] = poly.get(ch) * AUDIO_OUTPUT_ATTENUATION;
         }
-      } else {
       }
     }
 
@@ -1390,7 +1384,6 @@ where
   println!("Time at start: {time_at_start:?}");
 
   // Clone shared state for the closure
-  let stopped = shared.stopped.clone();
   let recording_writer = shared.recording_writer.clone();
   let audio_budget_meter = shared.audio_budget_meter.clone();
 
@@ -1436,10 +1429,10 @@ where
 
           // Record if enabled (use try_lock to avoid blocking audio)
           // For multi-channel, record first channel (mono mix could be added later)
-          if let Some(mut writer_guard) = recording_writer.try_lock() {
-            if let Some(ref mut writer) = *writer_guard {
-              let _ = writer.write_sample(T::from_sample(samples[0]));
-            }
+          if let Some(mut writer_guard) = recording_writer.try_lock()
+            && let Some(ref mut writer) = *writer_guard
+          {
+            let _ = writer.write_sample(T::from_sample(samples[0]));
           }
         }
 

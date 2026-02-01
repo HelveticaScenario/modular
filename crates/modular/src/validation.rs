@@ -1,5 +1,7 @@
 use modular_core::dsp::get_param_validators;
-use modular_core::types::{ModuleSchema, ModuleState, PatchGraph, ScopeItem, Signal, WellKnownModule};
+use modular_core::types::{
+  ModuleSchema, ModuleState, PatchGraph, ScopeItem, Signal, WellKnownModule,
+};
 use napi_derive::napi;
 use schemars::Schema;
 use serde::{Deserialize, Serialize};
@@ -58,48 +60,38 @@ fn translate_serde_error(raw: &str, module_type: &str) -> (String, Option<String
   if let Some(caps) = extract_type_mismatch(raw) {
     return (
       format!("expected {}, got {}", caps.1, caps.0),
-      Some(format!("{}", caps.1)),
+      Some(caps.1.to_string()),
     );
   }
 
   // Pattern: "missing field `fieldName`"
-  if raw.contains("missing field") {
-    if let Some(field) = extract_field_name(raw, "missing field") {
-      return (
-        format!("missing required parameter: {}", field),
-        None,
-      );
-    }
+  if raw.contains("missing field")
+    && let Some(field) = extract_field_name(raw, "missing field")
+  {
+    return (format!("missing required parameter: {}", field), None);
   }
 
   // Pattern: "unknown field `fieldName`"
-  if raw.contains("unknown field") {
-    if let Some(field) = extract_field_name(raw, "unknown field") {
-      return (
-        format!("unknown parameter: {}", field),
-        None,
-      );
-    }
+  if raw.contains("unknown field")
+    && let Some(field) = extract_field_name(raw, "unknown field")
+  {
+    return (format!("unknown parameter: {}", field), None);
   }
 
   // Pattern: "invalid value: X, expected Y"
-  if raw.contains("invalid value:") {
-    if let Some(caps) = extract_invalid_value(raw) {
-      return (
-        format!("invalid value: {}, expected {}", caps.0, caps.1),
-        Some(caps.1),
-      );
-    }
+  if raw.contains("invalid value:")
+    && let Some(caps) = extract_invalid_value(raw)
+  {
+    return (
+      format!("invalid value: {}, expected {}", caps.0, caps.1),
+      Some(caps.1),
+    );
   }
 
   // Pattern: "expected X at line Y column Z" (JSON path errors)
   if raw.contains("expected") && (raw.contains("at line") || raw.contains("at column")) {
     // Strip the position info which isn't useful to DSL users
-    let cleaned = raw
-      .split(" at line")
-      .next()
-      .unwrap_or(raw)
-      .to_string();
+    let cleaned = raw.split(" at line").next().unwrap_or(raw).to_string();
     return (cleaned, None);
   }
 
@@ -151,7 +143,7 @@ fn extract_field_name(raw: &str, prefix: &str) -> Option<String> {
 }
 
 /// Format module location for error messages.
-/// 
+///
 /// For explicitly named modules, returns the user's ID (e.g., "myOscillator").
 /// For auto-generated IDs, returns None so the error can be tied to source line instead.
 fn format_module_location(module: &ModuleState) -> String {
@@ -235,22 +227,22 @@ fn schema_refers_to_signal(schema_node: &Schema) -> bool {
     }
 
     for key in ["anyOf", "oneOf", "allOf"] {
-      if let Some(items) = obj.get(key).and_then(|v| v.as_array()) {
-        if items.iter().any(|item| {
+      if let Some(items) = obj.get(key).and_then(|v| v.as_array())
+        && items.iter().any(|item| {
           let schema: Result<Schema, _> = item.clone().try_into();
           schema.ok().is_some_and(|s| schema_refers_to_signal(&s))
-        }) {
-          return true;
-        }
+        })
+      {
+        return true;
       }
     }
 
     if let Some(items) = obj.get("items") {
       let schema: Result<Schema, _> = items.clone().try_into();
-      if let Ok(schema) = schema {
-        if schema_refers_to_signal(&schema) {
-          return true;
-        }
+      if let Ok(schema) = schema
+        && schema_refers_to_signal(&schema)
+      {
+        return true;
       }
     }
 
@@ -276,15 +268,14 @@ fn schema_refers_to_signal(schema_node: &Schema) -> bool {
     }
 
     // Tolerate older shapes where properties appear under `schema`.
-    if let Some(schema_obj) = obj.get("schema").and_then(|v| v.as_object()) {
-      if let Some(props) = schema_obj.get("properties").and_then(|v| v.as_object()) {
-        if props.iter().any(|(_, v)| {
-          let schema: Result<Schema, _> = v.clone().try_into();
-          schema.ok().is_some_and(|s| schema_refers_to_signal(&s))
-        }) {
-          return true;
-        }
-      }
+    if let Some(schema_obj) = obj.get("schema").and_then(|v| v.as_object())
+      && let Some(props) = schema_obj.get("properties").and_then(|v| v.as_object())
+      && props.iter().any(|(_, v)| {
+        let schema: Result<Schema, _> = v.clone().try_into();
+        schema.ok().is_some_and(|s| schema_refers_to_signal(&s))
+      })
+    {
+      return true;
     }
   }
 
@@ -363,15 +354,13 @@ fn validate_signals_in_json_value(
 ) {
   // Only attempt to parse as a Signal when the tagged discriminator looks right.
   // This avoids false positives and reduces cloning.
-  if let Some(obj) = value.as_object() {
-    if let Some(tag) = obj.get("type").and_then(|v| v.as_str()) {
-      if matches!(tag, "cable" | "track" | "volts" | "disconnected") {
-        if let Ok(signal) = serde_json::from_value::<Signal>(value.clone()) {
-          validate_signal_reference(&signal, field, location, module_by_id, schema_map, errors);
-          return;
-        }
-      }
-    }
+  if let Some(obj) = value.as_object()
+    && let Some(tag) = obj.get("type").and_then(|v| v.as_str())
+    && matches!(tag, "cable" | "track" | "volts" | "disconnected")
+    && let Ok(signal) = serde_json::from_value::<Signal>(value.clone())
+  {
+    validate_signal_reference(&signal, field, location, module_by_id, schema_map, errors);
+    return;
   }
 
   match value {
@@ -481,18 +470,19 @@ pub fn validate_patch(
     //
     // Important: we only attempt this once we know params is an object. We explicitly
     // tolerate `null` elsewhere, and we don't want a redundant parse failure in that case.
-    if let Some(validate) = param_validators.get(module.module_type.as_str()) {
-      if let Err(err) = validate(&module.params) {
-        let raw_error = err.to_string();
-        let (translated_message, expected_type) = translate_serde_error(&raw_error, &module.module_type);
-        errors.push(ValidationError {
-          field: "params".to_string(),
-          message: translated_message,
-          location: Some(location_str.clone()),
-          expected_type,
-          actual_value: Some(truncate_json(&module.params)),
-        });
-      }
+    if let Some(validate) = param_validators.get(module.module_type.as_str())
+      && let Err(err) = validate(&module.params)
+    {
+      let raw_error = err.to_string();
+      let (translated_message, expected_type) =
+        translate_serde_error(&raw_error, &module.module_type);
+      errors.push(ValidationError {
+        field: "params".to_string(),
+        message: translated_message,
+        location: Some(location_str.clone()),
+        expected_type,
+        actual_value: Some(truncate_json(&module.params)),
+      });
     }
 
     // 4) Validate each param key/value pair.
