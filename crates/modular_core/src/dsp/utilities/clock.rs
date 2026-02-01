@@ -68,7 +68,7 @@ message_handlers!(impl Clock {
 
 lazy_static! {
     static ref BPM_120_VOCT: f32 = hz_to_voct(120.0 / 60.0);
-};
+}
 
 impl Clock {
     fn update(&mut self, sample_rate: f32) {
