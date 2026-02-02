@@ -168,7 +168,7 @@ impl Mix {
         for i in 0..output_channels {
             let pre_gain_index = i % max_input_channels;
             let pre_gain_value = pre_gain_values[pre_gain_index];
-            self.gain_buffer[i].update(gain.get_value_or(i, 1.0));
+            self.gain_buffer[i].update(gain.get_value_or(i, 5.0) / 5.0);
             let gain_value = *self.gain_buffer[i];
             self.outputs.sample.set(i, pre_gain_value * gain_value);
         }
@@ -264,9 +264,9 @@ mod tests {
                 ],
                 mode: MixMode::Sum,
                 gain: PolySignal::poly(&[
-                    Signal::Volts(1.0),
-                    Signal::Volts(2.0),
-                    Signal::Volts(0.5),
+                    Signal::Volts(5.0),
+                    Signal::Volts(10.0),
+                    Signal::Volts(2.5),
                 ]),
             },
             ..Default::default()
@@ -274,11 +274,11 @@ mod tests {
         mixer.update(48000.0);
         // Output channels = max(2 input channels, 3 gain channels) = 3
         assert_eq!(mixer.outputs.sample.channels(), 3);
-        // Channel 0: (5 + 10) * 1 = 15
+        // Channel 0: (5 + 10) * 1 (normalized from 5) = 15
         assert_eq!(mixer.outputs.sample.get(0), 15.0);
-        // Channel 1: (0 + 20) * 2 = 40 (A has no channel 1)
+        // Channel 1: (0 + 20) * 2 (normalized from 10) = 40
         assert_eq!(mixer.outputs.sample.get(1), 40.0);
-        // Channel 2: pre_gain cycles from channel 0 (15 pre-gain), gain[2] = 0.5 -> 15 * 0.5 = 7.5
+        // Channel 2: pre_gain cycles from channel 0 (15 pre-gain), gain[2] = 0.5 (normalized from 2.5) -> 15 * 0.5 = 7.5
         assert_eq!(mixer.outputs.sample.get(2), 7.5);
     }
 
