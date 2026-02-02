@@ -109,7 +109,7 @@ impl Mix {
         }
         .min(PORT_MAX_CHANNELS);
 
-        self.outputs.sample.set_channels(output_channels as u8);
+        self.outputs.sample.set_channels(output_channels);
 
         // Handle empty inputs case - output silence
         if inputs.is_empty() {

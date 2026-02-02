@@ -181,7 +181,7 @@ export const IPC_CHANNELS = {
     MIDI_LIST_INPUTS: 'modular:midi:list-inputs',
     MIDI_GET_INPUT: 'modular:midi:get-input',
     MIDI_SET_INPUT: 'modular:midi:set-input',
-    MIDI_POLL: 'modular:midi:poll',
+    MIDI_TRY_RECONNECT: 'modular:midi:try-reconnect',
 
     // Filesystem operations
     FS_SELECT_WORKSPACE: 'modular:fs:select-workspace',
@@ -280,7 +280,7 @@ export interface IPCHandlers {
     [IPC_CHANNELS.MIDI_LIST_INPUTS]: typeof Synthesizer.prototype.listMidiInputs;
     [IPC_CHANNELS.MIDI_GET_INPUT]: typeof Synthesizer.prototype.getMidiInputName;
     [IPC_CHANNELS.MIDI_SET_INPUT]: typeof Synthesizer.prototype.setMidiInput;
-    [IPC_CHANNELS.MIDI_POLL]: typeof Synthesizer.prototype.pollMidi;
+    [IPC_CHANNELS.MIDI_TRY_RECONNECT]: typeof Synthesizer.prototype.tryReconnectMidi;
 
     // Filesystem operations (IPC automatically promisifies all handlers)
     [IPC_CHANNELS.FS_SELECT_WORKSPACE]: () => WorkspaceFolder | null;

@@ -292,9 +292,6 @@ function App() {
     useEffect(() => {
         if (isClockRunningRef.current) {
             const tick = () => {
-                // Poll MIDI input (fire-and-forget, don't await)
-                electronAPI.midi.poll().catch(() => {});
-
                 electronAPI.synthesizer
                     .getScopes()
                     .then((scopes) => {

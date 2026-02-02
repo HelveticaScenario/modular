@@ -95,7 +95,7 @@ impl Default for BandpassFilter {
 impl BandpassFilter {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
-        self.outputs.sample.set_channels(num_channels as u8);
+        self.outputs.sample.set_channels(num_channels);
 
         // Update coefficients
         if self.params.center.is_monophonic() && self.params.resonance.is_monophonic() {

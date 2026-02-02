@@ -70,7 +70,7 @@ export interface ElectronAPI {
         listInputs: Promisify<IPCHandlers[typeof IPC_CHANNELS.MIDI_LIST_INPUTS]>;
         getInput: Promisify<IPCHandlers[typeof IPC_CHANNELS.MIDI_GET_INPUT]>;
         setInput: Promisify<IPCHandlers[typeof IPC_CHANNELS.MIDI_SET_INPUT]>;
-        poll: Promisify<IPCHandlers[typeof IPC_CHANNELS.MIDI_POLL]>;
+        tryReconnect: Promisify<IPCHandlers[typeof IPC_CHANNELS.MIDI_TRY_RECONNECT]>;
     };
     // Filesystem operations
     filesystem: {
@@ -227,8 +227,8 @@ const electronAPI: ElectronAPI = {
         setInput: (...args) =>
             invokeIPC('MIDI_SET_INPUT', ...args),
 
-        poll: (...args) =>
-            invokeIPC('MIDI_POLL', ...args),
+        tryReconnect: (...args) =>
+            invokeIPC('MIDI_TRY_RECONNECT', ...args),
     },
 
     // Filesystem operations

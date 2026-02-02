@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::patch::Patch;
-use crate::poly::{PolyOutput, PORT_MAX_CHANNELS};
+use crate::poly::{PORT_MAX_CHANNELS, PolyOutput};
 use crate::types::{
     Connect, MidiChannelPressure, MidiControlChange, MidiNoteOff, MidiNoteOn, MidiPitchBend,
     MidiPolyPressure,
@@ -72,9 +72,13 @@ struct VoiceState {
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct MidiCvParams {
+    /// MIDI device name to receive from (None = all devices)
+    #[serde(default)]
+    device: Option<String>,
+
     /// Number of polyphonic voices (1-16)
     #[serde(default = "default_channels")]
-    channels: u8,
+    channels: usize,
 
     /// MIDI channel filter (1-16, None = omni/all channels)
     #[serde(default)]
@@ -93,7 +97,7 @@ struct MidiCvParams {
     pitch_bend_range: u8,
 }
 
-fn default_channels() -> u8 {
+fn default_channels() -> usize {
     1
 }
 
@@ -105,22 +109,26 @@ fn default_pitch_bend_range() -> u8 {
 struct MidiCvOutputs {
     #[output("pitch", "pitch CV in 1V/octave (0V = C4)", default)]
     pitch: PolyOutput,
-    #[output("gate", "gate output (0V or 10V)")]
+    #[output("gate", "gate output (0V or 5V)")]
     gate: PolyOutput,
-    #[output("velocity", "velocity (0-10V)")]
+    #[output("velocity", "velocity (0-5V)")]
     velocity: PolyOutput,
-    #[output("aftertouch", "channel pressure / aftertouch (0-10V)")]
+    #[output("aftertouch", "channel pressure / aftertouch (0-5V)")]
     aftertouch: PolyOutput,
-    #[output("retrigger", "retrigger pulse (10V for 1ms on new note)")]
+    #[output("retrigger", "retrigger pulse (5V for 1ms on new note)")]
     retrigger: PolyOutput,
     #[output("pitchWheel", "pitch wheel (-5V to +5V, unscaled)")]
     pitch_wheel: PolyOutput,
-    #[output("modWheel", "mod wheel (0-10V)")]
+    #[output("modWheel", "mod wheel (0-5V)")]
     mod_wheel: PolyOutput,
 }
 
 #[derive(Module)]
-#[module("midiCv", "MIDI to CV converter with polyphonic voice allocation")]
+#[module(
+    "midiCv",
+    "MIDI to CV converter with polyphonic voice allocation",
+    channels_param = "channels"
+)]
 #[args()]
 pub struct MidiCv {
     outputs: MidiCvOutputs,
@@ -153,6 +161,8 @@ pub struct MidiCv {
 
     /// Retrigger pulse counters (samples remaining)
     retrigger_counters: [u32; PORT_MAX_CHANNELS],
+
+    last_channel_count: usize,
 }
 
 impl Default for MidiCv {
@@ -170,6 +180,7 @@ impl Default for MidiCv {
             global_mod_wheel: 0,
             global_aftertouch: 0,
             retrigger_counters: [0; PORT_MAX_CHANNELS],
+            last_channel_count: 0,
         }
     }
 }
@@ -182,7 +193,7 @@ impl MidiCv {
 
     /// Convert velocity (0-127) to voltage (0-10V)
     fn velocity_to_cv(velocity: u8) -> f32 {
-        velocity as f32 / 127.0 * 10.0
+        velocity as f32 / 127.0 * 5.0
     }
 
     /// Convert pitch bend to voltage offset based on range
@@ -196,17 +207,26 @@ impl MidiCv {
         semitones / 12.0
     }
 
+    /// Check if we should process events from a MIDI device
+    fn should_process_device(&self, device: Option<&String>) -> bool {
+        match (&self.params.device, device) {
+            (None, _) => true,                          // No filter = accept all devices
+            (Some(wanted), Some(got)) => wanted == got, // Exact match
+            (Some(_), None) => false,                   // Filter set but no device info
+        }
+    }
+
     /// Check if we should process events from a MIDI channel
     fn should_process_channel(&self, midi_channel: u8) -> bool {
         match self.params.channel {
-            None => true, // Omni mode
+            None => true,                                       // Omni mode
             Some(ch) => midi_channel == (ch.saturating_sub(1)), // 1-indexed param to 0-indexed MIDI
         }
     }
 
     /// Find a free voice or steal one based on poly mode
     fn allocate_voice(&mut self, note: u8, midi_channel: u8) -> usize {
-        let num_voices = self.params.channels.clamp(1, PORT_MAX_CHANNELS as u8) as usize;
+        let num_voices = self.params.channels.clamp(1, PORT_MAX_CHANNELS) as usize;
 
         match self.params.poly_mode {
             PolyMode::Mpe => {
@@ -259,7 +279,7 @@ impl MidiCv {
 
     /// Find which voice is playing a note
     fn find_voice_for_note(&self, note: u8) -> Option<usize> {
-        let num_voices = self.params.channels.clamp(1, PORT_MAX_CHANNELS as u8) as usize;
+        let num_voices = self.params.channels.clamp(1, PORT_MAX_CHANNELS) as usize;
         for i in 0..num_voices {
             if self.voices[i].gate && self.voices[i].note == note {
                 return Some(i);
@@ -292,7 +312,9 @@ impl MidiCv {
 
     /// Handle MIDI note on message
     fn on_midi_note_on(&mut self, msg: &MidiNoteOn) -> Result<()> {
-        if !self.should_process_channel(msg.channel) {
+        if !self.should_process_device(msg.device.as_ref())
+            || !self.should_process_channel(msg.channel)
+        {
             return Ok(());
         }
 
@@ -304,7 +326,7 @@ impl MidiCv {
         self.held_notes.retain(|&(n, _, _)| n != note);
         self.held_notes.push((note, velocity, midi_channel));
 
-        let num_voices = self.params.channels.clamp(1, PORT_MAX_CHANNELS as u8) as usize;
+        let num_voices = self.params.channels.clamp(1, PORT_MAX_CHANNELS) as usize;
 
         if num_voices == 1 {
             // Monophonic mode
@@ -334,7 +356,9 @@ impl MidiCv {
 
     /// Handle MIDI note off message
     fn on_midi_note_off(&mut self, msg: &MidiNoteOff) -> Result<()> {
-        if !self.should_process_channel(msg.channel) {
+        if !self.should_process_device(msg.device.as_ref())
+            || !self.should_process_channel(msg.channel)
+        {
             return Ok(());
         }
 
@@ -356,7 +380,7 @@ impl MidiCv {
         self.held_notes.retain(|&(n, _, _)| n != note);
         self.sustained_notes.retain(|&(n, _, _)| n != note);
 
-        let num_voices = self.params.channels.clamp(1, PORT_MAX_CHANNELS as u8) as usize;
+        let num_voices = self.params.channels.clamp(1, PORT_MAX_CHANNELS) as usize;
 
         if num_voices == 1 {
             // Monophonic: check if a different note should take over
@@ -382,7 +406,9 @@ impl MidiCv {
 
     /// Handle MIDI CC message (for sustain pedal and mod wheel)
     fn on_midi_cc(&mut self, msg: &MidiControlChange) -> Result<()> {
-        if !self.should_process_channel(msg.channel) {
+        if !self.should_process_device(msg.device.as_ref())
+            || !self.should_process_channel(msg.channel)
+        {
             return Ok(());
         }
 
@@ -414,8 +440,7 @@ impl MidiCv {
                             .map(|&(n, _, _)| n)
                             .collect();
 
-                        self.sustained_notes
-                            .retain(|&(_, _, c)| c != msg.channel);
+                        self.sustained_notes.retain(|&(_, _, c)| c != msg.channel);
 
                         // Release voices for these notes
                         for note in notes_to_release {
@@ -434,14 +459,16 @@ impl MidiCv {
 
     /// Handle MIDI pitch bend message
     fn on_midi_pitch_bend(&mut self, msg: &MidiPitchBend) -> Result<()> {
-        if !self.should_process_channel(msg.channel) {
+        if !self.should_process_device(msg.device.as_ref())
+            || !self.should_process_channel(msg.channel)
+        {
             return Ok(());
         }
 
         if self.params.poly_mode == PolyMode::Mpe && msg.channel > 0 {
             // MPE: per-voice pitch bend
-            let voice_idx = ((msg.channel - 1) as usize)
-                .min(self.params.channels.saturating_sub(1) as usize);
+            let voice_idx =
+                ((msg.channel - 1) as usize).min(self.params.channels.saturating_sub(1) as usize);
             self.voices[voice_idx].pitch_wheel = msg.value;
         } else {
             // Standard: global pitch bend
@@ -453,13 +480,15 @@ impl MidiCv {
 
     /// Handle MIDI channel pressure message
     fn on_midi_channel_pressure(&mut self, msg: &MidiChannelPressure) -> Result<()> {
-        if !self.should_process_channel(msg.channel) {
+        if !self.should_process_device(msg.device.as_ref())
+            || !self.should_process_channel(msg.channel)
+        {
             return Ok(());
         }
 
         if self.params.poly_mode == PolyMode::Mpe && msg.channel > 0 {
-            let voice_idx = ((msg.channel - 1) as usize)
-                .min(self.params.channels.saturating_sub(1) as usize);
+            let voice_idx =
+                ((msg.channel - 1) as usize).min(self.params.channels.saturating_sub(1) as usize);
             self.voices[voice_idx].aftertouch = msg.pressure;
         } else {
             self.global_aftertouch = msg.pressure;
@@ -470,7 +499,9 @@ impl MidiCv {
 
     /// Handle MIDI polyphonic pressure message
     fn on_midi_poly_pressure(&mut self, msg: &MidiPolyPressure) -> Result<()> {
-        if !self.should_process_channel(msg.channel) {
+        if !self.should_process_device(msg.device.as_ref())
+            || !self.should_process_channel(msg.channel)
+        {
             return Ok(());
         }
 
@@ -506,8 +537,11 @@ impl MidiCv {
     fn update(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
 
-        let num_voices = self.params.channels.clamp(1, PORT_MAX_CHANNELS as u8);
-
+        let num_voices = self.channel_count();
+        if self.last_channel_count != num_voices {
+            self.last_channel_count = num_voices;
+            println!("MIDI CV: updating to {} voices", num_voices);
+        }
         // Set output channel counts
         self.outputs.pitch.set_channels(num_voices);
         self.outputs.gate.set_channels(num_voices);
@@ -531,7 +565,9 @@ impl MidiCv {
             self.outputs.pitch.set(i, pitch_cv + pitch_bend_cv);
 
             // Gate
-            self.outputs.gate.set(i, if voice.gate { 10.0 } else { 0.0 });
+            self.outputs
+                .gate
+                .set(i, if voice.gate { 5.0 } else { 0.0 });
 
             // Velocity
             self.outputs
@@ -546,11 +582,11 @@ impl MidiCv {
             };
             self.outputs
                 .aftertouch
-                .set(i, aftertouch as f32 / 127.0 * 10.0);
+                .set(i, aftertouch as f32 / 127.0 * 5.0);
 
             // Retrigger pulse
             if self.retrigger_counters[i] > 0 {
-                self.outputs.retrigger.set(i, 10.0);
+                self.outputs.retrigger.set(i, 5.0);
                 self.retrigger_counters[i] -= 1;
             } else {
                 self.outputs.retrigger.set(i, 0.0);
@@ -570,7 +606,7 @@ impl MidiCv {
             } else {
                 self.global_mod_wheel
             };
-            self.outputs.mod_wheel.set(i, mw as f32 / 127.0 * 10.0);
+            self.outputs.mod_wheel.set(i, mw as f32 / 127.0 * 5.0);
         }
     }
 }
@@ -602,7 +638,7 @@ mod tests {
     #[test]
     fn test_velocity_to_cv() {
         assert!((MidiCv::velocity_to_cv(0) - 0.0).abs() < 0.001);
-        assert!((MidiCv::velocity_to_cv(127) - 10.0).abs() < 0.001);
-        assert!((MidiCv::velocity_to_cv(64) - 5.04).abs() < 0.1);
+        assert!((MidiCv::velocity_to_cv(127) - 5.0).abs() < 0.001);
+        assert!((MidiCv::velocity_to_cv(64) - 2.52).abs() < 0.1);
     }
 }

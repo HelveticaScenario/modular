@@ -317,8 +317,8 @@ impl Plaits {
         // Copy current samples to outputs
         let mut out = PolyOutput::default();
         let mut aux = PolyOutput::default();
-        out.set_channels(num_channels as u8);
-        aux.set_channels(num_channels as u8);
+        out.set_channels(num_channels);
+        aux.set_channels(num_channels);
 
         for ch in 0..num_channels {
             let state = &self.channels[ch];

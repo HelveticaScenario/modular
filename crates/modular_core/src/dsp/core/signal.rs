@@ -32,7 +32,7 @@ pub struct Signal {
 
 impl Signal {
     fn update(&mut self, _sample_rate: f32) {
-        let channels = self.channel_count() as u8;
+        let channels = self.channel_count();
         self.outputs.sample.set_channels(channels);
         for i in 0..channels as usize {
             let val = self.params.source.get_value(i);

@@ -51,15 +51,18 @@ export declare class Synthesizer {
   setAudioInputDevice(deviceId?: string | undefined | null): void
   /** List all available MIDI input ports */
   listMidiInputs(): Array<MidiInputInfo>
-  /** Get the currently connected MIDI input port name */
+  /** Get the currently connected MIDI input port name (first port for backward compatibility) */
   getMidiInputName(): string | null
-  /** Connect to a MIDI input port by name */
+  /** Get all currently connected MIDI input port names */
+  getMidiInputNames(): Array<string>
+  /** Connect to a MIDI input port by name (for manual/backward-compatible use) */
   setMidiInput(portName?: string | undefined | null): void
   /**
-   * Poll MIDI input and dispatch messages to the audio thread.
-   * Call this periodically (e.g., on each animation frame or timer tick).
+   * Attempt to reconnect to any MIDI devices that were configured but disconnected.
+   * Call this periodically if you want hot-plug support.
+   * Note: MIDI messages are polled automatically in the audio thread.
    */
-  pollMidi(): void
+  tryReconnectMidi(): void
 }
 
 export interface ApplyPatchError {

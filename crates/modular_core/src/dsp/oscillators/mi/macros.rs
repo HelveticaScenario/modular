@@ -398,8 +398,8 @@ macro_rules! mi_engine_module_impl {
                     // Copy current samples to outputs
                     let mut output = PolyOutput::default();
                     let mut aux_output = PolyOutput::default();
-                    output.set_channels(num_channels as u8);
-                    aux_output.set_channels(num_channels as u8);
+                    output.set_channels(num_channels);
+                    aux_output.set_channels(num_channels);
 
                     for ch in 0..num_channels {
                         let state = &self.channels[ch];
@@ -601,8 +601,8 @@ macro_rules! mi_engine_module_impl {
                     // Copy current samples to outputs
                     let mut output = PolyOutput::default();
                     let mut aux_output = PolyOutput::default();
-                    output.set_channels(num_channels as u8);
-                    aux_output.set_channels(num_channels as u8);
+                    output.set_channels(num_channels);
+                    aux_output.set_channels(num_channels);
 
                     for ch in 0..num_channels {
                         let state = &self.channels[ch];
@@ -804,8 +804,8 @@ macro_rules! mi_engine_module_impl {
                     // Copy current samples to outputs
                     let mut output = PolyOutput::default();
                     let mut aux_output = PolyOutput::default();
-                    output.set_channels(num_channels as u8);
-                    aux_output.set_channels(num_channels as u8);
+                    output.set_channels(num_channels);
+                    aux_output.set_channels(num_channels);
 
                     for ch in 0..num_channels {
                         let state = &self.channels[ch];

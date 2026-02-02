@@ -11,6 +11,10 @@ use crate::types::{MidiNoteOff, MidiNoteOn};
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct MidiGateParams {
+    /// MIDI device name to receive from (None = all devices)
+    #[serde(default)]
+    device: Option<String>,
+
     /// Minimum note number (0-127, default 0)
     #[serde(default)]
     min_note: u8,
@@ -22,14 +26,6 @@ struct MidiGateParams {
     /// MIDI channel filter (1-16, None = omni/all channels)
     #[serde(default)]
     channel: Option<u8>,
-
-    /// High voltage when gate is on (default 10.0)
-    #[serde(default = "default_high_voltage")]
-    high_voltage: f32,
-
-    /// Low voltage when gate is off (default 0.0)
-    #[serde(default)]
-    low_voltage: f32,
 }
 
 fn default_max_note() -> u8 {
@@ -59,10 +55,19 @@ pub struct MidiGate {
 }
 
 impl MidiGate {
+    /// Check if we should process events from a MIDI device
+    fn should_process_device(&self, device: Option<&String>) -> bool {
+        match (&self.params.device, device) {
+            (None, _) => true,                          // No filter = accept all devices
+            (Some(wanted), Some(got)) => wanted == got, // Exact match
+            (Some(_), None) => false,                   // Filter set but no device info
+        }
+    }
+
     /// Check if we should process events from a MIDI channel
     fn should_process_channel(&self, midi_channel: u8) -> bool {
         match self.params.channel {
-            None => true, // Omni mode
+            None => true,                                       // Omni mode
             Some(ch) => midi_channel == (ch.saturating_sub(1)), // 1-indexed param to 0-indexed MIDI
         }
     }
@@ -74,7 +79,10 @@ impl MidiGate {
 
     /// Handle MIDI note on message
     fn on_midi_note_on(&mut self, msg: &MidiNoteOn) -> Result<()> {
-        if self.should_process_channel(msg.channel) && self.is_in_range(msg.note) {
+        if self.should_process_device(msg.device.as_ref())
+            && self.should_process_channel(msg.channel)
+            && self.is_in_range(msg.note)
+        {
             self.notes_held = self.notes_held.saturating_add(1);
         }
         Ok(())
@@ -82,7 +90,10 @@ impl MidiGate {
 
     /// Handle MIDI note off message
     fn on_midi_note_off(&mut self, msg: &MidiNoteOff) -> Result<()> {
-        if self.should_process_channel(msg.channel) && self.is_in_range(msg.note) {
+        if self.should_process_device(msg.device.as_ref())
+            && self.should_process_channel(msg.channel)
+            && self.is_in_range(msg.note)
+        {
             self.notes_held = self.notes_held.saturating_sub(1);
         }
         Ok(())
@@ -95,11 +106,7 @@ impl MidiGate {
     }
 
     fn update(&mut self, _sample_rate: f32) {
-        self.outputs.gate = if self.notes_held > 0 {
-            self.params.high_voltage
-        } else {
-            self.params.low_voltage
-        };
+        self.outputs.gate = if self.notes_held > 0 { 5.0 } else { 0.0 };
         self.outputs.note_count = self.notes_held as f32;
     }
 }

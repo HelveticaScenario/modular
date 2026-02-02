@@ -33,7 +33,7 @@ pub struct ScaleAndShift {
 
 impl ScaleAndShift {
     fn update(&mut self, _sample_rate: f32) {
-        let channels = self.channel_count() as u8;
+        let channels = self.channel_count();
 
         self.outputs.sample.set_channels(channels);
 

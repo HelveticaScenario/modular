@@ -20,6 +20,7 @@ import {
     buildSequenceTracking,
     startActiveStepPolling,
 } from './monaco/sequenceTracking';
+import { registerMidiCompletionProvider } from './monaco/midiCompletionProvider';
 import electronAPI from '../electronAPI';
 
 export interface PatchEditorProps {
@@ -159,6 +160,16 @@ export function MonacoPatchEditor({
         if (!monaco) return;
         const disposable = registerDslFormattingProvider(monaco);
         return () => disposable.dispose();
+    }, [monaco]);
+
+    // Register MIDI device autocomplete provider
+    useEffect(() => {
+        if (!monaco) return;
+        const midiProvider = registerMidiCompletionProvider(
+            monaco,
+            () => electronAPI.midi.listInputs()
+        );
+        return () => midiProvider.dispose();
     }, [monaco]);
 
     useEffect(() => {

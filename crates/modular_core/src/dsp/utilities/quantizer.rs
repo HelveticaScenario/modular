@@ -210,9 +210,9 @@ impl Default for Quantizer {
 impl Quantizer {
     pub fn update(&mut self, _sample_rate: f32) {
         let num_channels = self.params.input.channels().max(1) as usize;
-        self.outputs.output.set_channels(num_channels as u8);
-        self.outputs.gate.set_channels(num_channels as u8);
-        self.outputs.trig.set_channels(num_channels as u8);
+        self.outputs.output.set_channels(num_channels);
+        self.outputs.gate.set_channels(num_channels);
+        self.outputs.trig.set_channels(num_channels);
 
         for ch in 0..num_channels {
             let input = self.params.input.get(ch).get_value() as f64;

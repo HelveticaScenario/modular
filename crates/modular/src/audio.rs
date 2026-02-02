@@ -42,6 +42,7 @@ use std::time::Instant;
 use crate::commands::{
   AudioError, COMMAND_QUEUE_CAPACITY, ERROR_QUEUE_CAPACITY, GraphCommand, PatchUpdate,
 };
+use crate::midi::MidiInputManager;
 
 // ============================================================================
 // Audio Host Information
@@ -612,7 +613,7 @@ pub struct ScopeBuffer {
   buffers: Vec<[f32; SCOPE_CAPACITY as usize]>,
   buffer_idx: usize,
   /// Current number of channels being captured
-  num_channels: u8,
+  num_channels: usize,
 }
 
 fn ms_to_samples(ms: u32, sample_rate: f32) -> u32 {
@@ -659,7 +660,7 @@ impl ScopeBuffer {
   }
 
   /// Push samples for all channels at once
-  pub fn push_poly(&mut self, values: &[f32], num_channels: u8) {
+  pub fn push_poly(&mut self, values: &[f32], num_channels: usize) {
     // Dynamically resize buffers if channel count changes
     if num_channels != self.num_channels {
       let new_count = num_channels as usize;
@@ -810,6 +811,8 @@ pub struct AudioState {
   audio_budget_meter: Arc<AudioBudgetMeter>,
   /// Module states (e.g., seq current step) - written by audio thread, read by main thread
   module_states: Arc<Mutex<HashMap<String, serde_json::Value>>>,
+  /// MIDI input manager - shared with audio thread for polling
+  midi_manager: Arc<MidiInputManager>,
 }
 
 #[derive(Default)]
@@ -830,6 +833,7 @@ impl AudioState {
     error_rx: ErrorConsumer,
     sample_rate: f32,
     channels: u16,
+    midi_manager: Arc<MidiInputManager>,
   ) -> Self {
     Self {
       command_tx: Mutex::new(command_tx),
@@ -842,6 +846,7 @@ impl AudioState {
       channels,
       audio_budget_meter: Arc::new(AudioBudgetMeter::default()),
       module_states: Arc::new(Mutex::new(HashMap::new())),
+      midi_manager,
     }
   }
 
@@ -851,14 +856,6 @@ impl AudioState {
     tx.push(cmd).map_err(|_| {
       napi::Error::from_reason("Command queue full - audio thread may be overloaded".to_string())
     })
-  }
-
-  /// Queue MIDI messages to be dispatched on the audio thread
-  pub fn queue_midi_messages(&self, messages: Vec<Message>) {
-    for msg in messages {
-      // Ignore errors - best effort delivery for MIDI
-      let _ = self.send_command(GraphCommand::DispatchMessage(msg));
-    }
   }
 
   /// Drain any errors accumulated on the audio thread
@@ -900,6 +897,7 @@ impl AudioState {
       recording_writer: self.recording_writer.clone(),
       audio_budget_meter: self.audio_budget_meter.clone(),
       module_states: self.module_states.clone(),
+      midi_manager: self.midi_manager.clone(),
     }
   }
 
@@ -1116,6 +1114,8 @@ pub struct AudioSharedState {
   pub audio_budget_meter: Arc<AudioBudgetMeter>,
   /// Module states (e.g., seq current step) - written by audio thread, read by main thread
   pub module_states: Arc<Mutex<HashMap<String, serde_json::Value>>>,
+  /// MIDI input manager for polling MIDI messages
+  pub midi_manager: Arc<MidiInputManager>,
 }
 
 fn chrono_simple_timestamp() -> String {
@@ -1147,6 +1147,8 @@ struct AudioProcessor {
   audio_budget_meter: Arc<AudioBudgetMeter>,
   /// Shared module states (e.g., seq current step)
   module_states: Arc<Mutex<HashMap<String, serde_json::Value>>>,
+  /// MIDI input manager for polling
+  midi_manager: Arc<MidiInputManager>,
   /// Sample rate
   sample_rate: f32,
 }
@@ -1167,13 +1169,25 @@ impl AudioProcessor {
       recording_writer: shared.recording_writer,
       audio_budget_meter: shared.audio_budget_meter,
       module_states: shared.module_states,
+      midi_manager: shared.midi_manager,
       sample_rate,
     }
   }
 
-  /// Process all pending commands from the main thread.
+  /// Process all pending commands from the main thread and poll MIDI.
   /// Called at the start of each audio callback before processing frames.
   fn process_commands(&mut self) {
+    // Poll MIDI messages and dispatch directly to the patch
+    // This happens in the audio thread for low-latency MIDI response
+    for msg in self.midi_manager.take_messages() {
+      if let Err(e) = self.patch.dispatch_message(&msg) {
+        let _ = self.error_tx.push(AudioError::MessageDispatchFailed {
+          message: e.to_string(),
+        });
+      }
+    }
+
+    // Process commands from the main thread
     while let Ok(cmd) = self.command_rx.pop() {
       match cmd {
         GraphCommand::PatchUpdate(update) => {
@@ -1317,7 +1331,7 @@ impl AudioProcessor {
               && let Ok(poly) = module.get_poly_sample(port_name)
             {
               let num_channels = poly.channels();
-              let values: Vec<f32> = (0..num_channels as usize).map(|ch| poly.get(ch)).collect();
+              let values: Vec<f32> = (0..num_channels).map(|ch| poly.get(ch)).collect();
               scope_buffer.push_poly(&values, num_channels);
             }
           }
@@ -1408,7 +1422,7 @@ where
             let input_samples = input_reader.read_frame();
 
             // Set channel count so that get() returns values instead of 0.0
-            audio_in.set_channels(PORT_MAX_CHANNELS as u8);
+            audio_in.set_channels(PORT_MAX_CHANNELS);
             for i in 0..PORT_MAX_CHANNELS {
               // Apply gain to bring input from [-1, 1] to [-5, 5] volt range
               audio_in.set(i, input_samples[i] * AUDIO_INPUT_GAIN);
@@ -1755,6 +1769,7 @@ mod tests {
       recording_writer: Arc::new(Mutex::new(None)),
       audio_budget_meter: Arc::new(AudioBudgetMeter::new()),
       module_states: Arc::new(Mutex::new(HashMap::new())),
+      midi_manager: Arc::new(MidiInputManager::new()),
     };
 
     let processor = AudioProcessor::new(cmd_consumer, err_producer, shared, 48000.0);

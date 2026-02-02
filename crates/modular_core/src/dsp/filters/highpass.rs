@@ -95,7 +95,7 @@ impl Default for HighpassFilter {
 impl HighpassFilter {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
-        self.outputs.sample.set_channels(num_channels as u8);
+        self.outputs.sample.set_channels(num_channels);
 
         // Update coefficients
         if self.params.cutoff.is_monophonic() && self.params.resonance.is_monophonic() {

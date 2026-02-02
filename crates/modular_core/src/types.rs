@@ -1058,53 +1058,85 @@ pub enum ClockMessages {
 }
 
 /// MIDI note on message
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MidiNoteOn {
+    /// Source MIDI device name (None for legacy messages)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
     pub channel: u8,
     pub note: u8,
     pub velocity: u8,
 }
 
 /// MIDI note off message
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MidiNoteOff {
+    /// Source MIDI device name (None for legacy messages)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
     pub channel: u8,
     pub note: u8,
     pub velocity: u8,
 }
 
 /// MIDI control change message
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MidiControlChange {
+    /// Source MIDI device name (None for legacy messages)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
     pub channel: u8,
     pub cc: u8,
     pub value: u8,
 }
 
+/// MIDI 14-bit control change message (CC 0-31 with LSB from CC 32-63)
+/// Used for high-resolution continuous controllers.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MidiControlChange14Bit {
+    /// Source MIDI device name (None for legacy messages)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
+    pub channel: u8,
+    /// CC number (0-31, the MSB controller number)
+    pub cc: u8,
+    /// 14-bit value (0-16383)
+    pub value: u16,
+}
+
 /// MIDI pitch bend message
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MidiPitchBend {
+    /// Source MIDI device name (None for legacy messages)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
     pub channel: u8,
     /// Pitch bend value: -8192 to 8191 (center = 0)
     pub value: i16,
 }
 
 /// MIDI channel pressure (aftertouch) message
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MidiChannelPressure {
+    /// Source MIDI device name (None for legacy messages)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
     pub channel: u8,
     pub pressure: u8,
 }
 
 /// MIDI polyphonic key pressure message
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MidiPolyPressure {
+    /// Source MIDI device name (None for legacy messages)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
     pub channel: u8,
     pub note: u8,
     pub pressure: u8,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumTag, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, EnumTag, Serialize, Deserialize)]
 #[serde(
     tag = "type",
     content = "data",
@@ -1116,6 +1148,7 @@ pub enum Message {
     MidiNoteOn(MidiNoteOn),
     MidiNoteOff(MidiNoteOff),
     MidiCC(MidiControlChange),
+    MidiCC14Bit(MidiControlChange14Bit),
     MidiPitchBend(MidiPitchBend),
     MidiChannelPressure(MidiChannelPressure),
     MidiPolyPressure(MidiPolyPressure),

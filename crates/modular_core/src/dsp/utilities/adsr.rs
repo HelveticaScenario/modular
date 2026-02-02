@@ -83,7 +83,7 @@ impl Adsr {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
 
-        self.outputs.sample.set_channels(num_channels as u8);
+        self.outputs.sample.set_channels(num_channels);
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];

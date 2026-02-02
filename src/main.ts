@@ -767,8 +767,8 @@ registerIPCHandler('MIDI_SET_INPUT', (portName: string | null) => {
     synth.setMidiInput(portName ?? undefined);
 });
 
-registerIPCHandler('MIDI_POLL', () => {
-    synth.pollMidi();
+registerIPCHandler('MIDI_TRY_RECONNECT', () => {
+    synth.tryReconnectMidi();
 });
 
 registerIPCHandler('SHOW_CONTEXT_MENU', (options: ContextMenuOptions) => {

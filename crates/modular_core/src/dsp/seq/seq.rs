@@ -287,9 +287,9 @@ impl Seq {
         // based on pattern analysis or explicit user value
         let num_channels = self.params.channels.clamp(1, PORT_MAX_CHANNELS);
         // Set output channel counts
-        self.outputs.cv.set_channels(num_channels as u8);
-        self.outputs.gate.set_channels(num_channels as u8);
-        self.outputs.trig.set_channels(num_channels as u8);
+        self.outputs.cv.set_channels(num_channels);
+        self.outputs.gate.set_channels(num_channels);
+        self.outputs.trig.set_channels(num_channels);
 
         // Release voices whose haps have ended
         self.release_ended_voices(playhead, num_channels);

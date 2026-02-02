@@ -50,7 +50,7 @@ impl Default for RisingEdgeDetector {
 impl RisingEdgeDetector {
     pub fn update(&mut self, _sample_rate: f32) {
         let num_channels = self.channel_count();
-        self.outputs.output.set_channels(num_channels as u8);
+        self.outputs.output.set_channels(num_channels);
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
@@ -88,7 +88,7 @@ impl Default for FallingEdgeDetector {
 impl FallingEdgeDetector {
     pub fn update(&mut self, _sample_rate: f32) {
         let num_channels = self.channel_count();
-        self.outputs.output.set_channels(num_channels as u8);
+        self.outputs.output.set_channels(num_channels);
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];

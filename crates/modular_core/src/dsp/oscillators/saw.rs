@@ -53,7 +53,7 @@ impl SawOscillator {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
 
-        self.outputs.sample.set_channels(num_channels as u8);
+        self.outputs.sample.set_channels(num_channels);
 
         // Pre-compute inverse sample rate for frequency calculation
         let inv_sample_rate = 1.0 / sample_rate;

@@ -25,7 +25,7 @@ pub struct PolyOutput {
     /// Voltage values for each channel (always allocated, not all may be active)
     voltages: [f32; PORT_MAX_CHANNELS],
     /// Number of active channels: 0 = disconnected, 1 = mono, 2-16 = poly
-    channels: u8,
+    channels: usize,
 }
 
 impl Default for PolyOutput {
@@ -91,16 +91,16 @@ impl PolyOutput {
     }
 
     /// Set the number of active channels (clears higher channels to 0)
-    pub fn set_channels(&mut self, channels: u8) {
-        let channels = channels.clamp(0, PORT_MAX_CHANNELS as u8);
+    pub fn set_channels(&mut self, channels: usize) {
+        let channels = channels.clamp(0, PORT_MAX_CHANNELS);
         // Clear channels beyond the new count
-        for c in channels as usize..self.channels as usize {
+        for c in channels..self.channels {
             self.voltages[c] = 0.0;
         }
         self.channels = channels;
     }
 
-    pub fn channels(&self) -> u8 {
+    pub fn channels(&self) -> usize {
         self.channels
     }
 
@@ -132,13 +132,13 @@ impl<'de> Deserialize<'de> for PolyOutput {
     {
         #[derive(Deserialize)]
         struct PolyOutputDe {
-            channels: u8,
+            channels: usize,
             voltages: Vec<f32>,
         }
 
         let de = PolyOutputDe::deserialize(deserializer)?;
         let mut sig = PolyOutput::default();
-        sig.channels = de.channels.min(PORT_MAX_CHANNELS as u8);
+        sig.channels = de.channels.min(PORT_MAX_CHANNELS);
         for (i, &v) in de.voltages.iter().enumerate().take(sig.channels as usize) {
             sig.voltages[i] = v;
         }
@@ -158,7 +158,7 @@ impl JsonSchema for PolyOutput {
         #[derive(JsonSchema)]
         #[allow(dead_code)]
         struct PolyOutputSchema {
-            channels: u8,
+            channels: usize,
             voltages: Vec<f32>,
         }
         PolyOutputSchema::json_schema(r#gen)
@@ -184,7 +184,7 @@ pub struct PolySignal {
     /// Signal values for each channel
     signals: [Signal; PORT_MAX_CHANNELS],
     /// Number of active channels: 0 = disconnected, 1 = mono, 2-16 = poly
-    channels: u8,
+    channels: usize,
 }
 
 impl Default for PolySignal {
@@ -212,14 +212,14 @@ impl PolySignal {
         for (i, s) in signals.iter().enumerate().take(channels) {
             ps.signals[i] = s.clone();
         }
-        ps.channels = channels as u8;
+        ps.channels = channels;
         ps
     }
 
     // === Accessors ===
 
     /// Get the number of active channels
-    pub fn channels(&self) -> u8 {
+    pub fn channels(&self) -> usize {
         self.channels
     }
 
@@ -274,7 +274,7 @@ impl PolySignal {
     }
 
     /// Calculate the maximum channel count across multiple PolySignals
-    pub fn max_channels(poly_signals: &[&PolySignal]) -> u8 {
+    pub fn max_channels(poly_signals: &[&PolySignal]) -> usize {
         poly_signals
             .iter()
             .map(|sig| sig.channels)

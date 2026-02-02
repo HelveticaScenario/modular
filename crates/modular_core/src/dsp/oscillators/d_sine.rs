@@ -35,7 +35,7 @@ impl DSineOscillator {
     fn update(&mut self, _sample_rate: f32) {
         let num_channels = self.channel_count();
 
-        self.outputs.sample.set_channels(num_channels as u8);
+        self.outputs.sample.set_channels(num_channels);
 
         for ch in 0..num_channels {
             let phase = wrap(0.0..1.0, self.params.phase.get_value(ch));

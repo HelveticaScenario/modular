@@ -1,17 +1,22 @@
 //! MIDI CC (Control Change) to CV converter module.
 //!
 //! Converts MIDI CC messages to control voltage signals.
+//! Supports both 7-bit (standard) and 14-bit (high-resolution) CC.
 
 use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::types::MidiControlChange;
+use crate::types::{MidiControlChange, MidiControlChange14Bit};
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct MidiCcParams {
-    /// CC number to monitor (0-127)
+    /// MIDI device name to receive from (None = all devices)
+    #[serde(default)]
+    device: Option<String>,
+
+    /// CC number to monitor (0-127 for 7-bit, 0-31 for 14-bit mode)
     #[serde(default)]
     cc: u8,
 
@@ -19,21 +24,13 @@ struct MidiCcParams {
     #[serde(default)]
     channel: Option<u8>,
 
-    /// Minimum output voltage (default 0.0)
-    #[serde(default)]
-    min_voltage: f32,
-
-    /// Maximum output voltage (default 10.0)
-    #[serde(default = "default_max_voltage")]
-    max_voltage: f32,
-
     /// Smoothing time in milliseconds (0 = instant)
     #[serde(default)]
     smoothing_ms: f32,
-}
 
-fn default_max_voltage() -> f32 {
-    10.0
+    /// Enable 14-bit high-resolution CC mode (CC 0-31 MSB + CC 32-63 LSB)
+    #[serde(default)]
+    high_resolution: bool,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -49,25 +46,62 @@ pub struct MidiCc {
     outputs: MidiCcOutputs,
     params: MidiCcParams,
     sample_rate: f32,
-    /// Current CC value (0-127)
-    current_value: u8,
+    /// Current CC value (normalized 0.0-1.0, supports both 7-bit and 14-bit)
+    current_value: f32,
     /// Smoothed output value
     smoothed_value: f32,
 }
 
 impl MidiCc {
+    /// Check if we should process events from a MIDI device
+    fn should_process_device(&self, device: Option<&String>) -> bool {
+        match (&self.params.device, device) {
+            (None, _) => true,                          // No filter = accept all devices
+            (Some(wanted), Some(got)) => wanted == got, // Exact match
+            (Some(_), None) => false,                   // Filter set but no device info
+        }
+    }
+
     /// Check if we should process events from a MIDI channel
     fn should_process_channel(&self, midi_channel: u8) -> bool {
         match self.params.channel {
-            None => true, // Omni mode
+            None => true,                                       // Omni mode
             Some(ch) => midi_channel == (ch.saturating_sub(1)), // 1-indexed param to 0-indexed MIDI
         }
     }
 
-    /// Handle MIDI CC message
+    /// Handle 7-bit MIDI CC message
     fn on_midi_cc(&mut self, msg: &MidiControlChange) -> Result<()> {
-        if msg.cc == self.params.cc && self.should_process_channel(msg.channel) {
-            self.current_value = msg.value;
+        // Skip 7-bit messages if in high-resolution mode (we'll use 14-bit instead)
+        if self.params.high_resolution {
+            return Ok(());
+        }
+
+        if msg.cc == self.params.cc
+            && self.should_process_device(msg.device.as_ref())
+            && self.should_process_channel(msg.channel)
+        {
+            // Normalize 7-bit value (0-127) to 0.0-1.0
+            self.current_value = msg.value as f32 / 127.0;
+        }
+        Ok(())
+    }
+
+    /// Handle 14-bit MIDI CC message
+    fn on_midi_cc_14bit(&mut self, msg: &MidiControlChange14Bit) -> Result<()> {
+        // Only process if in high-resolution mode
+        if !self.params.high_resolution {
+            return Ok(());
+        }
+
+        if msg.cc == self.params.cc
+            && self.should_process_device(msg.device.as_ref())
+            && self.should_process_channel(msg.channel)
+        {
+            // Normalize 14-bit value (0-16383) to 0.0-1.0
+            // Note: max useful value is 127*128=16256 (MSB=127, LSB=0)
+            // but we normalize to full 14-bit range for simplicity
+            self.current_value = msg.value as f32 / 16383.0;
         }
         Ok(())
     }
@@ -75,10 +109,8 @@ impl MidiCc {
     fn update(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
 
-        // Calculate target voltage
-        let normalized = self.current_value as f32 / 127.0;
-        let target =
-            self.params.min_voltage + normalized * (self.params.max_voltage - self.params.min_voltage);
+        // Calculate target voltage from normalized value
+        let target = self.current_value * 5.0;
 
         // Apply smoothing
         if self.params.smoothing_ms > 0.0 {
@@ -95,4 +127,5 @@ impl MidiCc {
 
 message_handlers!(impl MidiCc {
     MidiCC(m) => MidiCc::on_midi_cc,
+    MidiCC14Bit(m) => MidiCc::on_midi_cc_14bit,
 });

@@ -281,6 +281,8 @@ struct StreamSetupParams<'a> {
   buffer_size: Option<u32>,
   /// Input device with its config, or None for no input
   input: Option<(&'a cpal::Device, cpal::SupportedStreamConfig, String)>,
+  /// MIDI input manager (shared with audio thread)
+  midi_manager: Arc<MidiInputManager>,
 }
 
 /// Set up output and input streams with the given parameters.
@@ -309,6 +311,7 @@ fn setup_streams(params: StreamSetupParams) -> Result<StreamSetupResult> {
     error_rx,
     params.sample_rate as f32,
     channels,
+    params.midi_manager.clone(),
   ));
 
   // Get shared state for audio processor
@@ -458,6 +461,9 @@ impl Synthesizer {
       host_id
     );
 
+    // Create MIDI manager first so it can be shared with audio thread
+    let midi_manager = Arc::new(MidiInputManager::new());
+
     // Set up streams using shared helper
     let setup_result = setup_streams(StreamSetupParams {
       output_device: &output_device,
@@ -465,12 +471,10 @@ impl Synthesizer {
       sample_rate,
       buffer_size: config.buffer_size,
       input: input_setup,
+      midi_manager: midi_manager.clone(),
     })?;
 
     println!("Audio output stream started.");
-
-    // Create MIDI manager
-    let midi_manager = Arc::new(MidiInputManager::new());
 
     Ok(Self {
       state: setup_result.state,
@@ -522,7 +526,35 @@ impl Synthesizer {
 
   #[napi]
   pub fn update_patch(&self, patch: PatchGraph) -> Vec<ApplyPatchError> {
+    // Extract MIDI device names from MIDI modules and sync connections
+    self.sync_midi_devices_from_patch(&patch);
+    
     self.state.handle_set_patch(patch, self.sample_rate)
+  }
+
+  /// Extract MIDI device names from patch modules and sync connections
+  fn sync_midi_devices_from_patch(&self, patch: &PatchGraph) {
+    use std::collections::HashSet;
+    
+    let mut devices: HashSet<String> = HashSet::new();
+    
+    for module in &patch.modules {
+      // Check if this is a MIDI module type
+      match module.module_type.as_str() {
+        "midiCv" | "midiCc" | "midiGate" => {
+          // Extract device param from params JSON
+          if let Some(device) = module.params.get("device").and_then(|v| v.as_str()) {
+            if !device.is_empty() {
+              devices.insert(device.to_string());
+            }
+          }
+        }
+        _ => {}
+      }
+    }
+    
+    // Sync MIDI manager connections
+    self.midi_manager.sync_devices(&devices);
   }
 
   #[napi]
@@ -725,7 +757,7 @@ impl Synthesizer {
       None
     };
 
-    // Set up streams using shared helper
+    // Set up streams using shared helper (reuse existing midi_manager)
     let setup_result = setup_streams(StreamSetupParams {
       output_device: &output_device,
       output_config: &output_config,
@@ -734,6 +766,7 @@ impl Synthesizer {
       input: input_setup
         .as_ref()
         .map(|(d, c, id)| (d, c.clone(), id.clone())),
+      midi_manager: self.midi_manager.clone(),
     })?;
 
     // Update self with new streams and state
@@ -844,19 +877,25 @@ impl Synthesizer {
       .collect()
   }
 
-  /// Get the currently connected MIDI input port name
+  /// Get the currently connected MIDI input port name (first port for backward compatibility)
   #[napi]
   pub fn get_midi_input_name(&self) -> Option<String> {
     self.midi_manager.connected_port()
   }
 
-  /// Connect to a MIDI input port by name
+  /// Get all currently connected MIDI input port names
+  #[napi]
+  pub fn get_midi_input_names(&self) -> Vec<String> {
+    self.midi_manager.connected_ports()
+  }
+
+  /// Connect to a MIDI input port by name (for manual/backward-compatible use)
   #[napi]
   pub fn set_midi_input(&self, port_name: Option<String>) -> Result<()> {
     match port_name {
       None => {
-        self.midi_manager.disconnect();
-        println!("MIDI input disconnected");
+        self.midi_manager.disconnect_all();
+        println!("[MIDI] All inputs disconnected");
         Ok(())
       }
       Some(name) => {
@@ -864,20 +903,17 @@ impl Synthesizer {
           .midi_manager
           .connect(&name)
           .map_err(napi::Error::from_reason)?;
-        println!("MIDI input connected to: {}", name);
         Ok(())
       }
     }
   }
 
-  /// Poll MIDI input and dispatch messages to the audio thread.
-  /// Call this periodically (e.g., on each animation frame or timer tick).
+  /// Attempt to reconnect to any MIDI devices that were configured but disconnected.
+  /// Call this periodically if you want hot-plug support.
+  /// Note: MIDI messages are polled automatically in the audio thread.
   #[napi]
-  pub fn poll_midi(&self) {
-    let messages = self.midi_manager.take_messages();
-    if !messages.is_empty() {
-      self.state.queue_midi_messages(messages);
-    }
+  pub fn try_reconnect_midi(&self) {
+    self.midi_manager.try_reconnect();
   }
 }
 
