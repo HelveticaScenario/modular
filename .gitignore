@@ -106,3 +106,5 @@ typings/
 
 # Electron-Forge
 out/
+
+generated/
