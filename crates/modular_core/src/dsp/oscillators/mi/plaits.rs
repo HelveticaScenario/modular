@@ -28,7 +28,7 @@ const ENGINE_SAMPLE_RATE: f32 = 48000.0;
 
 /// Synthesis engine selection for Plaits
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub enum PlaitsEngine {
     /// Virtual analog oscillator with VCF - classic subtractive synthesis
     #[default]
