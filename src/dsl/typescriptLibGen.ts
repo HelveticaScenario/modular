@@ -125,7 +125,7 @@ interface Console {
     warn(...data: any[]): void;
 }
 
-declare var console: Console;
+var console: Console;
 type NoteNames = "a" | "A" | "b" | "B" | "c" | "C" | "d" | "D" | "e" | "E" | "f" | "F" | "g" | "G"
 type Accidental = "" | "#" | "b"
 type Note = \`\${NoteNames}\${Accidental}\${number | ''}\`
@@ -321,21 +321,21 @@ interface CollectionWithRange extends Iterable<ModuleOutputWithRange> {
 }
 
 // Helper functions exposed by the DSL runtime
-declare function hz(frequency: number): number;
-declare function note(noteName: string): number;
-declare function bpm(beatsPerMinute: number): number;
+function hz(frequency: number): number;
+function note(noteName: string): number;
+function bpm(beatsPerMinute: number): number;
 
 /**
  * Create a Collection from ModuleOutput instances.
  * @example $(osc1, osc2).gain(0.5).out()
  */
-declare function $(...args: ModuleOutput[]): Collection;
+function $(...args: ModuleOutput[]): Collection;
 
 /**
  * Create a CollectionWithRange from ModuleOutputWithRange instances.
  * @example $r(...lfo).range(note('c3'), note('c5'))
  */
-declare function $r(...args: ModuleOutputWithRange[]): CollectionWithRange;
+function $r(...args: ModuleOutputWithRange[]): CollectionWithRange;
 
 /**
  * Set the global tempo for the root clock.
@@ -344,7 +344,7 @@ declare function $r(...args: ModuleOutputWithRange[]): CollectionWithRange;
  * @example setTempo(hz(2)) // 2 Hz = 120 BPM
  * @example setTempo(lfo.sine) // modulate tempo from LFO
  */
-declare function setTempo(tempo: Signal): void;
+function setTempo(tempo: Signal): void;
 
 /**
  * Set the global output gain applied to the final mix.
@@ -353,7 +353,7 @@ declare function setTempo(tempo: Signal): void;
  * @example setOutputGain(5.0) // unity gain
  * @example setOutputGain(env.out) // modulate gain from envelope
  */
-declare function setOutputGain(gain: Signal): void;
+function setOutputGain(gain: Signal): void;
 `;
 
 export function buildLibSource(schemas: ModuleSchema[]): string {
@@ -806,30 +806,30 @@ function generateMultiOutputInterface(moduleSchema: ModuleSchema, indent: string
     const defaultOutput = outputs.find((o: any) => o.default) || outputs[0];
     const defaultOutputMeta = defaultOutput as { polyphonic?: boolean; minValue?: number; maxValue?: number };
     const baseType = getOutputType(defaultOutputMeta);
-    
+
     const interfaceName = getMultiOutputInterfaceName(moduleSchema);
-    
+
     const lines: string[] = [];
     lines.push(`${indent}/**`);
     lines.push(`${indent} * Output type for ${moduleSchema.name} module.`);
     lines.push(`${indent} * Extends ${baseType} (default output: ${defaultOutput.name})`);
     lines.push(`${indent} */`);
     lines.push(`${indent}export interface ${interfaceName} extends ${baseType} {`);
-    
+
     // Add properties for non-default outputs
     for (const output of outputs) {
         if (output.name === defaultOutput.name) continue;
-        
+
         const outputMeta = output as { polyphonic?: boolean; minValue?: number; maxValue?: number; description?: string };
         const outputType = getOutputType(outputMeta);
         const safeName = sanitizeOutputName(output.name);
-        
+
         if (output.description) {
             lines.push(`${indent}  /** ${output.description} */`);
         }
         lines.push(`${indent}  readonly ${safeName}: ${outputType};`);
     }
-    
+
     lines.push(`${indent}}`);
     return lines;
 }
@@ -839,7 +839,7 @@ function generateMultiOutputInterface(moduleSchema: ModuleSchema, indent: string
  */
 function getFactoryReturnType(moduleSchema: ModuleSchema): string {
     const outputs = moduleSchema.outputs || [];
-    
+
     if (outputs.length === 0) {
         return 'void';
     } else if (outputs.length === 1) {
@@ -1001,7 +1001,7 @@ function renderTree(node: NamespaceNode, indentLevel: number = 0): string[] {
 
         const child = node.namespaces.get(item.name);
         if (!child) continue;
-        lines.push(`${indent}export declare namespace ${item.name} {`);
+        lines.push(`${indent}export namespace ${item.name} {`);
         lines.push(...renderTree(child, indentLevel + 1));
         lines.push(`${indent}}`);
         lines.push('');
@@ -1027,7 +1027,7 @@ export function generateDSL(schemas: ModuleSchema[]): string {
         lines.push('/** Default clock module running at 120 BPM. */');
         const clockReturnType = getFactoryReturnType(clockSchema);
         lines.push(
-            `export declare const rootClock: ${clockReturnType};`,
+            `export const rootClock: ${clockReturnType};`,
         );
     }
 
@@ -1037,7 +1037,7 @@ export function generateDSL(schemas: ModuleSchema[]): string {
         lines.push('/** Input signals. */');
         const signalReturnType = getFactoryReturnType(signalSchema);
         lines.push(
-            `export declare const input: readonly ${signalReturnType};`,
+            `export const input: Readonly<${signalReturnType}>;`,
         );
     }
 
