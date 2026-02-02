@@ -1,7 +1,7 @@
 use crate::{
+    PORT_MAX_CHANNELS,
     poly::{PolyOutput, PolySignal},
     types::Signal,
-    PORT_MAX_CHANNELS,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -23,6 +23,7 @@ struct SampleAndHoldOutputs {
 struct SahChannelState {
     last_trigger: f32,
     held_value: f32,
+    initialized: bool,
 }
 
 #[derive(Module)]
@@ -54,7 +55,10 @@ impl SampleAndHold {
             let input = self.params.input.get_value_or(ch, 0.0);
             let trigger = self.params.trigger.get_value_or(ch, 0.0);
 
-            if trigger > 0.1 && state.last_trigger <= 0.1 {
+            if !state.initialized {
+                state.held_value = input;
+                state.initialized = true;
+            } else if trigger > 0.1 && state.last_trigger <= 0.1 {
                 state.held_value = input;
             }
             state.last_trigger = trigger;
