@@ -288,6 +288,8 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
 
 #[cfg(test)]
 mod tests {
+    use crate::pattern_system::Fraction;
+
     use super::*;
 
     #[test]
