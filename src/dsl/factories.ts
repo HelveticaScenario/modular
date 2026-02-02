@@ -146,6 +146,8 @@ const RESERVED_OUTPUT_NAMES = new Set([
     // Collection/CollectionWithRange properties
     'items',
     'length',
+    // DeferredModuleOutput/DeferredCollection methods
+    'set',
     // JavaScript built-ins
     'constructor',
     'prototype',

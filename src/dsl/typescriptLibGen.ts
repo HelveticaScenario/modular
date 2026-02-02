@@ -354,6 +354,90 @@ function setTempo(tempo: Signal): void;
  * @example setOutputGain(env.out) // modulate gain from envelope
  */
 function setOutputGain(gain: Signal): void;
+
+/**
+ * DeferredModuleOutput is a placeholder for a signal that will be assigned later.
+ * Useful for feedback loops and forward references in the DSL.
+ * Supports the same chainable methods as ModuleOutput (gain, shift, scope, out, outMono).
+ */
+interface DeferredModuleOutput extends ModuleOutput {
+  /**
+   * Set the actual signal this deferred output should resolve to.
+   * @param signal - The signal to resolve to (number, string, or ModuleOutput)
+   */
+  set(signal: Signal): void;
+  /**
+   * Scale the resolved output by a factor.
+   * The transform is stored and applied during resolution.
+   */
+  gain(factor: PolySignal): DeferredModuleOutput;
+  /**
+   * Shift the resolved output by an offset.
+   * The transform is stored and applied during resolution.
+   */
+  shift(offset: PolySignal): DeferredModuleOutput;
+  /**
+   * Add scope visualization for the resolved output.
+   * The side effect is stored and executed during resolution.
+   */
+  scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): DeferredModuleOutput;
+  /**
+   * Send the resolved output to speakers as stereo.
+   * The side effect is stored and executed during resolution.
+   */
+  out(baseChannel?: number, options?: StereoOutOptions): DeferredModuleOutput;
+  /**
+   * Send the resolved output to speakers as mono.
+   * The side effect is stored and executed during resolution.
+   */
+  outMono(channel?: number, gain?: PolySignal): DeferredModuleOutput;
+}
+
+/**
+ * DeferredCollection is a collection of DeferredModuleOutput instances.
+ * Provides a .set() method to assign signals to all contained deferred outputs.
+ */
+interface DeferredCollection extends Iterable<DeferredModuleOutput> {
+  readonly length: number;
+  readonly [index: number]: DeferredModuleOutput;
+  [Symbol.iterator](): Iterator<DeferredModuleOutput>;
+  /**
+   * Set the signals for all deferred outputs in this collection.
+   * @param polySignal - A PolySignal (single signal, array, or iterable) to distribute across outputs
+   */
+  set(polySignal: PolySignal): void;
+  /**
+   * Scale all resolved outputs by a factor.
+   */
+  gain(factor: PolySignal): DeferredCollection;
+  /**
+   * Shift all resolved outputs by an offset.
+   */
+  shift(offset: PolySignal): DeferredCollection;
+  /**
+   * Add scope visualization for the first resolved output.
+   */
+  scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): DeferredCollection;
+  /**
+   * Send all resolved outputs to speakers as stereo.
+   */
+  out(baseChannel?: number, options?: StereoOutOptions): DeferredCollection;
+  /**
+   * Send all resolved outputs to speakers as mono.
+   */
+  outMono(channel?: number, gain?: PolySignal): DeferredCollection;
+}
+
+/**
+ * Create a DeferredCollection with placeholder signals that can be assigned later.
+ * Useful for feedback loops and forward references.
+ * @param channels - Number of deferred outputs (1-16, default 1)
+ * @example
+ * const feedback = deferred();
+ * const delayed = delay(osc.out, feedback[0]);
+ * feedback.set(delayed);
+ */
+function deferred(channels?: number): DeferredCollection;
 `;
 
 export function buildLibSource(schemas: ModuleSchema[]): string {
@@ -759,6 +843,8 @@ const RESERVED_OUTPUT_NAMES = new Set([
     // Collection/CollectionWithRange properties
     'items',
     'length',
+    // DeferredModuleOutput/DeferredCollection methods
+    'set',
     // JavaScript built-ins
     'constructor',
     'prototype',

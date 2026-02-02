@@ -1,6 +1,6 @@
 import { ModuleSchema, PatchGraph } from '@modular/core';
 import { DSLContext, hz, note, bpm, setDSLWrapperLineOffset } from './factories';
-import { $, $r, Signal, SourceLocation } from './GraphBuilder';
+import { $, $r, Signal, SourceLocation, DeferredModuleOutput, DeferredCollection } from './GraphBuilder';
 
 /**
  * Result of executing a DSL script.
@@ -62,6 +62,22 @@ export function executePatchScript(
         builder.setOutputGain(gain);
     };
 
+    /**
+     * Create a DeferredCollection with placeholder signals that can be assigned later.
+     * Useful for feedback loops and forward references.
+     * @param channels - Number of deferred outputs (1-16, default 1)
+     */
+    const deferred = (channels: number = 1): DeferredCollection => {
+        if (channels < 1 || channels > 16) {
+            throw new Error(`deferred() channels must be between 1 and 16, got ${channels}`);
+        }
+        const items: DeferredModuleOutput[] = [];
+        for (let i = 0; i < channels; i++) {
+            items.push(new DeferredModuleOutput(builder));
+        }
+        return new DeferredCollection(...items);
+    };
+
     // Create the execution environment with all DSL functions
     const dslGlobals = {
         ...context.namespaceTree,
@@ -72,6 +88,8 @@ export function executePatchScript(
         // Collection helpers
         $,
         $r,
+        // Deferred signal helper
+        deferred,
         // Global settings
         setTempo,
         setOutputGain,

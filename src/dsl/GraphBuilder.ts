@@ -234,6 +234,13 @@ export interface SourceLocation {
     idIsExplicit: boolean;
 }
 
+
+class Foo {
+    bar() {
+
+    }
+}
+
 /**
  * GraphBuilder manages the construction of a PatchGraph from DSL code.
  * It tracks modules, generates deterministic IDs, and builds the final graph.
@@ -251,6 +258,8 @@ export class GraphBuilder {
     private outGroups: Map<number, OutGroup[]> = new Map();
     private factoryRegistry: Map<string, FactoryFunction> = new Map();
     private sourceLocationMap: Map<string, SourceLocation> = new Map();
+    /** Track all deferred outputs for string replacement during toPatch */
+    private deferredOutputs: Set<DeferredModuleOutput> = new Set();
     /** Global tempo signal for ROOT_CLOCK (default: bpm(120) = hz(2)) */
     private tempo: Signal = bpm(120); // hz(2) = bpm(120), using constant to avoid circular dep
     /** Global output gain signal (default: 0.5) */
@@ -476,11 +485,27 @@ export class GraphBuilder {
             rootClock.params.tempo = this.tempo;
         }
 
+        // Build a map of deferred output strings to their resolved output strings
+        const deferredStringMap = new Map<string, string>();
+        for (const deferred of this.deferredOutputs) {
+            const deferredStr = deferred.toString();
+            const resolved = deferred.resolve();
+            if (resolved) {
+                deferredStringMap.set(deferredStr, resolved.toString());
+            }
+        }
+
         const ret = {
-            modules: Array.from(this.modules.values()).map((m) => ({
-                ...m,
-                params: replaceSignals(m.params),
-            })),
+            modules: Array.from(this.modules.values()).map((m) => {
+                // First replace signals (ModuleOutput -> cable objects)
+                const replacedParams = replaceSignals(m.params);
+                // Then replace any deferred strings with resolved strings
+                const finalParams = replaceDeferredStrings(replacedParams, deferredStringMap);
+                return {
+                    ...m,
+                    params: finalParams,
+                };
+            }),
             scopes: Array.from(this.scopes),
         };
         return ret;
@@ -495,6 +520,7 @@ export class GraphBuilder {
         this.counters.clear();
         this.outGroups.clear();
         this.sourceLocationMap.clear();
+        this.deferredOutputs.clear();
         this.tempo = 2; // hz(2) = bpm(120)
         this.outputGain = 2.5;
     }
@@ -549,6 +575,14 @@ export class GraphBuilder {
         const existing = this.outGroups.get(channel) ?? [];
         existing.push(group);
         this.outGroups.set(channel, existing);
+    }
+
+    /**
+     * Register a deferred output for tracking.
+     * Called by DeferredModuleOutput constructor.
+     */
+    registerDeferred(deferred: DeferredModuleOutput): void {
+        this.deferredOutputs.add(deferred);
     }
 
     addScope(
@@ -814,6 +848,156 @@ export class ModuleOutputWithRange extends ModuleOutput {
     }
 }
 
+/** Type for transforms that return a new ModuleOutput */
+type OutputTransform = (output: ModuleOutput) => ModuleOutput;
+/** Type for side effects that operate on a ModuleOutput but don't return a new one */
+type OutputSideEffect = (output: ModuleOutput) => void;
+
+/**
+ * DeferredModuleOutput is a placeholder for a signal that will be assigned later.
+ * Useful for feedback loops and forward references in the DSL.
+ * Supports the same chainable methods as ModuleOutput (gain, shift, scope, out, outMono).
+ * Transforms are stored and applied when the deferred signal is resolved.
+ */
+export class DeferredModuleOutput extends ModuleOutput {
+    readonly builder: GraphBuilder;
+    private resolvedSignal: Signal | null = null;
+    private transforms: OutputTransform[] = [];
+    private sideEffects: OutputSideEffect[] = [];
+    static idCounter = 0;
+
+    constructor(builder: GraphBuilder, id?: string) {
+        super(builder, `DEFERRED-${DeferredModuleOutput.idCounter++}`, 'output');
+        this.builder = builder;
+        // Register this deferred output with the builder for string replacement during toPatch
+        builder.registerDeferred(this);
+    }
+
+    /**
+     * Set the actual signal this deferred output should resolve to.
+     * @param signal - The signal to resolve to (number, string, or ModuleOutput)
+     */
+    set(signal: Signal): void {
+        this.resolvedSignal = signal;
+    }
+
+    /**
+     * Scale the resolved output by a factor.
+     * The transform is stored and applied during resolution.
+     */
+    override gain(factor: Value): this {
+        this.transforms.push((output) => output.gain(factor));
+        return this;
+    }
+
+    /**
+     * Shift the resolved output by an offset.
+     * The transform is stored and applied during resolution.
+     */
+    override shift(offset: Value): this {
+        this.transforms.push((output) => output.shift(offset));
+        return this;
+    }
+
+    /**
+     * Add scope visualization for the resolved output.
+     * The side effect is stored and executed during resolution.
+     */
+    override scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this {
+        this.sideEffects.push((output) => output.scope(config));
+        return this;
+    }
+
+    /**
+     * Send the resolved output to speakers as stereo.
+     * The side effect is stored and executed during resolution.
+     */
+    override out(baseChannel: number = 0, options: StereoOutOptions = {}): this {
+        this.sideEffects.push((output) => output.out(baseChannel, options));
+        return this;
+    }
+
+    /**
+     * Send the resolved output to speakers as mono.
+     * The side effect is stored and executed during resolution.
+     */
+    override outMono(channel: number = 0, gain?: PolySignal): this {
+        this.sideEffects.push((output) => output.outMono(channel, gain));
+        return this;
+    }
+
+    /**
+     * Resolve this deferred output to an actual ModuleOutput.
+     * Applies all stored transforms and executes side effects.
+     * @returns The resolved ModuleOutput, or null if not set.
+     */
+    resolve(): ModuleOutput | null {
+        if (this.resolvedSignal === null) {
+            return null;
+        }
+
+        // Convert signal to ModuleOutput if needed
+        let output: ModuleOutput;
+        if (this.resolvedSignal instanceof ModuleOutput) {
+            output = this.resolvedSignal;
+        } else {
+            // For numbers/strings, we need to create a signal module
+            const signalFactory = this.builder.getFactory('signal');
+            if (!signalFactory) {
+                throw new Error('Factory for signal not registered');
+            }
+            output = signalFactory(this.resolvedSignal) as ModuleOutput;
+        }
+
+        // Apply all transforms
+        for (const transform of this.transforms) {
+            output = transform(output);
+        }
+
+        // Execute all side effects
+        for (const sideEffect of this.sideEffects) {
+            sideEffect(output);
+        }
+
+        return output;
+    }
+}
+
+/**
+ * DeferredCollection is a collection of DeferredModuleOutput instances.
+ * Provides a .set() method to assign signals to all contained deferred outputs.
+ */
+export class DeferredCollection extends BaseCollection<DeferredModuleOutput> {
+    static idCounter = 0;
+    constructor(...args: DeferredModuleOutput[]) {
+        super(...args);
+    }
+
+    /**
+     * Set the signals for all deferred outputs in this collection.
+     * @param polySignal - A PolySignal (single signal, array, or iterable) to distribute across outputs
+     */
+    set(polySignal: PolySignal): void {
+        // Convert polySignal to array
+        let signals: Signal[];
+        if (Array.isArray(polySignal)) {
+            signals = polySignal;
+        } else if (typeof polySignal === 'object' && polySignal !== null && Symbol.iterator in polySignal) {
+            signals = [...(polySignal as Iterable<Signal>)];
+        } else {
+            // Single signal - apply to all
+            signals = [polySignal as Signal];
+        }
+
+        // Distribute signals across deferred outputs
+        for (let i = 0; i < this.items.length; i++) {
+            // Use modulo to wrap if fewer signals than outputs, or just use last signal
+            const signal = signals[Math.min(i, signals.length - 1)];
+            this.items[i].set(signal);
+        }
+    }
+}
+
 type Replacer = (key: string, value: unknown) => unknown;
 
 export function replaceValues(input: unknown, replacer: Replacer): unknown {
@@ -856,9 +1040,46 @@ export function replaceSignals(input: unknown): unknown {
             return [...value];
         }
 
+        // Replace DeferredCollection with resolved items array
+        if (value instanceof DeferredCollection) {
+            return [...value].map((deferred) => deferred.resolve());
+        }
+
         return valueToSignal(value);
 
     });
+}
+
+/**
+ * Recursively replace deferred output strings with resolved output strings in params.
+ * This handles cases where a DeferredModuleOutput was stringified (e.g., in pattern strings).
+ */
+export function replaceDeferredStrings(
+    input: unknown,
+    deferredStringMap: Map<string, string>
+): unknown {
+    if (typeof input === 'string') {
+        // Replace all occurrences of deferred strings with resolved strings
+        let result = input;
+        for (const [deferredStr, resolvedStr] of deferredStringMap) {
+            result = result.split(deferredStr).join(resolvedStr);
+        }
+        return result;
+    }
+
+    if (Array.isArray(input)) {
+        return input.map((item) => replaceDeferredStrings(item, deferredStringMap));
+    }
+
+    if (typeof input === 'object' && input !== null) {
+        const result: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(input)) {
+            result[key] = replaceDeferredStrings(value, deferredStringMap);
+        }
+        return result;
+    }
+
+    return input;
 }
 
 
@@ -870,6 +1091,13 @@ function valueToSignal(value: unknown): unknown {
             port: value.portName,
             channel: value.channel,
         };
+    } else if (value instanceof DeferredModuleOutput) {
+        // Resolve deferred output and convert to signal
+        const resolved = value.resolve();
+        if (resolved === null) {
+            return { type: 'disconnected' };
+        }
+        return valueToSignal(resolved);
     } else if (value === null || value === undefined) {
         return { type: 'disconnected' };
     }
