@@ -24,6 +24,7 @@ struct ChannelState {
     current_level: f32,
     last_trigger: f32,
     decay: f32,
+    in_attack: bool,
 }
 
 #[derive(Module)]
@@ -44,6 +45,7 @@ impl Default for PercussionEnvelope {
                 current_level: 0.0,
                 last_trigger: 0.0,
                 decay: 0.1,
+                in_attack: false,
             }),
         }
     }
@@ -64,13 +66,22 @@ impl PercussionEnvelope {
             // Detect rising edge of trigger
             let trigger = self.params.trigger.get_value(ch);
             if trigger > 2.5 && state.last_trigger <= 2.5 {
-                // Trigger detected - reset envelope to peak
-                state.current_level = 1.0;
+                // Trigger detected - start attack phase (continue from current level for smooth re-trigger)
+                state.in_attack = true;
             }
             state.last_trigger = trigger;
 
-            // Exponential decay
-            if state.current_level > 0.00001 {
+            // Attack phase: 1ms linear ramp to peak
+            if state.in_attack {
+                const ATTACK_TIME: f32 = 0.001; // 1ms
+                let step = 1.0 / (ATTACK_TIME * sample_rate);
+                state.current_level += step;
+                if state.current_level >= 1.0 {
+                    state.current_level = 1.0;
+                    state.in_attack = false;
+                }
+            } else if state.current_level > 0.00001 {
+                // Exponential decay
                 // Calculate decay coefficient for exponential decay
                 // Time constant tau = decay_time, we want level to reach ~0.001 after decay_time
                 // Using e^(-t/tau) where tau = decay_time / 6.9 (ln(1000) ≈ 6.9)
