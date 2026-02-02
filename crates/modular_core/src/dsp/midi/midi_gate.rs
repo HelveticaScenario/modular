@@ -32,10 +32,6 @@ fn default_max_note() -> u8 {
     127
 }
 
-fn default_high_voltage() -> f32 {
-    10.0
-}
-
 #[derive(Outputs, JsonSchema)]
 struct MidiGateOutputs {
     #[output("gate", "gate output", default)]
