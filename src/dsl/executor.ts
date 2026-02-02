@@ -1,6 +1,6 @@
 import { ModuleSchema, PatchGraph } from '@modular/core';
 import { DSLContext, hz, note, bpm, setDSLWrapperLineOffset } from './factories';
-import { $, $r, SourceLocation } from './GraphBuilder';
+import { $, $r, Signal, SourceLocation } from './GraphBuilder';
 
 /**
  * Result of executing a DSL script.
@@ -53,6 +53,15 @@ export function executePatchScript(
         { id: 'ROOT_INPUT' },
     );
 
+    // Create functions to set global tempo and output gain
+    const builder = context.getBuilder();
+    const setTempo = (tempo: Signal) => {
+        builder.setTempo(tempo);
+    };
+    const setOutputGain = (gain: Signal) => {
+        builder.setOutputGain(gain);
+    };
+
     // Create the execution environment with all DSL functions
     const dslGlobals = {
         ...context.namespaceTree,
@@ -63,6 +72,9 @@ export function executePatchScript(
         // Collection helpers
         $,
         $r,
+        // Global settings
+        setTempo,
+        setOutputGain,
         // Built-in modules
         rootClock,
         input: rootInput,
@@ -76,7 +88,7 @@ export function executePatchScript(
     // own wrapper results in user code starting at line 5 in stack traces.
     const wrapperLineCount = 4;
     setDSLWrapperLineOffset(wrapperLineCount);
-    
+
     const functionBody = `
     'use strict';
     ${source}
@@ -95,7 +107,7 @@ export function executePatchScript(
         const builder = context.getBuilder();
         const patch = builder.toPatch();
         const sourceLocationMap = builder.getSourceLocationMap();
-        
+
         return { patch, sourceLocationMap };
     } catch (error) {
         if (error instanceof Error) {

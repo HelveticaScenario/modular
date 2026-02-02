@@ -6,11 +6,12 @@ import type {
 } from '@modular/core';
 import type { ProcessedModuleSchema } from './paramsSchema';
 import { processSchemas } from './paramsSchema';
+import { bpm } from './factories';
 
-const PORT_MAX_CHANNELS = 16;
+export const PORT_MAX_CHANNELS = 16;
 
 // Extended OutputSchema interface that includes optional range
-interface OutputSchemaWithRange {
+export interface OutputSchemaWithRange {
     name: string;
     description: string;
     polyphonic?: boolean;
@@ -19,9 +20,9 @@ interface OutputSchemaWithRange {
 }
 
 // Type definitions for Collection system
-type OrArray<T> = T | T[];
-type Signal = number | string | ModuleOutput;
-type PolySignal = OrArray<Signal> | Iterable<ModuleOutput>;
+export type OrArray<T> = T | T[];
+export type Signal = number | string | ModuleOutput;
+export type PolySignal = OrArray<Signal> | Iterable<ModuleOutput>;
 
 /** Options for stereo output routing */
 export interface StereoOutOptions {
@@ -44,7 +45,7 @@ export interface MonoOutOptions {
 }
 
 /** Internal storage for a stereo output group */
-interface StereoOutGroup {
+export interface StereoOutGroup {
     type: 'stereo';
     outputs: ModuleOutput[];
     gain?: PolySignal;
@@ -53,19 +54,19 @@ interface StereoOutGroup {
 }
 
 /** Internal storage for a mono output group */
-interface MonoOutGroup {
+export interface MonoOutGroup {
     type: 'mono';
     outputs: ModuleOutput[];
     gain?: PolySignal;
 }
 
-type OutGroup = StereoOutGroup | MonoOutGroup;
+export type OutGroup = StereoOutGroup | MonoOutGroup;
 
 /**
  * BaseCollection provides iterable, indexable container for ModuleOutput arrays
  * with chainable DSP methods (gain, shift, scope, out).
  */
-class BaseCollection<T extends ModuleOutput> {
+export class BaseCollection<T extends ModuleOutput> {
     [index: number]: T;
     readonly items: T[] = [];
 
@@ -142,6 +143,11 @@ class BaseCollection<T extends ModuleOutput> {
             this.items[0].builder.addOutMono([...this.items], { channel, gain });
         }
         return this;
+    }
+
+
+    toString(): string {
+        return `[${this.items.map((item) => item.toString()).join(',')}]`;
     }
 }
 
@@ -245,6 +251,10 @@ export class GraphBuilder {
     private outGroups: Map<number, OutGroup[]> = new Map();
     private factoryRegistry: Map<string, FactoryFunction> = new Map();
     private sourceLocationMap: Map<string, SourceLocation> = new Map();
+    /** Global tempo signal for ROOT_CLOCK (default: bpm(120) = hz(2)) */
+    private tempo: Signal = bpm(120); // hz(2) = bpm(120), using constant to avoid circular dep
+    /** Global output gain signal (default: 0.5) */
+    private outputGain: Signal = 0.5;
 
     constructor(schemas: ModuleSchema[]) {
         this.schemas = processSchemas(schemas);
@@ -348,6 +358,22 @@ export class GraphBuilder {
     }
 
     /**
+     * Set the global tempo for ROOT_CLOCK
+     * @param tempo - Signal value for tempo (use bpm() or hz() helpers)
+     */
+    setTempo(tempo: Signal): void {
+        this.tempo = tempo;
+    }
+
+    /**
+     * Set the global output gain
+     * @param gain - Signal value for output gain (2.5 is default, 5.0 is unity)
+     */
+    setOutputGain(gain: Signal): void {
+        this.outputGain = gain;
+    }
+
+    /**
      * Get a factory function by module type name.
      * Returns undefined if factories haven't been registered yet.
      */
@@ -434,11 +460,20 @@ export class GraphBuilder {
             // Each collection contributes to corresponding output channels
             const finalMix = mixFactory(allChannelCollections) as Collection;
 
+            // Apply global output gain
+            const gainedMix = finalMix.gain(this.outputGain);
+
             // Create root signal module with the final mix
-            signalFactory(finalMix, { id: 'ROOT_OUTPUT' });
+            signalFactory(gainedMix, { id: 'ROOT_OUTPUT' });
         } else {
             // No outputs registered - create empty root signal
             signalFactory(undefined, { id: 'ROOT_OUTPUT' });
+        }
+
+        // Update ROOT_CLOCK tempo with the current tempo setting
+        const rootClock = this.modules.get('ROOT_CLOCK');
+        if (rootClock) {
+            rootClock.params.tempo = this.tempo;
         }
 
         const ret = {
@@ -460,6 +495,8 @@ export class GraphBuilder {
         this.counters.clear();
         this.outGroups.clear();
         this.sourceLocationMap.clear();
+        this.tempo = 2; // hz(2) = bpm(120)
+        this.outputGain = 2.5;
     }
 
     /**

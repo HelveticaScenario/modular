@@ -336,6 +336,24 @@ declare function $(...args: ModuleOutput[]): Collection;
  * @example $r(...lfo).range(note('c3'), note('c5'))
  */
 declare function $r(...args: ModuleOutputWithRange[]): CollectionWithRange;
+
+/**
+ * Set the global tempo for the root clock.
+ * @param tempo - Tempo as a Signal (use bpm() helper, e.g., setTempo(bpm(140)))
+ * @example setTempo(bpm(120)) // 120 beats per minute
+ * @example setTempo(hz(2)) // 2 Hz = 120 BPM
+ * @example setTempo(lfo.sine) // modulate tempo from LFO
+ */
+declare function setTempo(tempo: Signal): void;
+
+/**
+ * Set the global output gain applied to the final mix.
+ * @param gain - Gain as a Signal (2.5 is default, 5.0 is unity gain)
+ * @example setOutputGain(2.5) // 50% gain (default)
+ * @example setOutputGain(5.0) // unity gain
+ * @example setOutputGain(env.out) // modulate gain from envelope
+ */
+declare function setOutputGain(gain: Signal): void;
 `;
 
 export function buildLibSource(schemas: ModuleSchema[]): string {
