@@ -34,6 +34,25 @@ import { HelpWindow } from './components/HelpWindow';
 import { ThemeProvider } from './themes/ThemeContext';
 import monaco from 'monaco-editor/esm/vs/editor/editor.main';
 
+// Suppress Monaco Editor's harmless "Canceled" errors that occur during
+// normal operations like dismissing the "Go to Symbol" dialog with Escape.
+// These must be registered early before React/webpack error overlays catch them.
+window.addEventListener('error', (event) => {
+    if (event.error?.message === 'Canceled') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return false;
+    }
+}, true); // Use capture phase to intercept before other handlers
+
+window.addEventListener('unhandledrejection', (event) => {
+    if (event.reason?.message === 'Canceled') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return false;
+    }
+}, true);
+
 // Make monaco available globally
 (window as any).monaco = monaco;
 

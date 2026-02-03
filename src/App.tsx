@@ -111,41 +111,6 @@ function App() {
     const editorRef = useRef<editor.IStandaloneCodeEditor>(null);
     const scopeCanvasMapRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
 
-    // Suppress harmless Monaco Editor cancellation errors when switching files
-    useEffect(() => {
-        const handleError = (event: ErrorEvent) => {
-            // Check if this is the Monaco WordHighlighter cancellation error
-            if (
-                event.error?.message === 'Canceled' &&
-                event.error?.stack?.includes('WordHighlighter')
-            ) {
-                // Suppress this error - it's harmless and happens during normal file switching
-                event.preventDefault();
-                return;
-            }
-        };
-
-        const handleRejection = (event: PromiseRejectionEvent) => {
-            // Also catch if it appears as an unhandled promise rejection
-            const reason = event.reason;
-            if (
-                reason?.message === 'Canceled' &&
-                (reason?.stack?.includes('WordHighlighter') ||
-                    reason?.stack?.includes('Delayer'))
-            ) {
-                event.preventDefault();
-                return;
-            }
-        };
-
-        window.addEventListener('error', handleError);
-        window.addEventListener('unhandledrejection', handleRejection);
-        return () => {
-            window.removeEventListener('error', handleError);
-            window.removeEventListener('unhandledrejection', handleRejection);
-        };
-    }, []);
-
     // Load workspace and file tree on mount
     useEffect(() => {
         electronAPI.filesystem
@@ -423,37 +388,6 @@ function App() {
     const dismissError = useCallback(() => {
         setError(null);
         setValidationErrors(null);
-    }, []);
-
-    useEffect(() => {
-        // Add global error handler to suppress Monaco cancellation errors
-        const handleError = (event: ErrorEvent) => {
-            // Suppress Monaco-specific cancellation errors that occur during buffer closing
-            if (event.error && event.error.message === 'Canceled') {
-                event.preventDefault();
-                event.stopPropagation();
-                return false;
-            }
-        };
-
-        const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-            // Suppress Monaco-specific cancellation errors in promises
-            if (event.reason && event.reason.message === 'Canceled') {
-                event.preventDefault();
-                return false;
-            }
-        };
-
-        window.addEventListener('error', handleError);
-        window.addEventListener('unhandledrejection', handleUnhandledRejection);
-
-        return () => {
-            window.removeEventListener('error', handleError);
-            window.removeEventListener(
-                'unhandledrejection',
-                handleUnhandledRejection,
-            );
-        };
     }, []);
 
     useEffect(() => {
