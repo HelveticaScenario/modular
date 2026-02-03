@@ -418,6 +418,8 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
         // Collection/CollectionWithRange properties
         "items",
         "length",
+        // DeferredModuleOutput/DeferredCollection methods
+        "set",
         // JavaScript built-ins
         "constructor",
         "prototype",
