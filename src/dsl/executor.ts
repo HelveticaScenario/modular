@@ -1,6 +1,19 @@
 import { ModuleSchema, PatchGraph } from '@modular/core';
-import { DSLContext, hz, note, bpm, setDSLWrapperLineOffset } from './factories';
-import { $, $r, Signal, SourceLocation, DeferredModuleOutput, DeferredCollection } from './GraphBuilder';
+import {
+    DSLContext,
+    hz,
+    note,
+    bpm,
+    setDSLWrapperLineOffset,
+} from './factories';
+import {
+    $,
+    $r,
+    Signal,
+    SourceLocation,
+    DeferredModuleOutput,
+    DeferredCollection,
+} from './GraphBuilder';
 
 /**
  * Result of executing a DSL script.
@@ -69,7 +82,9 @@ export function executePatchScript(
      */
     const deferred = (channels: number = 1): DeferredCollection => {
         if (channels < 1 || channels > 16) {
-            throw new Error(`deferred() channels must be between 1 and 16, got ${channels}`);
+            throw new Error(
+                `deferred() channels must be between 1 and 16, got ${channels}`,
+            );
         }
         const items: DeferredModuleOutput[] = [];
         for (let i = 0; i < channels; i++) {

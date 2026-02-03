@@ -8,6 +8,8 @@ import type { ProcessedModuleSchema } from './paramsSchema';
 import { processSchemas } from './paramsSchema';
 import { bpm } from './factories';
 
+import z from 'zod';
+
 export const PORT_MAX_CHANNELS = 16;
 
 // Extended OutputSchema interface that includes optional range
@@ -18,6 +20,15 @@ export interface OutputSchemaWithRange {
     minValue?: number;
     maxValue?: number;
 }
+
+const ResolvedModuleOutput = z.object({
+    type: z.literal('cable'),
+    module: z.string(),
+    port: z.string(),
+    channel: z.number().optional(),
+});
+
+export type ResolvedModuleOutput = z.infer<typeof ResolvedModuleOutput>;
 
 // Type definitions for Collection system
 export type OrArray<T> = T | T[];
@@ -112,7 +123,11 @@ export class BaseCollection<T extends ModuleOutput> {
     /**
      * Add scope visualization for the first output in the collection
      */
-    scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this {
+    scope(config?: {
+        msPerFrame?: number;
+        triggerThreshold?: number;
+        scale?: number;
+    }): this {
         if (this.items.length > 0) {
             this.items[0].builder.addScope(this.items[0], config);
         }
@@ -128,7 +143,10 @@ export class BaseCollection<T extends ModuleOutput> {
      */
     out(baseChannel: number = 0, options: StereoOutOptions = {}): this {
         if (this.items.length > 0) {
-            this.items[0].builder.addOut([...this.items], { ...options, baseChannel });
+            this.items[0].builder.addOut([...this.items], {
+                ...options,
+                baseChannel,
+            });
         }
         return this;
     }
@@ -140,11 +158,13 @@ export class BaseCollection<T extends ModuleOutput> {
      */
     outMono(channel: number = 0, gain?: PolySignal): this {
         if (this.items.length > 0) {
-            this.items[0].builder.addOutMono([...this.items], { channel, gain });
+            this.items[0].builder.addOutMono([...this.items], {
+                channel,
+                gain,
+            });
         }
         return this;
     }
-
 
     toString(): string {
         return `[${this.items.map((item) => item.toString()).join(',')}]`;
@@ -163,18 +183,18 @@ export class Collection extends BaseCollection<ModuleOutput> {
     /**
      * Remap outputs from explicit input range to output range
      */
-    range(inMin: PolySignal, inMax: PolySignal, outMin: PolySignal, outMax: PolySignal): Collection {
+    range(
+        inMin: PolySignal,
+        inMax: PolySignal,
+        outMin: PolySignal,
+        outMax: PolySignal,
+    ): Collection {
         if (this.items.length === 0) return new Collection();
         const factory = this.items[0].builder.getFactory('remap');
         if (!factory) {
             throw new Error('Factory for remap not registered');
         }
-        return factory(this.items,
-            inMin,
-            inMax,
-            outMin,
-            outMax,
-        ) as Collection;
+        return factory(this.items, inMin, inMax, outMin, outMax) as Collection;
     }
 }
 
@@ -209,18 +229,22 @@ export class CollectionWithRange extends BaseCollection<ModuleOutputWithRange> {
 /**
  * Create a Collection from ModuleOutput instances
  */
-export const $ = (...args: ModuleOutput[]): Collection => new Collection(...args);
+export const $ = (...args: ModuleOutput[]): Collection =>
+    new Collection(...args);
 
 /**
  * Create a CollectionWithRange from ModuleOutputWithRange instances
  */
-export const $r = (...args: ModuleOutputWithRange[]): CollectionWithRange => new CollectionWithRange(...args);
+export const $r = (...args: ModuleOutputWithRange[]): CollectionWithRange =>
+    new CollectionWithRange(...args);
 
 /**
  * Factory function type for creating modules via DSL.
  * Returns the module's output(s) directly rather than the ModuleNode.
  */
-export type FactoryFunction = (...args: unknown[]) => ModuleOutput | Collection | CollectionWithRange;
+export type FactoryFunction = (
+    ...args: unknown[]
+) => ModuleOutput | Collection | CollectionWithRange;
 
 /**
  * Source location information for mapping validation errors back to DSL code.
@@ -234,17 +258,14 @@ export interface SourceLocation {
     idIsExplicit: boolean;
 }
 
-
 class Foo {
-    bar() {
-
-    }
+    bar() {}
 }
 
 /**
  * GraphBuilder manages the construction of a PatchGraph from DSL code.
  * It tracks modules, generates deterministic IDs, and builds the final graph.
- * 
+ *
  * Note: Factory functions add overhead from channel count derivation but provide
  * consistency across all module creation paths.
  */
@@ -259,7 +280,7 @@ export class GraphBuilder {
     private factoryRegistry: Map<string, FactoryFunction> = new Map();
     private sourceLocationMap: Map<string, SourceLocation> = new Map();
     /** Track all deferred outputs for string replacement during toPatch */
-    private deferredOutputs: Set<DeferredModuleOutput> = new Set();
+    private deferredOutputs: Map<string, DeferredModuleOutput> = new Map();
     /** Global tempo signal for ROOT_CLOCK (default: bpm(120) = hz(2)) */
     private tempo: Signal = bpm(120); // hz(2) = bpm(120), using constant to avoid circular dep
     /** Global output gain signal (default: 0.5) */
@@ -295,7 +316,11 @@ export class GraphBuilder {
     /**
      * Add or update a module in the graph
      */
-    addModule(moduleType: string, explicitId?: string, sourceLocation?: { line: number; column: number }): ModuleNode {
+    addModule(
+        moduleType: string,
+        explicitId?: string,
+        sourceLocation?: { line: number; column: number },
+    ): ModuleNode {
         const id = this.generateId(moduleType, explicitId);
 
         if (this.modules.has(id)) {
@@ -392,7 +417,7 @@ export class GraphBuilder {
 
     /**
      * Build the final PatchGraph
-     * 
+     *
      * Note: Uses factory functions for signal/mix modules for consistency,
      * which adds overhead from channel count derivation on every patch build.
      */
@@ -402,8 +427,15 @@ export class GraphBuilder {
         const stereoMixerFactory = this.getFactory('stereoMixer');
         const scaleAndShiftFactory = this.getFactory('scaleAndShift');
 
-        if (!signalFactory || !mixFactory || !stereoMixerFactory || !scaleAndShiftFactory) {
-            throw new Error('Required factories (signal, mix, stereoMixer, scaleAndShift) not registered');
+        if (
+            !signalFactory ||
+            !mixFactory ||
+            !stereoMixerFactory ||
+            !scaleAndShiftFactory
+        ) {
+            throw new Error(
+                'Required factories (signal, mix, stereoMixer, scaleAndShift) not registered',
+            );
         }
 
         // Process output groups and build channel collections
@@ -412,7 +444,9 @@ export class GraphBuilder {
             const allChannelCollections: (ModuleOutput | undefined)[][] = [];
 
             // Sort by baseChannel for deterministic processing
-            const sortedChannels = [...this.outGroups.keys()].sort((a, b) => a - b);
+            const sortedChannels = [...this.outGroups.keys()].sort(
+                (a, b) => a - b,
+            );
 
             for (const baseChannel of sortedChannels) {
                 const groups = this.outGroups.get(baseChannel)!;
@@ -422,28 +456,37 @@ export class GraphBuilder {
 
                     if (group.type === 'stereo') {
                         // Create stereoMixer with the outputs
-                        const stereoOut = stereoMixerFactory(
-                            group.outputs, {
+                        const stereoOut = stereoMixerFactory(group.outputs, {
                             pan: group.pan ?? 0,
                             width: group.width ?? 0,
-                        }
-                        ) as Collection;
+                        }) as Collection;
 
                         // Apply gain if specified
                         if (group.gain !== undefined) {
-                            const gained = scaleAndShiftFactory([...stereoOut], group.gain) as Collection;
+                            const gained = scaleAndShiftFactory(
+                                [...stereoOut],
+                                group.gain,
+                            ) as Collection;
                             outputSignals = [...gained];
                         } else {
                             outputSignals = [...stereoOut];
                         }
                     } else {
                         // Mono: use mix module
-                        const mixOut = (stereoMixerFactory(group.outputs, { pan: -5, width: 0 }) as Collection)[0];
+                        const mixOut = (
+                            stereoMixerFactory(group.outputs, {
+                                pan: -5,
+                                width: 0,
+                            }) as Collection
+                        )[0];
 
                         // Apply gain if specified
                         let finalOut: ModuleOutput;
                         if (group.gain !== undefined) {
-                            finalOut = scaleAndShiftFactory(mixOut, group.gain) as ModuleOutput;
+                            finalOut = scaleAndShiftFactory(
+                                mixOut,
+                                group.gain,
+                            ) as ModuleOutput;
                         } else {
                             finalOut = mixOut;
                         }
@@ -486,28 +529,62 @@ export class GraphBuilder {
         }
 
         // Build a map of deferred output strings to their resolved output strings
-        const deferredStringMap = new Map<string, string>();
-        for (const deferred of this.deferredOutputs) {
+        const deferredStringMap = new Map<string, string | null>();
+        for (const deferred of this.deferredOutputs.values()) {
             const deferredStr = deferred.toString();
             const resolved = deferred.resolve();
             if (resolved) {
                 deferredStringMap.set(deferredStr, resolved.toString());
+            } else {
+                deferredStringMap.set(deferredStr, null);
             }
         }
 
         const ret = {
             modules: Array.from(this.modules.values()).map((m) => {
+                console.log('Building module:', m);
                 // First replace signals (ModuleOutput -> cable objects)
-                const replacedParams = replaceSignals(m.params);
+                const replacedParams = replaceDeferred(
+                    replaceSignals(m.params),
+                    this.deferredOutputs,
+                );
                 // Then replace any deferred strings with resolved strings
-                const finalParams = replaceDeferredStrings(replacedParams, deferredStringMap);
+                const finalParams = replaceDeferredStrings(
+                    replacedParams,
+                    deferredStringMap,
+                );
                 return {
                     ...m,
                     params: finalParams,
                 };
             }),
-            scopes: Array.from(this.scopes),
+            scopes: this.scopes
+                .map((scope) => {
+                    const deferredOutput = this.deferredOutputs.get(
+                        scope.item.moduleId,
+                    );
+                    if (deferredOutput) {
+                        const resolved = deferredOutput.resolve();
+                        if (resolved) {
+                            const newScope: Scope = {
+                                ...scope,
+                                item: {
+                                    type: 'ModuleOutput',
+                                    moduleId: resolved.moduleId,
+                                    portName: resolved.portName,
+                                },
+                            };
+                            return newScope;
+                        } else {
+                            return null;
+                        }
+                    }
+                    return scope;
+                })
+                .filter((s: Scope | null): s is Scope => s !== null),
         };
+
+        console.log('Built PatchGraph:', ret);
         return ret;
     }
 
@@ -536,7 +613,10 @@ export class GraphBuilder {
     /**
      * Register module output(s) for stereo output routing
      */
-    addOut(value: ModuleOutput | ModuleOutput[], options: StereoOutOptions = {}): void {
+    addOut(
+        value: ModuleOutput | ModuleOutput[],
+        options: StereoOutOptions = {},
+    ): void {
         const baseChannel = options.baseChannel ?? 0;
         if (baseChannel < 0 || baseChannel > 14) {
             throw new Error(`baseChannel must be 0-14, got ${baseChannel}`);
@@ -559,7 +639,10 @@ export class GraphBuilder {
     /**
      * Register module output(s) for mono output routing
      */
-    addOutMono(value: ModuleOutput | ModuleOutput[], options: MonoOutOptions = {}): void {
+    addOutMono(
+        value: ModuleOutput | ModuleOutput[],
+        options: MonoOutOptions = {},
+    ): void {
         const channel = options.channel ?? 0;
         if (channel < 0 || channel > 15) {
             throw new Error(`channel must be 0-15, got ${channel}`);
@@ -582,12 +665,16 @@ export class GraphBuilder {
      * Called by DeferredModuleOutput constructor.
      */
     registerDeferred(deferred: DeferredModuleOutput): void {
-        this.deferredOutputs.add(deferred);
+        this.deferredOutputs.set(deferred.moduleId, deferred);
     }
 
     addScope(
         value: ModuleOutput | ModuleOutput[],
-        config: { msPerFrame?: number; triggerThreshold?: number; scale?: number } = {},
+        config: {
+            msPerFrame?: number;
+            triggerThreshold?: number;
+            scale?: number;
+        } = {},
     ) {
         const { msPerFrame = 500, triggerThreshold, scale = 5 } = config;
         let realTriggerThreshold: number | undefined =
@@ -672,11 +759,7 @@ export class ModuleNode {
     _output(
         portName: string,
         polyphonic: boolean = false,
-    ):
-        | ModuleOutput
-        | Collection
-        | ModuleOutputWithRange
-        | CollectionWithRange {
+    ): ModuleOutput | Collection | ModuleOutputWithRange | CollectionWithRange {
         // Verify output exists
         const outputSchema = this.schema.outputs.find(
             (o) => o.name === portName,
@@ -777,7 +860,11 @@ export class ModuleOutput {
         return factory(this, undefined, offset) as ModuleOutput;
     }
 
-    scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this {
+    scope(config?: {
+        msPerFrame?: number;
+        triggerThreshold?: number;
+        scale?: number;
+    }): this {
         this.builder.addScope(this, config);
         return this;
     }
@@ -839,7 +926,8 @@ export class ModuleOutputWithRange extends ModuleOutput {
         if (!factory) {
             throw new Error('Factory for remap not registered');
         }
-        return factory(this,
+        return factory(
+            this,
             this.minValue,
             this.maxValue,
             outMin,
@@ -860,15 +948,16 @@ type OutputSideEffect = (output: ModuleOutput) => void;
  * Transforms are stored and applied when the deferred signal is resolved.
  */
 export class DeferredModuleOutput extends ModuleOutput {
-    readonly builder: GraphBuilder;
-    private resolvedSignal: Signal | null = null;
-    private transforms: OutputTransform[] = [];
-    private sideEffects: OutputSideEffect[] = [];
+    private resolvedModuleOutput: ModuleOutput | null = null;
+    private resolving: boolean = false;
     static idCounter = 0;
 
-    constructor(builder: GraphBuilder, id?: string) {
-        super(builder, `DEFERRED-${DeferredModuleOutput.idCounter++}`, 'output');
-        this.builder = builder;
+    constructor(builder: GraphBuilder) {
+        super(
+            builder,
+            `DEFERRED-${DeferredModuleOutput.idCounter++}`,
+            'output',
+        );
         // Register this deferred output with the builder for string replacement during toPatch
         builder.registerDeferred(this);
     }
@@ -877,86 +966,35 @@ export class DeferredModuleOutput extends ModuleOutput {
      * Set the actual signal this deferred output should resolve to.
      * @param signal - The signal to resolve to (number, string, or ModuleOutput)
      */
-    set(signal: Signal): void {
-        this.resolvedSignal = signal;
-    }
-
-    /**
-     * Scale the resolved output by a factor.
-     * The transform is stored and applied during resolution.
-     */
-    override gain(factor: Value): this {
-        this.transforms.push((output) => output.gain(factor));
-        return this;
-    }
-
-    /**
-     * Shift the resolved output by an offset.
-     * The transform is stored and applied during resolution.
-     */
-    override shift(offset: Value): this {
-        this.transforms.push((output) => output.shift(offset));
-        return this;
-    }
-
-    /**
-     * Add scope visualization for the resolved output.
-     * The side effect is stored and executed during resolution.
-     */
-    override scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this {
-        this.sideEffects.push((output) => output.scope(config));
-        return this;
-    }
-
-    /**
-     * Send the resolved output to speakers as stereo.
-     * The side effect is stored and executed during resolution.
-     */
-    override out(baseChannel: number = 0, options: StereoOutOptions = {}): this {
-        this.sideEffects.push((output) => output.out(baseChannel, options));
-        return this;
-    }
-
-    /**
-     * Send the resolved output to speakers as mono.
-     * The side effect is stored and executed during resolution.
-     */
-    override outMono(channel: number = 0, gain?: PolySignal): this {
-        this.sideEffects.push((output) => output.outMono(channel, gain));
-        return this;
+    set(signal: ModuleOutput): void {
+        this.resolvedModuleOutput = signal;
     }
 
     /**
      * Resolve this deferred output to an actual ModuleOutput.
-     * Applies all stored transforms and executes side effects.
      * @returns The resolved ModuleOutput, or null if not set.
      */
     resolve(): ModuleOutput | null {
-        if (this.resolvedSignal === null) {
+        if (this.resolving) {
+            throw new Error(
+                'Circular reference detected while resolving DeferredModuleOutput',
+            );
+        }
+
+        if (this.resolvedModuleOutput === null) {
             return null;
         }
 
-        // Convert signal to ModuleOutput if needed
-        let output: ModuleOutput;
-        if (this.resolvedSignal instanceof ModuleOutput) {
-            output = this.resolvedSignal;
-        } else {
-            // For numbers/strings, we need to create a signal module
-            const signalFactory = this.builder.getFactory('signal');
-            if (!signalFactory) {
-                throw new Error('Factory for signal not registered');
+        let output = this.resolvedModuleOutput;
+        if (output instanceof DeferredModuleOutput) {
+            this.resolving = true;
+            let resolved = output.resolve();
+            this.resolving = false;
+
+            if (resolved === null) {
+                return null;
             }
-            output = signalFactory(this.resolvedSignal) as ModuleOutput;
-        }
-
-        // Apply all transforms
-        for (const transform of this.transforms) {
-            output = transform(output);
-        }
-
-        // Execute all side effects
-        for (const sideEffect of this.sideEffects) {
-            sideEffect(output);
+            output = resolved;
         }
 
         return output;
@@ -965,35 +1003,27 @@ export class DeferredModuleOutput extends ModuleOutput {
 
 /**
  * DeferredCollection is a collection of DeferredModuleOutput instances.
- * Provides a .set() method to assign signals to all contained deferred outputs.
+ * Provides a .set() method to assign ModuleOutputs to all contained deferred outputs.
  */
 export class DeferredCollection extends BaseCollection<DeferredModuleOutput> {
-    static idCounter = 0;
     constructor(...args: DeferredModuleOutput[]) {
         super(...args);
     }
 
     /**
-     * Set the signals for all deferred outputs in this collection.
-     * @param polySignal - A PolySignal (single signal, array, or iterable) to distribute across outputs
+     * Set the values for all deferred outputs in this collection.
+     * @param outputs - A ModuleOutput or iterable of ModuleOutputs to distribute across outputs
      */
-    set(polySignal: PolySignal): void {
-        // Convert polySignal to array
-        let signals: Signal[];
-        if (Array.isArray(polySignal)) {
-            signals = polySignal;
-        } else if (typeof polySignal === 'object' && polySignal !== null && Symbol.iterator in polySignal) {
-            signals = [...(polySignal as Iterable<Signal>)];
-        } else {
-            // Single signal - apply to all
-            signals = [polySignal as Signal];
+    set(outputs: ModuleOutput | Iterable<ModuleOutput>): void {
+        if (outputs instanceof ModuleOutput) {
+            outputs = [outputs];
         }
+
+        const outputsArr = Array.from(outputs);
 
         // Distribute signals across deferred outputs
         for (let i = 0; i < this.items.length; i++) {
-            // Use modulo to wrap if fewer signals than outputs, or just use last signal
-            const signal = signals[Math.min(i, signals.length - 1)];
-            this.items[i].set(signal);
+            this.items[i].set(outputsArr[i % outputsArr.length]);
         }
     }
 }
@@ -1036,17 +1066,11 @@ export function replaceValues(input: unknown, replacer: Replacer): unknown {
 export function replaceSignals(input: unknown): unknown {
     return replaceValues(input, (_key, value) => {
         // Replace Collection instances with their items array
-        if (value instanceof Collection || value instanceof CollectionWithRange) {
+        if (value instanceof BaseCollection) {
             return [...value];
         }
 
-        // Replace DeferredCollection with resolved items array
-        if (value instanceof DeferredCollection) {
-            return [...value].map((deferred) => deferred.resolve());
-        }
-
         return valueToSignal(value);
-
     });
 }
 
@@ -1056,19 +1080,30 @@ export function replaceSignals(input: unknown): unknown {
  */
 export function replaceDeferredStrings(
     input: unknown,
-    deferredStringMap: Map<string, string>
+    deferredStringMap: Map<string, string | null>,
 ): unknown {
     if (typeof input === 'string') {
         // Replace all occurrences of deferred strings with resolved strings
         let result = input;
         for (const [deferredStr, resolvedStr] of deferredStringMap) {
-            result = result.split(deferredStr).join(resolvedStr);
+            const splitResult = result.split(deferredStr);
+            if (splitResult.length > 1) {
+                if (resolvedStr === null) {
+                    throw new Error(
+                        `Unset DeferredModuleOutput used in string: "${input}"`,
+                    );
+                }
+
+                result = splitResult.join(resolvedStr);
+            }
         }
         return result;
     }
 
     if (Array.isArray(input)) {
-        return input.map((item) => replaceDeferredStrings(item, deferredStringMap));
+        return input.map((item) =>
+            replaceDeferredStrings(item, deferredStringMap),
+        );
     }
 
     if (typeof input === 'object' && input !== null) {
@@ -1082,6 +1117,35 @@ export function replaceDeferredStrings(
     return input;
 }
 
+function replaceDeferred(
+    input: unknown,
+    deferredOutputs: Map<string, DeferredModuleOutput>,
+): unknown {
+    function replace(value: unknown): unknown {
+        const maybeResolvedModuleOutput = ResolvedModuleOutput.safeParse(value);
+        if (maybeResolvedModuleOutput.success) {
+            const resolved = deferredOutputs.get(
+                maybeResolvedModuleOutput.data.module,
+            );
+            console.log('Found deferred output for replacement:', resolved);
+            if (resolved) {
+                console.log('Resolving deferred output:', resolved);
+                return valueToSignal(resolved.resolve());
+            } else {
+                return valueToSignal(null);
+            }
+        }
+        return value;
+    }
+    return replaceValues(input, (_key, value) => {
+        // Replace Collection instances with their items array
+        if (value instanceof BaseCollection) {
+            return [...value];
+        }
+
+        return replace(value);
+    });
+}
 
 function valueToSignal(value: unknown): unknown {
     if (value instanceof ModuleOutput) {
@@ -1091,13 +1155,6 @@ function valueToSignal(value: unknown): unknown {
             port: value.portName,
             channel: value.channel,
         };
-    } else if (value instanceof DeferredModuleOutput) {
-        // Resolve deferred output and convert to signal
-        const resolved = value.resolve();
-        if (resolved === null) {
-            return { type: 'disconnected' };
-        }
-        return valueToSignal(resolved);
     } else if (value === null || value === undefined) {
         return { type: 'disconnected' };
     }
