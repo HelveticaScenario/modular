@@ -1131,6 +1131,20 @@ registerIPCHandler('OPEN_HELP_WINDOW', async () => {
     createHelpWindow();
 });
 
+registerIPCHandler('OPEN_HELP_FOR_SYMBOL', async (symbolType: 'type' | 'module' | 'namespace', symbolName: string) => {
+    createHelpWindow();
+    // Send navigation message to help window after it loads
+    if (helpWindow) {
+        helpWindow.webContents.once('did-finish-load', () => {
+            helpWindow?.webContents.send('navigate-to-symbol', { symbolType, symbolName });
+        });
+        // If already loaded, send immediately
+        if (!helpWindow.webContents.isLoading()) {
+            helpWindow.webContents.send('navigate-to-symbol', { symbolType, symbolName });
+        }
+    }
+});
+
 // Config IPC handlers
 registerIPCHandler('CONFIG_GET_PATH', () => {
     ensureConfigExists();

@@ -23,10 +23,16 @@
     text-align: left;
     padding: 8px;
     cursor: pointer;
+    border-radius: 4px;
 }
 
 .sidebar button:hover {
     background: #2a2d2e;
+}
+
+.sidebar button.active {
+    background: #37373d;
+    color: #fff;
 }
 
 .content {
@@ -50,4 +56,179 @@ pre {
     background: #111;
     padding: 10px;
     border-radius: 4px;
+    overflow-x: auto;
+}
+
+/* Type link styling - TypeScript-like cyan color */
+.type-link {
+    color: #4EC9B0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    font-family: inherit;
+    font-size: inherit;
+    padding: 0;
+    margin: 0;
+}
+
+.type-link:hover {
+    text-decoration-style: solid;
+    color: #6fd9c0;
+}
+
+/* Search input */
+.search-input {
+    width: 100%;
+    padding: 8px;
+    margin-bottom: 16px;
+    background: #333;
+    color: #fff;
+    border: 1px solid #444;
+    border-radius: 4px;
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: #0078d4;
+}
+
+/* Types page */
+.types-intro {
+    margin-bottom: 20px;
+    color: #999;
+}
+
+.types-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* Type card */
+.type-card {
+    background: #2d2d2d;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.type-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.type-card-header:hover {
+    background: #353535;
+}
+
+.type-card-header h3 {
+    margin: 0;
+    color: #4EC9B0;
+    font-family: monospace;
+}
+
+.expand-icon {
+    color: #666;
+    font-size: 12px;
+}
+
+.type-description {
+    padding: 0 15px 12px;
+    margin: 0;
+    color: #bbb;
+    line-height: 1.5;
+}
+
+.type-card.expanded .type-description {
+    border-bottom: 1px solid #404040;
+    padding-bottom: 15px;
+}
+
+.type-details {
+    padding: 15px;
+    background: #262626;
+}
+
+.type-details h4 {
+    margin: 0 0 8px;
+    color: #888;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.type-details > div {
+    margin-bottom: 15px;
+}
+
+.type-details > div:last-child {
+    margin-bottom: 0;
+}
+
+.type-definition code {
+    display: block;
+    background: #1e1e1e;
+    padding: 10px;
+    border-radius: 4px;
+    color: #9cdcfe;
+    font-family: monospace;
+}
+
+.type-examples pre {
+    margin: 0;
+    font-size: 13px;
+}
+
+/* Method cards */
+.method-card {
+    background: #1e1e1e;
+    padding: 12px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+}
+
+.method-card:last-child {
+    margin-bottom: 0;
+}
+
+.method-signature {
+    display: block;
+    color: #dcdcaa;
+    font-family: monospace;
+    margin-bottom: 8px;
+}
+
+.method-card p {
+    margin: 0 0 8px;
+    color: #bbb;
+    font-size: 14px;
+}
+
+.method-example {
+    margin: 0;
+    font-size: 12px;
+    padding: 8px;
+}
+
+/* See also links */
+.see-also-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.see-also-links .type-link {
+    background: #1e1e1e;
+    padding: 4px 8px;
+    border-radius: 4px;
+    text-decoration: none;
+}
+
+.see-also-links .type-link:hover {
+    background: #2a2a2a;
 }

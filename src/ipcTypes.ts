@@ -203,6 +203,7 @@ export const IPC_CHANNELS = {
 
     // Window operations
     OPEN_HELP_WINDOW: 'modular:window:open-help',
+    OPEN_HELP_FOR_SYMBOL: 'modular:window:open-help-for-symbol',
 
     // Config operations
     CONFIG_GET_PATH: 'modular:config:get-path',
@@ -302,6 +303,7 @@ export interface IPCHandlers {
 
     // Window operations
     [IPC_CHANNELS.OPEN_HELP_WINDOW]: () => void;
+    [IPC_CHANNELS.OPEN_HELP_FOR_SYMBOL]: (symbolType: 'type' | 'module' | 'namespace', symbolName: string) => void;
 
     // Config operations
     [IPC_CHANNELS.CONFIG_GET_PATH]: () => string;

@@ -106,6 +106,8 @@ export interface ElectronAPI {
 
     // Window operations
     openHelpWindow: () => Promise<void>;
+    openHelpForSymbol: (symbolType: 'type' | 'module' | 'namespace', symbolName: string) => Promise<void>;
+    onNavigateToSymbol: (callback: (data: { symbolType: 'type' | 'module' | 'namespace', symbolName: string }) => void) => () => void;
 
     // Config operations
     config: {
@@ -133,6 +135,13 @@ const electronAPI: ElectronAPI = {
 
     // Window operations
     openHelpWindow: () => invokeIPC('OPEN_HELP_WINDOW'),
+    openHelpForSymbol: (symbolType: 'type' | 'module' | 'namespace', symbolName: string) => 
+        invokeIPC('OPEN_HELP_FOR_SYMBOL', symbolType, symbolName),
+    onNavigateToSymbol: (callback: (data: { symbolType: 'type' | 'module' | 'namespace', symbolName: string }) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, data: { symbolType: 'type' | 'module' | 'namespace', symbolName: string }) => callback(data);
+        ipcRenderer.on('navigate-to-symbol', listener);
+        return () => ipcRenderer.removeListener('navigate-to-symbol', listener);
+    },
 
     // Synthesizer operations
     synthesizer: {

@@ -201,16 +201,60 @@ type ModeString =
   // Lydian (start of string)
   | \`\${CaseVariants<"lydian">}\${string}\`;
 
+/**
+ * A scale pattern string for generating multiple pitches.
+ * Format: "{count}s({root}:{mode})"
+ * @example "4s(C:major)" - 4 notes of C major scale
+ * @example "8s(A:minor)" - 8 notes of A minor scale
+ * @see {@link Signal}
+ * @see {@link Note}
+ */
 type Scale = \`\${number}s(\${Note}:\${ModeString})\`
 
 type OrArray<T> = T | T[];
 
-// Core DSL types used by the generated declarations
+/**
+ * A single-channel audio signal value. The fundamental type for all audio connections.
+ * 
+ * Signals follow the 1V/octave convention where 0V = C4 (~261.63 Hz).
+ * 
+ * Can be one of:
+ * - A **number** (constant voltage)
+ * - A **{@link Note}** string like \`"C4"\` or \`"A#3"\`
+ * - A **{@link HZ}** string like \`"440hz"\`
+ * - A **{@link MidiNote}** string like \`"60m"\`
+ * - A **{@link Scale}** pattern like \`"4s(C:major)"\`
+ * - A **{@link ModuleOutput}** from another module
+ * 
+ * @example sine("C4")        // Note string
+ * @example sine(440)         // Number
+ * @example sine("440hz")     // Hz string
+ * @example sine(lfo.out)     // ModuleOutput
+ * @see {@link PolySignal} - for multi-channel signals
+ * @see {@link ModuleOutput} - for module connections
+ */
 type Signal = number | Note | HZ | MidiNote | Scale | ModuleOutput;
 
+/**
+ * A potentially multi-channel signal for polyphonic patches.
+ * 
+ * Can be:
+ * - A single {@link Signal}
+ * - An array of {@link Signal}s (creates multiple voices)
+ * - An iterable of {@link ModuleOutput}s
+ * 
+ * @example filter.lpf(["C3", "E3", "G3"]) // 3-voice chord
+ * @example osc.saw([...seq.pitch])        // Spread sequencer outputs
+ * @see {@link Signal} - for single-channel signals
+ * @see {@link Collection} - for grouping outputs
+ */
 type PolySignal = OrArray<Signal> | Iterable<ModuleOutput>;
 
-/** Options for stereo output routing */
+/**
+ * Options for stereo output routing via the out() method.
+ * @see {@link ModuleOutput.out}
+ * @see {@link Collection.out}
+ */
 interface StereoOutOptions {
   /** Output gain. If set, a scaleAndShift module is added after the stereo mix */
   gain?: PolySignal;
@@ -220,120 +264,295 @@ interface StereoOutOptions {
   width?: Signal;
 }
 
+/**
+ * A single output from a module, representing a mono signal connection.
+ * 
+ * ModuleOutputs are chainable - methods like gain(), shift(), and out() 
+ * return the same output for fluent API usage.
+ * 
+ * @example
+ * const osc = osc.sine("C4")
+ * osc.gain(0.5).out()           // Chain methods
+ * osc.scope().out()             // Add visualization
+ * filter.lpf(osc, { q: 4 })     // Use as input
+ * 
+ * @see {@link ModuleOutputWithRange} - for outputs with known value ranges
+ * @see {@link Collection} - for grouping multiple outputs
+ * @see {@link Signal} - ModuleOutput is a valid Signal
+ */
 interface ModuleOutput {
+  /** The unique identifier of the module this output belongs to */
   readonly moduleId: string;
+  /** The name of the output port */
   readonly portName: string;
+  /** The channel index for polyphonic outputs */
   readonly channel: number;
-  gain(factor: PolySignal): ModuleOutput;
-  shift(offset: PolySignal): ModuleOutput;
+  
   /**
-   * Add scope visualization for this output
+   * Scale the signal by a factor. Creates a scaleAndShift module internally.
+   * @param factor - Scale factor as {@link PolySignal}
+   * @returns The scaled {@link ModuleOutput} for chaining
+   * @example osc.gain(0.5)  // Half amplitude
+   */
+  gain(factor: PolySignal): ModuleOutput;
+  
+  /**
+   * Add a DC offset to the signal. Creates a scaleAndShift module internally.
+   * @param offset - Offset value as {@link PolySignal}
+   * @returns The shifted {@link ModuleOutput} for chaining
+   * @example lfo.shift(2.5)  // Shift to 0-5V range
+   */
+  shift(offset: PolySignal): ModuleOutput;
+  
+  /**
+   * Add scope visualization for this output.
+   * The scope appears as an overlay in the editor.
    * @param config - Scope configuration options
    * @param config.msPerFrame - Time window in milliseconds (default 500)
    * @param config.triggerThreshold - Trigger threshold in volts (optional)
    * @param config.scale - Voltage scale for display, shows -scale to +scale (default 5)
+   * @example osc.scope({ msPerFrame: 100, scale: 5 }).out()
    */
   scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this;
+  
   /**
-   * Send this output to speakers as stereo
+   * Send this output to speakers as stereo.
    * @param baseChannel - Base output channel (0-15, default 0). Left plays on baseChannel, right on baseChannel+1
-   * @param options - Stereo output options (gain, pan, width)
+   * @param options - Stereo output options ({@link StereoOutOptions})
+   * @example osc.out(0, { gain: 0.5, pan: -2 })
    */
   out(baseChannel?: number, options?: StereoOutOptions): this;
+  
   /**
-   * Send this output to speakers as mono
+   * Send this output to speakers as mono.
    * @param channel - Output channel (0-15, default 0)
-   * @param gain - Output gain (optional)
+   * @param gain - Output gain as {@link PolySignal} (optional)
+   * @example lfo.outMono(2, 0.3)
    */
   outMono(channel?: number, gain?: PolySignal): this;
 }
 
+/**
+ * A {@link ModuleOutput} that knows its output value range (minValue, maxValue).
+ * 
+ * Typically returned by LFOs, envelopes, and other modulation sources.
+ * The range() method uses the stored min/max for automatic scaling.
+ * 
+ * @example
+ * const lfo = lfo.sine(2)              // Outputs -5 to +5
+ * lfo.range(200, 2000)                 // Remap to 200-2000
+ * env.adsr({ attack: 0.1 }).range(0, 1)
+ * 
+ * @see {@link ModuleOutput} - base interface
+ * @see {@link CollectionWithRange} - for collections of ranged outputs
+ */
 interface ModuleOutputWithRange extends ModuleOutput {
+  /** The minimum value this output produces */
   readonly minValue: number;
+  /** The maximum value this output produces */
   readonly maxValue: number;
+  
+  /**
+   * Remap the output from its native range to a new range.
+   * Uses the stored minValue/maxValue automatically.
+   * @param outMin - New minimum as {@link PolySignal}
+   * @param outMax - New maximum as {@link PolySignal}
+   * @returns A {@link ModuleOutput} with the remapped signal
+   * @example lfo.range(note("C3"), note("C5"))
+   */
   range(outMin: PolySignal, outMax: PolySignal): ModuleOutput;
 }
 
 /**
- * Collection of ModuleOutput instances with chainable DSP methods.
- * Supports iteration, indexing, and spreading.
+ * A collection of {@link ModuleOutput} instances with chainable DSP methods.
+ * 
+ * Created with the $() helper function. Supports iteration, indexing, and spreading.
+ * Methods operate on all outputs in the collection.
+ * 
+ * @example
+ * $(osc1, osc2, osc3).gain(0.5).out()  // Apply gain to all
+ * for (const v of voices) { ... }      // Iterate
+ * [...voices]                          // Spread to array
+ * voices[0]                            // Index access
+ * 
+ * @see {@link CollectionWithRange} - for ranged outputs
+ * @see {@link ModuleOutput} - individual outputs
+ * @see {@link $} - helper to create Collection
  */
 interface Collection extends Iterable<ModuleOutput> {
+  /** Number of outputs in the collection */
   readonly length: number;
+  /** Index access to individual {@link ModuleOutput}s */
   readonly [index: number]: ModuleOutput;
   [Symbol.iterator](): Iterator<ModuleOutput>;
-  gain(factor: PolySignal): Collection;
-  shift(offset: PolySignal): Collection;
+  
   /**
-   * Add scope visualization for the first output in the collection
+   * Scale all signals by a factor.
+   * @param factor - Scale factor as {@link PolySignal}
+   * @see {@link ModuleOutput.gain}
+   */
+  gain(factor: PolySignal): Collection;
+  
+  /**
+   * Add DC offset to all signals.
+   * @param offset - Offset as {@link PolySignal}
+   * @see {@link ModuleOutput.shift}
+   */
+  shift(offset: PolySignal): Collection;
+  
+  /**
+   * Add scope visualization for the first output in the collection.
    * @param config - Scope configuration options
    * @param config.msPerFrame - Time window in milliseconds (default 500)
    * @param config.triggerThreshold - Trigger threshold in volts (optional)
    * @param config.scale - Voltage scale for display, shows -scale to +scale (default 5)
    */
   scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this;
+  
   /**
-   * Send all outputs to speakers as stereo
-   * @param baseChannel - Base output channel (0-14, default 0). Left plays on baseChannel, right on baseChannel+1
-   * @param options - Stereo output options (gain, pan, width)
+   * Send all outputs to speakers as stereo, summed together.
+   * @param baseChannel - Base output channel (0-14, default 0)
+   * @param options - Stereo output options ({@link StereoOutOptions})
    */
   out(baseChannel?: number, options?: StereoOutOptions): this;
+  
   /**
-   * Send all outputs to speakers as mono
+   * Send all outputs to speakers as mono, summed together.
    * @param channel - Output channel (0-15, default 0)
-   * @param gain - Output gain (optional)
+   * @param gain - Output gain as {@link PolySignal} (optional)
    */
   outMono(channel?: number, gain?: PolySignal): this;
+  
+  /**
+   * Remap all outputs from input range to output range.
+   * Requires explicit input min/max values.
+   * @param inMin - Input minimum as {@link PolySignal}
+   * @param inMax - Input maximum as {@link PolySignal}
+   * @param outMin - Output minimum as {@link PolySignal}
+   * @param outMax - Output maximum as {@link PolySignal}
+   * @see {@link CollectionWithRange.range} - for automatic input range
+   */
   range(inMin: PolySignal, inMax: PolySignal, outMin: PolySignal, outMax: PolySignal): Collection;
 }
 
 /**
- * Collection of ModuleOutputWithRange instances.
- * Use .range(outMin, outMax) to remap using stored min/max values.
+ * A collection of {@link ModuleOutputWithRange} instances.
+ * 
+ * Created with the $r() helper function. Like {@link Collection}, but the 
+ * range() method uses stored min/max values from each output.
+ * 
+ * @example
+ * $r(lfo1, lfo2).range(0, 5).out()     // Remap using stored ranges
+ * $r(...seq.gates).range(0, 1)        // Spread and remap gates
+ * 
+ * @see {@link Collection} - for outputs without known ranges
+ * @see {@link ModuleOutputWithRange} - individual ranged outputs
+ * @see {@link $r} - helper to create CollectionWithRange
  */
 interface CollectionWithRange extends Iterable<ModuleOutputWithRange> {
+  /** Number of outputs in the collection */
   readonly length: number;
+  /** Index access to individual {@link ModuleOutputWithRange}s */
   readonly [index: number]: ModuleOutputWithRange;
   [Symbol.iterator](): Iterator<ModuleOutputWithRange>;
-  gain(factor: PolySignal): Collection;
-  shift(offset: PolySignal): Collection;
+  
   /**
-   * Add scope visualization for the first output in the collection
+   * Scale all signals by a factor.
+   * @param factor - Scale factor as {@link PolySignal}
+   */
+  gain(factor: PolySignal): Collection;
+  
+  /**
+   * Add DC offset to all signals.
+   * @param offset - Offset as {@link PolySignal}
+   */
+  shift(offset: PolySignal): Collection;
+  
+  /**
+   * Add scope visualization for the first output in the collection.
    * @param config - Scope configuration options
    * @param config.msPerFrame - Time window in milliseconds (default 500)
    * @param config.triggerThreshold - Trigger threshold in volts (optional)
    * @param config.scale - Voltage scale for display, shows -scale to +scale (default 5)
    */
   scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this;
+  
   /**
-   * Send all outputs to speakers as stereo
-   * @param baseChannel - Base output channel (0-14, default 0). Left plays on baseChannel, right on baseChannel+1
-   * @param options - Stereo output options (gain, pan, width)
+   * Send all outputs to speakers as stereo, summed together.
+   * @param baseChannel - Base output channel (0-14, default 0)
+   * @param options - Stereo output options ({@link StereoOutOptions})
    */
   out(baseChannel?: number, options?: StereoOutOptions): this;
+  
   /**
-   * Send all outputs to speakers as mono
+   * Send all outputs to speakers as mono, summed together.
    * @param channel - Output channel (0-15, default 0)
-   * @param gain - Output gain (optional)
+   * @param gain - Output gain as {@link PolySignal} (optional)
    */
   outMono(channel?: number, gain?: PolySignal): this;
+  
+  /**
+   * Remap all outputs from their native ranges to a new range.
+   * Uses each output's stored minValue/maxValue.
+   * @param outMin - Output minimum as {@link PolySignal}
+   * @param outMax - Output maximum as {@link PolySignal}
+   * @see {@link Collection.range} - for explicit input range
+   */
   range(outMin: PolySignal, outMax: PolySignal): Collection;
 }
 
 // Helper functions exposed by the DSL runtime
+
+/**
+ * Convert a frequency in Hertz to a voltage value (1V/octave).
+ * @param frequency - Frequency in Hz
+ * @returns Voltage value for use as a {@link Signal}
+ * @example hz(440)  // A4
+ * @example hz(261.63)  // ~C4
+ */
 function hz(frequency: number): number;
+
+/**
+ * Convert a note name string to a voltage value (1V/octave).
+ * @param noteName - Note name like "C4", "A#3", "Bb5"
+ * @returns Voltage value for use as a {@link Signal}
+ * @example note("C4")  // Middle C
+ * @example note("A4")  // 440 Hz
+ */
 function note(noteName: string): number;
+
+/**
+ * Convert beats per minute to a frequency in Hz.
+ * Useful for setting clock tempo.
+ * @param beatsPerMinute - Tempo in BPM
+ * @returns Frequency in Hz
+ * @example bpm(120)  // 2 Hz
+ * @see {@link setTempo}
+ */
 function bpm(beatsPerMinute: number): number;
 
 /**
- * Create a Collection from ModuleOutput instances.
+ * Create a {@link Collection} from {@link ModuleOutput} instances.
+ * 
+ * Collections support chainable DSP methods, iteration, indexing, and spreading.
+ * @param args - One or more {@link ModuleOutput}s to group
+ * @returns A {@link Collection} of the outputs
  * @example $(osc1, osc2).gain(0.5).out()
+ * @example $(osc1, osc2, osc3)[0]  // Index access
+ * @example [...$(osc1, osc2)]      // Spread to array
+ * @see {@link $r} - for ranged outputs
  */
 function $(...args: ModuleOutput[]): Collection;
 
 /**
- * Create a CollectionWithRange from ModuleOutputWithRange instances.
- * @example $r(...lfo).range(note('c3'), note('c5'))
+ * Create a {@link CollectionWithRange} from {@link ModuleOutputWithRange} instances.
+ * 
+ * Like $() but the range() method uses stored min/max values.
+ * @param args - One or more {@link ModuleOutputWithRange}s to group
+ * @returns A {@link CollectionWithRange} of the outputs
+ * @example $r(lfo1, lfo2).range(0, 5)  // Uses stored ranges
+ * @example $r(...seq.gates).range(0, 1)
+ * @see {@link $} - for outputs without known ranges
  */
 function $r(...args: ModuleOutputWithRange[]): CollectionWithRange;
 

@@ -1,8 +1,21 @@
 import type { Monaco } from '../../hooks/useCustomMonaco';
 import { applyDslLibToMonaco } from './monacoHelpers';
 import { findSliderCalls } from './sliderWidgets';
+import { registerDslDefinitionProvider, buildSymbolSets, DefinitionProviderDeps } from './definitionProvider';
+import type { ModuleSchema } from '@modular/core';
 
-export function setupMonacoJavascript(monaco: Monaco, libSource: string) {
+export interface MonacoSetupOptions {
+    /** Function to open help window for a symbol */
+    openHelpForSymbol?: (symbolType: 'type' | 'module' | 'namespace', symbolName: string) => void;
+    /** Module schemas for building symbol sets */
+    schemas?: ModuleSchema[];
+}
+
+export function setupMonacoJavascript(
+    monaco: Monaco, 
+    libSource: string,
+    options: MonacoSetupOptions = {}
+) {
     const ts = monaco.typescript;
     console.log('Monaco TS version:', ts);
     const jsDefaults = ts.javascriptDefaults;
@@ -53,8 +66,21 @@ export function setupMonacoJavascript(monaco: Monaco, libSource: string) {
         },
     );
 
+    // Register definition provider if deps are provided
+    let definitionProvider: { dispose: () => void } | null = null;
+    if (options.openHelpForSymbol && options.schemas) {
+        const { moduleNames, namespaceNames } = buildSymbolSets(options.schemas);
+        const deps: DefinitionProviderDeps = {
+            openHelpForSymbol: options.openHelpForSymbol,
+            moduleNames,
+            namespaceNames,
+        };
+        definitionProvider = registerDslDefinitionProvider(monaco, deps);
+    }
+
     return () => {
         extraLib?.dispose();
         inlayHints?.dispose();
+        definitionProvider?.dispose();
     };
 }

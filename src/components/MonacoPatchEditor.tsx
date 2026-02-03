@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { editor } from 'monaco-editor';
+import type { ModuleSchema } from '@modular/core';
 import { useTheme } from '../themes/ThemeContext';
 import { findScopeCallEndLines } from '../utils/findScopeCallEndLines';
 import { useCustomMonaco } from '../hooks/useCustomMonaco';
@@ -48,8 +49,11 @@ export function MonacoPatchEditor({
 }: PatchEditorProps) {
     // Fetch DSL lib source once at mount for Monaco autocomplete
     const [libSource, setLibSource] = useState<string | null>(null);
+    const [schemas, setSchemas] = useState<ModuleSchema[]>([]);
+    
     useEffect(() => {
         electronAPI.getDslLibSource().then(setLibSource).catch(console.error);
+        electronAPI.getSchemas().then(setSchemas).catch(console.error);
     }, []);
 
     const monaco = useCustomMonaco();
@@ -153,8 +157,13 @@ export function MonacoPatchEditor({
 
     useEffect(() => {
         if (!monaco || !libSource) return;
-        return setupMonacoJavascript(monaco, libSource);
-    }, [monaco, libSource]);
+        return setupMonacoJavascript(monaco, libSource, {
+            schemas,
+            openHelpForSymbol: (symbolType, symbolName) => {
+                electronAPI.openHelpForSymbol(symbolType, symbolName);
+            },
+        });
+    }, [monaco, libSource, schemas]);
 
     useEffect(() => {
         if (!monaco) return;
