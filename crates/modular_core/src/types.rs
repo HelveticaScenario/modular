@@ -306,7 +306,10 @@ impl From<Clickless> for f32 {
 
 impl From<f32> for Clickless {
     fn from(value: f32) -> Self {
-        Clickless { value, initialized: false }
+        Clickless {
+            value,
+            initialized: false,
+        }
     }
 }
 
@@ -790,11 +793,12 @@ impl Signal {
 impl Connect for Signal {
     fn connect(&mut self, patch: &Patch) {
         if let Signal::Cable {
-                module, module_ptr, ..
-            } = self
-            && let Some(sampleable) = patch.sampleables.get(module) {
-                *module_ptr = Arc::downgrade(sampleable);
-            }
+            module, module_ptr, ..
+        } = self
+            && let Some(sampleable) = patch.sampleables.get(module)
+        {
+            *module_ptr = Arc::downgrade(sampleable);
+        }
     }
 }
 
@@ -1039,13 +1043,13 @@ fn default_scope_scale() -> f64 {
     5.0
 }
 
-#[derive(Debug, Clone, PartialEq)]
-// #[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 #[napi(object)]
 pub struct PatchGraph {
     pub modules: Vec<ModuleState>,
     pub module_id_remaps: Option<Vec<ModuleIdRemap>>,
-    // #[serde(default)]
+    #[serde(default)]
     pub scopes: Vec<Scope>,
 }
 

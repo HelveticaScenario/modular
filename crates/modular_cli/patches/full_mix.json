@@ -1,0 +1,109 @@
+{
+  "modules": [
+    {
+      "id": "ROOT_OUTPUT",
+      "moduleType": "signal",
+      "params": {
+        "source": [
+          { "type": "cable", "module": "master-mix", "port": "output", "channel": 0 },
+          { "type": "cable", "module": "master-mix", "port": "output", "channel": 1 }
+        ]
+      }
+    },
+    {
+      "id": "master-mix",
+      "moduleType": "mix",
+      "params": {
+        "inputs": [
+          { "type": "cable", "module": "synth-chain", "port": "output", "channel": 0 },
+          { "type": "cable", "module": "bass-chain", "port": "output", "channel": 0 },
+          { "type": "cable", "module": "pad-chain", "port": "output", "channel": 0 }
+        ],
+        "mode": "sum",
+        "gain": 0.33
+      }
+    },
+    {
+      "id": "synth-chain",
+      "moduleType": "lpf",
+      "params": {
+        "input": { "type": "cable", "module": "synth-osc-mix", "port": "output", "channel": 0 },
+        "cutoff": { "type": "cable", "module": "filter-lfo", "port": "output", "channel": 0 },
+        "resonance": 2.0
+      }
+    },
+    {
+      "id": "synth-osc-mix",
+      "moduleType": "mix",
+      "params": {
+        "inputs": [
+          { "type": "cable", "module": "synth-saw", "port": "output", "channel": 0 },
+          { "type": "cable", "module": "synth-pulse", "port": "output", "channel": 0 }
+        ],
+        "mode": "average",
+        "gain": 1.0
+      }
+    },
+    {
+      "id": "synth-saw",
+      "moduleType": "saw",
+      "params": {
+        "freq": 0.0
+      }
+    },
+    {
+      "id": "synth-pulse",
+      "moduleType": "pulse",
+      "params": {
+        "freq": 0.01,
+        "width": 0.3
+      }
+    },
+    {
+      "id": "filter-lfo",
+      "moduleType": "sine",
+      "params": {
+        "freq": -4.0
+      }
+    },
+    {
+      "id": "bass-chain",
+      "moduleType": "lpf",
+      "params": {
+        "input": { "type": "cable", "module": "bass-osc", "port": "output", "channel": 0 },
+        "cutoff": -1.0,
+        "resonance": 1.0
+      }
+    },
+    {
+      "id": "bass-osc",
+      "moduleType": "saw",
+      "params": {
+        "freq": -1.0
+      }
+    },
+    {
+      "id": "pad-chain",
+      "moduleType": "mix",
+      "params": {
+        "inputs": [
+          { "type": "cable", "module": "plaits-pad", "port": "out", "channel": 0 }
+        ],
+        "mode": "sum",
+        "gain": 0.5
+      }
+    },
+    {
+      "id": "plaits-pad",
+      "moduleType": "plaits",
+      "params": {
+        "pitch": 0.5,
+        "engine": "stringMachine",
+        "harmonics": 0.6,
+        "timbre": 0.4,
+        "morph": 0.5
+      }
+    }
+  ],
+  "scopes": []
+}

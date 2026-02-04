@@ -1,0 +1,183 @@
+{
+    "modules": [
+        {
+            "id": "ROOT_OUTPUT",
+            "moduleType": "signal",
+            "params": {
+                "source": [
+                    {
+                        "type": "cable",
+                        "module": "mix-1",
+                        "port": "output",
+                        "channel": 0
+                    },
+                    {
+                        "type": "cable",
+                        "module": "mix-1",
+                        "port": "output",
+                        "channel": 1
+                    }
+                ]
+            }
+        },
+        {
+            "id": "mix-1",
+            "moduleType": "mix",
+            "params": {
+                "inputs": [
+                    [
+                        {
+                            "type": "cable",
+                            "module": "plaits-1",
+                            "port": "out",
+                            "channel": 0
+                        },
+                        {
+                            "type": "cable",
+                            "module": "plaits-1",
+                            "port": "out",
+                            "channel": 1
+                        },
+                        {
+                            "type": "cable",
+                            "module": "plaits-1",
+                            "port": "out",
+                            "channel": 2
+                        },
+                        {
+                            "type": "cable",
+                            "module": "plaits-1",
+                            "port": "out",
+                            "channel": 3
+                        }
+                    ],
+                    [
+                        {
+                            "type": "cable",
+                            "module": "plaits-2",
+                            "port": "out",
+                            "channel": 0
+                        },
+                        {
+                            "type": "cable",
+                            "module": "plaits-2",
+                            "port": "out",
+                            "channel": 1
+                        },
+                        {
+                            "type": "cable",
+                            "module": "plaits-2",
+                            "port": "out",
+                            "channel": 2
+                        },
+                        {
+                            "type": "cable",
+                            "module": "plaits-2",
+                            "port": "out",
+                            "channel": 3
+                        }
+                    ],
+                    [
+                        {
+                            "type": "cable",
+                            "module": "plaits-3",
+                            "port": "out",
+                            "channel": 0
+                        },
+                        {
+                            "type": "cable",
+                            "module": "plaits-3",
+                            "port": "out",
+                            "channel": 1
+                        },
+                        {
+                            "type": "cable",
+                            "module": "plaits-3",
+                            "port": "out",
+                            "channel": 2
+                        },
+                        {
+                            "type": "cable",
+                            "module": "plaits-3",
+                            "port": "out",
+                            "channel": 3
+                        }
+                    ],
+                    [
+                        {
+                            "type": "cable",
+                            "module": "plaits-4",
+                            "port": "out",
+                            "channel": 0
+                        },
+                        {
+                            "type": "cable",
+                            "module": "plaits-4",
+                            "port": "out",
+                            "channel": 1
+                        },
+                        {
+                            "type": "cable",
+                            "module": "plaits-4",
+                            "port": "out",
+                            "channel": 2
+                        },
+                        {
+                            "type": "cable",
+                            "module": "plaits-4",
+                            "port": "out",
+                            "channel": 3
+                        }
+                    ]
+                ],
+                "mode": "average",
+                "gain": 1.0
+            }
+        },
+        {
+            "id": "plaits-1",
+            "moduleType": "plaits",
+            "params": {
+                "pitch": [0.0, 0.01, -0.01, 0.02],
+                "engine": "vaVcf",
+                "harmonics": 0.5,
+                "timbre": 0.5,
+                "morph": 0.5
+            }
+        },
+        {
+            "id": "plaits-2",
+            "moduleType": "plaits",
+            "params": {
+                "pitch": [0.333, 0.343, 0.323, 0.353],
+                "engine": "granularFormant",
+                "harmonics": 0.3,
+                "timbre": 0.7,
+                "morph": 0.2
+            }
+        },
+        {
+            "id": "plaits-3",
+            "moduleType": "plaits",
+            "params": {
+                "pitch": [0.583, 0.593, 0.573, 0.603],
+                "engine": "wavetable",
+                "harmonics": 0.6,
+                "timbre": 0.4,
+                "morph": 0.8
+            }
+        },
+        {
+            "id": "plaits-4",
+            "moduleType": "plaits",
+            "params": {
+                "pitch": [1.0, 1.01, 0.99, 1.02],
+                "engine": "modalResonator",
+                "harmonics": 0.4,
+                "timbre": 0.5,
+                "morph": 0.5
+            }
+        }
+    ],
+    "scopes": []
+}

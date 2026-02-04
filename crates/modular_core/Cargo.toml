@@ -6,6 +6,11 @@ edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = []
+profile = ["tracing", "tracing-tracy"]
+legacy-dsp-tests = []
+
 [dependencies]
 serde_json = "1.0.147"
 serde = { version = "1.0", features = ["derive"] }
@@ -26,6 +31,17 @@ rust-music-theory = "0.3.0"
 num = "0.4.3"
 paste = "1.0"
 
+# Profiling (optional)
+tracing = { version = "0.1", optional = true }
+tracing-tracy = { version = "0.11", optional = true, default-features = false }
+
 [dependencies.napi]
 version = "3.7.1"
 features = ["serde", "serde-json"]
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "dsp_bench"
+harness = false

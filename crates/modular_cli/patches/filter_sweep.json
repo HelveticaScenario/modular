@@ -1,0 +1,38 @@
+{
+  "modules": [
+    {
+      "id": "ROOT_OUTPUT",
+      "moduleType": "signal",
+      "params": {
+        "source": [
+          { "type": "cable", "module": "lpf-1", "port": "output", "channel": 0 },
+          { "type": "cable", "module": "lpf-1", "port": "output", "channel": 0 }
+        ]
+      }
+    },
+    {
+      "id": "lpf-1",
+      "moduleType": "lpf",
+      "params": {
+        "input": { "type": "cable", "module": "saw-1", "port": "output", "channel": 0 },
+        "cutoff": { "type": "cable", "module": "lfo-1", "port": "output", "channel": 0 },
+        "resonance": 2.5
+      }
+    },
+    {
+      "id": "saw-1",
+      "moduleType": "saw",
+      "params": {
+        "freq": 0.0
+      }
+    },
+    {
+      "id": "lfo-1",
+      "moduleType": "sine",
+      "params": {
+        "freq": -5.0
+      }
+    }
+  ],
+  "scopes": []
+}

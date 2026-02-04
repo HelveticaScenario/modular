@@ -13,3 +13,15 @@ default-members = [
     "crates/modular",
     "crates/modular_cli",
 ]
+
+# Profiling profile: optimized but with debug symbols for samply/Instruments/perf
+[profile.profiling]
+inherits = "release"
+debug = true
+lto = false
+strip = false
+
+# Release profile for N-API module
+[profile.release]
+lto = true
+strip = "symbols"

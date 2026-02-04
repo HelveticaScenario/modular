@@ -1,0 +1,19 @@
+{
+  "modules": [
+    {
+      "id": "ROOT_OUTPUT",
+      "moduleType": "signal",
+      "params": {
+        "source": { "type": "cable", "module": "sine-1", "port": "output", "channel": 0 }
+      }
+    },
+    {
+      "id": "sine-1",
+      "moduleType": "sine",
+      "params": {
+        "freq": 0.0
+      }
+    }
+  ],
+  "scopes": []
+}
