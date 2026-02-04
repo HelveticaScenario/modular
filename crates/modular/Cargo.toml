@@ -20,6 +20,7 @@ midir = "0.10"
 crossbeam-channel = "0.5"
 ringbuf = "0.4"
 rtrb = "0.3"
+dirs = "5"
 
 [dependencies.napi]
 version = "3.7.1"

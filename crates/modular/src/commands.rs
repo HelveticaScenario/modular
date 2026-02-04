@@ -133,3 +133,23 @@ pub const COMMAND_QUEUE_CAPACITY: usize = 1024;
 
 /// Capacity for the error queue (audio → main)
 pub const ERROR_QUEUE_CAPACITY: usize = 256;
+
+/// Capacity for the metrics queue (audio → main)
+pub const METRICS_QUEUE_CAPACITY: usize = 512;
+
+/// Timing metrics report for a single module, sent from audio thread to main thread.
+#[derive(Debug, Clone)]
+pub struct ModuleTimingReport {
+    /// Internal module ID (what the module stores, may differ from external DSL-assigned ID)
+    pub module_id: String,
+    /// Module type (e.g., "sine", "mix", "seq")
+    pub module_type: String,
+    /// Total nanoseconds spent in update() since last reset
+    pub total_ns: u64,
+    /// Number of update() calls since last reset
+    pub count: u64,
+    /// Minimum time for a single update() call in nanoseconds
+    pub min_ns: u64,
+    /// Maximum time for a single update() call in nanoseconds
+    pub max_ns: u64,
+}

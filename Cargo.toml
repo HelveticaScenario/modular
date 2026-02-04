@@ -5,4 +5,11 @@ members = [
     "crates/modular_derive",
     "crates/mi-plaits-dsp-rs",
     "crates/modular",
+    "crates/modular_cli",
+]
+default-members = [
+    "crates/modular_core",
+    "crates/modular_derive",
+    "crates/modular",
+    "crates/modular_cli",
 ]

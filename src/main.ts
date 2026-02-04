@@ -328,6 +328,12 @@ setInterval(() => {
     console.log('health:', synth.getHealth());
 }, 10000);
 
+// Poll performance metrics more frequently than health check
+// (audio thread sends metrics every ~1 second, so 2 second poll is sufficient)
+setInterval(() => {
+    synth.pollMetrics();
+}, 2000);
+
 // Workspace root state
 let currentWorkspaceRoot: string | null = null;
 

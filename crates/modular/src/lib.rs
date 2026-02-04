@@ -2,6 +2,7 @@
 
 mod audio;
 mod commands;
+mod metrics;
 mod midi;
 mod validation;
 
@@ -23,6 +24,7 @@ use crate::audio::{
   InputBufferWriter, create_audio_channels, create_input_ring_buffer, find_input_device_in_host,
   find_output_device_in_host, get_host_by_preference, make_input_stream, make_stream,
 };
+use crate::metrics::MetricsManager;
 use crate::midi::MidiInputManager;
 
 /// Information about a MIDI input port (for N-API)
@@ -59,6 +61,8 @@ pub struct Synthesizer {
   input_device_id: Option<String>,
   device_cache: AudioDeviceCache,
   fallback_warning: Option<String>,
+  /// Performance metrics manager (handles ID remapping, params registry, and log writing)
+  metrics_manager: MetricsManager,
 }
 
 /// Resolve devices from config, falling back to defaults if not found
@@ -220,21 +224,22 @@ fn build_output_stream(
   sample_format: cpal::SampleFormat,
   command_rx: crate::audio::CommandConsumer,
   error_tx: crate::audio::ErrorProducer,
+  metrics_tx: crate::audio::MetricsProducer,
   shared: AudioSharedState,
   input_reader: InputBufferReader,
 ) -> Result<cpal::Stream> {
   match sample_format {
     cpal::SampleFormat::I8 => {
-      make_stream::<i8>(device, config, command_rx, error_tx, shared, input_reader)
+      make_stream::<i8>(device, config, command_rx, error_tx, metrics_tx, shared, input_reader)
     }
     cpal::SampleFormat::I16 => {
-      make_stream::<i16>(device, config, command_rx, error_tx, shared, input_reader)
+      make_stream::<i16>(device, config, command_rx, error_tx, metrics_tx, shared, input_reader)
     }
     cpal::SampleFormat::I32 => {
-      make_stream::<i32>(device, config, command_rx, error_tx, shared, input_reader)
+      make_stream::<i32>(device, config, command_rx, error_tx, metrics_tx, shared, input_reader)
     }
     cpal::SampleFormat::F32 => {
-      make_stream::<f32>(device, config, command_rx, error_tx, shared, input_reader)
+      make_stream::<f32>(device, config, command_rx, error_tx, metrics_tx, shared, input_reader)
     }
     _ => Err(napi::Error::from_reason(format!(
       "Unsupported output sample format: {:?}",
@@ -303,12 +308,13 @@ fn setup_streams(params: StreamSetupParams) -> Result<StreamSetupResult> {
   };
 
   // Create command and error queues for audio thread communication
-  let (command_tx, command_rx, error_tx, error_rx) = create_audio_channels();
+  let (command_tx, command_rx, error_tx, error_rx, metrics_tx, metrics_rx) = create_audio_channels();
 
   // Create audio state handle (main thread side)
   let state = Arc::new(AudioState::new_with_channels(
     command_tx,
     error_rx,
+    metrics_rx,
     params.sample_rate as f32,
     channels,
     params.midi_manager.clone(),
@@ -334,6 +340,7 @@ fn setup_streams(params: StreamSetupParams) -> Result<StreamSetupResult> {
     params.output_config.sample_format(),
     command_rx,
     error_tx,
+    metrics_tx,
     shared,
     input_reader,
   )?;
@@ -491,6 +498,7 @@ impl Synthesizer {
       input_device_id: setup_result.input_device_id,
       device_cache,
       fallback_warning,
+      metrics_manager: MetricsManager::default(),
     })
   }
 
@@ -525,11 +533,31 @@ impl Synthesizer {
   }
 
   #[napi]
-  pub fn update_patch(&self, patch: PatchGraph) -> Vec<ApplyPatchError> {
+  pub fn update_patch(&mut self, patch: PatchGraph) -> Vec<ApplyPatchError> {
     // Extract MIDI device names from MIDI modules and sync connections
     self.sync_midi_devices_from_patch(&patch);
+
+    // Update metrics manager with new module registry and ID remaps
+    let remaps = patch.module_id_remaps.as_deref().unwrap_or(&[]);
+    self.metrics_manager.on_patch_update(&patch.modules, remaps);
     
     self.state.handle_set_patch(patch, self.sample_rate)
+  }
+
+  /// Poll and process any pending timing metrics from the audio thread.
+  /// Should be called periodically from the main thread (e.g., every frame or tick).
+  #[napi]
+  pub fn poll_metrics(&mut self) {
+    let reports = self.state.drain_metrics();
+    if !reports.is_empty() {
+      self.metrics_manager.process_metrics(reports);
+    }
+  }
+
+  /// Get the path to the performance log file
+  #[napi]
+  pub fn get_perf_log_path(&self) -> String {
+    self.metrics_manager.log_path().to_string_lossy().to_string()
   }
 
   /// Extract MIDI device names from patch modules and sync connections

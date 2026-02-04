@@ -163,6 +163,15 @@ pub trait Sampleable: MessageHandler + Send + Sync {
     fn get_state(&self) -> Option<serde_json::Value> {
         None
     }
+
+    /// Get accumulated timing metrics for this module's update() calls.
+    /// Returns (total_ns, call_count, min_ns, max_ns) since last reset, or None if not tracked.
+    fn get_timing_metrics(&self) -> Option<(u64, u64, u64, u64)> {
+        None
+    }
+
+    /// Reset timing metrics. Called periodically (e.g., every second) after collection.
+    fn reset_timing_metrics(&self) {}
 }
 
 pub trait Module {

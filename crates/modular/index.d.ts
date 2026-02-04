@@ -14,6 +14,13 @@ export declare class Synthesizer {
   inputChannels(): number
   getScopes(): Array<[ScopeItem, Array<Float32Array>, ScopeStats]>
   updatePatch(patch: PatchGraph): Array<ApplyPatchError>
+  /**
+   * Poll and process any pending timing metrics from the audio thread.
+   * Should be called periodically from the main thread (e.g., every frame or tick).
+   */
+  pollMetrics(): void
+  /** Get the path to the performance log file */
+  getPerfLogPath(): string
   startRecording(path?: string | undefined | null): string
   stopRecording(): string | null
   isRecording(): boolean
