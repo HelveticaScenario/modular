@@ -2,13 +2,14 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::types::{ClockMessages, Signal};
+use crate::poly::MonoSignal;
+use crate::types::ClockMessages;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct ClockDividerParams {
     pub division: u32,
-    pub input: Signal,
+    pub input: MonoSignal,
 }
 
 #[derive(Outputs, JsonSchema)]

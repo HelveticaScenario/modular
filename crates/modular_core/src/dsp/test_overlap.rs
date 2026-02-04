@@ -4,13 +4,13 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::types::Signal;
+use crate::poly::MonoSignal;
 
 #[derive(Default, Deserialize, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct TestOverlapParams {
     /// this conflicts with the output name
-    output: Signal,
+    output: MonoSignal,
 }
 
 #[derive(Default, Module)]

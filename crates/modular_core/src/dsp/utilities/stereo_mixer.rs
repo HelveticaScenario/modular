@@ -1,7 +1,7 @@
 use crate::{
     PORT_MAX_CHANNELS,
-    poly::{PolyOutput, PolySignal},
-    types::{Clickless, Signal},
+    poly::{MonoSignal, PolyOutput, PolySignal},
+    types::Clickless,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -16,7 +16,7 @@ struct StereoMixerParams {
     pan: PolySignal,
     /// Stereo width (0 = no spread, 5 = full spread across voices).
     /// Voices are auto-panned relative to their base pan position.
-    width: Signal,
+    width: MonoSignal,
 }
 
 #[derive(Outputs, JsonSchema)]

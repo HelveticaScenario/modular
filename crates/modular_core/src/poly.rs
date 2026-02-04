@@ -350,6 +350,96 @@ impl JsonSchema for PolySignal {
     }
 }
 
+// =============================================================================
+// MonoSignal - Polyphonic input that sums to mono output
+// =============================================================================
+
+/// A polyphonic input that sums all channels to a single mono value.
+///
+/// This wraps a `PolySignal` but provides a `Signal`-like API where:
+/// - `is_disconnected()` returns true if the inner PolySignal has 0 channels
+/// - `get_value()` returns the sum of all channels in the PolySignal
+///
+/// Use this for module inputs that accept polyphonic connections but produce
+/// a mono control signal (e.g., stereo width, etc.).
+///
+/// For polyphony propagation, MonoSignal is treated as a single channel.
+#[derive(Clone, Debug, Default)]
+pub struct MonoSignal {
+    inner: PolySignal,
+}
+
+impl MonoSignal {
+    /// Create a MonoSignal from a PolySignal
+    pub fn from_poly(poly: PolySignal) -> Self {
+        Self { inner: poly }
+    }
+
+    /// Check if disconnected (no active channels in inner PolySignal)
+    pub fn is_disconnected(&self) -> bool {
+        self.inner.is_disconnected()
+    }
+
+    /// Get the summed value of all channels
+    pub fn get_value(&self) -> f32 {
+        self.inner
+            .signals
+            .iter()
+            .map(|ch| ch.get_value())
+            .sum::<f32>()
+    }
+
+    /// Get value with fallback for disconnected inputs (normalled input)
+    pub fn get_value_or(&self, default: f32) -> f32 {
+        if self.is_disconnected() {
+            default
+        } else {
+            self.get_value()
+        }
+    }
+}
+
+// === Connect implementation for MonoSignal ===
+
+impl crate::types::Connect for MonoSignal {
+    fn connect(&mut self, patch: &crate::Patch) {
+        self.inner.connect(patch);
+    }
+}
+
+// === Serialization for MonoSignal (delegates to PolySignal) ===
+
+impl Serialize for MonoSignal {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.inner.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for MonoSignal {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(MonoSignal {
+            inner: PolySignal::deserialize(deserializer)?,
+        })
+    }
+}
+
+impl JsonSchema for MonoSignal {
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("MonoSignal")
+    }
+
+    fn json_schema(r#gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        // Reuse PolySignal's schema
+        PolySignal::json_schema(r#gen)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::dsp::utils::hz_to_voct;
@@ -444,5 +534,31 @@ mod tests {
         // Array
         let v: Vec<String> = from_str(r#"["white", "pink", "brown"]"#).unwrap();
         assert_eq!(v, vec!["white", "pink", "brown"]);
+    }
+
+    #[test]
+    fn test_mono_signal_disconnected() {
+        let mono = MonoSignal::default();
+        assert!(mono.is_disconnected());
+        assert_eq!(mono.get_value(), 0.0);
+        assert_eq!(mono.get_value_or(5.0), 5.0);
+    }
+
+    #[test]
+    fn test_mono_signal_single_channel() {
+        let json = "2.5";
+        let mono: MonoSignal = serde_json::from_str(json).expect("Failed to deserialize");
+        assert!(!mono.is_disconnected());
+        assert_eq!(mono.get_value(), 2.5);
+        assert_eq!(mono.get_value_or(0.0), 2.5);
+    }
+
+    #[test]
+    fn test_mono_signal_sums_channels() {
+        // MonoSignal should sum all channels
+        let json = "[1.0, 2.0, 3.0]";
+        let mono: MonoSignal = serde_json::from_str(json).expect("Failed to deserialize");
+        assert!(!mono.is_disconnected());
+        assert_eq!(mono.get_value(), 6.0); // 1 + 2 + 3 = 6
     }
 }

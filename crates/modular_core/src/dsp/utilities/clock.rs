@@ -5,14 +5,15 @@ use serde::Deserialize;
 use crate::{
     PolyOutput,
     dsp::utils::{hz_to_voct, voct_to_hz_f64},
-    types::{ClockMessages, Signal},
+    poly::MonoSignal,
+    types::ClockMessages,
 };
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct ClockParams {
     /// tempo in v/oct (tempo)
-    tempo: Signal,
+    tempo: MonoSignal,
 }
 
 #[derive(Module)]

@@ -1,4 +1,5 @@
 use crate::dsp::utils::{hz_to_voct_f64, voct_to_hz_f64};
+use crate::poly::MonoSignal;
 use crate::types::{ClockMessages, Connect, Signal};
 use fasteval::{Compiler, Evaler, Instruction};
 use napi::Result;
@@ -90,9 +91,9 @@ impl Connect for MathExpressionParam {
 #[serde(default)]
 struct MathParams {
     expression: MathExpressionParam,
-    x: Signal,
-    y: Signal,
-    z: Signal,
+    x: MonoSignal,
+    y: MonoSignal,
+    z: MonoSignal,
 }
 
 impl Connect for MathParams {

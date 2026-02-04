@@ -1,7 +1,6 @@
 use crate::{
     PORT_MAX_CHANNELS,
-    poly::{PolyOutput, PolySignal},
-    types::Signal,
+    poly::{MonoSignal, PolyOutput, PolySignal},
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -73,8 +72,8 @@ message_handlers!(impl SampleAndHold {});
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct TrackAndHoldParams {
-    input: Signal,
-    gate: Signal,
+    input: MonoSignal,
+    gate: MonoSignal,
 }
 
 #[derive(Outputs, JsonSchema)]

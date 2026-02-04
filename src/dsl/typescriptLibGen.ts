@@ -230,7 +230,7 @@ type OrArray<T> = T | T[];
  * @example sine(440)         // Number
  * @example sine("440hz")     // Hz string
  * @example sine(lfo.out)     // ModuleOutput
- * @see {@link PolySignal} - for multi-channel signals
+ * @see {@link Poly<Signal>} - for multi-channel signals
  * @see {@link ModuleOutput} - for module connections
  */
 type Signal = number | Note | HZ | MidiNote | Scale | ModuleOutput;
@@ -248,7 +248,10 @@ type Signal = number | Note | HZ | MidiNote | Scale | ModuleOutput;
  * @see {@link Signal} - for single-channel signals
  * @see {@link Collection} - for grouping outputs
  */
-type PolySignal = OrArray<Signal> | Iterable<ModuleOutput>;
+type Poly<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
+
+
+type Mono<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
 
 /**
  * Options for stereo output routing via the out() method.
@@ -257,9 +260,9 @@ type PolySignal = OrArray<Signal> | Iterable<ModuleOutput>;
  */
 interface StereoOutOptions {
   /** Output gain. If set, a scaleAndShift module is added after the stereo mix */
-  gain?: PolySignal;
+  gain?: Poly<Signal>;
   /** Pan position (-5 = left, 0 = center, +5 = right). Default 0 */
-  pan?: PolySignal;
+  pan?: Poly<Signal>;
   /** Stereo width/spread (0 = no spread, 5 = full spread). Default 0 */
   width?: Signal;
 }
@@ -290,19 +293,19 @@ interface ModuleOutput {
   
   /**
    * Scale the signal by a factor. Creates a scaleAndShift module internally.
-   * @param factor - Scale factor as {@link PolySignal}
+   * @param factor - Scale factor as {@link Poly<Signal>}
    * @returns The scaled {@link ModuleOutput} for chaining
    * @example osc.gain(0.5)  // Half amplitude
    */
-  gain(factor: PolySignal): ModuleOutput;
+  gain(factor: Poly<Signal>): ModuleOutput;
   
   /**
    * Add a DC offset to the signal. Creates a scaleAndShift module internally.
-   * @param offset - Offset value as {@link PolySignal}
+   * @param offset - Offset value as {@link Poly<Signal>}
    * @returns The shifted {@link ModuleOutput} for chaining
    * @example lfo.shift(2.5)  // Shift to 0-5V range
    */
-  shift(offset: PolySignal): ModuleOutput;
+  shift(offset: Poly<Signal>): ModuleOutput;
   
   /**
    * Add scope visualization for this output.
@@ -326,10 +329,10 @@ interface ModuleOutput {
   /**
    * Send this output to speakers as mono.
    * @param channel - Output channel (0-15, default 0)
-   * @param gain - Output gain as {@link PolySignal} (optional)
+   * @param gain - Output gain as {@link Poly<Signal>} (optional)
    * @example lfo.outMono(2, 0.3)
    */
-  outMono(channel?: number, gain?: PolySignal): this;
+  outMono(channel?: number, gain?: Poly<Signal>): this;
 }
 
 /**
@@ -355,12 +358,12 @@ interface ModuleOutputWithRange extends ModuleOutput {
   /**
    * Remap the output from its native range to a new range.
    * Uses the stored minValue/maxValue automatically.
-   * @param outMin - New minimum as {@link PolySignal}
-   * @param outMax - New maximum as {@link PolySignal}
+   * @param outMin - New minimum as {@link Poly<Signal>}
+   * @param outMax - New maximum as {@link Poly<Signal>}
    * @returns A {@link ModuleOutput} with the remapped signal
    * @example lfo.range(note("C3"), note("C5"))
    */
-  range(outMin: PolySignal, outMax: PolySignal): ModuleOutput;
+  range(outMin: Poly<Signal>, outMax: Poly<Signal>): ModuleOutput;
 }
 
 /**
@@ -388,17 +391,17 @@ interface Collection extends Iterable<ModuleOutput> {
   
   /**
    * Scale all signals by a factor.
-   * @param factor - Scale factor as {@link PolySignal}
+   * @param factor - Scale factor as {@link Poly<Signal>}
    * @see {@link ModuleOutput.gain}
    */
-  gain(factor: PolySignal): Collection;
+  gain(factor: Poly<Signal>): Collection;
   
   /**
    * Add DC offset to all signals.
-   * @param offset - Offset as {@link PolySignal}
+   * @param offset - Offset as {@link Poly<Signal>}
    * @see {@link ModuleOutput.shift}
    */
-  shift(offset: PolySignal): Collection;
+  shift(offset: Poly<Signal>): Collection;
   
   /**
    * Add scope visualization for the first output in the collection.
@@ -419,20 +422,20 @@ interface Collection extends Iterable<ModuleOutput> {
   /**
    * Send all outputs to speakers as mono, summed together.
    * @param channel - Output channel (0-15, default 0)
-   * @param gain - Output gain as {@link PolySignal} (optional)
+   * @param gain - Output gain as {@link Poly<Signal>} (optional)
    */
-  outMono(channel?: number, gain?: PolySignal): this;
+  outMono(channel?: number, gain?: Poly<Signal>): this;
   
   /**
    * Remap all outputs from input range to output range.
    * Requires explicit input min/max values.
-   * @param inMin - Input minimum as {@link PolySignal}
-   * @param inMax - Input maximum as {@link PolySignal}
-   * @param outMin - Output minimum as {@link PolySignal}
-   * @param outMax - Output maximum as {@link PolySignal}
+   * @param inMin - Input minimum as {@link Poly<Signal>}
+   * @param inMax - Input maximum as {@link Poly<Signal>}
+   * @param outMin - Output minimum as {@link Poly<Signal>}
+   * @param outMax - Output maximum as {@link Poly<Signal>}
    * @see {@link CollectionWithRange.range} - for automatic input range
    */
-  range(inMin: PolySignal, inMax: PolySignal, outMin: PolySignal, outMax: PolySignal): Collection;
+  range(inMin: Poly<Signal>, inMax: Poly<Signal>, outMin: Poly<Signal>, outMax: Poly<Signal>): Collection;
 }
 
 /**
@@ -458,15 +461,15 @@ interface CollectionWithRange extends Iterable<ModuleOutputWithRange> {
   
   /**
    * Scale all signals by a factor.
-   * @param factor - Scale factor as {@link PolySignal}
+   * @param factor - Scale factor as {@link Poly<Signal>}
    */
-  gain(factor: PolySignal): Collection;
+  gain(factor: Poly<Signal>): Collection;
   
   /**
    * Add DC offset to all signals.
-   * @param offset - Offset as {@link PolySignal}
+   * @param offset - Offset as {@link Poly<Signal>}
    */
-  shift(offset: PolySignal): Collection;
+  shift(offset: Poly<Signal>): Collection;
   
   /**
    * Add scope visualization for the first output in the collection.
@@ -487,18 +490,18 @@ interface CollectionWithRange extends Iterable<ModuleOutputWithRange> {
   /**
    * Send all outputs to speakers as mono, summed together.
    * @param channel - Output channel (0-15, default 0)
-   * @param gain - Output gain as {@link PolySignal} (optional)
+   * @param gain - Output gain as {@link Poly<Signal>} (optional)
    */
-  outMono(channel?: number, gain?: PolySignal): this;
+  outMono(channel?: number, gain?: Poly<Signal>): this;
   
   /**
    * Remap all outputs from their native ranges to a new range.
    * Uses each output's stored minValue/maxValue.
-   * @param outMin - Output minimum as {@link PolySignal}
-   * @param outMax - Output maximum as {@link PolySignal}
+   * @param outMin - Output minimum as {@link Poly<Signal>}
+   * @param outMax - Output maximum as {@link Poly<Signal>}
    * @see {@link Collection.range} - for explicit input range
    */
-  range(outMin: PolySignal, outMax: PolySignal): Collection;
+  range(outMin: Poly<Signal>, outMax: Poly<Signal>): Collection;
 }
 
 // Helper functions exposed by the DSL runtime
@@ -589,12 +592,12 @@ interface DeferredModuleOutput extends ModuleOutput {
    * Scale the resolved output by a factor.
    * The transform is stored and applied during resolution.
    */
-  gain(factor: PolySignal): DeferredModuleOutput;
+  gain(factor: Poly<Signal>): DeferredModuleOutput;
   /**
    * Shift the resolved output by an offset.
    * The transform is stored and applied during resolution.
    */
-  shift(offset: PolySignal): DeferredModuleOutput;
+  shift(offset: Poly<Signal>): DeferredModuleOutput;
   /**
    * Add scope visualization for the resolved output.
    * The side effect is stored and executed during resolution.
@@ -609,7 +612,7 @@ interface DeferredModuleOutput extends ModuleOutput {
    * Send the resolved output to speakers as mono.
    * The side effect is stored and executed during resolution.
    */
-  outMono(channel?: number, gain?: PolySignal): DeferredModuleOutput;
+  outMono(channel?: number, gain?: Poly<Signal>): DeferredModuleOutput;
 }
 
 /**
@@ -622,17 +625,17 @@ interface DeferredCollection extends Iterable<DeferredModuleOutput> {
   [Symbol.iterator](): Iterator<DeferredModuleOutput>;
   /**
    * Set the signals for all deferred outputs in this collection.
-   * @param polySignal - A PolySignal (single signal, array, or iterable) to distribute across outputs
+   * @param polySignal - A Poly<Signal> (single signal, array, or iterable) to distribute across outputs
    */
-  set(polySignal: PolySignal): void;
+  set(polySignal: Poly<Signal>): void;
   /**
    * Scale all resolved outputs by a factor.
    */
-  gain(factor: PolySignal): DeferredCollection;
+  gain(factor: Poly<Signal>): DeferredCollection;
   /**
    * Shift all resolved outputs by an offset.
    */
-  shift(offset: PolySignal): DeferredCollection;
+  shift(offset: Poly<Signal>): DeferredCollection;
   /**
    * Add scope visualization for the first resolved output.
    */
@@ -644,7 +647,7 @@ interface DeferredCollection extends Iterable<DeferredModuleOutput> {
   /**
    * Send all resolved outputs to speakers as mono.
    */
-  outMono(channel?: number, gain?: PolySignal): DeferredCollection;
+  outMono(channel?: number, gain?: Poly<Signal>): DeferredCollection;
 }
 
 /**
@@ -728,7 +731,7 @@ function extractParamNamesFromDoc(description?: string): string[] {
 function resolveRef(
     ref: string,
     rootSchema: JSONSchema,
-): JSONSchema | 'Signal' | 'PolySignal' {
+): JSONSchema | 'Signal' | 'Poly<Signal>' | 'Mono<Signal>' {
     if (ref === 'Signal') return 'Signal';
 
     const defsPrefix = '#/$defs/';
@@ -738,7 +741,8 @@ function resolveRef(
 
     const defName = ref.slice(defsPrefix.length);
     if (defName === 'Signal') return 'Signal';
-    if (defName === 'PolySignal') return 'PolySignal';
+    if (defName === 'PolySignal') return 'Poly<Signal>';
+    if (defName === 'MonoSignal') return 'Mono<Signal>';
 
     const defs = rootSchema?.$defs;
     if (!defs || typeof defs !== 'object') {
@@ -751,7 +755,8 @@ function resolveRef(
     }
 
     if (resolved?.title === 'Signal') return 'Signal';
-    if (resolved?.title === 'PolySignal') return 'PolySignal';
+    if (resolved?.title === 'PolySignal') return 'Poly<Signal>';
+    if (resolved?.title === 'MonoSignal') return 'Mono<Signal>';
     return resolved;
 }
 
@@ -782,11 +787,11 @@ function schemaToTypeExpr(schema: JSONSchema, rootSchema: JSONSchema): string {
             });
             // If all variants are Signal, return Signal
             if (types.every((t) => t === 'Signal')) {
-                return 'PolySignal';
+                return 'Poly<Signal>';
             }
-            // If it's a mix but includes Signal[], treat as Signal (for PolySignal)
+            // If it's a mix but includes Signal[], treat as Signal (for Poly<Signal>)
             if (types.includes('Signal') && types.includes('Signal[]')) {
-                return 'PolySignal';
+                return 'Poly<Signal>';
             }
         }
         console.log('schema:', schema);
@@ -820,7 +825,8 @@ function schemaToTypeExpr(schema: JSONSchema, rootSchema: JSONSchema): string {
     if (schema.$ref) {
         const resolved = resolveRef(String(schema.$ref), rootSchema);
         if (resolved === 'Signal') return 'Signal';
-        if (resolved === 'PolySignal') return 'PolySignal';
+        if (resolved === 'Poly<Signal>') return 'Poly<Signal>';
+        if (resolved === 'Mono<Signal>') return 'Mono<Signal>';
         return schemaToTypeExpr(resolved, rootSchema);
     }
 
@@ -879,7 +885,8 @@ function schemaToTypeExpr(schema: JSONSchema, rootSchema: JSONSchema): string {
         if (schema.$ref) {
             const resolved = resolveRef(String(schema.$ref), rootSchema);
             if (resolved === 'Signal') return 'Signal';
-            if (resolved === 'PolySignal') return 'PolySignal';
+            if (resolved === 'Poly<Signal>') return 'Poly<Signal>';
+            if (resolved === 'Mono<Signal>') return 'Mono<Signal>';
             return schemaToTypeExpr(resolved, rootSchema);
         }
         // Schema with only 'const' (used in tagged unions)
