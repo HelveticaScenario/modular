@@ -258,10 +258,6 @@ export interface SourceLocation {
     idIsExplicit: boolean;
 }
 
-class Foo {
-    bar() {}
-}
-
 /**
  * GraphBuilder manages the construction of a PatchGraph from DSL code.
  * It tracks modules, generates deterministic IDs, and builds the final graph.
@@ -1127,12 +1123,10 @@ function replaceDeferred(
             const resolved = deferredOutputs.get(
                 maybeResolvedModuleOutput.data.module,
             );
-            console.log('Found deferred output for replacement:', resolved);
             if (resolved) {
-                console.log('Resolving deferred output:', resolved);
                 return valueToSignal(resolved.resolve());
             } else {
-                return valueToSignal(null);
+                return maybeResolvedModuleOutput.data
             }
         }
         return value;
