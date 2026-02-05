@@ -19,6 +19,7 @@ use napi::Result;
 use napi::bindgen_prelude::Float32Array;
 use napi_derive::napi;
 use parking_lot::Mutex;
+use profiling;
 use ringbuf::{
   HeapRb,
   traits::{Consumer, Producer, Split},
@@ -40,8 +41,7 @@ use modular_core::types::{ROOT_OUTPUT_PORT, ScopeItem};
 use std::time::Instant;
 
 use crate::commands::{
-  AudioError, COMMAND_QUEUE_CAPACITY, ERROR_QUEUE_CAPACITY, METRICS_QUEUE_CAPACITY,
-  GraphCommand, ModuleTimingReport, PatchUpdate,
+  AudioError, COMMAND_QUEUE_CAPACITY, ERROR_QUEUE_CAPACITY, GraphCommand, PatchUpdate,
 };
 use crate::midi::MidiInputManager;
 
@@ -774,24 +774,16 @@ pub type ErrorProducer = RtrbProducer<AudioError>;
 /// Consumer end of the error queue (main thread ← audio thread)
 pub type ErrorConsumer = RtrbConsumer<AudioError>;
 
-/// Producer end of the metrics queue (audio thread → main thread)
-pub type MetricsProducer = RtrbProducer<ModuleTimingReport>;
-/// Consumer end of the metrics queue (main thread ← audio thread)
-pub type MetricsConsumer = RtrbConsumer<ModuleTimingReport>;
-
-/// Create the command, error, and metrics queues for audio thread communication
+/// Create the command and error queues for audio thread communication
 pub fn create_audio_channels() -> (
   CommandProducer,
   CommandConsumer,
   ErrorProducer,
   ErrorConsumer,
-  MetricsProducer,
-  MetricsConsumer,
 ) {
   let (cmd_prod, cmd_cons) = RingBuffer::new(COMMAND_QUEUE_CAPACITY);
   let (err_prod, err_cons) = RingBuffer::new(ERROR_QUEUE_CAPACITY);
-  let (metrics_prod, metrics_cons) = RingBuffer::new(METRICS_QUEUE_CAPACITY);
-  (cmd_prod, cmd_cons, err_prod, err_cons, metrics_prod, metrics_cons)
+  (cmd_prod, cmd_cons, err_prod, err_cons)
 }
 
 // ============================================================================
@@ -804,8 +796,6 @@ pub struct AudioState {
   command_tx: Mutex<CommandProducer>,
   /// Error queue consumer (main thread ← audio thread)
   error_rx: Mutex<ErrorConsumer>,
-  /// Metrics queue consumer (main thread ← audio thread)
-  metrics_rx: Mutex<MetricsConsumer>,
   /// Stopped flag - shared with audio thread for quick reads
   stopped: Arc<AtomicBool>,
   /// Scope collection - shared with audio thread for UI reads
@@ -842,7 +832,6 @@ impl AudioState {
   pub fn new_with_channels(
     command_tx: CommandProducer,
     error_rx: ErrorConsumer,
-    metrics_rx: MetricsConsumer,
     sample_rate: f32,
     channels: u16,
     midi_manager: Arc<MidiInputManager>,
@@ -850,7 +839,6 @@ impl AudioState {
     Self {
       command_tx: Mutex::new(command_tx),
       error_rx: Mutex::new(error_rx),
-      metrics_rx: Mutex::new(metrics_rx),
       stopped: Arc::new(AtomicBool::new(true)),
       scope_collection: Arc::new(Mutex::new(HashMap::new())),
       recording_writer: Arc::new(Mutex::new(None)),
@@ -879,16 +867,6 @@ impl AudioState {
       errors.push(err);
     }
     errors
-  }
-
-  /// Drain any timing metrics accumulated on the audio thread
-  pub fn drain_metrics(&self) -> Vec<ModuleTimingReport> {
-    let mut rx = self.metrics_rx.lock();
-    let mut metrics = Vec::new();
-    while let Ok(report) = rx.pop() {
-      metrics.push(report);
-    }
-    metrics
   }
 
   pub fn take_audio_thread_budget_snapshot_and_reset(&self) -> AudioBudgetSnapshot {
@@ -1160,47 +1138,26 @@ struct AudioProcessor {
   command_rx: CommandConsumer,
   /// Error queue producer
   error_tx: ErrorProducer,
-  /// Metrics queue producer (for sending timing reports to main thread)
-  metrics_tx: MetricsProducer,
   /// Shared stopped flag
   stopped: Arc<AtomicBool>,
   /// Shared scope collection
   scope_collection: Arc<Mutex<HashMap<ScopeItem, ScopeBuffer>>>,
-  /// Shared recording writer
-  recording_writer: Arc<Mutex<Option<WavWriter<BufWriter<File>>>>>,
-  /// Shared audio budget meter
-  audio_budget_meter: Arc<AudioBudgetMeter>,
   /// Shared module states (e.g., seq current step)
   module_states: Arc<Mutex<HashMap<String, serde_json::Value>>>,
   /// MIDI input manager for polling
   midi_manager: Arc<MidiInputManager>,
-  /// Sample rate
-  sample_rate: f32,
-  /// Frame counter for periodic metric collection (counts samples processed)
-  frame_count: usize,
 }
 
 impl AudioProcessor {
-  fn new(
-    command_rx: CommandConsumer,
-    error_tx: ErrorProducer,
-    metrics_tx: MetricsProducer,
-    shared: AudioSharedState,
-    sample_rate: f32,
-  ) -> Self {
+  fn new(command_rx: CommandConsumer, error_tx: ErrorProducer, shared: AudioSharedState) -> Self {
     Self {
       patch: Patch::new(),
       command_rx,
       error_tx,
-      metrics_tx,
       stopped: shared.stopped,
       scope_collection: shared.scope_collection,
-      recording_writer: shared.recording_writer,
-      audio_budget_meter: shared.audio_budget_meter,
       module_states: shared.module_states,
       midi_manager: shared.midi_manager,
-      sample_rate,
-      frame_count: 0,
     }
   }
 
@@ -1335,21 +1292,29 @@ impl AudioProcessor {
   /// Process a single frame, returning multi-channel output
   fn process_frame(&mut self, num_channels: usize) -> [f32; PORT_MAX_CHANNELS] {
     use modular_core::types::ROOT_ID;
+    profiling::scope!("process_frame");
 
     let mut output = [0.0f32; PORT_MAX_CHANNELS];
 
     // Update all modules
-    for module in self.patch.sampleables.values() {
-      module.update();
+    {
+      profiling::scope!("update_modules");
+      for module in self.patch.sampleables.values() {
+        module.update();
+      }
     }
 
     // Tick all modules
-    for module in self.patch.sampleables.values() {
-      module.tick();
+    {
+      profiling::scope!("tick_modules");
+      for module in self.patch.sampleables.values() {
+        module.tick();
+      }
     }
 
     // Capture audio for scopes
     {
+      profiling::scope!("capture_scopes");
       let mut scope_lock = self.scope_collection.lock();
       for (scope, scope_buffer) in scope_lock.iter_mut() {
         match scope {
@@ -1395,26 +1360,6 @@ impl AudioProcessor {
     }
   }
 
-  /// Collect timing metrics from all modules and send to main thread.
-  /// Called once per second (when frame_count >= sample_rate).
-  fn collect_and_send_timing_metrics(&mut self) {
-    for module in self.patch.sampleables.values() {
-      if let Some((total_ns, count, min_ns, max_ns)) = module.get_timing_metrics() {
-        let report = ModuleTimingReport {
-          module_id: module.get_id().to_string(),
-          module_type: module.get_module_type().to_string(),
-          total_ns,
-          count,
-          min_ns,
-          max_ns,
-        };
-        // Drop the report if queue is full (better than blocking audio thread)
-        let _ = self.metrics_tx.push(report);
-      }
-      module.reset_timing_metrics();
-    }
-  }
-
   fn is_stopped(&self) -> bool {
     self.stopped.load(Ordering::SeqCst)
   }
@@ -1433,7 +1378,6 @@ pub fn make_stream<T>(
   config: &cpal::StreamConfig,
   command_rx: CommandConsumer,
   error_tx: ErrorProducer,
-  metrics_tx: MetricsProducer,
   shared: AudioSharedState,
   mut input_reader: InputBufferReader,
 ) -> Result<cpal::Stream>
@@ -1441,8 +1385,6 @@ where
   T: SizedSample + FromSample<f32> + hound::Sample,
 {
   let num_channels = config.channels as usize;
-  let sample_rate = config.sample_rate as f32;
-  let sample_rate_usize = sample_rate as usize;
 
   let err_fn = |err| eprintln!("Error building output sound stream: {err}");
 
@@ -1454,7 +1396,7 @@ where
   let audio_budget_meter = shared.audio_budget_meter.clone();
 
   // Create the audio processor that owns the patch
-  let mut audio_processor = AudioProcessor::new(command_rx, error_tx, metrics_tx, shared, sample_rate);
+  let mut audio_processor = AudioProcessor::new(command_rx, error_tx, shared);
 
   let mut final_state_processor = FinalStateProcessor::new(num_channels);
 
@@ -1462,57 +1404,59 @@ where
     .build_output_stream(
       config,
       move |output: &mut [T], _info: &cpal::OutputCallbackInfo| {
+        profiling::scope!("audio_callback");
+
         let callback_start = Instant::now();
 
         // Process any pending commands from the main thread
-        audio_processor.process_commands();
+        {
+          profiling::scope!("process_commands");
+          audio_processor.process_commands();
+        }
 
-        let buffer_frame_count = output.len() / num_channels;
+        {
+          profiling::scope!("process_frames");
+          for frame in output.chunks_mut(num_channels) {
+            // Read from the input buffer and update audio_in
+            {
+              let mut audio_in = audio_processor.patch.audio_in.lock();
+              let input_samples = input_reader.read_frame();
 
-        for frame in output.chunks_mut(num_channels) {
-          // Read from the input buffer and update audio_in
-          {
-            let mut audio_in = audio_processor.patch.audio_in.lock();
-            let input_samples = input_reader.read_frame();
-
-            // Set channel count so that get() returns values instead of 0.0
-            audio_in.set_channels(PORT_MAX_CHANNELS);
-            for i in 0..PORT_MAX_CHANNELS {
-              // Apply gain to bring input from [-1, 1] to [-5, 5] volt range
-              audio_in.set(i, input_samples[i] * AUDIO_INPUT_GAIN);
+              // Set channel count so that get() returns values instead of 0.0
+              audio_in.set_channels(PORT_MAX_CHANNELS);
+              for i in 0..PORT_MAX_CHANNELS {
+                // Apply gain to bring input from [-1, 1] to [-5, 5] volt range
+                audio_in.set(i, input_samples[i] * AUDIO_INPUT_GAIN);
+              }
             }
-          }
 
-          // Process frame and get multi-channel output
-          let samples =
-            final_state_processor.process_frame_with_processor(&mut audio_processor, num_channels);
+            // Process frame and get multi-channel output
+            let samples = final_state_processor
+              .process_frame_with_processor(&mut audio_processor, num_channels);
 
-          for (ch, s) in frame.iter_mut().enumerate() {
-            if ch < samples.len() {
-              *s = T::from_sample(samples[ch]);
-            } else {
-              *s = T::from_sample(0.0);
+            for (ch, s) in frame.iter_mut().enumerate() {
+              if ch < samples.len() {
+                *s = T::from_sample(samples[ch]);
+              } else {
+                *s = T::from_sample(0.0);
+              }
             }
-          }
 
-          // Record if enabled (use try_lock to avoid blocking audio)
-          // For multi-channel, record first channel (mono mix could be added later)
-          if let Some(mut writer_guard) = recording_writer.try_lock()
-            && let Some(ref mut writer) = *writer_guard
-          {
-            let _ = writer.write_sample(T::from_sample(samples[0]));
+            // Record if enabled (use try_lock to avoid blocking audio)
+            // For multi-channel, record first channel (mono mix could be added later)
+            if let Some(mut writer_guard) = recording_writer.try_lock()
+              && let Some(ref mut writer) = *writer_guard
+            {
+              let _ = writer.write_sample(T::from_sample(samples[0]));
+            }
           }
         }
 
         // Collect module states for UI (e.g., seq step highlighting)
         // Done once per buffer, not per frame, to minimize overhead
-        audio_processor.collect_module_states();
-
-        // Collect and send timing metrics every ~1 second
-        audio_processor.frame_count += buffer_frame_count;
-        if audio_processor.frame_count >= sample_rate_usize {
-          audio_processor.collect_and_send_timing_metrics();
-          audio_processor.frame_count = 0;
+        {
+          profiling::scope!("collect_module_states");
+          audio_processor.collect_module_states();
         }
 
         let elapsed_ns = callback_start.elapsed().as_nanos() as u64;
@@ -1819,7 +1763,7 @@ mod tests {
   #[test]
   fn test_audio_processor_owns_patch() {
     // Verify AudioProcessor can be created and owns patch exclusively
-    let (cmd_producer, cmd_consumer, err_producer, _err_consumer, metrics_producer, _metrics_consumer) = create_audio_channels();
+    let (cmd_producer, cmd_consumer, err_producer, _err_consumer) = create_audio_channels();
 
     // Drop the command producer since we won't use it in this test
     drop(cmd_producer);
@@ -1833,7 +1777,7 @@ mod tests {
       midi_manager: Arc::new(MidiInputManager::new()),
     };
 
-    let processor = AudioProcessor::new(cmd_consumer, err_producer, metrics_producer, shared, 48000.0);
+    let processor = AudioProcessor::new(cmd_consumer, err_producer, shared);
 
     // Processor starts with empty patch (may have hidden audio_in)
     assert!(processor.patch.sampleables.is_empty() || processor.patch.sampleables.len() == 1);

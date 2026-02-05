@@ -10,6 +10,7 @@
     },
     "scripts": {
         "start": "yarn build-native && electron-forge start",
+        "profile": "yarn build-native-profile && electron-forge start",
         "package": "yarn build-native && electron-forge package",
         "make": "yarn build-native && electron-forge make",
         "forge-publish": "yarn build-native && electron-forge publish",
@@ -19,6 +20,7 @@
         "rebuild": "yarn build-native && electron-rebuild -f -w modular-core",
         "lint": "eslint .",
         "build-native": "cd crates/modular && yarn build",
+        "build-native-profile": "cd crates/modular && yarn build --features=tracy",
         "generate-lib": "yarn build-native && tsx scripts/generateLib.ts"
     },
     "keywords": [],

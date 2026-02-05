@@ -163,15 +163,6 @@ pub trait Sampleable: MessageHandler + Send + Sync {
     fn get_state(&self) -> Option<serde_json::Value> {
         None
     }
-
-    /// Get accumulated timing metrics for this module's update() calls.
-    /// Returns (total_ns, call_count, min_ns, max_ns) since last reset, or None if not tracked.
-    fn get_timing_metrics(&self) -> Option<(u64, u64, u64, u64)> {
-        None
-    }
-
-    /// Reset timing metrics. Called periodically (e.g., every second) after collection.
-    fn reset_timing_metrics(&self) {}
 }
 
 pub trait Module {
@@ -306,7 +297,10 @@ impl From<Clickless> for f32 {
 
 impl From<f32> for Clickless {
     fn from(value: f32) -> Self {
-        Clickless { value, initialized: false }
+        Clickless {
+            value,
+            initialized: false,
+        }
     }
 }
 
@@ -790,11 +784,12 @@ impl Signal {
 impl Connect for Signal {
     fn connect(&mut self, patch: &Patch) {
         if let Signal::Cable {
-                module, module_ptr, ..
-            } = self
-            && let Some(sampleable) = patch.sampleables.get(module) {
-                *module_ptr = Arc::downgrade(sampleable);
-            }
+            module, module_ptr, ..
+        } = self
+            && let Some(sampleable) = patch.sampleables.get(module)
+        {
+            *module_ptr = Arc::downgrade(sampleable);
+        }
     }
 }
 

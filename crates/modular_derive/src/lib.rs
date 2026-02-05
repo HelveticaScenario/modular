@@ -237,7 +237,8 @@ fn impl_enum_tag_macro(ast: &DeriveInput) -> TokenStream {
 
 fn unwrap_attr(attrs: &Vec<Attribute>, ident: &str) -> Option<TokenStream2> {
     attrs
-        .iter().find(|attr| attr.path().is_ident(ident))
+        .iter()
+        .find(|attr| attr.path().is_ident(ident))
         .and_then(|attr| {
             if let syn::Meta::List(list) = &attr.meta {
                 Some(list.tokens.clone())
@@ -1329,11 +1330,6 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             module: std::cell::UnsafeCell<#name #static_ty_generics>,
             processed: core::sync::atomic::AtomicBool,
             sample_rate: f32,
-            // Timing metrics fields (using Cell for single-threaded interior mutability)
-            timing_total_ns: std::cell::Cell<u64>,
-            timing_count: std::cell::Cell<u64>,
-            timing_min_ns: std::cell::Cell<u64>,
-            timing_max_ns: std::cell::Cell<u64>,
         }
 
         impl Default for #struct_name {
@@ -1344,10 +1340,6 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                     module: std::cell::UnsafeCell::new(Default::default()),
                     processed: core::sync::atomic::AtomicBool::new(false),
                     sample_rate: 0.0,
-                    timing_total_ns: std::cell::Cell::new(0),
-                    timing_count: std::cell::Cell::new(0),
-                    timing_min_ns: std::cell::Cell::new(u64::MAX),
-                    timing_max_ns: std::cell::Cell::new(0),
                 }
             }
         }
@@ -1370,9 +1362,6 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                     core::sync::atomic::Ordering::Acquire,
                     core::sync::atomic::Ordering::Relaxed,
                 ) {
-                    // Start timing
-                    let start = std::time::Instant::now();
-
                     // SAFETY: Audio thread has exclusive access to modules.
                     // The processed flag prevents re-entrant calls within the same frame.
                     // See struct-level documentation for full safety invariants.
@@ -1382,42 +1371,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                         let outputs = &mut *self.outputs.get();
                         crate::types::OutputStruct::copy_from(outputs, &module.outputs);
                     }
-
-                    // Record timing
-                    let elapsed_ns = start.elapsed().as_nanos() as u64;
-                    self.timing_total_ns.set(self.timing_total_ns.get() + elapsed_ns);
-                    self.timing_count.set(self.timing_count.get() + 1);
-
-                    // Update min/max
-                    let current_min = self.timing_min_ns.get();
-                    if elapsed_ns < current_min {
-                        self.timing_min_ns.set(elapsed_ns);
-                    }
-                    let current_max = self.timing_max_ns.get();
-                    if elapsed_ns > current_max {
-                        self.timing_max_ns.set(elapsed_ns);
-                    }
                 }
-            }
-
-            fn get_timing_metrics(&self) -> Option<(u64, u64, u64, u64)> {
-                let count = self.timing_count.get();
-                if count == 0 {
-                    return None;
-                }
-                Some((
-                    self.timing_total_ns.get(),
-                    count,
-                    self.timing_min_ns.get(),
-                    self.timing_max_ns.get(),
-                ))
-            }
-
-            fn reset_timing_metrics(&self) {
-                self.timing_total_ns.set(0);
-                self.timing_count.set(0);
-                self.timing_min_ns.set(u64::MAX);
-                self.timing_max_ns.set(0);
             }
 
             fn get_poly_sample(&self, port: &str) -> napi::Result<crate::poly::PolyOutput> {

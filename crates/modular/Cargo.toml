@@ -8,10 +8,14 @@ version = "0.1.0"
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+default = []
+tracy = ["modular_core/tracy", "tracy-client", "profiling/profile-with-tracy"]
+
 [dependencies]
 napi-derive = "3.4.1"
 hound = "3.5"
-tracing = "0.1"
+profiling = { workspace = true }
 parking_lot = "0.12.5"
 schemars = "1.1.0"
 serde_json = "1.0.147"
@@ -21,6 +25,7 @@ crossbeam-channel = "0.5"
 ringbuf = "0.4"
 rtrb = "0.3"
 dirs = "5"
+tracy-client = { workspace = true, optional = true }
 
 [dependencies.napi]
 version = "3.7.1"

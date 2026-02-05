@@ -5,11 +5,19 @@ members = [
     "crates/modular_derive",
     "crates/mi-plaits-dsp-rs",
     "crates/modular",
-    "crates/modular_cli",
 ]
 default-members = [
     "crates/modular_core",
     "crates/modular_derive",
     "crates/modular",
-    "crates/modular_cli",
 ]
+
+[workspace.dependencies]
+profiling = "1.0"
+tracy-client = { version = "0.17", default-features = false }
+
+# Profile for Tracy profiling - keeps debug symbols for stack traces
+[profile.profiling]
+inherits = "release"
+strip = false
+debug = 1
