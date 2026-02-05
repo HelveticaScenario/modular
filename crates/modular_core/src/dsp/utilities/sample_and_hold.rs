@@ -19,29 +19,19 @@ struct SampleAndHoldOutputs {
 }
 
 #[derive(Default, Clone, Copy)]
-struct SahChannelState {
+struct SampleAndHoldChannelState {
     last_trigger: f32,
     held_value: f32,
     initialized: bool,
 }
 
-#[derive(Module)]
-#[module("sah", "Sample and Hold")]
+#[derive(Module, Default)]
+#[module("util.sah", "Sample and Hold")]
 #[args(input, trigger)]
 pub struct SampleAndHold {
     outputs: SampleAndHoldOutputs,
     params: SampleAndHoldParams,
-    channels: [SahChannelState; PORT_MAX_CHANNELS],
-}
-
-impl Default for SampleAndHold {
-    fn default() -> Self {
-        Self {
-            outputs: Default::default(),
-            params: Default::default(),
-            channels: [SahChannelState::default(); PORT_MAX_CHANNELS],
-        }
-    }
+    channels: [SampleAndHoldChannelState; PORT_MAX_CHANNELS],
 }
 
 impl SampleAndHold {
@@ -51,8 +41,8 @@ impl SampleAndHold {
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
-            let input = self.params.input.get_value_or(ch, 0.0);
-            let trigger = self.params.trigger.get_value_or(ch, 0.0);
+            let input = self.params.input.get_value(ch);
+            let trigger = self.params.trigger.get_value(ch);
 
             if !state.initialized {
                 state.held_value = input;
@@ -72,51 +62,43 @@ message_handlers!(impl SampleAndHold {});
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default)]
 struct TrackAndHoldParams {
-    input: MonoSignal,
-    gate: MonoSignal,
+    input: PolySignal,
+    gate: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
 struct TrackAndHoldOutputs {
     #[output("output", "output", default)]
-    sample: f32,
+    sample: PolyOutput,
 }
 
-#[derive(Module)]
-#[module("tah", "Track and Hold")]
+#[derive(Default)]
+struct TrackAndHoldChannelState {
+    last_gate: f32,
+}
+
+#[derive(Module, Default)]
+#[module("util.tah", "Track and Hold")]
 #[args(input, gate)]
 pub struct TrackAndHold {
     outputs: TrackAndHoldOutputs,
     params: TrackAndHoldParams,
-    last_gate: f32,
-    held_value: f32,
-}
-
-impl Default for TrackAndHold {
-    fn default() -> Self {
-        Self {
-            outputs: TrackAndHoldOutputs { sample: 0.0 },
-            params: Default::default(),
-            last_gate: 0.0,
-            held_value: 0.0,
-        }
-    }
+    channels: [TrackAndHoldChannelState; PORT_MAX_CHANNELS],
 }
 
 impl TrackAndHold {
     pub fn update(&mut self, _sample_rate: f32) {
-        let input = self.params.input.get_value();
-        let gate = self.params.gate.get_value();
+        let num_channels = self.channel_count();
+        self.outputs.sample.set_channels(num_channels);
 
-        if gate > 2.5 {
-            if self.last_gate <= 2.5 {
-                // Just opened gate
-                self.held_value = input;
+        for ch in 0..num_channels {
+            let state = &mut self.channels[ch];
+            let input = self.params.input.get_value(ch);
+            let gate = self.params.gate.get_value(ch);
+
+            if (gate > 2.5 && state.last_gate <= 2.5) || gate <= 2.5 {
+                self.outputs.sample.set(ch, input);
             }
-            self.outputs.sample = self.held_value;
-        } else {
-            // Gate is low, track input
-            self.held_value = input;
         }
     }
 }

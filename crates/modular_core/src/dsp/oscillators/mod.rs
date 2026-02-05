@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 
-use crate::types::{ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor};
+use crate::types::{
+    ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor,
+};
 
 pub mod d_pulse;
 pub mod d_saw;
 pub mod d_sine;
-pub mod mi;
 pub mod noise;
+pub mod plaits;
 pub mod pulse;
 pub mod saw;
 pub mod sine;
@@ -19,7 +21,7 @@ pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     d_saw::DSawOscillator::install_constructor(map);
     d_pulse::DPulseOscillator::install_constructor(map);
     noise::Noise::install_constructor(map);
-    mi::install_constructors(map);
+    plaits::Plaits::install_constructor(map);
 }
 
 pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
@@ -31,7 +33,7 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     d_pulse::DPulseOscillator::install_params_validator(map);
     noise::Noise::install_params_validator(map);
 
-    mi::install_param_validators(map);
+    plaits::Plaits::install_params_validator(map);
 }
 
 pub fn install_channel_count_derivers(map: &mut HashMap<String, ChannelCountDeriver>) {
@@ -42,23 +44,18 @@ pub fn install_channel_count_derivers(map: &mut HashMap<String, ChannelCountDeri
     d_saw::DSawOscillator::install_channel_count_deriver(map);
     d_pulse::DPulseOscillator::install_channel_count_deriver(map);
     noise::Noise::install_channel_count_deriver(map);
-    mi::install_channel_count_derivers(map);
+    plaits::Plaits::install_channel_count_deriver(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {
     vec![
-        vec![
-            sine::SineOscillator::get_schema(),
-            saw::SawOscillator::get_schema(),
-            pulse::PulseOscillator::get_schema(),
-            d_sine::DSineOscillator::get_schema(),
-            d_saw::DSawOscillator::get_schema(),
-            d_pulse::DPulseOscillator::get_schema(),
-            noise::Noise::get_schema(),
-        ],
-        mi::schemas(),
+        sine::SineOscillator::get_schema(),
+        saw::SawOscillator::get_schema(),
+        pulse::PulseOscillator::get_schema(),
+        d_sine::DSineOscillator::get_schema(),
+        d_saw::DSawOscillator::get_schema(),
+        d_pulse::DPulseOscillator::get_schema(),
+        noise::Noise::get_schema(),
+        plaits::Plaits::get_schema(),
     ]
-    .into_iter()
-    .flatten()
-    .collect()
 }

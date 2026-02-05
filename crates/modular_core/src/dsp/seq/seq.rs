@@ -228,7 +228,7 @@ struct SeqOutputs {
 
 #[derive(Module)]
 #[module(
-    "seq",
+    "seq.cycle",
     "A strudel/tidalcycles style sequencer",
     channels_derive = seq_derive_channel_count
 )]

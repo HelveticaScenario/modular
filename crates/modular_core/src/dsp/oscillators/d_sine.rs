@@ -22,7 +22,7 @@ struct DSineOscillatorOutputs {
 }
 
 #[derive(Module)]
-#[module("dSine", "A phase-driven sine wave oscillator")]
+#[module("osc.dSine", "A phase-driven sine wave oscillator")]
 #[args(phase)]
 #[derive(Default)]
 pub struct DSineOscillator {

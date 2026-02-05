@@ -26,12 +26,11 @@ struct SawOscillatorOutputs {
 #[derive(Default, Clone, Copy)]
 struct ChannelState {
     phase: f32,
-    freq: f32,
     shape: Clickless,
 }
 
 #[derive(Module)]
-#[module("saw", "Sawtooth/Triangle/Ramp oscillator")]
+#[module("osc.saw", "Sawtooth/Triangle/Ramp oscillator")]
 #[args(freq)]
 pub struct SawOscillator {
     outputs: SawOscillatorOutputs,

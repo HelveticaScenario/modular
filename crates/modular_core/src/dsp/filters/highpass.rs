@@ -67,7 +67,7 @@ fn compute_hpf_biquad(cutoff: f32, resonance: f32, sample_rate: f32) -> BiquadCo
 }
 
 #[derive(Module)]
-#[module("hpf", "12dB/octave highpass filter with resonance")]
+#[module("filt.high", "12dB/octave highpass filter with resonance")]
 #[args(input, cutoff, resonance?)]
 pub struct HighpassFilter {
     outputs: HighpassFilterOutputs,

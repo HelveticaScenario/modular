@@ -29,7 +29,7 @@ struct EdgeChannelState {
 }
 
 #[derive(Module)]
-#[module("rising", "Rising Edge Detector")]
+#[module("util.rising", "Rising Edge Detector")]
 #[args(input)]
 pub struct RisingEdgeDetector {
     outputs: EdgeDetectorOutputs,

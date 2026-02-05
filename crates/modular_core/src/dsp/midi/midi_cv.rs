@@ -125,7 +125,7 @@ struct MidiCvOutputs {
 
 #[derive(Module)]
 #[module(
-    "midiCv",
+    "midi.cv",
     "MIDI to CV converter with polyphonic voice allocation",
     channels_param = "channels"
 )]

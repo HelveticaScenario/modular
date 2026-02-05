@@ -20,7 +20,7 @@ struct ClockDividerOutputs {
 
 #[derive(Default, Module)]
 #[module(
-    "clockDivider",
+    "util.clockDivider",
     "Divides an incoming clock signal by a specified integer value"
 )]
 #[args(input, division)]

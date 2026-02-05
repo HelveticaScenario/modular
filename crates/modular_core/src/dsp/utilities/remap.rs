@@ -30,7 +30,7 @@ struct RemapOutputs {
 }
 
 #[derive(Default, Module)]
-#[module("remap", "remap a signal from one range to another")]
+#[module("util.remap", "remap a signal from one range to another")]
 #[args(input, inMin?, inMax?, outMin?, outMax?)]
 pub struct Remap {
     outputs: RemapOutputs,

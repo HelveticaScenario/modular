@@ -30,7 +30,7 @@ struct ChannelState {
 }
 
 #[derive(Module)]
-#[module("dPulse", "A phase-driven pulse/square oscillator with PWM")]
+#[module("osc.dPulse", "A phase-driven pulse/square oscillator with PWM")]
 #[args(phase)]
 pub struct DPulseOscillator {
     outputs: DPulseOscillatorOutputs,

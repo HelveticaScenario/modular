@@ -28,7 +28,7 @@ struct ChannelState {
 }
 
 #[derive(Module)]
-#[module("perc", "Percussion envelope with exponential decay")]
+#[module("env.perc", "Percussion envelope with exponential decay")]
 #[args(trigger)]
 pub struct PercussionEnvelope {
     outputs: PercussionEnvelopeOutputs,

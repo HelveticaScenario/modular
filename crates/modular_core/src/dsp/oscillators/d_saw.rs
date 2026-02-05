@@ -28,7 +28,7 @@ struct ChannelState {
 }
 
 #[derive(Module)]
-#[module("dSaw", "A phase-driven sawtooth/triangle/ramp oscillator")]
+#[module("osc.dSaw", "A phase-driven sawtooth/triangle/ramp oscillator")]
 #[args(phase)]
 pub struct DSawOscillator {
     outputs: DSawOscillatorOutputs,

@@ -33,7 +33,7 @@ struct PulseChannelState {
 }
 
 #[derive(Module)]
-#[module("pulse", "Pulse/Square oscillator with PWM")]
+#[module("osc.pulse", "Pulse/Square oscillator with PWM")]
 #[args(freq)]
 pub struct PulseOscillator {
     outputs: PulseOscillatorOutputs,

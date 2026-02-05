@@ -190,7 +190,7 @@ export class Collection extends BaseCollection<ModuleOutput> {
         outMax: PolySignal,
     ): Collection {
         if (this.items.length === 0) return new Collection();
-        const factory = this.items[0].builder.getFactory('remap');
+        const factory = this.items[0].builder.getFactory('util.remap');
         if (!factory) {
             throw new Error('Factory for remap not registered');
         }
@@ -212,7 +212,7 @@ export class CollectionWithRange extends BaseCollection<ModuleOutputWithRange> {
      */
     range(outMin: PolySignal, outMax: PolySignal): Collection {
         if (this.items.length === 0) return new Collection();
-        const factory = this.items[0].builder.getFactory('remap');
+        const factory = this.items[0].builder.getFactory('util.remap');
         if (!factory) {
             throw new Error('Factory for remap not registered');
         }
@@ -420,7 +420,7 @@ export class GraphBuilder {
     toPatch(): PatchGraph {
         const signalFactory = this.getFactory('signal');
         const mixFactory = this.getFactory('mix');
-        const stereoMixerFactory = this.getFactory('stereoMixer');
+        const stereoMixerFactory = this.getFactory('stereoMix');
         const scaleAndShiftFactory = this.getFactory('scaleAndShift');
 
         if (
@@ -918,7 +918,7 @@ export class ModuleOutputWithRange extends ModuleOutput {
      * Creates a remap module internally.
      */
     range(outMin: Value, outMax: Value): ModuleOutput {
-        const factory = this.builder.getFactory('remap');
+        const factory = this.builder.getFactory('util.remap');
         if (!factory) {
             throw new Error('Factory for remap not registered');
         }

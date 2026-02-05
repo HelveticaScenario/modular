@@ -28,7 +28,7 @@ struct ChannelState {
 }
 
 #[derive(Module)]
-#[module("sine", "A sine wave oscillator")]
+#[module("osc.sine", "A sine wave oscillator")]
 #[args(freq)]
 pub struct SineOscillator {
     outputs: SineOscillatorOutputs,

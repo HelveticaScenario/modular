@@ -242,7 +242,7 @@ impl Default for PlaitsChannelState {
 /// - 23: Analog hi-hat
 #[derive(Module)]
 #[module(
-    "plaits",
+    "osc.macro",
     "Mutable Instruments Plaits - Full macro-oscillator with 24 engines, LPG, and modulation"
 )]
 #[args(freq, engine)]

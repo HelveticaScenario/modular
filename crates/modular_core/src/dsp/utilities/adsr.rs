@@ -55,7 +55,7 @@ impl Default for ChannelState {
 }
 
 #[derive(Module)]
-#[module("adsr", "ADSR envelope generator")]
+#[module("env.adsr", "ADSR envelope generator")]
 #[args(gate)]
 pub struct Adsr {
     outputs: AdsrOutputs,

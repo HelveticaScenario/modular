@@ -41,7 +41,7 @@ struct MidiGateOutputs {
 }
 
 #[derive(Default, Module)]
-#[module("midiGate", "MIDI note range to gate")]
+#[module("midi.gate", "MIDI note range to gate")]
 #[args()]
 pub struct MidiGate {
     outputs: MidiGateOutputs,
