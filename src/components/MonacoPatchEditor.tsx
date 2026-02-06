@@ -17,10 +17,7 @@ import {
     registerConfigSchemaForFile,
 } from './monaco/jsonSchema';
 import { createScopeViewZones } from './monaco/scopeViewZones';
-import {
-    buildSequenceTracking,
-    startActiveStepPolling,
-} from './monaco/sequenceTracking';
+import { startModuleStatePolling } from './monaco/moduleStateTracking';
 import { registerMidiCompletionProvider } from './monaco/midiCompletionProvider';
 import electronAPI from '../electronAPI';
 
@@ -32,7 +29,6 @@ export interface PatchEditorProps {
     scopeViews?: ScopeView[];
     onRegisterScopeCanvas?: (key: string, canvas: HTMLCanvasElement) => void;
     onUnregisterScopeCanvas?: (key: string) => void;
-    lastSubmittedCode?: string | null;
     runningBufferId?: string | null;
 }
 
@@ -44,7 +40,6 @@ export function MonacoPatchEditor({
     scopeViews = [],
     onRegisterScopeCanvas,
     onUnregisterScopeCanvas,
-    lastSubmittedCode,
     runningBufferId,
 }: PatchEditorProps) {
     // Fetch DSL lib source once at mount for Monaco autocomplete
@@ -61,65 +56,24 @@ export function MonacoPatchEditor({
         null,
     );
 
-    // Tracked decorations for seq patterns (created at eval time)
-    const [spanDecorations, setSpanDecorations] = useState<
-        Map<string, Map<string, string>>
-    >(new Map());
-    const [seqCallCache, setSeqCallCache] = useState<
-        Map<string, { sourcePattern: string; patternOffset: number; hasInterpolations: boolean; positionMapper?: (evalPos: number) => number | null; evaluatedPatternForMapper?: string }>
-    >(new Map());
-    const trackingCollectionRef =
-        useRef<editor.IEditorDecorationsCollection | null>(null);
-    const activeStepCollectionRef =
-        useRef<editor.IEditorDecorationsCollection | null>(null);
+    // Decoration collection for active module state highlighting (seq steps, etc.)
+    const activeDecorationRef = useRef<editor.IEditorDecorationsCollection | null>(null);
 
-    // Build tracked decorations when code is evaluated
-    useEffect(() => {
-        if (!lastSubmittedCode || !editor || !monaco) return;
-
-        const run = async () => {
-            const result = await buildSequenceTracking({
-                editor,
-                monaco,
-                lastSubmittedCode,
-                currentFile,
-                runningBufferId,
-                existingCollection: trackingCollectionRef.current,
-                getMiniLeafSpans: window.electronAPI.getMiniLeafSpans,
-            });
-
-            if (!result) return;
-
-            trackingCollectionRef.current = result.collection;
-            setSpanDecorations(result.spanDecorations);
-            setSeqCallCache(result.seqCallCache);
-        };
-
-        run();
-    }, [lastSubmittedCode, editor, monaco, currentFile, runningBufferId]);
-
-    // Poll module states for active step highlighting
+    // Poll module states for active step highlighting using the generic system
+    // This uses argument_spans from Rust to know where arguments are in the document,
+    // combined with source_spans for internal highlighting (like mini-notation spans)
     useEffect(() => {
         if (!editor || !monaco) return;
-        return startActiveStepPolling({
+        return startModuleStatePolling({
             editor,
             monaco,
             currentFile,
             runningBufferId,
-            spanDecorations,
-            seqCallCache,
-            activeStepCollectionRef,
+            activeDecorationRef,
             getModuleStates: () =>
                 window.electronAPI.synthesizer.getModuleStates(),
         });
-    }, [
-        editor,
-        monaco,
-        spanDecorations,
-        seqCallCache,
-        currentFile,
-        runningBufferId,
-    ]);
+    }, [editor, monaco, currentFile, runningBufferId]);
 
     const activeScopeViews = useMemo(
         () => scopeViews.filter((view) => view.file === currentFile),

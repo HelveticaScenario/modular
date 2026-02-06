@@ -5,6 +5,7 @@ import {
     note,
     bpm,
     setDSLWrapperLineOffset,
+    setActiveSpanRegistry,
 } from './factories';
 import {
     $,
@@ -14,6 +15,7 @@ import {
     DeferredModuleOutput,
     DeferredCollection,
 } from './GraphBuilder';
+import { analyzeSourceSpans, SpanRegistry } from './sourceSpanAnalyzer';
 
 /**
  * Result of executing a DSL script.
@@ -122,6 +124,15 @@ export function executePatchScript(
     const wrapperLineCount = 4;
     setDSLWrapperLineOffset(wrapperLineCount);
 
+    // The function body template indents the first line of source with 4 spaces
+    // This affects the column reported by V8 for the first line only
+    const firstLineColumnOffset = 4;
+
+    // Analyze source code to extract argument spans before execution
+    // The registry maps call-site keys (line:column) to argument span info
+    const spanRegistry = analyzeSourceSpans(source, schemas, wrapperLineCount, firstLineColumnOffset);
+    setActiveSpanRegistry(spanRegistry);
+
     const functionBody = `
     'use strict';
     ${source}
@@ -147,6 +158,9 @@ export function executePatchScript(
             throw new Error(`DSL execution error: ${error.message}`);
         }
         throw error;
+    } finally {
+        // Clear the registry after execution to avoid stale data
+        setActiveSpanRegistry(null);
     }
 }
 

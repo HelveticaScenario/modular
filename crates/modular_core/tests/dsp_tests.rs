@@ -30,7 +30,7 @@ fn create_test_patch() -> Patch {
 /// Add a module to the patch.
 ///
 /// Note: `module_type` must match the DSP module's `#[module("…")]` name
-/// (e.g. "sine", "saw", "pulse", "lpf", "hpf", "bpf", "apf",
+/// (e.g. "osc.sine", "osc.saw", "osc.pulse", "filt.low", "filt.high", "filt.band",
 /// "scaleAndShift", "signal", "mix", "sum"). These are the canonical
 /// identifiers used by `dsp::get_constructors()` and by the runtime
 /// schema/DSL.
@@ -764,9 +764,9 @@ fn test_adsr_envelope_progression() {
 #[test]
 fn test_frequency_modulation() {
     let mut patch = create_test_patch();
-    add_module(&mut patch, "lfo", "sine");
-    add_module(&mut patch, "carrier", "sine");
-    add_module(&mut patch, "scaler", "scaleAndShift");
+    add_module(&mut patch, "lfo", "osc.sine");
+    add_module(&mut patch, "carrier", "osc.sine");
+    add_module(&mut patch, "scaler", "util.scaleAndShift");
 
     // LFO at very low frequency
     if let Some(lfo) = patch.sampleables.get("lfo") {

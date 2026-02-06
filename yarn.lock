@@ -1312,6 +1312,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@isaacs/brace-expansion@npm:^5.0.1":
+  version: 5.0.1
+  resolution: "@isaacs/brace-expansion@npm:5.0.1"
+  dependencies:
+    "@isaacs/balanced-match": "npm:^4.0.1"
+  checksum: 10c0/e5d67c7bbf1f17b88132a35bc638af306d48acbb72810d48fa6e6edd8ab375854773108e8bf70f021f7ef6a8273455a6d1f0c3b5aa2aff06ce7894049ab77fb8
+  languageName: node
+  linkType: hard
+
 "@isaacs/cliui@npm:^8.0.2":
   version: 8.0.2
   resolution: "@isaacs/cliui@npm:8.0.2"
@@ -1504,6 +1513,7 @@ __metadata:
     react-use-websocket: "npm:^4.13.0"
     style-loader: "npm:^3.3.4"
     ts-loader: "npm:^9.5.4"
+    ts-morph: "npm:^27.0.2"
     tsx: "npm:^4.21.0"
     typescript: "npm:~5.9.3"
     typescript-eslint: "npm:^8.46.4"
@@ -2783,6 +2793,17 @@ __metadata:
   version: 2.0.0
   resolution: "@tootallnate/once@npm:2.0.0"
   checksum: 10c0/073bfa548026b1ebaf1659eb8961e526be22fa77139b10d60e712f46d2f0f05f4e6c8bec62a087d41088ee9e29faa7f54838568e475ab2f776171003c3920858
+  languageName: node
+  linkType: hard
+
+"@ts-morph/common@npm:~0.28.1":
+  version: 0.28.1
+  resolution: "@ts-morph/common@npm:0.28.1"
+  dependencies:
+    minimatch: "npm:^10.0.1"
+    path-browserify: "npm:^1.0.1"
+    tinyglobby: "npm:^0.2.14"
+  checksum: 10c0/d51276d840997e0f8f83e04f8b1689135bb12588a7ddbed575f87848d5737eeae31e242685d6449de27573e8ed30892157fea643393cb875e175f2711200bc50
   languageName: node
   linkType: hard
 
@@ -4771,6 +4792,13 @@ __metadata:
   version: 1.0.4
   resolution: "clone@npm:1.0.4"
   checksum: 10c0/2176952b3649293473999a95d7bebfc9dc96410f6cbd3d2595cf12fd401f63a4bf41a7adbfd3ab2ff09ed60cb9870c58c6acdd18b87767366fabfc163700f13b
+  languageName: node
+  linkType: hard
+
+"code-block-writer@npm:^13.0.3":
+  version: 13.0.3
+  resolution: "code-block-writer@npm:13.0.3"
+  checksum: 10c0/87db97b37583f71cfd7eced8bf3f0a0a0ca53af912751a734372b36c08cd27f3e8a4878ec05591c0cd9ae11bea8add1423e132d660edd86aab952656dd41fd66
   languageName: node
   linkType: hard
 
@@ -8608,6 +8636,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"minimatch@npm:^10.0.1":
+  version: 10.1.2
+  resolution: "minimatch@npm:10.1.2"
+  dependencies:
+    "@isaacs/brace-expansion": "npm:^5.0.1"
+  checksum: 10c0/0cccef3622201703de6ecf9d772c0be1d5513dcc038ed9feb866c20cf798243e678ac35605dac3f1a054650c28037486713fe9e9a34b184b9097959114daf086
+  languageName: node
+  linkType: hard
+
 "minimatch@npm:^10.1.1":
   version: 10.1.1
   resolution: "minimatch@npm:10.1.1"
@@ -9546,6 +9583,13 @@ __metadata:
     no-case: "npm:^3.0.4"
     tslib: "npm:^2.0.3"
   checksum: 10c0/05ff7c344809fd272fc5030ae0ee3da8e4e63f36d47a1e0a4855ca59736254192c5a27b5822ed4bae96e54048eec5f6907713cfcfff7cdf7a464eaf7490786d8
+  languageName: node
+  linkType: hard
+
+"path-browserify@npm:^1.0.1":
+  version: 1.0.1
+  resolution: "path-browserify@npm:1.0.1"
+  checksum: 10c0/8b8c3fd5c66bd340272180590ae4ff139769e9ab79522e2eb82e3d571a89b8117c04147f65ad066dccfb42fcad902e5b7d794b3d35e0fd840491a8ddbedf8c66
   languageName: node
   linkType: hard
 
@@ -11312,7 +11356,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tinyglobby@npm:^0.2.12, tinyglobby@npm:^0.2.15":
+"tinyglobby@npm:^0.2.12, tinyglobby@npm:^0.2.14, tinyglobby@npm:^0.2.15":
   version: 0.2.15
   resolution: "tinyglobby@npm:0.2.15"
   dependencies:
@@ -11401,6 +11445,16 @@ __metadata:
     typescript: "*"
     webpack: ^5.0.0
   checksum: 10c0/f0982404b43628c335d3b3a60ac3f1738385da7b97c3f04cb5ad2ebad791597be39b25c8a4e158a66173f9bd9f5aa72e285b046b0573e4beed8ecd032d418e4d
+  languageName: node
+  linkType: hard
+
+"ts-morph@npm:^27.0.2":
+  version: 27.0.2
+  resolution: "ts-morph@npm:27.0.2"
+  dependencies:
+    "@ts-morph/common": "npm:~0.28.1"
+    code-block-writer: "npm:^13.0.3"
+  checksum: 10c0/224715cc6d97b8ff5afd3986f9629f912a0ebd83eaecbdca91c35cf10a98f607c663f666e7ea5e6afab00563d00dc80fa7a13552cc7f1cef735261c3217d0863
   languageName: node
   linkType: hard
 

@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct LagProcessorParams {
     input: PolySignal,
     /// rise time in seconds (default 0.01s)
@@ -16,6 +16,7 @@ struct LagProcessorParams {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct LagProcessorOutputs {
     #[output("output", "output", default)]
     sample: PolyOutput,

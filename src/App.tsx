@@ -308,10 +308,6 @@ function App() {
         handleOpenWorkspaceRef.current = selectWorkspaceFolder;
     }, [selectWorkspaceFolder]);
 
-    const [lastSubmittedCode, setLastSubmittedCode] = useState<string | null>(
-        null,
-    );
-
     const handleSubmitRef = useRef(() => {});
     useEffect(() => {
         handleSubmitRef.current = async () => {
@@ -347,7 +343,6 @@ function App() {
                 
                 setIsClockRunning(true);
                 setRunningBufferId(activeBufferId);
-                setLastSubmittedCode(patchCodeValue);
                 setError(null);
                 setValidationErrors(null);
 
@@ -479,7 +474,6 @@ function App() {
                         <div className="editor-panel">
                             <PatchEditor
                                 value={patchCode}
-                                lastSubmittedCode={lastSubmittedCode}
                                 runningBufferId={runningBufferId}
                                 currentFile={activeBufferId}
                                 onChange={handlePatchChange}

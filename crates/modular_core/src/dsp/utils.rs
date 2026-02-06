@@ -2,6 +2,16 @@ use num::Float;
 
 use crate::dsp::consts::{LUT_PITCH_RATIO_HIGH, LUT_PITCH_RATIO_LOW};
 
+// ============ Gate/Trigger Voltage Standards ============
+// Gates and triggers output 5V when high, 0V when low.
+// Detection uses a Schmitt trigger with hysteresis:
+// - High threshold: 1.0V (signal goes high when input rises above this)
+// - Low threshold: 0.1V (signal goes low when input falls below this)
+pub const GATE_HIGH_VOLTAGE: f32 = 5.0;
+pub const GATE_LOW_VOLTAGE: f32 = 0.0;
+pub const GATE_DETECTION_HIGH_THRESHOLD: f32 = 1.0;
+pub const GATE_DETECTION_LOW_THRESHOLD: f32 = 0.1;
+
 #[inline]
 pub fn changed(a: f32, b: f32) -> bool {
     (a - b).abs() > 1e-6
@@ -56,6 +66,30 @@ where
     val
 }
 
+/// Result of edge detection
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EdgeEvent {
+    /// No state change
+    #[default]
+    None,
+    /// Transitioned from low to high
+    Rising,
+    /// Transitioned from high to low
+    Falling,
+}
+
+impl EdgeEvent {
+    /// Returns true if this is a rising edge
+    pub fn is_rising(&self) -> bool {
+        matches!(self, EdgeEvent::Rising)
+    }
+
+    /// Returns true if this is a falling edge
+    pub fn is_falling(&self) -> bool {
+        matches!(self, EdgeEvent::Falling)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SchmittState {
     Low,
@@ -82,33 +116,44 @@ impl SchmittTrigger {
     }
 
     /// Process a sample through the Schmitt trigger
-    /// Returns true if it toggled from low to high
+    /// Returns true if it toggled from low to high (rising edge)
     pub fn process(&mut self, input: f32) -> bool {
+        self.process_with_edge(input).1.is_rising()
+    }
+
+    /// Process a sample through the Schmitt trigger
+    /// Returns (is_high, edge_event) where is_high is the current state and edge_event indicates any transition
+    pub fn process_with_edge(&mut self, input: f32) -> (bool, EdgeEvent) {
         match self.state {
             SchmittState::Uninitialized => {
                 // Initialize state based on input
                 if input >= self.high_threshold {
                     self.state = SchmittState::High;
+                    (true, EdgeEvent::None)
                 } else {
                     self.state = SchmittState::Low;
+                    (false, EdgeEvent::None)
                 }
             }
             SchmittState::High => {
                 // Currently high - check if we should go low
                 if input < self.low_threshold {
                     self.state = SchmittState::Low;
+                    (false, EdgeEvent::Falling)
+                } else {
+                    (true, EdgeEvent::None)
                 }
             }
             SchmittState::Low => {
                 // Currently low - check if we should go high
                 if input > self.high_threshold {
                     self.state = SchmittState::High;
-                    return true;
+                    (true, EdgeEvent::Rising)
+                } else {
+                    (false, EdgeEvent::None)
                 }
             }
         }
-
-        false
     }
 
     /// Update thresholds
@@ -130,7 +175,7 @@ impl SchmittTrigger {
 
 impl Default for SchmittTrigger {
     fn default() -> Self {
-        Self::new(-1.0, 1.0)
+        Self::new(GATE_DETECTION_LOW_THRESHOLD, GATE_DETECTION_HIGH_THRESHOLD)
     }
 }
 
@@ -157,6 +202,11 @@ impl TempGate {
             low_val,
             high_val,
         }
+    }
+
+    /// Create a TempGate using standard gate voltages (0V low, 5V high)
+    pub fn new_gate(state: TempGateState) -> Self {
+        Self::new(state, GATE_LOW_VOLTAGE, GATE_HIGH_VOLTAGE)
     }
 
     pub fn set_state(&mut self, state: TempGateState, target: TempGateState) {

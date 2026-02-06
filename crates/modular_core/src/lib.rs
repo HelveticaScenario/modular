@@ -28,6 +28,6 @@ pub use patch::Patch;
 pub use poly::{MonoSignal, PORT_MAX_CHANNELS, PolyOutput, PolySignal};
 
 pub use types::{
-    Module, ModuleSchema, ModuleState, PatchGraph, ROOT_ID, ROOT_OUTPUT_PORT, Sampleable,
-    SampleableConstructor, SampleableMap, Signal, SignalParamSchema,
+    ARGUMENT_SPANS_KEY, ArgumentSpan, Module, ModuleSchema, ModuleState, PatchGraph, ROOT_ID,
+    ROOT_OUTPUT_PORT, Sampleable, SampleableConstructor, SampleableMap, Signal, SignalParamSchema,
 };

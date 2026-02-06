@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct StereoMixerParams {
     /// Polyphonic input signal to mix down to stereo
     input: PolySignal,
@@ -20,6 +20,7 @@ struct StereoMixerParams {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct StereoMixerOutputs {
     /// Stereo output (channel 0 = left, channel 1 = right)
     #[output("output", "stereo output", default)]

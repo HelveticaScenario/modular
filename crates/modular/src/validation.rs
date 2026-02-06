@@ -1,6 +1,6 @@
 use modular_core::dsp::get_param_validators;
 use modular_core::types::{
-  ModuleSchema, ModuleState, PatchGraph, ScopeItem, Signal, WellKnownModule,
+  ARGUMENT_SPANS_KEY, ModuleSchema, ModuleState, PatchGraph, ScopeItem, Signal, WellKnownModule,
 };
 use napi_derive::napi;
 use schemars::Schema;
@@ -492,6 +492,11 @@ pub fn validate_patch(
     // - Here we *only* validate that any referenced targets (Cable/Track) actually exist.
     // - Params may contain Signals nested inside arbitrary serializable structures.
     for (param_name, param_value) in param_obj {
+      // Skip internal metadata fields used for editor features (argument spans tracking).
+      if param_name == ARGUMENT_SPANS_KEY {
+        continue;
+      }
+
       // 4a) Unknown param names are always an error.
       let Some(param_schema_node) = param_schemas.get(param_name) else {
         errors.push(ValidationError {
@@ -603,7 +608,7 @@ mod tests {
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "sine-1".to_string(),
-        module_type: "sine".to_string(),
+        module_type: "osc.sine".to_string(),
         id_is_explicit: None,
         params: json!({
             "freq": 4.0
@@ -645,7 +650,7 @@ mod tests {
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "sine-1".to_string(),
-        module_type: "sine".to_string(),
+        module_type: "osc.sine".to_string(),
         id_is_explicit: None,
         params: json!({
             "unknown_param": {"type": "volts", "value": 1.0}
@@ -694,7 +699,7 @@ mod tests {
       modules: vec![
         ModuleState {
           id: "sine-1".to_string(),
-          module_type: "sine".to_string(),
+          module_type: "osc.sine".to_string(),
           id_is_explicit: None,
           params: json!({
               "freq": 4.0
@@ -762,7 +767,7 @@ mod tests {
       modules: vec![
         ModuleState {
           id: "sine-1".to_string(),
-          module_type: "sine".to_string(),
+          module_type: "osc.sine".to_string(),
           id_is_explicit: None,
           params: json!({
               "freq": 4.0
@@ -794,7 +799,7 @@ mod tests {
       modules: vec![
         ModuleState {
           id: "sine-1".to_string(),
-          module_type: "sine".to_string(),
+          module_type: "osc.sine".to_string(),
           id_is_explicit: None,
           params: json!({
               "freq": 4.0
@@ -823,7 +828,7 @@ mod tests {
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "sine-1".to_string(),
-        module_type: "sine".to_string(),
+        module_type: "osc.sine".to_string(),
         id_is_explicit: None,
         params: json!({
             "unknown1": 1.0,
@@ -864,7 +869,7 @@ mod tests {
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "noise-1".to_string(),
-        module_type: "noise".to_string(),
+        module_type: "osc.noise".to_string(),
         id_is_explicit: None,
         params: json!({
             "color": "invalid_color"
@@ -896,7 +901,7 @@ mod tests {
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "noise-1".to_string(),
-        module_type: "noise".to_string(),
+        module_type: "osc.noise".to_string(),
         id_is_explicit: None,
         params: serde_json::Value::Null,
       }],

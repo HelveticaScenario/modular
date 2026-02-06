@@ -9,7 +9,7 @@ use crate::{
 };
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct PulseOscillatorParams {
     /// frequency in v/oct
     freq: PolySignal,
@@ -20,6 +20,7 @@ struct PulseOscillatorParams {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct PulseOscillatorOutputs {
     #[output("output", "signal output", default, range = (-5.0, 5.0))]
     sample: PolyOutput,

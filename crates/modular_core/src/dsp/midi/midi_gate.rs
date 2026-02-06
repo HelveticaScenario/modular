@@ -6,10 +6,11 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+use crate::dsp::utils::{GATE_HIGH_VOLTAGE, GATE_LOW_VOLTAGE};
 use crate::types::{MidiNoteOff, MidiNoteOn};
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct MidiGateParams {
     /// MIDI device name to receive from (None = all devices)
     #[serde(default)]
@@ -33,6 +34,7 @@ fn default_max_note() -> u8 {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct MidiGateOutputs {
     #[output("gate", "gate output", default)]
     gate: f32,
@@ -102,7 +104,7 @@ impl MidiGate {
     }
 
     fn update(&mut self, _sample_rate: f32) {
-        self.outputs.gate = if self.notes_held > 0 { 5.0 } else { 0.0 };
+        self.outputs.gate = if self.notes_held > 0 { GATE_HIGH_VOLTAGE } else { GATE_LOW_VOLTAGE };
         self.outputs.note_count = self.notes_held as f32;
     }
 }

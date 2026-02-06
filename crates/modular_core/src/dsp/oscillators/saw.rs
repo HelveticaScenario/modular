@@ -8,7 +8,7 @@ use crate::{
 };
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct SawOscillatorParams {
     /// frequency in v/oct
     freq: PolySignal,
@@ -17,6 +17,7 @@ struct SawOscillatorParams {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct SawOscillatorOutputs {
     #[output("output", "signal output", default, range = (-5.0, 5.0))]
     sample: PolyOutput,

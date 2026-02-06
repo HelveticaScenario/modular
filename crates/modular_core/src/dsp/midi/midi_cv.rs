@@ -7,6 +7,7 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::dsp::utils::{GATE_HIGH_VOLTAGE, GATE_LOW_VOLTAGE};
 use crate::patch::Patch;
 use crate::poly::{PORT_MAX_CHANNELS, PolyOutput};
 use crate::types::{
@@ -70,7 +71,7 @@ struct VoiceState {
 }
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct MidiCvParams {
     /// MIDI device name to receive from (None = all devices)
     #[serde(default)]
@@ -106,6 +107,7 @@ fn default_pitch_bend_range() -> u8 {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct MidiCvOutputs {
     #[output("pitch", "pitch CV in 1V/octave (0V = C4)", default)]
     pitch: PolyOutput,
@@ -567,7 +569,7 @@ impl MidiCv {
             // Gate
             self.outputs
                 .gate
-                .set(i, if voice.gate { 5.0 } else { 0.0 });
+                .set(i, if voice.gate { GATE_HIGH_VOLTAGE } else { GATE_LOW_VOLTAGE });
 
             // Velocity
             self.outputs
@@ -586,10 +588,10 @@ impl MidiCv {
 
             // Retrigger pulse
             if self.retrigger_counters[i] > 0 {
-                self.outputs.retrigger.set(i, 5.0);
+                self.outputs.retrigger.set(i, GATE_HIGH_VOLTAGE);
                 self.retrigger_counters[i] -= 1;
             } else {
-                self.outputs.retrigger.set(i, 0.0);
+                self.outputs.retrigger.set(i, GATE_LOW_VOLTAGE);
             }
 
             // Pitch wheel (raw, unscaled, -5V to +5V)

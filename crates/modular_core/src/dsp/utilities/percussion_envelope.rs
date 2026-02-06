@@ -1,10 +1,10 @@
+use crate::dsp::utils::SchmittTrigger;
 use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
-use crate::types::Clickless;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct PercussionEnvelopeParams {
     /// trigger input (rising edge triggers envelope)
     trigger: PolySignal,
@@ -13,6 +13,7 @@ struct PercussionEnvelopeParams {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct PercussionEnvelopeOutputs {
     #[output("output", "envelope output", default, range = (0.0, 5.0))]
     sample: PolyOutput,
@@ -22,8 +23,7 @@ struct PercussionEnvelopeOutputs {
 #[derive(Default, Clone, Copy)]
 struct ChannelState {
     current_level: f32,
-    last_trigger: f32,
-    decay: f32,
+    trigger_schmitt: SchmittTrigger,
     in_attack: bool,
 }
 
@@ -41,12 +41,7 @@ impl Default for PercussionEnvelope {
         Self {
             outputs: PercussionEnvelopeOutputs::default(),
             params: PercussionEnvelopeParams::default(),
-            channels: std::array::from_fn(|_| ChannelState {
-                current_level: 0.0,
-                last_trigger: 0.0,
-                decay: 0.1,
-                in_attack: false,
-            }),
+            channels: std::array::from_fn(|_| ChannelState::default()),
         }
     }
 }
@@ -63,13 +58,12 @@ impl PercussionEnvelope {
 
             let decay_time = self.params.decay.get_value_or(ch, 0.1).max(0.001);
 
-            // Detect rising edge of trigger
+            // Detect rising edge of trigger using Schmitt trigger for noise immunity
             let trigger = self.params.trigger.get_value(ch);
-            if trigger > 2.5 && state.last_trigger <= 2.5 {
+            if state.trigger_schmitt.process(trigger) {
                 // Trigger detected - start attack phase (continue from current level for smooth re-trigger)
                 state.in_attack = true;
             }
-            state.last_trigger = trigger;
 
             // Attack phase: 1ms linear ramp to peak
             if state.in_attack {

@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct NoiseParams {
     /// color of the noise: white, pink, brown
     color: NoiseKind,
@@ -81,6 +81,7 @@ pub struct Noise {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct NoiseOutputs {
     #[output("output", "signal output", default, range = (-5.0, 5.0))]
     sample: f32,

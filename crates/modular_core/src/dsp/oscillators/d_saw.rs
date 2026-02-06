@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct DSawOscillatorParams {
     /// phase input (0-1, will be wrapped)
     phase: PolySignal,
@@ -16,6 +16,7 @@ struct DSawOscillatorParams {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct DSawOscillatorOutputs {
     #[output("output", "signal output", default, range = (-5.0, 5.0))]
     sample: PolyOutput,

@@ -91,13 +91,13 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             {
                 name: 'gain',
                 signature: 'gain(factor: PolySignal): ModuleOutput',
-                description: 'Scale the signal by a factor. Creates a scaleAndShift module internally.',
+                description: 'Scale the signal by a factor. Creates a util.scaleAndShift module internally.',
                 example: 'osc.gain(0.5)  // Half amplitude',
             },
             {
                 name: 'shift',
                 signature: 'shift(offset: PolySignal): ModuleOutput',
-                description: 'Add a DC offset to the signal. Creates a scaleAndShift module internally.',
+                description: 'Add a DC offset to the signal. Creates a util.scaleAndShift module internally.',
                 example: 'lfo.shift(2.5)  // Shift LFO to 0-5V range',
             },
             {

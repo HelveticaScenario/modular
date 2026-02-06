@@ -1,5 +1,7 @@
 # Copilot instructions (modular)
 
+NEVER STAGE OR COMMIT FILES
+
 ## Big picture
 - Electron app (React/TypeScript renderer) + Rust DSP engine exposed via N-API.
 - The JS DSL builds a `PatchGraph` JSON, sent over Electron IPC to the Rust `Synthesizer`.
@@ -30,8 +32,13 @@ Key areas:
   3) rebuild N-API for updated TS types
   4) adjust DSL factories in `src/dsl/factories.ts` if needed
 - Real-time safety in audio callback: avoid allocations/logging; validate on main thread.
-- Voltage convention: use 1v/oct (0v is c4 ~261.63Hz) for frequency; output attenuation `AUDIO_OUTPUT_ATTENUATION` in `crates/modular/src/audio.rs`.
+- Voltage conventions:
+  - **V/Oct pitch**: use 1V/oct (0V = C4 ~261.63Hz) for frequency
+  - **Gates and triggers**: output `GATE_HIGH_VOLTAGE` (5V) when high, `GATE_LOW_VOLTAGE` (0V) when low. Use constants from `crates/modular_core/src/dsp/utils.rs`.
+  - **Gate/trigger detection**: use Schmitt trigger with hysteresis. High threshold `GATE_DETECTION_HIGH_THRESHOLD` (1.0V), low threshold `GATE_DETECTION_LOW_THRESHOLD` (0.1V). Use `SchmittTrigger::default()` for standard behavior, or the constants for custom logic.
+  - Output attenuation: `AUDIO_OUTPUT_ATTENUATION` in `crates/modular/src/audio.rs`.
 - Prefer Electron APIs over web/React APIs when either could solve a task (see `src/**/*.ts`).
+- **Dependency size**: This is an Electron app with locally-served bundles. NPM package size doesn't matter (no CDN/network concerns). Heavy dependencies like `ts-morph` are acceptable for developer experience.
 - Reserved output names: when adding methods to `ModuleOutput`, `ModuleOutputWithRange`, `BaseCollection`, `Collection`, or `CollectionWithRange`, add the method name to `RESERVED_OUTPUT_NAMES` in all three locations:
   - `crates/modular_derive/src/lib.rs` (Rust compile-time check)
   - `src/dsl/factories.ts` (runtime sanitization)

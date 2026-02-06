@@ -5,7 +5,7 @@ use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
 use crate::types::Clickless;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct ScaleAndShiftParams {
     /// signal input
     input: PolySignal,
@@ -16,13 +16,14 @@ struct ScaleAndShiftParams {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct ScaleAndShiftOutputs {
     #[output("output", "signal output", default)]
     sample: PolyOutput,
 }
 
 #[derive(Default, Module)]
-#[module("scaleAndShift", "attenuate, invert, offset")]
+#[module("util.scaleAndShift", "attenuate, invert, offset")]
 #[args(input, scale?, shift?)]
 pub struct ScaleAndShift {
     outputs: ScaleAndShiftOutputs,

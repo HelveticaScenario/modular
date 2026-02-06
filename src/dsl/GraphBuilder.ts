@@ -101,9 +101,9 @@ export class BaseCollection<T extends ModuleOutput> {
      */
     gain(factor: PolySignal): Collection {
         if (this.items.length === 0) return new Collection();
-        const factory = this.items[0].builder.getFactory('scaleAndShift');
+        const factory = this.items[0].builder.getFactory('util.scaleAndShift');
         if (!factory) {
-            throw new Error('Factory for scaleAndShift not registered');
+            throw new Error('Factory for util.scaleAndShift not registered');
         }
         return factory(this.items, factor) as Collection;
     }
@@ -113,9 +113,9 @@ export class BaseCollection<T extends ModuleOutput> {
      */
     shift(offset: PolySignal): Collection {
         if (this.items.length === 0) return new Collection();
-        const factory = this.items[0].builder.getFactory('scaleAndShift');
+        const factory = this.items[0].builder.getFactory('util.scaleAndShift');
         if (!factory) {
-            throw new Error('Factory for scaleAndShift not registered');
+            throw new Error('Factory for util.scaleAndShift not registered');
         }
         return factory(this.items, undefined, offset) as Collection;
     }
@@ -192,7 +192,7 @@ export class Collection extends BaseCollection<ModuleOutput> {
         if (this.items.length === 0) return new Collection();
         const factory = this.items[0].builder.getFactory('util.remap');
         if (!factory) {
-            throw new Error('Factory for remap not registered');
+            throw new Error('Factory for util.remap not registered');
         }
         return factory(this.items, inMin, inMax, outMin, outMax) as Collection;
     }
@@ -214,7 +214,7 @@ export class CollectionWithRange extends BaseCollection<ModuleOutputWithRange> {
         if (this.items.length === 0) return new Collection();
         const factory = this.items[0].builder.getFactory('util.remap');
         if (!factory) {
-            throw new Error('Factory for remap not registered');
+            throw new Error('Factory for util.remap not registered');
         }
         return factory(
             this.items,
@@ -421,7 +421,7 @@ export class GraphBuilder {
         const signalFactory = this.getFactory('signal');
         const mixFactory = this.getFactory('mix');
         const stereoMixerFactory = this.getFactory('stereoMix');
-        const scaleAndShiftFactory = this.getFactory('scaleAndShift');
+        const scaleAndShiftFactory = this.getFactory('util.scaleAndShift');
 
         if (
             !signalFactory ||
@@ -430,7 +430,7 @@ export class GraphBuilder {
             !scaleAndShiftFactory
         ) {
             throw new Error(
-                'Required factories (signal, mix, stereoMixer, scaleAndShift) not registered',
+                'Required factories (signal, mix, stereoMixer, util.scaleAndShift) not registered',
             );
         }
 
@@ -838,9 +838,9 @@ export class ModuleOutput {
      * Scale this output by a factor
      */
     gain(factor: Value): ModuleOutput {
-        const factory = this.builder.getFactory('scaleAndShift');
+        const factory = this.builder.getFactory('util.scaleAndShift');
         if (!factory) {
-            throw new Error('Factory for scaleAndShift not registered');
+            throw new Error('Factory for util.scaleAndShift not registered');
         }
         return factory(this, factor) as ModuleOutput;
     }
@@ -849,9 +849,9 @@ export class ModuleOutput {
      * Shift this output by an offset
      */
     shift(offset: Value): ModuleOutput {
-        const factory = this.builder.getFactory('scaleAndShift');
+        const factory = this.builder.getFactory('util.scaleAndShift');
         if (!factory) {
-            throw new Error('Factory for scaleAndShift not registered');
+            throw new Error('Factory for util.scaleAndShift not registered');
         }
         return factory(this, undefined, offset) as ModuleOutput;
     }
@@ -868,7 +868,7 @@ export class ModuleOutput {
     /**
      * Send this output to speakers as stereo
      * @param baseChannel - Base output channel (0-15, default 0)
-     * @param options.gain - Output gain (adds scaleAndShift after stereo mix)
+     * @param options.gain - Output gain (adds util.scaleAndShift after stereo mix)
      * @param options.pan - Pan position (-5 = left, 0 = center, +5 = right)
      * @param options.width - Stereo width/spread (0 = no spread, 5 = full spread)
      */

@@ -259,7 +259,7 @@ type Mono<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
  * @see {@link Collection.out}
  */
 interface StereoOutOptions {
-  /** Output gain. If set, a scaleAndShift module is added after the stereo mix */
+  /** Output gain. If set, a util.scaleAndShift module is added after the stereo mix */
   gain?: Poly<Signal>;
   /** Pan position (-5 = left, 0 = center, +5 = right). Default 0 */
   pan?: Poly<Signal>;
@@ -292,7 +292,7 @@ interface ModuleOutput {
   readonly channel: number;
   
   /**
-   * Scale the signal by a factor. Creates a scaleAndShift module internally.
+   * Scale the signal by a factor. Creates a util.scaleAndShift module internally.
    * @param factor - Scale factor as {@link Poly<Signal>}
    * @returns The scaled {@link ModuleOutput} for chaining
    * @example osc.gain(0.5)  // Half amplitude
@@ -300,7 +300,7 @@ interface ModuleOutput {
   gain(factor: Poly<Signal>): ModuleOutput;
   
   /**
-   * Add a DC offset to the signal. Creates a scaleAndShift module internally.
+   * Add a DC offset to the signal. Creates a util.scaleAndShift module internally.
    * @param offset - Offset value as {@link Poly<Signal>}
    * @returns The shifted {@link ModuleOutput} for chaining
    * @example lfo.shift(2.5)  // Shift to 0-5V range

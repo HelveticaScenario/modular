@@ -120,8 +120,8 @@ impl Default for VoiceState {
     fn default() -> Self {
         Self {
             cached_hap: None,
-            gate: TempGate::new(TempGateState::Low, 0.0, 5.0),
-            trigger: TempGate::new(TempGateState::Low, 0.0, 1.0),
+            gate: TempGate::new_gate(TempGateState::Low),
+            trigger: TempGate::new_gate(TempGateState::Low),
             active: false,
             last_assigned: 0.0,
         }
@@ -133,7 +133,7 @@ fn default_channels() -> usize {
 }
 
 #[derive(Deserialize, Default, ChannelCount, JsonSchema, Connect, Debug)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 pub struct SeqParams {
     /// Strudel/tidalcycles style pattern string
     pattern: SeqPatternParam,
@@ -141,8 +141,8 @@ pub struct SeqParams {
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
     playhead: PolySignal,
     /// Number of polyphonic voices (1-16, default 4)
-    #[serde(default = "default_channels")]
-    pub channels: usize,
+    // #[serde(default = "default_channels")]
+    pub channels: Option<usize>,
     /// The pattern string (used for serialization)
     #[serde(skip)]
     #[schemars(skip)]
@@ -151,7 +151,7 @@ pub struct SeqParams {
 
 /// Channel count derivation for Seq.
 ///
-/// Analyzes the pattern to determine maximum polyphony by running 300 cycles
+/// Analyzes the pattern to determine maximum polyphony by running 90 cycles
 /// of the pattern and counting maximum simultaneous haps.
 ///
 /// This is called by TypeScript to derive channel count from params.
@@ -159,8 +159,8 @@ pub struct SeqParams {
 /// will have already set based on this analysis, or user explicitly set).
 pub fn seq_derive_channel_count(params: &SeqParams) -> usize {
     // If channels was explicitly set (non-default), use that
-    if params.channels != default_channels() {
-        return params.channels.clamp(1, PORT_MAX_CHANNELS);
+    if let Some(channels) = params.channels {
+        return channels.clamp(1, PORT_MAX_CHANNELS);
     }
 
     // Otherwise, analyze pattern polyphony
@@ -168,7 +168,7 @@ pub fn seq_derive_channel_count(params: &SeqParams) -> usize {
         return default_channels();
     };
 
-    const NUM_CYCLES: i64 = 300;
+    const NUM_CYCLES: i64 = 90;
     const MAX_POLYPHONY: usize = 16;
 
     // Query all cycles at once
@@ -212,11 +212,11 @@ pub fn seq_derive_channel_count(params: &SeqParams) -> usize {
             current = current.saturating_sub(1);
         }
     }
-    println!("Derived seq polyphony: {}", max_simultaneous);
     max_simultaneous.max(1) // At least 1 channel
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct SeqOutputs {
     #[output("cv", "control voltage output", default)]
     cv: PolyOutput,
@@ -285,7 +285,11 @@ impl Seq {
 
         // Use params.channels directly - TypeScript will have already set this
         // based on pattern analysis or explicit user value
-        let num_channels = self.params.channels.clamp(1, PORT_MAX_CHANNELS);
+        let num_channels = self
+            .params
+            .channels
+            .unwrap_or(default_channels())
+            .clamp(1, PORT_MAX_CHANNELS);
         // Set output channel counts
         self.outputs.cv.set_channels(num_channels);
         self.outputs.gate.set_channels(num_channels);
@@ -372,7 +376,7 @@ impl Seq {
             // Find the next available voice using round-robin with LRU voice stealing.
             let voice_idx = allocate_voice();
             let voice = &mut self.voices[voice_idx];
-
+            println!("Allocating voice {}", voice_idx);
             voice.cached_hap = Some(cached);
             voice.active = true;
             voice
@@ -388,9 +392,10 @@ impl Seq {
             let voice = &mut self.voices[ch];
 
             if let Some(ref cached) = voice.cached_hap
-                && let Some(cv) = cached.get_cv() {
-                    self.outputs.cv.set(ch, cv as f32);
-                }
+                && let Some(cv) = cached.get_cv()
+            {
+                self.outputs.cv.set(ch, cv as f32);
+            }
 
             self.outputs.gate.set(ch, voice.gate.process());
             self.outputs.trig.set(ch, voice.trigger.process());
@@ -401,43 +406,58 @@ impl Seq {
     fn release_ended_voices(&mut self, playhead: f64, num_channels: usize) {
         for i in 0..num_channels {
             if let Some(ref cached) = self.voices[i].cached_hap
-                && !cached.contains(playhead) {
-                    self.voices[i].active = false;
-                    self.voices[i].cached_hap = None;
-                    // Gate goes low
-                    self.voices[i]
-                        .gate
-                        .set_state(TempGateState::Low, TempGateState::Low);
-                }
+                && !cached.contains(playhead)
+            {
+                self.voices[i].active = false;
+                self.voices[i].cached_hap = None;
+                // Gate goes low
+                self.voices[i]
+                    .gate
+                    .set_state(TempGateState::Low, TempGateState::Low);
+            }
         }
     }
 }
 
 impl crate::types::StatefulModule for Seq {
     fn get_state(&self) -> Option<serde_json::Value> {
-        let num_channels = self.params.channels.clamp(1, PORT_MAX_CHANNELS);
+        let num_channels = self
+            .params
+            .channels
+            .unwrap_or(default_channels())
+            .clamp(1, PORT_MAX_CHANNELS);
         // Collect all source spans from all active voices
-        let mut all_source_spans: Vec<(usize, usize)> = Vec::new();
+        let mut active_spans: Vec<(usize, usize)> = Vec::new();
         let mut any_non_rest = false;
 
         for voice in self.voices.iter().take(num_channels) {
             if let Some(ref cached) = voice.cached_hap
-                && !cached.is_rest() {
-                    any_non_rest = true;
-                    all_source_spans.extend(cached.hap.get_active_spans());
-                }
+                && !cached.is_rest()
+            {
+                any_non_rest = true;
+                active_spans.extend(cached.hap.get_active_spans());
+            }
         }
 
-        if all_source_spans.is_empty() && !any_non_rest {
+        if active_spans.is_empty() && !any_non_rest {
             None
         } else {
             // Deduplicate spans (same span could be in multiple voices for stacked patterns)
-            all_source_spans.sort();
-            all_source_spans.dedup();
+            active_spans.sort();
+            active_spans.dedup();
 
+            // Generic param_spans format: map of param name -> { spans, source, all_spans }
+            // - spans: currently active spans (for highlighting)
+            // - source: the evaluated pattern string
+            // - all_spans: all leaf spans in the pattern (for creating tracked decorations at patch time)
             Some(serde_json::json!({
-                "source_spans": all_source_spans,
-                "pattern_source": self.params.pattern.source(),
+                "param_spans": {
+                    "pattern": {
+                        "spans": active_spans,
+                        "source": self.params.pattern.source(),
+                        "all_spans": self.params.pattern.all_spans(),
+                    }
+                },
                 "num_channels": num_channels,
             }))
         }

@@ -163,7 +163,7 @@ export declare function getMiniLeafSpans(source: string): Array<Array<number>>
 /**
  * Analyze a mini notation pattern and return the maximum polyphony needed.
  *
- * Queries 300 cycles (10 min at 120 BPM) and counts the maximum number of simultaneous haps,
+ * Queries 90 cycles (3 min at 120 BPM) and counts the maximum number of simultaneous haps,
  * capping at 16 (the poly voice limit). Logs timing for profiling.
  */
 export declare function getPatternPolyphony(source: string): number
@@ -202,6 +202,17 @@ export interface ValidationError {
   /** JSON snippet of the actual value that failed */
   actualValue?: string
 }
+/**
+ * Represents a character span in source code, used for argument highlighting.
+ * Start and end are absolute character offsets (0-based, end exclusive).
+ */
+export interface ArgumentSpan {
+  /** Absolute start offset (0-based) */
+  start: number
+  /** Absolute end offset (exclusive) */
+  end: number
+}
+
 export interface ModuleIdRemap {
   from: string
   to: string

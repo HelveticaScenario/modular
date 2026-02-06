@@ -6,13 +6,14 @@ use crate::poly::MonoSignal;
 use crate::types::ClockMessages;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct ClockDividerParams {
     pub division: u32,
     pub input: MonoSignal,
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct ClockDividerOutputs {
     #[output("output", "divided clock output", default)]
     pub output: f32,

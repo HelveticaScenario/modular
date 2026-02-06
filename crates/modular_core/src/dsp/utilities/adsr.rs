@@ -1,10 +1,10 @@
+use crate::dsp::utils::SchmittTrigger;
 use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
-use crate::types::Clickless;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct AdsrParams {
     /// gate input (expects >0V for on)
     gate: PolySignal,
@@ -33,7 +33,7 @@ enum EnvelopeStage {
 struct ChannelState {
     stage: EnvelopeStage,
     current_level: f32,
-    gate_was_high: bool,
+    gate_schmitt: SchmittTrigger,
     attack: f32,
     decay: f32,
     release: f32,
@@ -45,7 +45,7 @@ impl Default for ChannelState {
         Self {
             stage: EnvelopeStage::Idle,
             current_level: 0.0,
-            gate_was_high: false,
+            gate_schmitt: SchmittTrigger::default(),
             attack: 0.01,
             decay: 0.1,
             release: 0.1,
@@ -64,6 +64,7 @@ pub struct Adsr {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct AdsrOutputs {
     #[output("output", "envelope output", default, range = (0.0, 5.0))]
     sample: PolyOutput,
@@ -98,14 +99,14 @@ impl Adsr {
             let decay = state.decay;
             let release_var = state.release;
 
-            let gate_on = self.params.gate.get_value(ch) > 2.5;
+            let gate_val = self.params.gate.get_value(ch);
+            let (gate_on, edge) = state.gate_schmitt.process_with_edge(gate_val);
 
-            if gate_on && !state.gate_was_high {
+            if edge.is_rising() {
                 state.stage = EnvelopeStage::Attack;
-            } else if !gate_on && state.gate_was_high {
+            } else if edge.is_falling() {
                 state.stage = EnvelopeStage::Release;
             }
-            state.gate_was_high = gate_on;
 
             let sustain_level = (state.sustain / 5.0).clamp(0.0, 1.0);
 

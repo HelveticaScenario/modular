@@ -7,20 +7,22 @@
 use rust_music_theory::note::{Note, Notes, Pitch};
 use rust_music_theory::scale::Scale;
 
-/// A fixed scale root (note letter + optional accidental).
+/// A fixed scale root (note letter + optional accidental + optional octave).
 #[derive(Clone, Debug, PartialEq)]
 pub struct FixedRoot {
     pub letter: char,
     pub accidental: Option<char>,
+    pub octave: Option<i8>,
 }
 
 impl FixedRoot {
     /// Create a new fixed root.
     pub fn new(letter: char, accidental: Option<char>) -> Self {
-        Self { letter, accidental }
+        Self { letter, accidental, octave: None }
     }
 
-    /// Parse from a string like "c", "c#", "bb".
+    /// Parse from a string like "c", "c#", "bb", "c3", "c#4", "db3".
+    /// The optional octave number follows the note letter and accidental.
     pub fn parse(s: &str) -> Option<Self> {
         let chars: Vec<char> = s.chars().collect();
         if chars.is_empty() {
@@ -32,17 +34,25 @@ impl FixedRoot {
             return None;
         }
 
-        let accidental = if chars.len() > 1 {
-            match chars[1] {
-                '#' | 's' => Some('#'),
-                'b' | 'f' => Some('b'),
+        let mut idx = 1;
+        let accidental = if idx < chars.len() {
+            match chars[idx] {
+                '#' | 's' => { idx += 1; Some('#') }
+                'b' | 'f' => { idx += 1; Some('b') }
                 _ => None,
             }
         } else {
             None
         };
 
-        Some(Self { letter, accidental })
+        let octave = if idx < chars.len() {
+            let rest: String = chars[idx..].iter().collect();
+            Some(rest.parse::<i8>().ok()?)
+        } else {
+            None
+        };
+
+        Some(Self { letter, accidental, octave })
     }
 
     /// Get the pitch class (0-11, C=0).
@@ -65,6 +75,18 @@ impl FixedRoot {
         };
 
         ((base + acc) % 12 + 12) as i8 % 12
+    }
+
+    /// Get the base MIDI note number.
+    ///
+    /// If an octave is specified, returns the MIDI note for that root+octave
+    /// (e.g. C3 = 48, D4 = 62). If no octave, defaults to octave 4 (C4 = 60).
+    pub fn base_midi(&self) -> i32 {
+        let pc = self.pitch_class() as i32;
+        match self.octave {
+            Some(oct) => (oct as i32 + 1) * 12 + pc,
+            None => 60 + pc,
+        }
     }
 
     /// Convert to rust_music_theory Pitch.
@@ -97,6 +119,9 @@ pub struct ScaleSnapper {
 
     /// The scale type name (for reference).
     scale_name: String,
+
+    /// Scale intervals (semitones from root for each scale degree).
+    scale_intervals: Vec<i8>,
 }
 
 impl ScaleSnapper {
@@ -115,6 +140,7 @@ impl ScaleSnapper {
                 snap_table: [0; 13],
                 root_offset: root.pitch_class(),
                 scale_name: "chromatic".to_string(),
+                scale_intervals: (0..12).collect(),
             });
         }
 
@@ -181,6 +207,7 @@ impl ScaleSnapper {
             snap_table,
             root_offset,
             scale_name: scale_name.to_string(),
+            scale_intervals: scale_degrees,
         })
     }
 
@@ -242,6 +269,7 @@ impl ScaleSnapper {
             snap_table,
             root_offset: root_pc,
             scale_name: "custom".to_string(),
+            scale_intervals: scale_degrees,
         }
     }
 
@@ -302,6 +330,16 @@ impl ScaleSnapper {
     pub fn scale_name(&self) -> &str {
         &self.scale_name
     }
+
+    /// Get the scale intervals (semitone offsets from root for each degree).
+    pub fn scale_intervals(&self) -> &[i8] {
+        &self.scale_intervals
+    }
+
+    /// Get the root offset in semitones (C=0, C#=1, ..., B=11).
+    pub fn root_offset(&self) -> i8 {
+        self.root_offset
+    }
 }
 
 /// Validate that a scale type name is recognized by rust_music_theory.
@@ -329,14 +367,44 @@ mod tests {
         let c = FixedRoot::parse("c").unwrap();
         assert_eq!(c.letter, 'c');
         assert_eq!(c.accidental, None);
+        assert_eq!(c.octave, None);
 
         let cs = FixedRoot::parse("c#").unwrap();
         assert_eq!(cs.letter, 'c');
         assert_eq!(cs.accidental, Some('#'));
+        assert_eq!(cs.octave, None);
 
         let bb = FixedRoot::parse("bb").unwrap();
         assert_eq!(bb.letter, 'b');
         assert_eq!(bb.accidental, Some('b'));
+        assert_eq!(bb.octave, None);
+    }
+
+    #[test]
+    fn test_fixed_root_parse_with_octave() {
+        let c3 = FixedRoot::parse("c3").unwrap();
+        assert_eq!(c3.letter, 'c');
+        assert_eq!(c3.accidental, None);
+        assert_eq!(c3.octave, Some(3));
+        assert_eq!(c3.base_midi(), 48); // C3
+
+        let cs4 = FixedRoot::parse("c#4").unwrap();
+        assert_eq!(cs4.letter, 'c');
+        assert_eq!(cs4.accidental, Some('#'));
+        assert_eq!(cs4.octave, Some(4));
+        assert_eq!(cs4.base_midi(), 61); // C#4
+
+        let db3 = FixedRoot::parse("db3").unwrap();
+        assert_eq!(db3.letter, 'd');
+        assert_eq!(db3.accidental, Some('b'));
+        assert_eq!(db3.octave, Some(3));
+        assert_eq!(db3.base_midi(), 49); // Db3
+
+        let b5 = FixedRoot::parse("b5").unwrap();
+        assert_eq!(b5.letter, 'b');
+        assert_eq!(b5.accidental, None);
+        assert_eq!(b5.octave, Some(5));
+        assert_eq!(b5.base_midi(), 83); // B5
     }
 
     #[test]

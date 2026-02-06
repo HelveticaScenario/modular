@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use crate::{
     PolySignal,
-    dsp::utils::{TempGate, TempGateState},
+    dsp::utils::{TempGate, TempGateState, GATE_HIGH_VOLTAGE, GATE_LOW_VOLTAGE},
     poly::{PolyOutput, PORT_MAX_CHANNELS},
     types::Connect,
     Patch,
@@ -25,10 +25,16 @@ use super::scale::{FixedRoot, ScaleSnapper, validate_scale_type};
 /// - `"C(major)"` - C major scale (root + scale type)
 /// - `"C#(minor)"` - C# minor scale
 /// - `"D(0 2 4 5 7 9 11)"` - D with custom intervals (semitones from root)
-#[derive(Clone, Debug, Default)]
+///
+/// Octave syntax (e.g. `"C3(major)"`) is **not** supported here.
+/// Use [`parse_with_octave`] for contexts that need an octave-aware root.
+#[derive(Clone, Debug)]
 pub struct ScaleParam {
     snapper: Option<Arc<ScaleSnapper>>,
     source: String,
+    /// Base MIDI note for degree 0 (default 60 = C4).
+    /// Computed from the root note + optional octave (when using parse_with_octave).
+    base_midi: i32,
 }
 
 impl Connect for ScaleParam {
@@ -37,15 +43,39 @@ impl Connect for ScaleParam {
     }
 }
 
+impl Default for ScaleParam {
+    fn default() -> Self {
+        Self {
+            snapper: None,
+            source: String::new(),
+            base_midi: 60,
+        }
+    }
+}
+
 impl ScaleParam {
-    /// Parse a scale specification string.
+    /// Parse a scale specification string. Octaves in the root are **not** allowed;
+    /// use [`parse_with_octave`] for contexts that support them.
     pub fn parse(source: &str) -> Option<Self> {
+        let result = Self::parse_inner(source, false)?;
+        Some(result)
+    }
+
+    /// Parse a scale specification string, allowing an optional octave in the
+    /// root (e.g. `"C3(major)"`, `"Db3(min)"`).
+    pub fn parse_with_octave(source: &str) -> Option<Self> {
+        Self::parse_inner(source, true)
+    }
+
+    /// Shared parse implementation.
+    fn parse_inner(source: &str, allow_octave: bool) -> Option<Self> {
         let source = source.trim();
         
         if source.is_empty() {
             return Some(Self {
                 snapper: None,
                 source: source.to_string(),
+                base_midi: 60,
             });
         }
 
@@ -56,11 +86,11 @@ impl ScaleParam {
             return Some(Self {
                 snapper: Some(Arc::new(snapper)),
                 source: source.to_string(),
+                base_midi: 60,
             });
         }
 
         // Parse "root(scale_type)" or "root(intervals)"
-        // Examples: "C(major)", "C#(minor)", "D(0 2 4 5 7 9 11)"
         let open_paren = source.find('(')?;
         let close_paren = source.rfind(')')?;
         
@@ -72,6 +102,13 @@ impl ScaleParam {
         let scale_spec = &source[open_paren + 1..close_paren];
         
         let root = FixedRoot::parse(root_str)?;
+
+        // Reject octave when not allowed
+        if !allow_octave && root.octave.is_some() {
+            return None;
+        }
+
+        let base_midi = root.base_midi();
 
         // Check if scale_spec is a known scale type or custom intervals
         let snapper = if is_known_scale_type(scale_spec) {
@@ -94,12 +131,22 @@ impl ScaleParam {
         Some(Self {
             snapper: Some(Arc::new(snapper)),
             source: source.to_string(),
+            base_midi,
         })
     }
 
     /// Get the scale snapper, if configured.
     pub fn snapper(&self) -> Option<&ScaleSnapper> {
         self.snapper.as_deref()
+    }
+
+    /// Get the base MIDI note for degree 0.
+    ///
+    /// When an octave is specified via [`parse_with_octave`] (e.g. "C3(major)"),
+    /// this returns the MIDI note for that root+octave (e.g. 48 for C3).
+    /// Without an octave, defaults to octave 4 (MIDI 60 for C).
+    pub fn base_midi(&self) -> i32 {
+        self.base_midi
     }
 }
 
@@ -136,7 +183,7 @@ fn default_scale() -> ScaleParam {
 }
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct QuantizerParams {
     /// Input V/Oct signal to quantize
     input: PolySignal,
@@ -149,6 +196,7 @@ struct QuantizerParams {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct QuantizerOutputs {
     #[output("output", "quantized V/Oct output", default)]
     output: PolyOutput,
@@ -201,7 +249,7 @@ impl Default for Quantizer {
             params: QuantizerParams::default(),
             channels: std::array::from_fn(|_| ChannelState {
                 prev_quantized: None,
-                trigger: TempGate::new(TempGateState::Low, 0.0, 1.0),
+                trigger: TempGate::new_gate(TempGateState::Low),
             }),
         }
     }
@@ -241,7 +289,7 @@ impl Quantizer {
             }
             
             self.outputs.output.set(ch, quantized as f32);
-            self.outputs.gate.set(ch, if note_changed { 1.0 } else { 0.0 });
+            self.outputs.gate.set(ch, if note_changed { GATE_HIGH_VOLTAGE } else { GATE_LOW_VOLTAGE });
             self.outputs.trig.set(ch, state.trigger.process());
         }
     }
@@ -284,6 +332,26 @@ mod tests {
     }
 
     #[test]
+    fn test_scale_param_parse_rejects_octave() {
+        assert!(ScaleParam::parse("C3(major)").is_none());
+        assert!(ScaleParam::parse("Db3(min)").is_none());
+    }
+
+    #[test]
+    fn test_scale_param_parse_with_octave() {
+        let scale = ScaleParam::parse_with_octave("C3(major)").unwrap();
+        assert_eq!(scale.base_midi(), 48);
+        assert!(scale.snapper().is_some());
+
+        let scale = ScaleParam::parse_with_octave("Db3(min)").unwrap();
+        assert_eq!(scale.base_midi(), 49);
+
+        // Without octave still works and defaults to 4
+        let scale = ScaleParam::parse_with_octave("C(major)").unwrap();
+        assert_eq!(scale.base_midi(), 60);
+    }
+
+    #[test]
     fn test_scale_param_quantize_c_major() {
         let scale = ScaleParam::parse("C(major)").unwrap();
         let snapper = scale.snapper().unwrap();
@@ -304,7 +372,7 @@ mod tests {
         // Test the note change detection logic directly
         let mut state = ChannelState {
             prev_quantized: None,
-            trigger: TempGate::new(TempGateState::Low, 0.0, 1.0),
+            trigger: TempGate::new_gate(TempGateState::Low),
         };
         
         // First sample - should detect change (None -> Some)
@@ -333,15 +401,15 @@ mod tests {
     #[test]
     fn test_temp_gate_trigger_behavior() {
         // Test that TempGate produces correct single-sample pulse
-        let mut trigger = TempGate::new(TempGateState::Low, 0.0, 1.0);
+        let mut trigger = TempGate::new_gate(TempGateState::Low);
         
         // Initially low
-        assert_eq!(trigger.process(), 0.0);
+        assert_eq!(trigger.process(), GATE_LOW_VOLTAGE);
         
         // Trigger a pulse (High then Low)
         trigger.set_state(TempGateState::High, TempGateState::Low);
-        assert_eq!(trigger.process(), 1.0, "should be high on first process after trigger");
-        assert_eq!(trigger.process(), 0.0, "should return to low on second process");
-        assert_eq!(trigger.process(), 0.0, "should stay low");
+        assert_eq!(trigger.process(), GATE_HIGH_VOLTAGE, "should be high on first process after trigger");
+        assert_eq!(trigger.process(), GATE_LOW_VOLTAGE, "should return to low on second process");
+        assert_eq!(trigger.process(), GATE_LOW_VOLTAGE, "should stay low");
     }
 }

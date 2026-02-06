@@ -10,7 +10,7 @@ use crate::{
 };
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct ClockParams {
     /// tempo in v/oct (tempo)
     tempo: MonoSignal,
@@ -32,6 +32,7 @@ pub struct Clock {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct ClockOutputs {
     #[output(
         "playhead",

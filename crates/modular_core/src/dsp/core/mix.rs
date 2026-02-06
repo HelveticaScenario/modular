@@ -18,9 +18,9 @@ use crate::{
 #[serde(rename_all = "snake_case")]
 pub enum MixMode {
     /// Sum all inputs at each channel
-    #[default]
     Sum,
     /// Average all inputs at each channel
+    #[default]
     Average,
     /// Take the maximum absolute value at each channel
     Max,
@@ -33,7 +33,7 @@ impl crate::types::Connect for MixMode {
 }
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 pub struct MixParams {
     /// Polyphonic inputs to mix together
     pub inputs: Vec<PolySignal>,
@@ -44,6 +44,7 @@ pub struct MixParams {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct MixOutputs {
     /// Mixed polyphonic output
     #[output("output", "mixed polyphonic output", default)]

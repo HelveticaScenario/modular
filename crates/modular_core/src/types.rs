@@ -956,6 +956,34 @@ impl FromNapiValue for SchemaContainer {
     }
 }
 
+/// Key used for internal metadata field storing argument source spans.
+/// This constant is shared across Rust validation, derive macros, and TypeScript.
+pub const ARGUMENT_SPANS_KEY: &str = "__argument_spans";
+
+/// Represents a character span in source code, used for argument highlighting.
+/// Start and end are absolute character offsets (0-based, end exclusive).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+#[napi(object)]
+pub struct ArgumentSpan {
+    /// Absolute start offset (0-based)
+    pub start: u32,
+    /// Absolute end offset (exclusive)
+    pub end: u32,
+}
+
+impl ArgumentSpan {
+    /// Create a new argument span
+    pub fn new(start: u32, end: u32) -> Self {
+        Self { start, end }
+    }
+    
+    /// Check if this span is empty/unset
+    pub fn is_empty(&self) -> bool {
+        self.start == 0 && self.end == 0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[napi(object)]

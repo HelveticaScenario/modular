@@ -5,25 +5,22 @@ use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
 use crate::types::Clickless;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct RemapParams {
     /// signal input to remap
     input: PolySignal,
     /// minimum of input range
-    #[serde(rename = "inMin")]
     in_min: PolySignal,
     /// maximum of input range
-    #[serde(rename = "inMax")]
     in_max: PolySignal,
     /// minimum of output range
-    #[serde(rename = "outMin")]
     out_min: PolySignal,
     /// maximum of output range
-    #[serde(rename = "outMax")]
     out_max: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct RemapOutputs {
     #[output("output", "remapped signal output", default)]
     sample: PolyOutput,

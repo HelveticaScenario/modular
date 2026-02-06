@@ -10,6 +10,10 @@ use quote::{format_ident, quote, quote_spanned};
 use syn::{Attribute, LitStr, Token, parse::Parser, punctuated::Punctuated, spanned::Spanned};
 use syn::{Data, DeriveInput, Fields, Type};
 
+/// Key used for internal metadata field storing argument source spans.
+/// Must match modular_core::types::ARGUMENT_SPANS_KEY.
+const ARGUMENT_SPANS_KEY: &str = "__argument_spans";
+
 #[proc_macro]
 pub fn message_handlers(input: TokenStream) -> TokenStream {
     struct Arm {
@@ -1046,6 +1050,8 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     };
 
     let args_tokens = unwrap_attr(&ast.attrs, "args");
+    // Check if module has #[args] attribute before consuming the tokens
+    let has_args = args_tokens.is_some();
     let positional_args_exprs = if let Some(tokens) = args_tokens {
         let args = Punctuated::<ArgAttr, Token![,]>::parse_terminated
             .parse2(tokens)
@@ -1159,12 +1165,67 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         .attrs
         .iter()
         .any(|attr| attr.path().is_ident("stateful"));
+    
+    // has_args was set earlier when we checked args_tokens.is_some()
+    
     let get_state_impl = if is_stateful {
+        if has_args {
+            // Stateful module with positional args - merge argument_spans into state
+            quote! {
+                use crate::types::StatefulModule;
+                // SAFETY: Audio thread has exclusive access. See crate::types module documentation.
+                let module = unsafe { &*self.module.get() };
+                let argument_spans = unsafe { &*self.argument_spans.get() };
+                
+                // Get base state from module's StatefulModule impl
+                let state = module.get_state();
+                
+                // If we have argument spans, merge them into the state
+                if argument_spans.is_empty() {
+                    state
+                } else {
+                    match (state, serde_json::to_value(argument_spans).ok()) {
+                        (Some(serde_json::Value::Object(mut obj)), Some(spans)) => {
+                            obj.insert("argument_spans".to_string(), spans);
+                            Some(serde_json::Value::Object(obj))
+                        }
+                        (Some(state_val), Some(spans)) => {
+                            // State exists but isn't an object - wrap it
+                            Some(serde_json::json!({
+                                "_state": state_val,
+                                "argument_spans": spans
+                            }))
+                        }
+                        (None, Some(spans)) => {
+                            // No base state, create one with just argument_spans
+                            Some(serde_json::json!({
+                                "argument_spans": spans
+                            }))
+                        }
+                        (state, None) => state,
+                    }
+                }
+            }
+        } else {
+            // Stateful module without args - just return module state
+            quote! {
+                use crate::types::StatefulModule;
+                // SAFETY: Audio thread has exclusive access. See crate::types module documentation.
+                let module = unsafe { &*self.module.get() };
+                module.get_state()
+            }
+        }
+    } else if has_args {
+        // Non-stateful module with args - return argument_spans only if present
         quote! {
-            use crate::types::StatefulModule;
-            // SAFETY: Audio thread has exclusive access. See crate::types module documentation.
-            let module = unsafe { &*self.module.get() };
-            module.get_state()
+            let argument_spans = unsafe { &*self.argument_spans.get() };
+            if !argument_spans.is_empty() {
+                serde_json::to_value(std::collections::HashMap::from([
+                    ("argument_spans".to_string(), argument_spans.clone())
+                ])).ok()
+            } else {
+                None
+            }
         }
     } else {
         quote! { None }
@@ -1330,6 +1391,10 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             module: std::cell::UnsafeCell<#name #static_ty_generics>,
             processed: core::sync::atomic::AtomicBool,
             sample_rate: f32,
+            /// Argument spans from DSL source code for editor highlighting.
+            /// Populated from ARGUMENT_SPANS_KEY ("__argument_spans") in params JSON during try_update_params.
+            /// See modular_core::types::ARGUMENT_SPANS_KEY for the shared constant.
+            argument_spans: std::cell::UnsafeCell<std::collections::HashMap<String, crate::types::ArgumentSpan>>,
         }
 
         impl Default for #struct_name {
@@ -1340,6 +1405,7 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                     module: std::cell::UnsafeCell::new(Default::default()),
                     processed: core::sync::atomic::AtomicBool::new(false),
                     sample_rate: 0.0,
+                    argument_spans: std::cell::UnsafeCell::new(std::collections::HashMap::new()),
                 }
             }
         }
@@ -1398,7 +1464,30 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             fn try_update_params(&self, params: serde_json::Value) -> napi::Result<()> {
                 // SAFETY: Audio thread has exclusive access. See struct-level documentation.
                 let module = unsafe { &mut *self.module.get() };
-                module.params = serde_json::from_value(params)?;
+                let argument_spans = unsafe { &mut *self.argument_spans.get() };
+                
+                // Extract __argument_spans before deserializing params
+                // This field contains source locations for editor highlighting
+                let params_to_deserialize = if params.is_object() {
+                    let mut obj = match params {
+                        serde_json::Value::Object(o) => o,
+                        _ => unreachable!(),
+                    };
+                    if let Some(spans_value) = obj.remove("__argument_spans") {
+                        if let serde_json::Value::Object(spans_obj) = spans_value {
+                            argument_spans.clear();
+                            for (key, value) in spans_obj {
+                                if let Ok(span) = serde_json::from_value::<crate::types::ArgumentSpan>(value) {
+                                    argument_spans.insert(key, span);
+                                }
+                            }
+                        }
+                    }
+                    serde_json::Value::Object(obj)
+                } else {
+                    params
+                };
+                module.params = serde_json::from_value(params_to_deserialize)?;
                 Ok(())
             }
 
@@ -1442,13 +1531,30 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 // Attempt to deserialize the JSON params object into the module's concrete
                 // `*Params` struct. If this fails, the patch's params shape is incompatible
                 // with what the DSP module expects.
-                let _parsed: #params_struct_name = serde_json::from_value(params.clone())?;
+                //
+                // First strip __argument_spans since it's internal metadata, not a real param.
+                let params_to_validate = if params.is_object() {
+                    let mut obj = params.as_object().unwrap().clone();
+                    obj.remove("__argument_spans");
+                    serde_json::Value::Object(obj)
+                } else {
+                    params.clone()
+                };
+                let _parsed: #params_struct_name = serde_json::from_value(params_to_validate)?;
                 Ok(())
             }
 
             fn derive_channel_count(params: &serde_json::Value) -> Option<usize> {
                 // Deserialize JSON to typed params struct and call the shared implementation.
-                let parsed: #params_struct_name = serde_json::from_value(params.clone()).ok()?;
+                // First strip __argument_spans since it's internal metadata, not a real param.
+                let params_to_parse = if params.is_object() {
+                    let mut obj = params.as_object().unwrap().clone();
+                    obj.remove("__argument_spans");
+                    serde_json::Value::Object(obj)
+                } else {
+                    params.clone()
+                };
+                let parsed: #params_struct_name = serde_json::from_value(params_to_parse).ok()?;
                 Some(#channel_count_fn_name(&parsed))
             }
 

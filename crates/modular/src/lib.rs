@@ -541,7 +541,7 @@ impl Synthesizer {
     for module in &patch.modules {
       // Check if this is a MIDI module type
       match module.module_type.as_str() {
-        "midiCv" | "midiCc" | "midiGate" => {
+        "midi.cv" | "midi.cc" | "midi.gate" => {
           // Extract device param from params JSON
           if let Some(device) = module.params.get("device").and_then(|v| v.as_str()) {
             if !device.is_empty() {
@@ -967,7 +967,7 @@ pub fn get_mini_leaf_spans(source: String) -> Result<Vec<Vec<u32>>> {
 
 /// Analyze a mini notation pattern and return the maximum polyphony needed.
 ///
-/// Queries 300 cycles (10 min at 120 BPM) and counts the maximum number of simultaneous haps,
+/// Queries 90 cycles (3 min at 120 BPM) and counts the maximum number of simultaneous haps,
 /// capping at 16 (the poly voice limit). Logs timing for profiling.
 #[napi]
 pub fn get_pattern_polyphony(source: String) -> Result<u32> {
@@ -985,7 +985,7 @@ pub fn get_pattern_polyphony(source: String) -> Result<u32> {
   let parse_time = start.elapsed();
   let query_start = Instant::now();
 
-  const NUM_CYCLES: i64 = 300;
+  const NUM_CYCLES: i64 = 90;
   const MAX_POLYPHONY: u32 = 16;
 
   // Query all cycles at once

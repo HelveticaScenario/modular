@@ -6,18 +6,19 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct RisingEdgeDetectorParams {
     input: PolySignal,
 }
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct FallingEdgeDetectorParams {
     input: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct EdgeDetectorOutputs {
     #[output("output", "gate", default)]
     output: PolyOutput,

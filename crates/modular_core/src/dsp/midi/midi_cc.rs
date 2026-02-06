@@ -10,7 +10,7 @@ use serde::Deserialize;
 use crate::types::{MidiControlChange, MidiControlChange14Bit};
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct MidiCcParams {
     /// MIDI device name to receive from (None = all devices)
     #[serde(default)]
@@ -34,6 +34,7 @@ struct MidiCcParams {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct MidiCcOutputs {
     #[output("output", "CC value as voltage", default)]
     output: f32,

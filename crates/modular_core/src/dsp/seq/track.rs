@@ -17,6 +17,7 @@ struct TrackParams {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct TrackOutputs {
     #[output("output", "signal output", default)]
     sample: f32,

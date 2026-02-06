@@ -275,20 +275,30 @@ pub struct SeqPatternParam {
     #[serde(skip, default)]
     #[schemars(skip)]
     pub(crate) signals: Vec<*mut Signal>,
-}
 
-// SAFETY: SeqPatternParam is Send because:
-// - The Signal pointers are only used on the audio thread after connection
-// - The pattern is immutable after parsing
-// - All access to signals goes through the owning pattern
-unsafe impl Send for SeqPatternParam {}
-unsafe impl Sync for SeqPatternParam {}
+    /// All leaf spans in the pattern (character offsets within the pattern string).
+    /// Computed once at parse time for creating Monaco tracked decorations.
+    ///
+    /// These differ from the "spans" returned in module state:
+    /// - `all_spans`: All pattern leaves, used to create decorations that track edits
+    /// - `spans` (in get_state): Currently active/playing spans, used for highlighting
+    #[serde(skip, default)]
+    #[schemars(skip)]
+    pub(crate) all_spans: Vec<(usize, usize)>,
+}
 
 impl SeqPatternParam {
     /// Parse a pattern string and collect signals.
     fn parse(source: &str) -> Result<Self, String> {
-        // Parse mini notation into a pattern
-        let pattern = crate::pattern_system::mini::parse::<SeqValue>(source)
+        // Parse mini notation AST first (for span collection)
+        let ast = crate::pattern_system::mini::parse_ast(source)
+            .map_err(|e| e.to_string())?;
+
+        // Collect all leaf spans from AST
+        let all_spans = crate::pattern_system::mini::collect_leaf_spans(&ast);
+
+        // Convert AST to pattern
+        let pattern = crate::pattern_system::mini::convert::<SeqValue>(&ast)
             .map_err(|e| e.to_string())?;
 
         // TODO: Collect signals from pattern - this requires walking the pattern
@@ -298,6 +308,7 @@ impl SeqPatternParam {
             source: source.to_string(),
             pattern: Some(pattern),
             signals: Vec::new(),
+            all_spans,
         })
     }
 
@@ -309,6 +320,11 @@ impl SeqPatternParam {
     /// Get the source pattern string (the evaluated pattern passed to the parser).
     pub fn source(&self) -> &str {
         &self.source
+    }
+
+    /// Get all leaf spans in the pattern (for frontend tracked decorations).
+    pub fn all_spans(&self) -> &[(usize, usize)] {
+        &self.all_spans
     }
 }
 

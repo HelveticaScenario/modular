@@ -1,18 +1,20 @@
+use crate::dsp::utils::{SchmittState, SchmittTrigger};
 use crate::{
     PORT_MAX_CHANNELS,
-    poly::{MonoSignal, PolyOutput, PolySignal},
+    poly::{PolyOutput, PolySignal},
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct SampleAndHoldParams {
     input: PolySignal,
     trigger: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct SampleAndHoldOutputs {
     #[output("output", "output", default)]
     sample: PolyOutput,
@@ -20,9 +22,8 @@ struct SampleAndHoldOutputs {
 
 #[derive(Default, Clone, Copy)]
 struct SampleAndHoldChannelState {
-    last_trigger: f32,
+    trigger: SchmittTrigger,
     held_value: f32,
-    initialized: bool,
 }
 
 #[derive(Module, Default)]
@@ -44,13 +45,14 @@ impl SampleAndHold {
             let input = self.params.input.get_value(ch);
             let trigger = self.params.trigger.get_value(ch);
 
-            if !state.initialized {
-                state.held_value = input;
-                state.initialized = true;
-            } else if trigger > 0.1 && state.last_trigger <= 0.1 {
+            if state.trigger.state == SchmittState::Uninitialized {
                 state.held_value = input;
             }
-            state.last_trigger = trigger;
+
+            // Make sure to initialize the held value on the first update
+            if state.trigger.process(trigger) {
+                state.held_value = input;
+            }
 
             self.outputs.sample.set(ch, state.held_value);
         }
@@ -60,13 +62,14 @@ impl SampleAndHold {
 message_handlers!(impl SampleAndHold {});
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct TrackAndHoldParams {
     input: PolySignal,
     gate: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct TrackAndHoldOutputs {
     #[output("output", "output", default)]
     sample: PolyOutput,
@@ -74,7 +77,7 @@ struct TrackAndHoldOutputs {
 
 #[derive(Default)]
 struct TrackAndHoldChannelState {
-    last_gate: f32,
+    gate: SchmittTrigger,
 }
 
 #[derive(Module, Default)]
@@ -96,7 +99,9 @@ impl TrackAndHold {
             let input = self.params.input.get_value(ch);
             let gate = self.params.gate.get_value(ch);
 
-            if (gate > 2.5 && state.last_gate <= 2.5) || gate <= 2.5 {
+            // Track while gate is low or on rising edge
+            state.gate.process(gate);
+            if state.gate.state() != crate::dsp::utils::SchmittState::High {
                 self.outputs.sample.set(ch, input);
             }
         }

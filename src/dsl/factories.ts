@@ -1,8 +1,15 @@
 import { ModuleSchema, deriveChannelCount } from '@modular/core';
 import { GraphBuilder, ModuleNode, ModuleOutput, Collection, CollectionWithRange } from './GraphBuilder';
+import type { SpanRegistry, CallSiteKey, SourceSpan } from './sourceSpanAnalyzer';
+
+/**
+ * Key used for internal metadata field storing argument source spans.
+ * Must match modular_core::types::ARGUMENT_SPANS_KEY in Rust.
+ */
+const ARGUMENT_SPANS_KEY = '__argument_spans';
 
 // LRU-style cache for seq pattern polyphony analysis to avoid re-parsing on every patch update
-// The Rust-side analysis runs 300 cycles which can be expensive for complex patterns
+// The Rust-side analysis runs 90 cycles which can be expensive for complex patterns
 const POLYPHONY_CACHE_MAX_SIZE = 100;
 const patternPolyphonyCache = new Map<string, number>();
 
@@ -50,6 +57,27 @@ export function setDSLWrapperLineOffset(offset: number): void {
 }
 
 /**
+ * Active span registry for the current DSL execution.
+ * Set by executor.ts before running user code, cleared after.
+ */
+let activeSpanRegistry: SpanRegistry | null = null;
+
+/**
+ * Set the active span registry for argument span capture.
+ * Called by executor.ts before and after DSL execution.
+ */
+export function setActiveSpanRegistry(registry: SpanRegistry | null): void {
+    activeSpanRegistry = registry;
+}
+
+/**
+ * Type for argument spans attached to module params
+ */
+export interface ArgumentSpans {
+    [argName: string]: SourceSpan;
+}
+
+/**
  * Capture source location from the current stack trace.
  * Looks for the "<anonymous>" frame which corresponds to DSL code execution.
  * Returns undefined if source location cannot be determined.
@@ -84,6 +112,39 @@ function captureSourceLocation(): { line: number; column: number } | undefined {
     }
 
     return undefined;
+}
+
+/**
+ * Look up argument spans from the active span registry using the source location.
+ * Returns undefined if no registry is set or no spans found for this call site.
+ * 
+ * @param sourceLocation - The line/column from captureSourceLocation()
+ * @returns Map of argument names to their source spans, or undefined
+ */
+function captureArgumentSpans(
+    sourceLocation: { line: number; column: number } | undefined
+): ArgumentSpans | undefined {
+    if (!activeSpanRegistry || !sourceLocation) {
+        return undefined;
+    }
+
+    // Build the call site key matching what ts-morph produced
+    // ts-morph uses 1-based lines and columns, and the analyzer converts column to 0-based
+    // Stack traces also use 1-based line/column, so we need to convert column to 0-based here too
+    const key: CallSiteKey = `${sourceLocation.line + DSL_WRAPPER_LINE_OFFSET}:${sourceLocation.column - 1}`;
+
+    const entry = activeSpanRegistry.get(key);
+    if (!entry) {
+        return undefined;
+    }
+
+    // Convert Map to plain object for serialization to Rust
+    const spans: ArgumentSpans = {};
+    for (const [argName, span] of entry.args) {
+        spans[argName] = span;
+    }
+
+    return spans;
 }
 
 // Return type for module factories - varies by output configuration
@@ -255,6 +316,9 @@ export class DSLContext {
             // Capture source location from stack trace
             const sourceLocation = captureSourceLocation();
 
+            // Capture argument spans from the pre-analyzed registry
+            const argumentSpans = captureArgumentSpans(sourceLocation);
+
             // @ts-ignore
             const positionalArgs = schema.positionalArgs || [];
             const params: Record<string, any> = {};
@@ -287,6 +351,11 @@ export class DSLContext {
                 }
             }
 
+            // Attach argument spans to params if available
+            // This allows Rust-side modules to access source locations for highlighting
+            if (argumentSpans && Object.keys(argumentSpans).length > 0) {
+                params[ARGUMENT_SPANS_KEY] = argumentSpans;
+            }
 
             // Create the module node internally, passing source location
             const node = this.builder.addModule(schema.name, id, sourceLocation);
@@ -302,10 +371,10 @@ export class DSLContext {
             // This handles modules with custom derivation logic (like mix, seq)
             // as well as standard inference from PolySignal inputs
             let derivedChannels: number | null = null;
-
+            console.log(schema.name, params)
             // For seq module with a pattern, use LRU cache to avoid expensive re-analysis
             // (Rust-side pattern polyphony analysis runs 300 cycles)
-            if (schema.name === 'seq' && params.pattern !== undefined) {
+            if (schema.name === 'seq.cycle' && params.pattern !== undefined) {
                 if (params.channels !== undefined) {
                     // If channels explicitly set, use it directly
                     derivedChannels = params.channels as number;
@@ -322,6 +391,36 @@ export class DSLContext {
                         }
                     }
                     params.channels = derivedChannels
+                    node._setParam('channels', derivedChannels);
+                }
+            } else if (schema.name === 'seq.iCycle') {
+                // For interval seq with two patterns - cache each pattern separately
+                // like seq.cycle does, since they have the same semantics
+                if (params.channels !== undefined) {
+                    derivedChannels = params.channels as number;
+                    node._setDerivedChannelCount(derivedChannels);
+                } else {
+                    const intervalStr = params.interval_pattern !== undefined ? String(params.interval_pattern) : '';
+                    const addStr = params.add_pattern !== undefined ? String(params.add_pattern) : '';
+
+                    // Check cache for each pattern individually
+                    const intervalCached = intervalStr ? getCachedPolyphony(intervalStr) : undefined;
+                    const addCached = addStr ? getCachedPolyphony(addStr) : undefined;
+
+                    // Only use cache if both patterns are cached (combined analysis needed)
+                    if (intervalCached !== undefined && addCached !== undefined) {
+                        // For combined patterns, we still need to run derivation since
+                        // combined polyphony depends on overlap, not just individual patterns
+                        derivedChannels = deriveChannelCount(schema.name, node.getParamsSnapshot());
+                    } else {
+                        derivedChannels = deriveChannelCount(schema.name, node.getParamsSnapshot());
+                        // Cache individual patterns for future reuse
+                        if (derivedChannels !== null) {
+                            if (intervalStr) cachePolyphony(intervalStr, derivedChannels);
+                            if (addStr) cachePolyphony(addStr, derivedChannels);
+                        }
+                    }
+                    params.channels = derivedChannels;
                     node._setParam('channels', derivedChannels);
                 }
             } else {

@@ -4,7 +4,7 @@ use serde::Deserialize;
 use crate::poly::{PolyOutput, PolySignal};
 
 #[derive(Deserialize, Default, JsonSchema, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct SignalParams {
     /// signal input (polyphonic)
     source: PolySignal,
@@ -17,6 +17,7 @@ impl crate::types::Connect for SignalParams {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct SignalOutputs {
     #[output("output", "signal output", default)]
     sample: PolyOutput,

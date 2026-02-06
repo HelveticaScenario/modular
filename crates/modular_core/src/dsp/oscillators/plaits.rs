@@ -14,7 +14,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    dsp::utils::voct_to_midi,
+    dsp::utils::{SchmittTrigger, voct_to_midi},
     patch::Patch as ModularPatch,
     poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal},
     types::{Clickless, Connect},
@@ -118,7 +118,7 @@ impl Connect for PlaitsEngine {
 }
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct PlaitsParams {
     /// Pitch input in V/Oct (0V = C4)
     freq: PolySignal,
@@ -139,15 +139,12 @@ struct PlaitsParams {
     fm: PolySignal,
 
     /// Timbre CV attenuverter (-5 to 5) - scales timbre modulation
-    #[serde(rename = "timbreAmt")]
     timbre_amt: PolySignal,
 
     /// FM CV attenuverter (-5 to 5) - scales frequency modulation
-    #[serde(rename = "fmAmt")]
     fm_amt: PolySignal,
 
     /// Morph CV attenuverter (-5 to 5) - scales morph modulation
-    #[serde(rename = "morphAmt")]
     morph_amt: PolySignal,
 
     /// Trigger input - gates/triggers the internal envelope
@@ -157,15 +154,14 @@ struct PlaitsParams {
     level: PolySignal,
 
     /// LPG color (0-5V) - lowpass gate filter response (low = mellow, high = bright)
-    #[serde(rename = "lpgColor")]
     lpg_color: PolySignal,
 
     /// LPG decay (0-5V) - lowpass gate envelope decay time
-    #[serde(rename = "lpgDecay")]
     lpg_decay: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct PlaitsOutputs {
     #[output("output", "main synthesis output", default)]
     out: PolyOutput,
@@ -186,13 +182,11 @@ struct PlaitsChannelState {
     lpg_color: Clickless,
     lpg_decay: Clickless,
     // Trigger state tracking
-    /// Previous trigger input value for edge detection
-    last_trigger: f32,
+    /// Schmitt trigger for edge detection with hysteresis
+    trigger_schmitt: SchmittTrigger,
     /// Latched trigger value - captures any trigger that occurred since last block render
     /// This ensures short triggers (even 1 sample) aren't missed between block boundaries
-    trigger_latch: f32,
-    /// Maximum trigger value seen since last block render
-    trigger_max: f32,
+    trigger_latch: bool,
 }
 
 impl Default for PlaitsChannelState {
@@ -208,9 +202,8 @@ impl Default for PlaitsChannelState {
             morph: Clickless::default(),
             lpg_color: Clickless::default(),
             lpg_decay: Clickless::default(),
-            last_trigger: 0.0,
-            trigger_latch: 0.0,
-            trigger_max: 0.0,
+            trigger_schmitt: SchmittTrigger::default(),
+            trigger_latch: false,
         }
     }
 }
@@ -295,17 +288,11 @@ impl Plaits {
             let state = &mut self.channels[ch];
             let trigger_val = self.params.trigger.get_value_or(ch, 0.0);
 
-            // Detect rising edge (crossed threshold from below)
-            const TRIGGER_THRESHOLD: f32 = 0.7; // ~0.7V threshold like VCV
-            if trigger_val >= TRIGGER_THRESHOLD && state.last_trigger < TRIGGER_THRESHOLD {
+            // Detect rising edge using Schmitt trigger for noise immunity
+            if state.trigger_schmitt.process(trigger_val) {
                 // Rising edge detected - latch high trigger value
-                state.trigger_latch = 1.0;
+                state.trigger_latch = true;
             }
-
-            // Track maximum trigger value for level-sensitive behavior
-            state.trigger_max = state.trigger_max.max(trigger_val);
-
-            state.last_trigger = trigger_val;
         }
 
         // Render when buffer is exhausted
@@ -404,13 +391,7 @@ impl Plaits {
 
             // Use latched trigger value to ensure short triggers aren't missed
             // The latch captures any rising edge that occurred since last block render
-            let trigger_mod = if state.trigger_latch > 0.0 {
-                // Use the latched value (normalized for Plaits, which expects ~0-1 range)
-                state.trigger_latch
-            } else {
-                // No trigger edge detected, use max value seen (for gate behavior)
-                state.trigger_max / 3.0
-            };
+            let trigger_mod = if state.trigger_latch { 1.0 } else { 0.0 };
 
             // Level: 0-5V scaled to 0-1
             let level_val = self.params.level.get_value_or(ch, 0.0);
@@ -442,8 +423,7 @@ impl Plaits {
 
             // Clear trigger latch and max after rendering
             // This ensures the trigger is only processed once per event
-            state.trigger_latch = 0.0;
-            state.trigger_max = 0.0;
+            state.trigger_latch = false;
         }
     }
 }

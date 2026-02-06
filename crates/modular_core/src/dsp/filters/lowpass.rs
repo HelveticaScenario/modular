@@ -6,7 +6,7 @@ use crate::{
 };
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct LowpassFilterParams {
     /// signal input
     input: PolySignal,
@@ -17,6 +17,7 @@ struct LowpassFilterParams {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct LowpassFilterOutputs {
     #[output("output", "filtered signal", default)]
     sample: PolyOutput,

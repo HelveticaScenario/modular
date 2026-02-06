@@ -17,7 +17,7 @@ interface InterpolationRegion {
 
 /**
  * Extract interpolation regions from a template literal pattern.
- * Copied from sequenceTracking.ts for testing.
+ * Duplicated from moduleStateTracking.ts for unit testing.
  */
 function extractInterpolationRegions(
     sourcePattern: string,

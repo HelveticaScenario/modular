@@ -88,7 +88,7 @@ impl Connect for MathExpressionParam {
 }
 
 #[derive(Deserialize, Default, JsonSchema, ChannelCount)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 struct MathParams {
     expression: MathExpressionParam,
     x: MonoSignal,
@@ -106,6 +106,7 @@ impl Connect for MathParams {
 }
 
 #[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 struct MathOutputs {
     #[output("output", "result of the expression", default)]
     output: f32,
