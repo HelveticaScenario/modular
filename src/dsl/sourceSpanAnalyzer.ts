@@ -6,7 +6,7 @@
  * (line:column) for lookup from factory functions at runtime.
  */
 
-import { Project, SyntaxKind, Node, CallExpression, ts } from 'ts-morph';
+import { Project, SyntaxKind, Node, CallExpression, VariableDeclarationKind, type SourceFile, ts } from 'ts-morph';
 import type { ModuleSchema } from '@modular/core';
 
 /**
@@ -48,20 +48,17 @@ function buildFactoryNames(schemas: ModuleSchema[]): Set<string> {
     const names = new Set<string>();
     
     for (const schema of schemas) {
-        // Only track calls to modules with positional args
-        if (schema.positionalArgs && schema.positionalArgs.length > 0) {
-            // Extract the final identifier from dotted names (e.g., "seq.iCycle" -> "iCycle")
-            // Also include the full path for property access calls
-            const parts = schema.name.split('.');
-            const finalName = parts[parts.length - 1];
-            names.add(finalName);
-            
-            // Also add the sanitized version (for direct calls like `seqICycle`)
-            const sanitized = schema.name.replace(/[^a-zA-Z0-9]+(.)?/g, 
-                (_match, chr: string | undefined) => (chr ? chr.toUpperCase() : '')
-            );
-            names.add(sanitized);
-        }
+        // Track all module calls — positional args, config object properties,
+        // and const variable references can all contribute trackable spans
+        const parts = schema.name.split('.');
+        const finalName = parts[parts.length - 1];
+        names.add(finalName);
+        
+        // Also add the sanitized version (for direct calls like `seqICycle`)
+        const sanitized = schema.name.replace(/[^a-zA-Z0-9]+(.)?/g, 
+            (_match, chr: string | undefined) => (chr ? chr.toUpperCase() : '')
+        );
+        names.add(sanitized);
     }
     
     return names;
@@ -74,17 +71,15 @@ function buildSchemaMap(schemas: ModuleSchema[]): Map<string, ModuleSchema> {
     const map = new Map<string, ModuleSchema>();
     
     for (const schema of schemas) {
-        if (schema.positionalArgs && schema.positionalArgs.length > 0) {
-            const parts = schema.name.split('.');
-            const finalName = parts[parts.length - 1];
-            map.set(finalName, schema);
-            
-            const sanitized = schema.name.replace(/[^a-zA-Z0-9]+(.)?/g, 
-                (_match, chr: string | undefined) => (chr ? chr.toUpperCase() : '')
-            );
-            map.set(sanitized, schema);
-            map.set(schema.name, schema);
-        }
+        const parts = schema.name.split('.');
+        const finalName = parts[parts.length - 1];
+        map.set(finalName, schema);
+        
+        const sanitized = schema.name.replace(/[^a-zA-Z0-9]+(.)?/g, 
+            (_match, chr: string | undefined) => (chr ? chr.toUpperCase() : '')
+        );
+        map.set(sanitized, schema);
+        map.set(schema.name, schema);
     }
     
     return map;
@@ -147,6 +142,48 @@ function isTrackableLiteral(node: Node): boolean {
 }
 
 /**
+ * Pre-build a map of const-declared variable names to their literal initializer spans.
+ * Only includes variables declared with `const` whose initializer is a trackable literal.
+ * Scans top-level statements only (sufficient for flat DSL scripts).
+ */
+function buildConstLiteralMap(sourceFile: SourceFile): Map<string, SourceSpan> {
+    const map = new Map<string, SourceSpan>();
+    
+    for (const statement of sourceFile.getStatements()) {
+        if (!Node.isVariableStatement(statement)) continue;
+        
+        const declList = statement.getDeclarationList();
+        if (declList.getDeclarationKind() !== VariableDeclarationKind.Const) continue;
+        
+        for (const decl of declList.getDeclarations()) {
+            const initializer = decl.getInitializer();
+            if (initializer && isTrackableLiteral(initializer)) {
+                map.set(decl.getName(), { start: initializer.getStart(), end: initializer.getEnd() });
+            }
+        }
+    }
+    
+    return map;
+}
+
+/**
+ * Get a trackable span from a node, either directly (if it's a literal)
+ * or by resolving a const variable reference to its literal initializer.
+ */
+function getTrackableSpan(node: Node, constMap: Map<string, SourceSpan>): SourceSpan | null {
+    if (isTrackableLiteral(node)) {
+        return { start: node.getStart(), end: node.getEnd() };
+    }
+    
+    // Try resolving const variable reference
+    if (Node.isIdentifier(node)) {
+        return constMap.get(node.getText()) ?? null;
+    }
+    
+    return null;
+}
+
+/**
  * Analyze DSL source code and build a span registry for argument locations.
  * 
  * @param source - The DSL source code to analyze
@@ -178,6 +215,9 @@ export function analyzeSourceSpans(
     // Add source as a virtual file
     const sourceFile = project.createSourceFile('dsl.ts', source);
     
+    // Pre-build const literal map for resolving variable references
+    const constMap = buildConstLiteralMap(sourceFile);
+    
     // Walk all call expressions
     sourceFile.forEachDescendant((node: Node) => {
         if (!Node.isCallExpression(node)) return;
@@ -191,22 +231,50 @@ export function analyzeSourceSpans(
         // Get the schema for this call
         const fullPath = getFullCallPath(call);
         const schema = schemaMap.get(funcName) || (fullPath ? schemaMap.get(fullPath) : null);
-        if (!schema || !schema.positionalArgs) return;
+        if (!schema) return;
         
         const args = call.getArguments();
         const argsMap = new Map<string, SourceSpan>();
         
-        // Map each argument to its positional arg name
-        for (let i = 0; i < schema.positionalArgs.length && i < args.length; i++) {
+        // Map each positional argument to its arg name
+        const positionalArgs = schema.positionalArgs || [];
+        for (let i = 0; i < positionalArgs.length && i < args.length; i++) {
             const arg = args[i];
-            const argDef = schema.positionalArgs[i];
+            const argDef = positionalArgs[i];
             
-            // Only track literals (not variable references, function calls, etc.)
-            if (isTrackableLiteral(arg)) {
-                argsMap.set(argDef.name, {
-                    start: arg.getStart(),
-                    end: arg.getEnd(),
-                });
+            // Track literals directly, or resolve const variable references
+            const span = getTrackableSpan(arg, constMap);
+            if (span) {
+                argsMap.set(argDef.name, span);
+            }
+        }
+        
+        // Check for config object argument (after positional args)
+        if (positionalArgs.length < args.length) {
+            const configArg = args[positionalArgs.length];
+            
+            if (Node.isObjectLiteralExpression(configArg)) {
+                for (const prop of configArg.getProperties()) {
+                    if (Node.isPropertyAssignment(prop)) {
+                        const propName = prop.getName();
+                        if (propName === 'id') continue;
+                        
+                        const initializer = prop.getInitializerOrThrow();
+                        const span = getTrackableSpan(initializer, constMap);
+                        if (span) {
+                            argsMap.set(propName, span);
+                        }
+                    } else if (Node.isShorthandPropertyAssignment(prop)) {
+                        const propName = prop.getName();
+                        if (propName === 'id') continue;
+                        
+                        // For shorthand { myVar }, resolve the variable to its const literal
+                        const span = constMap.get(propName) ?? null;
+                        if (span) {
+                            argsMap.set(propName, span);
+                        }
+                    }
+                }
             }
         }
         
