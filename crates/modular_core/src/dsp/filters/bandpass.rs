@@ -67,9 +67,7 @@ fn compute_bpf_biquad(center: f32, resonance: f32, sample_rate: f32) -> BiquadCo
     }
 }
 
-#[derive(Module)]
-#[module("filt.band", "12dB/octave bandpass filter")]
-#[args(input, center, resonance?)]
+#[module(name = "filt.band", description = "12dB/octave bandpass filter", args(input, center, resonance?))]
 pub struct BandpassFilter {
     outputs: BandpassFilterOutputs,
     channels: [BpfChannelState; PORT_MAX_CHANNELS],

@@ -112,9 +112,7 @@ struct MathOutputs {
     output: f32,
 }
 
-#[derive(Module)]
-#[module("util.math", "Math expression evaluator")]
-#[args(expression)]
+#[module(name = "util.math", description = "Math expression evaluator", args(expression))]
 pub struct Math {
     outputs: MathOutputs,
     params: MathParams,

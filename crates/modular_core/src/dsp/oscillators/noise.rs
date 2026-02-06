@@ -68,9 +68,7 @@ impl LcgRng {
     }
 }
 
-#[derive(Module)]
-#[module("osc.noise", "Noise generator with selectable color")]
-#[args(color)]
+#[module(name = "osc.noise", description = "Noise generator with selectable color", args(color))]
 pub struct Noise {
     outputs: NoiseOutputs,
     params: NoiseParams,

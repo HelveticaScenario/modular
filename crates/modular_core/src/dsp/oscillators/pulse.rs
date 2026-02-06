@@ -33,9 +33,7 @@ struct PulseChannelState {
     width: Clickless,
 }
 
-#[derive(Module)]
-#[module("osc.pulse", "Pulse/Square oscillator with PWM")]
-#[args(freq)]
+#[module(name = "osc.pulse", description = "Pulse/Square oscillator with PWM", args(freq))]
 pub struct PulseOscillator {
     outputs: PulseOscillatorOutputs,
     channels: [PulseChannelState; PORT_MAX_CHANNELS],

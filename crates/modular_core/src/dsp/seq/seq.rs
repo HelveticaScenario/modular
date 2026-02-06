@@ -226,15 +226,14 @@ struct SeqOutputs {
     trig: PolyOutput,
 }
 
-#[derive(Module)]
 #[module(
-    "seq.cycle",
-    "A strudel/tidalcycles style sequencer",
-    channels_derive = seq_derive_channel_count
+    name = "seq.cycle",
+    description = "A strudel/tidalcycles style sequencer",
+    channels_derive = seq_derive_channel_count,
+    args(pattern),
+    stateful,
+    patch_update,
 )]
-#[args(pattern)]
-#[stateful]
-#[patch_update]
 pub struct Seq {
     outputs: SeqOutputs,
     params: SeqParams,

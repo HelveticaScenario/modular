@@ -22,9 +22,8 @@ struct ScaleAndShiftOutputs {
     sample: PolyOutput,
 }
 
-#[derive(Default, Module)]
-#[module("util.scaleAndShift", "attenuate, invert, offset")]
-#[args(input, scale?, shift?)]
+#[derive(Default)]
+#[module(name = "util.scaleAndShift", description = "attenuate, invert, offset", args(input, scale?, shift?))]
 pub struct ScaleAndShift {
     outputs: ScaleAndShiftOutputs,
     scale: [f32; PORT_MAX_CHANNELS],

@@ -423,15 +423,14 @@ struct IntervalSeqOutputs {
     trig: PolyOutput,
 }
 
-#[derive(Module)]
 #[module(
-    "seq.iCycle",
-    "A scale-degree sequencer with interval and add patterns",
-    channels_derive = interval_seq_derive_channel_count
+    name = "seq.iCycle",
+    description = "A scale-degree sequencer with interval and add patterns",
+    channels_derive = interval_seq_derive_channel_count,
+    args(intervalPattern, scale),
+    stateful,
+    patch_update,
 )]
-#[args(interval_pattern, scale)]
-#[stateful]
-#[patch_update]
 pub struct IntervalSeq {
     outputs: IntervalSeqOutputs,
     params: IntervalSeqParams,
@@ -798,12 +797,12 @@ impl crate::types::StatefulModule for IntervalSeq {
             // - all_spans: all leaf spans in the pattern (for creating tracked decorations at patch time)
             Some(serde_json::json!({
                 "param_spans": {
-                    "interval_pattern": {
+                    "intervalPattern": {
                         "spans": interval_spans,
                         "source": self.params.interval_pattern.source(),
                         "all_spans": self.params.interval_pattern.all_spans(),
                     },
-                    "add_pattern": {
+                    "addPattern": {
                         "spans": add_spans,
                         "source": self.params.add_pattern.source(),
                         "all_spans": self.params.add_pattern.all_spans(),

@@ -26,9 +26,8 @@ struct SampleAndHoldChannelState {
     held_value: f32,
 }
 
-#[derive(Module, Default)]
-#[module("util.sah", "Sample and Hold")]
-#[args(input, trigger)]
+#[module(name = "util.sah", description = "Sample and Hold", args(input, trigger))]
+#[derive(Default)]
 pub struct SampleAndHold {
     outputs: SampleAndHoldOutputs,
     params: SampleAndHoldParams,
@@ -80,9 +79,8 @@ struct TrackAndHoldChannelState {
     gate: SchmittTrigger,
 }
 
-#[derive(Module, Default)]
-#[module("util.tah", "Track and Hold")]
-#[args(input, gate)]
+#[module(name = "util.tah", description = "Track and Hold", args(input, gate))]
+#[derive(Default)]
 pub struct TrackAndHold {
     outputs: TrackAndHoldOutputs,
     params: TrackAndHoldParams,

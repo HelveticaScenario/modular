@@ -30,9 +30,7 @@ struct ChannelState {
     width: Clickless,
 }
 
-#[derive(Module)]
-#[module("osc.dPulse", "A phase-driven pulse/square oscillator with PWM")]
-#[args(phase)]
+#[module(name = "osc.dPulse", description = "A phase-driven pulse/square oscillator with PWM", args(phase))]
 pub struct DPulseOscillator {
     outputs: DPulseOscillatorOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

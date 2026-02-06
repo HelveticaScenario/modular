@@ -27,9 +27,7 @@ struct ChannelState {
     in_attack: bool,
 }
 
-#[derive(Module)]
-#[module("env.perc", "Percussion envelope with exponential decay")]
-#[args(trigger)]
+#[module(name = "env.perc", description = "Percussion envelope with exponential decay", args(trigger))]
 pub struct PercussionEnvelope {
     outputs: PercussionEnvelopeOutputs,
     params: PercussionEnvelopeParams,

@@ -28,9 +28,7 @@ struct ChannelState {
     shape: Clickless,
 }
 
-#[derive(Module)]
-#[module("osc.dSaw", "A phase-driven sawtooth/triangle/ramp oscillator")]
-#[args(phase)]
+#[module(name = "osc.dSaw", description = "A phase-driven sawtooth/triangle/ramp oscillator", args(phase))]
 pub struct DSawOscillator {
     outputs: DSawOscillatorOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

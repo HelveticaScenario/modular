@@ -232,9 +232,7 @@ struct ChannelState {
 /// - `"C(major)"` - C major scale
 /// - `"C#(minor)"` - C# minor scale
 /// - `"D(0 2 4 5 7 9 11)"` - custom scale with semitone intervals from root
-#[derive(Module)]
-#[module("util.quantizer", "Quantizes V/Oct input to scale degrees")]
-#[args(input, offset?, scale?)]
+#[module(name = "util.quantizer", description = "Quantizes V/Oct input to scale degrees", args(input, offset?, scale?))]
 pub struct Quantizer {
     outputs: QuantizerOutputs,
     params: QuantizerParams,

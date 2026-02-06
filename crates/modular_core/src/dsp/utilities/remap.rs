@@ -26,9 +26,8 @@ struct RemapOutputs {
     sample: PolyOutput,
 }
 
-#[derive(Default, Module)]
-#[module("util.remap", "remap a signal from one range to another")]
-#[args(input, inMin?, inMax?, outMin?, outMax?)]
+#[derive(Default)]
+#[module(name = "util.remap", description = "remap a signal from one range to another", args(input, inMin?, inMax?, outMin?, outMax?))]
 pub struct Remap {
     outputs: RemapOutputs,
     in_min: [f32; PORT_MAX_CHANNELS],

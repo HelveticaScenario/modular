@@ -23,9 +23,8 @@ struct SignalOutputs {
     sample: PolyOutput,
 }
 
-#[derive(Default, Module)]
-#[module("signal", "a polyphonic signal passthrough")]
-#[args(source)]
+#[derive(Default)]
+#[module(name = "signal", description = "a polyphonic signal passthrough", args(source))]
 pub struct Signal {
     outputs: SignalOutputs,
     params: SignalParams,

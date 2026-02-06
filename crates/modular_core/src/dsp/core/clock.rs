@@ -16,9 +16,7 @@ struct ClockParams {
     tempo: MonoSignal,
 }
 
-#[derive(Module)]
-#[module("clock", "A tempo clock with multiple outputs", channels = 2)]
-#[args(tempo?)]
+#[module(name = "clock", description = "A tempo clock with multiple outputs", channels = 2, args(tempo?))]
 pub struct Clock {
     outputs: ClockOutputs,
     phase: f64,

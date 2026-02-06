@@ -54,9 +54,7 @@ impl Default for ChannelState {
     }
 }
 
-#[derive(Module)]
-#[module("env.adsr", "ADSR envelope generator")]
-#[args(gate)]
+#[module(name = "env.adsr", description = "ADSR envelope generator", args(gate))]
 pub struct Adsr {
     outputs: AdsrOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

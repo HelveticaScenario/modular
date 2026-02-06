@@ -233,13 +233,12 @@ impl Default for PlaitsChannelState {
 /// - 21: Analog bass drum
 /// - 22: Analog snare drum
 /// - 23: Analog hi-hat
-#[derive(Module)]
 #[module(
-    "osc.macro",
-    "Mutable Instruments Plaits - Full macro-oscillator with 24 engines, LPG, and modulation"
+    name = "osc.macro",
+    description = "Mutable Instruments Plaits - Full macro-oscillator with 24 engines, LPG, and modulation",
+    args(freq, engine),
+    has_init,
 )]
-#[args(freq, engine)]
-#[has_init]
 pub struct Plaits {
     outputs: PlaitsOutputs,
     channels: Vec<PlaitsChannelState>,

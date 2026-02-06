@@ -27,9 +27,7 @@ struct SlewChannelState {
     current_value: f32,
 }
 
-#[derive(Module)]
-#[module("util.slew", "Lag Processor (Slew Limiter)")]
-#[args(input)]
+#[module(name = "util.slew", description = "Lag Processor (Slew Limiter)", args(input))]
 pub struct LagProcessor {
     outputs: LagProcessorOutputs,
     params: LagProcessorParams,

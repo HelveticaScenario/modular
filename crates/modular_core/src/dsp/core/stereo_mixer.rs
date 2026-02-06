@@ -32,9 +32,7 @@ struct ChannelState {
     pan: Clickless,
 }
 
-#[derive(Module)]
-#[module("stereoMix", "Mix polyphonic signal to stereo", channels = 2)]
-#[args(input)]
+#[module(name = "stereoMix", description = "Mix polyphonic signal to stereo", channels = 2, args(input))]
 pub struct StereoMixer {
     outputs: StereoMixerOutputs,
     params: StereoMixerParams,

@@ -23,9 +23,8 @@ struct TrackOutputs {
     sample: f32,
 }
 
-#[derive(Default, Module)]
-#[module("seq.track", "A sequencer track")]
-#[args(keyframes)]
+#[derive(Default)]
+#[module(name = "seq.track", description = "A sequencer track", args(keyframes))]
 pub struct Track {
     outputs: TrackOutputs,
     params: TrackParams,

@@ -23,9 +23,8 @@ struct LowpassFilterOutputs {
     sample: PolyOutput,
 }
 
-#[derive(Default, Module)]
-#[module("filt.low", "12dB/octave lowpass filter with resonance")]
-#[args(input, cutoff, resonance?)]
+#[derive(Default)]
+#[module(name = "filt.low", description = "12dB/octave lowpass filter with resonance", args(input, cutoff, resonance?))]
 pub struct LowpassFilter {
     outputs: LowpassFilterOutputs,
     // Per-channel state (audio-rate)

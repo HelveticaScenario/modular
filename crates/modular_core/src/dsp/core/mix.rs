@@ -77,9 +77,8 @@ pub fn mix_derive_channel_count(params: &MixParams) -> usize {
     .min(PORT_MAX_CHANNELS)
 }
 
-#[derive(Default, Module)]
-#[module("mix", "Mix multiple polyphonic signals together", channels_derive = mix_derive_channel_count)]
-#[args(inputs)]
+#[derive(Default)]
+#[module(name = "mix", description = "Mix multiple polyphonic signals together", channels_derive = mix_derive_channel_count, args(inputs))]
 pub struct Mix {
     outputs: MixOutputs,
     params: MixParams,

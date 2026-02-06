@@ -414,7 +414,7 @@ pub fn validate_patch(
 
   // Build a map from module type name -> typed params validator.
   //
-  // This map is generated from the Rust module param structs via `#[derive(Module)]`.
+  // This map is generated from the Rust module param structs via `#[module]`.
   // If a module type isn't present here (e.g. schemas were provided from a custom source),
   // we simply skip the typed-parse validation step for that module.
   let param_validators = get_param_validators();

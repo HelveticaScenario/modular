@@ -7,12 +7,12 @@ use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote, quote_spanned};
-use syn::{Attribute, LitStr, Token, parse::Parser, punctuated::Punctuated, spanned::Spanned};
+use syn::{Attribute, LitStr, Token, punctuated::Punctuated, spanned::Spanned};
 use syn::{Data, DeriveInput, Fields, Type};
 
 /// Key used for internal metadata field storing argument source spans.
 /// Must match modular_core::types::ARGUMENT_SPANS_KEY.
-const ARGUMENT_SPANS_KEY: &str = "__argument_spans";
+const _ARGUMENT_SPANS_KEY: &str = "__argument_spans";
 
 #[proc_macro]
 pub fn message_handlers(input: TokenStream) -> TokenStream {
@@ -264,119 +264,135 @@ struct ModuleAttr {
     channels_derive: Option<syn::Path>,
 }
 
-/// Parse module attribute tokens into ModuleAttr
-/// Supports:
-/// - #[module("name", "description")]
-/// - #[module("name", "description", channels = N)]
-/// - #[module("name", "description", channels_param = "paramName", channels_param_default = N)]
-/// - #[module("name", "description", channels_derive = my_derive_fn)]
-fn parse_module_attr(attrs: &Vec<Attribute>) -> ModuleAttr {
-    use syn::Result as SynResult;
-    use syn::parse::{Parse, ParseStream};
+// ---------------------------------------------------------------------------
+// Attribute-macro argument parser
+// ---------------------------------------------------------------------------
 
-    struct ModuleAttrParser {
-        name: LitStr,
-        description: Option<LitStr>,
-        channels: Option<u8>,
-        channels_param: Option<LitStr>,
-        channels_param_default: Option<u8>,
-        channels_derive: Option<syn::Path>,
-    }
+/// All configuration parsed from `#[module(...)]` attribute arguments.
+///
+/// Idiomatic key=value syntax:
+/// ```text
+/// #[module(
+///     name = "osc.sine",
+///     description = "A sine wave oscillator",
+///     channels = 2,
+///     args(freq, engine?),
+///     stateful,
+///     patch_update,
+///     has_init,
+/// )]
+/// ```
+struct ModuleAttrArgs {
+    module: ModuleAttr,
+    args: Vec<ArgAttr>,
+    /// Whether the `args(...)` keyword was present at all (even if empty).
+    has_args: bool,
+    stateful: bool,
+    patch_update: bool,
+    has_init: bool,
+}
 
-    impl Parse for ModuleAttrParser {
-        fn parse(input: ParseStream) -> SynResult<Self> {
-            // Parse first string literal (name)
-            let name: LitStr = input.parse()?;
+impl syn::parse::Parse for ModuleAttrArgs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut name: Option<LitStr> = None;
+        let mut description: Option<LitStr> = None;
+        let mut channels: Option<u8> = None;
+        let mut channels_param: Option<LitStr> = None;
+        let mut channels_param_default: Option<u8> = None;
+        let mut channels_derive: Option<syn::Path> = None;
+        let mut args: Vec<ArgAttr> = Vec::new();
+        let mut has_args = false;
+        let mut stateful = false;
+        let mut patch_update = false;
+        let mut has_init = false;
 
-            let mut description: Option<LitStr> = None;
-            let mut channels: Option<u8> = None;
-            let mut channels_param: Option<LitStr> = None;
-            let mut channels_param_default: Option<u8> = None;
-            let mut channels_derive: Option<syn::Path> = None;
-
-            // Parse remaining optional elements
-            while input.peek(Token![,]) {
-                input.parse::<Token![,]>()?;
-
-                if input.is_empty() {
-                    break;
+        while !input.is_empty() {
+            let ident: Ident = input.parse()?;
+            match ident.to_string().as_str() {
+                "name" => {
+                    input.parse::<Token![=]>()?;
+                    name = Some(input.parse()?);
                 }
-
-                // Check if it's a string literal (description) or identifier (attribute)
-                if input.peek(LitStr) {
+                "description" => {
+                    input.parse::<Token![=]>()?;
                     description = Some(input.parse()?);
-                } else {
-                    // Try to parse an identifier
-                    let ident: Ident = input.parse()?;
-
-                    if ident == "channels" {
-                        input.parse::<Token![=]>()?;
-                        let lit: syn::LitInt = input.parse()?;
-                        channels = Some(lit.base10_parse()?);
-                    } else if ident == "channels_param" {
-                        input.parse::<Token![=]>()?;
-                        let lit: LitStr = input.parse()?;
-                        channels_param = Some(lit);
-                    } else if ident == "channels_param_default" {
-                        input.parse::<Token![=]>()?;
-                        let lit: syn::LitInt = input.parse()?;
-                        channels_param_default = Some(lit.base10_parse()?);
-                    } else if ident == "channels_derive" {
-                        input.parse::<Token![=]>()?;
-                        let path: syn::Path = input.parse()?;
-                        channels_derive = Some(path);
-                    } else {
-                        return Err(syn::Error::new(
-                            ident.span(),
-                            format!(
-                                "Unknown module attribute '{}'. Expected 'channels', 'channels_param', 'channels_param_default', or 'channels_derive'",
-                                ident
-                            ),
-                        ));
-                    }
+                }
+                "channels" => {
+                    input.parse::<Token![=]>()?;
+                    let lit: syn::LitInt = input.parse()?;
+                    channels = Some(lit.base10_parse()?);
+                }
+                "channels_param" => {
+                    input.parse::<Token![=]>()?;
+                    channels_param = Some(input.parse()?);
+                }
+                "channels_param_default" => {
+                    input.parse::<Token![=]>()?;
+                    let lit: syn::LitInt = input.parse()?;
+                    channels_param_default = Some(lit.base10_parse()?);
+                }
+                "channels_derive" => {
+                    input.parse::<Token![=]>()?;
+                    channels_derive = Some(input.parse()?);
+                }
+                "args" => {
+                    has_args = true;
+                    let content;
+                    syn::parenthesized!(content in input);
+                    let parsed: Punctuated<ArgAttr, Token![,]> =
+                        Punctuated::parse_terminated(&content)?;
+                    args = parsed.into_iter().collect();
+                }
+                "stateful" => {
+                    stateful = true;
+                }
+                "patch_update" => {
+                    patch_update = true;
+                }
+                "has_init" => {
+                    has_init = true;
+                }
+                other => {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        format!(
+                            "Unknown module attribute '{other}'. Expected one of: \
+                             name, description, channels, channels_param, \
+                             channels_param_default, channels_derive, args, \
+                             stateful, patch_update, has_init"
+                        ),
+                    ));
                 }
             }
 
-            Ok(ModuleAttrParser {
+            // Consume trailing comma if present
+            let _ = input.parse::<Token![,]>();
+        }
+
+        let name = name
+            .ok_or_else(|| syn::Error::new(proc_macro2::Span::call_site(), "missing `name` in #[module(...)]"))?;
+
+        Ok(ModuleAttrArgs {
+            module: ModuleAttr {
                 name,
                 description,
                 channels,
                 channels_param,
                 channels_param_default,
                 channels_derive,
-            })
-        }
-    }
-
-    let tokens = unwrap_attr(attrs, "module").expect("Missing #[module(...)] attribute");
-    let parsed = syn::parse2::<ModuleAttrParser>(tokens).expect("Failed to parse module attribute");
-
-    ModuleAttr {
-        name: parsed.name,
-        description: parsed.description,
-        channels: parsed.channels,
-        channels_param: parsed.channels_param,
-        channels_param_default: parsed.channels_param_default,
-        channels_derive: parsed.channels_derive,
-    }
-}
-
-fn unwrap_name_description(
-    attrs: &Vec<Attribute>,
-    ident: &str,
-) -> (Option<LitStr>, Option<LitStr>) {
-    let attr = unwrap_attr(attrs, ident)
-        .map(|tokens| {
-            Punctuated::<LitStr, Token![,]>::parse_terminated
-                .parse2(tokens)
-                .unwrap()
+            },
+            args,
+            has_args,
+            stateful,
+            patch_update,
+            has_init,
         })
-        .unwrap_or_default();
-    let mut iter = attr.iter();
-    let name = iter.next().cloned();
-    let description = iter.next().cloned();
-    (name, description)
+    }
 }
+
+// ---------------------------------------------------------------------------
+// Legacy derive-macro helpers (kept for `Outputs`, `Connect`, `ChannelCount`)
+// ---------------------------------------------------------------------------
 
 /// Parse output attribute tokens into OutputAttr
 /// Supports:
@@ -514,17 +530,56 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
     }
 }
 
-#[proc_macro_derive(
-    Module,
-    attributes(output, module, args, stateful, patch_update, has_init)
-)]
-pub fn module_macro_derive(input: TokenStream) -> TokenStream {
-    // Construct a representation of Rust code as a syntax tree
-    // that we can manipulate
-    let ast: DeriveInput = syn::parse(input).unwrap();
+/// Attribute-style proc macro for declaring audio modules.
+///
+/// # Syntax
+///
+/// ```rust,ignore
+/// #[module(
+///     name = "osc.sine",
+///     description = "A sine wave oscillator",
+///     // Channel count configuration (at most one):
+///     // channels = 2,                         // hardcoded
+///     // channels_param = "channels",           // read from param field
+///     // channels_param_default = 1,            // default when param absent
+///     // channels_derive = my_derive_fn,        // custom function
+///     //
+///     // Positional DSL arguments (optional):
+///     // args(freq, engine?),
+///     //
+///     // Flags (optional):
+///     // stateful,      // implements StatefulModule
+///     // patch_update,  // implements PatchUpdateHandler
+///     // has_init,      // has fn init(&mut self, sample_rate: f32)
+/// )]
+/// pub struct MyModule { ... }
+/// ```
+///
+/// The struct **must** have a field named `outputs` whose type derives `Outputs`,
+/// and a field named `params` whose type derives `Deserialize`, `JsonSchema`,
+/// `Connect`, and `ChannelCount`.
+#[proc_macro_attribute]
+pub fn module(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attr_args = syn::parse_macro_input!(attr as ModuleAttrArgs);
+    let mut ast: DeriveInput = syn::parse_macro_input!(item as DeriveInput);
 
-    // // Build the trait implementation
-    impl_module_macro(&ast)
+    // Strip any leftover helper attributes that we've absorbed (safety net for migration)
+    ast.attrs.retain(|a| {
+        !a.path().is_ident("module")
+            && !a.path().is_ident("args")
+            && !a.path().is_ident("stateful")
+            && !a.path().is_ident("patch_update")
+            && !a.path().is_ident("has_init")
+    });
+
+    match impl_module_macro_attr(&ast, &attr_args) {
+        Ok(generated) => {
+            let mut output = quote!(#ast);
+            output.extend(generated);
+            output.into()
+        }
+        Err(e) => e.to_compile_error().into(),
+    }
 }
 
 /// Precision type for output fields
@@ -1024,57 +1079,47 @@ fn is_poly_signal(ty: &Type) -> bool {
     }
 }
 
-fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
+fn impl_module_macro_attr(ast: &DeriveInput, attr_args: &ModuleAttrArgs) -> syn::Result<TokenStream2> {
     let name = &ast.ident;
-    let module_attr = parse_module_attr(&ast.attrs);
-    let module_name = module_attr.name;
-    let module_description = module_attr.description;
+    let module_name = &attr_args.module.name;
+    let module_description = &attr_args.module.description;
 
     // Store channels info for channel_count generation
-    let hardcoded_channels = module_attr.channels;
-    let channels_param_name = module_attr.channels_param.clone();
-    let channels_param_default_val = module_attr.channels_param_default;
-    let channels_derive_fn = module_attr.channels_derive;
+    let hardcoded_channels = attr_args.module.channels;
+    let channels_param_name = attr_args.module.channels_param.clone();
+    let channels_param_default_val = attr_args.module.channels_param_default;
+    let channels_derive_fn = &attr_args.module.channels_derive;
 
-    let module_channels = match module_attr.channels {
+    let module_channels = match attr_args.module.channels {
         Some(n) => quote! { Some(#n) },
         None => quote! { None },
     };
-    let module_channels_param = match &module_attr.channels_param {
+    let module_channels_param = match &attr_args.module.channels_param {
         Some(s) => quote! { Some(#s.to_string()) },
         None => quote! { None },
     };
-    let module_channels_param_default = match module_attr.channels_param_default {
+    let module_channels_param_default = match attr_args.module.channels_param_default {
         Some(n) => quote! { Some(#n) },
         None => quote! { None },
     };
 
-    let args_tokens = unwrap_attr(&ast.attrs, "args");
-    // Check if module has #[args] attribute before consuming the tokens
-    let has_args = args_tokens.is_some();
-    let positional_args_exprs = if let Some(tokens) = args_tokens {
-        let args = Punctuated::<ArgAttr, Token![,]>::parse_terminated
-            .parse2(tokens)
-            .expect("Failed to parse args attribute");
-
-        args.into_iter()
-            .map(|arg| {
-                let name = arg.name.to_string();
-                let optional = arg.optional;
-                quote! {
-                    crate::types::PositionalArg {
-                        name: #name.to_string(),
-                        optional: #optional,
-                    }
+    let has_args = attr_args.has_args;
+    let positional_args_exprs: Vec<TokenStream2> = attr_args
+        .args
+        .iter()
+        .map(|arg| {
+            let arg_name = arg.name.to_string();
+            let optional = arg.optional;
+            quote! {
+                crate::types::PositionalArg {
+                    name: #arg_name.to_string(),
+                    optional: #optional,
                 }
-            })
-            .collect::<Vec<_>>()
-    } else {
-        Vec::new()
-    };
+            }
+        })
+        .collect();
 
-    // New convention: the module struct contains a single `outputs` field.
-    // The outputs type itself must `#[derive(Outputs)]` which implements `crate::types::OutputStruct`.
+    // The module struct must contain a field named `outputs`.
     let outputs_ty: Type = match ast.data {
         Data::Struct(ref data) => match data.fields {
             Fields::Named(ref fields) => {
@@ -1084,12 +1129,10 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                     .iter()
                     .any(|f| unwrap_attr(&f.attrs, "output").is_some())
                 {
-                    return syn::Error::new(
+                    return Err(syn::Error::new(
                         Span::call_site(),
-                        "#[derive(Module)] now expects an `outputs` field (a struct that derives Outputs); do not annotate module fields with #[output(...)]",
-                    )
-                    .to_compile_error()
-                    .into();
+                        "#[module] expects an `outputs` field (a struct that derives Outputs); do not annotate module fields with #[output(...)]",
+                    ));
                 }
 
                 let outputs_field = fields
@@ -1100,28 +1143,25 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                 match outputs_field {
                     Some(f) => f.ty.clone(),
                     None => {
-                        return syn::Error::new(
+                        return Err(syn::Error::new(
                             Span::call_site(),
-                            "#[derive(Module)] requires a field named `outputs` whose type derives Outputs",
-                        )
-                        .to_compile_error()
-                        .into();
+                            "#[module] requires a field named `outputs` whose type derives Outputs",
+                        ));
                     }
                 }
             }
             Fields::Unnamed(_) | Fields::Unit => {
-                return syn::Error::new(
+                return Err(syn::Error::new(
                     Span::call_site(),
-                    "Module can only be derived for structs with named fields",
-                )
-                .to_compile_error()
-                .into();
+                    "#[module] can only be applied to structs with named fields",
+                ));
             }
         },
         Data::Enum(_) | Data::Union(_) => {
-            return syn::Error::new(Span::call_site(), "Module can only be derived for structs")
-                .to_compile_error()
-                .into();
+            return Err(syn::Error::new(
+                Span::call_site(),
+                "#[module] can only be applied to structs",
+            ));
         }
     };
 
@@ -1161,13 +1201,8 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         }
     };
 
-    let is_stateful = ast
-        .attrs
-        .iter()
-        .any(|attr| attr.path().is_ident("stateful"));
-    
-    // has_args was set earlier when we checked args_tokens.is_some()
-    
+    let is_stateful = attr_args.stateful;
+
     let get_state_impl = if is_stateful {
         if has_args {
             // Stateful module with positional args - merge argument_spans into state
@@ -1231,12 +1266,8 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         quote! { None }
     };
 
-    // Check for #[has_init] attribute - if present, call the module's init(sample_rate) in constructor
-    let has_init = ast
-        .attrs
-        .iter()
-        .any(|attr| attr.path().is_ident("has_init"));
-    let has_init_call = if has_init {
+    // Check for has_init flag
+    let has_init_call = if attr_args.has_init {
         quote! {
             // SAFETY: We just created sampleable, no one else has access yet.
             unsafe { (*sampleable.module.get()).init(sample_rate); }
@@ -1245,12 +1276,8 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         quote! {}
     };
 
-    // Check for #[patch_update] attribute - if present, call the module's on_patch_update
-    let has_patch_update = ast
-        .attrs
-        .iter()
-        .any(|attr| attr.path().is_ident("patch_update"));
-    let on_patch_update_impl = if has_patch_update {
+    // Check for patch_update flag
+    let on_patch_update_impl = if attr_args.patch_update {
         quote! {
             fn on_patch_update(&self) {
                 use crate::types::PatchUpdateHandler;
@@ -1272,27 +1299,19 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     );
 
     // Generate the core channel count implementation that works with typed params.
-    // If channels_derive is specified, use that custom function.
-    // Otherwise, generate a default implementation based on schema attributes.
-    let channel_count_fn_impl = if let Some(ref custom_fn) = channels_derive_fn {
-        // Custom function provided - just call it directly
-        // The custom function must have signature: fn(&ParamsStruct) -> usize
+    let channel_count_fn_impl = if let Some(custom_fn) = channels_derive_fn {
         quote! {
-            /// Core channel count derivation function for this module.
-            /// Called by both `channel_count(&self)` and `derive_channel_count(json)`.
             #[inline]
             fn #channel_count_fn_name(params: &#params_struct_name) -> usize {
                 #custom_fn(params)
             }
         }
     } else {
-        // Generate default implementation based on schema attributes
         match (
             hardcoded_channels,
             &channels_param_name,
             channels_param_default_val,
         ) {
-            // 1. Hardcoded channel count from #[module(..., channels = N)]
             (Some(n), _, _) => {
                 let n = n as usize;
                 quote! {
@@ -1302,7 +1321,6 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                     }
                 }
             }
-            // 2. channels_param specified - read from params field, with optional default
             (None, Some(param_name), default_val) => {
                 let param_ident = Ident::new(&param_name.value(), param_name.span());
                 match default_val {
@@ -1330,7 +1348,6 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                     }
                 }
             }
-            // 3. Infer from PolySignal inputs
             (None, None, _) => {
                 quote! {
                     #[inline]
@@ -1346,14 +1363,10 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
     };
 
     let generated = quote! {
-        // Generated core channel count function that both self.channel_count() and
-        // derive_channel_count(json) call.
+        // Generated core channel count function
         #channel_count_fn_impl
 
-        // Generated channel_count method for the module
         impl #impl_generics #name #ty_generics #where_clause {
-            /// Get the channel count for this module.
-            /// Priority: 1. hardcoded channels, 2. channels_param value/default, 3. max of PolySignal inputs
             #[inline]
             pub fn channel_count(&self) -> usize {
                 #channel_count_fn_name(&self.params)
@@ -1391,9 +1404,6 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             module: std::cell::UnsafeCell<#name #static_ty_generics>,
             processed: core::sync::atomic::AtomicBool,
             sample_rate: f32,
-            /// Argument spans from DSL source code for editor highlighting.
-            /// Populated from ARGUMENT_SPANS_KEY ("__argument_spans") in params JSON during try_update_params.
-            /// See modular_core::types::ARGUMENT_SPANS_KEY for the shared constant.
             argument_spans: std::cell::UnsafeCell<std::collections::HashMap<String, crate::types::ArgumentSpan>>,
         }
 
@@ -1411,8 +1421,6 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
         }
 
         // SAFETY: This type is only accessed from the audio thread after construction.
-        // The audio thread has exclusive ownership of all modules in the Patch.
-        // See the struct-level documentation and crates/modular/src/audio.rs AudioProcessor.
         unsafe impl Send for #struct_name {}
         unsafe impl Sync for #struct_name {}
 
@@ -1428,9 +1436,6 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                     core::sync::atomic::Ordering::Acquire,
                     core::sync::atomic::Ordering::Relaxed,
                 ) {
-                    // SAFETY: Audio thread has exclusive access to modules.
-                    // The processed flag prevents re-entrant calls within the same frame.
-                    // See struct-level documentation for full safety invariants.
                     unsafe {
                         let module = &mut *self.module.get();
                         module.update(self.sample_rate);
@@ -1442,8 +1447,6 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
 
             fn get_poly_sample(&self, port: &str) -> napi::Result<crate::poly::PolyOutput> {
                 self.update();
-                // SAFETY: Audio thread has exclusive access. Reading outputs after
-                // update() is complete (processed flag ensures no concurrent mutation).
                 let outputs = unsafe { &*self.outputs.get() };
                 crate::types::OutputStruct::get_poly_sample(outputs, port).ok_or_else(|| {
                     napi::Error::from_reason(
@@ -1462,12 +1465,9 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             }
 
             fn try_update_params(&self, params: serde_json::Value) -> napi::Result<()> {
-                // SAFETY: Audio thread has exclusive access. See struct-level documentation.
                 let module = unsafe { &mut *self.module.get() };
                 let argument_spans = unsafe { &mut *self.argument_spans.get() };
                 
-                // Extract __argument_spans before deserializing params
-                // This field contains source locations for editor highlighting
                 let params_to_deserialize = if params.is_object() {
                     let mut obj = match params {
                         serde_json::Value::Object(o) => o,
@@ -1496,7 +1496,6 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             }
 
             fn connect(&self, patch: &crate::Patch) {
-                // SAFETY: Audio thread has exclusive access. See struct-level documentation.
                 let module = unsafe { &mut *self.module.get() };
                 crate::types::Connect::connect(&mut module.params, patch);
             }
@@ -1528,11 +1527,6 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             }
 
             fn validate_params_json(params: &serde_json::Value) -> napi::Result<()> {
-                // Attempt to deserialize the JSON params object into the module's concrete
-                // `*Params` struct. If this fails, the patch's params shape is incompatible
-                // with what the DSP module expects.
-                //
-                // First strip __argument_spans since it's internal metadata, not a real param.
                 let params_to_validate = if params.is_object() {
                     let mut obj = params.as_object().unwrap().clone();
                     obj.remove("__argument_spans");
@@ -1545,8 +1539,6 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             }
 
             fn derive_channel_count(params: &serde_json::Value) -> Option<usize> {
-                // Deserialize JSON to typed params struct and call the shared implementation.
-                // First strip __argument_spans since it's internal metadata, not a real param.
                 let params_to_parse = if params.is_object() {
                     let mut obj = params.as_object().unwrap().clone();
                     obj.remove("__argument_spans");
@@ -1559,17 +1551,10 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             }
 
             fn get_schema() -> crate::types::ModuleSchema {
-
-                // Derive JSON Schemas directly from the Rust param/output types.
-                // These are forwarded to the frontend for schema-driven editing/validation.
                 let params_schema = schemars::schema_for!(#params_struct_name);
 
-                // Validate that parameter names and output names don't overlap.
-                // (This is a runtime panic to keep schema generation deterministic and testable.)
                 let mut param_names: std::collections::HashSet<String> = std::collections::HashSet::new();
                 if let Some(obj) = params_schema.as_object() {
-                    // schemars has produced both "properties" (direct schema) and
-                    // {"schema": {"properties": ...}} shapes across versions; tolerate both.
                     let props = obj
                         .get("properties")
                         .and_then(|v| v.as_object())
@@ -1581,7 +1566,6 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
                         });
                     if let Some(props) = props {
                         for key in props.keys() {
-                            // Check for reserved parameter names
                             if key == "o" || key == "out" {
                                 panic!("Parameter name '{}' is reserved and cannot be used", key);
                             }
@@ -1612,5 +1596,5 @@ fn impl_module_macro(ast: &DeriveInput) -> TokenStream {
             }
         }
     };
-    generated.into()
+    Ok(generated)
 }

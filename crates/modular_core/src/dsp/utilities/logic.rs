@@ -29,9 +29,7 @@ struct EdgeChannelState {
     last_input: f32,
 }
 
-#[derive(Module)]
-#[module("util.rising", "Rising Edge Detector")]
-#[args(input)]
+#[module(name = "util.rising", description = "Rising Edge Detector", args(input))]
 pub struct RisingEdgeDetector {
     outputs: EdgeDetectorOutputs,
     params: RisingEdgeDetectorParams,
@@ -67,9 +65,7 @@ impl RisingEdgeDetector {
 
 message_handlers!(impl RisingEdgeDetector {});
 
-#[derive(Module)]
-#[module("falling", "Falling Edge Detector")]
-#[args(input)]
+#[module(name = "falling", description = "Falling Edge Detector", args(input))]
 pub struct FallingEdgeDetector {
     outputs: EdgeDetectorOutputs,
     params: FallingEdgeDetectorParams,

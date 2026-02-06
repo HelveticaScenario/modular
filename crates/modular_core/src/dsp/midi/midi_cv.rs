@@ -125,13 +125,12 @@ struct MidiCvOutputs {
     mod_wheel: PolyOutput,
 }
 
-#[derive(Module)]
 #[module(
-    "midi.cv",
-    "MIDI to CV converter with polyphonic voice allocation",
-    channels_param = "channels"
+    name = "midi.cv",
+    description = "MIDI to CV converter with polyphonic voice allocation",
+    channels_param = "channels",
+    args(),
 )]
-#[args()]
 pub struct MidiCv {
     outputs: MidiCvOutputs,
     params: MidiCvParams,

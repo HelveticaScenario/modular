@@ -30,9 +30,7 @@ struct ChannelState {
     shape: Clickless,
 }
 
-#[derive(Module)]
-#[module("osc.saw", "Sawtooth/Triangle/Ramp oscillator")]
-#[args(freq)]
+#[module(name = "osc.saw", description = "Sawtooth/Triangle/Ramp oscillator", args(freq))]
 pub struct SawOscillator {
     outputs: SawOscillatorOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

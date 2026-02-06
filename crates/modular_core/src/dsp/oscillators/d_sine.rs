@@ -22,9 +22,7 @@ struct DSineOscillatorOutputs {
     sample: PolyOutput,
 }
 
-#[derive(Module)]
-#[module("osc.dSine", "A phase-driven sine wave oscillator")]
-#[args(phase)]
+#[module(name = "osc.dSine", description = "A phase-driven sine wave oscillator", args(phase))]
 #[derive(Default)]
 pub struct DSineOscillator {
     outputs: DSineOscillatorOutputs,

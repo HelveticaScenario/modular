@@ -42,9 +42,8 @@ struct MidiGateOutputs {
     note_count: f32,
 }
 
-#[derive(Default, Module)]
-#[module("midi.gate", "MIDI note range to gate")]
-#[args()]
+#[derive(Default)]
+#[module(name = "midi.gate", description = "MIDI note range to gate", args())]
 pub struct MidiGate {
     outputs: MidiGateOutputs,
     params: MidiGateParams,
