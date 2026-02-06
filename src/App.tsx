@@ -13,6 +13,7 @@ import { ValidationError } from '@modular/core';
 import type { FileTreeEntry, SourceLocationInfo } from './ipcTypes';
 import type { EditorBuffer, ScopeView } from './types/editor';
 import { getBufferId } from './app/buffers';
+import { setActiveInterpolationResolutions } from './dsl/spanTypes';
 import { drawOscilloscope, scopeKeyFromSubscription } from './app/oscilloscope';
 import { useEditorBuffers } from './app/hooks/useEditorBuffers';
 
@@ -322,6 +323,12 @@ function App() {
                 );
                 
                 if (!result.success) {
+                    // Still set interpolation resolutions even on validation errors
+                    // (the analysis succeeded, only the patch application failed)
+                    if (result.interpolationResolutions) {
+                        const map = new Map(Object.entries(result.interpolationResolutions));
+                        setActiveInterpolationResolutions(map);
+                    }
                     if (result.errorMessage) {
                         setError(result.errorMessage);
                         setValidationErrors(null);
@@ -345,6 +352,12 @@ function App() {
                 setRunningBufferId(activeBufferId);
                 setError(null);
                 setValidationErrors(null);
+
+                // Set interpolation resolutions in renderer for template literal highlighting
+                if (result.interpolationResolutions) {
+                    const map = new Map(Object.entries(result.interpolationResolutions));
+                    setActiveInterpolationResolutions(map);
+                }
 
                 const scopeCalls = findScopeCallEndLines(patchCodeValue);
                 console.log('Found scope calls:', scopeCalls);

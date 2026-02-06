@@ -87,6 +87,16 @@ export interface SourceLocationInfo {
 /**
  * Result from DSL execution in main process
  */
+/**
+ * Serialized form of a ResolvedInterpolation for IPC transfer.
+ */
+export interface SerializedResolvedInterpolation {
+    evaluatedStart: number;
+    evaluatedLength: number;
+    constLiteralSpan: { start: number; end: number };
+    nestedResolutions?: SerializedResolvedInterpolation[];
+}
+
 export interface DSLExecuteResult {
     success: boolean;
     errors?: ApplyPatchError[];
@@ -95,6 +105,8 @@ export interface DSLExecuteResult {
     errorMessage?: string;
     /** Map from module ID to source location for error reporting */
     sourceLocationMap?: Record<string, SourceLocationInfo>;
+    /** Interpolation resolutions for template literal const redirects (serialized Map) */
+    interpolationResolutions?: Record<string, SerializedResolvedInterpolation[]>;
 }
 
 /**

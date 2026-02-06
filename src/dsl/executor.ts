@@ -15,7 +15,9 @@ import {
     DeferredModuleOutput,
     DeferredCollection,
 } from './GraphBuilder';
-import { analyzeSourceSpans, SpanRegistry } from './sourceSpanAnalyzer';
+import { analyzeSourceSpans } from './sourceSpanAnalyzer';
+import type { InterpolationResolutionMap } from './spanTypes';
+import { setActiveInterpolationResolutions } from './spanTypes';
 
 /**
  * Result of executing a DSL script.
@@ -25,6 +27,8 @@ export interface DSLExecutionResult {
     patch: PatchGraph;
     /** Map from module ID to source location in DSL code */
     sourceLocationMap: Map<string, SourceLocation>;
+    /** Interpolation resolution map for template literal const redirects */
+    interpolationResolutions: InterpolationResolutionMap;
 }
 
 /**
@@ -84,9 +88,7 @@ export function executePatchScript(
      */
     const deferred = (channels: number = 1): DeferredCollection => {
         if (channels < 1 || channels > 16) {
-            throw new Error(
-                `deferred() channels must be between 1 and 16, got ${channels}`,
-            );
+            throw new Error(`deferred() channels must be between 1 and 16, got ${channels}`);
         }
         const items: DeferredModuleOutput[] = [];
         for (let i = 0; i < channels; i++) {
@@ -130,8 +132,9 @@ export function executePatchScript(
 
     // Analyze source code to extract argument spans before execution
     // The registry maps call-site keys (line:column) to argument span info
-    const spanRegistry = analyzeSourceSpans(source, schemas, wrapperLineCount, firstLineColumnOffset);
+    const { registry: spanRegistry, interpolationResolutions } = analyzeSourceSpans(source, schemas, wrapperLineCount, firstLineColumnOffset);
     setActiveSpanRegistry(spanRegistry);
+    setActiveInterpolationResolutions(interpolationResolutions);
 
     const functionBody = `
     'use strict';
@@ -152,15 +155,19 @@ export function executePatchScript(
         const patch = builder.toPatch();
         const sourceLocationMap = builder.getSourceLocationMap();
 
-        return { patch, sourceLocationMap };
+        return { patch, sourceLocationMap, interpolationResolutions };
     } catch (error) {
         if (error instanceof Error) {
             throw new Error(`DSL execution error: ${error.message}`);
         }
         throw error;
     } finally {
-        // Clear the registry after execution to avoid stale data
+        // Clear the span registry after execution — spans are already baked into
+        // module state via ARGUMENT_SPANS_KEY so the registry isn't needed anymore.
         setActiveSpanRegistry(null);
+        // NOTE: Do NOT clear interpolation resolutions here. They are read
+        // asynchronously by moduleStateTracking during decoration polling and
+        // must persist until the next execution replaces them.
     }
 }
 

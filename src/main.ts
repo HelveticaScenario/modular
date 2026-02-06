@@ -502,13 +502,19 @@ registerIPCHandler('GET_DSL_LIB_SOURCE', () => {
 registerIPCHandler('DSL_EXECUTE', (source, sourceId): DSLExecuteResult => {
     try {
         const schemas = getSchemas();
-        const { patch, sourceLocationMap } = executePatchScript(source, schemas);
+        const { patch, sourceLocationMap, interpolationResolutions } = executePatchScript(source, schemas);
         patch.moduleIdRemaps = [];
 
         // Convert Map to Record for IPC serialization
         const sourceLocationRecord: Record<string, { line: number; column: number; idIsExplicit: boolean }> = {};
         for (const [moduleId, loc] of sourceLocationMap) {
             sourceLocationRecord[moduleId] = loc;
+        }
+
+        // Convert interpolation resolutions Map to Record for IPC serialization
+        const interpolationResolutionsRecord: Record<string, any[]> = {};
+        for (const [key, resolutions] of interpolationResolutions) {
+            interpolationResolutionsRecord[key] = resolutions;
         }
 
         // Requirement: assume a full change when a different file/buffer is evaluated.
@@ -571,6 +577,7 @@ registerIPCHandler('DSL_EXECUTE', (source, sourceId): DSLExecuteResult => {
                 appliedPatch: patch,
                 moduleIdRemap,
                 sourceLocationMap: sourceLocationRecord,
+                interpolationResolutions: interpolationResolutionsRecord,
             };
         }
 
@@ -580,6 +587,7 @@ registerIPCHandler('DSL_EXECUTE', (source, sourceId): DSLExecuteResult => {
             appliedPatch: patch,
             moduleIdRemap,
             sourceLocationMap: sourceLocationRecord,
+            interpolationResolutions: interpolationResolutionsRecord,
         };
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);

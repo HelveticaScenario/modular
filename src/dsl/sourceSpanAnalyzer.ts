@@ -4,20 +4,23 @@
  * Parses DSL source code and extracts absolute character offsets for literal
  * arguments in module factory calls. The registry is keyed by call-site
  * (line:column) for lookup from factory functions at runtime.
+ *
+ * Additionally builds an interpolation resolution map for template literals
+ * containing const variable references. When a template like `${root} e4 g4`
+ * interpolates a const string, the resolution map records the const's literal
+ * span so that highlights landing inside the interpolation result can be
+ * redirected to the original const declaration site. This works recursively
+ * for nested template const chains.
  */
 
 import { Project, SyntaxKind, Node, CallExpression, VariableDeclarationKind, type SourceFile, ts } from 'ts-morph';
 import type { ModuleSchema } from '@modular/core';
 
-/**
- * Span representing a character range in source code
- */
-export interface SourceSpan {
-    /** Absolute start offset (0-based) */
-    start: number;
-    /** Absolute end offset (exclusive) */
-    end: number;
-}
+// Re-export shared types/state from spanTypes (which has no Node.js dependencies)
+export type { SourceSpan, ResolvedInterpolation, InterpolationResolutionMap } from './spanTypes';
+export { setActiveInterpolationResolutions, getActiveInterpolationResolutions } from './spanTypes';
+
+import type { SourceSpan, InterpolationResolutionMap, ResolvedInterpolation } from './spanTypes';
 
 /**
  * Registry entry for a single call expression's argument spans
@@ -167,6 +170,181 @@ function buildConstLiteralMap(sourceFile: SourceFile): Map<string, SourceSpan> {
 }
 
 /**
+ * Pre-build a map of const-declared variable names to their AST initializer nodes.
+ * Used for deeper analysis of template expressions within const declarations.
+ */
+function buildConstNodeMap(sourceFile: SourceFile): Map<string, Node> {
+    const map = new Map<string, Node>();
+    
+    for (const statement of sourceFile.getStatements()) {
+        if (!Node.isVariableStatement(statement)) continue;
+        
+        const declList = statement.getDeclarationList();
+        if (declList.getDeclarationKind() !== VariableDeclarationKind.Const) continue;
+        
+        for (const decl of declList.getDeclarations()) {
+            const initializer = decl.getInitializer();
+            if (initializer && isTrackableLiteral(initializer)) {
+                map.set(decl.getName(), initializer);
+            }
+        }
+    }
+    
+    return map;
+}
+
+/**
+ * Get the string content length of a const literal, stripping quotes.
+ * Returns null if the length cannot be statically determined.
+ * 
+ * For simple string literals: `"abc"` → 3
+ * For no-substitution template literals: `` `abc` `` → 3
+ * For template expressions with all-const interpolations: recursively computed
+ */
+function getConstStringLength(
+    node: Node,
+    constNodeMap: Map<string, Node>,
+    visited: Set<string> = new Set(),
+): number | null {
+    if (Node.isStringLiteral(node)) {
+        // Strip quotes and compute length
+        return node.getLiteralValue().length;
+    }
+    
+    if (Node.isNoSubstitutionTemplateLiteral(node)) {
+        return node.getLiteralValue().length;
+    }
+    
+    if (Node.isTemplateExpression(node)) {
+        // Sum up: head literal + (each span's expression evaluated length + literal part)
+        const head = node.getHead();
+        // Head text is between ` and ${, strip the backtick
+        let totalLength = head.getLiteralText().length;
+        
+        for (const span of node.getTemplateSpans()) {
+            const expr = span.getExpression();
+            const exprLength = getExpressionStringLength(expr, constNodeMap, visited);
+            if (exprLength === null) return null; // Can't determine
+            totalLength += exprLength;
+            
+            // The literal part of the span (between } and next ${ or closing `)
+            const literal = span.getLiteral();
+            totalLength += literal.getLiteralText().length;
+        }
+        
+        return totalLength;
+    }
+    
+    return null;
+}
+
+/**
+ * Get the evaluated string length of an expression node.
+ * Only works for const identifier references with known literal initializers.
+ */
+function getExpressionStringLength(
+    expr: Node,
+    constNodeMap: Map<string, Node>,
+    visited: Set<string>,
+): number | null {
+    if (Node.isIdentifier(expr)) {
+        const name = expr.getText();
+        if (visited.has(name)) return null; // Circular reference
+        const constNode = constNodeMap.get(name);
+        if (!constNode) return null;
+        
+        visited.add(name);
+        const result = getConstStringLength(constNode, constNodeMap, visited);
+        visited.delete(name);
+        return result;
+    }
+    
+    // Direct literals in interpolation (rarely useful but handle it)
+    if (Node.isStringLiteral(expr)) {
+        return expr.getLiteralValue().length;
+    }
+    if (Node.isNumericLiteral(expr)) {
+        return expr.getText().length;
+    }
+    
+    return null;
+}
+
+/**
+ * Recursively resolve interpolations in a template expression or const reference.
+ * 
+ * For a template like `${root} e4 ${fifth}`:
+ * - Computes the evaluated start position and length for each interpolation
+ * - If the interpolated const is itself a template with interpolations, recurses
+ * 
+ * @param node - The template expression or const literal node
+ * @param constNodeMap - Map of const names to their AST nodes
+ * @param constMap - Map of const names to their document spans
+ * @returns Array of resolved interpolations, or null if resolution not possible
+ */
+function resolveInterpolations(
+    node: Node,
+    constNodeMap: Map<string, Node>,
+    constMap: Map<string, SourceSpan>,
+): ResolvedInterpolation[] | null {
+    if (!Node.isTemplateExpression(node)) return null;
+    
+    const resolutions: ResolvedInterpolation[] = [];
+    const head = node.getHead();
+    let evalOffset = head.getLiteralText().length;
+    
+    for (const span of node.getTemplateSpans()) {
+        const expr = span.getExpression();
+        
+        if (Node.isIdentifier(expr)) {
+            const name = expr.getText();
+            const constNode = constNodeMap.get(name);
+            const constSpan = constMap.get(name);
+            
+            if (constNode && constSpan) {
+                const evalLength = getConstStringLength(constNode, constNodeMap);
+                
+                if (evalLength !== null) {
+                    // Recursively resolve nested interpolations within the const
+                    const nested = resolveInterpolations(constNode, constNodeMap, constMap);
+                    
+                    resolutions.push({
+                        evaluatedStart: evalOffset,
+                        evaluatedLength: evalLength,
+                        constLiteralSpan: constSpan,
+                        nestedResolutions: nested ?? undefined,
+                    });
+                    
+                    evalOffset += evalLength;
+                } else {
+                    // Can't determine length — skip this interpolation but continue
+                    // (offset tracking becomes unreliable, bail on remaining interpolations)
+                    return resolutions.length > 0 ? resolutions : null;
+                }
+            } else {
+                // Not a const reference — can't resolve. Stop tracking offsets.
+                // Any previous resolutions are still valid since their offsets are correct.
+                return resolutions.length > 0 ? resolutions : null;
+            }
+        } else {
+            // Non-identifier expression in interpolation — can't resolve
+            const exprLength = getExpressionStringLength(expr, constNodeMap, new Set());
+            if (exprLength !== null) {
+                evalOffset += exprLength;
+            } else {
+                return resolutions.length > 0 ? resolutions : null;
+            }
+        }
+        
+        // Add the literal text following this interpolation
+        const literal = span.getLiteral();
+        evalOffset += literal.getLiteralText().length;
+    }
+    
+    return resolutions.length > 0 ? resolutions : null;
+}
+
+/**
  * Get a trackable span from a node, either directly (if it's a literal)
  * or by resolving a const variable reference to its literal initializer.
  */
@@ -184,20 +362,50 @@ function getTrackableSpan(node: Node, constMap: Map<string, SourceSpan>): Source
 }
 
 /**
+ * Get the AST node for a trackable argument, resolving const references.
+ * Returns the literal node itself, or the const's initializer node.
+ * Used for deeper analysis like interpolation resolution.
+ */
+function getTrackableNode(node: Node, constNodeMap: Map<string, Node>): Node | null {
+    if (isTrackableLiteral(node)) {
+        return node;
+    }
+    
+    if (Node.isIdentifier(node)) {
+        return constNodeMap.get(node.getText()) ?? null;
+    }
+    
+    return null;
+}
+
+/**
+ * Result of analyzing source spans, including both the span registry
+ * (for Rust-side argument highlighting) and the interpolation resolution map
+ * (for TS-side redirect of highlights into const declarations).
+ */
+export interface AnalysisResult {
+    /** Registry mapping call sites to argument spans */
+    registry: SpanRegistry;
+    /** Map from argument span key to resolved interpolations within that span */
+    interpolationResolutions: InterpolationResolutionMap;
+}
+
+/**
  * Analyze DSL source code and build a span registry for argument locations.
  * 
  * @param source - The DSL source code to analyze
  * @param schemas - Module schemas to determine which calls to track
  * @param lineOffset - Line offset to add (for wrapped code in new Function)
- * @returns Registry mapping call sites to argument spans
+ * @returns Analysis result with span registry and interpolation resolution map
  */
 export function analyzeSourceSpans(
     source: string,
     schemas: ModuleSchema[],
     lineOffset: number = 0,
     firstLineColumnOffset: number = 0,
-): SpanRegistry {
+): AnalysisResult {
     const registry: SpanRegistry = new Map();
+    const interpolationResolutions: InterpolationResolutionMap = new Map();
     const factoryNames = buildFactoryNames(schemas);
     const schemaMap = buildSchemaMap(schemas);
     
@@ -217,6 +425,7 @@ export function analyzeSourceSpans(
     
     // Pre-build const literal map for resolving variable references
     const constMap = buildConstLiteralMap(sourceFile);
+    const constNodeMap = buildConstNodeMap(sourceFile);
     
     // Walk all call expressions
     sourceFile.forEachDescendant((node: Node) => {
@@ -246,6 +455,16 @@ export function analyzeSourceSpans(
             const span = getTrackableSpan(arg, constMap);
             if (span) {
                 argsMap.set(argDef.name, span);
+                
+                // Resolve interpolations for template expressions
+                const node = getTrackableNode(arg, constNodeMap);
+                if (node) {
+                    const resolutions = resolveInterpolations(node, constNodeMap, constMap);
+                    if (resolutions) {
+                        const spanKey = `${span.start}:${span.end}`;
+                        interpolationResolutions.set(spanKey, resolutions);
+                    }
+                }
             }
         }
         
@@ -263,6 +482,16 @@ export function analyzeSourceSpans(
                         const span = getTrackableSpan(initializer, constMap);
                         if (span) {
                             argsMap.set(propName, span);
+                            
+                            // Resolve interpolations for template expressions
+                            const node = getTrackableNode(initializer, constNodeMap);
+                            if (node) {
+                                const resolutions = resolveInterpolations(node, constNodeMap, constMap);
+                                if (resolutions) {
+                                    const spanKey = `${span.start}:${span.end}`;
+                                    interpolationResolutions.set(spanKey, resolutions);
+                                }
+                            }
                         }
                     } else if (Node.isShorthandPropertyAssignment(prop)) {
                         const propName = prop.getName();
@@ -272,6 +501,16 @@ export function analyzeSourceSpans(
                         const span = constMap.get(propName) ?? null;
                         if (span) {
                             argsMap.set(propName, span);
+                            
+                            // Resolve interpolations if it's a template const
+                            const constNode = constNodeMap.get(propName);
+                            if (constNode) {
+                                const resolutions = resolveInterpolations(constNode, constNodeMap, constMap);
+                                if (resolutions) {
+                                    const spanKey = `${span.start}:${span.end}`;
+                                    interpolationResolutions.set(spanKey, resolutions);
+                                }
+                            }
                         }
                     }
                 }
@@ -313,7 +552,7 @@ export function analyzeSourceSpans(
         });
     });
     
-    return registry;
+    return { registry, interpolationResolutions };
 }
 
 /**

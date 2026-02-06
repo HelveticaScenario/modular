@@ -1,6 +1,7 @@
 import { ModuleSchema, deriveChannelCount } from '@modular/core';
 import { GraphBuilder, ModuleNode, ModuleOutput, Collection, CollectionWithRange } from './GraphBuilder';
-import type { SpanRegistry, CallSiteKey, SourceSpan } from './sourceSpanAnalyzer';
+import type { SourceSpan } from './spanTypes';
+import type { SpanRegistry, CallSiteKey } from './sourceSpanAnalyzer';
 
 /**
  * Key used for internal metadata field storing argument source spans.

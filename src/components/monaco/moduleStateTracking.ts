@@ -17,12 +17,14 @@
  * decorations automatically move when the user types. We create tracked decorations
  * for each span when we first see a module's argument_spans, then during polling
  * we use model.getDecorationRange() to get the current (tracked) positions.
+ * This applies to both interpolated and non-interpolated spans.
  */
 
 import type React from 'react';
 import type { editor } from 'monaco-editor';
 import type { Monaco } from '../../hooks/useCustomMonaco';
-import type { SourceSpan } from '../../dsl/sourceSpanAnalyzer';
+import type { SourceSpan, ResolvedInterpolation } from '../../dsl/spanTypes';
+import { getActiveInterpolationResolutions } from '../../dsl/spanTypes';
 
 /**
  * Argument spans as they come from module state (document offsets)
@@ -174,6 +176,50 @@ function extractInterpolationRegions(
 }
 
 /**
+ * Build interpolation regions using accurate data from the interpolation
+ * resolution map (computed by sourceSpanAnalyzer via ts-morph).
+ *
+ * This avoids the fragile indexOf-based text matching in extractInterpolationRegions,
+ * which can fail when the interpolated content contains substrings matching the
+ * template's literal text (e.g., `${interpolated} 2 3` where interpolated = '0 2 3 ...').
+ */
+function buildInterpolationRegionsFromResolutions(
+    sourceContent: string,
+    resolutions: ResolvedInterpolation[],
+): InterpolationRegion[] | null {
+    // Find ${...} in source to get source-side positions
+    const interpolationRegex = /\$\{/g;
+    const sourceRegions: { sourceStart: number; sourceEnd: number }[] = [];
+    let match;
+
+    while ((match = interpolationRegex.exec(sourceContent)) !== null) {
+        const startIdx = match.index;
+        let depth = 1;
+        let endIdx = startIdx + 2;
+
+        while (endIdx < sourceContent.length && depth > 0) {
+            if (sourceContent[endIdx] === '{') depth++;
+            else if (sourceContent[endIdx] === '}') depth--;
+            endIdx++;
+        }
+
+        if (depth === 0) {
+            sourceRegions.push({ sourceStart: startIdx, sourceEnd: endIdx });
+        }
+    }
+
+    if (sourceRegions.length === 0 || sourceRegions.length !== resolutions.length) return null;
+
+    return sourceRegions.map((sr, i) => ({
+        sourceStart: sr.sourceStart,
+        sourceEnd: sr.sourceEnd,
+        sourceLen: sr.sourceEnd - sr.sourceStart,
+        evaluatedStart: resolutions[i].evaluatedStart,
+        evaluatedLen: resolutions[i].evaluatedLength,
+    }));
+}
+
+/**
  * Build a position mapper from evaluated to source positions
  */
 function buildPositionMapper(
@@ -203,6 +249,51 @@ function buildPositionMapper(
 }
 
 /**
+ * Resolve an evaluated position that falls inside an interpolation result
+ * to a document offset by looking up the interpolation resolution map.
+ *
+ * When a template literal contains `${someConst}` and the position mapper
+ * returns null (position is inside the interpolation result), this function
+ * redirects the highlight to the original const literal's location in the document.
+ *
+ * Handles recursive resolution: if the const is itself a template with
+ * interpolations, recurses into nested resolutions.
+ *
+ * @param evalPos - Position in evaluated string that fell inside an interpolation
+ * @param resolutions - Resolved interpolations for this argument span
+ * @returns Document offset to highlight, or null if no resolution found
+ */
+function resolveInterpolatedPosition(
+    evalPos: number,
+    resolutions: ResolvedInterpolation[],
+): number | null {
+    for (const r of resolutions) {
+        const rEnd = r.evaluatedStart + r.evaluatedLength;
+        // Use <= for the end check because span ends are exclusive:
+        // a Rust span [0, 2] means characters 0-1, and position 2 is the
+        // exclusive end that should map to the exclusive end of the const literal.
+        if (evalPos >= r.evaluatedStart && evalPos <= rEnd) {
+            const offsetInResult = evalPos - r.evaluatedStart;
+
+            // If the const has nested resolutions (it's a template with interpolations),
+            // check if this offset falls inside one of the nested interpolations
+            if (r.nestedResolutions && r.nestedResolutions.length > 0) {
+                const nestedResult = resolveInterpolatedPosition(
+                    offsetInResult,
+                    r.nestedResolutions,
+                );
+                if (nestedResult !== null) return nestedResult;
+            }
+
+            // Simple case or fallback: map directly into the const literal
+            // +1 to skip the opening quote character
+            return r.constLiteralSpan.start + 1 + offsetInResult;
+        }
+    }
+    return null;
+}
+
+/**
  * Cache entry for a single parameter's state.
  * Stores tracked decoration IDs for spans within this parameter.
  */
@@ -220,12 +311,12 @@ interface ParamCache {
     /**
      * Map of span ID (e.g., "0:5") to Monaco decoration ID.
      * These decorations are tracked and automatically move with text edits.
-     * Only used for non-interpolated spans.
+     * Used for both interpolated and non-interpolated spans.
      */
     trackedDecorationIds?: Map<string, string>;
     /**
      * The decoration collection that holds all tracked decorations for this param.
-     * Only used for non-interpolated spans.
+     * Used for both interpolated and non-interpolated spans.
      */
     decorationCollection?: editor.IEditorDecorationsCollection;
     /**
@@ -304,6 +395,19 @@ export function startModuleStatePolling({
             const model = editor.getModel();
             if (!model) return;
 
+            // Clean up cache entries for modules that no longer exist in the patch.
+            // Without this, tracked decorations from removed modules would linger.
+            for (const [cachedModuleId, moduleCache] of globalCache) {
+                if (!(cachedModuleId in states)) {
+                    for (const paramCache of moduleCache.values()) {
+                        if (paramCache.decorationCollection) {
+                            paramCache.decorationCollection.clear();
+                        }
+                    }
+                    globalCache.delete(cachedModuleId);
+                }
+            }
+
             for (const [moduleId, state] of Object.entries(states)) {
                 const typedState = state as ModuleStateWithSpans;
 
@@ -374,9 +478,10 @@ export function startModuleStatePolling({
 
                     // Process spans with or without interpolation mapping
                     if (paramCache.hasInterpolations && evaluatedSource) {
-                        // Interpolated patterns can't use tracked decorations because
-                        // the spans from Rust refer to the evaluated string, not the source.
-                        // We have to map positions dynamically each poll.
+                        // Look up interpolation resolutions once for this param
+                        const interpolationResolutions = getActiveInterpolationResolutions();
+                        const spanKey = `${argSpan.start}:${argSpan.end}`;
+                        const resolutions = interpolationResolutions?.get(spanKey);
 
                         // Build mapper if needed (evaluated source changed)
                         if (paramCache.evaluatedContentForMapper !== evaluatedSource) {
@@ -390,46 +495,123 @@ export function startModuleStatePolling({
                                 sourceWithoutQuotes = sourceWithoutQuotes.slice(1, -1);
                             }
 
-                            const regions = extractInterpolationRegions(
-                                sourceWithoutQuotes,
-                                evaluatedSource,
-                            );
+                            // Prefer building regions from resolution data (accurate)
+                            // over indexOf-based text matching (can fail when
+                            // interpolated content contains literal piece substrings)
+                            let regions: InterpolationRegion[] | null = null;
+                            if (resolutions) {
+                                regions = buildInterpolationRegionsFromResolutions(
+                                    sourceWithoutQuotes,
+                                    resolutions,
+                                );
+                            }
+                            if (!regions) {
+                                regions = extractInterpolationRegions(
+                                    sourceWithoutQuotes,
+                                    evaluatedSource,
+                                );
+                            }
                             if (regions) {
                                 paramCache.positionMapper = buildPositionMapper(regions);
                             } else {
                                 paramCache.positionMapper = undefined;
                             }
                             paramCache.evaluatedContentForMapper = evaluatedSource;
+
+                            // Mapper changed — tracked decorations need recreating
+                            paramCache.trackedDecorationsCreated = false;
+                            if (paramCache.decorationCollection) {
+                                paramCache.decorationCollection.clear();
+                            }
+                            paramCache.trackedDecorationIds = undefined;
                         }
 
                         if (!paramCache.positionMapper) continue;
 
-                        // Map each span from evaluated to source positions
-                        for (const [evalStart, evalEnd] of spans) {
-                            const sourceStart = paramCache.positionMapper(evalStart);
-                            const sourceEnd = paramCache.positionMapper(evalEnd);
+                        // Create tracked decorations once for all interpolated spans,
+                        // mapping each evaluated position to its document position
+                        // (either in the template literal source or a const literal).
+                        const allSpans = paramInfo.all_spans;
 
-                            if (sourceStart === null || sourceEnd === null) continue;
+                        if (!paramCache.trackedDecorationsCreated && allSpans && allSpans.length > 0) {
 
-                            // +1 to skip opening quote in document
-                            const startOffset = argSpan.start + 1 + sourceStart;
-                            const endOffset = argSpan.start + 1 + sourceEnd;
+                            const decorationsToCreate: editor.IModelDeltaDecoration[] = [];
+                            const spanIds: string[] = [];
 
-                            const startPos = model.getPositionAt(startOffset);
-                            const endPos = model.getPositionAt(endOffset);
+                            for (const [evalStart, evalEnd] of allSpans) {
+                                const sourceStart = paramCache.positionMapper(evalStart);
+                                const sourceEnd = paramCache.positionMapper(evalEnd);
 
-                            newDecorations.push({
-                                range: new monaco.Range(
-                                    startPos.lineNumber,
-                                    startPos.column,
-                                    endPos.lineNumber,
-                                    endPos.column,
-                                ),
-                                options: {
-                                    className: activeClassName,
-                                    isWholeLine: false,
-                                },
-                            });
+                                let startOffset: number | null = null;
+                                let endOffset: number | null = null;
+
+                                if (sourceStart !== null && sourceEnd !== null) {
+                                    // Positions map to source text within the template literal
+                                    startOffset = argSpan.start + 1 + sourceStart;
+                                    endOffset = argSpan.start + 1 + sourceEnd;
+                                } else if (resolutions) {
+                                    // Positions inside interpolation result — redirect to const literal
+                                    const resolvedStart = resolveInterpolatedPosition(evalStart, resolutions);
+                                    const resolvedEnd = resolveInterpolatedPosition(evalEnd, resolutions);
+                                    if (resolvedStart !== null && resolvedEnd !== null) {
+                                        startOffset = resolvedStart;
+                                        endOffset = resolvedEnd;
+                                    }
+                                }
+
+                                if (startOffset !== null && endOffset !== null) {
+                                    const spanId = `${evalStart}:${evalEnd}`;
+                                    spanIds.push(spanId);
+
+                                    const startPos = model.getPositionAt(startOffset);
+                                    const endPos = model.getPositionAt(endOffset);
+
+                                    decorationsToCreate.push({
+                                        range: new monaco.Range(
+                                            startPos.lineNumber,
+                                            startPos.column,
+                                            endPos.lineNumber,
+                                            endPos.column,
+                                        ),
+                                        options: {
+                                            stickiness:
+                                                monaco.editor.TrackedRangeStickiness
+                                                    .NeverGrowsWhenTypingAtEdges,
+                                        },
+                                    });
+                                }
+                            }
+
+                            if (decorationsToCreate.length > 0) {
+                                paramCache.decorationCollection = editor.createDecorationsCollection();
+                                const ids = paramCache.decorationCollection.set(decorationsToCreate);
+                                paramCache.trackedDecorationIds = new Map();
+                                for (let i = 0; i < spanIds.length; i++) {
+                                    paramCache.trackedDecorationIds.set(spanIds[i], ids[i]);
+                                }
+                            }
+
+                            paramCache.trackedDecorationsCreated = true;
+                        }
+
+                        // Use tracked decorations for active spans
+                        if (paramCache.trackedDecorationIds) {
+                            for (const [spanStart, spanEnd] of spans) {
+                                const spanId = `${spanStart}:${spanEnd}`;
+                                const decoId = paramCache.trackedDecorationIds.get(spanId);
+                                if (!decoId) continue;
+
+                                const range = model.getDecorationRange(decoId);
+                                if (!range || range.isEmpty()) continue;
+
+                                newDecorations.push({
+                                    range,
+                                    options: {
+                                        className: activeClassName,
+                                        isWholeLine: false,
+                                    },
+                                });
+                            }
                         }
                     } else {
                         // No interpolations - use tracked decorations with all_spans

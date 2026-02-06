@@ -15,9 +15,6 @@ pub struct PatchUpdate {
   /// The Box<dyn Sampleable> is Send so it can be transferred across thread boundary.
   pub inserts: Vec<(String, Box<dyn modular_core::types::Sampleable>)>,
 
-  /// Module IDs to delete
-  pub deletes: Vec<String>,
-
   /// ID remappings (applied before inserts/deletes)
   pub remaps: Vec<ModuleIdRemap>,
 
@@ -42,7 +39,6 @@ impl PatchUpdate {
   pub fn new(sample_rate: f32) -> Self {
     Self {
       inserts: Vec::new(),
-      deletes: Vec::new(),
       remaps: Vec::new(),
       param_updates: Vec::new(),
       scope_adds: Vec::new(),
@@ -55,7 +51,6 @@ impl PatchUpdate {
   /// Check if this update has any changes
   pub fn is_empty(&self) -> bool {
     self.inserts.is_empty()
-      && self.deletes.is_empty()
       && self.remaps.is_empty()
       && self.param_updates.is_empty()
       && self.scope_adds.is_empty()

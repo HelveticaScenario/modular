@@ -1226,12 +1226,11 @@ impl AudioProcessor {
       }
     }
 
-    // Delete modules
-    for id in &update.deletes {
-      if !is_reserved_module_id(id) {
-        self.patch.sampleables.remove(id);
-      }
-    }
+    // Collect the set of desired module IDs from inserts before consuming them.
+    // apply_patch sends ALL desired modules as inserts, so any module not in this
+    // set (and not reserved) is stale and should be removed.
+    let desired_ids: std::collections::HashSet<String> =
+      update.inserts.iter().map(|(id, _)| id.clone()).collect();
 
     // Insert new modules - wrap Box in Arc
     for (id, boxed_module) in update.inserts {
@@ -1242,6 +1241,14 @@ impl AudioProcessor {
         .entry(id)
         .or_insert_with(|| Arc::new(boxed_module));
     }
+
+    // Remove modules that are no longer in the desired graph.
+    // This handles the case where a module was removed from the patch — without this,
+    // stale modules would keep running on the audio thread and reporting state.
+    self
+      .patch
+      .sampleables
+      .retain(|id, _| is_reserved_module_id(id) || desired_ids.contains(id));
 
     // Update params for all modules
     for (id, params, channel_count) in &update.param_updates {
