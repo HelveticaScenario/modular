@@ -68,6 +68,7 @@ fn compute_bpf_biquad(center: f32, resonance: f32, sample_rate: f32) -> BiquadCo
 }
 
 #[module(name = "filt.band", description = "12dB/octave bandpass filter", args(input, center, resonance?))]
+#[derive(Default)]
 pub struct BandpassFilter {
     outputs: BandpassFilterOutputs,
     channels: [BpfChannelState; PORT_MAX_CHANNELS],
@@ -78,23 +79,9 @@ pub struct BandpassFilter {
     params: BandpassFilterParams,
 }
 
-impl Default for BandpassFilter {
-    fn default() -> Self {
-        Self {
-            outputs: Default::default(),
-            channels: [BpfChannelState::default(); PORT_MAX_CHANNELS],
-            coeffs_mono: BiquadCoeffs::default(),
-            last_center_mono: 0.0,
-            last_q_mono: 0.0,
-            params: Default::default(),
-        }
-    }
-}
-
 impl BandpassFilter {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
-        self.outputs.sample.set_channels(num_channels);
 
         // Update coefficients
         if self.params.center.is_monophonic() && self.params.resonance.is_monophonic() {

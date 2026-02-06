@@ -237,7 +237,7 @@ impl Default for PlaitsChannelState {
     name = "osc.macro",
     description = "Mutable Instruments Plaits - Full macro-oscillator with 24 engines, LPG, and modulation",
     args(freq, engine),
-    has_init,
+    has_init
 )]
 pub struct Plaits {
     outputs: PlaitsOutputs,
@@ -255,6 +255,7 @@ impl Default for Plaits {
             buffer_pos: BLOCK_SIZE, // Start exhausted to trigger initial render
             params: PlaitsParams::default(),
             sample_rate: 0.0,
+            _channel_count: 0,
         }
     }
 }
@@ -300,21 +301,17 @@ impl Plaits {
             self.buffer_pos = 0;
         }
 
-        // Copy current samples to outputs
-        let mut out = PolyOutput::default();
-        let mut aux = PolyOutput::default();
-        out.set_channels(num_channels);
-        aux.set_channels(num_channels);
-
         for ch in 0..num_channels {
             let state = &self.channels[ch];
             // Output scaling: Plaits outputs ±1.0, scale to ±5V (inverted to match hardware)
-            out.set(ch, -state.out_buffer[self.buffer_pos] * 5.0);
-            aux.set(ch, -state.aux_buffer[self.buffer_pos] * 5.0);
+            self.outputs
+                .out
+                .set(ch, -state.out_buffer[self.buffer_pos] * 5.0);
+            self.outputs
+                .aux
+                .set(ch, -state.aux_buffer[self.buffer_pos] * 5.0);
         }
 
-        self.outputs.out = out;
-        self.outputs.aux = aux;
         self.buffer_pos += 1;
     }
 

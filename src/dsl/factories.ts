@@ -8,40 +8,6 @@ import type { SpanRegistry, CallSiteKey, SourceSpan } from './sourceSpanAnalyzer
  */
 const ARGUMENT_SPANS_KEY = '__argument_spans';
 
-// LRU-style cache for seq pattern polyphony analysis to avoid re-parsing on every patch update
-// The Rust-side analysis runs 90 cycles which can be expensive for complex patterns
-const POLYPHONY_CACHE_MAX_SIZE = 100;
-const patternPolyphonyCache = new Map<string, number>();
-
-/**
- * Get cached polyphony for a pattern string, or undefined if not cached.
- * Uses LRU eviction - moves accessed entries to end of map.
- */
-function getCachedPolyphony(patternStr: string): number | undefined {
-    const cached = patternPolyphonyCache.get(patternStr);
-    if (cached !== undefined) {
-        // Move to end (most recently used) by re-inserting
-        patternPolyphonyCache.delete(patternStr);
-        patternPolyphonyCache.set(patternStr, cached);
-        return cached;
-    }
-    return undefined;
-}
-
-/**
- * Cache a polyphony result for a pattern string with LRU eviction.
- */
-function cachePolyphony(patternStr: string, polyphony: number): void {
-    // Evict oldest entry if at capacity
-    if (patternPolyphonyCache.size >= POLYPHONY_CACHE_MAX_SIZE) {
-        const oldestKey = patternPolyphonyCache.keys().next().value;
-        if (oldestKey !== undefined) {
-            patternPolyphonyCache.delete(oldestKey);
-        }
-    }
-    patternPolyphonyCache.set(patternStr, polyphony);
-}
-
 /**
  * Line offset for DSL code wrapper.
  * The executePatchScript creates a function body with 'use strict' which adds lines
@@ -367,65 +333,10 @@ export class DSLContext {
                 }
             }
 
-            // Derive channel count from params using Rust-side derivation
+            // Derive channel count from params using Rust-side derivation (backed by LRU cache)
             // This handles modules with custom derivation logic (like mix, seq)
             // as well as standard inference from PolySignal inputs
-            let derivedChannels: number | null = null;
-            console.log(schema.name, params)
-            // For seq module with a pattern, use LRU cache to avoid expensive re-analysis
-            // (Rust-side pattern polyphony analysis runs 300 cycles)
-            if (schema.name === 'seq.cycle' && params.pattern !== undefined) {
-                if (params.channels !== undefined) {
-                    // If channels explicitly set, use it directly
-                    derivedChannels = params.channels as number;
-                    node._setDerivedChannelCount(derivedChannels);
-                } else {
-                    const patternStr = String(params.pattern);
-                    const cached = getCachedPolyphony(patternStr);
-                    if (cached !== undefined) {
-                        derivedChannels = cached;
-                    } else {
-                        derivedChannels = deriveChannelCount(schema.name, node.getParamsSnapshot());
-                        if (derivedChannels !== null) {
-                            cachePolyphony(patternStr, derivedChannels);
-                        }
-                    }
-                    params.channels = derivedChannels
-                    node._setParam('channels', derivedChannels);
-                }
-            } else if (schema.name === 'seq.iCycle') {
-                // For interval seq with two patterns - cache each pattern separately
-                // like seq.cycle does, since they have the same semantics
-                if (params.channels !== undefined) {
-                    derivedChannels = params.channels as number;
-                    node._setDerivedChannelCount(derivedChannels);
-                } else {
-                    const intervalStr = params.interval_pattern !== undefined ? String(params.interval_pattern) : '';
-                    const addStr = params.add_pattern !== undefined ? String(params.add_pattern) : '';
-
-                    // Check cache for each pattern individually
-                    const intervalCached = intervalStr ? getCachedPolyphony(intervalStr) : undefined;
-                    const addCached = addStr ? getCachedPolyphony(addStr) : undefined;
-
-                    // Only use cache if both patterns are cached (combined analysis needed)
-                    if (intervalCached !== undefined && addCached !== undefined) {
-                        // For combined patterns, we still need to run derivation since
-                        // combined polyphony depends on overlap, not just individual patterns
-                        derivedChannels = deriveChannelCount(schema.name, node.getParamsSnapshot());
-                    } else {
-                        derivedChannels = deriveChannelCount(schema.name, node.getParamsSnapshot());
-                        // Cache individual patterns for future reuse
-                        if (derivedChannels !== null) {
-                            if (intervalStr) cachePolyphony(intervalStr, derivedChannels);
-                            if (addStr) cachePolyphony(addStr, derivedChannels);
-                        }
-                    }
-                    params.channels = derivedChannels;
-                    node._setParam('channels', derivedChannels);
-                }
-            } else {
-                derivedChannels = deriveChannelCount(schema.name, node.getParamsSnapshot());
-            }
+            const derivedChannels = deriveChannelCount(schema.name, node.getParamsSnapshot());
 
             if (derivedChannels !== null) {
                 node._setDerivedChannelCount(derivedChannels);

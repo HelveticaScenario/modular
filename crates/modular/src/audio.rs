@@ -1057,10 +1057,15 @@ impl AudioState {
         )));
       }
 
-      // Also add param update
+      // Also add param update with precomputed channel count
+      let channel_count = crate::lookup_or_derive_channel_count(
+        &module_state.module_type,
+        &module_state.params,
+      )
+      .unwrap_or(1);
       update
         .param_updates
-        .push((id.clone(), module_state.params.clone()));
+        .push((id.clone(), module_state.params.clone(), channel_count));
     }
 
     // Send the update to audio thread
@@ -1239,9 +1244,9 @@ impl AudioProcessor {
     }
 
     // Update params for all modules
-    for (id, params) in &update.param_updates {
+    for (id, params, channel_count) in &update.param_updates {
       if let Some(module) = self.patch.sampleables.get(id)
-        && let Err(e) = module.try_update_params(params.clone())
+        && let Err(e) = module.try_update_params(params.clone(), *channel_count)
       {
         let _ = self.error_tx.push(AudioError::ParamUpdateFailed {
           module_id: id.clone(),

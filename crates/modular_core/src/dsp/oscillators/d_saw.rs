@@ -28,28 +28,21 @@ struct ChannelState {
     shape: Clickless,
 }
 
-#[module(name = "osc.dSaw", description = "A phase-driven sawtooth/triangle/ramp oscillator", args(phase))]
+#[module(
+    name = "osc.dSaw",
+    description = "A phase-driven sawtooth/triangle/ramp oscillator",
+    args(phase)
+)]
+#[derive(Default)]
 pub struct DSawOscillator {
     outputs: DSawOscillatorOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],
     params: DSawOscillatorParams,
 }
 
-impl Default for DSawOscillator {
-    fn default() -> Self {
-        Self {
-            outputs: DSawOscillatorOutputs::default(),
-            channels: [ChannelState::default(); PORT_MAX_CHANNELS],
-            params: DSawOscillatorParams::default(),
-        }
-    }
-}
-
 impl DSawOscillator {
     fn update(&mut self, _sample_rate: f32) {
         let num_channels = self.channel_count();
-
-        self.outputs.sample.set_channels(num_channels);
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];

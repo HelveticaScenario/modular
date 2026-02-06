@@ -68,6 +68,7 @@ fn compute_hpf_biquad(cutoff: f32, resonance: f32, sample_rate: f32) -> BiquadCo
 }
 
 #[module(name = "filt.high", description = "12dB/octave highpass filter with resonance", args(input, cutoff, resonance?))]
+#[derive(Default)]
 pub struct HighpassFilter {
     outputs: HighpassFilterOutputs,
     channels: [HpfChannelState; PORT_MAX_CHANNELS],
@@ -78,23 +79,9 @@ pub struct HighpassFilter {
     params: HighpassFilterParams,
 }
 
-impl Default for HighpassFilter {
-    fn default() -> Self {
-        Self {
-            outputs: Default::default(),
-            channels: [HpfChannelState::default(); PORT_MAX_CHANNELS],
-            coeffs_mono: BiquadCoeffs::default(),
-            last_cutoff_mono: 0.0,
-            last_resonance_mono: 0.0,
-            params: Default::default(),
-        }
-    }
-}
-
 impl HighpassFilter {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
-        self.outputs.sample.set_channels(num_channels);
 
         // Update coefficients
         if self.params.cutoff.is_monophonic() && self.params.resonance.is_monophonic() {

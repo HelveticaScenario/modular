@@ -22,8 +22,8 @@ struct ScaleAndShiftOutputs {
     sample: PolyOutput,
 }
 
-#[derive(Default)]
 #[module(name = "util.scaleAndShift", description = "attenuate, invert, offset", args(input, scale?, shift?))]
+#[derive(Default)]
 pub struct ScaleAndShift {
     outputs: ScaleAndShiftOutputs,
     scale: [f32; PORT_MAX_CHANNELS],
@@ -34,8 +34,6 @@ pub struct ScaleAndShift {
 impl ScaleAndShift {
     fn update(&mut self, _sample_rate: f32) {
         let channels = self.channel_count();
-
-        self.outputs.sample.set_channels(channels);
 
         for i in 0..channels as usize {
             let input_val = self.params.input.get_value(i);

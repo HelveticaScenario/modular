@@ -27,32 +27,24 @@ struct ChannelState {
     in_attack: bool,
 }
 
-#[module(name = "env.perc", description = "Percussion envelope with exponential decay", args(trigger))]
+#[module(
+    name = "env.perc",
+    description = "Percussion envelope with exponential decay",
+    args(trigger)
+)]
+#[derive(Default)]
 pub struct PercussionEnvelope {
     outputs: PercussionEnvelopeOutputs,
     params: PercussionEnvelopeParams,
     channels: [ChannelState; PORT_MAX_CHANNELS],
 }
 
-impl Default for PercussionEnvelope {
-    fn default() -> Self {
-        Self {
-            outputs: PercussionEnvelopeOutputs::default(),
-            params: PercussionEnvelopeParams::default(),
-            channels: std::array::from_fn(|_| ChannelState::default()),
-        }
-    }
-}
-
 impl PercussionEnvelope {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
 
-        self.outputs.sample.set_channels(num_channels);
-
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
-
 
             let decay_time = self.params.decay.get_value_or(ch, 0.1).max(0.001);
 

@@ -77,8 +77,8 @@ pub fn mix_derive_channel_count(params: &MixParams) -> usize {
     .min(PORT_MAX_CHANNELS)
 }
 
-#[derive(Default)]
 #[module(name = "mix", description = "Mix multiple polyphonic signals together", channels_derive = mix_derive_channel_count, args(inputs))]
+#[derive(Default)]
 pub struct Mix {
     outputs: MixOutputs,
     params: MixParams,
@@ -92,24 +92,15 @@ impl Mix {
         let inputs = &self.params.inputs;
         let gain = &self.params.gain;
 
-        // Calculate max channels across all inputs
-        let input_refs: Vec<&PolySignal> = inputs.iter().collect();
-        let max_input_channels = if inputs.is_empty() {
+        let input_refs: Vec<&PolySignal> = self.params.inputs.iter().collect();
+
+        let max_input_channels = if self.params.inputs.is_empty() {
             0usize
         } else {
             PolySignal::max_channels(&input_refs) as usize
         };
 
-        // Output channels = max(max_input_channels, gain.channels), but at least 1 if inputs empty
-        let gain_channels = gain.channels() as usize;
-        let output_channels = if inputs.is_empty() {
-            gain_channels.max(1)
-        } else {
-            max_input_channels.max(gain_channels)
-        }
-        .min(PORT_MAX_CHANNELS);
-
-        self.outputs.sample.set_channels(output_channels);
+        let output_channels = self.channel_count();
 
         // Handle empty inputs case - output silence
         if inputs.is_empty() {

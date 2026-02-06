@@ -55,6 +55,7 @@ impl Default for ChannelState {
 }
 
 #[module(name = "env.adsr", description = "ADSR envelope generator", args(gate))]
+#[derive(Default)]
 pub struct Adsr {
     outputs: AdsrOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],
@@ -68,21 +69,10 @@ struct AdsrOutputs {
     sample: PolyOutput,
 }
 
-impl Default for Adsr {
-    fn default() -> Self {
-        Self {
-            outputs: AdsrOutputs::default(),
-            channels: std::array::from_fn(|_| ChannelState::default()),
-            params: AdsrParams::default(),
-        }
-    }
-}
-
 impl Adsr {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
 
-        self.outputs.sample.set_channels(num_channels);
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];

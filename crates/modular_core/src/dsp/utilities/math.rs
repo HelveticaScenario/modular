@@ -131,6 +131,7 @@ impl Default for Math {
             phase: 0.0,
             loop_index: 0,
             running: true,
+            _channel_count: 0,
         }
     }
 }

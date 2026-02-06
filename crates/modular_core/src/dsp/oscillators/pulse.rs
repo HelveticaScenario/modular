@@ -34,26 +34,16 @@ struct PulseChannelState {
 }
 
 #[module(name = "osc.pulse", description = "Pulse/Square oscillator with PWM", args(freq))]
+#[derive(Default)]
 pub struct PulseOscillator {
     outputs: PulseOscillatorOutputs,
     channels: [PulseChannelState; PORT_MAX_CHANNELS],
     params: PulseOscillatorParams,
 }
 
-impl Default for PulseOscillator {
-    fn default() -> Self {
-        Self {
-            outputs: Default::default(),
-            channels: [PulseChannelState::default(); PORT_MAX_CHANNELS],
-            params: Default::default(),
-        }
-    }
-}
-
 impl PulseOscillator {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
-        self.outputs.sample.set_channels(num_channels);
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];

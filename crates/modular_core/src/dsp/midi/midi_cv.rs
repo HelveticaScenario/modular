@@ -182,6 +182,7 @@ impl Default for MidiCv {
             global_aftertouch: 0,
             retrigger_counters: [0; PORT_MAX_CHANNELS],
             last_channel_count: 0,
+            _channel_count: 0,
         }
     }
 }
@@ -543,14 +544,6 @@ impl MidiCv {
             self.last_channel_count = num_voices;
             println!("MIDI CV: updating to {} voices", num_voices);
         }
-        // Set output channel counts
-        self.outputs.pitch.set_channels(num_voices);
-        self.outputs.gate.set_channels(num_voices);
-        self.outputs.velocity.set_channels(num_voices);
-        self.outputs.aftertouch.set_channels(num_voices);
-        self.outputs.retrigger.set_channels(num_voices);
-        self.outputs.pitch_wheel.set_channels(num_voices);
-        self.outputs.mod_wheel.set_channels(num_voices);
 
         // Update outputs for each voice
         for i in 0..num_voices as usize {

@@ -155,7 +155,7 @@ pub trait Sampleable: MessageHandler + Send + Sync {
     /// Get polyphonic sample output for a port.
     fn get_poly_sample(&self, port: &str) -> Result<PolyOutput>;
     fn get_module_type(&self) -> &str;
-    fn try_update_params(&self, params: serde_json::Value) -> Result<()>;
+    fn try_update_params(&self, params: serde_json::Value, channel_count: usize) -> Result<()>;
     fn connect(&self, patch: &Patch);
     /// Called after the patch is updated and all modules are connected.
     /// Modules can override this to refresh caches or perform other post-update work.
@@ -913,6 +913,8 @@ pub trait OutputStruct: Default + Send + Sync + 'static {
     fn copy_from(&mut self, other: &Self);
     /// Get polyphonic sample output for a port.
     fn get_poly_sample(&self, port: &str) -> Option<PolyOutput>;
+    /// Set the channel count on all PolyOutput fields.
+    fn set_all_channels(&mut self, channels: usize);
     fn schemas() -> Vec<OutputSchema>
     where
         Self: Sized;

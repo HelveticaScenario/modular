@@ -234,6 +234,7 @@ struct SeqOutputs {
     stateful,
     patch_update,
 )]
+#[derive(Default)]
 pub struct Seq {
     outputs: SeqOutputs,
     params: SeqParams,
@@ -245,19 +246,6 @@ pub struct Seq {
     cached_cycle: Option<i64>,
     /// Cached haps for the current cycle (all haps intersecting the cycle)
     cached_haps: Vec<DspHap<SeqValue>>,
-}
-
-impl Default for Seq {
-    fn default() -> Self {
-        Self {
-            outputs: SeqOutputs::default(),
-            params: SeqParams::default(),
-            voices: std::array::from_fn(|_| VoiceState::default()),
-            next_voice: 0,
-            cached_cycle: None,
-            cached_haps: Vec::new(),
-        }
-    }
 }
 
 impl Seq {
@@ -282,17 +270,9 @@ impl Seq {
         let playhead = self.params.playhead.get(0).get_value() as f64
             + self.params.playhead.get(1).get_value() as f64;
 
-        // Use params.channels directly - TypeScript will have already set this
-        // based on pattern analysis or explicit user value
-        let num_channels = self
-            .params
-            .channels
-            .unwrap_or(default_channels())
-            .clamp(1, PORT_MAX_CHANNELS);
+        // Use precomputed channel count from _channel_count (set by try_update_params)
+        let num_channels = self.channel_count();
         // Set output channel counts
-        self.outputs.cv.set_channels(num_channels);
-        self.outputs.gate.set_channels(num_channels);
-        self.outputs.trig.set_channels(num_channels);
 
         // Release voices whose haps have ended
         self.release_ended_voices(playhead, num_channels);
@@ -420,11 +400,7 @@ impl Seq {
 
 impl crate::types::StatefulModule for Seq {
     fn get_state(&self) -> Option<serde_json::Value> {
-        let num_channels = self
-            .params
-            .channels
-            .unwrap_or(default_channels())
-            .clamp(1, PORT_MAX_CHANNELS);
+        let num_channels = self.channel_count().clamp(1, PORT_MAX_CHANNELS);
         // Collect all source spans from all active voices
         let mut active_spans: Vec<(usize, usize)> = Vec::new();
         let mut any_non_rest = false;

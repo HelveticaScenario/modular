@@ -23,8 +23,12 @@ struct SignalOutputs {
     sample: PolyOutput,
 }
 
+#[module(
+    name = "signal",
+    description = "a polyphonic signal passthrough",
+    args(source)
+)]
 #[derive(Default)]
-#[module(name = "signal", description = "a polyphonic signal passthrough", args(source))]
 pub struct Signal {
     outputs: SignalOutputs,
     params: SignalParams,
@@ -33,7 +37,6 @@ pub struct Signal {
 impl Signal {
     fn update(&mut self, _sample_rate: f32) {
         let channels = self.channel_count();
-        self.outputs.sample.set_channels(channels);
         for i in 0..channels as usize {
             let val = self.params.source.get_value(i);
             self.outputs.sample.set(i, val);

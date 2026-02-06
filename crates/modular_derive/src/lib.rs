@@ -369,8 +369,12 @@ impl syn::parse::Parse for ModuleAttrArgs {
             let _ = input.parse::<Token![,]>();
         }
 
-        let name = name
-            .ok_or_else(|| syn::Error::new(proc_macro2::Span::call_site(), "missing `name` in #[module(...)]"))?;
+        let name = name.ok_or_else(|| {
+            syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "missing `name` in #[module(...)]",
+            )
+        })?;
 
         Ok(ModuleAttrArgs {
             module: ModuleAttr {
@@ -558,6 +562,12 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
 /// The struct **must** have a field named `outputs` whose type derives `Outputs`,
 /// and a field named `params` whose type derives `Deserialize`, `JsonSchema`,
 /// `Connect`, and `ChannelCount`.
+///
+/// **Important**: If the struct derives `Default`, the `#[derive(Default)]`
+/// attribute must come *after* `#[module(...)]`, not before it. This is because
+/// `#[module]` injects a `_channel_count` field, and if `#[derive(Default)]`
+/// precedes `#[module]`, the derive expands on the original struct (without
+/// the injected field) and produces a broken `Default` impl.
 #[proc_macro_attribute]
 pub fn module(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr_args = syn::parse_macro_input!(attr as ModuleAttrArgs);
@@ -571,6 +581,18 @@ pub fn module(attr: TokenStream, item: TokenStream) -> TokenStream {
             && !a.path().is_ident("patch_update")
             && !a.path().is_ident("has_init")
     });
+
+    // Inject `_channel_count: usize` field into the struct so that
+    // `self.channel_count()` can return a precomputed value set by the
+    // main thread via `try_update_params`.
+    if let Data::Struct(ref mut data_struct) = ast.data {
+        if let Fields::Named(ref mut fields) = data_struct.fields {
+            let field: syn::Field = syn::parse_quote! {
+                pub _channel_count: usize
+            };
+            fields.named.push(field);
+        }
+    }
 
     match impl_module_macro_attr(&ast, &attr_args) {
         Ok(generated) => {
@@ -790,6 +812,17 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
         })
         .collect();
 
+    let set_channels_stmts: Vec<_> = outputs
+        .iter()
+        .filter(|o| o.precision == OutputPrecision::PolySignal)
+        .map(|o| {
+            let field_name = &o.field_name;
+            quote! {
+                self.#field_name.set_channels(channels);
+            }
+        })
+        .collect();
+
     let generated = quote! {
         impl Default for #name {
             fn default() -> Self {
@@ -809,6 +842,10 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
                     #(#poly_sample_match_arms)*
                     _ => None,
                 }
+            }
+
+            fn set_all_channels(&mut self, channels: usize) {
+                #(#set_channels_stmts)*
             }
 
             fn schemas() -> Vec<crate::types::OutputSchema> {
@@ -1079,7 +1116,10 @@ fn is_poly_signal(ty: &Type) -> bool {
     }
 }
 
-fn impl_module_macro_attr(ast: &DeriveInput, attr_args: &ModuleAttrArgs) -> syn::Result<TokenStream2> {
+fn impl_module_macro_attr(
+    ast: &DeriveInput,
+    attr_args: &ModuleAttrArgs,
+) -> syn::Result<TokenStream2> {
     let name = &ast.ident;
     let module_name = &attr_args.module.name;
     let module_description = &attr_args.module.description;
@@ -1211,10 +1251,10 @@ fn impl_module_macro_attr(ast: &DeriveInput, attr_args: &ModuleAttrArgs) -> syn:
                 // SAFETY: Audio thread has exclusive access. See crate::types module documentation.
                 let module = unsafe { &*self.module.get() };
                 let argument_spans = unsafe { &*self.argument_spans.get() };
-                
+
                 // Get base state from module's StatefulModule impl
                 let state = module.get_state();
-                
+
                 // If we have argument spans, merge them into the state
                 if argument_spans.is_empty() {
                     state
@@ -1363,13 +1403,16 @@ fn impl_module_macro_attr(ast: &DeriveInput, attr_args: &ModuleAttrArgs) -> syn:
     };
 
     let generated = quote! {
-        // Generated core channel count function
+        // Generated core channel count function (used by derive_channel_count and initial default)
+        // IMPORTANT: This function should never be called within the audio thread.
+        // It may be computationally expensive. It should only be called in non-audio-thread contexts.
         #channel_count_fn_impl
 
         impl #impl_generics #name #ty_generics #where_clause {
+            /// Returns the precomputed channel count injected by `try_update_params`.
             #[inline]
             pub fn channel_count(&self) -> usize {
-                #channel_count_fn_name(&self.params)
+                self._channel_count
             }
         }
 
@@ -1464,10 +1507,10 @@ fn impl_module_macro_attr(ast: &DeriveInput, attr_args: &ModuleAttrArgs) -> syn:
                 #module_name
             }
 
-            fn try_update_params(&self, params: serde_json::Value) -> napi::Result<()> {
+            fn try_update_params(&self, params: serde_json::Value, channel_count: usize) -> napi::Result<()> {
                 let module = unsafe { &mut *self.module.get() };
                 let argument_spans = unsafe { &mut *self.argument_spans.get() };
-                
+
                 let params_to_deserialize = if params.is_object() {
                     let mut obj = match params {
                         serde_json::Value::Object(o) => o,
@@ -1488,6 +1531,8 @@ fn impl_module_macro_attr(ast: &DeriveInput, attr_args: &ModuleAttrArgs) -> syn:
                     params
                 };
                 module.params = serde_json::from_value(params_to_deserialize)?;
+                module._channel_count = channel_count;
+                crate::types::OutputStruct::set_all_channels(&mut module.outputs, channel_count);
                 Ok(())
             }
 

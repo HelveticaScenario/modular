@@ -1,6 +1,6 @@
 use crate::{
-    poly::{PolyOutput, PolySignal},
     PORT_MAX_CHANNELS,
+    poly::{PolyOutput, PolySignal},
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -29,27 +29,21 @@ struct EdgeChannelState {
     last_input: f32,
 }
 
-#[module(name = "util.rising", description = "Rising Edge Detector", args(input))]
+#[module(
+    name = "util.rising",
+    description = "Rising Edge Detector",
+    args(input)
+)]
+#[derive(Default)]
 pub struct RisingEdgeDetector {
     outputs: EdgeDetectorOutputs,
     params: RisingEdgeDetectorParams,
     channels: [EdgeChannelState; PORT_MAX_CHANNELS],
 }
 
-impl Default for RisingEdgeDetector {
-    fn default() -> Self {
-        Self {
-            outputs: Default::default(),
-            params: Default::default(),
-            channels: [EdgeChannelState::default(); PORT_MAX_CHANNELS],
-        }
-    }
-}
-
 impl RisingEdgeDetector {
     pub fn update(&mut self, _sample_rate: f32) {
         let num_channels = self.channel_count();
-        self.outputs.output.set_channels(num_channels);
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
@@ -66,26 +60,16 @@ impl RisingEdgeDetector {
 message_handlers!(impl RisingEdgeDetector {});
 
 #[module(name = "falling", description = "Falling Edge Detector", args(input))]
+#[derive(Default)]
 pub struct FallingEdgeDetector {
     outputs: EdgeDetectorOutputs,
     params: FallingEdgeDetectorParams,
     channels: [EdgeChannelState; PORT_MAX_CHANNELS],
 }
 
-impl Default for FallingEdgeDetector {
-    fn default() -> Self {
-        Self {
-            outputs: Default::default(),
-            params: Default::default(),
-            channels: [EdgeChannelState::default(); PORT_MAX_CHANNELS],
-        }
-    }
-}
-
 impl FallingEdgeDetector {
     pub fn update(&mut self, _sample_rate: f32) {
         let num_channels = self.channel_count();
-        self.outputs.output.set_channels(num_channels);
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];

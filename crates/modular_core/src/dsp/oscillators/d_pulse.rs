@@ -30,28 +30,21 @@ struct ChannelState {
     width: Clickless,
 }
 
-#[module(name = "osc.dPulse", description = "A phase-driven pulse/square oscillator with PWM", args(phase))]
+#[module(
+    name = "osc.dPulse",
+    description = "A phase-driven pulse/square oscillator with PWM",
+    args(phase)
+)]
+#[derive(Default)]
 pub struct DPulseOscillator {
     outputs: DPulseOscillatorOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],
     params: DPulseOscillatorParams,
 }
 
-impl Default for DPulseOscillator {
-    fn default() -> Self {
-        Self {
-            outputs: DPulseOscillatorOutputs::default(),
-            channels: [ChannelState::default(); PORT_MAX_CHANNELS],
-            params: DPulseOscillatorParams::default(),
-        }
-    }
-}
-
 impl DPulseOscillator {
     fn update(&mut self, _sample_rate: f32) {
         let num_channels = self.channel_count();
-
-        self.outputs.sample.set_channels(num_channels);
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];

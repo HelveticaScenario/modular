@@ -18,13 +18,12 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    PolySignal,
+    Patch, PolySignal,
     dsp::utilities::quantizer::ScaleParam,
     dsp::utils::{TempGate, TempGateState, midi_to_voct_f64},
     pattern_system::{DspHap, Fraction, Pattern},
     poly::{PORT_MAX_CHANNELS, PolyOutput},
     types::Connect,
-    Patch,
 };
 
 /// Scale parameter for IntervalSeq that supports an optional octave in the root.
@@ -48,7 +47,9 @@ impl<'de> serde::Deserialize<'de> for IntervalScaleParam {
         let source = String::deserialize(deserializer)?;
         ScaleParam::parse_with_octave(&source)
             .map(Self)
-            .ok_or_else(|| serde::de::Error::custom(format!("Invalid scale specification: {}", source)))
+            .ok_or_else(|| {
+                serde::de::Error::custom(format!("Invalid scale specification: {}", source))
+            })
     }
 }
 
@@ -95,7 +96,9 @@ impl IntervalValue {
 }
 
 impl crate::pattern_system::mini::convert::FromMiniAtom for IntervalValue {
-    fn from_atom(atom: &crate::pattern_system::mini::ast::AtomValue) -> Result<Self, crate::pattern_system::mini::convert::ConvertError> {
+    fn from_atom(
+        atom: &crate::pattern_system::mini::ast::AtomValue,
+    ) -> Result<Self, crate::pattern_system::mini::convert::ConvertError> {
         match atom {
             crate::pattern_system::mini::ast::AtomValue::Number(n) => {
                 Ok(IntervalValue::Degree(*n as i32))
@@ -103,13 +106,17 @@ impl crate::pattern_system::mini::convert::FromMiniAtom for IntervalValue {
             crate::pattern_system::mini::ast::AtomValue::Midi(m) => {
                 Ok(IntervalValue::Degree(*m as i32))
             }
-            _ => Err(crate::pattern_system::mini::convert::ConvertError::InvalidAtom(
-                "IntervalValue only supports integers".to_string()
-            ))
+            _ => Err(
+                crate::pattern_system::mini::convert::ConvertError::InvalidAtom(
+                    "IntervalValue only supports integers".to_string(),
+                ),
+            ),
         }
     }
 
-    fn from_list(atoms: &[crate::pattern_system::mini::ast::AtomValue]) -> Result<Self, crate::pattern_system::mini::convert::ConvertError> {
+    fn from_list(
+        atoms: &[crate::pattern_system::mini::ast::AtomValue],
+    ) -> Result<Self, crate::pattern_system::mini::convert::ConvertError> {
         if atoms.len() == 1 {
             Self::from_atom(&atoms[0])
         } else {
@@ -117,7 +124,10 @@ impl crate::pattern_system::mini::convert::FromMiniAtom for IntervalValue {
         }
     }
 
-    fn combine_with_head(_head_atoms: &[crate::pattern_system::mini::ast::AtomValue], _tail: &Self) -> Result<Self, crate::pattern_system::mini::convert::ConvertError> {
+    fn combine_with_head(
+        _head_atoms: &[crate::pattern_system::mini::ast::AtomValue],
+        _tail: &Self,
+    ) -> Result<Self, crate::pattern_system::mini::convert::ConvertError> {
         Err(crate::pattern_system::mini::convert::ConvertError::ListNotSupported)
     }
 
@@ -175,8 +185,7 @@ impl IntervalPatternParam {
         }
 
         // Parse mini notation AST first (for span collection)
-        let ast = crate::pattern_system::mini::parse_ast(source)
-            .map_err(|e| e.to_string())?;
+        let ast = crate::pattern_system::mini::parse_ast(source).map_err(|e| e.to_string())?;
 
         // Collect all leaf spans from AST
         let all_spans = crate::pattern_system::mini::collect_leaf_spans(&ast);
@@ -327,11 +336,21 @@ fn derive_combined_polyphony(
 
     // Query both patterns
     let interval_haps = interval_pattern
-        .map(|p| p.query_arc(Fraction::from_integer(0), Fraction::from_integer(NUM_CYCLES)))
+        .map(|p| {
+            p.query_arc(
+                Fraction::from_integer(0),
+                Fraction::from_integer(NUM_CYCLES),
+            )
+        })
         .unwrap_or_default();
 
     let add_haps = add_pattern
-        .map(|p| p.query_arc(Fraction::from_integer(0), Fraction::from_integer(NUM_CYCLES)))
+        .map(|p| {
+            p.query_arc(
+                Fraction::from_integer(0),
+                Fraction::from_integer(NUM_CYCLES),
+            )
+        })
         .unwrap_or_default();
 
     // If both are empty, return 1
@@ -383,8 +402,8 @@ fn derive_combined_polyphony(
     let mut events: Vec<(Fraction, i32)> = Vec::with_capacity(combined_spans.len() * 2);
 
     for (begin, end) in combined_spans {
-        events.push((begin, 1));  // start
-        events.push((end, -1));   // end
+        events.push((begin, 1)); // start
+        events.push((end, -1)); // end
     }
 
     events.sort_by(|a, b| {
@@ -474,7 +493,8 @@ impl Default for IntervalSeq {
             cached_cycle: None,
             cached_combined_haps: Vec::new(),
             scale_intervals: vec![0, 2, 4, 5, 7, 9, 11], // Default major scale
-            base_midi: 60, // C4
+            base_midi: 60,                               // C4
+            _channel_count: 0,
         }
     }
 }
@@ -490,11 +510,17 @@ impl IntervalSeq {
     fn refresh_cache(&mut self, cycle: i64) {
         self.cached_combined_haps.clear();
 
-        let interval_haps = self.params.interval_pattern.pattern()
+        let interval_haps = self
+            .params
+            .interval_pattern
+            .pattern()
             .map(|p| p.query_cycle_all(cycle))
             .unwrap_or_default();
 
-        let add_haps = self.params.add_pattern.pattern()
+        let add_haps = self
+            .params
+            .add_pattern
+            .pattern()
             .map(|p| p.query_cycle_all(cycle))
             .unwrap_or_default();
 
@@ -509,7 +535,8 @@ impl IntervalSeq {
             let int_degree = int_hap.value.degree();
 
             // Find add_haps that overlap with this interval hap's whole span
-            let overlapping_add: Vec<&DspHap<IntervalValue>> = add_haps.iter()
+            let overlapping_add: Vec<&DspHap<IntervalValue>> = add_haps
+                .iter()
                 .filter(|add| {
                     add.whole_begin < int_hap.whole_end && add.whole_end > int_hap.whole_begin
                 })
@@ -536,8 +563,12 @@ impl IntervalSeq {
                     let combined_end = int_hap.whole_end.min(add_hap.whole_end);
 
                     // Onset at intersection start if either has onset there
-                    let has_onset = (int_hap.has_onset() && int_hap.part_begin >= combined_begin && int_hap.part_begin < combined_end)
-                        || (add_hap.has_onset() && add_hap.part_begin >= combined_begin && add_hap.part_begin < combined_end);
+                    let has_onset = (int_hap.has_onset()
+                        && int_hap.part_begin >= combined_begin
+                        && int_hap.part_begin < combined_end)
+                        || (add_hap.has_onset()
+                            && add_hap.part_begin >= combined_begin
+                            && add_hap.part_begin < combined_end);
 
                     let combined_degree = match (int_degree, add_degree) {
                         (Some(i), Some(a)) => Some(i + a),
@@ -602,7 +633,11 @@ impl IntervalSeq {
         };
 
         // Get semitone offset within octave from scale intervals
-        let semitone_in_scale = self.scale_intervals.get(wrapped_degree).copied().unwrap_or(0) as i32;
+        let semitone_in_scale = self
+            .scale_intervals
+            .get(wrapped_degree)
+            .copied()
+            .unwrap_or(0) as i32;
 
         // Total MIDI note: base_midi (root + octave) + degree_octave*12 + semitone_in_scale
         let midi = self.base_midi + (octave * 12) + semitone_in_scale;
@@ -628,11 +663,7 @@ impl IntervalSeq {
         let playhead = self.params.playhead.get(0).get_value() as f64
             + self.params.playhead.get(1).get_value() as f64;
 
-        let num_channels = self.params.channels.clamp(1, PORT_MAX_CHANNELS);
-
-        self.outputs.cv.set_channels(num_channels);
-        self.outputs.gate.set_channels(num_channels);
-        self.outputs.trig.set_channels(num_channels);
+        let num_channels = self.channel_count();
 
         // Release voices whose haps have ended
         self.release_ended_voices(playhead, num_channels);
@@ -657,7 +688,16 @@ impl IntervalSeq {
         }
 
         // Collect events to process (avoids borrow conflicts in the loop)
-        let events_to_process: Vec<(usize, i32, f64, f64, Vec<(usize, usize)>, Vec<(usize, usize)>)> = self.cached_combined_haps.iter()
+        let events_to_process: Vec<(
+            usize,
+            i32,
+            f64,
+            f64,
+            Vec<(usize, usize)>,
+            Vec<(usize, usize)>,
+        )> = self
+            .cached_combined_haps
+            .iter()
             .enumerate()
             .filter_map(|(hap_index, combined)| {
                 if !combined.has_onset {
@@ -673,8 +713,7 @@ impl IntervalSeq {
                 // Check if already assigned
                 let already_assigned = (0..num_channels).any(|i| {
                     if let Some(ref existing) = self.voices[i].cached_hap {
-                        existing.hap_index == hap_index
-                            && existing.cached_cycle == current_cycle
+                        existing.hap_index == hap_index && existing.cached_cycle == current_cycle
                     } else {
                         false
                     }
@@ -684,12 +723,21 @@ impl IntervalSeq {
                     return None;
                 }
 
-                Some((hap_index, degree, combined.whole_begin, combined.whole_end, combined.interval_spans.clone(), combined.add_spans.clone()))
+                Some((
+                    hap_index,
+                    degree,
+                    combined.whole_begin,
+                    combined.whole_end,
+                    combined.interval_spans.clone(),
+                    combined.add_spans.clone(),
+                ))
             })
             .collect();
 
         // Process collected events
-        for (hap_index, degree, whole_begin, whole_end, interval_spans, add_spans) in events_to_process {
+        for (hap_index, degree, whole_begin, whole_end, interval_spans, add_spans) in
+            events_to_process
+        {
             // Allocate voice
             let voice_idx = self.allocate_voice(playhead, num_channels);
 
@@ -707,8 +755,12 @@ impl IntervalSeq {
             });
             voice.cached_voltage = voltage;
             voice.active = true;
-            voice.gate.set_state(TempGateState::Low, TempGateState::High);
-            voice.trigger.set_state(TempGateState::High, TempGateState::Low);
+            voice
+                .gate
+                .set_state(TempGateState::Low, TempGateState::High);
+            voice
+                .trigger
+                .set_state(TempGateState::High, TempGateState::Low);
         }
 
         // Output all voices
@@ -758,7 +810,9 @@ impl IntervalSeq {
                 if !cached.contains(playhead) {
                     self.voices[i].active = false;
                     self.voices[i].cached_hap = None;
-                    self.voices[i].gate.set_state(TempGateState::Low, TempGateState::Low);
+                    self.voices[i]
+                        .gate
+                        .set_state(TempGateState::Low, TempGateState::Low);
                 }
             }
         }
@@ -767,7 +821,7 @@ impl IntervalSeq {
 
 impl crate::types::StatefulModule for IntervalSeq {
     fn get_state(&self) -> Option<serde_json::Value> {
-        let num_channels = self.params.channels.clamp(1, PORT_MAX_CHANNELS);
+        let num_channels = self.channel_count().clamp(1, PORT_MAX_CHANNELS);
         let mut interval_spans: Vec<(usize, usize)> = Vec::new();
         let mut add_spans: Vec<(usize, usize)> = Vec::new();
         let mut any_active = false;
@@ -829,8 +883,8 @@ mod tests {
 
     #[test]
     fn test_interval_value_from_atom() {
-        use crate::pattern_system::mini::convert::FromMiniAtom;
         use crate::pattern_system::mini::ast::AtomValue;
+        use crate::pattern_system::mini::convert::FromMiniAtom;
 
         let v = IntervalValue::from_atom(&AtomValue::Number(5.0)).unwrap();
         assert!(matches!(v, IntervalValue::Degree(5)));

@@ -1,6 +1,6 @@
 use crate::{
-    poly::{PolyOutput, PolySignal},
     PORT_MAX_CHANNELS,
+    poly::{PolyOutput, PolySignal},
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -27,27 +27,21 @@ struct SlewChannelState {
     current_value: f32,
 }
 
-#[module(name = "util.slew", description = "Lag Processor (Slew Limiter)", args(input))]
+#[module(
+    name = "util.slew",
+    description = "Lag Processor (Slew Limiter)",
+    args(input)
+)]
+#[derive(Default)]
 pub struct LagProcessor {
     outputs: LagProcessorOutputs,
     params: LagProcessorParams,
     channels: [SlewChannelState; PORT_MAX_CHANNELS],
 }
 
-impl Default for LagProcessor {
-    fn default() -> Self {
-        Self {
-            outputs: Default::default(),
-            params: Default::default(),
-            channels: [SlewChannelState::default(); PORT_MAX_CHANNELS],
-        }
-    }
-}
-
 impl LagProcessor {
     pub fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
-        self.outputs.sample.set_channels(num_channels);
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];

@@ -884,7 +884,7 @@ mod tests {
     assert!(result.is_err());
     let errors = result.unwrap_err();
 
-    // Location is formatted as "noise(...)" for auto-generated IDs
+    // Location is formatted as "osc.noise(...)" for auto-generated IDs
     assert!(errors.iter().any(|e| {
       e.field == "params"
         && e.location.as_deref() == Some("noise(...)")

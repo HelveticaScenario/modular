@@ -19,12 +19,12 @@ struct ClockDividerOutputs {
     pub output: f32,
 }
 
-#[derive(Default)]
 #[module(
     name = "util.clockDivider",
     description = "Divides an incoming clock signal by a specified integer value",
     args(input, division),
 )]
+#[derive(Default)]
 pub struct ClockDivider {
     params: ClockDividerParams,
     outputs: ClockDividerOutputs,

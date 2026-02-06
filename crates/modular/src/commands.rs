@@ -21,8 +21,8 @@ pub struct PatchUpdate {
   /// ID remappings (applied before inserts/deletes)
   pub remaps: Vec<ModuleIdRemap>,
 
-  /// Param updates for existing modules (module_id, params_json)
-  pub param_updates: Vec<(String, Value)>,
+  /// Param updates for existing modules (module_id, params_json, channel_count)
+  pub param_updates: Vec<(String, Value, usize)>,
 
   /// Scopes to add
   pub scope_adds: Vec<Scope>,

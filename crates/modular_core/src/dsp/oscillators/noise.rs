@@ -96,6 +96,7 @@ impl Default for Noise {
             pink: PinkFilter::default(),
             brown: 0.0,
             last_noise_type: NoiseKind::default(),
+            _channel_count: 0,
         }
     }
 }

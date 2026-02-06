@@ -26,8 +26,8 @@ struct RemapOutputs {
     sample: PolyOutput,
 }
 
-#[derive(Default)]
 #[module(name = "util.remap", description = "remap a signal from one range to another", args(input, inMin?, inMax?, outMin?, outMax?))]
+#[derive(Default)]
 pub struct Remap {
     outputs: RemapOutputs,
     in_min: [f32; PORT_MAX_CHANNELS],
@@ -40,8 +40,6 @@ pub struct Remap {
 impl Remap {
     fn update(&mut self, _sample_rate: f32) {
         let channels = self.channel_count();
-
-        self.outputs.sample.set_channels(channels);
 
         for i in 0..channels as usize {
             let input_val = self.params.input.get_value(i);

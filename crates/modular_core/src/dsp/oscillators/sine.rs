@@ -29,27 +29,16 @@ struct ChannelState {
 }
 
 #[module(name = "osc.sine", description = "A sine wave oscillator", args(freq))]
+#[derive(Default)]
 pub struct SineOscillator {
     outputs: SineOscillatorOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],
     params: SineOscillatorParams,
 }
 
-impl Default for SineOscillator {
-    fn default() -> Self {
-        Self {
-            outputs: SineOscillatorOutputs::default(),
-            channels: [ChannelState::default(); PORT_MAX_CHANNELS],
-            params: SineOscillatorParams::default(),
-        }
-    }
-}
-
 impl SineOscillator {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
-
-        self.outputs.sample.set_channels(num_channels);
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];

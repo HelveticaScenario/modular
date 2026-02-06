@@ -33,6 +33,7 @@ struct ChannelState {
 }
 
 #[module(name = "stereoMix", description = "Mix polyphonic signal to stereo", channels = 2, args(input))]
+#[derive(Default)]
 pub struct StereoMixer {
     outputs: StereoMixerOutputs,
     params: StereoMixerParams,
@@ -40,23 +41,9 @@ pub struct StereoMixer {
     width_buffer: Clickless,
 }
 
-impl Default for StereoMixer {
-    fn default() -> Self {
-        Self {
-            outputs: Default::default(),
-            params: Default::default(),
-            channel_state: [ChannelState::default(); PORT_MAX_CHANNELS],
-            width_buffer: Clickless::default(),
-        }
-    }
-}
-
 impl StereoMixer {
     pub fn update(&mut self, _sample_rate: f32) {
         let input_channels = self.params.input.channels() as usize;
-
-        // Output is always 2 channels (stereo)
-        self.outputs.sample.set_channels(2);
 
         // Width: 0 = no spread, 5 = full ±5V spread across voices
         self.width_buffer

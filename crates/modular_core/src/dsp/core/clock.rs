@@ -58,6 +58,7 @@ impl Default for Clock {
             running: true,
             params: ClockParams::default(),
             loop_index: 0,
+            _channel_count: 0,
         }
     }
 }
@@ -100,7 +101,6 @@ impl Clock {
                 self.ppq_phase -= 1.0 / 48.0;
             }
         }
-        self.outputs.playhead.set_channels(2);
         self.outputs.playhead.set(0, self.phase as f32);
         self.outputs.playhead.set(1, self.loop_index as f32);
 

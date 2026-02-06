@@ -31,7 +31,7 @@ impl Sampleable for AudioIn {
         WellKnownModule::HiddenAudioIn.id()
     }
 
-    fn try_update_params(&self, _params: serde_json::Value) -> Result<()> {
+    fn try_update_params(&self, _params: serde_json::Value, _channel_count: usize) -> Result<()> {
         Ok(())
     }
 

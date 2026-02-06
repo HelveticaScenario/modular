@@ -56,7 +56,7 @@ impl Sampleable for DummySampleable {
         &self.module_type
     }
 
-    fn try_update_params(&self, _params: serde_json::Value) -> Result<()> {
+    fn try_update_params(&self, _params: serde_json::Value, _channel_count: usize) -> Result<()> {
         Ok(())
     }
     fn connect(&self, _patch: &Patch) {

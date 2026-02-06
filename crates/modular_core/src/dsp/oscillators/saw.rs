@@ -31,27 +31,16 @@ struct ChannelState {
 }
 
 #[module(name = "osc.saw", description = "Sawtooth/Triangle/Ramp oscillator", args(freq))]
+#[derive(Default)]
 pub struct SawOscillator {
     outputs: SawOscillatorOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],
     params: SawOscillatorParams,
 }
 
-impl Default for SawOscillator {
-    fn default() -> Self {
-        Self {
-            outputs: SawOscillatorOutputs::default(),
-            channels: [ChannelState::default(); PORT_MAX_CHANNELS],
-            params: SawOscillatorParams::default(),
-        }
-    }
-}
-
 impl SawOscillator {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
-
-        self.outputs.sample.set_channels(num_channels);
 
         // Pre-compute inverse sample rate for frequency calculation
         let inv_sample_rate = 1.0 / sample_rate;

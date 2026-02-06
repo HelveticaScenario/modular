@@ -23,8 +23,8 @@ struct LowpassFilterOutputs {
     sample: PolyOutput,
 }
 
-#[derive(Default)]
 #[module(name = "filt.low", description = "12dB/octave lowpass filter with resonance", args(input, cutoff, resonance?))]
+#[derive(Default)]
 pub struct LowpassFilter {
     outputs: LowpassFilterOutputs,
     // Per-channel state (audio-rate)
@@ -114,8 +114,6 @@ impl LowpassFilter {
 
     fn update(&mut self, sample_rate: f32) {
         let channels = self.channel_count();
-
-        self.outputs.sample.set_channels(channels);
 
         // Update coefficients (borrows cutoff and resonance for reading)
         if self.params.cutoff.is_monophonic() && self.params.resonance.is_monophonic() {

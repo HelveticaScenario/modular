@@ -249,16 +249,14 @@ impl Default for Quantizer {
                 prev_quantized: None,
                 trigger: TempGate::new_gate(TempGateState::Low),
             }),
+            _channel_count: 0,
         }
     }
 }
 
 impl Quantizer {
     pub fn update(&mut self, _sample_rate: f32) {
-        let num_channels = self.params.input.channels().max(1) as usize;
-        self.outputs.output.set_channels(num_channels);
-        self.outputs.gate.set_channels(num_channels);
-        self.outputs.trig.set_channels(num_channels);
+        let num_channels = self.params.input.channels();
 
         for ch in 0..num_channels {
             let input = self.params.input.get(ch).get_value() as f64;
