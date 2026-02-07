@@ -1,0 +1,75 @@
+//! Phase ramp generator module.
+//!
+//! Produces a phase ramp from 0 to 1 at a given frequency.
+
+use schemars::JsonSchema;
+use serde::Deserialize;
+
+use crate::dsp::utils::voct_to_hz;
+use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
+
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[serde(default, rename_all = "camelCase")]
+struct RampParams {
+    /// frequency in v/oct
+    freq: PolySignal,
+}
+
+#[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct RampOutputs {
+    #[output("output", "phase ramp output (0 to 1)", default, range = (0.0, 1.0))]
+    sample: PolyOutput,
+}
+
+/// Per-channel phasor state
+#[derive(Default, Clone, Copy)]
+struct ChannelState {
+    phase: f32,
+}
+
+/// Phase ramp generator.
+///
+/// Produces a rising sawtooth phase signal from 0 to 1 at the given frequency.
+/// This is the fundamental building block for phase-based synthesis:
+/// feed its output into phase-distortion modules (crush, feedback, pulsar)
+/// and then into a waveshaper (e.g. `osc.dSine`) to produce audio.
+#[module(
+    name = "phase.ramp",
+    description = "Phase ramp generator (0 to 1)",
+    args(freq)
+)]
+#[derive(Default)]
+pub struct Ramp {
+    outputs: RampOutputs,
+    channels: [ChannelState; PORT_MAX_CHANNELS],
+    params: RampParams,
+}
+
+impl Ramp {
+    fn update(&mut self, sample_rate: f32) {
+        let num_channels = self.channel_count();
+        let inv_sample_rate = 1.0 / sample_rate;
+
+        for ch in 0..num_channels {
+            let state = &mut self.channels[ch];
+
+            let frequency = voct_to_hz(self.params.freq.get_value_or(ch, 0.0));
+            let phase_increment = frequency * inv_sample_rate;
+
+            state.phase += phase_increment;
+
+            // Wrap phase to [0, 1)
+            if state.phase >= 1.0 {
+                state.phase -= 1.0;
+            }
+            if state.phase < 0.0 {
+                state.phase += 1.0;
+            }
+
+            self.outputs.sample.set(ch, state.phase);
+        }
+    }
+}
+
+message_handlers!(impl Ramp {});

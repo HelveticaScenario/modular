@@ -530,7 +530,45 @@ impl IntervalSeq {
             return;
         }
 
-        // Combine haps: for each interval hap, find overlapping add haps
+        // If only one pattern is provided (the other is entirely absent),
+        // use the present pattern's haps directly instead of silencing them.
+        if interval_haps.is_empty() {
+            // Only add_pattern provided: use its haps directly
+            for add_hap in &add_haps {
+                self.cached_combined_haps.push(CombinedHap {
+                    whole_begin: add_hap.whole_begin,
+                    whole_end: add_hap.whole_end,
+                    part_begin: add_hap.part_begin,
+                    part_end: add_hap.part_end,
+                    degree: add_hap.value.degree(),
+                    has_onset: add_hap.has_onset(),
+                    interval_spans: Vec::new(),
+                    add_spans: add_hap.get_active_spans(),
+                });
+            }
+            self.cached_cycle = Some(cycle);
+            return;
+        }
+
+        if add_haps.is_empty() {
+            // Only interval_pattern provided: use its haps directly
+            for int_hap in &interval_haps {
+                self.cached_combined_haps.push(CombinedHap {
+                    whole_begin: int_hap.whole_begin,
+                    whole_end: int_hap.whole_end,
+                    part_begin: int_hap.part_begin,
+                    part_end: int_hap.part_end,
+                    degree: int_hap.value.degree(),
+                    has_onset: int_hap.has_onset(),
+                    interval_spans: int_hap.get_active_spans(),
+                    add_spans: Vec::new(),
+                });
+            }
+            self.cached_cycle = Some(cycle);
+            return;
+        }
+
+        // Both patterns present: combine haps via Cartesian product of overlaps
         for int_hap in &interval_haps {
             let int_degree = int_hap.value.degree();
 
