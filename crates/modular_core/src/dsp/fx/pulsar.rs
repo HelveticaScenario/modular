@@ -1,0 +1,101 @@
+//! Pulsar synthesis phase-distortion module.
+//!
+//! Adapted from the 4ms Ensemble Oscillator twist mode.
+//! Copyright 4ms Company. Used under GPL v3.
+
+use schemars::JsonSchema;
+use serde::Deserialize;
+
+use crate::dsp::fx::enosc_tables::aa_pulsar;
+use crate::dsp::utils::voct_to_hz;
+use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
+use crate::types::Clickless;
+
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[serde(default, rename_all = "camelCase")]
+struct PulsarParams {
+    /// input phase (0 to 1)
+    input: PolySignal,
+    /// compression amount (0-5, where 0 = no compression, 5 = 64x compression)
+    amount: PolySignal,
+    /// frequency in v/oct (optional, enables anti-aliasing when connected)
+    freq: PolySignal,
+}
+
+#[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct PulsarOutputs {
+    #[output("output", "pulsar phase output", default, range = (0.0, 1.0))]
+    sample: PolyOutput,
+}
+
+#[derive(Default, Clone, Copy)]
+struct ChannelState {
+    amount: Clickless,
+}
+
+/// Pulsar synthesis phase-distortion effect adapted from 4ms Ensemble Oscillator.
+///
+/// Takes a phase (0-1) and applies phase compression/multiplication.
+/// The phase is multiplied by a factor (1 to 64) and saturated, creating
+/// compressed phase ramps.
+///
+/// At low amounts, the phase passes through unchanged.
+/// At high amounts, creates narrow compressed phase patterns.
+#[module(
+    name = "fx.pulsar",
+    description = "Pulsar synthesis effect adapted from 4ms Ensemble Oscillator",
+    args(input, amount?)
+)]
+#[derive(Default)]
+pub struct Pulsar {
+    outputs: PulsarOutputs,
+    channels: [ChannelState; PORT_MAX_CHANNELS],
+    params: PulsarParams,
+}
+
+impl Pulsar {
+    fn update(&mut self, sample_rate: f32) {
+        let num_channels = self.channel_count();
+        let freq_connected = !self.params.freq.is_disconnected();
+
+        for ch in 0..num_channels {
+            let state = &mut self.channels[ch];
+
+            let input = self.params.input.get_value(ch);
+            let amount_raw = self.params.amount.get_value_or(ch, 0.0);
+
+            // Smooth amount parameter to avoid clicks
+            state.amount.update(amount_raw);
+            let amount = *state.amount;
+
+            // Map amount from [0, 5] to multiplier [1, 64]
+            // Reference scaling curve: 2^(x^2 * 6)
+            // Exponential of quadratic — stays near 1 for most of the range,
+            // then rapidly increases. Range: 1..64
+            let amount_norm = (amount / 5.0).clamp(0.0, 1.0);
+            let curved = amount_norm * amount_norm;
+            let multiplier = f32::exp2(curved * 6.0);
+
+            // Apply anti-aliasing when freq is connected
+            let multiplier = if freq_connected {
+                let freq_hz = voct_to_hz(self.params.freq.get_value(ch));
+                aa_pulsar(freq_hz / sample_rate, multiplier)
+            } else {
+                multiplier
+            };
+
+            // Input is already a phase [0, 1]
+            let phase = input;
+
+            // Multiply phase and saturate to [0, 1]
+            // Reference: u0_32::wrap((u0_16::narrow(phase) * p).min(1))
+            let compressed_phase = (phase * multiplier).min(1.0);
+
+            // Output the distorted phase
+            self.outputs.sample.set(ch, compressed_phase);
+        }
+    }
+}
+
+message_handlers!(impl Pulsar {});
