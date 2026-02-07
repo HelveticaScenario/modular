@@ -3,14 +3,15 @@ import Editor, { type OnMount } from '@monaco-editor/react';
 import { editor } from 'monaco-editor';
 import type { ModuleSchema } from '@modular/core';
 import { useTheme } from '../themes/ThemeContext';
-import { findScopeCallEndLines } from '../utils/findScopeCallEndLines';
 import { useCustomMonaco } from '../hooks/useCustomMonaco';
 import { configSchema } from '../configSchema';
 import { formatPath } from './monaco/monacoHelpers';
-import { createSliderWidgets } from './monaco/sliderWidgets';
 import type { ScopeView } from '../types/editor';
 import { setupMonacoJavascript } from './monaco/monacoLanguage';
-import { buildSymbolSets, resolveDslSymbolAtPosition } from './monaco/definitionProvider';
+import {
+    buildSymbolSets,
+    resolveDslSymbolAtPosition,
+} from './monaco/definitionProvider';
 import { registerDslFormattingProvider } from './monaco/formattingProvider';
 import { applyMonacoTheme } from './monaco/theme';
 import {
@@ -46,7 +47,7 @@ export function MonacoPatchEditor({
     // Fetch DSL lib source once at mount for Monaco autocomplete
     const [libSource, setLibSource] = useState<string | null>(null);
     const [schemas, setSchemas] = useState<ModuleSchema[]>([]);
-    
+
     useEffect(() => {
         electronAPI.getDslLibSource().then(setLibSource).catch(console.error);
         electronAPI.getSchemas().then(setSchemas).catch(console.error);
@@ -58,7 +59,8 @@ export function MonacoPatchEditor({
     );
 
     // Decoration collection for active module state highlighting (seq steps, etc.)
-    const activeDecorationRef = useRef<editor.IEditorDecorationsCollection | null>(null);
+    const activeDecorationRef =
+        useRef<editor.IEditorDecorationsCollection | null>(null);
 
     // Poll module states for active step highlighting using the generic system
     // This uses argument_spans from Rust to know where arguments are in the document,
@@ -93,21 +95,15 @@ export function MonacoPatchEditor({
         // On Windows, Monaco swallows global accelerators, so we need to
         // register them as Monaco keybindings that trigger the Electron menu actions.
         // Ctrl+Enter -> Update Patch
-        ed.addCommand(
-            monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
-            () => {
-                // Trigger the same IPC that the Electron menu sends
-                window.electronAPI.triggerMenuAction('UPDATE_PATCH');
-            },
-        );
-        
+        ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+            // Trigger the same IPC that the Electron menu sends
+            window.electronAPI.triggerMenuAction('UPDATE_PATCH');
+        });
+
         // Ctrl+. -> Stop Sound
-        ed.addCommand(
-            monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period,
-            () => {
-                window.electronAPI.triggerMenuAction('STOP');
-            },
-        );
+        ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period, () => {
+            window.electronAPI.triggerMenuAction('STOP');
+        });
     };
 
     useEffect(() => {
@@ -129,15 +125,20 @@ export function MonacoPatchEditor({
             const model = editor.getModel();
             if (!model) return;
 
-            const match = resolveDslSymbolAtPosition(
-                model,
-                e.target.position,
-                moduleNames,
-                namespaceNames,
-            );
-            if (match) {
-                electronAPI.openHelpForSymbol(match.symbolType, match.symbolName);
-            }
+            editor.focus();
+            editor.trigger('api', 'editor.action.peekDefinition', {});
+
+            // console.log({ model, e });
+
+            // const match = resolveDslSymbolAtPosition(
+            //     model,
+            //     e.target.position,
+            //     moduleNames,
+            //     namespaceNames,
+            // );
+            // if (match) {
+            //     electronAPI.openHelpForSymbol(match.symbolType, match.symbolName);
+            // }
         });
         return () => disposable.dispose();
     }, [editor, monaco, schemas]);
@@ -151,37 +152,11 @@ export function MonacoPatchEditor({
     // Register MIDI device autocomplete provider
     useEffect(() => {
         if (!monaco) return;
-        const midiProvider = registerMidiCompletionProvider(
-            monaco,
-            () => electronAPI.midi.listInputs()
+        const midiProvider = registerMidiCompletionProvider(monaco, () =>
+            electronAPI.midi.listInputs(),
         );
         return () => midiProvider.dispose();
     }, [monaco]);
-
-    useEffect(() => {
-        if (!monaco || !editor) return;
-        const model = editor.getModel();
-        if (!model) return;
-
-        const code = editor.getValue();
-        const calls = findScopeCallEndLines(code);
-        console.log(
-            'Found scope() calls:',
-            calls.map((c) => c.endLine),
-        );
-
-        const sliderWidgets: editor.IContentWidget[] = createSliderWidgets(
-            editor,
-            model,
-            monaco,
-            code,
-        );
-        return () => {
-            for (const widget of sliderWidgets) {
-                editor.removeContentWidget(widget);
-            }
-        };
-    }, [monaco, editor, value]);
 
     useEffect(() => {
         if (!editor || !monaco) return;
@@ -249,8 +224,8 @@ export function MonacoPatchEditor({
                         automaticLayout: true,
                         fontFamily: 'Fira Code, monospace',
                         fontLigatures: true,
-                        fontSize: 18,
-                        lineHeight: 1.6,
+                        fontSize: 17,
+                        // lineHeight: 1.6,
                         padding: { top: 8, bottom: 8 },
                         renderLineHighlight: 'line',
                         cursorBlinking: 'solid',

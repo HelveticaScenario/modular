@@ -1,6 +1,5 @@
 import type { Monaco } from '../../hooks/useCustomMonaco';
 import { applyDslLibToMonaco } from './monacoHelpers';
-import { findSliderCalls } from './sliderWidgets';
 import { registerDslDefinitionProvider, buildSymbolSets, DefinitionProviderDeps } from './definitionProvider';
 import type { ModuleSchema } from '@modular/core';
 
@@ -10,7 +9,7 @@ export interface MonacoSetupOptions {
 }
 
 export function setupMonacoJavascript(
-    monaco: Monaco, 
+    monaco: Monaco,
     libSource: string,
     options: MonacoSetupOptions = {}
 ) {
@@ -36,33 +35,8 @@ export function setupMonacoJavascript(
 
     jsDefaults.setEagerModelSync(true);
 
-    const extraLib = applyDslLibToMonaco(monaco, libSource);
-    const inlayHints = monaco.languages.registerInlayHintsProvider(
-        'javascript',
-        {
-            provideInlayHints(model, range) {
-                const code = model.getValueInRange(range);
-                const sliderCalls = findSliderCalls(code);
-                console.log('Providing inlay hints for slider calls:', sliderCalls);
-                return {
-                    hints: sliderCalls.map((call, i) => {
-                        const position = model.getPositionAt(
-                            call.openParenIndex + 1,
-                        );
-                        return {
-                            position,
-                            label: ' '
-                                .repeat(10)
-                                .concat('\u200C')
-                                .concat('\u200B'.repeat(i))
-                                .concat('\u200C'),
-                        };
-                    }),
-                    dispose() {},
-                };
-            },
-        },
-    );
+    const { extraLib, extraLibModel } = applyDslLibToMonaco(monaco, libSource);
+
 
     // Register definition provider if schemas are provided
     let definitionProvider: { dispose: () => void } | null = null;
@@ -72,12 +46,11 @@ export function setupMonacoJavascript(
             moduleNames,
             namespaceNames,
         };
-        definitionProvider = registerDslDefinitionProvider(monaco, deps);
+        // definitionProvider = registerDslDefinitionProvider(monaco, deps);
     }
 
     return () => {
         extraLib?.dispose();
-        inlayHints?.dispose();
-        definitionProvider?.dispose();
+        extraLibModel?.dispose();
     };
 }
