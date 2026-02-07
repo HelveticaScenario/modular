@@ -5,8 +5,6 @@ import { registerDslDefinitionProvider, buildSymbolSets, DefinitionProviderDeps 
 import type { ModuleSchema } from '@modular/core';
 
 export interface MonacoSetupOptions {
-    /** Function to open help window for a symbol */
-    openHelpForSymbol?: (symbolType: 'type' | 'module' | 'namespace', symbolName: string) => void;
     /** Module schemas for building symbol sets */
     schemas?: ModuleSchema[];
 }
@@ -66,12 +64,11 @@ export function setupMonacoJavascript(
         },
     );
 
-    // Register definition provider if deps are provided
+    // Register definition provider if schemas are provided
     let definitionProvider: { dispose: () => void } | null = null;
-    if (options.openHelpForSymbol && options.schemas) {
+    if (options.schemas) {
         const { moduleNames, namespaceNames } = buildSymbolSets(options.schemas);
         const deps: DefinitionProviderDeps = {
-            openHelpForSymbol: options.openHelpForSymbol,
             moduleNames,
             namespaceNames,
         };

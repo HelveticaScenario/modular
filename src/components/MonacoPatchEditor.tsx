@@ -10,6 +10,7 @@ import { formatPath } from './monaco/monacoHelpers';
 import { createSliderWidgets } from './monaco/sliderWidgets';
 import type { ScopeView } from '../types/editor';
 import { setupMonacoJavascript } from './monaco/monacoLanguage';
+import { buildSymbolSets, resolveDslSymbolAtPosition } from './monaco/definitionProvider';
 import { registerDslFormattingProvider } from './monaco/formattingProvider';
 import { applyMonacoTheme } from './monaco/theme';
 import {
@@ -113,11 +114,33 @@ export function MonacoPatchEditor({
         if (!monaco || !libSource) return;
         return setupMonacoJavascript(monaco, libSource, {
             schemas,
-            openHelpForSymbol: (symbolType, symbolName) => {
-                electronAPI.openHelpForSymbol(symbolType, symbolName);
-            },
         });
     }, [monaco, libSource, schemas]);
+
+    // Open help for DSL symbols on Cmd+Click (not Cmd+Hover)
+    useEffect(() => {
+        if (!editor || !monaco || schemas.length === 0) return;
+        const { moduleNames, namespaceNames } = buildSymbolSets(schemas);
+        const disposable = editor.onMouseDown((e) => {
+            // Check for Cmd (Mac) / Ctrl (Win/Linux) + primary button click
+            if (!e.event.metaKey && !e.event.ctrlKey) return;
+            if (e.target.position == null) return;
+
+            const model = editor.getModel();
+            if (!model) return;
+
+            const match = resolveDslSymbolAtPosition(
+                model,
+                e.target.position,
+                moduleNames,
+                namespaceNames,
+            );
+            if (match) {
+                electronAPI.openHelpForSymbol(match.symbolType, match.symbolName);
+            }
+        });
+        return () => disposable.dispose();
+    }, [editor, monaco, schemas]);
 
     useEffect(() => {
         if (!monaco) return;
