@@ -540,12 +540,12 @@ function bpm(beatsPerMinute: number): number;
  * Collections support chainable DSP methods, iteration, indexing, and spreading.
  * @param args - One or more {@link ModuleOutput}s to group
  * @returns A {@link Collection} of the outputs
- * @example $(osc1, osc2).gain(0.5).out()
- * @example $(osc1, osc2, osc3)[0]  // Index access
- * @example [...$(osc1, osc2)]      // Spread to array
+ * @example $c(osc1, osc2).gain(0.5).out()
+ * @example $c(osc1, osc2, osc3)[0]  // Index access
+ * @example [...$c(osc1, osc2)]      // Spread to array
  * @see {@link $r} - for ranged outputs
  */
-function $(...args: ModuleOutput[]): Collection;
+function $c(...args: ModuleOutput[]): Collection;
 
 /**
  * Create a {@link CollectionWithRange} from {@link ModuleOutputWithRange} instances.
@@ -592,27 +592,27 @@ interface DeferredModuleOutput extends ModuleOutput {
    * Scale the resolved output by a factor.
    * The transform is stored and applied during resolution.
    */
-  gain(factor: Poly<Signal>): DeferredModuleOutput;
+  gain(factor: Poly<Signal>): Collection;
   /**
    * Shift the resolved output by an offset.
    * The transform is stored and applied during resolution.
    */
-  shift(offset: Poly<Signal>): DeferredModuleOutput;
+  shift(offset: Poly<Signal>): Collection;
   /**
    * Add scope visualization for the resolved output.
    * The side effect is stored and executed during resolution.
    */
-  scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): DeferredModuleOutput;
+  scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this;
   /**
    * Send the resolved output to speakers as stereo.
    * The side effect is stored and executed during resolution.
    */
-  out(baseChannel?: number, options?: StereoOutOptions): DeferredModuleOutput;
+  out(baseChannel?: number, options?: StereoOutOptions): this;
   /**
    * Send the resolved output to speakers as mono.
    * The side effect is stored and executed during resolution.
    */
-  outMono(channel?: number, gain?: Poly<Signal>): DeferredModuleOutput;
+  outMono(channel?: number, gain?: Poly<Signal>): this;
 }
 
 /**
@@ -631,23 +631,23 @@ interface DeferredCollection extends Iterable<DeferredModuleOutput> {
   /**
    * Scale all resolved outputs by a factor.
    */
-  gain(factor: Poly<Signal>): DeferredCollection;
+  gain(factor: Poly<Signal>): Collection;
   /**
    * Shift all resolved outputs by an offset.
    */
-  shift(offset: Poly<Signal>): DeferredCollection;
+  shift(offset: Poly<Signal>): Collection;
   /**
    * Add scope visualization for the first resolved output.
    */
-  scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): DeferredCollection;
+  scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this;
   /**
    * Send all resolved outputs to speakers as stereo.
    */
-  out(baseChannel?: number, options?: StereoOutOptions): DeferredCollection;
+  out(baseChannel?: number, options?: StereoOutOptions): this;
   /**
    * Send all resolved outputs to speakers as mono.
    */
-  outMono(channel?: number, gain?: Poly<Signal>): DeferredCollection;
+  outMono(channel?: number, gain?: Poly<Signal>): this;
 }
 
 /**
@@ -1332,14 +1332,16 @@ export function generateDSL(schemas: ModuleSchema[]): string {
     }
     const tree = buildTreeFromSchemas(schemas);
     const lines = renderTree(tree, 0);
+    lines.unshift('namespace $ {');
 
+    lines.push('}');
     const clockSchema = schemas.find((s) => s.name === 'clock');
     if (clockSchema) {
         lines.push('');
         lines.push('/** Default clock module running at 120 BPM. */');
         const clockReturnType = getFactoryReturnType(clockSchema);
         lines.push(
-            `export const rootClock: ${clockReturnType};`,
+            `export const rootClock: $.${clockReturnType};`,
         );
     }
 

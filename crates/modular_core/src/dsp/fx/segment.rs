@@ -48,7 +48,7 @@ struct ChannelState {
 ///
 /// Creates stepped, quantized timbral variations based on musical intervals.
 #[module(
-    name = "fx.segment",
+    name = "segment",
     description = "Triangle segment morpher adapted from 4ms Ensemble Oscillator",
     args(input, amount?)
 )]

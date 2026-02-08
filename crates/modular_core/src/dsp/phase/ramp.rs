@@ -35,7 +35,7 @@ struct ChannelState {
 /// feed its output into phase-distortion modules (crush, feedback, pulsar)
 /// and then into a waveshaper (e.g. `osc.dSine`) to produce audio.
 #[module(
-    name = "phase.ramp",
+    name = "ramp",
     description = "Phase ramp generator (0 to 1)",
     args(freq)
 )]

@@ -39,7 +39,7 @@ struct ChannelState {
 /// No anti-aliasing is applied—the aliasing artifacts are intentional
 /// and part of the character.
 #[module(
-    name = "fx.crush",
+    name = "crush",
     description = "XOR bit-crush effect adapted from 4ms Ensemble Oscillator",
     args(input, amount?)
 )]

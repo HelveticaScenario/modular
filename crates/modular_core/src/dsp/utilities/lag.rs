@@ -28,7 +28,7 @@ struct SlewChannelState {
 }
 
 #[module(
-    name = "util.slew",
+    name = "slew",
     description = "Lag Processor (Slew Limiter)",
     args(input)
 )]

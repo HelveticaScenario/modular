@@ -30,7 +30,7 @@ struct EdgeChannelState {
 }
 
 #[module(
-    name = "util.rising",
+    name = "rising",
     description = "Rising Edge Detector",
     args(input)
 )]

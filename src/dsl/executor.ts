@@ -8,7 +8,7 @@ import {
     setActiveSpanRegistry,
 } from './factories';
 import {
-    $,
+    $c,
     $r,
     Signal,
     SourceLocation,
@@ -96,16 +96,17 @@ export function executePatchScript(
         }
         return new DeferredCollection(...items);
     };
+    console.log(context.namespaceTree)
 
     // Create the execution environment with all DSL functions
     const dslGlobals = {
-        ...context.namespaceTree,
+        $: { ...context.namespaceTree },
         // Helper functions
         hz,
         note,
         bpm,
         // Collection helpers
-        $,
+        $c,
         $r,
         // Deferred signal helper
         deferred,

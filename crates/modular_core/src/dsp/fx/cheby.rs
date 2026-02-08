@@ -44,7 +44,7 @@ struct ChannelState {
 /// The amount parameter crossfades between polynomial orders, allowing smooth
 /// timbral transitions from pure fundamental to rich harmonic content.
 #[module(
-    name = "fx.cheby",
+    name = "cheby",
     description = "Chebyshev waveshaper adapted from 4ms Ensemble Oscillator",
     args(input, amount?)
 )]

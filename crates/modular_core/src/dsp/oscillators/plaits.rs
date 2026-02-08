@@ -234,7 +234,7 @@ impl Default for PlaitsChannelState {
 /// - 22: Analog snare drum
 /// - 23: Analog hi-hat
 #[module(
-    name = "osc.macro",
+    name = "macro",
     description = "Mutable Instruments Plaits - Full macro-oscillator with 24 engines, LPG, and modulation",
     args(freq, engine),
     has_init

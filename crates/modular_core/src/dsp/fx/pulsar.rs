@@ -43,7 +43,7 @@ struct ChannelState {
 /// At low amounts, the phase passes through unchanged.
 /// At high amounts, creates narrow compressed phase patterns.
 #[module(
-    name = "fx.pulsar",
+    name = "pulsar",
     description = "Pulsar synthesis effect adapted from 4ms Ensemble Oscillator",
     args(input, amount?)
 )]

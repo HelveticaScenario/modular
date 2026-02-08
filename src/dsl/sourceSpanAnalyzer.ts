@@ -111,7 +111,7 @@ function getCalledFunctionName(call: CallExpression): string | null {
 
 /**
  * Get the full dotted path for a property access call.
- * e.g., "seq.iCycle" for seq.iCycle()
+ * e.g., "$.iCycle" for $.iCycle()
  */
 function getFullCallPath(call: CallExpression): string | null {
     const expression = call.getExpression();

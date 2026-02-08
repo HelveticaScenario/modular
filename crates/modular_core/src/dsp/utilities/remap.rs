@@ -26,7 +26,7 @@ struct RemapOutputs {
     sample: PolyOutput,
 }
 
-#[module(name = "util.remap", description = "remap a signal from one range to another", args(input, inMin?, inMax?, outMin?, outMax?))]
+#[module(name = "remap", description = "remap a signal from one range to another", args(input, inMin?, inMax?, outMin?, outMax?))]
 #[derive(Default)]
 pub struct Remap {
     outputs: RemapOutputs,

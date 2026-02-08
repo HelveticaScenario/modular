@@ -28,7 +28,7 @@ struct ChannelState {
     phase: f32,
 }
 
-#[module(name = "osc.sine", description = "A sine wave oscillator", args(freq))]
+#[module(name = "sine", description = "A sine wave oscillator", args(freq))]
 #[derive(Default)]
 pub struct SineOscillator {
     outputs: SineOscillatorOutputs,

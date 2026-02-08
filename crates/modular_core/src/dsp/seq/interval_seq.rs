@@ -304,7 +304,7 @@ pub struct IntervalSeqParams {
     /// 2 channel control signal, sums the first 2 channels
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
     playhead: PolySignal,
-    /// Number of polyphonic voices (1-16, default 4)
+    /// Number of polyphonic voices (1-16)
     #[serde(default = "default_channels")]
     pub channels: usize,
 }
@@ -443,7 +443,7 @@ struct IntervalSeqOutputs {
 }
 
 #[module(
-    name = "seq.iCycle",
+    name = "iCycle",
     description = "A scale-degree sequencer with interval and add patterns",
     channels_derive = interval_seq_derive_channel_count,
     args(intervalPattern, scale),

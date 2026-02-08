@@ -40,7 +40,7 @@ struct MidiCcOutputs {
     output: f32,
 }
 
-#[module(name = "midi.cc", description = "MIDI CC to CV converter", args())]
+#[module(name = "midiCC", description = "MIDI CC to CV converter", args())]
 #[derive(Default)]
 pub struct MidiCc {
     outputs: MidiCcOutputs,

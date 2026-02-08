@@ -140,8 +140,7 @@ pub struct SeqParams {
     /// 2 channel control signal, sums the first 2 channels
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
     playhead: PolySignal,
-    /// Number of polyphonic voices (1-16, default 4)
-    // #[serde(default = "default_channels")]
+    /// Number of polyphonic voices (1-16)
     pub channels: Option<usize>,
     /// The pattern string (used for serialization)
     #[serde(skip)]
@@ -227,7 +226,7 @@ struct SeqOutputs {
 }
 
 #[module(
-    name = "seq.cycle",
+    name = "cycle",
     description = "A strudel/tidalcycles style sequencer",
     channels_derive = seq_derive_channel_count,
     args(pattern),

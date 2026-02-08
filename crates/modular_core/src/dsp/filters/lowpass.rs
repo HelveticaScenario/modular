@@ -23,7 +23,7 @@ struct LowpassFilterOutputs {
     sample: PolyOutput,
 }
 
-#[module(name = "filt.low", description = "12dB/octave lowpass filter with resonance", args(input, cutoff, resonance?))]
+#[module(name = "lpf", description = "12dB/octave lowpass filter with resonance", args(input, cutoff, resonance?))]
 #[derive(Default)]
 pub struct LowpassFilter {
     outputs: LowpassFilterOutputs,

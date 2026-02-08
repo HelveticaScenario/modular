@@ -46,7 +46,7 @@ struct ChannelState {
 /// At low amounts, the phase passes through with minimal change.
 /// At high amounts, creates chaotic, complex phase distortion.
 #[module(
-    name = "fx.feedback",
+    name = "feedback",
     description = "FM feedback effect adapted from 4ms Ensemble Oscillator",
     args(input, amount?)
 )]

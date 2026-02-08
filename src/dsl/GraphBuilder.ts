@@ -101,7 +101,7 @@ export class BaseCollection<T extends ModuleOutput> {
      */
     gain(factor: PolySignal): Collection {
         if (this.items.length === 0) return new Collection();
-        const factory = this.items[0].builder.getFactory('util.scaleAndShift');
+        const factory = this.items[0].builder.getFactory('scaleAndShift');
         if (!factory) {
             throw new Error('Factory for util.scaleAndShift not registered');
         }
@@ -113,7 +113,7 @@ export class BaseCollection<T extends ModuleOutput> {
      */
     shift(offset: PolySignal): Collection {
         if (this.items.length === 0) return new Collection();
-        const factory = this.items[0].builder.getFactory('util.scaleAndShift');
+        const factory = this.items[0].builder.getFactory('scaleAndShift');
         if (!factory) {
             throw new Error('Factory for util.scaleAndShift not registered');
         }
@@ -190,7 +190,7 @@ export class Collection extends BaseCollection<ModuleOutput> {
         outMax: PolySignal,
     ): Collection {
         if (this.items.length === 0) return new Collection();
-        const factory = this.items[0].builder.getFactory('util.remap');
+        const factory = this.items[0].builder.getFactory('remap');
         if (!factory) {
             throw new Error('Factory for util.remap not registered');
         }
@@ -212,7 +212,7 @@ export class CollectionWithRange extends BaseCollection<ModuleOutputWithRange> {
      */
     range(outMin: PolySignal, outMax: PolySignal): Collection {
         if (this.items.length === 0) return new Collection();
-        const factory = this.items[0].builder.getFactory('util.remap');
+        const factory = this.items[0].builder.getFactory('remap');
         if (!factory) {
             throw new Error('Factory for util.remap not registered');
         }
@@ -229,7 +229,7 @@ export class CollectionWithRange extends BaseCollection<ModuleOutputWithRange> {
 /**
  * Create a Collection from ModuleOutput instances
  */
-export const $ = (...args: ModuleOutput[]): Collection =>
+export const $c = (...args: ModuleOutput[]): Collection =>
     new Collection(...args);
 
 /**
@@ -421,7 +421,7 @@ export class GraphBuilder {
         const signalFactory = this.getFactory('signal');
         const mixFactory = this.getFactory('mix');
         const stereoMixerFactory = this.getFactory('stereoMix');
-        const scaleAndShiftFactory = this.getFactory('util.scaleAndShift');
+        const scaleAndShiftFactory = this.getFactory('scaleAndShift');
 
         if (
             !signalFactory ||
@@ -838,7 +838,7 @@ export class ModuleOutput {
      * Scale this output by a factor
      */
     gain(factor: Value): ModuleOutput {
-        const factory = this.builder.getFactory('util.scaleAndShift');
+        const factory = this.builder.getFactory('scaleAndShift');
         if (!factory) {
             throw new Error('Factory for util.scaleAndShift not registered');
         }
@@ -849,7 +849,7 @@ export class ModuleOutput {
      * Shift this output by an offset
      */
     shift(offset: Value): ModuleOutput {
-        const factory = this.builder.getFactory('util.scaleAndShift');
+        const factory = this.builder.getFactory('scaleAndShift');
         if (!factory) {
             throw new Error('Factory for util.scaleAndShift not registered');
         }
@@ -918,7 +918,7 @@ export class ModuleOutputWithRange extends ModuleOutput {
      * Creates a remap module internally.
      */
     range(outMin: Value, outMax: Value): ModuleOutput {
-        const factory = this.builder.getFactory('util.remap');
+        const factory = this.builder.getFactory('remap');
         if (!factory) {
             throw new Error('Factory for remap not registered');
         }

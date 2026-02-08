@@ -33,7 +33,7 @@ struct TrackOutputs {
     sample: PolyOutput,
 }
 
-#[module(name = "seq.track", description = "A sequencer track", args(keyframes), channels_derive = derive_track_channel_count)]
+#[module(name = "track", description = "A sequencer track", args(keyframes), channels_derive = derive_track_channel_count)]
 #[derive(Default)]
 pub struct Track {
     outputs: TrackOutputs,
