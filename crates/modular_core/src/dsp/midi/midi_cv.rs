@@ -111,17 +111,17 @@ fn default_pitch_bend_range() -> u8 {
 struct MidiCvOutputs {
     #[output("pitch", "pitch CV in 1V/octave (0V = C4)", default)]
     pitch: PolyOutput,
-    #[output("gate", "gate output (0V or 5V)")]
+    #[output("gate", "gate output (0V or 5V)", range = (0.0, 5.0))]
     gate: PolyOutput,
-    #[output("velocity", "velocity (0-5V)")]
+    #[output("velocity", "velocity (0-5V)", range = (0.0, 5.0))]
     velocity: PolyOutput,
-    #[output("aftertouch", "channel pressure / aftertouch (0-5V)")]
+    #[output("aftertouch", "channel pressure / aftertouch (0-5V)", range = (0.0, 5.0))]
     aftertouch: PolyOutput,
-    #[output("retrigger", "retrigger pulse (5V for 1ms on new note)")]
+    #[output("retrigger", "retrigger pulse (5V for 1ms on new note)", range = (0.0, 5.0))]
     retrigger: PolyOutput,
-    #[output("pitchWheel", "pitch wheel (-5V to +5V, unscaled)")]
+    #[output("pitchWheel", "pitch wheel (-5V to +5V, unscaled)", range = (-5.0, 5.0))]
     pitch_wheel: PolyOutput,
-    #[output("modWheel", "mod wheel (0-5V)")]
+    #[output("modWheel", "mod wheel (0-5V)", range = (0.0, 5.0))]
     mod_wheel: PolyOutput,
 }
 
@@ -129,7 +129,7 @@ struct MidiCvOutputs {
     name = "midiCV",
     description = "MIDI to CV converter with polyphonic voice allocation",
     channels_param = "channels",
-    args(),
+    args()
 )]
 pub struct MidiCv {
     outputs: MidiCvOutputs,
@@ -559,9 +559,14 @@ impl MidiCv {
             self.outputs.pitch.set(i, pitch_cv + pitch_bend_cv);
 
             // Gate
-            self.outputs
-                .gate
-                .set(i, if voice.gate { GATE_HIGH_VOLTAGE } else { GATE_LOW_VOLTAGE });
+            self.outputs.gate.set(
+                i,
+                if voice.gate {
+                    GATE_HIGH_VOLTAGE
+                } else {
+                    GATE_LOW_VOLTAGE
+                },
+            );
 
             // Velocity
             self.outputs

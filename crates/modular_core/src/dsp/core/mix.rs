@@ -18,9 +18,9 @@ use crate::{
 #[serde(rename_all = "snake_case")]
 pub enum MixMode {
     /// Sum all inputs at each channel
+    #[default]
     Sum,
     /// Average all inputs at each channel
-    #[default]
     Average,
     /// Take the maximum absolute value at each channel
     Max,

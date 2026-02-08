@@ -36,7 +36,7 @@ struct MidiCcParams {
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct MidiCcOutputs {
-    #[output("output", "CC value as voltage", default)]
+    #[output("output", "CC value as voltage", default, range = (0.0, 5.0))]
     output: f32,
 }
 

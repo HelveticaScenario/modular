@@ -200,9 +200,7 @@ struct QuantizerParams {
 struct QuantizerOutputs {
     #[output("output", "quantized V/Oct output", default)]
     output: PolyOutput,
-    #[output("gate", "gate high when note changes (single sample pulse)")]
-    gate: PolyOutput,
-    #[output("trig", "trigger pulse on note change")]
+    #[output("trig", "trigger pulse on note change", range = (0.0, 5.0))]
     trig: PolyOutput,
 }
 
@@ -285,7 +283,6 @@ impl Quantizer {
             }
             
             self.outputs.output.set(ch, quantized as f32);
-            self.outputs.gate.set(ch, if note_changed { GATE_HIGH_VOLTAGE } else { GATE_LOW_VOLTAGE });
             self.outputs.trig.set(ch, state.trigger.process());
         }
     }

@@ -219,9 +219,9 @@ pub fn seq_derive_channel_count(params: &SeqParams) -> usize {
 struct SeqOutputs {
     #[output("cv", "control voltage output", default)]
     cv: PolyOutput,
-    #[output("gate", "gate output")]
+    #[output("gate", "gate output", range = (0.0, 5.0))]
     gate: PolyOutput,
-    #[output("trig", "trigger output")]
+    #[output("trig", "trigger output", range = (0.0, 5.0))]
     trig: PolyOutput,
 }
 
