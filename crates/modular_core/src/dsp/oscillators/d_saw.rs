@@ -58,13 +58,15 @@ impl DSawOscillator {
             // Handle phase wrapping correctly
             let mut phase_increment = phase - state.prev_phase;
             if phase_increment < -0.5 {
-                // Phase wrapped forward (0.9 -> 0.1)
+                // Phase wrapped forward (0.9 -> 0.1): add 1.0 to get actual increment
                 phase_increment += 1.0;
             } else if phase_increment > 0.5 {
-                // Phase wrapped backward (0.1 -> 0.9) - unlikely but handle it
+                // Phase wrapped backward (0.1 -> 0.9): subtract 1.0 to get negative increment
+                // This is unlikely in normal use but we handle it for completeness
                 phase_increment -= 1.0;
             }
-            // Clamp to reasonable bounds to avoid artifacts
+            // Take absolute value and clamp to Nyquist limit (0.5 = half the sample period)
+            // to prevent artifacts from unrealistic phase increments
             phase_increment = phase_increment.abs().clamp(0.0, 0.5);
             
             state.prev_phase = phase;
