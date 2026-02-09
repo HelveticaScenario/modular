@@ -261,15 +261,6 @@
     background-color: var(--bg-primary);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Monaco Editor Overrides
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.monaco-editor .editor-widget,
-.monaco-editor .peekview-widget,
-.monaco-editor .suggest-widget {
-    z-index: 2000 !important;
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Empty State - minimal prompt
