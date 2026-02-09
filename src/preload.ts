@@ -114,6 +114,7 @@ export interface ElectronAPI {
     config: {
         getPath: () => Promise<string>;
         read: () => Promise<AppConfig>;
+        write: (config: Partial<AppConfig>) => Promise<void>;
         onChange: (callback: (config: AppConfig) => void) => () => void;
     };
 
@@ -306,6 +307,7 @@ const electronAPI: ElectronAPI = {
     config: {
         getPath: () => invokeIPC('CONFIG_GET_PATH'),
         read: () => invokeIPC('CONFIG_READ'),
+        write: (config) => invokeIPC('CONFIG_WRITE', config),
         onChange: menuEventHandler(IPC_CHANNELS.CONFIG_ON_CHANGE),
     },
 

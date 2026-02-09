@@ -113,6 +113,9 @@ export function MonacoPatchEditor({
         });
     }, [monaco, libSource, schemas]);
 
+    const { theme: appTheme, cursorStyle, font, fontLigatures, fontSize, prettierConfig } = useTheme();
+    const monacoThemeId = `theme-${appTheme.id}`;
+
     // Open help for DSL symbols on Cmd+Click (not Cmd+Hover)
     useEffect(() => {
         if (!editor || !monaco || schemas.length === 0) return;
@@ -145,9 +148,9 @@ export function MonacoPatchEditor({
 
     useEffect(() => {
         if (!monaco) return;
-        const disposable = registerDslFormattingProvider(monaco);
+        const disposable = registerDslFormattingProvider(monaco, prettierConfig);
         return () => disposable.dispose();
-    }, [monaco]);
+    }, [monaco, prettierConfig]);
 
     // Register MIDI device autocomplete provider
     useEffect(() => {
@@ -174,9 +177,6 @@ export function MonacoPatchEditor({
         onRegisterScopeCanvas,
         onUnregisterScopeCanvas,
     ]);
-
-    const { theme: appTheme, cursorStyle } = useTheme();
-    const monacoThemeId = `theme-${appTheme.id}`;
 
     // Define Monaco theme from the current app theme
     useEffect(() => {
@@ -222,9 +222,9 @@ export function MonacoPatchEditor({
                         folding: false,
                         matchBrackets: 'always',
                         automaticLayout: true,
-                        fontFamily: 'Fira Code, monospace',
-                        fontLigatures: true,
-                        fontSize: 17,
+                        fontFamily: `${font}, monospace`,
+                        fontLigatures: fontLigatures,
+                        fontSize: fontSize,
                         // lineHeight: 1.6,
                         padding: { top: 8, bottom: 8 },
                         renderLineHighlight: 'line',

@@ -220,6 +220,42 @@ const AppConfigSchema = z.object({
             'underline-thin',
         ])
         .optional(),
+    font: z
+        .enum([
+            // Bundled fonts
+            'Fira Code',
+            'JetBrains Mono',
+            'Cascadia Code',
+            'Source Code Pro',
+            'IBM Plex Mono',
+            'Hack',
+            'Inconsolata',
+            'Monaspace Neon',
+            'Monaspace Argon',
+            'Monaspace Xenon',
+            'Monaspace Krypton',
+            'Monaspace Radon',
+            'Geist Mono',
+            'Iosevka',
+            'Victor Mono',
+            'Roboto Mono',
+            'Maple Mono',
+            'Commit Mono',
+            '0xProto',
+            'Intel One Mono',
+            'Mononoki',
+            'Anonymous Pro',
+            'Recursive',
+            // System fonts (available only if installed)
+            'SF Mono',
+            'Monaco',
+            'Menlo',
+            'Consolas',
+        ])
+        .optional(),
+    fontLigatures: z.boolean().optional(),
+    fontSize: z.number().min(8).max(72).optional(),
+    prettier: z.record(z.string(), z.unknown()).optional(),
     lastOpenedFolder: z.string().optional(),
     audioConfig: z.object({
         hostId: z.string().optional(),
@@ -339,6 +375,8 @@ function ensureConfigExists() {
         const defaultConfig: AppConfig = {
             theme: 'modular-dark',
             cursorStyle: 'block',
+            font: 'Fira Code',
+            fontSize: 17,
         };
         saveConfig(defaultConfig);
     }
@@ -890,8 +928,10 @@ registerIPCHandler('FS_SELECT_WORKSPACE', async () => {
     currentWorkspaceRoot = result.filePaths[0];
     console.log('Workspace selected:', currentWorkspaceRoot);
 
-    // Save to config
-    saveConfig({ lastOpenedFolder: currentWorkspaceRoot });
+    // Save to config (load-merge-save to preserve other settings)
+    const config = loadConfig();
+    config.lastOpenedFolder = currentWorkspaceRoot;
+    saveConfig(config);
 
     return { path: currentWorkspaceRoot };
 });
@@ -1168,6 +1208,13 @@ registerIPCHandler('CONFIG_GET_PATH', () => {
 registerIPCHandler('CONFIG_READ', () => {
     ensureConfigExists();
     return loadConfig();
+});
+
+registerIPCHandler('CONFIG_WRITE', (partial: Partial<AppConfig>) => {
+    ensureConfigExists();
+    const current = loadConfig();
+    const merged = { ...current, ...partial };
+    saveConfig(merged);
 });
 
 /**

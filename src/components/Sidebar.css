@@ -2,7 +2,7 @@
    Sidebar - tabbed container for Explorer and Control panels
    ═══════════════════════════════════════════════════════════════════════════ */
 
-.sidebar {
+.app-sidebar {
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -13,14 +13,14 @@
   font-size: var(--font-size);
 }
 
-.sidebar-tabs {
+.app-sidebar-tabs {
   display: flex;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-tertiary);
   flex-shrink: 0;
 }
 
-.sidebar-tab {
+.app-sidebar-tab {
   flex: 1;
   padding: var(--sp-half) var(--sp-1);
   font-family: var(--font-mono);
@@ -35,16 +35,16 @@
   transition: color 0.1s, border-color 0.1s;
 }
 
-.sidebar-tab:hover {
+.app-sidebar-tab:hover {
   color: var(--text-secondary);
 }
 
-.sidebar-tab.active {
+.app-sidebar-tab.active {
   color: var(--text-primary);
   border-bottom-color: var(--text-primary);
 }
 
-.sidebar-content {
+.app-sidebar-content {
   display: flex;
   flex-direction: column;
   flex: 1;

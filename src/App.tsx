@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { MonacoPatchEditor as PatchEditor } from './components/MonacoPatchEditor';
 import { AudioControls } from './components/AudioControls';
 import { ErrorDisplay } from './components/ErrorDisplay';
-import { AudioSettings } from './components/AudioSettings';
+import { Settings } from './components/Settings';
 import './App.css';
 import type { editor } from 'monaco-editor';
 import { findScopeCallEndLines } from './utils/findScopeCallEndLines';
@@ -525,7 +525,7 @@ function App() {
                 onDismiss={dismissError}
             />
 
-            <AudioSettings
+            <Settings
                 isOpen={isSettingsOpen}
                 onClose={() => setIsSettingsOpen(false)}
             />

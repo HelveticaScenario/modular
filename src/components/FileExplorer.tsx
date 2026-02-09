@@ -316,29 +316,6 @@ export function FileExplorer({
 
     return (
         <div className="file-explorer">
-            <div className="file-explorer-header">
-                <div className="file-explorer-title">
-                    <h3>Explorer</h3>
-                </div>
-                <div className="file-explorer-actions">
-                    <button
-                        onClick={onSelectWorkspace}
-                        title="Select workspace folder"
-                        className="action-button"
-                    >
-                        {workspaceRoot ? 'Change Folder' : 'Open Folder'}
-                    </button>
-                    <button
-                        onClick={onRefreshTree}
-                        title="Refresh file tree"
-                        className="action-button"
-                        disabled={!workspaceRoot}
-                    >
-                        ↻
-                    </button>
-                </div>
-            </div>
-
             <div className="file-sections">
                 {/* Open Editors Section */}
                 <div className="section">
@@ -388,7 +365,16 @@ export function FileExplorer({
                 {/* Workspace Files Tree */}
                 {workspaceRoot && (
                     <div className="section">
-                        <div className="section-header">Workspace Files</div>
+                        <div className="section-header">
+                        <span>Workspace Files</span>
+                        <button
+                            onClick={onRefreshTree}
+                            title="Refresh file tree"
+                            className="section-action"
+                        >
+                            ↻
+                        </button>
+                    </div>
                         <div className="file-tree">
                             {fileTree.length === 0 ? (
                                 <div className="empty-message">

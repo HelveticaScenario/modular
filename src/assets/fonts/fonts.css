@@ -1,0 +1,138 @@
+/* ==========================================================================
+   Bundled Fonts
+   ========================================================================== */
+
+/* --- Fontsource imports (400 = Regular, 700 = Bold) --- */
+
+/* Fira Code */
+@import '@fontsource/fira-code/400.css';
+@import '@fontsource/fira-code/700.css';
+
+/* JetBrains Mono */
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/700.css';
+
+/* Source Code Pro */
+@import '@fontsource/source-code-pro/400.css';
+@import '@fontsource/source-code-pro/700.css';
+
+/* IBM Plex Mono */
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/700.css';
+
+/* Inconsolata */
+@import '@fontsource/inconsolata/400.css';
+@import '@fontsource/inconsolata/700.css';
+
+/* Cascadia Code */
+@import '@fontsource/cascadia-code/400.css';
+@import '@fontsource/cascadia-code/700.css';
+
+/* Monaspace Neon */
+@import '@fontsource/monaspace-neon/400.css';
+@import '@fontsource/monaspace-neon/700.css';
+
+/* Monaspace Argon */
+@import '@fontsource/monaspace-argon/400.css';
+@import '@fontsource/monaspace-argon/700.css';
+
+/* Monaspace Xenon */
+@import '@fontsource/monaspace-xenon/400.css';
+@import '@fontsource/monaspace-xenon/700.css';
+
+/* Monaspace Krypton */
+@import '@fontsource/monaspace-krypton/400.css';
+@import '@fontsource/monaspace-krypton/700.css';
+
+/* Monaspace Radon */
+@import '@fontsource/monaspace-radon/400.css';
+@import '@fontsource/monaspace-radon/700.css';
+
+/* Geist Mono */
+@import '@fontsource/geist-mono/400.css';
+@import '@fontsource/geist-mono/700.css';
+
+/* Iosevka */
+@import '@fontsource/iosevka/400.css';
+@import '@fontsource/iosevka/700.css';
+
+/* Victor Mono */
+@import '@fontsource/victor-mono/400.css';
+@import '@fontsource/victor-mono/700.css';
+
+/* Roboto Mono */
+@import '@fontsource/roboto-mono/400.css';
+@import '@fontsource/roboto-mono/700.css';
+
+/* Maple Mono */
+@import '@fontsource/maple-mono/400.css';
+@import '@fontsource/maple-mono/700.css';
+
+/* Commit Mono */
+@import '@fontsource/commit-mono/400.css';
+@import '@fontsource/commit-mono/700.css';
+
+/* Mononoki */
+@import '@fontsource/mononoki/400.css';
+@import '@fontsource/mononoki/700.css';
+
+/* Anonymous Pro */
+@import '@fontsource/anonymous-pro/400.css';
+@import '@fontsource/anonymous-pro/700.css';
+
+/* Recursive (Mono Linear) */
+@import '@fontsource/recursive/400.css';
+@import '@fontsource/recursive/700.css';
+
+/* --- Manually bundled fonts --- */
+
+/* Hack (MIT License) */
+@font-face {
+    font-family: 'Hack';
+    font-style: normal;
+    font-weight: 400;
+    src: url('./Hack-Regular.ttf') format('truetype');
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Hack';
+    font-style: normal;
+    font-weight: 700;
+    src: url('./Hack-Bold.ttf') format('truetype');
+    font-display: swap;
+}
+
+/* 0xProto (OFL 1.1) */
+@font-face {
+    font-family: '0xProto';
+    font-style: normal;
+    font-weight: 400;
+    src: url('./0xProto-Regular.woff2') format('woff2');
+    font-display: swap;
+}
+
+@font-face {
+    font-family: '0xProto';
+    font-style: normal;
+    font-weight: 700;
+    src: url('./0xProto-Bold.woff2') format('woff2');
+    font-display: swap;
+}
+
+/* Intel One Mono (OFL 1.1) */
+@font-face {
+    font-family: 'Intel One Mono';
+    font-style: normal;
+    font-weight: 400;
+    src: url('./IntelOneMono-Regular.woff2') format('woff2');
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Intel One Mono';
+    font-style: normal;
+    font-weight: 700;
+    src: url('./IntelOneMono-Bold.woff2') format('woff2');
+    font-display: swap;
+}

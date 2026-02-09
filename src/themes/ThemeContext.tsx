@@ -3,6 +3,7 @@ import type { AppTheme } from './types';
 import { mapVSCodeTheme } from './types';
 import { bundledThemes } from './bundled';
 import electronAPI from '../electronAPI';
+import type { MonospaceFont, PrettierConfig } from '../ipcTypes';
 
 type CursorStyle = 'line' | 'block' | 'underline' | 'line-thin' | 'block-outline' | 'underline-thin';
 
@@ -10,6 +11,10 @@ interface ThemeContextValue {
     theme: AppTheme;
     themes: AppTheme[];
     cursorStyle: CursorStyle;
+    font: string;
+    fontLigatures: boolean;
+    fontSize: number;
+    prettierConfig: PrettierConfig;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -62,6 +67,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const [themes] = useState<AppTheme[]>(() => Array.from(themeMap.values()));
     const [theme, setTheme] = useState<AppTheme>(() => getThemeById('modular-dark'));
     const [cursorStyle, setCursorStyle] = useState<CursorStyle>('line');
+    const [font, setFont] = useState<string>('Fira Code');
+    const [fontLigatures, setFontLigatures] = useState<boolean>(true);
+    const [fontSize, setFontSize] = useState<number>(17);
+    const [prettierConfig, setPrettierConfig] = useState<PrettierConfig>({});
     
     // Load initial config and set up watcher
     useEffect(() => {
@@ -76,6 +85,18 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
             if (config.cursorStyle) {
                 setCursorStyle(config.cursorStyle);
             }
+            if (config.font) {
+                setFont(config.font);
+            }
+            if (config.fontLigatures != null) {
+                setFontLigatures(config.fontLigatures);
+            }
+            if (config.fontSize != null) {
+                setFontSize(config.fontSize);
+            }
+            if (config.prettier) {
+                setPrettierConfig(config.prettier);
+            }
             
             // Subscribe to config changes
             unsubscribe = electronAPI.config.onChange((newConfig) => {
@@ -84,6 +105,18 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
                 }
                 if (newConfig.cursorStyle) {
                     setCursorStyle(newConfig.cursorStyle);
+                }
+                if (newConfig.font) {
+                    setFont(newConfig.font);
+                }
+                if (newConfig.fontLigatures != null) {
+                    setFontLigatures(newConfig.fontLigatures);
+                }
+                if (newConfig.fontSize != null) {
+                    setFontSize(newConfig.fontSize);
+                }
+                if (newConfig.prettier) {
+                    setPrettierConfig(newConfig.prettier);
                 }
             });
         }
@@ -101,7 +134,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }, [theme]);
     
     return (
-        <ThemeContext.Provider value={{ theme, themes, cursorStyle }}>
+        <ThemeContext.Provider value={{ theme, themes, cursorStyle, font, fontLigatures, fontSize, prettierConfig }}>
             {children}
         </ThemeContext.Provider>
     );

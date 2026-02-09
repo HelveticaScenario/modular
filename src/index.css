@@ -2,8 +2,7 @@
   box-sizing: border-box;
 }
 
-@import '@fontsource/fira-code/400.css';
-@import '@fontsource/fira-code/600.css';
+@import './assets/fonts/fonts.css';
 
 :root {
   /* Typography - monospace as the foundation */

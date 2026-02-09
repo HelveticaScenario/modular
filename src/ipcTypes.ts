@@ -46,9 +46,57 @@ export interface AudioConfig {
     bufferSize?: number;
 }
 
+/** Bundled fonts (shipped with the app) */
+export type BundledFont =
+    | 'Fira Code'
+    | 'JetBrains Mono'
+    | 'Cascadia Code'
+    | 'Source Code Pro'
+    | 'IBM Plex Mono'
+    | 'Hack'
+    | 'Inconsolata'
+    | 'Monaspace Neon'
+    | 'Monaspace Argon'
+    | 'Monaspace Xenon'
+    | 'Monaspace Krypton'
+    | 'Monaspace Radon'
+    | 'Geist Mono'
+    | 'Iosevka'
+    | 'Victor Mono'
+    | 'Roboto Mono'
+    | 'Maple Mono'
+    | 'Commit Mono'
+    | '0xProto'
+    | 'Intel One Mono'
+    | 'Mononoki'
+    | 'Anonymous Pro'
+    | 'Recursive';
+
+/** System fonts (available only if installed on the OS) */
+export type SystemFont =
+    | 'SF Mono'
+    | 'Monaco'
+    | 'Menlo'
+    | 'Consolas';
+
+export type MonospaceFont = BundledFont | SystemFont;
+
+export interface PrettierConfig {
+    singleQuote?: boolean;
+    trailingComma?: 'all' | 'es5' | 'none';
+    semi?: boolean;
+    tabWidth?: number;
+    printWidth?: number;
+    [key: string]: unknown;
+}
+
 export interface AppConfig {
     theme?: string;
     cursorStyle?: 'line' | 'block' | 'underline' | 'line-thin' | 'block-outline' | 'underline-thin';
+    font?: MonospaceFont;
+    fontLigatures?: boolean;
+    fontSize?: number;
+    prettier?: PrettierConfig;
     lastOpenedFolder?: string;
     audioConfig?: AudioConfig;
 }
@@ -224,6 +272,7 @@ export const IPC_CHANNELS = {
     // Config operations
     CONFIG_GET_PATH: 'modular:config:get-path',
     CONFIG_READ: 'modular:config:read',
+    CONFIG_WRITE: 'modular:config:write',
     CONFIG_ON_CHANGE: 'modular:config:on-change',
 
     // Main process logging
@@ -326,6 +375,7 @@ export interface IPCHandlers {
     // Config operations
     [IPC_CHANNELS.CONFIG_GET_PATH]: () => string;
     [IPC_CHANNELS.CONFIG_READ]: () => AppConfig;
+    [IPC_CHANNELS.CONFIG_WRITE]: (config: Partial<AppConfig>) => void;
     [IPC_CHANNELS.CONFIG_ON_CHANGE]: (config: AppConfig) => void;
 
     // Main process logging

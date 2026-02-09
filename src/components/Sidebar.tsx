@@ -12,22 +12,22 @@ export function Sidebar({ explorerContent, controlContent }: SidebarProps) {
     const [activeTab, setActiveTab] = useState<SidebarTab>('explorer');
 
     return (
-        <div className="sidebar">
-            <div className="sidebar-tabs">
+        <div className="app-sidebar">
+            <div className="app-sidebar-tabs">
                 <button
-                    className={`sidebar-tab ${activeTab === 'explorer' ? 'active' : ''}`}
+                    className={`app-sidebar-tab ${activeTab === 'explorer' ? 'active' : ''}`}
                     onClick={() => setActiveTab('explorer')}
                 >
                     Explorer
                 </button>
                 <button
-                    className={`sidebar-tab ${activeTab === 'control' ? 'active' : ''}`}
+                    className={`app-sidebar-tab ${activeTab === 'control' ? 'active' : ''}`}
                     onClick={() => setActiveTab('control')}
                 >
                     Control
                 </button>
             </div>
-            <div className="sidebar-content">
+            <div className="app-sidebar-content">
                 {activeTab === 'explorer' ? explorerContent : controlContent}
             </div>
         </div>

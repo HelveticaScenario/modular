@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useImperativeHandle, forwardRef, useRef } from 'react';
 import electronAPI from '../electronAPI';
 import type { 
     AudioDeviceInfo, 
@@ -7,11 +7,14 @@ import type {
     DeviceCacheSnapshot,
     CurrentAudioState,
 } from '../ipcTypes';
-import './AudioSettings.css';
 
-interface AudioSettingsProps {
-    isOpen: boolean;
-    onClose: () => void;
+export interface AudioSettingsHandle {
+    apply: () => Promise<void>;
+    isDirty: () => boolean;
+}
+
+interface AudioSettingsTabProps {
+    isActive: boolean;
 }
 
 /**
@@ -55,7 +58,8 @@ function computeBufferSizes(
     return powerOf2Sizes.filter(size => size >= minSize && size <= maxSize);
 }
 
-export function AudioSettings({ isOpen, onClose }: AudioSettingsProps) {
+export const AudioSettingsTab = forwardRef<AudioSettingsHandle, AudioSettingsTabProps>(
+    function AudioSettingsTab({ isActive }, ref) {
     // Device cache from Rust
     const [deviceCache, setDeviceCache] = useState<DeviceCacheSnapshot | null>(null);
     const [currentState, setCurrentState] = useState<CurrentAudioState | null>(null);
@@ -66,10 +70,6 @@ export function AudioSettings({ isOpen, onClose }: AudioSettingsProps) {
     const [selectedInputDeviceId, setSelectedInputDeviceId] = useState<string | null>(null);
     const [selectedSampleRate, setSelectedSampleRate] = useState<number | null>(null);
     const [selectedBufferSize, setSelectedBufferSize] = useState<number | null>(null);
-    
-    // MIDI
-    const [midiInputs, setMidiInputs] = useState<MidiInputInfo[]>([]);
-    const [copiedMidiDevice, setCopiedMidiDevice] = useState<string | null>(null);
     
     // UI state
     const [loading, setLoading] = useState(true);
@@ -114,15 +114,13 @@ export function AudioSettings({ isOpen, onClose }: AudioSettingsProps) {
             setLoading(true);
             setError(null);
             
-            const [cache, state, midi] = await Promise.all([
+            const [cache, state] = await Promise.all([
                 electronAPI.audio.getDeviceCache(),
                 electronAPI.audio.getCurrentState(),
-                electronAPI.midi.listInputs(),
             ]);
             
             setDeviceCache(cache);
             setCurrentState(state);
-            setMidiInputs(midi);
             
             // Initialize selections from current state
             setSelectedHostId(state.hostId);
@@ -185,12 +183,12 @@ export function AudioSettings({ isOpen, onClose }: AudioSettingsProps) {
         }
     }, [loadData]);
 
-    // Load on open
+    // Load on active
     useEffect(() => {
-        if (isOpen) {
+        if (isActive) {
             loadData();
         }
-    }, [isOpen, loadData]);
+    }, [isActive, loadData]);
     
     // Listen for fallback warnings
     useEffect(() => {
@@ -201,7 +199,7 @@ export function AudioSettings({ isOpen, onClose }: AudioSettingsProps) {
     }, []);
 
     // Apply configuration using recreateStreams
-    const applyConfig = async () => {
+    const applyConfig = useCallback(async () => {
         if (!selectedOutputDeviceId) {
             setError('Please select an output device');
             return;
@@ -217,8 +215,6 @@ export function AudioSettings({ isOpen, onClose }: AudioSettingsProps) {
             setError(null);
             setWarning(null);
 
-            // Call the unified recreateStreams API
-            // Signature: (outputDeviceId, sampleRate, bufferSize?, inputDeviceId?)
             await electronAPI.audio.recreateStreams(
                 selectedOutputDeviceId,
                 selectedSampleRate,
@@ -242,22 +238,25 @@ export function AudioSettings({ isOpen, onClose }: AudioSettingsProps) {
         } finally {
             setApplying(false);
         }
-    };
+    }, [selectedOutputDeviceId, selectedSampleRate, selectedBufferSize, selectedInputDeviceId]);
 
-    // Copy MIDI device name to clipboard
-    const copyMidiDeviceName = async (deviceName: string) => {
-        try {
-            await navigator.clipboard.writeText(deviceName);
-            setCopiedMidiDevice(deviceName);
-            setTimeout(() => setCopiedMidiDevice(null), 2000);
-        } catch (err) {
-            setError('Failed to copy to clipboard');
-        }
-    };
+    // Check if selections differ from current running state
+    const checkIsDirty = useCallback(() => {
+        if (!currentState) return false;
+        return (
+            selectedHostId !== currentState.hostId ||
+            selectedOutputDeviceId !== (currentState.outputDeviceId ?? null) ||
+            selectedInputDeviceId !== (currentState.inputDeviceId ?? null) ||
+            selectedSampleRate !== currentState.sampleRate ||
+            selectedBufferSize !== (currentState.bufferSize ?? null)
+        );
+    }, [currentState, selectedHostId, selectedOutputDeviceId, selectedInputDeviceId, selectedSampleRate, selectedBufferSize]);
 
-    if (!isOpen) {
-        return null;
-    }
+    // Expose apply and isDirty to parent via ref
+    useImperativeHandle(ref, () => ({
+        apply: applyConfig,
+        isDirty: checkIsDirty,
+    }), [applyConfig, checkIsDirty]);
 
     // Only show hosts that have at least one available device
     const hosts = deviceCache?.hosts
@@ -265,173 +264,133 @@ export function AudioSettings({ isOpen, onClose }: AudioSettingsProps) {
         .map(h => ({ id: h.hostId, name: h.hostName })) ?? [];
 
     return (
-        <div className="audio-settings-overlay" onClick={onClose}>
-            <div className="audio-settings-panel" onClick={(e) => e.stopPropagation()}>
-                <div className="audio-settings-header">
-                    <h2>Audio & MIDI Settings</h2>
-                    <button className="close-btn" onClick={onClose}>×</button>
-                </div>
-                
-                {error && (
-                    <div className="audio-settings-error">{error}</div>
-                )}
-                
-                {warning && (
-                    <div className="audio-settings-warning">{warning}</div>
-                )}
-                
-                {loading ? (
-                    <div className="audio-settings-loading">Loading devices...</div>
-                ) : (
-                    <div className="audio-settings-content">
-                        {/* Audio Host */}
-                        <div className="settings-section">
-                            <h3>Audio Host</h3>
-                            <select 
-                                className="device-select"
-                                value={selectedHostId || ''}
-                                onChange={(e) => setSelectedHostId(e.target.value || null)}
-                            >
-                                {hosts.map(h => (
-                                    <option key={h.id} value={h.id}>
-                                        {h.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        {/* Output Device */}
-                        <div className="settings-section">
-                            <h3>Output Device</h3>
-                            <select 
-                                className="device-select"
-                                value={selectedOutputDeviceId || ''}
-                                onChange={(e) => setSelectedOutputDeviceId(e.target.value || null)}
-                            >
-                                <option value="">-- Select Output Device --</option>
-                                {outputDevicesForHost.map(d => (
-                                    <option key={d.id} value={d.id}>
-                                        {d.name} ({d.outputChannels} ch){d.isDefault ? ' (Default)' : ''}
-                                    </option>
-                                ))}
-                            </select>
-                            {selectedOutputDevice && (
-                                <div className="device-info">
-                                    {selectedOutputDevice.sampleRate} Hz, {selectedOutputDevice.outputChannels} channels
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Input Device */}
-                        <div className="settings-section">
-                            <h3>Input Device</h3>
-                            <select 
-                                className="device-select"
-                                value={selectedInputDeviceId || ''}
-                                onChange={(e) => setSelectedInputDeviceId(e.target.value || null)}
-                            >
-                                <option value="">None (No Input)</option>
-                                {inputDevicesForHost.map(d => (
-                                    <option key={d.id} value={d.id}>
-                                        {d.name} ({d.inputChannels} ch){d.isDefault ? ' (Default)' : ''}
-                                    </option>
-                                ))}
-                            </select>
-                            {selectedInputDevice && (
-                                <div className="device-info">
-                                    {selectedInputDevice.sampleRate} Hz, {selectedInputDevice.inputChannels} channels
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Sample Rate */}
-                        <div className="settings-section">
-                            <h3>Sample Rate</h3>
-                            <select 
-                                className="device-select"
-                                value={selectedSampleRate || ''}
-                                onChange={(e) => setSelectedSampleRate(Number(e.target.value) || null)}
-                                disabled={availableSampleRates.length === 0}
-                            >
-                                {availableSampleRates.length === 0 ? (
-                                    <option value="">Select devices first</option>
-                                ) : (
-                                    availableSampleRates.map(rate => (
-                                        <option key={rate} value={rate}>
-                                            {rate} Hz
-                                        </option>
-                                    ))
-                                )}
-                            </select>
-                        </div>
-
-                        {/* Buffer Size */}
-                        <div className="settings-section">
-                            <h3>Buffer Size</h3>
-                            <select 
-                                className="device-select"
-                                value={selectedBufferSize || ''}
-                                onChange={(e) => setSelectedBufferSize(Number(e.target.value) || null)}
-                                disabled={availableBufferSizes.length === 0}
-                            >
-                                {availableBufferSizes.length === 0 ? (
-                                    <option value="">Select devices first</option>
-                                ) : (
-                                    availableBufferSizes.map(size => (
-                                        <option key={size} value={size}>
-                                            {size} samples (~{((size / (selectedSampleRate || 48000)) * 1000).toFixed(1)} ms)
-                                        </option>
-                                    ))
-                                )}
-                            </select>
-                        </div>
-                        
-                        {/* MIDI Devices */}
-                        <div className="settings-section midi-section">
-                            <h3>MIDI Devices</h3>
-                            <p className="midi-hint">Copy a device name to use in MIDI modules</p>
-                            {midiInputs.length === 0 ? (
-                                <div className="midi-no-devices">No MIDI devices found</div>
-                            ) : (
-                                <div className="midi-device-list">
-                                    {midiInputs.map((port) => (
-                                        <div key={port.name} className="midi-device-row">
-                                            <span className="midi-device-name">{port.name}</span>
-                                            <button 
-                                                className="btn btn-copy"
-                                                onClick={() => copyMidiDeviceName(port.name)}
-                                            >
-                                                {copiedMidiDevice === port.name ? '✓ Copied' : 'Copy'}
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                        
-                        {/* Actions */}
-                        <div className="settings-actions">
-                            <button 
-                                className="btn btn-secondary"
-                                onClick={refreshDevices}
-                                disabled={applying}
-                            >
-                                ↻ Refresh Devices
-                            </button>
-                            <div className="action-spacer" />
-                            <button 
-                                className="btn btn-primary"
-                                onClick={applyConfig}
-                                disabled={applying || !selectedOutputDeviceId}
-                            >
-                                {applying ? 'Applying...' : 'Apply'}
-                            </button>
-                        </div>
+        <div className="settings-tab-content">
+            {error && (
+                <div className="settings-tab-error">{error}</div>
+            )}
+            
+            {warning && (
+                <div className="settings-tab-warning">{warning}</div>
+            )}
+            
+            {loading ? (
+                <div className="settings-tab-loading">Loading devices...</div>
+            ) : (
+                <>
+                    {/* Audio Host */}
+                    <div className="settings-section">
+                        <h3>Audio Host</h3>
+                        <select 
+                            className="device-select"
+                            value={selectedHostId || ''}
+                            onChange={(e) => setSelectedHostId(e.target.value || null)}
+                        >
+                            {hosts.map(h => (
+                                <option key={h.id} value={h.id}>
+                                    {h.name}
+                                </option>
+                            ))}
+                        </select>
                     </div>
-                )}
-            </div>
+
+                    {/* Output Device */}
+                    <div className="settings-section">
+                        <h3>Output Device</h3>
+                        <select 
+                            className="device-select"
+                            value={selectedOutputDeviceId || ''}
+                            onChange={(e) => setSelectedOutputDeviceId(e.target.value || null)}
+                        >
+                            <option value="">-- Select Output Device --</option>
+                            {outputDevicesForHost.map(d => (
+                                <option key={d.id} value={d.id}>
+                                    {d.name} ({d.outputChannels} ch){d.isDefault ? ' (Default)' : ''}
+                                </option>
+                            ))}
+                        </select>
+                        {selectedOutputDevice && (
+                            <div className="device-info">
+                                {selectedOutputDevice.sampleRate} Hz, {selectedOutputDevice.outputChannels} channels
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Input Device */}
+                    <div className="settings-section">
+                        <h3>Input Device</h3>
+                        <select 
+                            className="device-select"
+                            value={selectedInputDeviceId || ''}
+                            onChange={(e) => setSelectedInputDeviceId(e.target.value || null)}
+                        >
+                            <option value="">None (No Input)</option>
+                            {inputDevicesForHost.map(d => (
+                                <option key={d.id} value={d.id}>
+                                    {d.name} ({d.inputChannels} ch){d.isDefault ? ' (Default)' : ''}
+                                </option>
+                            ))}
+                        </select>
+                        {selectedInputDevice && (
+                            <div className="device-info">
+                                {selectedInputDevice.sampleRate} Hz, {selectedInputDevice.inputChannels} channels
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Sample Rate */}
+                    <div className="settings-section">
+                        <h3>Sample Rate</h3>
+                        <select 
+                            className="device-select"
+                            value={selectedSampleRate || ''}
+                            onChange={(e) => setSelectedSampleRate(Number(e.target.value) || null)}
+                            disabled={availableSampleRates.length === 0}
+                        >
+                            {availableSampleRates.length === 0 ? (
+                                <option value="">Select devices first</option>
+                            ) : (
+                                availableSampleRates.map(rate => (
+                                    <option key={rate} value={rate}>
+                                        {rate} Hz
+                                    </option>
+                                ))
+                            )}
+                        </select>
+                    </div>
+
+                    {/* Buffer Size */}
+                    <div className="settings-section">
+                        <h3>Buffer Size</h3>
+                        <select 
+                            className="device-select"
+                            value={selectedBufferSize || ''}
+                            onChange={(e) => setSelectedBufferSize(Number(e.target.value) || null)}
+                            disabled={availableBufferSizes.length === 0}
+                        >
+                            {availableBufferSizes.length === 0 ? (
+                                <option value="">Select devices first</option>
+                            ) : (
+                                availableBufferSizes.map(size => (
+                                    <option key={size} value={size}>
+                                        {size} samples (~{((size / (selectedSampleRate || 48000)) * 1000).toFixed(1)} ms)
+                                    </option>
+                                ))
+                            )}
+                        </select>
+                    </div>
+
+                    {/* Refresh Devices */}
+                    <div className="settings-section">
+                        <button 
+                            className="btn btn-secondary"
+                            onClick={refreshDevices}
+                            disabled={applying}
+                        >
+                            ↻ Refresh Devices
+                        </button>
+                    </div>
+                </>
+            )}
         </div>
     );
-}
-
-export default AudioSettings;
+});
