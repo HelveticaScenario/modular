@@ -45,6 +45,7 @@ export interface ElectronAPI {
         getHealth: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_HEALTH]>;
         stop: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_STOP]>;
         isStopped: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_IS_STOPPED]>;
+        setModuleParam: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_SET_MODULE_PARAM]>;
     };
     // Audio device operations
     audio: {
@@ -177,6 +178,9 @@ const electronAPI: ElectronAPI = {
 
         isStopped: (...args) =>
             invokeIPC('SYNTH_IS_STOPPED', ...args),
+
+        setModuleParam: (...args) =>
+            invokeIPC('SYNTH_SET_MODULE_PARAM', ...args),
     },
 
     // Audio device operations

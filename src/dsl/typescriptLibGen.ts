@@ -660,6 +660,28 @@ interface DeferredCollection extends Iterable<DeferredModuleOutput> {
  * feedback.set(delayed);
  */
 function deferred(channels?: number): DeferredCollection;
+
+/**
+ * Create a slider control that binds a UI slider to a signal module.
+ *
+ * The slider appears in the Control panel and allows real-time parameter adjustment.
+ * Dragging the slider updates both the audio engine and the source code value.
+ *
+ * @param label - Display label for the slider (must be a string literal)
+ * @param value - Initial value (must be a numeric literal)
+ * @param min - Minimum slider value
+ * @param max - Maximum slider value
+ * @returns A ModuleOutput carrying the slider's current value as a signal
+ *
+ * @example
+ * const vol = slider("Volume", 0.5, 0, 1);
+ * sine(440).gain(vol).out();
+ *
+ * @example
+ * const freq = slider("Frequency", 440, 20, 20000);
+ * sine(freq).out();
+ */
+function slider(label: string, value: number, min: number, max: number): ModuleOutput;
 `;
 
 export function buildLibSource(schemas: ModuleSchema[]): string {

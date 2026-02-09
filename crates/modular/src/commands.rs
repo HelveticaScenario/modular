@@ -64,6 +64,14 @@ pub enum GraphCommand {
   /// Atomic patch update - all changes applied together
   PatchUpdate(PatchUpdate),
 
+  /// Lightweight param-only update for a single module (e.g., slider changes).
+  /// Skips insert/retain/remap/scope/connect logic — only calls try_update_params.
+  SingleParamUpdate {
+    module_id: String,
+    params: Value,
+    channel_count: usize,
+  },
+
   /// MIDI/control messages (can be sent individually)
   DispatchMessage(Message),
 

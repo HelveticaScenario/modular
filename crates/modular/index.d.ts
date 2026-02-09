@@ -14,6 +14,11 @@ export declare class Synthesizer {
   inputChannels(): number
   getScopes(): Array<[ScopeItem, Array<Float32Array>, ScopeStats]>
   updatePatch(patch: PatchGraph): Array<ApplyPatchError>
+  /**
+   * Lightweight single-module param update. Bypasses full patch rebuild —
+   * only for modules already in the patch.
+   */
+  setModuleParam(moduleId: string, moduleType: string, params: any): void
   startRecording(path?: string | undefined | null): string
   stopRecording(): string | null
   isRecording(): boolean

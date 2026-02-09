@@ -23,6 +23,7 @@ import type {
     getMiniLeafSpans,
     Synthesizer
 } from '@modular/core';
+import type { SliderDefinition } from './dsl/sliderTypes';
 
 export type { 
     PatchGraph, 
@@ -107,6 +108,8 @@ export interface DSLExecuteResult {
     sourceLocationMap?: Record<string, SourceLocationInfo>;
     /** Interpolation resolutions for template literal const redirects (serialized Map) */
     interpolationResolutions?: Record<string, SerializedResolvedInterpolation[]>;
+    /** Slider definitions created by slider() DSL function calls */
+    sliders?: SliderDefinition[];
 }
 
 /**
@@ -170,6 +173,7 @@ export const IPC_CHANNELS = {
     GET_MINI_LEAF_SPANS: 'modular:get-mini-leaf-spans',
     SYNTH_STOP: 'modular:synth:stop',
     SYNTH_IS_STOPPED: 'modular:synth:is-stopped',
+    SYNTH_SET_MODULE_PARAM: 'modular:synth:set-module-param',
 
     // Audio device operations
     AUDIO_REFRESH_DEVICE_CACHE: 'modular:audio:refresh-device-cache',
@@ -271,6 +275,8 @@ export interface IPCHandlers {
     [IPC_CHANNELS.SYNTH_STOP]: typeof Synthesizer.prototype.stop;
 
     [IPC_CHANNELS.SYNTH_IS_STOPPED]: typeof Synthesizer.prototype.isStopped;
+
+    [IPC_CHANNELS.SYNTH_SET_MODULE_PARAM]: (moduleId: string, moduleType: string, params: object) => void;
 
     // Audio device operations
     [IPC_CHANNELS.AUDIO_REFRESH_DEVICE_CACHE]: typeof Synthesizer.prototype.refreshDeviceCache;

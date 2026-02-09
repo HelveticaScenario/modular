@@ -852,7 +852,7 @@ impl AudioState {
   }
 
   /// Send a command to the audio thread
-  fn send_command(&self, cmd: GraphCommand) -> Result<()> {
+  pub(crate) fn send_command(&self, cmd: GraphCommand) -> Result<()> {
     let mut tx = self.command_tx.lock();
     tx.push(cmd).map_err(|_| {
       napi::Error::from_reason("Command queue full - audio thread may be overloaded".to_string())
@@ -1184,6 +1184,20 @@ impl AudioProcessor {
       match cmd {
         GraphCommand::PatchUpdate(update) => {
           self.apply_patch_update(update);
+        }
+        GraphCommand::SingleParamUpdate {
+          module_id,
+          params,
+          channel_count,
+        } => {
+          if let Some(module) = self.patch.sampleables.get(&module_id) {
+            if let Err(e) = module.try_update_params(params, channel_count) {
+              let _ = self.error_tx.push(AudioError::ParamUpdateFailed {
+                module_id,
+                message: e.to_string(),
+              });
+            }
+          }
         }
         GraphCommand::DispatchMessage(msg) => {
           if let Err(e) = self.patch.dispatch_message(&msg) {

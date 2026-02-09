@@ -502,7 +502,7 @@ registerIPCHandler('GET_DSL_LIB_SOURCE', () => {
 registerIPCHandler('DSL_EXECUTE', (source, sourceId): DSLExecuteResult => {
     try {
         const schemas = getSchemas();
-        const { patch, sourceLocationMap, interpolationResolutions } = executePatchScript(source, schemas);
+        const { patch, sourceLocationMap, interpolationResolutions, sliders } = executePatchScript(source, schemas);
         patch.moduleIdRemaps = [];
 
         // Convert Map to Record for IPC serialization
@@ -578,6 +578,7 @@ registerIPCHandler('DSL_EXECUTE', (source, sourceId): DSLExecuteResult => {
                 moduleIdRemap,
                 sourceLocationMap: sourceLocationRecord,
                 interpolationResolutions: interpolationResolutionsRecord,
+                sliders,
             };
         }
 
@@ -588,6 +589,7 @@ registerIPCHandler('DSL_EXECUTE', (source, sourceId): DSLExecuteResult => {
             moduleIdRemap,
             sourceLocationMap: sourceLocationRecord,
             interpolationResolutions: interpolationResolutionsRecord,
+            sliders,
         };
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -698,6 +700,10 @@ registerIPCHandler('SYNTH_STOP', () => {
 
 registerIPCHandler('SYNTH_IS_STOPPED', () => {
     return synth.isStopped();
+});
+
+registerIPCHandler('SYNTH_SET_MODULE_PARAM', (moduleId, moduleType, params) => {
+    synth.setModuleParam(moduleId, moduleType, params);
 });
 
 // Audio device operations - new API

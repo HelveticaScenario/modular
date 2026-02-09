@@ -18,6 +18,7 @@ import {
 import { analyzeSourceSpans } from './sourceSpanAnalyzer';
 import type { InterpolationResolutionMap } from './spanTypes';
 import { setActiveInterpolationResolutions } from './spanTypes';
+import type { SliderDefinition } from './sliderTypes';
 
 /**
  * Result of executing a DSL script.
@@ -29,6 +30,8 @@ export interface DSLExecutionResult {
     sourceLocationMap: Map<string, SourceLocation>;
     /** Interpolation resolution map for template literal const redirects */
     interpolationResolutions: InterpolationResolutionMap;
+    /** Slider definitions created by slider() DSL function calls */
+    sliders: SliderDefinition[];
 }
 
 /**
@@ -96,6 +99,45 @@ export function executePatchScript(
         }
         return new DeferredCollection(...items);
     };
+
+    // Slider collector — populated by slider() calls during execution
+    const sliders: SliderDefinition[] = [];
+
+    /**
+     * Create a slider control: a signal module with a UI slider bound to it.
+     * @param label - Display label (must be a string literal)
+     * @param value - Initial value (must be a numeric literal)
+     * @param min - Minimum value
+     * @param max - Maximum value
+     * @returns The signal module's output
+     */
+    const slider = (label: string, value: number, min: number, max: number) => {
+        if (typeof label !== 'string') {
+            throw new Error('slider() label must be a string literal');
+        }
+        if (typeof value !== 'number' || !isFinite(value)) {
+            throw new Error('slider() value must be a finite number literal');
+        }
+        if (typeof min !== 'number' || !isFinite(min)) {
+            throw new Error('slider() min must be a finite number');
+        }
+        if (typeof max !== 'number' || !isFinite(max)) {
+            throw new Error('slider() max must be a finite number');
+        }
+        if (min >= max) {
+            throw new Error(`slider() min (${min}) must be less than max (${max})`);
+        }
+
+        const moduleId = `__slider_${label.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+
+        // Create backing signal module via the existing signal factory
+        const result = signal(value, { id: moduleId });
+
+        sliders.push({ moduleId, label, value, min, max });
+
+        return result;
+    };
+
     console.log(context.namespaceTree)
 
     // Create the execution environment with all DSL functions
@@ -110,6 +152,8 @@ export function executePatchScript(
         $r,
         // Deferred signal helper
         deferred,
+        // Slider control
+        slider,
         // Global settings
         setTempo,
         setOutputGain,
@@ -156,7 +200,7 @@ export function executePatchScript(
         const patch = builder.toPatch();
         const sourceLocationMap = builder.getSourceLocationMap();
 
-        return { patch, sourceLocationMap, interpolationResolutions };
+        return { patch, sourceLocationMap, interpolationResolutions, sliders };
     } catch (error) {
         if (error instanceof Error) {
             throw new Error(`DSL execution error: ${error.message}`);

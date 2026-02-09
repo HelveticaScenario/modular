@@ -15,7 +15,7 @@ export function registerDslFormattingProvider(monaco: Monaco) {
                     trailingComma: 'all',
                     semi: false,
                     tabWidth: 2,
-                    printWidth: 30,
+                    printWidth: 60,
                 });
 
                 return [

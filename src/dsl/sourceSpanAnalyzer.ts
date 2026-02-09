@@ -433,6 +433,24 @@ export function analyzeSourceSpans(
         
         const call = node as CallExpression;
         const funcName = getCalledFunctionName(call);
+
+        // Validate slider() calls: label (arg 0) and value (arg 1) must be literals
+        if (funcName === 'slider') {
+            const args = call.getArguments();
+            if (args.length >= 1 && !Node.isStringLiteral(args[0])) {
+                const { line, column } = sourceFile.getLineAndColumnAtPos(args[0].getStart());
+                throw new Error(
+                    `slider() label (argument 1) must be a string literal at line ${line}, column ${column}`,
+                );
+            }
+            if (args.length >= 2 && !Node.isNumericLiteral(args[1]) && !Node.isPrefixUnaryExpression(args[1])) {
+                const { line, column } = sourceFile.getLineAndColumnAtPos(args[1].getStart());
+                throw new Error(
+                    `slider() value (argument 2) must be a numeric literal at line ${line}, column ${column}`,
+                );
+            }
+            return; // slider is not a module factory, skip further processing
+        }
         
         // Skip if not a tracked factory
         if (!funcName || !factoryNames.has(funcName)) return;

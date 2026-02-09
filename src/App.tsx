@@ -8,9 +8,13 @@ import type { editor } from 'monaco-editor';
 import { findScopeCallEndLines } from './utils/findScopeCallEndLines';
 import { getErrorMessage } from './utils/errorUtils';
 import { FileExplorer } from './components/FileExplorer';
+import { Sidebar } from './components/Sidebar';
+import { ControlPanel } from './components/ControlPanel';
 import electronAPI from './electronAPI';
 import { ValidationError } from '@modular/core';
 import type { FileTreeEntry, SourceLocationInfo } from './ipcTypes';
+import type { SliderDefinition } from './dsl/sliderTypes';
+import { findSliderValueSpan } from './dsl/sliderSourceEdit';
 import type { EditorBuffer, ScopeView } from './types/editor';
 import { getBufferId } from './app/buffers';
 import { setActiveInterpolationResolutions } from './dsl/spanTypes';
@@ -108,9 +112,60 @@ function App() {
 
     const [scopeViews, setScopeViews] = useState<ScopeView[]>([]);
     const [runningBufferId, setRunningBufferId] = useState<string | null>(null);
+    const [sliderDefs, setSliderDefs] = useState<SliderDefinition[]>([]);
 
     const editorRef = useRef<editor.IStandaloneCodeEditor>(null);
     const scopeCanvasMapRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
+
+    const handleSliderChange = useCallback(
+        (label: string, newValue: number) => {
+            // Find the slider definition
+            const slider = sliderDefs.find((s) => s.label === label);
+            if (!slider) return;
+
+            // Update audio engine via lightweight param update
+            electronAPI.synthesizer.setModuleParam(
+                slider.moduleId,
+                'signal',
+                { source: newValue },
+            );
+
+            // Update the source code in the editor
+            const editorInstance = editorRef.current;
+            if (editorInstance) {
+                const model = editorInstance.getModel();
+                if (model) {
+                    const source = model.getValue();
+                    const span = findSliderValueSpan(source, label);
+                    if (span) {
+                        const startPos = model.getPositionAt(span.start);
+                        const endPos = model.getPositionAt(span.end);
+                        const range = new (window as any).monaco.Range(
+                            startPos.lineNumber,
+                            startPos.column,
+                            endPos.lineNumber,
+                            endPos.column,
+                        );
+                        const formattedValue = Number(newValue.toPrecision(6)).toString();
+                        // Use pushEditOperations for proper undo stack integration
+                        model.pushEditOperations(
+                            [],
+                            [{ range, text: formattedValue }],
+                            () => null,
+                        );
+                    }
+                }
+            }
+
+            // Update slider state
+            setSliderDefs((prev) =>
+                prev.map((s) =>
+                    s.label === label ? { ...s, value: newValue } : s,
+                ),
+            );
+        },
+        [sliderDefs],
+    );
 
     // Load workspace and file tree on mount
     useEffect(() => {
@@ -378,6 +433,9 @@ function App() {
                 console.log('Scope views:', views);
 
                 setScopeViews(views);
+
+                // Update slider definitions from DSL execution
+                setSliderDefs(result.sliders ?? []);
             } catch (err) {
                 setError(getErrorMessage(err, 'Unknown error'));
                 setValidationErrors(null);
@@ -497,30 +555,40 @@ function App() {
                             />
                         </div>
 
-                        <FileExplorer
-                            workspaceRoot={workspaceRoot}
-                            fileTree={fileTree}
-                            buffers={buffers}
-                            activeBufferId={activeBufferId}
-                            runningBufferId={runningBufferId}
-                            renamingPath={renamingPath}
-                            formatLabel={(buffer) => {
-                                const path = formatFileLabel(buffer);
-                                const parts = path.split(/[/\\]/);
-                                return parts[parts.length - 1];
-                            }}
-                            onSelectBuffer={setActiveBufferId}
-                            onOpenFile={handleOpenFile}
-                            onCreateFile={createUntitledFile}
-                            onSaveFile={handleSaveFileRef.current}
-                            onRenameFile={renameFile}
-                            onDeleteFile={handleDeleteFile}
-                            onCloseBuffer={closeBuffer}
-                            onSelectWorkspace={selectWorkspaceFolder}
-                            onRefreshTree={refreshFileTree}
-                            onRenameCommit={handleRenameCommitSafe}
-                            onRenameCancel={() => setRenamingPath(null)}
-                            onKeepBuffer={keepBuffer}
+                        <Sidebar
+                            explorerContent={
+                                <FileExplorer
+                                    workspaceRoot={workspaceRoot}
+                                    fileTree={fileTree}
+                                    buffers={buffers}
+                                    activeBufferId={activeBufferId}
+                                    runningBufferId={runningBufferId}
+                                    renamingPath={renamingPath}
+                                    formatLabel={(buffer) => {
+                                        const path = formatFileLabel(buffer);
+                                        const parts = path.split(/[/\\]/);
+                                        return parts[parts.length - 1];
+                                    }}
+                                    onSelectBuffer={setActiveBufferId}
+                                    onOpenFile={handleOpenFile}
+                                    onCreateFile={createUntitledFile}
+                                    onSaveFile={handleSaveFileRef.current}
+                                    onRenameFile={renameFile}
+                                    onDeleteFile={handleDeleteFile}
+                                    onCloseBuffer={closeBuffer}
+                                    onSelectWorkspace={selectWorkspaceFolder}
+                                    onRefreshTree={refreshFileTree}
+                                    onRenameCommit={handleRenameCommitSafe}
+                                    onRenameCancel={() => setRenamingPath(null)}
+                                    onKeepBuffer={keepBuffer}
+                                />
+                            }
+                            controlContent={
+                                <ControlPanel
+                                    sliders={sliderDefs}
+                                    onSliderChange={handleSliderChange}
+                                />
+                            }
                         />
                     </>
                 )}

@@ -23,6 +23,7 @@ use crate::audio::{
   InputBufferWriter, create_audio_channels, create_input_ring_buffer, find_input_device_in_host,
   find_output_device_in_host, get_host_by_preference, make_input_stream, make_stream,
 };
+use crate::commands::GraphCommand;
 use crate::midi::MidiInputManager;
 
 /// Information about a MIDI input port (for N-API)
@@ -530,6 +531,23 @@ impl Synthesizer {
     self.sync_midi_devices_from_patch(&patch);
 
     self.state.handle_set_patch(patch, self.sample_rate)
+  }
+
+  /// Lightweight single-module param update. Bypasses full patch rebuild —
+  /// only for modules already in the patch.
+  #[napi]
+  pub fn set_module_param(
+    &self,
+    module_id: String,
+    module_type: String,
+    params: serde_json::Value,
+  ) -> Result<()> {
+    let channel_count = lookup_or_derive_channel_count(&module_type, &params).unwrap_or(1);
+    self.state.send_command(GraphCommand::SingleParamUpdate {
+      module_id,
+      params,
+      channel_count,
+    })
   }
 
   /// Extract MIDI device names from patch modules and sync connections
