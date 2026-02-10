@@ -75,7 +75,12 @@ export function parseSliderDefinitions(source: string): SliderDefinition[] {
     // This captures:
     // - Group 1: the quote character (" or ')
     // - Group 2: the label (at least one character required)
-    // Empty labels are rejected as they would be invalid/confusing UI
+    // 
+    // Note: The label capture uses `.+?` (non-greedy match) which captures the label
+    // content literally without interpreting regex special characters. This works
+    // because the label is inside quotes in the source code, so regex metacharacters
+    // like $, *, +, ? are treated as literal characters in the label string.
+    // Empty labels are rejected as they would be invalid/confusing UI.
     const sliderPattern = /\bslider\s*\(\s*(['"])(.+?)\1\s*,/g;
     
     let match: RegExpExecArray | null;
@@ -123,6 +128,7 @@ export function parseSliderDefinitions(source: string): SliderDefinition[] {
 /**
  * Parse numeric arguments from a function call.
  * Extracts numeric literals (including scientific notation) separated by commas.
+ * Supports formats like: 123, -45, 67.89, .5, 1e3, 2.5e-2
  * 
  * @param source - Source code starting after the opening parenthesis or comma
  * @param count - Maximum number of arguments to extract
@@ -141,7 +147,8 @@ function parseNumericArguments(source: string, count: number): number[] {
         if (pos >= source.length) break;
         
         // Match a numeric literal
-        const numMatch = source.slice(pos).match(/^-?\d+(\.\d+)?([eE][+-]?\d+)?/);
+        // Supports: -123, 45.67, .5, 1e3, 2.5e-2
+        const numMatch = source.slice(pos).match(/^-?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?/);
         if (!numMatch) break;
         
         const numStr = numMatch[0];

@@ -333,10 +333,11 @@ function App() {
                 const existing = existingMap.get(parsed.label);
                 if (existing) {
                     // Keep the existing value if the slider still exists
-                    // but update min/max if they changed in the code
+                    // but clamp it to the new min/max range if they changed
+                    const clampedValue = Math.max(parsed.min, Math.min(parsed.max, existing.value));
                     return {
                         ...parsed,
-                        value: existing.value,
+                        value: clampedValue,
                     };
                 }
                 return parsed;
