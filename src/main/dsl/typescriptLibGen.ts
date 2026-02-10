@@ -510,29 +510,29 @@ interface CollectionWithRange extends Iterable<ModuleOutputWithRange> {
  * Convert a frequency in Hertz to a voltage value (1V/octave).
  * @param frequency - Frequency in Hz
  * @returns Voltage value for use as a {@link Signal}
- * @example hz(440)  // A4
- * @example hz(261.63)  // ~C4
+ * @example $hz(440)  // A4
+ * @example $hz(261.63)  // ~C4
  */
-function hz(frequency: number): number;
+function $hz(frequency: number): number;
 
 /**
  * Convert a note name string to a voltage value (1V/octave).
  * @param noteName - Note name like "C4", "A#3", "Bb5"
  * @returns Voltage value for use as a {@link Signal}
- * @example note("C4")  // Middle C
- * @example note("A4")  // 440 Hz
+ * @example $note("C4")  // Middle C
+ * @example $note("A4")  // 440 Hz
  */
-function note(noteName: string): number;
+function $note(noteName: string): number;
 
 /**
  * Convert beats per minute to a frequency in Hz.
  * Useful for setting clock tempo.
  * @param beatsPerMinute - Tempo in BPM
  * @returns Frequency in Hz
- * @example bpm(120)  // 2 Hz
- * @see {@link setTempo}
+ * @example $bpm(120)  // 2 Hz
+ * @see {@link $setTempo}
  */
-function bpm(beatsPerMinute: number): number;
+function $bpm(beatsPerMinute: number): number;
 
 /**
  * Create a {@link Collection} from {@link ModuleOutput} instances.
@@ -555,27 +555,27 @@ function $c(...args: ModuleOutput[]): Collection;
  * @returns A {@link CollectionWithRange} of the outputs
  * @example $r(lfo1, lfo2).range(0, 5)  // Uses stored ranges
  * @example $r(...seq.gates).range(0, 1)
- * @see {@link $} - for outputs without known ranges
+ * @see {@link $c} - for outputs without known ranges
  */
 function $r(...args: ModuleOutputWithRange[]): CollectionWithRange;
 
 /**
  * Set the global tempo for the root clock.
- * @param tempo - Tempo as a Signal (use bpm() helper, e.g., setTempo(bpm(140)))
- * @example setTempo(bpm(120)) // 120 beats per minute
- * @example setTempo(hz(2)) // 2 Hz = 120 BPM
- * @example setTempo(lfo.sine) // modulate tempo from LFO
+ * @param tempo - Tempo as a Signal (use $bpm() helper, e.g., $setTempo($bpm(140)))
+ * @example $setTempo($bpm(120)) // 120 beats per minute
+ * @example $setTempo($hz(2)) // 2 Hz = 120 BPM
+ * @example $setTempo(lfo.sine) // modulate tempo from LFO
  */
-function setTempo(tempo: Signal): void;
+function $setTempo(tempo: Signal): void;
 
 /**
  * Set the global output gain applied to the final mix.
  * @param gain - Gain as a Signal (2.5 is default, 5.0 is unity gain)
- * @example setOutputGain(2.5) // 50% gain (default)
- * @example setOutputGain(5.0) // unity gain
- * @example setOutputGain(env.out) // modulate gain from envelope
+ * @example $setOutputGain(2.5) // 50% gain (default)
+ * @example $setOutputGain(5.0) // unity gain
+ * @example $setOutputGain(env.out) // modulate gain from envelope
  */
-function setOutputGain(gain: Signal): void;
+function $setOutputGain(gain: Signal): void;
 
 /**
  * DeferredModuleOutput is a placeholder for a signal that will be assigned later.
@@ -655,11 +655,11 @@ interface DeferredCollection extends Iterable<DeferredModuleOutput> {
  * Useful for feedback loops and forward references.
  * @param channels - Number of deferred outputs (1-16, default 1)
  * @example
- * const feedback = deferred();
- * const delayed = delay(osc.out, feedback[0]);
+ * const feedback = $deferred();
+ * const delayed = $delay(osc.out, feedback[0]);
  * feedback.set(delayed);
  */
-function deferred(channels?: number): DeferredCollection;
+function $deferred(channels?: number): DeferredCollection;
 
 /**
  * Create a slider control that binds a UI slider to a signal module.
@@ -674,14 +674,14 @@ function deferred(channels?: number): DeferredCollection;
  * @returns A ModuleOutput carrying the slider's current value as a signal
  *
  * @example
- * const vol = slider("Volume", 0.5, 0, 1);
- * sine(440).gain(vol).out();
+ * const vol = $slider("Volume", 0.5, 0, 1);
+ * $sine(440).gain(vol).out();
  *
  * @example
- * const freq = slider("Frequency", 440, 20, 20000);
- * sine(freq).out();
+ * const freq = $slider("Frequency", 440, 20, 20000);
+ * $sine(freq).out();
  */
-function slider(label: string, value: number, min: number, max: number): ModuleOutput;
+function $slider(label: string, value: number, min: number, max: number): ModuleOutput;
 `;
 
 export function buildLibSource(schemas: ModuleSchema[]): string {
@@ -1189,8 +1189,10 @@ function renderFactoryFunction(
     moduleSchema: ModuleSchema,
     _interfaceName: string,
     indent: string,
+    prefixFunction: boolean = false,
 ): string[] {
-    const functionName = moduleSchema.name.split('.').pop()!;
+    const baseFunctionName = moduleSchema.name.split('.').pop()!;
+    const functionName = prefixFunction ? `$${baseFunctionName}` : baseFunctionName;
 
     let args: string[] = [];
     // @ts-ignore
@@ -1303,6 +1305,7 @@ function renderInterface(
     baseName: string,
     classSpec: ClassSpec,
     indent: string,
+    prefixFunction: boolean = false,
 ): string[] {
     const lines: string[] = [];
 
@@ -1315,12 +1318,12 @@ function renderInterface(
 
     // Render the factory function
     lines.push(
-        ...renderFactoryFunction(classSpec.moduleSchema, '', indent),
+        ...renderFactoryFunction(classSpec.moduleSchema, '', indent, prefixFunction),
     );
     return lines;
 }
 
-function renderTree(node: NamespaceNode, indentLevel: number = 0): string[] {
+function renderTree(node: NamespaceNode, indentLevel: number = 0, prefixTopLevel: boolean = false): string[] {
     const indent = '  '.repeat(indentLevel);
     const lines: string[] = [];
 
@@ -1328,15 +1331,17 @@ function renderTree(node: NamespaceNode, indentLevel: number = 0): string[] {
         if (item.kind === 'class') {
             const classSpec = node.classes.get(item.name);
             if (!classSpec) continue;
-            lines.push(...renderInterface(item.name, classSpec, indent));
+            const shouldPrefix = prefixTopLevel && indentLevel === 0;
+            lines.push(...renderInterface(item.name, classSpec, indent, shouldPrefix));
             lines.push('');
             continue;
         }
 
         const child = node.namespaces.get(item.name);
         if (!child) continue;
-        lines.push(`${indent}export namespace ${item.name} {`);
-        lines.push(...renderTree(child, indentLevel + 1));
+        const namespaceName = (prefixTopLevel && indentLevel === 0) ? `$${item.name}` : item.name;
+        lines.push(`${indent}export namespace ${namespaceName} {`);
+        lines.push(...renderTree(child, indentLevel + 1, false));
         lines.push(`${indent}}`);
         lines.push('');
     }
@@ -1353,17 +1358,15 @@ export function generateDSL(schemas: ModuleSchema[]): string {
         throw new Error('generateDSL expects an array of ModuleSchema');
     }
     const tree = buildTreeFromSchemas(schemas);
-    const lines = renderTree(tree, 0);
-    lines.unshift('namespace $ {');
+    const lines = renderTree(tree, 0, true); // Enable top-level prefixing
 
-    lines.push('}');
     const clockSchema = schemas.find((s) => s.name === 'clock');
     if (clockSchema) {
         lines.push('');
         lines.push('/** Default clock module running at 120 BPM. */');
         const clockReturnType = getFactoryReturnType(clockSchema);
         lines.push(
-            `export const rootClock: $.${clockReturnType};`,
+            `export const $rootClock: ${clockReturnType};`,
         );
     }
 
@@ -1373,7 +1376,7 @@ export function generateDSL(schemas: ModuleSchema[]): string {
         lines.push('/** Input signals. */');
         const signalReturnType = getFactoryReturnType(signalSchema);
         lines.push(
-            `export const input: Readonly<${signalReturnType}>;`,
+            `export const $input: Readonly<${signalReturnType}>;`,
         );
     }
 

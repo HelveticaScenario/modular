@@ -140,26 +140,33 @@ export function executePatchScript(
 
     console.log(context.namespaceTree)
 
+    // Prefix all top-level entries from the namespace tree with $
+    const prefixedNamespaceTree: Record<string, any> = {};
+    for (const [key, value] of Object.entries(context.namespaceTree)) {
+        prefixedNamespaceTree[`$${key}`] = value;
+    }
+
     // Create the execution environment with all DSL functions
     const dslGlobals = {
-        $: { ...context.namespaceTree },
-        // Helper functions
-        hz,
-        note,
-        bpm,
+        // Prefixed namespace tree (modules and namespaces)
+        ...prefixedNamespaceTree,
+        // Helper functions with $ prefix
+        $hz: hz,
+        $note: note,
+        $bpm: bpm,
         // Collection helpers
         $c,
         $r,
         // Deferred signal helper
-        deferred,
+        $deferred: deferred,
         // Slider control
-        slider,
+        $slider: slider,
         // Global settings
-        setTempo,
-        setOutputGain,
+        $setTempo: setTempo,
+        $setOutputGain: setOutputGain,
         // Built-in modules
-        rootClock,
-        input: rootInput,
+        $rootClock: rootClock,
+        $input: rootInput,
     };
 
     // console.log(dslGlobals);
