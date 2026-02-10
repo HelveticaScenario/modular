@@ -126,7 +126,7 @@ export class BaseCollection<T extends ModuleOutput> {
     scope(config?: {
         msPerFrame?: number;
         triggerThreshold?: number;
-        scale?: number;
+        range?: [number, number];
     }): this {
         if (this.items.length > 0) {
             this.items[0].builder.addScope(this.items[0], config);
@@ -669,10 +669,10 @@ export class GraphBuilder {
         config: {
             msPerFrame?: number;
             triggerThreshold?: number;
-            scale?: number;
+            range?: [number, number];
         } = {},
     ) {
-        const { msPerFrame = 500, triggerThreshold, scale = 5 } = config;
+        const { msPerFrame = 500, triggerThreshold, range = [-5, 5] } = config;
         let realTriggerThreshold: number | undefined =
             triggerThreshold !== undefined
                 ? triggerThreshold * 1000
@@ -691,7 +691,7 @@ export class GraphBuilder {
             },
             msPerFrame,
             triggerThreshold: realTriggerThreshold,
-            scale,
+            range,
         });
     }
 }
@@ -859,7 +859,7 @@ export class ModuleOutput {
     scope(config?: {
         msPerFrame?: number;
         triggerThreshold?: number;
-        scale?: number;
+        range?: [number, number];
     }): this {
         this.builder.addScope(this, config);
         return this;

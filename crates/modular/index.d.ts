@@ -272,8 +272,8 @@ export interface Scope {
   item: ScopeItem
   msPerFrame: number
   triggerThreshold?: number
-  /** Voltage scale for display (default 5.0). The scope displays from -scale to +scale. */
-  scale: number
+  /** Voltage range for display (default [-5.0, 5.0]). The scope displays from range[0] to range[1]. */
+  range: [number, number]
 }
 
 export type ScopeItem =

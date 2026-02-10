@@ -6,7 +6,7 @@ export const scopeKeyFromSubscription = (subscription: ScopeItem) => {
 };
 
 export interface ScopeDrawOptions {
-    scale?: number;
+    range?: [number, number];
     stats?: ScopeStats;
 }
 
@@ -18,7 +18,8 @@ export const drawOscilloscope = (
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const { scale = 5, stats } = options;
+    const { range = [-5, 5], stats } = options;
+    const [minVoltage, maxVoltage] = range;
     const w = canvas.width;
     const h = canvas.height;
 
@@ -42,25 +43,27 @@ export const drawOscilloscope = (
     const waveformWidth = w - legendWidth - statsWidth;
     const waveformRight = waveformLeft + waveformWidth;
 
-    const midY = h / 2;
-    const maxAbsAmplitude = scale;
-    const pixelsPerUnit = h / 2 / maxAbsAmplitude;
+    const voltageRange = maxVoltage - minVoltage;
+    const pixelsPerVolt = h / voltageRange;
+    const zeroY = h - (0 - minVoltage) * pixelsPerVolt;
 
     // Draw reference lines
     ctx.strokeStyle = borderColor;
     ctx.lineWidth = 1;
     ctx.setLineDash([]);
 
-    // Center line (0V) - solid
-    ctx.beginPath();
-    ctx.moveTo(waveformLeft, midY);
-    ctx.lineTo(waveformRight, midY);
-    ctx.stroke();
+    // Center line (0V) - solid (if 0V is within the range)
+    if (minVoltage <= 0 && maxVoltage >= 0) {
+        ctx.beginPath();
+        ctx.moveTo(waveformLeft, zeroY);
+        ctx.lineTo(waveformRight, zeroY);
+        ctx.stroke();
+    }
 
-    // +scale and -scale lines - dashed
+    // +maxVoltage and minVoltage lines - dashed
     ctx.setLineDash([4 * dpr, 4 * dpr]);
-    const topY = midY - scale * pixelsPerUnit;
-    const bottomY = midY + scale * pixelsPerUnit;
+    const topY = 0;
+    const bottomY = h;
 
     ctx.beginPath();
     ctx.moveTo(waveformLeft, topY);
@@ -81,9 +84,11 @@ export const drawOscilloscope = (
     ctx.textBaseline = 'middle';
 
     const legendX = legendWidth - 4 * dpr;
-    ctx.fillText(`+${scale}v`, legendX, topY);
-    ctx.fillText('0v', legendX, midY);
-    ctx.fillText(`-${scale}v`, legendX, bottomY);
+    ctx.fillText(`${maxVoltage.toFixed(1)}v`, legendX, topY);
+    if (minVoltage <= 0 && maxVoltage >= 0) {
+        ctx.fillText('0v', legendX, zeroY);
+    }
+    ctx.fillText(`${minVoltage.toFixed(1)}v`, legendX, bottomY);
 
     // Draw stats on right
     if (stats) {
@@ -102,7 +107,7 @@ export const drawOscilloscope = (
         ctx.font = `${13 * dpr}px "Fira Code", monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('~', waveformLeft + waveformWidth / 2, midY);
+        ctx.fillText('~', waveformLeft + waveformWidth / 2, zeroY);
         return;
     }
 
@@ -123,8 +128,8 @@ export const drawOscilloscope = (
         for (let i = 0; i < sampleCount; i++) {
             const x = waveformLeft + stepX * i;
             const rawSample = data[i];
-            const s = Math.max(-maxAbsAmplitude, Math.min(maxAbsAmplitude, rawSample));
-            const y = midY - s * pixelsPerUnit;
+            const clampedSample = Math.max(minVoltage, Math.min(maxVoltage, rawSample));
+            const y = h - (clampedSample - minVoltage) * pixelsPerVolt;
 
             if (i === 0) {
                 ctx.moveTo(x, y);
