@@ -1,28 +1,16 @@
+"use strict";
 /**
  * Shared type documentation for DSL types.
  * Used by both TypeScript lib generator (JSDoc) and HelpWindow (rendered docs).
  */
-
-export interface TypeMethod {
-    name: string;
-    signature: string;
-    description: string;
-    example?: string;
-}
-
-export interface TypeDocumentation {
-    name: string;
-    description: string;
-    definition?: string;
-    examples: string[];
-    seeAlso: string[];
-    methods?: TypeMethod[];
-}
-
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TYPE_DOCS = exports.DSL_TYPE_NAMES = void 0;
+exports.isDslType = isDslType;
+exports.getTypeDoc = getTypeDoc;
 /**
  * All DSL type names that should be linkified in documentation.
  */
-export const DSL_TYPE_NAMES = [
+exports.DSL_TYPE_NAMES = [
     'Signal',
     'PolySignal',
     'ModuleOutput',
@@ -34,18 +22,14 @@ export const DSL_TYPE_NAMES = [
     'MidiNote',
     'Scale',
     'StereoOutOptions',
-] as const;
-
-export type DslTypeName = (typeof DSL_TYPE_NAMES)[number];
-
+];
 /**
  * Comprehensive documentation for all DSL types.
  */
-export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
+exports.TYPE_DOCS = {
     Signal: {
         name: 'Signal',
-        description:
-            'A single-channel audio signal value. This is the fundamental type for all audio connections in the modular system. ' +
+        description: 'A single-channel audio signal value. This is the fundamental type for all audio connections in the modular system. ' +
             'Signals follow the 1V/octave convention where 0V corresponds to C4 (~261.63 Hz).',
         definition: 'number | Note | HZ | MidiNote | Scale | ModuleOutput',
         examples: [
@@ -58,11 +42,9 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         ],
         seeAlso: ['PolySignal', 'ModuleOutput', 'Note', 'HZ', 'MidiNote', 'Scale'],
     },
-
     PolySignal: {
         name: 'PolySignal',
-        description:
-            'A potentially multi-channel signal. Can be an array of Signals for polyphonic patches, ' +
+        description: 'A potentially multi-channel signal. Can be an array of Signals for polyphonic patches, ' +
             'or an iterable of ModuleOutputs. When used as input to a module, arrays are expanded to create multiple voices.',
         definition: 'Signal | Signal[] | Iterable<ModuleOutput>',
         examples: [
@@ -72,11 +54,9 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         ],
         seeAlso: ['Signal', 'ModuleOutput', 'Collection'],
     },
-
     ModuleOutput: {
         name: 'ModuleOutput',
-        description:
-            'A single output from a module, representing a mono signal connection. ' +
+        description: 'A single output from a module, representing a mono signal connection. ' +
             'ModuleOutputs are chainable - methods like gain(), shift(), and out() return the same output for fluent API usage. ' +
             'Every module factory returns either a ModuleOutput or a Collection of outputs.',
         definition: 'interface { moduleId: string; portName: string; channel: number; ... }',
@@ -102,9 +82,9 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             },
             {
                 name: 'scope',
-                signature: 'scope(config?: { msPerFrame?: number; triggerThreshold?: number; range?: [number, number] }): this',
+                signature: 'scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this',
                 description: 'Add an oscilloscope visualization for this output. The scope appears as an overlay in the editor.',
-                example: 'osc.scope({ msPerFrame: 100, range: [-10, 10] }).out()',
+                example: 'osc.scope({ msPerFrame: 100, scale: 5 }).out()',
             },
             {
                 name: 'out',
@@ -120,11 +100,9 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             },
         ],
     },
-
     ModuleOutputWithRange: {
         name: 'ModuleOutputWithRange',
-        description:
-            'An extension of ModuleOutput that knows its output value range (minValue, maxValue). ' +
+        description: 'An extension of ModuleOutput that knows its output value range (minValue, maxValue). ' +
             'Typically returned by LFOs, envelopes, and other modulation sources. ' +
             'The range() method uses the stored min/max for automatic scaling.',
         definition: 'interface extends ModuleOutput { minValue: number; maxValue: number; range(...): ModuleOutput }',
@@ -138,18 +116,15 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             {
                 name: 'range',
                 signature: 'range(outMin: PolySignal, outMax: PolySignal): ModuleOutput',
-                description:
-                    'Remap the output from its native range (minValue, maxValue) to a new range (outMin, outMax). ' +
+                description: 'Remap the output from its native range (minValue, maxValue) to a new range (outMin, outMax). ' +
                     'Unlike Collection.range(), this uses the stored min/max values automatically.',
                 example: 'lfo.range(note("C3"), note("C5"))  // Remap LFO to pitch range',
             },
         ],
     },
-
     Collection: {
         name: 'Collection',
-        description:
-            'A collection of ModuleOutput instances with chainable DSP methods. ' +
+        description: 'A collection of ModuleOutput instances with chainable DSP methods. ' +
             'Created with the $() helper function. Supports iteration, indexing, and spreading. ' +
             'Methods operate on all outputs in the collection.',
         definition: 'interface extends Iterable<ModuleOutput> { length: number; [index]: ModuleOutput; ... }',
@@ -176,7 +151,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             },
             {
                 name: 'scope',
-                signature: 'scope(config?: { msPerFrame?: number; triggerThreshold?: number; range?: [number, number] }): this',
+                signature: 'scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this',
                 description: 'Add scope visualization for the first output in the collection.',
                 example: '$(osc1, osc2).scope().out()',
             },
@@ -200,11 +175,9 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             },
         ],
     },
-
     CollectionWithRange: {
         name: 'CollectionWithRange',
-        description:
-            'A collection of ModuleOutputWithRange instances. ' +
+        description: 'A collection of ModuleOutputWithRange instances. ' +
             'Created with the $r() helper function. Like Collection, but the range() method uses stored min/max values.',
         definition: 'interface extends Iterable<ModuleOutputWithRange> { ... }',
         examples: [
@@ -216,18 +189,15 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             {
                 name: 'range',
                 signature: 'range(outMin: PolySignal, outMax: PolySignal): Collection',
-                description:
-                    'Remap all outputs from their native ranges to a new range. ' +
+                description: 'Remap all outputs from their native ranges to a new range. ' +
                     'Uses each output\'s stored minValue/maxValue.',
                 example: '$r(lfo1, lfo2).range(200, 2000)',
             },
         ],
     },
-
     Note: {
         name: 'Note',
-        description:
-            'A musical note string in scientific pitch notation. ' +
+        description: 'A musical note string in scientific pitch notation. ' +
             'Consists of a note name (A-G), optional accidental (#/b), and optional octave number. ' +
             'If octave is omitted, defaults to octave 4.',
         definition: '`${NoteName}${Accidental}${Octave}`',
@@ -239,11 +209,9 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         ],
         seeAlso: ['Signal', 'HZ', 'MidiNote'],
     },
-
     HZ: {
         name: 'HZ',
-        description:
-            'A frequency string specifying a value in Hertz. ' +
+        description: 'A frequency string specifying a value in Hertz. ' +
             'Case-insensitive suffix "hz". Converted to 1V/oct voltage internally.',
         definition: '`${number}hz` | `${number}Hz`',
         examples: [
@@ -253,11 +221,9 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         ],
         seeAlso: ['Signal', 'Note'],
     },
-
     MidiNote: {
         name: 'MidiNote',
-        description:
-            'A MIDI note number string. MIDI note 60 is middle C (C4). ' +
+        description: 'A MIDI note number string. MIDI note 60 is middle C (C4). ' +
             'Converted to 1V/oct voltage internally.',
         definition: '`${number}m`',
         examples: [
@@ -267,11 +233,9 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         ],
         seeAlso: ['Signal', 'Note'],
     },
-
     Scale: {
         name: 'Scale',
-        description:
-            'A scale pattern string for generating multiple pitches. ' +
+        description: 'A scale pattern string for generating multiple pitches. ' +
             'Format: "{count}s({root}:{mode})" where count is the number of notes, ' +
             'root is the root note, and mode is the scale type.',
         definition: '`${number}s(${Note}:${Mode})`',
@@ -283,11 +247,9 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         ],
         seeAlso: ['Signal', 'Note'],
     },
-
     StereoOutOptions: {
         name: 'StereoOutOptions',
-        description:
-            'Options for stereo output routing via the out() method. ' +
+        description: 'Options for stereo output routing via the out() method. ' +
             'Controls gain, panning, and stereo width.',
         definition: 'interface { gain?: PolySignal; pan?: PolySignal; width?: Signal }',
         examples: [
@@ -299,20 +261,19 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         seeAlso: ['ModuleOutput', 'Collection', 'PolySignal'],
     },
 };
-
 /**
  * Check if a string is a known DSL type name.
  */
-export function isDslType(name: string): name is DslTypeName {
-    return DSL_TYPE_NAMES.includes(name as DslTypeName);
+function isDslType(name) {
+    return exports.DSL_TYPE_NAMES.includes(name);
 }
-
 /**
  * Get documentation for a DSL type by name.
  */
-export function getTypeDoc(name: string): TypeDocumentation | undefined {
+function getTypeDoc(name) {
     if (isDslType(name)) {
-        return TYPE_DOCS[name];
+        return exports.TYPE_DOCS[name];
     }
     return undefined;
 }
+//# sourceMappingURL=typeDocs.js.map

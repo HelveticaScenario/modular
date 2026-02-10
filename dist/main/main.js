@@ -1,0 +1,1264 @@
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+const electron_1 = require("electron");
+const core_1 = require("@modular/core");
+const ipcTypes_1 = require("../shared/ipcTypes");
+const patchSimilarityRemap_1 = require("./patchSimilarityRemap");
+const executor_1 = require("./dsl/executor");
+const typescriptLibGen_1 = require("./dsl/typescriptLibGen");
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
+const zod_1 = require("zod");
+const update_electron_app_1 = require("update-electron-app");
+(0, update_electron_app_1.updateElectronApp)();
+// Declare mainWindow early so log forwarding can reference it
+let mainWindow = null;
+// ========================================================================
+// Main Process Log Forwarding
+// ========================================================================
+// Queue logs until the renderer is ready, then forward all logs to renderer
+const pendingLogEntries = [];
+let rendererReady = false;
+function sendLogToRenderer(entry) {
+    if (mainWindow && !mainWindow.isDestroyed() && rendererReady) {
+        mainWindow.webContents.send(ipcTypes_1.IPC_CHANNELS.MAIN_LOG, entry);
+    }
+    else {
+        // Queue log entries until renderer is ready
+        pendingLogEntries.push(entry);
+    }
+}
+function flushPendingLogs() {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        rendererReady = true;
+        for (const entry of pendingLogEntries) {
+            mainWindow.webContents.send(ipcTypes_1.IPC_CHANNELS.MAIN_LOG, entry);
+        }
+        pendingLogEntries.length = 0;
+    }
+}
+// Intercept console methods to forward to renderer
+const originalConsole = {
+    log: console.log.bind(console),
+    info: console.info.bind(console),
+    warn: console.warn.bind(console),
+    error: console.error.bind(console),
+    debug: console.debug.bind(console),
+};
+function createLogInterceptor(level) {
+    return (...args) => {
+        // Always call original console method first
+        originalConsole[level](...args);
+        // Forward to renderer (serialize args to handle non-transferable values)
+        const entry = {
+            level,
+            timestamp: Date.now(),
+            args: args.map(arg => serializeForIPC(arg)),
+        };
+        sendLogToRenderer(entry);
+    };
+}
+/**
+ * Serialize a value for IPC transfer, handling non-transferable types
+ */
+function serializeForIPC(value, seen = new WeakSet()) {
+    // Handle primitives
+    if (value === null || value === undefined) {
+        return value;
+    }
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        return value;
+    }
+    // Handle BigInt by converting to string with 'n' suffix for clarity
+    if (typeof value === 'bigint') {
+        return `${value}n`;
+    }
+    // Handle symbols
+    if (typeof value === 'symbol') {
+        return value.toString();
+    }
+    // Handle functions
+    if (typeof value === 'function') {
+        return `[Function: ${value.name || 'anonymous'}]`;
+    }
+    // Handle Error objects specially
+    if (value instanceof Error) {
+        return { __error: true, name: value.name, message: value.message, stack: value.stack };
+    }
+    // Handle objects and arrays
+    if (typeof value === 'object') {
+        // Detect circular references
+        if (seen.has(value)) {
+            return '[Circular]';
+        }
+        seen.add(value);
+        // Handle arrays
+        if (Array.isArray(value)) {
+            return value.map(item => serializeForIPC(item, seen));
+        }
+        // Handle Date
+        if (value instanceof Date) {
+            return value.toISOString();
+        }
+        // Handle Map
+        if (value instanceof Map) {
+            const obj = { __type: 'Map' };
+            for (const [k, v] of value) {
+                obj[String(k)] = serializeForIPC(v, seen);
+            }
+            return obj;
+        }
+        // Handle Set
+        if (value instanceof Set) {
+            return { __type: 'Set', values: Array.from(value).map(v => serializeForIPC(v, seen)) };
+        }
+        // Handle plain objects
+        const result = {};
+        for (const key of Object.keys(value)) {
+            result[key] = serializeForIPC(value[key], seen);
+        }
+        return result;
+    }
+    // Fallback
+    return String(value);
+}
+console.log = createLogInterceptor('log');
+console.info = createLogInterceptor('info');
+console.warn = createLogInterceptor('warn');
+console.error = createLogInterceptor('error');
+console.debug = createLogInterceptor('debug');
+// ========================================================================
+// Handle creating/removing shortcuts on Windows when installing/uninstalling.
+if (require('electron-squirrel-startup')) {
+    electron_1.app.quit();
+}
+// Enforce single instance
+const gotTheLock = electron_1.app.requestSingleInstanceLock();
+if (!gotTheLock) {
+    electron_1.app.quit();
+}
+else {
+    electron_1.app.on('second-instance', () => {
+        // Focus the existing window if someone tries to open a second instance
+        const windows = electron_1.BrowserWindow.getAllWindows();
+        if (windows.length > 0) {
+            const mainWindow = windows[0];
+            if (mainWindow.isMinimized())
+                mainWindow.restore();
+            mainWindow.focus();
+        }
+    });
+}
+// Config persistence - defined early so we can load before synth creation
+let CONFIG_FILE;
+try {
+    CONFIG_FILE = path.join(electron_1.app.getPath('userData'), 'config.json');
+}
+catch (error) {
+    console.error('Error determining config file path:', error);
+    CONFIG_FILE = 'config.json';
+}
+const AppConfigSchema = zod_1.z.object({
+    theme: zod_1.z.string().optional(),
+    cursorStyle: zod_1.z
+        .enum([
+        'line',
+        'block',
+        'underline',
+        'line-thin',
+        'block-outline',
+        'underline-thin',
+    ])
+        .optional(),
+    font: zod_1.z
+        .enum([
+        // Bundled fonts
+        'Fira Code',
+        'JetBrains Mono',
+        'Cascadia Code',
+        'Source Code Pro',
+        'IBM Plex Mono',
+        'Hack',
+        'Inconsolata',
+        'Monaspace Neon',
+        'Monaspace Argon',
+        'Monaspace Xenon',
+        'Monaspace Krypton',
+        'Monaspace Radon',
+        'Geist Mono',
+        'Iosevka',
+        'Victor Mono',
+        'Roboto Mono',
+        'Maple Mono',
+        'Commit Mono',
+        '0xProto',
+        'Intel One Mono',
+        'Mononoki',
+        'Anonymous Pro',
+        'Recursive',
+        // System fonts (available only if installed)
+        'SF Mono',
+        'Monaco',
+        'Menlo',
+        'Consolas',
+    ])
+        .optional(),
+    fontLigatures: zod_1.z.boolean().optional(),
+    fontSize: zod_1.z.number().min(8).max(72).optional(),
+    prettier: zod_1.z.record(zod_1.z.string(), zod_1.z.unknown()).optional(),
+    lastOpenedFolder: zod_1.z.string().optional(),
+    audioConfig: zod_1.z.object({
+        hostId: zod_1.z.string().optional(),
+        inputDeviceId: zod_1.z.string().nullable().optional(),
+        outputDeviceId: zod_1.z.string().optional(),
+        sampleRate: zod_1.z.number().optional(),
+        bufferSize: zod_1.z.number().optional(),
+    }).optional(),
+});
+function loadConfig() {
+    try {
+        if (fs.existsSync(CONFIG_FILE)) {
+            const data = fs.readFileSync(CONFIG_FILE, 'utf-8');
+            const json = JSON.parse(data);
+            const result = AppConfigSchema.safeParse(json);
+            if (result.success) {
+                return result.data;
+            }
+            else {
+                console.error('Config validation failed:', result.error);
+            }
+        }
+    }
+    catch (error) {
+        console.error('Error loading config:', error);
+    }
+    return {};
+}
+function saveConfig(config) {
+    try {
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+    }
+    catch (error) {
+        console.error('Error saving config:', error);
+    }
+}
+// Load saved config to pass to synthesizer
+const savedConfig = loadConfig();
+const audioConfigOptions = savedConfig.audioConfig ? {
+    hostId: savedConfig.audioConfig.hostId ?? undefined,
+    outputDeviceId: savedConfig.audioConfig.outputDeviceId ?? undefined,
+    inputDeviceId: savedConfig.audioConfig.inputDeviceId ?? undefined,
+    sampleRate: savedConfig.audioConfig.sampleRate ?? undefined,
+    bufferSize: savedConfig.audioConfig.bufferSize ?? undefined,
+} : undefined;
+// Initialize the synthesizer instance with saved config
+console.log('Initializing Synthesizer with config:', audioConfigOptions);
+const synth = new core_1.Synthesizer(audioConfigOptions);
+// Get the actual audio state after construction (may have fallen back to defaults)
+const actualAudioState = synth.getCurrentAudioState();
+console.log('Actual audio state after construction:', actualAudioState);
+// Check for fallback warning and update saved config if devices changed
+if (actualAudioState.fallbackWarning) {
+    console.warn('Audio device fallback occurred:', actualAudioState.fallbackWarning);
+}
+// Update saved config with actual devices used (in case of fallback)
+const actualConfig = loadConfig();
+const configNeedsUpdate = actualConfig.audioConfig?.hostId !== actualAudioState.hostId ||
+    actualConfig.audioConfig?.outputDeviceId !== actualAudioState.outputDeviceId ||
+    actualConfig.audioConfig?.inputDeviceId !== actualAudioState.inputDeviceId ||
+    actualConfig.audioConfig?.sampleRate !== actualAudioState.sampleRate ||
+    actualConfig.audioConfig?.bufferSize !== actualAudioState.bufferSize;
+if (configNeedsUpdate) {
+    actualConfig.audioConfig = {
+        hostId: actualAudioState.hostId,
+        outputDeviceId: actualAudioState.outputDeviceId ?? undefined,
+        inputDeviceId: actualAudioState.inputDeviceId ?? null,
+        sampleRate: actualAudioState.sampleRate,
+        bufferSize: actualAudioState.bufferSize ?? undefined,
+    };
+    saveConfig(actualConfig);
+    console.log('Saved updated audio config after fallback');
+}
+// Save audio configuration to config file
+function saveAudioConfig() {
+    try {
+        const config = loadConfig();
+        const state = synth.getCurrentAudioState();
+        config.audioConfig = {
+            hostId: state.hostId,
+            outputDeviceId: state.outputDeviceId ?? undefined,
+            inputDeviceId: state.inputDeviceId ?? null,
+            sampleRate: state.sampleRate,
+            bufferSize: state.bufferSize ?? undefined,
+        };
+        saveConfig(config);
+        console.log('Audio configuration saved');
+    }
+    catch (error) {
+        console.error('Error saving audio config:', error);
+    }
+}
+setInterval(() => {
+    // Keep the audio thread alive
+    console.log('health:', synth.getHealth());
+}, 10000);
+// Workspace root state
+let currentWorkspaceRoot = null;
+// File watcher for config changes
+let configWatcher = null;
+function ensureConfigExists() {
+    if (!fs.existsSync(CONFIG_FILE)) {
+        const defaultConfig = {
+            theme: 'modular-dark',
+            cursorStyle: 'block',
+            font: 'Fira Code',
+            fontSize: 17,
+        };
+        saveConfig(defaultConfig);
+    }
+}
+function startConfigWatcher() {
+    if (configWatcher) {
+        configWatcher.close();
+    }
+    ensureConfigExists();
+    // Watch for config file changes
+    configWatcher = fs.watch(CONFIG_FILE, (eventType) => {
+        if (eventType === 'change') {
+            const config = loadConfig();
+            // Send updated config to renderer
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send(ipcTypes_1.IPC_CHANNELS.CONFIG_ON_CHANGE, config);
+            }
+        }
+    });
+}
+// Patch reconciliation state (reset when a different file/buffer is evaluated)
+let lastAppliedPatchGraph = null;
+let lastAppliedSourceId = null;
+const DEBUG_LOG = process.env.MODULAR_DEBUG_LOG === '1' ||
+    process.env.MODULAR_DEBUG_LOG === 'true';
+const PATCH_REMAP_THRESHOLD = process.env.MODULAR_PATCH_REMAP_THRESHOLD
+    ? Number(process.env.MODULAR_PATCH_REMAP_THRESHOLD)
+    : undefined;
+const PATCH_REMAP_MARGIN = process.env.MODULAR_PATCH_REMAP_MARGIN
+    ? Number(process.env.MODULAR_PATCH_REMAP_MARGIN)
+    : undefined;
+console.log('Patch remap debug mode:', DEBUG_LOG);
+/**
+ * Validate that a path is valid (absolute or relative to workspace)
+ */
+function validatePathInWorkspace(filePath) {
+    if (path.isAbsolute(filePath)) {
+        return filePath;
+    }
+    if (!currentWorkspaceRoot) {
+        return null;
+    }
+    return path.resolve(currentWorkspaceRoot, filePath);
+}
+/**
+ * Check if a file should be included (only .js and .mjs files)
+ */
+function isJavaScriptFile(filename) {
+    return filename.endsWith('.js') || filename.endsWith('.mjs');
+}
+/**
+ * Recursively build file tree for JavaScript files
+ */
+function buildFileTree(dirPath, relativePath = '') {
+    const entries = [];
+    try {
+        const items = fs.readdirSync(dirPath, { withFileTypes: true });
+        for (const item of items) {
+            // Skip hidden files and node_modules
+            if (item.name.startsWith('.') || item.name === 'node_modules') {
+                continue;
+            }
+            const itemRelativePath = relativePath
+                ? `${relativePath}/${item.name}`
+                : item.name;
+            const itemAbsolutePath = path.join(dirPath, item.name);
+            if (item.isDirectory()) {
+                const children = buildFileTree(itemAbsolutePath, itemRelativePath);
+                if (children.length > 0) {
+                    entries.push({
+                        name: item.name,
+                        path: itemRelativePath,
+                        type: 'directory',
+                        children,
+                    });
+                }
+            }
+            else if (item.isFile() && isJavaScriptFile(item.name)) {
+                entries.push({
+                    name: item.name,
+                    path: itemRelativePath,
+                    type: 'file',
+                });
+            }
+        }
+    }
+    catch (error) {
+        console.error('Error reading directory:', dirPath, error);
+    }
+    // Sort: directories first, then files, alphabetically
+    return entries.sort((a, b) => {
+        if (a.type !== b.type) {
+            return a.type === 'directory' ? -1 : 1;
+        }
+        return a.name.localeCompare(b.name);
+    });
+}
+/**
+ * Type-safe IPC handler registration
+ */
+function registerIPCHandler(channel, handler) {
+    electron_1.ipcMain.handle(ipcTypes_1.IPC_CHANNELS[channel], async (_event, ...args) => {
+        try {
+            // @ts-ignore - TypeScript has trouble with the variadic handler signatures
+            const ret = handler(...args);
+            if (ret instanceof Promise) {
+                return await ret;
+            }
+            return ret;
+        }
+        catch (error) {
+            console.error(`Error in IPC handler ${channel}:`, error);
+            throw error;
+        }
+    });
+}
+// Register all IPC handlers
+registerIPCHandler('GET_SCHEMAS', () => {
+    return (0, core_1.getSchemas)();
+});
+// DSL lib source for Monaco autocomplete - cached since schemas don't change at runtime
+let cachedLibSource = null;
+registerIPCHandler('GET_DSL_LIB_SOURCE', () => {
+    if (!cachedLibSource) {
+        cachedLibSource = (0, typescriptLibGen_1.buildLibSource)((0, core_1.getSchemas)());
+    }
+    return cachedLibSource;
+});
+// DSL execution in main process with direct N-API access
+registerIPCHandler('DSL_EXECUTE', (source, sourceId) => {
+    try {
+        const schemas = (0, core_1.getSchemas)();
+        const { patch, sourceLocationMap, interpolationResolutions, sliders } = (0, executor_1.executePatchScript)(source, schemas);
+        patch.moduleIdRemaps = [];
+        // Convert Map to Record for IPC serialization
+        const sourceLocationRecord = {};
+        for (const [moduleId, loc] of sourceLocationMap) {
+            sourceLocationRecord[moduleId] = loc;
+        }
+        // Convert interpolation resolutions Map to Record for IPC serialization
+        const interpolationResolutionsRecord = {};
+        for (const [key, resolutions] of interpolationResolutions) {
+            interpolationResolutionsRecord[key] = resolutions;
+        }
+        // Requirement: assume a full change when a different file/buffer is evaluated.
+        const shouldReconcile = !!sourceId && lastAppliedSourceId === sourceId;
+        if (DEBUG_LOG) {
+            if (!sourceId) {
+                console.log('[patch-remap] no sourceId; reconciliation disabled');
+            }
+            else if (!shouldReconcile) {
+                console.log(`[patch-remap] source changed (${lastAppliedSourceId ?? 'none'} -> ${sourceId}); reconciliation disabled`);
+            }
+            else {
+                console.log(`[patch-remap] reconciling for sourceId=${sourceId}`);
+            }
+        }
+        const { moduleIdRemap } = (0, patchSimilarityRemap_1.reconcilePatchBySimilarity)(patch, shouldReconcile ? lastAppliedPatchGraph : null, {
+            matchThreshold: PATCH_REMAP_THRESHOLD,
+            ambiguityMargin: PATCH_REMAP_MARGIN,
+            debugLog: DEBUG_LOG ? (message) => console.log(message) : undefined,
+        });
+        if (DEBUG_LOG) {
+            const remapCount = Object.keys(moduleIdRemap).length;
+            const thresholdInfo = PATCH_REMAP_THRESHOLD !== undefined
+                ? PATCH_REMAP_THRESHOLD.toFixed(4)
+                : 'default';
+            const marginInfo = PATCH_REMAP_MARGIN !== undefined
+                ? PATCH_REMAP_MARGIN.toFixed(4)
+                : 'default';
+            console.log(`[patch-remap] summary shouldReconcile=${shouldReconcile} remaps=${remapCount} threshold=${thresholdInfo} margin=${marginInfo}`);
+        }
+        // Send remap hints along with the desired patch
+        patch.moduleIdRemaps = Object.entries(moduleIdRemap).map(([from, to]) => ({
+            from,
+            to,
+        }));
+        const errors = synth.updatePatch(patch);
+        if (errors.length === 0) {
+            lastAppliedPatchGraph = patch;
+            lastAppliedSourceId = sourceId ?? null;
+        }
+        if (errors.length > 0) {
+            return {
+                success: false,
+                errors,
+                appliedPatch: patch,
+                moduleIdRemap,
+                sourceLocationMap: sourceLocationRecord,
+                interpolationResolutions: interpolationResolutionsRecord,
+                sliders,
+            };
+        }
+        return {
+            success: true,
+            errors: [],
+            appliedPatch: patch,
+            moduleIdRemap,
+            sourceLocationMap: sourceLocationRecord,
+            interpolationResolutions: interpolationResolutionsRecord,
+            sliders,
+        };
+    }
+    catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return {
+            success: false,
+            errorMessage,
+        };
+    }
+});
+registerIPCHandler('SYNTH_GET_SAMPLE_RATE', () => {
+    return synth.sampleRate();
+});
+registerIPCHandler('SYNTH_GET_CHANNELS', () => {
+    return synth.channels();
+});
+registerIPCHandler('SYNTH_GET_SCOPES', () => {
+    return synth.getScopes();
+});
+registerIPCHandler('SYNTH_GET_MODULE_STATES', () => {
+    return synth.getModuleStates();
+});
+registerIPCHandler('GET_MINI_LEAF_SPANS', (source) => {
+    return (0, core_1.getMiniLeafSpans)(source);
+});
+registerIPCHandler('SYNTH_UPDATE_PATCH', (patch, sourceId) => {
+    // Requirement: assume a full change when a different file/buffer is evaluated.
+    const shouldReconcile = !!sourceId && lastAppliedSourceId === sourceId;
+    if (DEBUG_LOG) {
+        if (!sourceId) {
+            console.log('[patch-remap] no sourceId; reconciliation disabled');
+        }
+        else if (!shouldReconcile) {
+            console.log(`[patch-remap] source changed (${lastAppliedSourceId ?? 'none'} -> ${sourceId}); reconciliation disabled`);
+        }
+        else {
+            console.log(`[patch-remap] reconciling for sourceId=${sourceId}`);
+        }
+    }
+    const { moduleIdRemap } = (0, patchSimilarityRemap_1.reconcilePatchBySimilarity)(patch, shouldReconcile ? lastAppliedPatchGraph : null, {
+        matchThreshold: PATCH_REMAP_THRESHOLD,
+        ambiguityMargin: PATCH_REMAP_MARGIN,
+        debugLog: DEBUG_LOG ? (message) => console.log(message) : undefined,
+    });
+    if (DEBUG_LOG) {
+        const remapCount = Object.keys(moduleIdRemap).length;
+        const thresholdInfo = PATCH_REMAP_THRESHOLD !== undefined
+            ? PATCH_REMAP_THRESHOLD.toFixed(4)
+            : 'default';
+        const marginInfo = PATCH_REMAP_MARGIN !== undefined
+            ? PATCH_REMAP_MARGIN.toFixed(4)
+            : 'default';
+        console.log(`[patch-remap] summary shouldReconcile=${shouldReconcile} remaps=${remapCount} threshold=${thresholdInfo} margin=${marginInfo}`);
+    }
+    // Send remap hints along with the desired patch; Rust will use them to
+    // preserve module instances while keeping the desired ids.
+    patch.moduleIdRemaps = Object.entries(moduleIdRemap).map(([from, to]) => ({
+        from,
+        to,
+    }));
+    const errors = synth.updatePatch(patch);
+    if (errors.length === 0) {
+        lastAppliedPatchGraph = patch;
+        lastAppliedSourceId = sourceId ?? null;
+    }
+    return { errors, appliedPatch: patch, moduleIdRemap };
+});
+registerIPCHandler('SYNTH_START_RECORDING', (path) => {
+    return synth.startRecording(path);
+});
+registerIPCHandler('SYNTH_STOP_RECORDING', () => {
+    return synth.stopRecording();
+});
+registerIPCHandler('SYNTH_IS_RECORDING', () => {
+    return synth.isRecording();
+});
+registerIPCHandler('SYNTH_GET_HEALTH', () => {
+    return synth.getHealth();
+});
+registerIPCHandler('SYNTH_STOP', () => {
+    synth.stop();
+});
+registerIPCHandler('SYNTH_IS_STOPPED', () => {
+    return synth.isStopped();
+});
+registerIPCHandler('SYNTH_SET_MODULE_PARAM', (moduleId, moduleType, params) => {
+    synth.setModuleParam(moduleId, moduleType, params);
+});
+// Audio device operations - new API
+registerIPCHandler('AUDIO_REFRESH_DEVICE_CACHE', () => {
+    synth.refreshDeviceCache();
+});
+registerIPCHandler('AUDIO_GET_DEVICE_CACHE', () => {
+    return synth.getDeviceCache();
+});
+registerIPCHandler('AUDIO_GET_CURRENT_STATE', () => {
+    return synth.getCurrentAudioState();
+});
+registerIPCHandler('AUDIO_RECREATE_STREAMS', (outputDeviceId, sampleRate, bufferSize, inputDeviceId) => {
+    synth.recreateStreams(outputDeviceId, sampleRate, bufferSize ?? undefined, inputDeviceId ?? undefined);
+    saveAudioConfig();
+});
+// Legacy audio device operations (for backward compatibility)
+registerIPCHandler('AUDIO_REFRESH_DEVICE_LIST', () => {
+    synth.refreshDeviceList();
+});
+registerIPCHandler('AUDIO_LIST_HOSTS', () => {
+    return synth.listAudioHosts();
+});
+registerIPCHandler('AUDIO_LIST_OUTPUT_DEVICES', () => {
+    return synth.listAudioOutputDevices();
+});
+registerIPCHandler('AUDIO_LIST_INPUT_DEVICES', () => {
+    return synth.listAudioInputDevices();
+});
+registerIPCHandler('AUDIO_GET_OUTPUT_DEVICE', () => {
+    return synth.getOutputDeviceId();
+});
+registerIPCHandler('AUDIO_GET_INPUT_DEVICE', () => {
+    return synth.getInputDeviceId();
+});
+registerIPCHandler('AUDIO_SET_OUTPUT_DEVICE', (deviceId) => {
+    synth.setAudioOutputDevice(deviceId);
+    saveAudioConfig();
+});
+registerIPCHandler('AUDIO_SET_INPUT_DEVICE', (deviceId) => {
+    synth.setAudioInputDevice(deviceId ?? undefined);
+    saveAudioConfig();
+});
+registerIPCHandler('AUDIO_GET_INPUT_CHANNELS', () => {
+    return synth.inputChannels();
+});
+// MIDI device operations
+registerIPCHandler('MIDI_LIST_INPUTS', () => {
+    return synth.listMidiInputs();
+});
+registerIPCHandler('MIDI_GET_INPUT', () => {
+    return synth.getMidiInputName();
+});
+registerIPCHandler('MIDI_SET_INPUT', (portName) => {
+    synth.setMidiInput(portName ?? undefined);
+});
+registerIPCHandler('MIDI_TRY_RECONNECT', () => {
+    synth.tryReconnectMidi();
+});
+registerIPCHandler('SHOW_CONTEXT_MENU', (options) => {
+    // We import Menu, MenuItem dynamically or assume they are available if imported at top
+    // Since imports are top-level, we can use them.
+    const menu = new electron_1.Menu();
+    const webContents = electron_1.BrowserWindow.getAllWindows()[0]?.webContents;
+    if (!webContents)
+        return;
+    if (options.type === 'untitled') {
+        menu.append(new electron_1.MenuItem({
+            label: 'Save',
+            click: () => webContents.send(ipcTypes_1.IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, {
+                command: 'save',
+                bufferId: options.bufferId,
+            }),
+        }));
+    }
+    else if (options.type === 'file' || options.type === 'directory') {
+        const filePath = options.path;
+        if (options.type === 'file') {
+            if (options.isOpenBuffer) {
+                menu.append(new electron_1.MenuItem({
+                    label: 'Save',
+                    click: () => webContents.send(ipcTypes_1.IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, { command: 'save', bufferId: options.bufferId }),
+                }));
+                menu.append(new electron_1.MenuItem({ type: 'separator' }));
+            }
+        }
+        menu.append(new electron_1.MenuItem({
+            label: 'Rename...',
+            click: () => webContents.send(ipcTypes_1.IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, {
+                command: 'rename',
+                path: options.path,
+                bufferId: options.bufferId,
+            }),
+        }));
+        menu.append(new electron_1.MenuItem({
+            label: 'Delete',
+            click: () => webContents.send(ipcTypes_1.IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND, {
+                command: 'delete',
+                path: options.path,
+                bufferId: options.bufferId,
+            }),
+        }));
+        menu.append(new electron_1.MenuItem({ type: 'separator' }));
+        menu.append(new electron_1.MenuItem({
+            label: 'Reveal in Finder/Explorer',
+            click: () => {
+                if (filePath) {
+                    const absPath = validatePathInWorkspace(filePath);
+                    if (absPath)
+                        electron_1.shell.showItemInFolder(absPath);
+                }
+            },
+        }));
+    }
+    menu.popup();
+});
+// Filesystem IPC handlers
+// @ts-ignore - async handler returns Promise
+registerIPCHandler('FS_SELECT_WORKSPACE', async () => {
+    const properties = [
+        'openDirectory',
+    ];
+    // Add 'createDirectory' for macOS or 'promptToCreate' for Windows if needed
+    if (process.platform === 'darwin') {
+        properties.push('createDirectory'); // Allows creating new directories from the dialog on macOS
+    }
+    else if (process.platform === 'win32') {
+        // Note: promptToCreate on Windows prompts for creation if the path doesn't exist,
+        // but doesn't handle the actual creation, which must be done by your app.
+        properties.push('promptToCreate');
+    }
+    const result = await electron_1.dialog.showOpenDialog({
+        properties,
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+        return null;
+    }
+    currentWorkspaceRoot = result.filePaths[0];
+    console.log('Workspace selected:', currentWorkspaceRoot);
+    // Save to config (load-merge-save to preserve other settings)
+    const config = loadConfig();
+    config.lastOpenedFolder = currentWorkspaceRoot;
+    saveConfig(config);
+    return { path: currentWorkspaceRoot };
+});
+registerIPCHandler('FS_GET_WORKSPACE', () => {
+    return currentWorkspaceRoot ? { path: currentWorkspaceRoot } : null;
+});
+registerIPCHandler('FS_LIST_FILES', () => {
+    if (!currentWorkspaceRoot) {
+        return [];
+    }
+    return buildFileTree(currentWorkspaceRoot);
+});
+registerIPCHandler('FS_READ_FILE', (relativePath) => {
+    const absolutePath = validatePathInWorkspace(relativePath);
+    if (!absolutePath) {
+        throw new Error('Invalid file path or no workspace selected');
+    }
+    try {
+        return fs.readFileSync(absolutePath, 'utf-8');
+    }
+    catch (error) {
+        console.error('Error reading file:', error);
+        throw new Error(`Failed to read file: ${relativePath}`);
+    }
+});
+registerIPCHandler('FS_WRITE_FILE', (relativePath, content) => {
+    const absolutePath = validatePathInWorkspace(relativePath);
+    if (!absolutePath) {
+        return {
+            success: false,
+            error: 'Invalid file path or no workspace selected',
+        };
+    }
+    try {
+        // Ensure directory exists
+        const dir = path.dirname(absolutePath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(absolutePath, content, 'utf-8');
+        return { success: true };
+    }
+    catch (error) {
+        console.error('Error writing file:', error);
+        return {
+            success: false,
+            error: `Failed to write file: ${relativePath}`,
+        };
+    }
+});
+registerIPCHandler('FS_RENAME_FILE', (oldPath, newPath) => {
+    const oldAbsolutePath = validatePathInWorkspace(oldPath);
+    const newAbsolutePath = validatePathInWorkspace(newPath);
+    if (!oldAbsolutePath || !newAbsolutePath) {
+        return {
+            success: false,
+            error: 'Invalid file path or no workspace selected',
+        };
+    }
+    try {
+        // Ensure target directory exists
+        const dir = path.dirname(newAbsolutePath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        // Check for collision
+        if (fs.existsSync(newAbsolutePath)) {
+            // Check if it's the same file (e.g. case-only rename on case-insensitive FS)
+            try {
+                const oldStat = fs.statSync(oldAbsolutePath);
+                const newStat = fs.statSync(newAbsolutePath);
+                // If inodes coincide, it's the same file, so allow rename (case change)
+                if (oldStat.ino !== newStat.ino) {
+                    return {
+                        success: false,
+                        error: 'A file with that name already exists.',
+                    };
+                }
+            }
+            catch (e) {
+                // If we can't verify, be safe and prevent overwrite
+                return {
+                    success: false,
+                    error: 'A file with that name already exists.',
+                };
+            }
+        }
+        fs.renameSync(oldAbsolutePath, newAbsolutePath);
+        return { success: true };
+    }
+    catch (error) {
+        console.error('Error renaming file:', error);
+        return { success: false, error: `Failed to rename file: ${oldPath}` };
+    }
+});
+registerIPCHandler('FS_DELETE_FILE', async (absolutePath) => {
+    try {
+        await electron_1.shell.trashItem(absolutePath);
+        return { success: true };
+    }
+    catch (error) {
+        console.error('Error deleting file:', error);
+        return { success: false, error: `Failed to delete: ${absolutePath}` };
+    }
+});
+registerIPCHandler('FS_MOVE_FILE', (sourcePath, destPath) => {
+    const sourceAbsolutePath = validatePathInWorkspace(sourcePath);
+    const destAbsolutePath = validatePathInWorkspace(destPath);
+    if (!sourceAbsolutePath || !destAbsolutePath) {
+        return {
+            success: false,
+            error: 'Invalid file path or no workspace selected',
+        };
+    }
+    try {
+        // Ensure target directory exists
+        const dir = path.dirname(destAbsolutePath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.renameSync(sourceAbsolutePath, destAbsolutePath);
+        return { success: true };
+    }
+    catch (error) {
+        console.error('Error moving file:', error);
+        return { success: false, error: `Failed to move file: ${sourcePath}` };
+    }
+});
+registerIPCHandler('FS_CREATE_FOLDER', (relativePath) => {
+    const absolutePath = validatePathInWorkspace(relativePath);
+    if (!absolutePath) {
+        return {
+            success: false,
+            error: 'Invalid folder path or no workspace selected',
+        };
+    }
+    try {
+        fs.mkdirSync(absolutePath, { recursive: true });
+        return { success: true };
+    }
+    catch (error) {
+        console.error('Error creating folder:', error);
+        return {
+            success: false,
+            error: `Failed to create folder: ${relativePath}`,
+        };
+    }
+});
+// @ts-ignore - async handler returns Promise
+registerIPCHandler('FS_SHOW_SAVE_DIALOG', async (defaultPath) => {
+    console.log('defaultPath:', defaultPath);
+    const result = await electron_1.dialog.showSaveDialog({
+        defaultPath: defaultPath || 'untitled.mjs',
+        filters: [
+            { name: 'JavaScript Files', extensions: ['js', 'mjs'] },
+            { name: 'All Files', extensions: ['*'] },
+        ],
+    });
+    if (result.canceled || !result.filePath) {
+        return null;
+    }
+    // Return relative path if within workspace, otherwise absolute
+    if (currentWorkspaceRoot &&
+        result.filePath.startsWith(currentWorkspaceRoot)) {
+        return path.relative(currentWorkspaceRoot, result.filePath);
+    }
+    return result.filePath;
+});
+registerIPCHandler('FS_SHOW_INPUT_DIALOG', 
+// @ts-ignore - async handler returns Promise
+async (title, defaultValue) => {
+    // Electron doesn't have a built-in input dialog, so we'll use a save dialog for now
+    // A proper implementation would create a custom BrowserWindow with a form
+    const result = await electron_1.dialog.showSaveDialog({
+        title,
+        defaultPath: defaultValue || '',
+        filters: [
+            { name: 'JavaScript Files', extensions: ['js', 'mjs'] },
+            { name: 'All Files', extensions: ['*'] },
+        ],
+    });
+    if (result.canceled || !result.filePath) {
+        return null;
+    }
+    // Return just the filename for rename operations
+    return path.basename(result.filePath);
+});
+registerIPCHandler('SHOW_UNSAVED_CHANGES_DIALOG', async (fileName) => {
+    const result = await electron_1.dialog.showMessageBox({
+        type: 'warning',
+        buttons: ['Save', "Don't Save", 'Cancel'],
+        defaultId: 0, // Save is default (primary)
+        cancelId: 2, // Cancel
+        message: `Do you want to save the changes you made to ${fileName}?`,
+        detail: "Your changes will be lost if you don't save them.",
+    });
+    return result.response; // Returns the button index: 0=Save, 1=Don't Save, 2=Cancel
+});
+let helpWindow = null;
+const createHelpWindow = () => {
+    if (helpWindow) {
+        helpWindow.focus();
+        return;
+    }
+    helpWindow = new electron_1.BrowserWindow({
+        width: 1500,
+        height: 1000,
+        webPreferences: {
+            preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
+        },
+        title: 'Modular Help',
+    });
+    // Load the index.html of the app with #help hash
+    helpWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY + '#help');
+    helpWindow.on('closed', () => {
+        helpWindow = null;
+    });
+};
+registerIPCHandler('OPEN_HELP_WINDOW', async () => {
+    createHelpWindow();
+});
+registerIPCHandler('OPEN_HELP_FOR_SYMBOL', async (symbolType, symbolName) => {
+    createHelpWindow();
+    // Send navigation message to help window after it loads
+    if (helpWindow) {
+        helpWindow.webContents.once('did-finish-load', () => {
+            helpWindow?.webContents.send('navigate-to-symbol', { symbolType, symbolName });
+        });
+        // If already loaded, send immediately
+        if (!helpWindow.webContents.isLoading()) {
+            helpWindow.webContents.send('navigate-to-symbol', { symbolType, symbolName });
+        }
+    }
+});
+// Config IPC handlers
+registerIPCHandler('CONFIG_GET_PATH', () => {
+    ensureConfigExists();
+    return CONFIG_FILE;
+});
+registerIPCHandler('CONFIG_READ', () => {
+    ensureConfigExists();
+    return loadConfig();
+});
+registerIPCHandler('CONFIG_WRITE', (partial) => {
+    ensureConfigExists();
+    const current = loadConfig();
+    const merged = { ...current, ...partial };
+    saveConfig(merged);
+});
+/**
+ * Create the main application window
+ */
+const createWindow = () => {
+    const isMac = process.platform === 'darwin';
+    // Create the browser window.
+    mainWindow = new electron_1.BrowserWindow({
+        height: 1000,
+        width: 1500,
+        titleBarStyle: isMac ? 'hiddenInset' : 'default',
+        trafficLightPosition: isMac ? { x: 12, y: 10 } : undefined,
+        webPreferences: {
+            preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
+        },
+    });
+    // Quit app when window is closed (on all platforms, including macOS)
+    mainWindow.on('close', () => {
+        electron_1.app.quit();
+    });
+    // and load the index.html of the app.
+    mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
+    // Flush pending logs when the renderer is ready
+    mainWindow.webContents.on('did-finish-load', () => {
+        flushPendingLogs();
+    });
+    // Start watching config file for changes
+    startConfigWatcher();
+};
+/**
+ * Create the application menu
+ */
+const createMenu = () => {
+    const isMac = process.platform === 'darwin';
+    const template = [
+        // App menu (macOS only)
+        ...(isMac
+            ? [
+                {
+                    label: electron_1.app.name,
+                    submenu: [
+                        { role: 'about' },
+                        { type: 'separator' },
+                        {
+                            label: 'Settings...',
+                            accelerator: 'Cmd+,',
+                            click: () => {
+                                if (mainWindow && !mainWindow.isDestroyed()) {
+                                    mainWindow.webContents.send(ipcTypes_1.MENU_CHANNELS.OPEN_SETTINGS);
+                                }
+                            },
+                        },
+                        { type: 'separator' },
+                        { role: 'services' },
+                        { type: 'separator' },
+                        { role: 'hide' },
+                        { role: 'hideOthers' },
+                        { role: 'unhide' },
+                        { type: 'separator' },
+                        { role: 'quit' },
+                    ],
+                },
+            ]
+            : []),
+        // File menu
+        {
+            label: 'File',
+            submenu: [
+                {
+                    label: 'Open Workspace...',
+                    accelerator: 'CmdOrCtrl+O',
+                    click: (_item, focusedWindow) => {
+                        if (focusedWindow) {
+                            electron_1.BrowserWindow.fromId(focusedWindow.id)?.webContents.send(ipcTypes_1.MENU_CHANNELS.OPEN_WORKSPACE);
+                        }
+                    },
+                },
+                { type: 'separator' },
+                {
+                    label: 'Save',
+                    accelerator: 'CmdOrCtrl+S',
+                    click: (_item, focusedWindow) => {
+                        if (focusedWindow) {
+                            electron_1.BrowserWindow.fromId(focusedWindow.id)?.webContents.send(ipcTypes_1.MENU_CHANNELS.SAVE);
+                        }
+                    },
+                },
+                {
+                    label: 'Close Buffer',
+                    accelerator: 'CmdOrCtrl+W',
+                    click: (_item, focusedWindow) => {
+                        if (focusedWindow) {
+                            electron_1.BrowserWindow.fromId(focusedWindow.id)?.webContents.send(ipcTypes_1.MENU_CHANNELS.CLOSE_BUFFER);
+                        }
+                    },
+                },
+                { type: 'separator' },
+                isMac ? { role: 'close' } : { role: 'quit' },
+            ],
+        },
+        // Edit menu
+        {
+            label: 'Edit',
+            submenu: [
+                { role: 'undo' },
+                { role: 'redo' },
+                { type: 'separator' },
+                { role: 'cut' },
+                { role: 'copy' },
+                { role: 'paste' },
+                ...(isMac
+                    ? [
+                        { role: 'pasteAndMatchStyle' },
+                        { role: 'delete' },
+                        { role: 'selectAll' },
+                    ]
+                    : [
+                        { role: 'delete' },
+                        { type: 'separator' },
+                        { role: 'selectAll' },
+                    ]),
+            ],
+        },
+        // View menu
+        {
+            label: 'View',
+            submenu: [
+                { role: 'reload' },
+                { role: 'forceReload' },
+                {
+                    label: 'Toggle Developer Tools',
+                    accelerator: isMac ? 'Cmd+Option+I' : 'Ctrl+Shift+I',
+                    click: (_item, focusedWindow) => {
+                        if (focusedWindow) {
+                            electron_1.BrowserWindow.fromId(focusedWindow.id)?.webContents.toggleDevTools();
+                        }
+                    },
+                },
+                { type: 'separator' },
+                { role: 'resetZoom' },
+                { role: 'zoomIn' },
+                { role: 'zoomOut' },
+                { type: 'separator' },
+                { role: 'togglefullscreen' },
+            ],
+        },
+        // Run menu
+        {
+            label: 'Run',
+            submenu: [
+                {
+                    label: 'Update Patch',
+                    accelerator: 'Ctrl+Enter',
+                    click: (_item, focusedWindow) => {
+                        if (focusedWindow) {
+                            electron_1.BrowserWindow.fromId(focusedWindow.id)?.webContents.send(ipcTypes_1.MENU_CHANNELS.UPDATE_PATCH);
+                        }
+                    },
+                },
+                {
+                    label: 'Stop Sound',
+                    accelerator: 'Ctrl+.',
+                    click: (_item, focusedWindow) => {
+                        if (focusedWindow) {
+                            electron_1.BrowserWindow.fromId(focusedWindow.id)?.webContents.send(ipcTypes_1.MENU_CHANNELS.STOP);
+                        }
+                    },
+                },
+                { type: 'separator' },
+                {
+                    label: 'Toggle Recording',
+                    accelerator: 'Ctrl+R',
+                    click: (_item, focusedWindow) => {
+                        if (focusedWindow) {
+                            electron_1.BrowserWindow.fromId(focusedWindow.id)?.webContents.send(ipcTypes_1.MENU_CHANNELS.TOGGLE_RECORDING);
+                        }
+                    },
+                },
+                { type: 'separator' },
+                {
+                    label: 'Audio Settings...',
+                    accelerator: isMac ? undefined : 'CmdOrCtrl+,',
+                    click: (_item, focusedWindow) => {
+                        if (focusedWindow) {
+                            electron_1.BrowserWindow.fromId(focusedWindow.id)?.webContents.send(ipcTypes_1.MENU_CHANNELS.OPEN_SETTINGS);
+                        }
+                    },
+                },
+            ],
+        },
+        // Window menu
+        {
+            label: 'Window',
+            submenu: [
+                { role: 'minimize' },
+                { role: 'zoom' },
+                ...(isMac
+                    ? [
+                        { type: 'separator' },
+                        { role: 'front' },
+                        { type: 'separator' },
+                        { role: 'window' },
+                    ]
+                    : [{ role: 'close' }]),
+            ],
+        },
+    ];
+    const menu = electron_1.Menu.buildFromTemplate(template);
+    electron_1.Menu.setApplicationMenu(menu);
+};
+// This method will be called when Electron has finished
+// initialization and is ready to create browser windows.
+// Some APIs can only be used after this event occurs.
+electron_1.app.on('ready', () => {
+    // Load last opened folder
+    const config = loadConfig();
+    if (config.lastOpenedFolder && fs.existsSync(config.lastOpenedFolder)) {
+        currentWorkspaceRoot = config.lastOpenedFolder;
+        console.log('Restored last opened folder:', currentWorkspaceRoot);
+    }
+    // Audio configuration is already restored during Synthesizer initialization
+    // (the config is passed to the constructor)
+    createWindow();
+    createMenu();
+});
+// Quit when all windows are closed (on all platforms, including macOS)
+electron_1.app.on('window-all-closed', () => {
+    electron_1.app.quit();
+});
+// Remove the macOS-specific reactivation behavior since we want single window only
+electron_1.app.on('activate', () => {
+    // Prevent window recreation on macOS
+    if (electron_1.BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+    }
+});
+// In this file you can include the rest of your app's specific main process
+// code. You can also put them in separate files and import them here.
+//# sourceMappingURL=main.js.map
