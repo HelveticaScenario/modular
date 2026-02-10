@@ -294,18 +294,18 @@ interface ModuleOutput {
   /**
    * Scale the signal by a factor. Creates a util.scaleAndShift module internally.
    * @param factor - Scale factor as {@link Poly<Signal>}
-   * @returns The scaled {@link ModuleOutput} for chaining
+   * @returns The scaled {@link Collection} for chaining
    * @example osc.gain(0.5)  // Half amplitude
    */
-  gain(factor: Poly<Signal>): ModuleOutput;
+  gain(factor: Poly<Signal>): Collection;
   
   /**
    * Add a DC offset to the signal. Creates a util.scaleAndShift module internally.
    * @param offset - Offset value as {@link Poly<Signal>}
-   * @returns The shifted {@link ModuleOutput} for chaining
+   * @returns The shifted {@link Collection} for chaining
    * @example lfo.shift(2.5)  // Shift to 0-5V range
    */
-  shift(offset: Poly<Signal>): ModuleOutput;
+  shift(offset: Poly<Signal>): Collection;
   
   /**
    * Add scope visualization for this output.
@@ -588,31 +588,6 @@ interface DeferredModuleOutput extends ModuleOutput {
    * @param signal - The signal to resolve to (number, string, or ModuleOutput)
    */
   set(signal: Signal): void;
-  /**
-   * Scale the resolved output by a factor.
-   * The transform is stored and applied during resolution.
-   */
-  gain(factor: Poly<Signal>): Collection;
-  /**
-   * Shift the resolved output by an offset.
-   * The transform is stored and applied during resolution.
-   */
-  shift(offset: Poly<Signal>): Collection;
-  /**
-   * Add scope visualization for the resolved output.
-   * The side effect is stored and executed during resolution.
-   */
-  scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this;
-  /**
-   * Send the resolved output to speakers as stereo.
-   * The side effect is stored and executed during resolution.
-   */
-  out(baseChannel?: number, options?: StereoOutOptions): this;
-  /**
-   * Send the resolved output to speakers as mono.
-   * The side effect is stored and executed during resolution.
-   */
-  outMono(channel?: number, gain?: Poly<Signal>): this;
 }
 
 /**
