@@ -138,8 +138,6 @@ export function executePatchScript(
         return result;
     };
 
-    console.log(context.namespaceTree)
-
     // Prefix all top-level entries from the namespace tree with $
     const prefixedNamespaceTree: Record<string, any> = {};
     for (const [key, value] of Object.entries(context.namespaceTree)) {
