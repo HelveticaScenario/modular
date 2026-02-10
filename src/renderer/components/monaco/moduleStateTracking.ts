@@ -23,8 +23,8 @@
 import type React from 'react';
 import type { editor } from 'monaco-editor';
 import type { Monaco } from '../../hooks/useCustomMonaco';
-import type { SourceSpan, ResolvedInterpolation } from '../../dsl/spanTypes';
-import { getActiveInterpolationResolutions } from '../../dsl/spanTypes';
+import type { SourceSpan, ResolvedInterpolation } from '../../../shared/dsl/spanTypes';
+import { getActiveInterpolationResolutions } from '../../../shared/dsl/spanTypes';
 
 /**
  * Argument spans as they come from module state (document offsets)

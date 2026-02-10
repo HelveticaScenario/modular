@@ -2,7 +2,7 @@ import * as prettier from 'prettier/standalone';
 import * as prettierBabel from 'prettier/plugins/babel';
 import * as prettierEstree from 'prettier/plugins/estree';
 import type { Monaco } from '../../hooks/useCustomMonaco';
-import type { PrettierConfig } from '../../ipcTypes';
+import type { PrettierConfig } from '../../../shared/ipcTypes';
 
 const DEFAULT_PRETTIER_OPTIONS = {
     singleQuote: true,

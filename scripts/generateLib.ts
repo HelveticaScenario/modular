@@ -1,5 +1,5 @@
 import { getSchemas } from '@modular/core';
-import { buildLibSource } from '../src/dsl/typescriptLibGen';
+import { buildLibSource } from '../src/main/dsl/typescriptLibGen';
 import * as fs from 'fs';
 import * as path from 'path';
 

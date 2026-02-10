@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback, ReactNode } from 'react';
 import { ModuleSchema } from '@modular/core';
 import electronAPI from '../electronAPI';
-import { TYPE_DOCS, DSL_TYPE_NAMES, DslTypeName, TypeDocumentation, isDslType } from '../dsl/typeDocs';
+import { TYPE_DOCS, DSL_TYPE_NAMES, DslTypeName, TypeDocumentation, isDslType } from '../../shared/dsl/typeDocs';
 import './HelpWindow.css';
 
 type Page = 'hotkeys' | 'syntax' | 'math' | 'types' | 'output' | 'clock' | 'reference';

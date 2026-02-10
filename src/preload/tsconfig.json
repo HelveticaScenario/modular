@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "../../dist/preload",
+    "types": ["electron"]
+  },
+  "include": ["./**/*"],
+  "references": [
+    { "path": "../shared" }
+  ]
+}

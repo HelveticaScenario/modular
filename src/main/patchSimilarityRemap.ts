@@ -1,4 +1,4 @@
-import type { PatchGraph } from './ipcTypes';
+import type { PatchGraph } from '../shared/ipcTypes';
 
 type ModuleState = PatchGraph['modules'][number];
 

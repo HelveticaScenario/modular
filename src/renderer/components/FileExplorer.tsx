@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import './FileExplorer.css';
-import type { FileTreeEntry } from '../ipcTypes';
+import type { FileTreeEntry } from '../../shared/ipcTypes';
 import type { EditorBuffer } from '../types/editor';
 import { getBufferId } from '../app/buffers';
 import electronAPI from '../electronAPI';

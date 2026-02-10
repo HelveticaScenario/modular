@@ -12,12 +12,12 @@ import { Sidebar } from './components/Sidebar';
 import { ControlPanel } from './components/ControlPanel';
 import electronAPI from './electronAPI';
 import { ValidationError } from '@modular/core';
-import type { FileTreeEntry, SourceLocationInfo } from './ipcTypes';
-import type { SliderDefinition } from './dsl/sliderTypes';
+import type { FileTreeEntry, SourceLocationInfo } from '../shared/ipcTypes';
+import type { SliderDefinition } from '../shared/dsl/sliderTypes';
 import { findSliderValueSpan } from './dsl/sliderSourceEdit';
 import type { EditorBuffer, ScopeView } from './types/editor';
 import { getBufferId } from './app/buffers';
-import { setActiveInterpolationResolutions } from './dsl/spanTypes';
+import { setActiveInterpolationResolutions } from '../shared/dsl/spanTypes';
 import { drawOscilloscope, scopeKeyFromSubscription } from './app/oscilloscope';
 import { useEditorBuffers } from './app/hooks/useEditorBuffers';
 

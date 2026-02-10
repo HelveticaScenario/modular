@@ -16,7 +16,7 @@
         "forge-publish": "yarn build-native && electron-forge publish",
         "deploy": "./release.sh",
         "test": "yarn build-native && ava",
-        "typecheck": "yarn build-native && tsc --noEmit",
+        "typecheck": "yarn build-native && tsc -b",
         "rebuild": "yarn build-native && electron-rebuild -f -w modular-core",
         "lint": "eslint .",
         "build-native": "cd crates/modular && yarn build",

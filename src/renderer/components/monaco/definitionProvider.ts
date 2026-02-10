@@ -5,7 +5,7 @@
 
 import type { Monaco } from '../../hooks/useCustomMonaco';
 import type { languages, editor, Position, CancellationToken } from 'monaco-editor';
-import { DSL_TYPE_NAMES, isDslType } from '../../dsl/typeDocs';
+import { DSL_TYPE_NAMES, isDslType } from '../../../shared/dsl/typeDocs';
 
 export interface DefinitionProviderDeps {
     /** Set of module factory names (including namespaced ones like "osc.sine") */

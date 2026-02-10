@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import type { SliderDefinition } from '../dsl/sliderTypes';
+import type { SliderDefinition } from '../../shared/dsl/sliderTypes';
 import './ControlPanel.css';
 
 interface ControlPanelProps {

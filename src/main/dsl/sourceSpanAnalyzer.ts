@@ -17,10 +17,10 @@ import { Project, SyntaxKind, Node, CallExpression, VariableDeclarationKind, typ
 import type { ModuleSchema } from '@modular/core';
 
 // Re-export shared types/state from spanTypes (which has no Node.js dependencies)
-export type { SourceSpan, ResolvedInterpolation, InterpolationResolutionMap } from './spanTypes';
-export { setActiveInterpolationResolutions, getActiveInterpolationResolutions } from './spanTypes';
+export type { SourceSpan, ResolvedInterpolation, InterpolationResolutionMap } from '../../shared/dsl/spanTypes';
+export { setActiveInterpolationResolutions, getActiveInterpolationResolutions } from '../../shared/dsl/spanTypes';
 
-import type { SourceSpan, InterpolationResolutionMap, ResolvedInterpolation } from './spanTypes';
+import type { SourceSpan, InterpolationResolutionMap, ResolvedInterpolation } from '../../shared/dsl/spanTypes';
 
 /**
  * Registry entry for a single call expression's argument spans

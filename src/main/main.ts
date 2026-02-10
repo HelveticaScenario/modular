@@ -23,7 +23,7 @@ import {
     DSLExecuteResult,
     MainLogLevel,
     MainLogEntry,
-} from './ipcTypes';
+} from '../shared/ipcTypes';
 import { reconcilePatchBySimilarity } from './patchSimilarityRemap';
 import { executePatchScript } from './dsl/executor';
 import { buildLibSource } from './dsl/typescriptLibGen';

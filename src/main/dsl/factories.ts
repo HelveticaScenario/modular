@@ -1,6 +1,6 @@
 import { ModuleSchema, deriveChannelCount } from '@modular/core';
 import { GraphBuilder, ModuleNode, ModuleOutput, Collection, CollectionWithRange } from './GraphBuilder';
-import type { SourceSpan } from './spanTypes';
+import type { SourceSpan } from '../../shared/dsl/spanTypes';
 import type { SpanRegistry, CallSiteKey } from './sourceSpanAnalyzer';
 
 /**

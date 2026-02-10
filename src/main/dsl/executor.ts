@@ -16,9 +16,9 @@ import {
     DeferredCollection,
 } from './GraphBuilder';
 import { analyzeSourceSpans } from './sourceSpanAnalyzer';
-import type { InterpolationResolutionMap } from './spanTypes';
-import { setActiveInterpolationResolutions } from './spanTypes';
-import type { SliderDefinition } from './sliderTypes';
+import type { InterpolationResolutionMap } from '../../shared/dsl/spanTypes';
+import { setActiveInterpolationResolutions } from '../../shared/dsl/spanTypes';
+import type { SliderDefinition } from '../../shared/dsl/sliderTypes';
 
 /**
  * Result of executing a DSL script.
