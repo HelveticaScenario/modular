@@ -14,7 +14,7 @@ import electronAPI from './electronAPI';
 import { ValidationError } from '@modular/core';
 import type { FileTreeEntry, SourceLocationInfo } from '../shared/ipcTypes';
 import type { SliderDefinition } from '../shared/dsl/sliderTypes';
-import { findSliderValueSpan } from './dsl/sliderSourceEdit';
+import { findSliderValueSpan, parseSliderDefinitions } from './dsl/sliderSourceEdit';
 import type { EditorBuffer, ScopeView } from './types/editor';
 import { getBufferId } from './app/buffers';
 import { setActiveInterpolationResolutions } from '../shared/dsl/spanTypes';
@@ -304,6 +304,40 @@ function App() {
     useEffect(() => {
         patchCodeRef.current = patchCode;
     }, [patchCode]);
+
+    // Parse slider definitions from code as the user types (without executing)
+    useEffect(() => {
+        const parsedSliders = parseSliderDefinitions(patchCode);
+        
+        // Only update if there are actual changes to avoid unnecessary re-renders
+        // We compare the labels and values to see if anything meaningful changed
+        const hasChanges = parsedSliders.length !== sliderDefs.length ||
+            parsedSliders.some((parsed, idx) => {
+                const existing = sliderDefs[idx];
+                return !existing || 
+                    parsed.label !== existing.label ||
+                    parsed.min !== existing.min ||
+                    parsed.max !== existing.max;
+            });
+        
+        if (hasChanges) {
+            // Preserve the current values for sliders that still exist with the same label
+            const mergedSliders = parsedSliders.map(parsed => {
+                const existing = sliderDefs.find(s => s.label === parsed.label);
+                if (existing) {
+                    // Keep the existing value if the slider still exists
+                    // but update min/max if they changed in the code
+                    return {
+                        ...parsed,
+                        value: existing.value,
+                    };
+                }
+                return parsed;
+            });
+            
+            setSliderDefs(mergedSliders);
+        }
+    }, [patchCode]); // Intentionally not including sliderDefs to avoid infinite loops
 
     const isClockRunningRef = useRef(isClockRunning);
     useEffect(() => {

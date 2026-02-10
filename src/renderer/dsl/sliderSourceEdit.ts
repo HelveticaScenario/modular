@@ -8,6 +8,8 @@
  * This runs in the renderer process, so it must not depend on Node.js-only modules.
  */
 
+import type { SliderDefinition } from '../../shared/dsl/sliderTypes';
+
 export interface SourceSpanResult {
     /** Inclusive start character offset */
     start: number;
@@ -55,4 +57,101 @@ export function findSliderValueSpan(source: string, label: string): SourceSpanRe
     }
 
     return null;
+}
+
+/**
+ * Parse all slider definitions from DSL source code without executing it.
+ * 
+ * Uses regex to find slider(label, value, min, max) calls and extract their parameters.
+ * This enables real-time label updates as the user types, without needing to execute the patch.
+ * 
+ * @param source - The full DSL source code
+ * @returns Array of slider definitions found in the source
+ */
+export function parseSliderDefinitions(source: string): SliderDefinition[] {
+    const sliders: SliderDefinition[] = [];
+    
+    // Pattern to match: slider( "label" or 'label', value, min, max )
+    // This captures:
+    // - Group 1: the label (without quotes)
+    // - Group 2: the quote character (" or ')
+    // - Everything after for parsing the numeric args
+    const sliderPattern = /\bslider\s*\(\s*(['"])(.+?)\1\s*,/g;
+    
+    let match: RegExpExecArray | null;
+    while ((match = sliderPattern.exec(source)) !== null) {
+        const label = match[2]; // The captured label without quotes
+        const afterLabel = match.index + match[0].length;
+        
+        // Parse the remaining arguments: value, min, max
+        const remainingSource = source.slice(afterLabel);
+        
+        // Extract up to 3 numeric arguments
+        const numericArgs = parseNumericArguments(remainingSource, 3);
+        
+        if (numericArgs.length >= 3) {
+            const [value, min, max] = numericArgs;
+            
+            // Validate that min < max
+            if (min < max && isFinite(value) && isFinite(min) && isFinite(max)) {
+                const moduleId = `__slider_${label.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+                sliders.push({
+                    moduleId,
+                    label,
+                    value,
+                    min,
+                    max,
+                });
+            }
+        }
+    }
+    
+    return sliders;
+}
+
+/**
+ * Parse numeric arguments from a function call.
+ * Extracts numeric literals (including scientific notation) separated by commas.
+ * 
+ * @param source - Source code starting after the opening parenthesis or comma
+ * @param count - Maximum number of arguments to extract
+ * @returns Array of parsed numbers
+ */
+function parseNumericArguments(source: string, count: number): number[] {
+    const args: number[] = [];
+    let pos = 0;
+    
+    for (let i = 0; i < count; i++) {
+        // Skip whitespace
+        while (pos < source.length && /\s/.test(source[pos])) {
+            pos++;
+        }
+        
+        if (pos >= source.length) break;
+        
+        // Match a numeric literal
+        const numMatch = source.slice(pos).match(/^-?\d+(\.\d+)?([eE][+-]?\d+)?/);
+        if (!numMatch) break;
+        
+        const numStr = numMatch[0];
+        const num = parseFloat(numStr);
+        args.push(num);
+        pos += numStr.length;
+        
+        // Skip whitespace after the number
+        while (pos < source.length && /\s/.test(source[pos])) {
+            pos++;
+        }
+        
+        // Expect a comma (unless this is the last argument we're looking for)
+        if (i < count - 1) {
+            if (pos < source.length && source[pos] === ',') {
+                pos++; // Skip the comma
+            } else {
+                break; // No comma means we're done
+            }
+        }
+    }
+    
+    return args;
 }
