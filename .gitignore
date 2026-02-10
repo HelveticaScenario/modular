@@ -107,4 +107,5 @@ typings/
 # Electron-Forge
 out/
 
-generated//dist
+generated/
+/dist

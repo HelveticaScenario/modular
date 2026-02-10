@@ -84,11 +84,12 @@ export const drawOscilloscope = (
     ctx.textBaseline = 'middle';
 
     const legendX = legendWidth - 4 * dpr;
-    ctx.fillText(`${maxVoltage.toFixed(1)}v`, legendX, topY);
+    const textVerticalOffset = 10 * dpr;
+    ctx.fillText(`${maxVoltage.toFixed(1)}v`, legendX, topY + textVerticalOffset);
     if (minVoltage <= 0 && maxVoltage >= 0) {
         ctx.fillText('0v', legendX, zeroY);
     }
-    ctx.fillText(`${minVoltage.toFixed(1)}v`, legendX, bottomY);
+    ctx.fillText(`${minVoltage.toFixed(1)}v`, legendX, bottomY - textVerticalOffset);
 
     // Draw stats on right
     if (stats) {
