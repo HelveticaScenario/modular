@@ -309,21 +309,25 @@ function App() {
     useEffect(() => {
         const parsedSliders = parseSliderDefinitions(patchCode);
         
-        // Only update if there are actual changes to avoid unnecessary re-renders
-        // We compare the labels and values to see if anything meaningful changed
-        const hasChanges = parsedSliders.length !== sliderDefs.length ||
-            parsedSliders.some((parsed, idx) => {
-                const existing = sliderDefs[idx];
+        // Check if there are actual changes to avoid unnecessary re-renders
+        // Compare by creating label->slider maps
+        const parsedMap = new Map(parsedSliders.map(s => [s.label, s]));
+        const existingMap = new Map(sliderDefs.map(s => [s.label, s]));
+        
+        // Check if labels, min, or max changed
+        const labelsChanged = parsedSliders.length !== sliderDefs.length ||
+            parsedSliders.some(parsed => {
+                const existing = existingMap.get(parsed.label);
                 return !existing || 
-                    parsed.label !== existing.label ||
                     parsed.min !== existing.min ||
                     parsed.max !== existing.max;
-            });
+            }) ||
+            sliderDefs.some(existing => !parsedMap.has(existing.label));
         
-        if (hasChanges) {
+        if (labelsChanged) {
             // Preserve the current values for sliders that still exist with the same label
             const mergedSliders = parsedSliders.map(parsed => {
-                const existing = sliderDefs.find(s => s.label === parsed.label);
+                const existing = existingMap.get(parsed.label);
                 if (existing) {
                     // Keep the existing value if the slider still exists
                     // but update min/max if they changed in the code
