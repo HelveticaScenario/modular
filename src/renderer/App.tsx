@@ -305,6 +305,9 @@ function App() {
         patchCodeRef.current = patchCode;
     }, [patchCode]);
 
+    // Track previous slider defs to avoid stale closures
+    const prevSliderDefsRef = useRef<SliderDefinition[]>([]);
+    
     // Parse slider definitions from code as the user types (without executing)
     useEffect(() => {
         const parsedSliders = parseSliderDefinitions(patchCode);
@@ -312,17 +315,17 @@ function App() {
         // Check if there are actual changes to avoid unnecessary re-renders
         // Compare by creating label->slider maps
         const parsedMap = new Map(parsedSliders.map(s => [s.label, s]));
-        const existingMap = new Map(sliderDefs.map(s => [s.label, s]));
+        const existingMap = new Map(prevSliderDefsRef.current.map(s => [s.label, s]));
         
         // Check if labels, min, or max changed
-        const labelsChanged = parsedSliders.length !== sliderDefs.length ||
+        const labelsChanged = parsedSliders.length !== prevSliderDefsRef.current.length ||
             parsedSliders.some(parsed => {
                 const existing = existingMap.get(parsed.label);
                 return !existing || 
                     parsed.min !== existing.min ||
                     parsed.max !== existing.max;
             }) ||
-            sliderDefs.some(existing => !parsedMap.has(existing.label));
+            prevSliderDefsRef.current.some(existing => !parsedMap.has(existing.label));
         
         if (labelsChanged) {
             // Preserve the current values for sliders that still exist with the same label
@@ -339,9 +342,10 @@ function App() {
                 return parsed;
             });
             
+            prevSliderDefsRef.current = mergedSliders;
             setSliderDefs(mergedSliders);
         }
-    }, [patchCode]); // Intentionally not including sliderDefs to avoid infinite loops
+    }, [patchCode]);
 
     const isClockRunningRef = useRef(isClockRunning);
     useEffect(() => {

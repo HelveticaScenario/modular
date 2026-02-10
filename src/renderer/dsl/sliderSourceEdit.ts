@@ -73,12 +73,15 @@ export function parseSliderDefinitions(source: string): SliderDefinition[] {
     
     // Pattern to match: slider( "label" or 'label', value, min, max )
     // This captures:
-    // - Group 1: the label (without quotes)
-    // - Group 2: the quote character (" or ')
-    // - Everything after for parsing the numeric args
+    // - Group 1: the quote character (" or ')
+    // - Group 2: the label (at least one character required)
+    // Empty labels are rejected as they would be invalid/confusing UI
     const sliderPattern = /\bslider\s*\(\s*(['"])(.+?)\1\s*,/g;
     
     let match: RegExpExecArray | null;
+    // Track seen moduleIds to handle duplicate moduleId issue
+    const seenModuleIds = new Map<string, number>();
+    
     while ((match = sliderPattern.exec(source)) !== null) {
         const label = match[2]; // The captured label without quotes
         const afterLabel = match.index + match[0].length;
@@ -94,7 +97,15 @@ export function parseSliderDefinitions(source: string): SliderDefinition[] {
             
             // Validate that min < max
             if (min < max && isFinite(value) && isFinite(min) && isFinite(max)) {
-                const moduleId = `__slider_${label.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+                // Generate unique moduleId, handling potential collisions
+                const baseModuleId = `__slider_${label.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+                const occurrenceCount = (seenModuleIds.get(baseModuleId) || 0);
+                seenModuleIds.set(baseModuleId, occurrenceCount + 1);
+                
+                const moduleId = occurrenceCount > 0 
+                    ? `${baseModuleId}_${occurrenceCount}`
+                    : baseModuleId;
+                
                 sliders.push({
                     moduleId,
                     label,
