@@ -40,10 +40,13 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
     // Load config when opened
     useEffect(() => {
         if (!isOpen) return;
-        electronAPI.config.read().then((cfg) => {
-            setSavedConfig(cfg);
-            setDraftConfig(cfg);
-        }).catch(console.error);
+        electronAPI.config
+            .read()
+            .then((cfg) => {
+                setSavedConfig(cfg);
+                setDraftConfig(cfg);
+            })
+            .catch(console.error);
     }, [isOpen]);
 
     // Listen for external config changes (e.g. manual JSON edits)
@@ -60,9 +63,12 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
         setDraftConfig((prev) => {
             const updated = { ...prev, ...partial };
             // Auto-save editor/formatter config changes immediately
-            electronAPI.config.write(updated).then(() => {
-                setSavedConfig(updated);
-            }).catch(console.error);
+            electronAPI.config
+                .write(updated)
+                .then(() => {
+                    setSavedConfig(updated);
+                })
+                .catch(console.error);
             return updated;
         });
     }, []);
@@ -106,10 +112,17 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
 
     return (
         <div className="settings-overlay" onClick={onClose}>
-            <div className="settings-panel" ref={panelRef} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+            <div
+                className="settings-panel"
+                ref={panelRef}
+                tabIndex={-1}
+                onClick={(e) => e.stopPropagation()}
+            >
                 <div className="settings-header">
                     <h2>Settings</h2>
-                    <button className="close-btn" onClick={onClose}>×</button>
+                    <button className="close-btn" onClick={onClose}>
+                        ×
+                    </button>
                 </div>
 
                 <div className="settings-tabs">

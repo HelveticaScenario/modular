@@ -1,7 +1,7 @@
 - [x] zeroconf
 - [x] license?
 - [x] indicator of what file is currently running
-- [ ] better way of scaling output to a range? would need to know the period of the oscilator 
+- [ ] better way of scaling output to a range? would need to know the period of the oscilator
 - [x] make scope narrower
 - [ ] make custom scope for track
 - [ ] make seq type (cv + gate with mini (mondo?) notation)

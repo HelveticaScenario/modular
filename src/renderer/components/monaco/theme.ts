@@ -10,7 +10,9 @@ export function applyMonacoTheme(
 
     const rules = raw.tokenColors
         .map((tc) => {
-            const scopes = Array.isArray(tc.scope) ? tc.scope : [tc.scope || ''];
+            const scopes = Array.isArray(tc.scope)
+                ? tc.scope
+                : [tc.scope || ''];
             return scopes.map((scope) => ({
                 token: scope.replace(/\./g, ' ').trim() || '',
                 foreground: tc.settings.foreground?.replace('#', ''),

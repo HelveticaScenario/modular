@@ -153,7 +153,7 @@ function BufferItem({
     onCloseBuffer,
     onRenameCommit,
     onRenameCancel,
-    onKeepBuffer
+    onKeepBuffer,
 }: {
     buffer: EditorBuffer;
     isActive: boolean;
@@ -170,7 +170,8 @@ function BufferItem({
     const bufferId = getBufferId(buffer);
     const [editName, setEditName] = useState(formatLabel(buffer));
     const inputRef = useRef<HTMLInputElement>(null);
-    const isRenaming = buffer.kind === 'file' && renamingPath === buffer.filePath;
+    const isRenaming =
+        buffer.kind === 'file' && renamingPath === buffer.filePath;
 
     useEffect(() => {
         if (isRenaming && inputRef.current) {
@@ -225,19 +226,13 @@ function BufferItem({
                     onClick={(e) => e.stopPropagation()}
                 />
             ) : (
-                <span className="file-name">
-                    {formatLabel(buffer)}
-                </span>
+                <span className="file-name">{formatLabel(buffer)}</span>
             )}
             {!isRenaming && isRunning && (
-                <span className="running-badge">
-                    ▶
-                </span>
+                <span className="running-badge">▶</span>
             )}
             {!isRenaming && buffer.dirty && (
-                <span className="dirty-dot">
-                    ●
-                </span>
+                <span className="dirty-dot">●</span>
             )}
             {!isRenaming && (
                 <button
@@ -274,14 +269,14 @@ export function FileExplorer({
     onRefreshTree,
     onRenameCommit,
     onRenameCancel,
-    onKeepBuffer
+    onKeepBuffer,
 }: FileExplorerProps) {
     const activeBuffer = buffers.find((b) => getBufferId(b) === activeBufferId);
 
     const handleBufferContextMenu = (e: React.MouseEvent, bufferId: string) => {
         e.preventDefault();
         const buffer = buffers.find((b) => getBufferId(b) === bufferId);
-        
+
         let contextType: 'file' | 'untitled' | 'unknown' = 'unknown';
         if (buffer?.kind === 'file') contextType = 'file';
         else if (buffer?.kind === 'untitled') contextType = 'untitled';
@@ -297,12 +292,17 @@ export function FileExplorer({
         });
     };
 
-    const handleTreeContextMenu = (e: React.MouseEvent, entry: FileTreeEntry) => {
+    const handleTreeContextMenu = (
+        e: React.MouseEvent,
+        entry: FileTreeEntry,
+    ) => {
         e.preventDefault();
-        
+
         // Check if it's open
-        const buffer = buffers.find(b => b.kind === 'file' && b.filePath === entry.path);
-        
+        const buffer = buffers.find(
+            (b) => b.kind === 'file' && b.filePath === entry.path,
+        );
+
         electronAPI.showContextMenu({
             type: entry.type === 'directory' ? 'directory' : 'file',
             path: entry.path,
@@ -349,7 +349,9 @@ export function FileExplorer({
                                             renamingPath={renamingPath}
                                             formatLabel={formatLabel}
                                             onSelectBuffer={onSelectBuffer}
-                                            onContextMenu={handleBufferContextMenu}
+                                            onContextMenu={
+                                                handleBufferContextMenu
+                                            }
                                             onCloseBuffer={onCloseBuffer}
                                             onRenameCommit={onRenameCommit}
                                             onRenameCancel={onRenameCancel}
@@ -366,15 +368,15 @@ export function FileExplorer({
                 {workspaceRoot && (
                     <div className="section">
                         <div className="section-header">
-                        <span>Workspace Files</span>
-                        <button
-                            onClick={onRefreshTree}
-                            title="Refresh file tree"
-                            className="section-action"
-                        >
-                            ↻
-                        </button>
-                    </div>
+                            <span>Workspace Files</span>
+                            <button
+                                onClick={onRefreshTree}
+                                title="Refresh file tree"
+                                className="section-action"
+                            >
+                                ↻
+                            </button>
+                        </div>
                         <div className="file-tree">
                             {fileTree.length === 0 ? (
                                 <div className="empty-message">
@@ -387,7 +389,9 @@ export function FileExplorer({
                                             key={entry.path}
                                             entry={entry}
                                             onOpenFile={onOpenFile}
-                                            onContextMenu={handleTreeContextMenu}
+                                            onContextMenu={
+                                                handleTreeContextMenu
+                                            }
                                             renamingPath={renamingPath}
                                             onRenameCommit={onRenameCommit}
                                             onRenameCancel={onRenameCancel}

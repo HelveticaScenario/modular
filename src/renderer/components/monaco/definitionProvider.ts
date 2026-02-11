@@ -4,7 +4,12 @@
  */
 
 import type { Monaco } from '../../hooks/useCustomMonaco';
-import type { languages, editor, Position, CancellationToken } from 'monaco-editor';
+import type {
+    languages,
+    editor,
+    Position,
+    CancellationToken,
+} from 'monaco-editor';
 import { DSL_TYPE_NAMES, isDslType } from '../../../shared/dsl/typeDocs';
 
 export interface DefinitionProviderDeps {
@@ -21,7 +26,7 @@ export interface DefinitionProviderDeps {
  */
 function resolveDottedPath(
     model: editor.ITextModel,
-    position: Position
+    position: Position,
 ): { fullPath: string; word: string } | null {
     const word = model.getWordAtPosition(position);
     if (!word) return null;
@@ -84,28 +89,35 @@ function resolveDottedPath(
  */
 export function registerDslDefinitionProvider(
     monaco: Monaco,
-    deps: DefinitionProviderDeps
+    deps: DefinitionProviderDeps,
 ): { dispose: () => void } {
     const provider: languages.DefinitionProvider = {
         provideDefinition(
             model: editor.ITextModel,
             position: Position,
-            _token: CancellationToken
+            _token: CancellationToken,
         ) {
             const resolved = resolveDottedPath(model, position);
             if (!resolved) return null;
 
-            const match = resolveDslSymbol(resolved, deps.moduleNames, deps.namespaceNames);
+            const match = resolveDslSymbol(
+                resolved,
+                deps.moduleNames,
+                deps.namespaceNames,
+            );
             // For DSL symbols, return null to suppress TypeScript navigating to .d.ts
             // Help is opened separately via editor.onMouseDown (Cmd+Click)
             if (match) return null;
 
             // Not a DSL symbol - let TypeScript handle it
             return null;
-        }
+        },
     };
 
-    const disposable = monaco.languages.registerDefinitionProvider('javascript', provider);
+    const disposable = monaco.languages.registerDefinitionProvider(
+        'javascript',
+        provider,
+    );
     return { dispose: () => disposable.dispose() };
 }
 
@@ -121,7 +133,7 @@ export interface DslSymbolMatch {
 export function resolveDslSymbol(
     resolved: { fullPath: string; word: string },
     moduleNames: Set<string>,
-    namespaceNames: Set<string>
+    namespaceNames: Set<string>,
 ): DslSymbolMatch | null {
     const { fullPath, word } = resolved;
 
@@ -148,7 +160,7 @@ export function resolveDslSymbolAtPosition(
     model: editor.ITextModel,
     position: Position,
     moduleNames: Set<string>,
-    namespaceNames: Set<string>
+    namespaceNames: Set<string>,
 ): DslSymbolMatch | null {
     const resolved = resolveDottedPath(model, position);
     if (!resolved) return null;
@@ -167,7 +179,7 @@ export function buildSymbolSets(schemas: Array<{ name: string }>): {
 
     for (const schema of schemas) {
         moduleNames.add(schema.name);
-        
+
         // Extract namespace from dotted name
         const parts = schema.name.split('.');
         if (parts.length > 1) {

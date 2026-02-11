@@ -27,7 +27,6 @@ How does "Auto" sample rate work? The master module calls setSuggestedSampleRate
 Latency tradeoffs? The ring buffer size (32768) and quality=6 resampler are tunable; lower quality = less latency but more aliasing.
 Would you like a deeper dive into any specific subsystem (e.g., the Speex resampler DSP, the fallback thread, or how modules claim master status)?
 
-
 Plan: Rearchitect Audio to Support Multi-Device with Per-Module SRC
 Migrate from a single global audio stream to VCV Rack-style architecture where Audio modules in the DSL own device streams and perform per-module sample rate conversion to a fixed engine rate.
 

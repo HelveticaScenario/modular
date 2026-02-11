@@ -26,7 +26,7 @@ export const gruvboxDark: VSCodeTheme = {
         'editorSuggestWidget.selectedBackground': '#504945',
         'editorHoverWidget.background': '#1d2021',
         'editorHoverWidget.border': '#3c3836',
-        
+
         'activityBar.background': '#1d2021',
         'activityBar.foreground': '#ebdbb2',
         'sideBar.background': '#1d2021',
@@ -34,40 +34,40 @@ export const gruvboxDark: VSCodeTheme = {
         'sideBar.border': '#3c3836',
         'sideBarSectionHeader.background': '#282828',
         'sideBarSectionHeader.foreground': '#a89984',
-        
+
         'statusBar.background': '#1d2021',
         'statusBar.foreground': '#a89984',
-        
+
         'tab.activeBackground': '#282828',
         'tab.inactiveBackground': '#1d2021',
         'tab.activeForeground': '#ebdbb2',
         'tab.inactiveForeground': '#a89984',
         'tab.border': '#3c3836',
-        
+
         'list.activeSelectionBackground': '#504945',
         'list.activeSelectionForeground': '#ebdbb2',
         'list.hoverBackground': '#3c3836',
         'list.focusBackground': '#504945',
-        
+
         'input.background': '#1d2021',
         'input.foreground': '#ebdbb2',
         'input.border': '#3c3836',
         'input.placeholderForeground': '#665c54',
-        
+
         'button.background': '#504945',
         'button.foreground': '#ebdbb2',
         'button.hoverBackground': '#665c54',
-        
-        'focusBorder': '#fe8019',
-        'foreground': '#ebdbb2',
-        'descriptionForeground': '#a89984',
-        'disabledForeground': '#665c54',
-        
+
+        focusBorder: '#fe8019',
+        foreground: '#ebdbb2',
+        descriptionForeground: '#a89984',
+        disabledForeground: '#665c54',
+
         'scrollbar.shadow': '#00000000',
         'scrollbarSlider.background': '#50494580',
         'scrollbarSlider.hoverBackground': '#504945',
         'scrollbarSlider.activeBackground': '#665c54',
-        
+
         'terminal.ansiGreen': '#b8bb26',
         'terminal.ansiYellow': '#fabd2f',
         'terminal.ansiRed': '#fb4934',
@@ -76,15 +76,36 @@ export const gruvboxDark: VSCodeTheme = {
         'terminal.ansiMagenta': '#d3869b',
     },
     tokenColors: [
-        { scope: ['comment'], settings: { foreground: '#928374', fontStyle: 'italic' } },
-        { scope: ['keyword', 'storage.type', 'storage.modifier'], settings: { foreground: '#fb4934' } },
-        { scope: ['string', 'string.quoted'], settings: { foreground: '#b8bb26' } },
+        {
+            scope: ['comment'],
+            settings: { foreground: '#928374', fontStyle: 'italic' },
+        },
+        {
+            scope: ['keyword', 'storage.type', 'storage.modifier'],
+            settings: { foreground: '#fb4934' },
+        },
+        {
+            scope: ['string', 'string.quoted'],
+            settings: { foreground: '#b8bb26' },
+        },
         { scope: ['constant.numeric'], settings: { foreground: '#d3869b' } },
         { scope: ['constant.language'], settings: { foreground: '#d3869b' } },
-        { scope: ['entity.name.function', 'support.function'], settings: { foreground: '#b8bb26' } },
-        { scope: ['variable', 'variable.other'], settings: { foreground: '#ebdbb2' } },
-        { scope: ['entity.name.type', 'support.type'], settings: { foreground: '#fabd2f' } },
+        {
+            scope: ['entity.name.function', 'support.function'],
+            settings: { foreground: '#b8bb26' },
+        },
+        {
+            scope: ['variable', 'variable.other'],
+            settings: { foreground: '#ebdbb2' },
+        },
+        {
+            scope: ['entity.name.type', 'support.type'],
+            settings: { foreground: '#fabd2f' },
+        },
         { scope: ['punctuation'], settings: { foreground: '#ebdbb2' } },
-        { scope: ['constant.other', 'variable.other.constant'], settings: { foreground: '#d3869b' } },
+        {
+            scope: ['constant.other', 'variable.other.constant'],
+            settings: { foreground: '#d3869b' },
+        },
     ],
 };

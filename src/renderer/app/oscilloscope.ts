@@ -85,11 +85,19 @@ export const drawOscilloscope = (
 
     const legendX = legendWidth - 4 * dpr;
     const textVerticalOffset = 10 * dpr;
-    ctx.fillText(`${maxVoltage.toFixed(1)}v`, legendX, topY + textVerticalOffset);
+    ctx.fillText(
+        `${maxVoltage.toFixed(1)}v`,
+        legendX,
+        topY + textVerticalOffset,
+    );
     if (minVoltage <= 0 && maxVoltage >= 0) {
         ctx.fillText('0v', legendX, zeroY);
     }
-    ctx.fillText(`${minVoltage.toFixed(1)}v`, legendX, bottomY - textVerticalOffset);
+    ctx.fillText(
+        `${minVoltage.toFixed(1)}v`,
+        legendX,
+        bottomY - textVerticalOffset,
+    );
 
     // Draw stats on right
     if (stats) {
@@ -97,13 +105,25 @@ export const drawOscilloscope = (
         const statsX = waveformRight + 8 * dpr;
         const lineHeight = 14 * dpr;
 
-        ctx.fillText(`min: ${stats.min.toFixed(2)}v`, statsX, h / 2 - lineHeight);
+        ctx.fillText(
+            `min: ${stats.min.toFixed(2)}v`,
+            statsX,
+            h / 2 - lineHeight,
+        );
         ctx.fillText(`max: ${stats.max.toFixed(2)}v`, statsX, h / 2);
-        ctx.fillText(`p-p: ${stats.peakToPeak.toFixed(2)}v`, statsX, h / 2 + lineHeight);
+        ctx.fillText(
+            `p-p: ${stats.peakToPeak.toFixed(2)}v`,
+            statsX,
+            h / 2 + lineHeight,
+        );
     }
 
     // Handle empty data
-    if (!channels || channels.length === 0 || channels.every(ch => ch.length === 0)) {
+    if (
+        !channels ||
+        channels.length === 0 ||
+        channels.every((ch) => ch.length === 0)
+    ) {
         ctx.fillStyle = mutedColor;
         ctx.font = `${13 * dpr}px "Fira Code", monospace`;
         ctx.textAlign = 'center';
@@ -129,7 +149,10 @@ export const drawOscilloscope = (
         for (let i = 0; i < sampleCount; i++) {
             const x = waveformLeft + stepX * i;
             const rawSample = data[i];
-            const clampedSample = Math.max(minVoltage, Math.min(maxVoltage, rawSample));
+            const clampedSample = Math.max(
+                minVoltage,
+                Math.min(maxVoltage, rawSample),
+            );
             const y = h - (clampedSample - minVoltage) * pixelsPerVolt;
 
             if (i === 0) {

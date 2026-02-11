@@ -110,8 +110,13 @@
 }
 
 @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.4;
+    }
 }
 
 .control-buttons {
@@ -193,11 +198,12 @@
 }
 
 @keyframes recording-pulse {
-    0%, 100% { 
+    0%,
+    100% {
         color: var(--color-error);
         border-color: var(--color-error);
     }
-    50% { 
+    50% {
         color: color-mix(in srgb, var(--color-error) 60%, transparent);
         border-color: color-mix(in srgb, var(--color-error) 40%, transparent);
     }
@@ -209,8 +215,13 @@
 
 .error-display {
     padding: var(--sp-half) var(--sp-2);
-    background-color: color-mix(in srgb, var(--color-error) 15%, var(--bg-primary));
-    border-bottom: 1px solid color-mix(in srgb, var(--color-error) 30%, transparent);
+    background-color: color-mix(
+        in srgb,
+        var(--color-error) 15%,
+        var(--bg-primary)
+    );
+    border-bottom: 1px solid
+        color-mix(in srgb, var(--color-error) 30%, transparent);
 }
 
 .error-content {
@@ -261,7 +272,6 @@
     background-color: var(--bg-primary);
 }
 
-
 /* ═══════════════════════════════════════════════════════════════════════════
    Empty State - minimal prompt
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -301,4 +311,3 @@
     color: var(--text-bright);
     border-color: var(--accent-primary);
 }
-

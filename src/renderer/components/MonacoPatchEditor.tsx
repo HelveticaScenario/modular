@@ -113,7 +113,14 @@ export function MonacoPatchEditor({
         });
     }, [monaco, libSource, schemas]);
 
-    const { theme: appTheme, cursorStyle, font, fontLigatures, fontSize, prettierConfig } = useTheme();
+    const {
+        theme: appTheme,
+        cursorStyle,
+        font,
+        fontLigatures,
+        fontSize,
+        prettierConfig,
+    } = useTheme();
     const monacoThemeId = `theme-${appTheme.id}`;
 
     // Open help for DSL symbols on Cmd+Click (not Cmd+Hover)
@@ -148,7 +155,10 @@ export function MonacoPatchEditor({
 
     useEffect(() => {
         if (!monaco) return;
-        const disposable = registerDslFormattingProvider(monaco, prettierConfig);
+        const disposable = registerDslFormattingProvider(
+            monaco,
+            prettierConfig,
+        );
         return () => disposable.dispose();
     }, [monaco, prettierConfig]);
 

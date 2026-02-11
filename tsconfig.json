@@ -1,9 +1,9 @@
 {
-  "files": [],
-  "references": [
-    { "path": "src/shared" },
-    { "path": "src/main" },
-    { "path": "src/preload" },
-    { "path": "src/renderer" }
-  ]
+    "files": [],
+    "references": [
+        { "path": "src/shared" },
+        { "path": "src/main" },
+        { "path": "src/preload" },
+        { "path": "src/renderer" }
+    ]
 }

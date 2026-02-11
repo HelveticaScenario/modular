@@ -61,7 +61,7 @@ pre {
 
 /* Type link styling - TypeScript-like cyan color */
 .type-link {
-    color: #4EC9B0;
+    color: #4ec9b0;
     background: none;
     border: none;
     cursor: pointer;
@@ -128,7 +128,7 @@ pre {
 
 .type-card-header h3 {
     margin: 0;
-    color: #4EC9B0;
+    color: #4ec9b0;
     font-family: monospace;
 }
 

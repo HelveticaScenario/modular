@@ -8,7 +8,10 @@ interface FormatterSettingsTabProps {
     onConfigChange: (partial: Partial<AppConfig>) => void;
 }
 
-export function FormatterSettingsTab({ config, onConfigChange }: FormatterSettingsTabProps) {
+export function FormatterSettingsTab({
+    config,
+    onConfigChange,
+}: FormatterSettingsTabProps) {
     const prettier = config.prettier ?? {};
 
     const updatePrettier = (patch: Partial<PrettierConfig>) => {
@@ -18,7 +21,8 @@ export function FormatterSettingsTab({ config, onConfigChange }: FormatterSettin
     return (
         <div className="settings-tab-content">
             <p className="settings-description">
-                Configure Prettier formatting options for the patch editor. These are merged with built-in defaults.
+                Configure Prettier formatting options for the patch editor.
+                These are merged with built-in defaults.
             </p>
 
             {/* Print Width */}
@@ -31,7 +35,11 @@ export function FormatterSettingsTab({ config, onConfigChange }: FormatterSettin
                         min={20}
                         max={200}
                         value={prettier.printWidth ?? 60}
-                        onChange={(e) => updatePrettier({ printWidth: Number(e.target.value) })}
+                        onChange={(e) =>
+                            updatePrettier({
+                                printWidth: Number(e.target.value),
+                            })
+                        }
                     />
                     <span className="settings-hint">characters per line</span>
                 </div>
@@ -47,7 +55,9 @@ export function FormatterSettingsTab({ config, onConfigChange }: FormatterSettin
                         min={1}
                         max={8}
                         value={prettier.tabWidth ?? 2}
-                        onChange={(e) => updatePrettier({ tabWidth: Number(e.target.value) })}
+                        onChange={(e) =>
+                            updatePrettier({ tabWidth: Number(e.target.value) })
+                        }
                     />
                     <span className="settings-hint">spaces per indent</span>
                 </div>
@@ -60,7 +70,9 @@ export function FormatterSettingsTab({ config, onConfigChange }: FormatterSettin
                     <input
                         type="checkbox"
                         checked={prettier.semi ?? false}
-                        onChange={(e) => updatePrettier({ semi: e.target.checked })}
+                        onChange={(e) =>
+                            updatePrettier({ semi: e.target.checked })
+                        }
                     />
                     <span>Add semicolons at the end of statements</span>
                 </label>
@@ -73,7 +85,9 @@ export function FormatterSettingsTab({ config, onConfigChange }: FormatterSettin
                     <input
                         type="checkbox"
                         checked={prettier.singleQuote ?? true}
-                        onChange={(e) => updatePrettier({ singleQuote: e.target.checked })}
+                        onChange={(e) =>
+                            updatePrettier({ singleQuote: e.target.checked })
+                        }
                     />
                     <span>Use single quotes instead of double quotes</span>
                 </label>
@@ -85,7 +99,14 @@ export function FormatterSettingsTab({ config, onConfigChange }: FormatterSettin
                 <select
                     className="device-select"
                     value={(prettier.trailingComma as string) ?? 'all'}
-                    onChange={(e) => updatePrettier({ trailingComma: e.target.value as 'all' | 'es5' | 'none' })}
+                    onChange={(e) =>
+                        updatePrettier({
+                            trailingComma: e.target.value as
+                                | 'all'
+                                | 'es5'
+                                | 'none',
+                        })
+                    }
                 >
                     {TRAILING_COMMA_OPTIONS.map((opt) => (
                         <option key={opt} value={opt}>

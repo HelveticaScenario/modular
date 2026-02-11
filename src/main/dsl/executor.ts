@@ -91,7 +91,7 @@ export function executePatchScript(
     const $deferred = (channels: number = 1): DeferredCollection => {
         if (channels < 1 || channels > 16) {
             throw new Error(
-                `$deferred() channels must be between 1 and 16, got ${channels}`,
+                `deferred() channels must be between 1 and 16, got ${channels}`,
             );
         }
         const items: DeferredModuleOutput[] = [];

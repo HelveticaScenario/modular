@@ -9,6 +9,7 @@ yarn generate-lib
 ```
 
 This will:
+
 1. Build the native Rust module (`yarn build-native`)
 2. Compile the TypeScript script
 3. Call `getSchemas()` from the N-API module
@@ -18,6 +19,7 @@ This will:
 ## Output
 
 The generated file contains:
+
 - Console API definitions
 - TypeScript type definitions for all DSL modules
 - Factory functions with proper typing

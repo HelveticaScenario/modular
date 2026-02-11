@@ -1,11 +1,9 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "composite": true,
-    "outDir": "../../dist/main"
-  },
-  "include": ["./**/*"],
-  "references": [
-    { "path": "../shared" }
-  ]
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+        "composite": true,
+        "outDir": "../../dist/main"
+    },
+    "include": ["./**/*"],
+    "references": [{ "path": "../shared" }]
 }

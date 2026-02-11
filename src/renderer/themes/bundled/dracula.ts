@@ -26,7 +26,7 @@ export const draculaTheme: VSCodeTheme = {
         'editorSuggestWidget.selectedBackground': '#44475a',
         'editorHoverWidget.background': '#21222c',
         'editorHoverWidget.border': '#191a21',
-        
+
         'activityBar.background': '#21222c',
         'activityBar.foreground': '#f8f8f2',
         'sideBar.background': '#21222c',
@@ -34,40 +34,40 @@ export const draculaTheme: VSCodeTheme = {
         'sideBar.border': '#191a21',
         'sideBarSectionHeader.background': '#282a36',
         'sideBarSectionHeader.foreground': '#f8f8f2',
-        
+
         'statusBar.background': '#191a21',
         'statusBar.foreground': '#f8f8f2',
-        
+
         'tab.activeBackground': '#282a36',
         'tab.inactiveBackground': '#21222c',
         'tab.activeForeground': '#f8f8f2',
         'tab.inactiveForeground': '#6272a4',
         'tab.border': '#191a21',
-        
+
         'list.activeSelectionBackground': '#44475a',
         'list.activeSelectionForeground': '#f8f8f2',
         'list.hoverBackground': '#44475a75',
         'list.focusBackground': '#44475a',
-        
+
         'input.background': '#21222c',
         'input.foreground': '#f8f8f2',
         'input.border': '#191a21',
         'input.placeholderForeground': '#6272a4',
-        
+
         'button.background': '#44475a',
         'button.foreground': '#f8f8f2',
         'button.hoverBackground': '#6272a4',
-        
-        'focusBorder': '#6272a4',
-        'foreground': '#f8f8f2',
-        'descriptionForeground': '#6272a4',
-        'disabledForeground': '#6272a4',
-        
+
+        focusBorder: '#6272a4',
+        foreground: '#f8f8f2',
+        descriptionForeground: '#6272a4',
+        disabledForeground: '#6272a4',
+
         'scrollbar.shadow': '#00000000',
         'scrollbarSlider.background': '#44475a80',
         'scrollbarSlider.hoverBackground': '#44475a',
         'scrollbarSlider.activeBackground': '#6272a4',
-        
+
         'terminal.ansiGreen': '#50fa7b',
         'terminal.ansiYellow': '#f1fa8c',
         'terminal.ansiRed': '#ff5555',
@@ -76,15 +76,36 @@ export const draculaTheme: VSCodeTheme = {
         'terminal.ansiMagenta': '#ff79c6',
     },
     tokenColors: [
-        { scope: ['comment'], settings: { foreground: '#6272a4', fontStyle: 'italic' } },
-        { scope: ['keyword', 'storage.type', 'storage.modifier'], settings: { foreground: '#ff79c6' } },
-        { scope: ['string', 'string.quoted'], settings: { foreground: '#f1fa8c' } },
+        {
+            scope: ['comment'],
+            settings: { foreground: '#6272a4', fontStyle: 'italic' },
+        },
+        {
+            scope: ['keyword', 'storage.type', 'storage.modifier'],
+            settings: { foreground: '#ff79c6' },
+        },
+        {
+            scope: ['string', 'string.quoted'],
+            settings: { foreground: '#f1fa8c' },
+        },
         { scope: ['constant.numeric'], settings: { foreground: '#bd93f9' } },
         { scope: ['constant.language'], settings: { foreground: '#bd93f9' } },
-        { scope: ['entity.name.function', 'support.function'], settings: { foreground: '#50fa7b' } },
-        { scope: ['variable', 'variable.other'], settings: { foreground: '#f8f8f2' } },
-        { scope: ['entity.name.type', 'support.type'], settings: { foreground: '#8be9fd', fontStyle: 'italic' } },
+        {
+            scope: ['entity.name.function', 'support.function'],
+            settings: { foreground: '#50fa7b' },
+        },
+        {
+            scope: ['variable', 'variable.other'],
+            settings: { foreground: '#f8f8f2' },
+        },
+        {
+            scope: ['entity.name.type', 'support.type'],
+            settings: { foreground: '#8be9fd', fontStyle: 'italic' },
+        },
         { scope: ['punctuation'], settings: { foreground: '#f8f8f2' } },
-        { scope: ['constant.other', 'variable.other.constant'], settings: { foreground: '#bd93f9' } },
+        {
+            scope: ['constant.other', 'variable.other.constant'],
+            settings: { foreground: '#bd93f9' },
+        },
     ],
 };

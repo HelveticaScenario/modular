@@ -8,8 +8,15 @@ export function applyDslLibToMonaco(monaco: Monaco, libSource: string) {
 
     const ts = monaco.typescript;
     const jsDefaults = ts.javascriptDefaults;
-    const extraLib = jsDefaults.addExtraLib(libSource, 'file:///modular/dsl-lib.d.ts');
-    const extraLibModel = monaco.editor.createModel(libSource, 'typescript', monaco.Uri.parse('file:///modular/dsl-lib.d.ts'));
+    const extraLib = jsDefaults.addExtraLib(
+        libSource,
+        'file:///modular/dsl-lib.d.ts',
+    );
+    const extraLibModel = monaco.editor.createModel(
+        libSource,
+        'typescript',
+        monaco.Uri.parse('file:///modular/dsl-lib.d.ts'),
+    );
     extraLibModel.onDidChangeContent((e) => {
         // TODO: Make this model read-only
     });
@@ -25,7 +32,6 @@ export function formatPath(currentFile: string) {
     }
     return `file://${currentFile}`;
 }
-
 
 // export const constrainedModel = function (model, ranges, monaco) {
 //   const rangeConstructor = monaco.Range;

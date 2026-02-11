@@ -1,8 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import type { AppConfig, MonospaceFont, BundledFont, SystemFont } from '../ipcTypes';
+import type {
+    AppConfig,
+    MonospaceFont,
+    BundledFont,
+    SystemFont,
+} from '../ipcTypes';
 import type { AppTheme } from '../themes/types';
 
-type CursorStyle = 'line' | 'block' | 'underline' | 'line-thin' | 'block-outline' | 'underline-thin';
+type CursorStyle =
+    | 'line'
+    | 'block'
+    | 'underline'
+    | 'line-thin'
+    | 'block-outline'
+    | 'underline-thin';
 
 const BUNDLED_FONTS: BundledFont[] = [
     'Fira Code',
@@ -30,12 +41,7 @@ const BUNDLED_FONTS: BundledFont[] = [
     'Recursive',
 ];
 
-const SYSTEM_FONTS: SystemFont[] = [
-    'SF Mono',
-    'Monaco',
-    'Menlo',
-    'Consolas',
-];
+const SYSTEM_FONTS: SystemFont[] = ['SF Mono', 'Monaco', 'Menlo', 'Consolas'];
 
 const CURSOR_STYLES: CursorStyle[] = [
     'line',
@@ -79,8 +85,14 @@ function isFontInstalled(fontName: string): boolean {
     return false;
 }
 
-export function EditorSettingsTab({ config, themes, onConfigChange }: EditorSettingsTabProps) {
-    const [availableSystemFonts, setAvailableSystemFonts] = useState<SystemFont[]>([]);
+export function EditorSettingsTab({
+    config,
+    themes,
+    onConfigChange,
+}: EditorSettingsTabProps) {
+    const [availableSystemFonts, setAvailableSystemFonts] = useState<
+        SystemFont[]
+    >([]);
 
     useEffect(() => {
         // Detect which system fonts are actually installed via canvas measurement
@@ -112,7 +124,11 @@ export function EditorSettingsTab({ config, themes, onConfigChange }: EditorSett
                 <select
                     className="device-select"
                     value={config.font || 'Fira Code'}
-                    onChange={(e) => onConfigChange({ font: e.target.value as MonospaceFont })}
+                    onChange={(e) =>
+                        onConfigChange({
+                            font: e.target.value as MonospaceFont,
+                        })
+                    }
                 >
                     <optgroup label="Bundled">
                         {BUNDLED_FONTS.map((f) => (
@@ -144,9 +160,13 @@ export function EditorSettingsTab({ config, themes, onConfigChange }: EditorSett
                         max={72}
                         step={1}
                         value={config.fontSize ?? 17}
-                        onChange={(e) => onConfigChange({ fontSize: Number(e.target.value) })}
+                        onChange={(e) =>
+                            onConfigChange({ fontSize: Number(e.target.value) })
+                        }
                     />
-                    <span className="settings-range-value">{config.fontSize ?? 17}px</span>
+                    <span className="settings-range-value">
+                        {config.fontSize ?? 17}px
+                    </span>
                 </div>
             </div>
 
@@ -158,7 +178,9 @@ export function EditorSettingsTab({ config, themes, onConfigChange }: EditorSett
                         type="checkbox"
                         className="settings-toggle"
                         checked={config.fontLigatures ?? true}
-                        onChange={(e) => onConfigChange({ fontLigatures: e.target.checked })}
+                        onChange={(e) =>
+                            onConfigChange({ fontLigatures: e.target.checked })
+                        }
                     />
                 </label>
             </div>
@@ -169,7 +191,11 @@ export function EditorSettingsTab({ config, themes, onConfigChange }: EditorSett
                 <select
                     className="device-select"
                     value={config.cursorStyle || 'block'}
-                    onChange={(e) => onConfigChange({ cursorStyle: e.target.value as CursorStyle })}
+                    onChange={(e) =>
+                        onConfigChange({
+                            cursorStyle: e.target.value as CursorStyle,
+                        })
+                    }
                 >
                     {CURSOR_STYLES.map((s) => (
                         <option key={s} value={s}>

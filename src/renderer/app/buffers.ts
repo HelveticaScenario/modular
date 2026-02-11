@@ -44,21 +44,23 @@ export const saveUnsavedBuffers = (buffers: EditorBuffer[]) => {
 
     try {
         const dirtyBuffers = buffers.filter((b) => b.dirty);
-        const snapshots: UnsavedBufferSnapshot[] = dirtyBuffers.map((buffer) => {
-            if (buffer.kind === 'file') {
+        const snapshots: UnsavedBufferSnapshot[] = dirtyBuffers.map(
+            (buffer) => {
+                if (buffer.kind === 'file') {
+                    return {
+                        kind: 'file',
+                        id: buffer.filePath,
+                        filePath: buffer.filePath,
+                        content: buffer.content,
+                    };
+                }
                 return {
-                    kind: 'file',
-                    id: buffer.filePath,
-                    filePath: buffer.filePath,
+                    kind: 'untitled',
+                    id: buffer.id,
                     content: buffer.content,
                 };
-            }
-            return {
-                kind: 'untitled',
-                id: buffer.id,
-                content: buffer.content,
-            };
-        });
+            },
+        );
 
         window.localStorage.setItem(
             UNSAVED_STORAGE_KEY,

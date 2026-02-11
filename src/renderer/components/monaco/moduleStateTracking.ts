@@ -23,7 +23,10 @@
 import type React from 'react';
 import type { editor } from 'monaco-editor';
 import type { Monaco } from '../../hooks/useCustomMonaco';
-import type { SourceSpan, ResolvedInterpolation } from '../../../shared/dsl/spanTypes';
+import type {
+    SourceSpan,
+    ResolvedInterpolation,
+} from '../../../shared/dsl/spanTypes';
 import { getActiveInterpolationResolutions } from '../../../shared/dsl/spanTypes';
 
 /**
@@ -154,9 +157,7 @@ function extractInterpolationRegions(
 
         const interpolationBeforeThisPiece =
             regionIdx < regions.length &&
-            (i === 0
-                ? regions[0].sourceStart < piece.sourceStart
-                : true);
+            (i === 0 ? regions[0].sourceStart < piece.sourceStart : true);
 
         if (interpolationBeforeThisPiece) {
             regions[regionIdx].evaluatedStart = evalPos;
@@ -208,7 +209,11 @@ function buildInterpolationRegionsFromResolutions(
         }
     }
 
-    if (sourceRegions.length === 0 || sourceRegions.length !== resolutions.length) return null;
+    if (
+        sourceRegions.length === 0 ||
+        sourceRegions.length !== resolutions.length
+    )
+        return null;
 
     return sourceRegions.map((sr, i) => ({
         sourceStart: sr.sourceStart,
@@ -425,7 +430,9 @@ export function startModuleStatePolling({
                 }
 
                 // Process each param that has spans
-                for (const [paramName, paramInfo] of Object.entries(paramSpans)) {
+                for (const [paramName, paramInfo] of Object.entries(
+                    paramSpans,
+                )) {
                     const { spans, source: evaluatedSource } = paramInfo;
 
                     // Skip if no spans to highlight
@@ -472,27 +479,37 @@ export function startModuleStatePolling({
                         });
 
                         // Check if it's a template literal with interpolations
-                        paramCache.hasInterpolations = sourceText.includes('${');
+                        paramCache.hasInterpolations =
+                            sourceText.includes('${');
                         paramCache.sourceContent = sourceText;
                     }
 
                     // Process spans with or without interpolation mapping
                     if (paramCache.hasInterpolations && evaluatedSource) {
                         // Look up interpolation resolutions once for this param
-                        const interpolationResolutions = getActiveInterpolationResolutions();
+                        const interpolationResolutions =
+                            getActiveInterpolationResolutions();
                         const spanKey = `${argSpan.start}:${argSpan.end}`;
-                        const resolutions = interpolationResolutions?.get(spanKey);
+                        const resolutions =
+                            interpolationResolutions?.get(spanKey);
 
                         // Build mapper if needed (evaluated source changed)
-                        if (paramCache.evaluatedContentForMapper !== evaluatedSource) {
+                        if (
+                            paramCache.evaluatedContentForMapper !==
+                            evaluatedSource
+                        ) {
                             // Strip quotes from source content for mapping
-                            let sourceWithoutQuotes = paramCache.sourceContent || '';
+                            let sourceWithoutQuotes =
+                                paramCache.sourceContent || '';
                             if (
                                 sourceWithoutQuotes.startsWith('`') ||
                                 sourceWithoutQuotes.startsWith('"') ||
                                 sourceWithoutQuotes.startsWith("'")
                             ) {
-                                sourceWithoutQuotes = sourceWithoutQuotes.slice(1, -1);
+                                sourceWithoutQuotes = sourceWithoutQuotes.slice(
+                                    1,
+                                    -1,
+                                );
                             }
 
                             // Prefer building regions from resolution data (accurate)
@@ -500,10 +517,11 @@ export function startModuleStatePolling({
                             // interpolated content contains literal piece substrings)
                             let regions: InterpolationRegion[] | null = null;
                             if (resolutions) {
-                                regions = buildInterpolationRegionsFromResolutions(
-                                    sourceWithoutQuotes,
-                                    resolutions,
-                                );
+                                regions =
+                                    buildInterpolationRegionsFromResolutions(
+                                        sourceWithoutQuotes,
+                                        resolutions,
+                                    );
                             }
                             if (!regions) {
                                 regions = extractInterpolationRegions(
@@ -512,11 +530,13 @@ export function startModuleStatePolling({
                                 );
                             }
                             if (regions) {
-                                paramCache.positionMapper = buildPositionMapper(regions);
+                                paramCache.positionMapper =
+                                    buildPositionMapper(regions);
                             } else {
                                 paramCache.positionMapper = undefined;
                             }
-                            paramCache.evaluatedContentForMapper = evaluatedSource;
+                            paramCache.evaluatedContentForMapper =
+                                evaluatedSource;
 
                             // Mapper changed — tracked decorations need recreating
                             paramCache.trackedDecorationsCreated = false;
@@ -533,38 +553,64 @@ export function startModuleStatePolling({
                         // (either in the template literal source or a const literal).
                         const allSpans = paramInfo.all_spans;
 
-                        if (!paramCache.trackedDecorationsCreated && allSpans && allSpans.length > 0) {
-
-                            const decorationsToCreate: editor.IModelDeltaDecoration[] = [];
+                        if (
+                            !paramCache.trackedDecorationsCreated &&
+                            allSpans &&
+                            allSpans.length > 0
+                        ) {
+                            const decorationsToCreate: editor.IModelDeltaDecoration[] =
+                                [];
                             const spanIds: string[] = [];
 
                             for (const [evalStart, evalEnd] of allSpans) {
-                                const sourceStart = paramCache.positionMapper(evalStart);
-                                const sourceEnd = paramCache.positionMapper(evalEnd);
+                                const sourceStart =
+                                    paramCache.positionMapper(evalStart);
+                                const sourceEnd =
+                                    paramCache.positionMapper(evalEnd);
 
                                 let startOffset: number | null = null;
                                 let endOffset: number | null = null;
 
-                                if (sourceStart !== null && sourceEnd !== null) {
+                                if (
+                                    sourceStart !== null &&
+                                    sourceEnd !== null
+                                ) {
                                     // Positions map to source text within the template literal
-                                    startOffset = argSpan.start + 1 + sourceStart;
+                                    startOffset =
+                                        argSpan.start + 1 + sourceStart;
                                     endOffset = argSpan.start + 1 + sourceEnd;
                                 } else if (resolutions) {
                                     // Positions inside interpolation result — redirect to const literal
-                                    const resolvedStart = resolveInterpolatedPosition(evalStart, resolutions);
-                                    const resolvedEnd = resolveInterpolatedPosition(evalEnd, resolutions);
-                                    if (resolvedStart !== null && resolvedEnd !== null) {
+                                    const resolvedStart =
+                                        resolveInterpolatedPosition(
+                                            evalStart,
+                                            resolutions,
+                                        );
+                                    const resolvedEnd =
+                                        resolveInterpolatedPosition(
+                                            evalEnd,
+                                            resolutions,
+                                        );
+                                    if (
+                                        resolvedStart !== null &&
+                                        resolvedEnd !== null
+                                    ) {
                                         startOffset = resolvedStart;
                                         endOffset = resolvedEnd;
                                     }
                                 }
 
-                                if (startOffset !== null && endOffset !== null) {
+                                if (
+                                    startOffset !== null &&
+                                    endOffset !== null
+                                ) {
                                     const spanId = `${evalStart}:${evalEnd}`;
                                     spanIds.push(spanId);
 
-                                    const startPos = model.getPositionAt(startOffset);
-                                    const endPos = model.getPositionAt(endOffset);
+                                    const startPos =
+                                        model.getPositionAt(startOffset);
+                                    const endPos =
+                                        model.getPositionAt(endOffset);
 
                                     decorationsToCreate.push({
                                         range: new monaco.Range(
@@ -575,7 +621,8 @@ export function startModuleStatePolling({
                                         ),
                                         options: {
                                             stickiness:
-                                                monaco.editor.TrackedRangeStickiness
+                                                monaco.editor
+                                                    .TrackedRangeStickiness
                                                     .NeverGrowsWhenTypingAtEdges,
                                         },
                                     });
@@ -583,11 +630,18 @@ export function startModuleStatePolling({
                             }
 
                             if (decorationsToCreate.length > 0) {
-                                paramCache.decorationCollection = editor.createDecorationsCollection();
-                                const ids = paramCache.decorationCollection.set(decorationsToCreate);
+                                paramCache.decorationCollection =
+                                    editor.createDecorationsCollection();
+                                const ids =
+                                    paramCache.decorationCollection.set(
+                                        decorationsToCreate,
+                                    );
                                 paramCache.trackedDecorationIds = new Map();
                                 for (let i = 0; i < spanIds.length; i++) {
-                                    paramCache.trackedDecorationIds.set(spanIds[i], ids[i]);
+                                    paramCache.trackedDecorationIds.set(
+                                        spanIds[i],
+                                        ids[i],
+                                    );
                                 }
                             }
 
@@ -598,7 +652,8 @@ export function startModuleStatePolling({
                         if (paramCache.trackedDecorationIds) {
                             for (const [spanStart, spanEnd] of spans) {
                                 const spanId = `${spanStart}:${spanEnd}`;
-                                const decoId = paramCache.trackedDecorationIds.get(spanId);
+                                const decoId =
+                                    paramCache.trackedDecorationIds.get(spanId);
                                 if (!decoId) continue;
 
                                 const range = model.getDecorationRange(decoId);
@@ -621,8 +676,13 @@ export function startModuleStatePolling({
                         const allSpans = paramInfo.all_spans;
 
                         // Create tracked decorations if we haven't yet and we have all_spans
-                        if (!paramCache.trackedDecorationsCreated && allSpans && allSpans.length > 0) {
-                            const decorationsToCreate: editor.IModelDeltaDecoration[] = [];
+                        if (
+                            !paramCache.trackedDecorationsCreated &&
+                            allSpans &&
+                            allSpans.length > 0
+                        ) {
+                            const decorationsToCreate: editor.IModelDeltaDecoration[] =
+                                [];
                             const spanIds: string[] = [];
 
                             for (const [spanStart, spanEnd] of allSpans) {
@@ -630,10 +690,12 @@ export function startModuleStatePolling({
                                 spanIds.push(spanId);
 
                                 // +1 to skip opening quote in document
-                                const startOffset = argSpan.start + 1 + spanStart;
+                                const startOffset =
+                                    argSpan.start + 1 + spanStart;
                                 const endOffset = argSpan.start + 1 + spanEnd;
 
-                                const startPos = model.getPositionAt(startOffset);
+                                const startPos =
+                                    model.getPositionAt(startOffset);
                                 const endPos = model.getPositionAt(endOffset);
 
                                 decorationsToCreate.push({
@@ -654,13 +716,20 @@ export function startModuleStatePolling({
                             }
 
                             // Create the decoration collection and get IDs
-                            paramCache.decorationCollection = editor.createDecorationsCollection();
-                            const ids = paramCache.decorationCollection.set(decorationsToCreate);
+                            paramCache.decorationCollection =
+                                editor.createDecorationsCollection();
+                            const ids =
+                                paramCache.decorationCollection.set(
+                                    decorationsToCreate,
+                                );
 
                             // Build span ID -> decoration ID map
                             paramCache.trackedDecorationIds = new Map();
                             for (let i = 0; i < spanIds.length; i++) {
-                                paramCache.trackedDecorationIds.set(spanIds[i], ids[i]);
+                                paramCache.trackedDecorationIds.set(
+                                    spanIds[i],
+                                    ids[i],
+                                );
                             }
 
                             paramCache.trackedDecorationsCreated = true;
@@ -670,7 +739,8 @@ export function startModuleStatePolling({
                         if (paramCache.trackedDecorationIds) {
                             for (const [spanStart, spanEnd] of spans) {
                                 const spanId = `${spanStart}:${spanEnd}`;
-                                const decoId = paramCache.trackedDecorationIds.get(spanId);
+                                const decoId =
+                                    paramCache.trackedDecorationIds.get(spanId);
 
                                 if (!decoId) {
                                     // This span wasn't in all_spans - shouldn't happen but skip
