@@ -1,7 +1,7 @@
 {
     "name": "@modular/app",
     "productName": "Operator",
-    "version": "0.0.17",
+    "version": "0.0.18",
     "description": "My Electron application description",
     "main": ".webpack/main",
     "repository": {
