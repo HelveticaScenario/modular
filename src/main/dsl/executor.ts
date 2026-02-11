@@ -48,22 +48,21 @@ export function executePatchScript(
     const clock = context.namespaceTree['$clock'];
     if (typeof clock !== 'function') {
         throw new Error(
-            'DSL execution error: "clock" module not found in schemas',
+            'DSL execution error: "$clock" module not found in schemas',
         );
     }
 
     const signal = context.namespaceTree['$signal'];
     if (typeof signal !== 'function') {
         throw new Error(
-            'DSL execution error: "signal" module not found in schemas',
+            'DSL execution error: "$signal" module not found in schemas',
         );
     }
 
     // Create default clock module that runs at 120 BPM
-    const rootClock = clock(bpm(120), {
+    const $rootClock = clock(bpm(120), {
         id: 'ROOT_CLOCK',
     });
-    // console.log('Created clock module:', rootClock);
 
     const rootInput = signal(
         Array.from({ length: 16 }, (_, i) => ({
@@ -77,10 +76,10 @@ export function executePatchScript(
 
     // Create functions to set global tempo and output gain
     const builder = context.getBuilder();
-    const setTempo = (tempo: Signal) => {
+    const $setTempo = (tempo: Signal) => {
         builder.setTempo(tempo);
     };
-    const setOutputGain = (gain: Signal) => {
+    const $setOutputGain = (gain: Signal) => {
         builder.setOutputGain(gain);
     };
 
@@ -89,7 +88,7 @@ export function executePatchScript(
      * Useful for feedback loops and forward references.
      * @param channels - Number of deferred outputs (1-16, default 1)
      */
-    const deferred = (channels: number = 1): DeferredCollection => {
+    const $deferred = (channels: number = 1): DeferredCollection => {
         if (channels < 1 || channels > 16) {
             throw new Error(
                 `deferred() channels must be between 1 and 16, got ${channels}`,
@@ -113,9 +112,17 @@ export function executePatchScript(
      * @param max - Maximum value
      * @returns The signal module's output
      */
-    const slider = (label: string, value: number, min: number, max: number) => {
+    const $slider = (
+        label: string,
+        value: number,
+        min: number,
+        max: number,
+    ) => {
         if (typeof label !== 'string') {
             throw new Error('$slider() label must be a string literal');
+        }
+        if (sliders.find((s) => s.label === label)) {
+            throw new Error(`$slider() label "${label}" must be unique`);
         }
         if (typeof value !== 'number' || !isFinite(value)) {
             throw new Error('$slider() value must be a finite number literal');
@@ -154,14 +161,14 @@ export function executePatchScript(
         $c,
         $r,
         // Deferred signal helper
-        $deferred: deferred,
+        $deferred,
         // Slider control
-        $slider: slider,
+        $slider,
         // Global settings
-        $setTempo: setTempo,
-        $setOutputGain: setOutputGain,
+        $setTempo,
+        $setOutputGain,
         // Built-in modules
-        $rootClock: rootClock,
+        $rootClock: $rootClock,
         $input: rootInput,
     };
 

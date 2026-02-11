@@ -330,11 +330,14 @@ function App() {
                             const scopedCanvas =
                                 scopeCanvasMapRef.current.get(scopeKey);
                             if (scopedCanvas) {
-                                const scale = parseFloat(
-                                    scopedCanvas.dataset.scopeScale || '5',
+                                const rangeMin = parseFloat(
+                                    scopedCanvas.dataset.scopeRangeMin || '-5',
+                                );
+                                const rangeMax = parseFloat(
+                                    scopedCanvas.dataset.scopeRangeMax || '5',
                                 );
                                 drawOscilloscope(channels, scopedCanvas, {
-                                    scale,
+                                    range: [rangeMin, rangeMax],
                                     stats,
                                 });
                             }
@@ -446,7 +449,7 @@ function App() {
                             key: `:module:${moduleId}:${portName}`,
                             lineNumber: call.endLine,
                             file: activeBufferId,
-                            scale: scope.scale ?? 5,
+                            range: scope.range ?? [-5, 5],
                         };
                     })
                     .filter((v): v is ScopeView => v !== null);

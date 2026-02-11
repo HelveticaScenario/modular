@@ -313,10 +313,10 @@ interface ModuleOutput {
    * @param config - Scope configuration options
    * @param config.msPerFrame - Time window in milliseconds (default 500)
    * @param config.triggerThreshold - Trigger threshold in volts (optional)
-   * @param config.scale - Voltage scale for display, shows -scale to +scale (default 5)
-   * @example osc.scope({ msPerFrame: 100, scale: 5 }).out()
+   * @param config.range - Voltage range for display as [min, max] tuple (default [-5, 5])
+   * @example osc.scope({ msPerFrame: 100, range: [-10, 10] }).out()
    */
-  scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this;
+  scope(config?: { msPerFrame?: number; triggerThreshold?: number; range?: [number, number] }): this;
   
   /**
    * Send this output to speakers as stereo.
@@ -408,9 +408,9 @@ interface Collection extends Iterable<ModuleOutput> {
    * @param config - Scope configuration options
    * @param config.msPerFrame - Time window in milliseconds (default 500)
    * @param config.triggerThreshold - Trigger threshold in volts (optional)
-   * @param config.scale - Voltage scale for display, shows -scale to +scale (default 5)
+   * @param config.range - Voltage range for display as [min, max] tuple (default [-5, 5])
    */
-  scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this;
+  scope(config?: { msPerFrame?: number; triggerThreshold?: number; range?: [number, number] }): this;
   
   /**
    * Send all outputs to speakers as stereo, summed together.
@@ -476,9 +476,9 @@ interface CollectionWithRange extends Iterable<ModuleOutputWithRange> {
    * @param config - Scope configuration options
    * @param config.msPerFrame - Time window in milliseconds (default 500)
    * @param config.triggerThreshold - Trigger threshold in volts (optional)
-   * @param config.scale - Voltage scale for display, shows -scale to +scale (default 5)
+   * @param config.range - Voltage range for display as [min, max] tuple (default [-5, 5])
    */
-  scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this;
+  scope(config?: { msPerFrame?: number; triggerThreshold?: number; range?: [number, number] }): this;
   
   /**
    * Send all outputs to speakers as stereo, summed together.
@@ -614,7 +614,7 @@ interface DeferredCollection extends Iterable<DeferredModuleOutput> {
   /**
    * Add scope visualization for the first resolved output.
    */
-  scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this;
+  scope(config?: { msPerFrame?: number; triggerThreshold?: number; range?: [number, number] }): this;
   /**
    * Send all resolved outputs to speakers as stereo.
    */

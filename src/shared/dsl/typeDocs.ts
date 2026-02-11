@@ -113,10 +113,11 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             {
                 name: 'scope',
                 signature:
-                    'scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this',
+                    'scope(config?: { msPerFrame?: number; triggerThreshold?: number; range?: [number, number] }): this',
                 description:
                     'Add an oscilloscope visualization for this output. The scope appears as an overlay in the editor.',
-                example: 'osc.scope({ msPerFrame: 100, scale: 5 }).out()',
+                example:
+                    'osc.scope({ msPerFrame: 100, range: [-10, 10] }).out()',
             },
             {
                 name: 'out',
@@ -197,7 +198,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             {
                 name: 'scope',
                 signature:
-                    'scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this',
+                    'scope(config?: { msPerFrame?: number; triggerThreshold?: number; range?: [number, number] }): this',
                 description:
                     'Add scope visualization for the first output in the collection.',
                 example: '$(osc1, osc2).scope().out()',

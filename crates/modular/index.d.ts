@@ -34,12 +34,7 @@ export declare class Synthesizer {
    * Recreate both input and output streams with new device/config
    * This is the primary way to change audio devices after initialization
    */
-  recreateStreams(
-    outputDeviceId: string,
-    sampleRate: number,
-    bufferSize?: number | undefined | null,
-    inputDeviceId?: string | undefined | null,
-  ): void
+  recreateStreams(outputDeviceId: string, sampleRate: number, bufferSize?: number | undefined | null, inputDeviceId?: string | undefined | null): void
   /** Force refresh the device cache (legacy - same as refresh_device_cache) */
   refreshDeviceList(): void
   /** List all available audio hosts (from cache) */
@@ -277,11 +272,12 @@ export interface Scope {
   item: ScopeItem
   msPerFrame: number
   triggerThreshold?: number
-  /** Voltage scale for display (default 5.0). The scope displays from -scale to +scale. */
-  scale: number
+  /** Voltage range for display (default [-5.0, 5.0]). The scope displays from range[0] to range[1]. */
+  range: [number, number]
 }
 
-export type ScopeItem = { type: 'ModuleOutput'; moduleId: string; portName: string }
+export type ScopeItem =
+  | { type: 'ModuleOutput', moduleId: string, portName: string }
 
 /** Statistics computed from scope buffer data */
 export interface ScopeStats {

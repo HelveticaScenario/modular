@@ -1,0 +1,8 @@
+crates/modular/target
+crates/modular/.yarn
+crates/modular/index.js
+crates/modular/package-template.wasi-browser.js
+crates/modular/package-template.wasi.cjs
+crates/modular/wasi-worker-browser.mjs
+crates/modular/wasi-worker.mjs
+crates/modular/.yarnrc.yml
