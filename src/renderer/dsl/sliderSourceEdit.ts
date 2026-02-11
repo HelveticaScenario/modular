@@ -71,7 +71,7 @@ export function findSliderValueSpan(source: string, label: string): SourceSpanRe
 export function parseSliderDefinitions(source: string): SliderDefinition[] {
     const sliders: SliderDefinition[] = [];
     
-    // Pattern to match: slider( "label" or 'label', value, min, max )
+    // Pattern to match: $slider( "label" or 'label', value, min, max )
     // This captures:
     // - Group 1: the quote character (" or ')
     // - Group 2: the label (at least one character required)
@@ -81,7 +81,7 @@ export function parseSliderDefinitions(source: string): SliderDefinition[] {
     // because the label is inside quotes in the source code, so regex metacharacters
     // like $, *, +, ? are treated as literal characters in the label string.
     // Empty labels are rejected as they would be invalid/confusing UI.
-    const sliderPattern = /\bslider\s*\(\s*(['"])(.+?)\1\s*,/g;
+    const sliderPattern = /\$slider\s*\(\s*(['"])(.+?)\1\s*,/g;
     
     let match: RegExpExecArray | null;
     // Track seen moduleIds to handle duplicate moduleId issue
