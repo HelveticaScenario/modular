@@ -156,7 +156,7 @@ export interface DSLExecuteResult {
     sourceLocationMap?: Record<string, SourceLocationInfo>;
     /** Interpolation resolutions for template literal const redirects (serialized Map) */
     interpolationResolutions?: Record<string, SerializedResolvedInterpolation[]>;
-    /** Slider definitions created by slider() DSL function calls */
+    /** Slider definitions created by $slider() DSL function calls */
     sliders?: SliderDefinition[];
 }
 

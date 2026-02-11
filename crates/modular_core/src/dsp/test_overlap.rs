@@ -13,7 +13,7 @@ struct TestOverlapParams {
     output: MonoSignal,
 }
 
-#[module(name = "test-overlap", description = "Test module with overlapping names")]
+#[module(name = "$test-overlap", description = "Test module with overlapping names")]
 #[derive(Default)]
 pub struct TestOverlap {
     outputs: TestOverlapOutputs,

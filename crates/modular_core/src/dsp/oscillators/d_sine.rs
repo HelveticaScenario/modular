@@ -23,7 +23,7 @@ struct DSineOscillatorOutputs {
 }
 
 #[module(
-    name = "dSine",
+    name = "$dSine",
     description = "A phase-driven sine wave oscillator",
     args(phase)
 )]

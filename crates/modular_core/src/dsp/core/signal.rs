@@ -24,7 +24,7 @@ struct SignalOutputs {
 }
 
 #[module(
-    name = "signal",
+    name = "$signal",
     description = "a polyphonic signal passthrough",
     args(source)
 )]
