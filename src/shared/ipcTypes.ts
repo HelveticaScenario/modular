@@ -1,6 +1,6 @@
 /**
  * Type-safe IPC channel definitions for @modular/core
- * 
+ *
  * This file defines all IPC channels with their request/response types.
  * Shared between main and renderer processes.
  */
@@ -21,14 +21,14 @@ import type {
     AudioConfigOptions,
     getSchemas,
     getMiniLeafSpans,
-    Synthesizer
+    Synthesizer,
 } from '@modular/core';
 import type { SliderDefinition } from './dsl/sliderTypes';
 
-export type { 
-    PatchGraph, 
-    ApplyPatchError, 
-    AudioDeviceInfo, 
+export type {
+    PatchGraph,
+    ApplyPatchError,
+    AudioDeviceInfo,
     MidiInputInfo,
     HostInfo,
     BufferSizeRange,
@@ -73,11 +73,7 @@ export type BundledFont =
     | 'Recursive';
 
 /** System fonts (available only if installed on the OS) */
-export type SystemFont =
-    | 'SF Mono'
-    | 'Monaco'
-    | 'Menlo'
-    | 'Consolas';
+export type SystemFont = 'SF Mono' | 'Monaco' | 'Menlo' | 'Consolas';
 
 export type MonospaceFont = BundledFont | SystemFont;
 
@@ -92,7 +88,13 @@ export interface PrettierConfig {
 
 export interface AppConfig {
     theme?: string;
-    cursorStyle?: 'line' | 'block' | 'underline' | 'line-thin' | 'block-outline' | 'underline-thin';
+    cursorStyle?:
+        | 'line'
+        | 'block'
+        | 'underline'
+        | 'line-thin'
+        | 'block-outline'
+        | 'underline-thin';
     font?: MonospaceFont;
     fontLigatures?: boolean;
     fontSize?: number;
@@ -155,7 +157,10 @@ export interface DSLExecuteResult {
     /** Map from module ID to source location for error reporting */
     sourceLocationMap?: Record<string, SourceLocationInfo>;
     /** Interpolation resolutions for template literal const redirects (serialized Map) */
-    interpolationResolutions?: Record<string, SerializedResolvedInterpolation[]>;
+    interpolationResolutions?: Record<
+        string,
+        SerializedResolvedInterpolation[]
+    >;
     /** Slider definitions created by $slider() DSL function calls */
     sliders?: SliderDefinition[];
 }
@@ -297,7 +302,10 @@ export interface IPCHandlers {
     [IPC_CHANNELS.GET_SCHEMAS]: typeof getSchemas;
 
     // DSL operations
-    [IPC_CHANNELS.DSL_EXECUTE]: (source: string, sourceId?: string) => DSLExecuteResult;
+    [IPC_CHANNELS.DSL_EXECUTE]: (
+        source: string,
+        sourceId?: string,
+    ) => DSLExecuteResult;
     [IPC_CHANNELS.GET_DSL_LIB_SOURCE]: () => string;
 
     // Synthesizer operations
@@ -307,7 +315,10 @@ export interface IPCHandlers {
 
     [IPC_CHANNELS.SYNTH_GET_SCOPES]: typeof Synthesizer.prototype.getScopes;
 
-    [IPC_CHANNELS.SYNTH_UPDATE_PATCH]: (patch: PatchGraph, sourceId?: string) => UpdatePatchResult;
+    [IPC_CHANNELS.SYNTH_UPDATE_PATCH]: (
+        patch: PatchGraph,
+        sourceId?: string,
+    ) => UpdatePatchResult;
 
     [IPC_CHANNELS.SYNTH_START_RECORDING]: typeof Synthesizer.prototype.startRecording;
 
@@ -325,7 +336,11 @@ export interface IPCHandlers {
 
     [IPC_CHANNELS.SYNTH_IS_STOPPED]: typeof Synthesizer.prototype.isStopped;
 
-    [IPC_CHANNELS.SYNTH_SET_MODULE_PARAM]: (moduleId: string, moduleType: string, params: object) => void;
+    [IPC_CHANNELS.SYNTH_SET_MODULE_PARAM]: (
+        moduleId: string,
+        moduleType: string,
+        params: object,
+    ) => void;
 
     // Audio device operations
     [IPC_CHANNELS.AUDIO_REFRESH_DEVICE_CACHE]: typeof Synthesizer.prototype.refreshDeviceCache;
@@ -355,22 +370,41 @@ export interface IPCHandlers {
     [IPC_CHANNELS.FS_GET_WORKSPACE]: () => WorkspaceFolder | null;
     [IPC_CHANNELS.FS_LIST_FILES]: () => FileTreeEntry[];
     [IPC_CHANNELS.FS_READ_FILE]: (filePath: string) => string;
-    [IPC_CHANNELS.FS_WRITE_FILE]: (filePath: string, content: string) => FSOperationResult;
-    [IPC_CHANNELS.FS_RENAME_FILE]: (oldPath: string, newPath: string) => FSOperationResult;
-    [IPC_CHANNELS.FS_DELETE_FILE]: (filePath: string) => Promise<FSOperationResult>;
-    [IPC_CHANNELS.FS_MOVE_FILE]: (sourcePath: string, destPath: string) => FSOperationResult;
+    [IPC_CHANNELS.FS_WRITE_FILE]: (
+        filePath: string,
+        content: string,
+    ) => FSOperationResult;
+    [IPC_CHANNELS.FS_RENAME_FILE]: (
+        oldPath: string,
+        newPath: string,
+    ) => FSOperationResult;
+    [IPC_CHANNELS.FS_DELETE_FILE]: (
+        filePath: string,
+    ) => Promise<FSOperationResult>;
+    [IPC_CHANNELS.FS_MOVE_FILE]: (
+        sourcePath: string,
+        destPath: string,
+    ) => FSOperationResult;
     [IPC_CHANNELS.FS_CREATE_FOLDER]: (filePath: string) => FSOperationResult;
     [IPC_CHANNELS.FS_SHOW_SAVE_DIALOG]: (defaultPath?: string) => string | null;
-    [IPC_CHANNELS.FS_SHOW_INPUT_DIALOG]: (title: string, defaultValue?: string) => string | null;
+    [IPC_CHANNELS.FS_SHOW_INPUT_DIALOG]: (
+        title: string,
+        defaultValue?: string,
+    ) => string | null;
 
     // UI operations
     [IPC_CHANNELS.SHOW_CONTEXT_MENU]: (options: ContextMenuOptions) => void;
     [IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND]: (action: ContextMenuAction) => void;
-    [IPC_CHANNELS.SHOW_UNSAVED_CHANGES_DIALOG]: (fileName: string) => Promise<number>;
+    [IPC_CHANNELS.SHOW_UNSAVED_CHANGES_DIALOG]: (
+        fileName: string,
+    ) => Promise<number>;
 
     // Window operations
     [IPC_CHANNELS.OPEN_HELP_WINDOW]: () => void;
-    [IPC_CHANNELS.OPEN_HELP_FOR_SYMBOL]: (symbolType: 'type' | 'module' | 'namespace', symbolName: string) => void;
+    [IPC_CHANNELS.OPEN_HELP_FOR_SYMBOL]: (
+        symbolType: 'type' | 'module' | 'namespace',
+        symbolName: string,
+    ) => void;
 
     // Config operations
     [IPC_CHANNELS.CONFIG_GET_PATH]: () => string;
@@ -385,11 +419,19 @@ export interface IPCHandlers {
 /**
  * Type helper to extract request type for a channel
  */
-export type IPCRequest<T extends keyof IPCHandlers> = Parameters<IPCHandlers[T]>;
+export type IPCRequest<T extends keyof IPCHandlers> = Parameters<
+    IPCHandlers[T]
+>;
 
 /**
  * Type helper to extract response type for a channel
  */
-export type IPCResponse<T extends keyof IPCHandlers> = ReturnType<Promisify<IPCHandlers[T]>>;
+export type IPCResponse<T extends keyof IPCHandlers> = ReturnType<
+    Promisify<IPCHandlers[T]>
+>;
 
-export type Promisify<T> = T extends (...args: any[]) => Promise<any> ? T : T extends (...args: infer P) => infer R ? (...args: P) => Promise<R> : never;
+export type Promisify<T> = T extends (...args: any[]) => Promise<any>
+    ? T
+    : T extends (...args: infer P) => infer R
+      ? (...args: P) => Promise<R>
+      : never;

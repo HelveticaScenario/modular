@@ -1,6 +1,6 @@
 /**
  * Source Span Analyzer using ts-morph
- * 
+ *
  * Parses DSL source code and extracts absolute character offsets for literal
  * arguments in module factory calls. The registry is keyed by call-site
  * (line:column) for lookup from factory functions at runtime.
@@ -13,14 +13,33 @@
  * for nested template const chains.
  */
 
-import { Project, SyntaxKind, Node, CallExpression, VariableDeclarationKind, type SourceFile, ts } from 'ts-morph';
+import {
+    Project,
+    SyntaxKind,
+    Node,
+    CallExpression,
+    VariableDeclarationKind,
+    type SourceFile,
+    ts,
+} from 'ts-morph';
 import type { ModuleSchema } from '@modular/core';
 
 // Re-export shared types/state from spanTypes (which has no Node.js dependencies)
-export type { SourceSpan, ResolvedInterpolation, InterpolationResolutionMap } from '../../shared/dsl/spanTypes';
-export { setActiveInterpolationResolutions, getActiveInterpolationResolutions } from '../../shared/dsl/spanTypes';
+export type {
+    SourceSpan,
+    ResolvedInterpolation,
+    InterpolationResolutionMap,
+} from '../../shared/dsl/spanTypes';
+export {
+    setActiveInterpolationResolutions,
+    getActiveInterpolationResolutions,
+} from '../../shared/dsl/spanTypes';
 
-import type { SourceSpan, InterpolationResolutionMap, ResolvedInterpolation } from '../../shared/dsl/spanTypes';
+import type {
+    SourceSpan,
+    InterpolationResolutionMap,
+    ResolvedInterpolation,
+} from '../../shared/dsl/spanTypes';
 
 /**
  * Registry entry for a single call expression's argument spans
@@ -58,8 +77,9 @@ function buildFactoryNames(schemas: ModuleSchema[]): Set<string> {
         names.add(finalName);
 
         // Also add the sanitized version (for direct calls like `seqICycle`)
-        const sanitized = schema.name.replace(/[^a-zA-Z0-9]+(.)?/g,
-            (_match, chr: string | undefined) => (chr ? chr.toUpperCase() : '')
+        const sanitized = schema.name.replace(
+            /[^a-zA-Z0-9]+(.)?/g,
+            (_match, chr: string | undefined) => (chr ? chr.toUpperCase() : ''),
         );
         names.add(sanitized);
     }
@@ -78,8 +98,9 @@ function buildSchemaMap(schemas: ModuleSchema[]): Map<string, ModuleSchema> {
         const finalName = parts[parts.length - 1];
         map.set(finalName, schema);
 
-        const sanitized = schema.name.replace(/[^a-zA-Z0-9]+(.)?/g,
-            (_match, chr: string | undefined) => (chr ? chr.toUpperCase() : '')
+        const sanitized = schema.name.replace(
+            /[^a-zA-Z0-9]+(.)?/g,
+            (_match, chr: string | undefined) => (chr ? chr.toUpperCase() : ''),
         );
         map.set(sanitized, schema);
         map.set(schema.name, schema);
@@ -156,12 +177,16 @@ function buildConstLiteralMap(sourceFile: SourceFile): Map<string, SourceSpan> {
         if (!Node.isVariableStatement(statement)) continue;
 
         const declList = statement.getDeclarationList();
-        if (declList.getDeclarationKind() !== VariableDeclarationKind.Const) continue;
+        if (declList.getDeclarationKind() !== VariableDeclarationKind.Const)
+            continue;
 
         for (const decl of declList.getDeclarations()) {
             const initializer = decl.getInitializer();
             if (initializer && isTrackableLiteral(initializer)) {
-                map.set(decl.getName(), { start: initializer.getStart(), end: initializer.getEnd() });
+                map.set(decl.getName(), {
+                    start: initializer.getStart(),
+                    end: initializer.getEnd(),
+                });
             }
         }
     }
@@ -180,7 +205,8 @@ function buildConstNodeMap(sourceFile: SourceFile): Map<string, Node> {
         if (!Node.isVariableStatement(statement)) continue;
 
         const declList = statement.getDeclarationList();
-        if (declList.getDeclarationKind() !== VariableDeclarationKind.Const) continue;
+        if (declList.getDeclarationKind() !== VariableDeclarationKind.Const)
+            continue;
 
         for (const decl of declList.getDeclarations()) {
             const initializer = decl.getInitializer();
@@ -196,7 +222,7 @@ function buildConstNodeMap(sourceFile: SourceFile): Map<string, Node> {
 /**
  * Get the string content length of a const literal, stripping quotes.
  * Returns null if the length cannot be statically determined.
- * 
+ *
  * For simple string literals: `"abc"` → 3
  * For no-substitution template literals: `` `abc` `` → 3
  * For template expressions with all-const interpolations: recursively computed
@@ -223,7 +249,11 @@ function getConstStringLength(
 
         for (const span of node.getTemplateSpans()) {
             const expr = span.getExpression();
-            const exprLength = getExpressionStringLength(expr, constNodeMap, visited);
+            const exprLength = getExpressionStringLength(
+                expr,
+                constNodeMap,
+                visited,
+            );
             if (exprLength === null) return null; // Can't determine
             totalLength += exprLength;
 
@@ -272,11 +302,11 @@ function getExpressionStringLength(
 
 /**
  * Recursively resolve interpolations in a template expression or const reference.
- * 
+ *
  * For a template like `${root} e4 ${fifth}`:
  * - Computes the evaluated start position and length for each interpolation
  * - If the interpolated const is itself a template with interpolations, recurses
- * 
+ *
  * @param node - The template expression or const literal node
  * @param constNodeMap - Map of const names to their AST nodes
  * @param constMap - Map of const names to their document spans
@@ -302,11 +332,18 @@ function resolveInterpolations(
             const constSpan = constMap.get(name);
 
             if (constNode && constSpan) {
-                const evalLength = getConstStringLength(constNode, constNodeMap);
+                const evalLength = getConstStringLength(
+                    constNode,
+                    constNodeMap,
+                );
 
                 if (evalLength !== null) {
                     // Recursively resolve nested interpolations within the const
-                    const nested = resolveInterpolations(constNode, constNodeMap, constMap);
+                    const nested = resolveInterpolations(
+                        constNode,
+                        constNodeMap,
+                        constMap,
+                    );
 
                     resolutions.push({
                         evaluatedStart: evalOffset,
@@ -328,7 +365,11 @@ function resolveInterpolations(
             }
         } else {
             // Non-identifier expression in interpolation — can't resolve
-            const exprLength = getExpressionStringLength(expr, constNodeMap, new Set());
+            const exprLength = getExpressionStringLength(
+                expr,
+                constNodeMap,
+                new Set(),
+            );
             if (exprLength !== null) {
                 evalOffset += exprLength;
             } else {
@@ -348,7 +389,10 @@ function resolveInterpolations(
  * Get a trackable span from a node, either directly (if it's a literal)
  * or by resolving a const variable reference to its literal initializer.
  */
-function getTrackableSpan(node: Node, constMap: Map<string, SourceSpan>): SourceSpan | null {
+function getTrackableSpan(
+    node: Node,
+    constMap: Map<string, SourceSpan>,
+): SourceSpan | null {
     if (isTrackableLiteral(node)) {
         return { start: node.getStart(), end: node.getEnd() };
     }
@@ -366,7 +410,10 @@ function getTrackableSpan(node: Node, constMap: Map<string, SourceSpan>): Source
  * Returns the literal node itself, or the const's initializer node.
  * Used for deeper analysis like interpolation resolution.
  */
-function getTrackableNode(node: Node, constNodeMap: Map<string, Node>): Node | null {
+function getTrackableNode(
+    node: Node,
+    constNodeMap: Map<string, Node>,
+): Node | null {
     if (isTrackableLiteral(node)) {
         return node;
     }
@@ -392,7 +439,7 @@ export interface AnalysisResult {
 
 /**
  * Analyze DSL source code and build a span registry for argument locations.
- * 
+ *
  * @param source - The DSL source code to analyze
  * @param schemas - Module schemas to determine which calls to track
  * @param lineOffset - Line offset to add (for wrapped code in new Function)
@@ -427,7 +474,6 @@ export function analyzeSourceSpans(
     const constMap = buildConstLiteralMap(sourceFile);
     const constNodeMap = buildConstNodeMap(sourceFile);
 
-
     // Walk all call expressions
     sourceFile.forEachDescendant((node: Node) => {
         if (!Node.isCallExpression(node)) return;
@@ -439,13 +485,21 @@ export function analyzeSourceSpans(
         if (funcName === '$slider') {
             const args = call.getArguments();
             if (args.length >= 1 && !Node.isStringLiteral(args[0])) {
-                const { line, column } = sourceFile.getLineAndColumnAtPos(args[0].getStart());
+                const { line, column } = sourceFile.getLineAndColumnAtPos(
+                    args[0].getStart(),
+                );
                 throw new Error(
                     `$slider() label (argument 1) must be a string literal at line ${line}, column ${column}`,
                 );
             }
-            if (args.length >= 2 && !Node.isNumericLiteral(args[1]) && !Node.isPrefixUnaryExpression(args[1])) {
-                const { line, column } = sourceFile.getLineAndColumnAtPos(args[1].getStart());
+            if (
+                args.length >= 2 &&
+                !Node.isNumericLiteral(args[1]) &&
+                !Node.isPrefixUnaryExpression(args[1])
+            ) {
+                const { line, column } = sourceFile.getLineAndColumnAtPos(
+                    args[1].getStart(),
+                );
                 throw new Error(
                     `$slider() value (argument 2) must be a numeric literal at line ${line}, column ${column}`,
                 );
@@ -458,7 +512,9 @@ export function analyzeSourceSpans(
 
         // Get the schema for this call
         const fullPath = getFullCallPath(call);
-        const schema = schemaMap.get(funcName) || (fullPath ? schemaMap.get(fullPath) : null);
+        const schema =
+            schemaMap.get(funcName) ||
+            (fullPath ? schemaMap.get(fullPath) : null);
         if (!schema) return;
 
         const args = call.getArguments();
@@ -478,7 +534,11 @@ export function analyzeSourceSpans(
                 // Resolve interpolations for template expressions
                 const node = getTrackableNode(arg, constNodeMap);
                 if (node) {
-                    const resolutions = resolveInterpolations(node, constNodeMap, constMap);
+                    const resolutions = resolveInterpolations(
+                        node,
+                        constNodeMap,
+                        constMap,
+                    );
                     if (resolutions) {
                         const spanKey = `${span.start}:${span.end}`;
                         interpolationResolutions.set(spanKey, resolutions);
@@ -503,12 +563,22 @@ export function analyzeSourceSpans(
                             argsMap.set(propName, span);
 
                             // Resolve interpolations for template expressions
-                            const node = getTrackableNode(initializer, constNodeMap);
+                            const node = getTrackableNode(
+                                initializer,
+                                constNodeMap,
+                            );
                             if (node) {
-                                const resolutions = resolveInterpolations(node, constNodeMap, constMap);
+                                const resolutions = resolveInterpolations(
+                                    node,
+                                    constNodeMap,
+                                    constMap,
+                                );
                                 if (resolutions) {
                                     const spanKey = `${span.start}:${span.end}`;
-                                    interpolationResolutions.set(spanKey, resolutions);
+                                    interpolationResolutions.set(
+                                        spanKey,
+                                        resolutions,
+                                    );
                                 }
                             }
                         }
@@ -524,10 +594,17 @@ export function analyzeSourceSpans(
                             // Resolve interpolations if it's a template const
                             const constNode = constNodeMap.get(propName);
                             if (constNode) {
-                                const resolutions = resolveInterpolations(constNode, constNodeMap, constMap);
+                                const resolutions = resolveInterpolations(
+                                    constNode,
+                                    constNodeMap,
+                                    constMap,
+                                );
                                 if (resolutions) {
                                     const spanKey = `${span.start}:${span.end}`;
-                                    interpolationResolutions.set(spanKey, resolutions);
+                                    interpolationResolutions.set(
+                                        spanKey,
+                                        resolutions,
+                                    );
                                 }
                             }
                         }

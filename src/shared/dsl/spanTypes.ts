@@ -52,7 +52,9 @@ let _activeInterpolationResolutions: InterpolationResolutionMap | null = null;
  * Set the active interpolation resolution map.
  * Called by executor.ts after analysis and before/after execution.
  */
-export function setActiveInterpolationResolutions(map: InterpolationResolutionMap | null): void {
+export function setActiveInterpolationResolutions(
+    map: InterpolationResolutionMap | null,
+): void {
     _activeInterpolationResolutions = map;
 }
 

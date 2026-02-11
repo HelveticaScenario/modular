@@ -56,7 +56,14 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             'sine(lfo.out)        // ModuleOutput from another module',
             'sine("4s(C:major)")  // Scale pattern',
         ],
-        seeAlso: ['PolySignal', 'ModuleOutput', 'Note', 'HZ', 'MidiNote', 'Scale'],
+        seeAlso: [
+            'PolySignal',
+            'ModuleOutput',
+            'Note',
+            'HZ',
+            'MidiNote',
+            'Scale',
+        ],
     },
 
     PolySignal: {
@@ -79,7 +86,8 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             'A single output from a module, representing a mono signal connection. ' +
             'ModuleOutputs are chainable - methods like gain(), shift(), and out() return the same output for fluent API usage. ' +
             'Every module factory returns either a ModuleOutput or a Collection of outputs.',
-        definition: 'interface { moduleId: string; portName: string; channel: number; ... }',
+        definition:
+            'interface { moduleId: string; portName: string; channel: number; ... }',
         examples: [
             'const osc = osc.sine("C4")',
             'osc.gain(0.5).out()           // Chain methods',
@@ -91,31 +99,38 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             {
                 name: 'gain',
                 signature: 'gain(factor: PolySignal): ModuleOutput',
-                description: 'Scale the signal by a factor. Creates a util.scaleAndShift module internally.',
+                description:
+                    'Scale the signal by a factor. Creates a util.scaleAndShift module internally.',
                 example: 'osc.gain(0.5)  // Half amplitude',
             },
             {
                 name: 'shift',
                 signature: 'shift(offset: PolySignal): ModuleOutput',
-                description: 'Add a DC offset to the signal. Creates a util.scaleAndShift module internally.',
+                description:
+                    'Add a DC offset to the signal. Creates a util.scaleAndShift module internally.',
                 example: 'lfo.shift(2.5)  // Shift LFO to 0-5V range',
             },
             {
                 name: 'scope',
-                signature: 'scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this',
-                description: 'Add an oscilloscope visualization for this output. The scope appears as an overlay in the editor.',
+                signature:
+                    'scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this',
+                description:
+                    'Add an oscilloscope visualization for this output. The scope appears as an overlay in the editor.',
                 example: 'osc.scope({ msPerFrame: 100, scale: 5 }).out()',
             },
             {
                 name: 'out',
-                signature: 'out(baseChannel?: number, options?: StereoOutOptions): this',
-                description: 'Send this output to the speakers as stereo audio. Left plays on baseChannel, right on baseChannel+1.',
+                signature:
+                    'out(baseChannel?: number, options?: StereoOutOptions): this',
+                description:
+                    'Send this output to the speakers as stereo audio. Left plays on baseChannel, right on baseChannel+1.',
                 example: 'osc.out(0, { gain: 0.5, pan: -2 })',
             },
             {
                 name: 'outMono',
                 signature: 'outMono(channel?: number, gain?: PolySignal): this',
-                description: 'Send this output to a single speaker channel as mono audio.',
+                description:
+                    'Send this output to a single speaker channel as mono audio.',
                 example: 'lfo.outMono(2, 0.3)',
             },
         ],
@@ -127,7 +142,8 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             'An extension of ModuleOutput that knows its output value range (minValue, maxValue). ' +
             'Typically returned by LFOs, envelopes, and other modulation sources. ' +
             'The range() method uses the stored min/max for automatic scaling.',
-        definition: 'interface extends ModuleOutput { minValue: number; maxValue: number; range(...): ModuleOutput }',
+        definition:
+            'interface extends ModuleOutput { minValue: number; maxValue: number; range(...): ModuleOutput }',
         examples: [
             'const lfo = lfo.sine(2)              // LFO outputs -5 to +5',
             'lfo.range(200, 2000)                 // Remap to 200-2000 for filter cutoff',
@@ -137,11 +153,13 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         methods: [
             {
                 name: 'range',
-                signature: 'range(outMin: PolySignal, outMax: PolySignal): ModuleOutput',
+                signature:
+                    'range(outMin: PolySignal, outMax: PolySignal): ModuleOutput',
                 description:
                     'Remap the output from its native range (minValue, maxValue) to a new range (outMin, outMax). ' +
                     'Unlike Collection.range(), this uses the stored min/max values automatically.',
-                example: 'lfo.range(note("C3"), note("C5"))  // Remap LFO to pitch range',
+                example:
+                    'lfo.range(note("C3"), note("C5"))  // Remap LFO to pitch range',
             },
         ],
     },
@@ -152,7 +170,8 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             'A collection of ModuleOutput instances with chainable DSP methods. ' +
             'Created with the $() helper function. Supports iteration, indexing, and spreading. ' +
             'Methods operate on all outputs in the collection.',
-        definition: 'interface extends Iterable<ModuleOutput> { length: number; [index]: ModuleOutput; ... }',
+        definition:
+            'interface extends Iterable<ModuleOutput> { length: number; [index]: ModuleOutput; ... }',
         examples: [
             '$(osc1, osc2, osc3).gain(0.5).out()  // Apply gain to all, send to output',
             'const voices = $(osc1, osc2, osc3)',
@@ -171,31 +190,39 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             {
                 name: 'shift',
                 signature: 'shift(offset: PolySignal): Collection',
-                description: 'Add a DC offset to all signals in the collection.',
+                description:
+                    'Add a DC offset to all signals in the collection.',
                 example: '$(lfo1, lfo2).shift(2.5)',
             },
             {
                 name: 'scope',
-                signature: 'scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this',
-                description: 'Add scope visualization for the first output in the collection.',
+                signature:
+                    'scope(config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number }): this',
+                description:
+                    'Add scope visualization for the first output in the collection.',
                 example: '$(osc1, osc2).scope().out()',
             },
             {
                 name: 'out',
-                signature: 'out(baseChannel?: number, options?: StereoOutOptions): this',
-                description: 'Send all outputs to speakers as stereo, summed together.',
+                signature:
+                    'out(baseChannel?: number, options?: StereoOutOptions): this',
+                description:
+                    'Send all outputs to speakers as stereo, summed together.',
                 example: '$(osc1, osc2, osc3).out()',
             },
             {
                 name: 'outMono',
                 signature: 'outMono(channel?: number, gain?: PolySignal): this',
-                description: 'Send all outputs to a single speaker channel as mono, summed together.',
+                description:
+                    'Send all outputs to a single speaker channel as mono, summed together.',
                 example: '$(osc1, osc2).outMono(0, 0.3)',
             },
             {
                 name: 'range',
-                signature: 'range(inMin: PolySignal, inMax: PolySignal, outMin: PolySignal, outMax: PolySignal): Collection',
-                description: 'Remap all outputs from input range to output range. Requires explicit input min/max.',
+                signature:
+                    'range(inMin: PolySignal, inMax: PolySignal, outMin: PolySignal, outMax: PolySignal): Collection',
+                description:
+                    'Remap all outputs from input range to output range. Requires explicit input min/max.',
                 example: '$(lfo1, lfo2).range(-5, 5, 0, 1)',
             },
         ],
@@ -215,10 +242,11 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         methods: [
             {
                 name: 'range',
-                signature: 'range(outMin: PolySignal, outMax: PolySignal): Collection',
+                signature:
+                    'range(outMin: PolySignal, outMax: PolySignal): Collection',
                 description:
                     'Remap all outputs from their native ranges to a new range. ' +
-                    'Uses each output\'s stored minValue/maxValue.',
+                    "Uses each output's stored minValue/maxValue.",
                 example: '$r(lfo1, lfo2).range(200, 2000)',
             },
         ],
@@ -289,7 +317,8 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         description:
             'Options for stereo output routing via the out() method. ' +
             'Controls gain, panning, and stereo width.',
-        definition: 'interface { gain?: PolySignal; pan?: PolySignal; width?: Signal }',
+        definition:
+            'interface { gain?: PolySignal; pan?: PolySignal; width?: Signal }',
         examples: [
             'osc.out(0, { gain: 0.5 })           // 50% gain',
             'osc.out(0, { pan: -2.5 })           // Pan left',

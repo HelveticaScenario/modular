@@ -26,7 +26,7 @@ export const modularDark: VSCodeTheme = {
         'editorSuggestWidget.selectedBackground': '#1f3a3a',
         'editorHoverWidget.background': '#111111',
         'editorHoverWidget.border': '#222222',
-        
+
         'activityBar.background': '#0a0a0a',
         'activityBar.foreground': '#cccccc',
         'sideBar.background': '#111111',
@@ -34,40 +34,40 @@ export const modularDark: VSCodeTheme = {
         'sideBar.border': '#222222',
         'sideBarSectionHeader.background': '#161616',
         'sideBarSectionHeader.foreground': '#888888',
-        
+
         'statusBar.background': '#111111',
         'statusBar.foreground': '#888888',
-        
+
         'tab.activeBackground': '#0a0a0a',
         'tab.inactiveBackground': '#111111',
         'tab.activeForeground': '#cccccc',
         'tab.inactiveForeground': '#888888',
         'tab.border': '#222222',
-        
+
         'list.activeSelectionBackground': '#1f3a3a',
         'list.activeSelectionForeground': '#4ec9b0',
         'list.hoverBackground': '#1a1a1a',
         'list.focusBackground': '#1f3a3a',
-        
+
         'input.background': '#111111',
         'input.foreground': '#cccccc',
         'input.border': '#2a2a2a',
         'input.placeholderForeground': '#555555',
-        
+
         'button.background': '#2d6b5f',
         'button.foreground': '#ffffff',
         'button.hoverBackground': '#3d7b6f',
-        
-        'focusBorder': '#4ec9b0',
-        'foreground': '#cccccc',
-        'descriptionForeground': '#888888',
-        'disabledForeground': '#555555',
-        
+
+        focusBorder: '#4ec9b0',
+        foreground: '#cccccc',
+        descriptionForeground: '#888888',
+        disabledForeground: '#555555',
+
         'scrollbar.shadow': '#00000000',
         'scrollbarSlider.background': '#2a2a2a',
         'scrollbarSlider.hoverBackground': '#555555',
         'scrollbarSlider.activeBackground': '#555555',
-        
+
         'terminal.ansiGreen': '#3fb27f',
         'terminal.ansiYellow': '#d4a855',
         'terminal.ansiRed': '#e05561',
@@ -76,14 +76,41 @@ export const modularDark: VSCodeTheme = {
         'terminal.ansiMagenta': '#c678dd',
     },
     tokenColors: [
-        { scope: ['comment'], settings: { foreground: '#555555', fontStyle: 'italic' } },
-        { scope: ['keyword', 'storage.type', 'storage.modifier'], settings: { foreground: '#4ec9b0' } },
-        { scope: ['string', 'string.quoted'], settings: { foreground: '#d4a855' } },
-        { scope: ['constant.numeric', 'constant.language'], settings: { foreground: '#5ce1e6' } },
-        { scope: ['entity.name.function', 'support.function'], settings: { foreground: '#61afef' } },
-        { scope: ['variable', 'variable.other'], settings: { foreground: '#cccccc' } },
-        { scope: ['entity.name.type', 'support.type'], settings: { foreground: '#4ec9b0' } },
-        { scope: ['punctuation', 'meta.brace'], settings: { foreground: '#888888' } },
-        { scope: ['constant.other', 'variable.other.constant'], settings: { foreground: '#5ce1e6' } },
+        {
+            scope: ['comment'],
+            settings: { foreground: '#555555', fontStyle: 'italic' },
+        },
+        {
+            scope: ['keyword', 'storage.type', 'storage.modifier'],
+            settings: { foreground: '#4ec9b0' },
+        },
+        {
+            scope: ['string', 'string.quoted'],
+            settings: { foreground: '#d4a855' },
+        },
+        {
+            scope: ['constant.numeric', 'constant.language'],
+            settings: { foreground: '#5ce1e6' },
+        },
+        {
+            scope: ['entity.name.function', 'support.function'],
+            settings: { foreground: '#61afef' },
+        },
+        {
+            scope: ['variable', 'variable.other'],
+            settings: { foreground: '#cccccc' },
+        },
+        {
+            scope: ['entity.name.type', 'support.type'],
+            settings: { foreground: '#4ec9b0' },
+        },
+        {
+            scope: ['punctuation', 'meta.brace'],
+            settings: { foreground: '#888888' },
+        },
+        {
+            scope: ['constant.other', 'variable.other.constant'],
+            settings: { foreground: '#5ce1e6' },
+        },
     ],
 };

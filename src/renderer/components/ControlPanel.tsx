@@ -14,7 +14,8 @@ export function ControlPanel({ sliders, onSliderChange }: ControlPanelProps) {
                 <div className="control-panel-placeholder">
                     <p>No sliders defined.</p>
                     <p className="control-panel-hint">
-                        Use <code>$slider(label, value, min, max)</code> in your patch.
+                        Use <code>$slider(label, value, min, max)</code> in your
+                        patch.
                     </p>
                 </div>
             </div>

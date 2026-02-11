@@ -91,7 +91,9 @@ export function executePatchScript(
      */
     const deferred = (channels: number = 1): DeferredCollection => {
         if (channels < 1 || channels > 16) {
-            throw new Error(`deferred() channels must be between 1 and 16, got ${channels}`);
+            throw new Error(
+                `deferred() channels must be between 1 and 16, got ${channels}`,
+            );
         }
         const items: DeferredModuleOutput[] = [];
         for (let i = 0; i < channels; i++) {
@@ -125,7 +127,9 @@ export function executePatchScript(
             throw new Error('$slider() max must be a finite number');
         }
         if (min >= max) {
-            throw new Error(`$slider() min (${min}) must be less than max (${max})`);
+            throw new Error(
+                `$slider() min (${min}) must be less than max (${max})`,
+            );
         }
 
         const moduleId = `__slider_${label.replace(/[^a-zA-Z0-9_]/g, '_')}`;
@@ -176,7 +180,13 @@ export function executePatchScript(
 
     // Analyze source code to extract argument spans before execution
     // The registry maps call-site keys (line:column) to argument span info
-    const { registry: spanRegistry, interpolationResolutions } = analyzeSourceSpans(source, schemas, wrapperLineCount, firstLineColumnOffset);
+    const { registry: spanRegistry, interpolationResolutions } =
+        analyzeSourceSpans(
+            source,
+            schemas,
+            wrapperLineCount,
+            firstLineColumnOffset,
+        );
     setActiveSpanRegistry(spanRegistry);
     setActiveInterpolationResolutions(interpolationResolutions);
 

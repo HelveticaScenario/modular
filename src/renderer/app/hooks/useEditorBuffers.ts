@@ -164,9 +164,8 @@ export function useEditorBuffers({
             if (!buffer) return;
 
             if (buffer.kind === 'untitled') {
-                const input = await electronAPI.filesystem.showSaveDialog(
-                    'untitled.mjs',
-                );
+                const input =
+                    await electronAPI.filesystem.showSaveDialog('untitled.mjs');
                 if (!input) return;
 
                 const normalized = normalizeFileName(input);
@@ -366,8 +365,7 @@ export function useEditorBuffers({
             if (result.success) {
                 setBuffers((prev) =>
                     prev.filter(
-                        (b) =>
-                            !(b.kind === 'file' && b.filePath === filePath),
+                        (b) => !(b.kind === 'file' && b.filePath === filePath),
                     ),
                 );
 
@@ -384,8 +382,7 @@ export function useEditorBuffers({
 
                 if (activeIsDeleted) {
                     const remaining = buffers.filter(
-                        (b) =>
-                            !(b.kind === 'file' && b.filePath === filePath),
+                        (b) => !(b.kind === 'file' && b.filePath === filePath),
                     );
                     if (remaining.length > 0) {
                         setActiveBufferId(getBufferId(remaining[0]));

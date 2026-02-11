@@ -48,22 +48,24 @@ The frontend will be available at `http://localhost:5173`
 ### Example Patches
 
 **Simple Sine Wave:**
+
 ```javascript
 const osc = sine('440hz');
 out.source(osc);
 ```
 
 **Musical Note:**
+
 ```javascript
 const osc = sine('a3');
 out.source(osc);
 ```
 
 **FM Synthesis:**
+
 ```javascript
 const modulator = sine('a3');
-const carrier = sine('a3')
-  .phase(modulator.scale(0.5));
+const carrier = sine('a3').phase(modulator.scale(0.5));
 out.source(carrier);
 ```
 
@@ -132,4 +134,3 @@ yarn test
 ## License
 
 MIT
-

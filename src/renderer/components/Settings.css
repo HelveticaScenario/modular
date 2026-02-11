@@ -78,7 +78,9 @@
     font-size: 13px;
     padding: 10px 16px;
     cursor: pointer;
-    transition: color 0.15s, border-color 0.15s;
+    transition:
+        color 0.15s,
+        border-color 0.15s;
     white-space: nowrap;
 }
 
@@ -248,7 +250,7 @@
     color: var(--text-primary, #cccccc);
 }
 
-.settings-toggle input[type="checkbox"] {
+.settings-toggle input[type='checkbox'] {
     width: 16px;
     height: 16px;
     accent-color: var(--accent-primary, #007acc);

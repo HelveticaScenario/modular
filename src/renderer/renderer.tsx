@@ -37,21 +37,29 @@ import monaco from 'monaco-editor/esm/vs/editor/editor.main';
 // Suppress Monaco Editor's harmless "Canceled" errors that occur during
 // normal operations like dismissing the "Go to Symbol" dialog with Escape.
 // These must be registered early before React/webpack error overlays catch them.
-window.addEventListener('error', (event) => {
-    if (event.error?.message === 'Canceled') {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        return false;
-    }
-}, true); // Use capture phase to intercept before other handlers
+window.addEventListener(
+    'error',
+    (event) => {
+        if (event.error?.message === 'Canceled') {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return false;
+        }
+    },
+    true,
+); // Use capture phase to intercept before other handlers
 
-window.addEventListener('unhandledrejection', (event) => {
-    if (event.reason?.message === 'Canceled') {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        return false;
-    }
-}, true);
+window.addEventListener(
+    'unhandledrejection',
+    (event) => {
+        if (event.reason?.message === 'Canceled') {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return false;
+        }
+    },
+    true,
+);
 
 // Make monaco available globally
 (window as any).monaco = monaco;
@@ -63,7 +71,11 @@ window.electronAPI.onMainLog((entry) => {
     const args = entry.args.map((arg) => {
         // Reconstruct Error objects
         if (arg && typeof arg === 'object' && '__error' in arg) {
-            const errorLike = arg as unknown as { name: string; message: string; stack?: string };
+            const errorLike = arg as unknown as {
+                name: string;
+                message: string;
+                stack?: string;
+            };
             const err = new Error(errorLike.message);
             err.name = errorLike.name;
             if (errorLike.stack) {
@@ -73,7 +85,7 @@ window.electronAPI.onMainLog((entry) => {
         }
         return arg;
     });
-    
+
     switch (entry.level) {
         case 'log':
             console.log(prefix, ...args);
@@ -102,8 +114,6 @@ const isHelpWindow = window.location.hash === '#help';
 
 createRoot(root).render(
     <StrictMode>
-        <ThemeProvider>
-            {isHelpWindow ? <HelpWindow /> : <App />}
-        </ThemeProvider>
+        <ThemeProvider>{isHelpWindow ? <HelpWindow /> : <App />}</ThemeProvider>
     </StrictMode>,
 );

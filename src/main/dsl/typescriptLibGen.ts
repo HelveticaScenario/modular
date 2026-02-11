@@ -770,9 +770,13 @@ function schemaToTypeExpr(schema: JSONSchema, rootSchema: JSONSchema): string {
         const variants = schema.oneOf || schema.anyOf;
         if (Array.isArray(variants)) {
             // Check if this is an enum (all variants have 'const')
-            const isEnum = variants.every((v: JSONSchema) => v.const !== undefined);
+            const isEnum = variants.every(
+                (v: JSONSchema) => v.const !== undefined,
+            );
             if (isEnum) {
-                return variants.map((v: any) => JSON.stringify(v.const)).join(' | ');
+                return variants
+                    .map((v: any) => JSON.stringify(v.const))
+                    .join(' | ');
             }
 
             const types = variants.map((v: JSONSchema) => {
@@ -805,7 +809,8 @@ function schemaToTypeExpr(schema: JSONSchema, rootSchema: JSONSchema): string {
         if (nonNullTypes.length === 1) {
             // This is a nullable type, treat it as the non-null type (optional in TS)
             const singleType = nonNullTypes[0];
-            if (singleType === 'integer' || singleType === 'number') return 'number';
+            if (singleType === 'integer' || singleType === 'number')
+                return 'number';
             if (singleType === 'string') return 'string';
             if (singleType === 'boolean') return 'boolean';
         }
@@ -890,7 +895,10 @@ function schemaToTypeExpr(schema: JSONSchema, rootSchema: JSONSchema): string {
         if (schema.const !== undefined) {
             return JSON.stringify(schema.const);
         }
-        console.error('Schema with missing type:', JSON.stringify(schema, null, 2));
+        console.error(
+            'Schema with missing type:',
+            JSON.stringify(schema, null, 2),
+        );
         throw new Error('Unsupported schema: missing type');
     }
 
@@ -1033,7 +1041,9 @@ function renderParamsInterface(
  * Convert snake_case to camelCase
  */
 function toCamelCase(str: string): string {
-    return str.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+    return str.replace(/_([a-z])/g, (_, letter: string) =>
+        letter.toUpperCase(),
+    );
 }
 
 /**
@@ -1086,8 +1096,13 @@ function sanitizeOutputName(name: string): string {
 /**
  * Get the output type for a single output definition
  */
-function getOutputType(output: { polyphonic?: boolean; minValue?: number; maxValue?: number }): string {
-    const hasRange = output.minValue !== undefined && output.maxValue !== undefined;
+function getOutputType(output: {
+    polyphonic?: boolean;
+    minValue?: number;
+    maxValue?: number;
+}): string {
+    const hasRange =
+        output.minValue !== undefined && output.maxValue !== undefined;
     if (output.polyphonic) {
         return hasRange ? 'CollectionWithRange' : 'Collection';
     }
@@ -1098,9 +1113,13 @@ function getOutputType(output: { polyphonic?: boolean; minValue?: number; maxVal
  * Generate interface name for multi-output modules
  */
 function getMultiOutputInterfaceName(moduleSchema: ModuleSchema): string {
-    const parts = moduleSchema.name.split('.').filter((p: string) => p.length > 0);
+    const parts = moduleSchema.name
+        .split('.')
+        .filter((p: string) => p.length > 0);
     const baseName = parts[parts.length - 1];
-    const baseNameWithoutPrefix = baseName.startsWith('$') ? baseName.slice(1) : baseName;
+    const baseNameWithoutPrefix = baseName.startsWith('$')
+        ? baseName.slice(1)
+        : baseName;
     return `${capitalizeName(baseNameWithoutPrefix)}Outputs`;
 }
 
@@ -1108,13 +1127,20 @@ function getMultiOutputInterfaceName(moduleSchema: ModuleSchema): string {
  * Generate interface definition for multi-output modules.
  * The interface extends from the default output's type and includes properties for other outputs.
  */
-function generateMultiOutputInterface(moduleSchema: ModuleSchema, indent: string): string[] {
+function generateMultiOutputInterface(
+    moduleSchema: ModuleSchema,
+    indent: string,
+): string[] {
     const outputs = moduleSchema.outputs || [];
     if (outputs.length <= 1) return [];
 
     // Find the default output
     const defaultOutput = outputs.find((o: any) => o.default) || outputs[0];
-    const defaultOutputMeta = defaultOutput as { polyphonic?: boolean; minValue?: number; maxValue?: number };
+    const defaultOutputMeta = defaultOutput as {
+        polyphonic?: boolean;
+        minValue?: number;
+        maxValue?: number;
+    };
     const baseType = getOutputType(defaultOutputMeta);
 
     const interfaceName = getMultiOutputInterfaceName(moduleSchema);
@@ -1122,15 +1148,24 @@ function generateMultiOutputInterface(moduleSchema: ModuleSchema, indent: string
     const lines: string[] = [];
     lines.push(`${indent}/**`);
     lines.push(`${indent} * Output type for ${moduleSchema.name} module.`);
-    lines.push(`${indent} * Extends ${baseType} (default output: ${defaultOutput.name})`);
+    lines.push(
+        `${indent} * Extends ${baseType} (default output: ${defaultOutput.name})`,
+    );
     lines.push(`${indent} */`);
-    lines.push(`${indent}export interface ${interfaceName} extends ${baseType} {`);
+    lines.push(
+        `${indent}export interface ${interfaceName} extends ${baseType} {`,
+    );
 
     // Add properties for non-default outputs
     for (const output of outputs) {
         if (output.name === defaultOutput.name) continue;
 
-        const outputMeta = output as { polyphonic?: boolean; minValue?: number; maxValue?: number; description?: string };
+        const outputMeta = output as {
+            polyphonic?: boolean;
+            minValue?: number;
+            maxValue?: number;
+            description?: string;
+        };
         const outputType = getOutputType(outputMeta);
         const safeName = sanitizeOutputName(output.name);
 
@@ -1153,7 +1188,11 @@ function getFactoryReturnType(moduleSchema: ModuleSchema): string {
     if (outputs.length === 0) {
         return 'void';
     } else if (outputs.length === 1) {
-        const output = outputs[0] as { polyphonic?: boolean; minValue?: number; maxValue?: number };
+        const output = outputs[0] as {
+            polyphonic?: boolean;
+            minValue?: number;
+            maxValue?: number;
+        };
         return getOutputType(output);
     } else {
         // Multiple outputs - return the generated interface name
@@ -1283,16 +1322,17 @@ function renderInterface(
     const lines: string[] = [];
 
     // Generate multi-output interface if needed
-    const multiOutputInterface = generateMultiOutputInterface(classSpec.moduleSchema, indent);
+    const multiOutputInterface = generateMultiOutputInterface(
+        classSpec.moduleSchema,
+        indent,
+    );
     if (multiOutputInterface.length > 0) {
         lines.push(...multiOutputInterface);
         lines.push('');
     }
 
     // Render the factory function
-    lines.push(
-        ...renderFactoryFunction(classSpec.moduleSchema, '', indent),
-    );
+    lines.push(...renderFactoryFunction(classSpec.moduleSchema, '', indent));
     return lines;
 }
 
@@ -1336,9 +1376,7 @@ export function generateDSL(schemas: ModuleSchema[]): string {
         lines.push('');
         lines.push('/** Default clock module running at 120 BPM. */');
         const clockReturnType = getFactoryReturnType(clockSchema);
-        lines.push(
-            `export const $rootClock: ${clockReturnType};`,
-        );
+        lines.push(`export const $rootClock: ${clockReturnType};`);
     }
 
     const signalSchema = schemas.find((s) => s.name === '$signal');
@@ -1346,9 +1384,7 @@ export function generateDSL(schemas: ModuleSchema[]): string {
         lines.push('');
         lines.push('/** Input signals. */');
         const signalReturnType = getFactoryReturnType(signalSchema);
-        lines.push(
-            `export const $input: Readonly<${signalReturnType}>;`,
-        );
+        lines.push(`export const $input: Readonly<${signalReturnType}>;`);
     }
 
     return lines.join('\n') + '\n';

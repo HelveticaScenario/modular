@@ -2,7 +2,12 @@ import type { PatchGraph } from '../shared/ipcTypes';
 
 type ModuleState = PatchGraph['modules'][number];
 
-const RESERVED_MODULE_IDS = new Set(['ROOT_OUTPUT', 'ROOT_CLOCK', 'ROOT_INPUT', 'HIDDEN_AUDIO_IN']);
+const RESERVED_MODULE_IDS = new Set([
+    'ROOT_OUTPUT',
+    'ROOT_CLOCK',
+    'ROOT_INPUT',
+    'HIDDEN_AUDIO_IN',
+]);
 
 const DEFAULT_MATCH_THRESHOLD = 0.65;
 const DEFAULT_AMBIGUITY_MARGIN = 0.05;
@@ -50,8 +55,6 @@ function isCableRef(
         typeof value.port === 'string'
     );
 }
-
-
 
 function walkValues(
     value: unknown,
@@ -142,8 +145,6 @@ function canonicalizeForFingerprint(
     return value;
 }
 
-
-
 function extractFeatures(
     ctx: Pick<GraphContext, 'typeById'>,
     module: ModuleState,
@@ -164,8 +165,6 @@ function extractFeatures(
             });
             return; // treat as leaf
         }
-
-
 
         if (typeof v === 'number') {
             features.set(key, {
@@ -265,8 +264,6 @@ function computeDownstreamUsage(
             record(v.module, token);
         });
     }
-
-
 
     return usage;
 }
@@ -501,8 +498,6 @@ function remapGraph(
         module.params = remapModuleIdsInValue(module.params, idMap);
     }
 
-
-
     for (const scope of applied.scopes) {
         if (scope.item.type === 'ModuleOutput') {
             const nextId = idMap.get(scope.item.moduleId);
@@ -532,8 +527,6 @@ export function reconcilePatchBySimilarity(
     performance.clearMeasures('patch-similarity');
     performance.clearMarks('patch-similarity-start');
     performance.mark('patch-similarity-start');
-
-
 
     if (!currentGraph) {
         return {
@@ -758,11 +751,14 @@ export function reconcilePatchBySimilarity(
         }
     }
     performance.mark('patch-similarity-end');
-    console.log('patch similarity', performance.measure(
-        'patch-similarity',
-        'patch-similarity-start',
-        'patch-similarity-end',
-    ));
+    console.log(
+        'patch similarity',
+        performance.measure(
+            'patch-similarity',
+            'patch-similarity-start',
+            'patch-similarity-end',
+        ),
+    );
     // performance.
     return { appliedPatch, moduleIdRemap };
 }

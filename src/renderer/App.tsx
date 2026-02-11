@@ -27,7 +27,7 @@ import { useEditorBuffers } from './app/hooks/useEditorBuffers';
  */
 function transformErrorsWithSourceLocations(
     errors: ValidationError[],
-    sourceLocationMap?: Record<string, SourceLocationInfo>
+    sourceLocationMap?: Record<string, SourceLocationInfo>,
 ): ValidationError[] {
     if (!sourceLocationMap) {
         return errors;
@@ -48,12 +48,15 @@ function transformErrorsWithSourceLocations(
             return err;
         }
 
-        // For auto-generated module locations like "sine(...)", 
+        // For auto-generated module locations like "sine(...)",
         // try to find source line from the map
         // The moduleType(...) format is produced by Rust, but we need the actual moduleId
         // to look up in the map. Let's check all entries in the map.
         for (const [moduleId, loc] of Object.entries(sourceLocationMap)) {
-            if (!loc.idIsExplicit && err.location.includes(moduleId.split('-')[0])) {
+            if (
+                !loc.idIsExplicit &&
+                err.location.includes(moduleId.split('-')[0])
+            ) {
                 // Found a match - replace location with line number
                 return {
                     ...err,
@@ -65,7 +68,6 @@ function transformErrorsWithSourceLocations(
         return err;
     });
 }
-
 
 function App() {
     // Workspace & filesystem
@@ -124,11 +126,9 @@ function App() {
             if (!slider) return;
 
             // Update audio engine via lightweight param update
-            electronAPI.synthesizer.setModuleParam(
-                slider.moduleId,
-                'signal',
-                { source: newValue },
-            );
+            electronAPI.synthesizer.setModuleParam(slider.moduleId, 'signal', {
+                source: newValue,
+            });
 
             // Update the source code in the editor
             const editorInstance = editorRef.current;
@@ -146,7 +146,9 @@ function App() {
                             endPos.lineNumber,
                             endPos.column,
                         );
-                        const formattedValue = Number(newValue.toPrecision(6)).toString();
+                        const formattedValue = Number(
+                            newValue.toPrecision(6),
+                        ).toString();
                         // Use pushEditOperations for proper undo stack integration
                         model.pushEditOperations(
                             [],
@@ -274,16 +276,22 @@ function App() {
                     });
                     break;
                 case 'rename':
-                    renameFile(action.path || action.bufferId).catch((error) => {
-                        setError(
-                            getErrorMessage(error, 'Failed to rename file'),
-                        );
-                    });
+                    renameFile(action.path || action.bufferId).catch(
+                        (error) => {
+                            setError(
+                                getErrorMessage(error, 'Failed to rename file'),
+                            );
+                        },
+                    );
                     break;
                 case 'delete':
-                    deleteFile(action.path || action.bufferId).catch((error) => {
-                        setError(getErrorMessage(error, 'Failed to delete file'));
-                    });
+                    deleteFile(action.path || action.bufferId).catch(
+                        (error) => {
+                            setError(
+                                getErrorMessage(error, 'Failed to delete file'),
+                            );
+                        },
+                    );
                     break;
             }
         });
@@ -322,8 +330,13 @@ function App() {
                             const scopedCanvas =
                                 scopeCanvasMapRef.current.get(scopeKey);
                             if (scopedCanvas) {
-                                const scale = parseFloat(scopedCanvas.dataset.scopeScale || '5');
-                                drawOscilloscope(channels, scopedCanvas, { scale, stats });
+                                const scale = parseFloat(
+                                    scopedCanvas.dataset.scopeScale || '5',
+                                );
+                                drawOscilloscope(channels, scopedCanvas, {
+                                    scale,
+                                    stats,
+                                });
                             }
                         }
                         if (isClockRunningRef.current) {
@@ -370,18 +383,20 @@ function App() {
             if (!activeBufferId) return;
             try {
                 const patchCodeValue = patchCodeRef.current;
-                
+
                 // Execute DSL in main process (has direct N-API access)
                 const result = await electronAPI.executeDSL(
                     patchCodeValue,
                     activeBufferId,
                 );
-                
+
                 if (!result.success) {
                     // Still set interpolation resolutions even on validation errors
                     // (the analysis succeeded, only the patch application failed)
                     if (result.interpolationResolutions) {
-                        const map = new Map(Object.entries(result.interpolationResolutions));
+                        const map = new Map(
+                            Object.entries(result.interpolationResolutions),
+                        );
                         setActiveInterpolationResolutions(map);
                     }
                     if (result.errorMessage) {
@@ -389,11 +404,14 @@ function App() {
                         setValidationErrors(null);
                     } else if (result.errors && result.errors.length > 0) {
                         // Extract and transform validation errors to show source lines
-                        const rawErrors = result.errors.flatMap((e) => e.errors || []);
-                        const transformedErrors = transformErrorsWithSourceLocations(
-                            rawErrors,
-                            result.sourceLocationMap
+                        const rawErrors = result.errors.flatMap(
+                            (e) => e.errors || [],
                         );
+                        const transformedErrors =
+                            transformErrorsWithSourceLocations(
+                                rawErrors,
+                                result.sourceLocationMap,
+                            );
                         setValidationErrors(transformedErrors);
                         setError(
                             result.errors.map((e) => e.message).join('\n') ||
@@ -402,7 +420,7 @@ function App() {
                     }
                     return;
                 }
-                
+
                 setIsClockRunning(true);
                 setRunningBufferId(activeBufferId);
                 setError(null);
@@ -410,7 +428,9 @@ function App() {
 
                 // Set interpolation resolutions in renderer for template literal highlighting
                 if (result.interpolationResolutions) {
-                    const map = new Map(Object.entries(result.interpolationResolutions));
+                    const map = new Map(
+                        Object.entries(result.interpolationResolutions),
+                    );
                     setActiveInterpolationResolutions(map);
                 }
 

@@ -1,18 +1,27 @@
 // See the Electron documentation for details on how to use preload scripts:
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 import { contextBridge, ipcRenderer } from 'electron/renderer';
-import { IPC_CHANNELS, IPCHandlers, IPCRequest, IPCResponse, Promisify, MENU_CHANNELS, ContextMenuOptions, ContextMenuAction, AppConfig, DSLExecuteResult, MainLogEntry } from '../shared/ipcTypes';
-
-
-
+import {
+    IPC_CHANNELS,
+    IPCHandlers,
+    IPCRequest,
+    IPCResponse,
+    Promisify,
+    MENU_CHANNELS,
+    ContextMenuOptions,
+    ContextMenuAction,
+    AppConfig,
+    DSLExecuteResult,
+    MainLogEntry,
+} from '../shared/ipcTypes';
 
 /**
  * Type-safe wrapper for IPC invoke calls
  */
 function invokeIPC<T extends keyof typeof IPC_CHANNELS>(
     channel: T,
-    ...args: IPCRequest<typeof IPC_CHANNELS[T]>
-): IPCResponse<typeof IPC_CHANNELS[T]> {
+    ...args: IPCRequest<(typeof IPC_CHANNELS)[T]>
+): IPCResponse<(typeof IPC_CHANNELS)[T]> {
     // @ts-ignore - TypeScript is having trouble inferring the return type here
     return ipcRenderer.invoke(IPC_CHANNELS[channel], ...args);
 }
@@ -22,70 +31,128 @@ function invokeIPC<T extends keyof typeof IPC_CHANNELS>(
  * All methods are type-safe and match the @modular/core interface.
  */
 
-
 export interface ElectronAPI {
     // Schema operations
     getSchemas: Promisify<IPCHandlers[typeof IPC_CHANNELS.GET_SCHEMAS]>;
-    getMiniLeafSpans: Promisify<IPCHandlers[typeof IPC_CHANNELS.GET_MINI_LEAF_SPANS]>;
-    
+    getMiniLeafSpans: Promisify<
+        IPCHandlers[typeof IPC_CHANNELS.GET_MINI_LEAF_SPANS]
+    >;
+
     // DSL operations
-    executeDSL: (source: string, sourceId?: string) => Promise<DSLExecuteResult>;
+    executeDSL: (
+        source: string,
+        sourceId?: string,
+    ) => Promise<DSLExecuteResult>;
     getDslLibSource: () => Promise<string>;
-    
+
     // Synthesizer operations
     synthesizer: {
-        getSampleRate: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_SAMPLE_RATE]>;
-        getChannels: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_CHANNELS]>;
+        getSampleRate: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_SAMPLE_RATE]
+        >;
+        getChannels: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_CHANNELS]
+        >;
         getScopes: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_SCOPES]>;
-        getModuleStates: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_MODULE_STATES]>;
-        updatePatch: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_UPDATE_PATCH]>;
-        startRecording: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_START_RECORDING]>;
-        stopRecording: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_STOP_RECORDING]>;
-        isRecording: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_IS_RECORDING]>;
+        getModuleStates: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_MODULE_STATES]
+        >;
+        updatePatch: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.SYNTH_UPDATE_PATCH]
+        >;
+        startRecording: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.SYNTH_START_RECORDING]
+        >;
+        stopRecording: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.SYNTH_STOP_RECORDING]
+        >;
+        isRecording: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.SYNTH_IS_RECORDING]
+        >;
         getHealth: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_HEALTH]>;
         stop: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_STOP]>;
         isStopped: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_IS_STOPPED]>;
-        setModuleParam: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_SET_MODULE_PARAM]>;
+        setModuleParam: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.SYNTH_SET_MODULE_PARAM]
+        >;
     };
     // Audio device operations
     audio: {
         // New API
-        refreshDeviceCache: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_REFRESH_DEVICE_CACHE]>;
-        getDeviceCache: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_GET_DEVICE_CACHE]>;
-        getCurrentState: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_GET_CURRENT_STATE]>;
-        recreateStreams: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_RECREATE_STREAMS]>;
+        refreshDeviceCache: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.AUDIO_REFRESH_DEVICE_CACHE]
+        >;
+        getDeviceCache: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.AUDIO_GET_DEVICE_CACHE]
+        >;
+        getCurrentState: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.AUDIO_GET_CURRENT_STATE]
+        >;
+        recreateStreams: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.AUDIO_RECREATE_STREAMS]
+        >;
         onFallbackWarning: (callback: (warning: string) => void) => () => void;
         // Legacy (kept for backward compatibility)
-        refreshDeviceList: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_REFRESH_DEVICE_LIST]>;
+        refreshDeviceList: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.AUDIO_REFRESH_DEVICE_LIST]
+        >;
         listHosts: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_LIST_HOSTS]>;
-        listOutputDevices: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_LIST_OUTPUT_DEVICES]>;
-        listInputDevices: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_LIST_INPUT_DEVICES]>;
-        getOutputDevice: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_GET_OUTPUT_DEVICE]>;
-        getInputDevice: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_GET_INPUT_DEVICE]>;
-        setOutputDevice: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_SET_OUTPUT_DEVICE]>;
-        setInputDevice: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_SET_INPUT_DEVICE]>;
-        getInputChannels: Promisify<IPCHandlers[typeof IPC_CHANNELS.AUDIO_GET_INPUT_CHANNELS]>;
+        listOutputDevices: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.AUDIO_LIST_OUTPUT_DEVICES]
+        >;
+        listInputDevices: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.AUDIO_LIST_INPUT_DEVICES]
+        >;
+        getOutputDevice: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.AUDIO_GET_OUTPUT_DEVICE]
+        >;
+        getInputDevice: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.AUDIO_GET_INPUT_DEVICE]
+        >;
+        setOutputDevice: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.AUDIO_SET_OUTPUT_DEVICE]
+        >;
+        setInputDevice: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.AUDIO_SET_INPUT_DEVICE]
+        >;
+        getInputChannels: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.AUDIO_GET_INPUT_CHANNELS]
+        >;
     };
     // MIDI device operations
     midi: {
-        listInputs: Promisify<IPCHandlers[typeof IPC_CHANNELS.MIDI_LIST_INPUTS]>;
+        listInputs: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.MIDI_LIST_INPUTS]
+        >;
         getInput: Promisify<IPCHandlers[typeof IPC_CHANNELS.MIDI_GET_INPUT]>;
         setInput: Promisify<IPCHandlers[typeof IPC_CHANNELS.MIDI_SET_INPUT]>;
-        tryReconnect: Promisify<IPCHandlers[typeof IPC_CHANNELS.MIDI_TRY_RECONNECT]>;
+        tryReconnect: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.MIDI_TRY_RECONNECT]
+        >;
     };
     // Filesystem operations
     filesystem: {
-        selectWorkspace: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_SELECT_WORKSPACE]>;
-        getWorkspace: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_GET_WORKSPACE]>;
+        selectWorkspace: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.FS_SELECT_WORKSPACE]
+        >;
+        getWorkspace: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.FS_GET_WORKSPACE]
+        >;
         listFiles: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_LIST_FILES]>;
         readFile: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_READ_FILE]>;
         writeFile: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_WRITE_FILE]>;
         renameFile: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_RENAME_FILE]>;
         deleteFile: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_DELETE_FILE]>;
         moveFile: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_MOVE_FILE]>;
-        createFolder: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_CREATE_FOLDER]>;
-        showSaveDialog: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_SHOW_SAVE_DIALOG]>;
-        showInputDialog: Promisify<IPCHandlers[typeof IPC_CHANNELS.FS_SHOW_INPUT_DIALOG]>;
+        createFolder: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.FS_CREATE_FOLDER]
+        >;
+        showSaveDialog: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.FS_SHOW_SAVE_DIALOG]
+        >;
+        showInputDialog: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.FS_SHOW_INPUT_DIALOG]
+        >;
     };
     // Menu events
     onMenuSave: (callback: () => void) => () => void;
@@ -102,13 +169,23 @@ export interface ElectronAPI {
     triggerMenuAction: (action: keyof typeof MENU_CHANNELS) => void;
     // UI operations
     showContextMenu: (options: ContextMenuOptions) => Promise<void>;
-    onContextMenuCommand: (callback: (action: ContextMenuAction) => void) => () => void;
+    onContextMenuCommand: (
+        callback: (action: ContextMenuAction) => void,
+    ) => () => void;
     showUnsavedChangesDialog: (fileName: string) => Promise<number>;
 
     // Window operations
     openHelpWindow: () => Promise<void>;
-    openHelpForSymbol: (symbolType: 'type' | 'module' | 'namespace', symbolName: string) => Promise<void>;
-    onNavigateToSymbol: (callback: (data: { symbolType: 'type' | 'module' | 'namespace', symbolName: string }) => void) => () => void;
+    openHelpForSymbol: (
+        symbolType: 'type' | 'module' | 'namespace',
+        symbolName: string,
+    ) => Promise<void>;
+    onNavigateToSymbol: (
+        callback: (data: {
+            symbolType: 'type' | 'module' | 'namespace';
+            symbolName: string;
+        }) => void,
+    ) => () => void;
 
     // Config operations
     config: {
@@ -124,61 +201,62 @@ export interface ElectronAPI {
 
 const electronAPI: ElectronAPI = {
     // Schema operations
-    getSchemas: (...args) =>
-        invokeIPC('GET_SCHEMAS', ...args),
-    getMiniLeafSpans: (...args) =>
-        invokeIPC('GET_MINI_LEAF_SPANS', ...args),
+    getSchemas: (...args) => invokeIPC('GET_SCHEMAS', ...args),
+    getMiniLeafSpans: (...args) => invokeIPC('GET_MINI_LEAF_SPANS', ...args),
 
     // DSL operations
     executeDSL: (source, sourceId) =>
         invokeIPC('DSL_EXECUTE', source, sourceId),
-    getDslLibSource: () =>
-        invokeIPC('GET_DSL_LIB_SOURCE'),
+    getDslLibSource: () => invokeIPC('GET_DSL_LIB_SOURCE'),
 
     // Window operations
     openHelpWindow: () => invokeIPC('OPEN_HELP_WINDOW'),
-    openHelpForSymbol: (symbolType: 'type' | 'module' | 'namespace', symbolName: string) => 
-        invokeIPC('OPEN_HELP_FOR_SYMBOL', symbolType, symbolName),
-    onNavigateToSymbol: (callback: (data: { symbolType: 'type' | 'module' | 'namespace', symbolName: string }) => void) => {
-        const listener = (_event: Electron.IpcRendererEvent, data: { symbolType: 'type' | 'module' | 'namespace', symbolName: string }) => callback(data);
+    openHelpForSymbol: (
+        symbolType: 'type' | 'module' | 'namespace',
+        symbolName: string,
+    ) => invokeIPC('OPEN_HELP_FOR_SYMBOL', symbolType, symbolName),
+    onNavigateToSymbol: (
+        callback: (data: {
+            symbolType: 'type' | 'module' | 'namespace';
+            symbolName: string;
+        }) => void,
+    ) => {
+        const listener = (
+            _event: Electron.IpcRendererEvent,
+            data: {
+                symbolType: 'type' | 'module' | 'namespace';
+                symbolName: string;
+            },
+        ) => callback(data);
         ipcRenderer.on('navigate-to-symbol', listener);
         return () => ipcRenderer.removeListener('navigate-to-symbol', listener);
     },
 
     // Synthesizer operations
     synthesizer: {
-        getSampleRate: (...args) =>
-            invokeIPC('SYNTH_GET_SAMPLE_RATE', ...args),
+        getSampleRate: (...args) => invokeIPC('SYNTH_GET_SAMPLE_RATE', ...args),
 
-        getChannels: (...args) =>
-            invokeIPC('SYNTH_GET_CHANNELS', ...args),
+        getChannels: (...args) => invokeIPC('SYNTH_GET_CHANNELS', ...args),
 
-        getScopes: (...args) =>
-            invokeIPC('SYNTH_GET_SCOPES', ...args),
+        getScopes: (...args) => invokeIPC('SYNTH_GET_SCOPES', ...args),
 
         getModuleStates: (...args) =>
             invokeIPC('SYNTH_GET_MODULE_STATES', ...args),
 
-        updatePatch: (...args) =>
-            invokeIPC('SYNTH_UPDATE_PATCH', ...args),
+        updatePatch: (...args) => invokeIPC('SYNTH_UPDATE_PATCH', ...args),
 
         startRecording: (...args) =>
             invokeIPC('SYNTH_START_RECORDING', ...args),
 
-        stopRecording: (...args) =>
-            invokeIPC('SYNTH_STOP_RECORDING', ...args),
+        stopRecording: (...args) => invokeIPC('SYNTH_STOP_RECORDING', ...args),
 
-        isRecording: (...args) =>
-            invokeIPC('SYNTH_IS_RECORDING', ...args),
+        isRecording: (...args) => invokeIPC('SYNTH_IS_RECORDING', ...args),
 
-        getHealth: (...args) =>
-            invokeIPC('SYNTH_GET_HEALTH', ...args),
+        getHealth: (...args) => invokeIPC('SYNTH_GET_HEALTH', ...args),
 
-        stop: (...args) =>
-            invokeIPC('SYNTH_STOP', ...args),
+        stop: (...args) => invokeIPC('SYNTH_STOP', ...args),
 
-        isStopped: (...args) =>
-            invokeIPC('SYNTH_IS_STOPPED', ...args),
+        isStopped: (...args) => invokeIPC('SYNTH_IS_STOPPED', ...args),
 
         setModuleParam: (...args) =>
             invokeIPC('SYNTH_SET_MODULE_PARAM', ...args),
@@ -199,14 +277,15 @@ const electronAPI: ElectronAPI = {
         recreateStreams: (...args) =>
             invokeIPC('AUDIO_RECREATE_STREAMS', ...args),
 
-        onFallbackWarning: menuEventHandler(IPC_CHANNELS.AUDIO_FALLBACK_WARNING),
+        onFallbackWarning: menuEventHandler(
+            IPC_CHANNELS.AUDIO_FALLBACK_WARNING,
+        ),
 
         // Legacy (kept for backward compatibility)
         refreshDeviceList: (...args) =>
             invokeIPC('AUDIO_REFRESH_DEVICE_LIST', ...args),
 
-        listHosts: (...args) =>
-            invokeIPC('AUDIO_LIST_HOSTS', ...args),
+        listHosts: (...args) => invokeIPC('AUDIO_LIST_HOSTS', ...args),
 
         listOutputDevices: (...args) =>
             invokeIPC('AUDIO_LIST_OUTPUT_DEVICES', ...args),
@@ -232,50 +311,36 @@ const electronAPI: ElectronAPI = {
 
     // MIDI device operations
     midi: {
-        listInputs: (...args) =>
-            invokeIPC('MIDI_LIST_INPUTS', ...args),
+        listInputs: (...args) => invokeIPC('MIDI_LIST_INPUTS', ...args),
 
-        getInput: (...args) =>
-            invokeIPC('MIDI_GET_INPUT', ...args),
+        getInput: (...args) => invokeIPC('MIDI_GET_INPUT', ...args),
 
-        setInput: (...args) =>
-            invokeIPC('MIDI_SET_INPUT', ...args),
+        setInput: (...args) => invokeIPC('MIDI_SET_INPUT', ...args),
 
-        tryReconnect: (...args) =>
-            invokeIPC('MIDI_TRY_RECONNECT', ...args),
+        tryReconnect: (...args) => invokeIPC('MIDI_TRY_RECONNECT', ...args),
     },
 
     // Filesystem operations
     filesystem: {
-        selectWorkspace: (...args) =>
-            invokeIPC('FS_SELECT_WORKSPACE', ...args),
+        selectWorkspace: (...args) => invokeIPC('FS_SELECT_WORKSPACE', ...args),
 
-        getWorkspace: (...args) =>
-            invokeIPC('FS_GET_WORKSPACE', ...args),
+        getWorkspace: (...args) => invokeIPC('FS_GET_WORKSPACE', ...args),
 
-        listFiles: (...args) =>
-            invokeIPC('FS_LIST_FILES', ...args),
+        listFiles: (...args) => invokeIPC('FS_LIST_FILES', ...args),
 
-        readFile: (...args) =>
-            invokeIPC('FS_READ_FILE', ...args),
+        readFile: (...args) => invokeIPC('FS_READ_FILE', ...args),
 
-        writeFile: (...args) =>
-            invokeIPC('FS_WRITE_FILE', ...args),
+        writeFile: (...args) => invokeIPC('FS_WRITE_FILE', ...args),
 
-        renameFile: (...args) =>
-            invokeIPC('FS_RENAME_FILE', ...args),
+        renameFile: (...args) => invokeIPC('FS_RENAME_FILE', ...args),
 
-        deleteFile: (...args) =>
-            invokeIPC('FS_DELETE_FILE', ...args),
+        deleteFile: (...args) => invokeIPC('FS_DELETE_FILE', ...args),
 
-        moveFile: (...args) =>
-            invokeIPC('FS_MOVE_FILE', ...args),
+        moveFile: (...args) => invokeIPC('FS_MOVE_FILE', ...args),
 
-        createFolder: (...args) =>
-            invokeIPC('FS_CREATE_FOLDER', ...args),
+        createFolder: (...args) => invokeIPC('FS_CREATE_FOLDER', ...args),
 
-        showSaveDialog: (...args) =>
-            invokeIPC('FS_SHOW_SAVE_DIALOG', ...args),
+        showSaveDialog: (...args) => invokeIPC('FS_SHOW_SAVE_DIALOG', ...args),
 
         showInputDialog: (...args) =>
             invokeIPC('FS_SHOW_INPUT_DIALOG', ...args),
@@ -300,8 +365,11 @@ const electronAPI: ElectronAPI = {
 
     // UI operations
     showContextMenu: (options) => invokeIPC('SHOW_CONTEXT_MENU', options),
-    onContextMenuCommand: menuEventHandler(IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND),
-    showUnsavedChangesDialog: (fileName) => invokeIPC('SHOW_UNSAVED_CHANGES_DIALOG', fileName),
+    onContextMenuCommand: menuEventHandler(
+        IPC_CHANNELS.ON_CONTEXT_MENU_COMMAND,
+    ),
+    showUnsavedChangesDialog: (fileName) =>
+        invokeIPC('SHOW_UNSAVED_CHANGES_DIALOG', fileName),
 
     // Config operations
     config: {
@@ -318,11 +386,12 @@ const electronAPI: ElectronAPI = {
 // Expose the API to the renderer process
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 
-function menuEventHandler<T extends any[]>(channel: string): (callback: (...args: T) => void) => () => Electron.IpcRenderer {
+function menuEventHandler<T extends any[]>(
+    channel: string,
+): (callback: (...args: T) => void) => () => Electron.IpcRenderer {
     return (callback: (...args: T) => void) => {
         const subscription = (_event: any, ...args: T) => callback(...args);
         ipcRenderer.on(channel, subscription);
         return () => ipcRenderer.removeListener(channel, subscription);
-    }
+    };
 }
-

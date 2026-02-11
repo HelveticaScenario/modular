@@ -5,7 +5,9 @@ This document describes the signal string syntax used for module parameters that
 ## Value Types
 
 ### Note Names
+
 Standard note names with optional octave (defaults to octave 3):
+
 ```
 c               // C3 (octave omitted = 3)
 c4              // C4
@@ -17,7 +19,9 @@ c-1             // C-1 (negative octaves supported)
 ```
 
 ### Hz Values (`Xhz`)
+
 Frequency values with Hz suffix, converted to V/Oct:
+
 ```
 440hz           // 440 Hz (A3)
 880hz           // 880 Hz (A4)
@@ -26,7 +30,9 @@ Frequency values with Hz suffix, converted to V/Oct:
 ```
 
 ### MIDI Note Numbers (`Xm`)
+
 MIDI note numbers with `m` suffix:
+
 ```
 72m             // MIDI 72 = C4
 69m             // MIDI 69 = A3
@@ -34,7 +40,9 @@ MIDI note numbers with `m` suffix:
 ```
 
 ### Scale Intervals (`Xs(Root:Scale)`)
+
 Scale-relative intervals with root and scale name:
+
 ```
 1s(C4:Major)    // 1st degree of C Major = C4
 3s(C4:Major)    // 3rd degree of C Major = E4
@@ -42,6 +50,7 @@ Scale-relative intervals with root and scale name:
 ```
 
 Decimal values add cents:
+
 ```
 1.5s(C4:Major)  // Root + 50 cents
 ```
@@ -49,12 +58,13 @@ Decimal values add cents:
 ## V/Oct Reference
 
 The V/Oct (Volts per Octave) standard used:
+
 - **A0 = 0V = 55Hz = MIDI 33**
 - Each volt = one octave
 - Each 1/12 volt = one semitone
 
 | Note | MIDI | V/Oct | Hz     |
-|------|------|-------|--------|
+| ---- | ---- | ----- | ------ |
 | A0   | 33   | 0.000 | 55     |
 | A1   | 45   | 1.000 | 110    |
 | A2   | 57   | 2.000 | 220    |
@@ -67,6 +77,7 @@ The V/Oct (Volts per Octave) standard used:
 ## Supported Scale Names
 
 Common scales (case-insensitive):
+
 - `Major`, `Minor`
 - `Dorian`, `Phrygian`, `Lydian`, `Mixolydian`, `Aeolian`, `Locrian`
 - `HarmonicMinor`, `MelodicMinor`

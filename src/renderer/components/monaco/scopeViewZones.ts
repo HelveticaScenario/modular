@@ -19,8 +19,9 @@ export function createScopeViewZones({
 }: ScopeViewZoneParams) {
     const viewZoneIds: string[] = [];
     const scopeCanvasMap = new Map<string, HTMLCanvasElement>();
-    let layoutListener: ReturnType<editor.IStandaloneCodeEditor['onDidLayoutChange']> | null =
-        null;
+    let layoutListener: ReturnType<
+        editor.IStandaloneCodeEditor['onDidLayoutChange']
+    > | null = null;
 
     const disposeViewZones = () => {
         if (viewZoneIds.length > 0) {
@@ -49,7 +50,8 @@ export function createScopeViewZones({
         return disposeViewZones;
     }
 
-    const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+    const dpr =
+        typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
     const layoutInfo = editor.getLayoutInfo();
     const scopeHeight = 80; // Increased height for legend and stats
 
@@ -66,7 +68,10 @@ export function createScopeViewZones({
         canvas.dataset.scopeKey = view.key;
         canvas.dataset.scopeScale = String(view.scale);
 
-        const pixelWidth = Math.max(1, Math.floor(layoutInfo.contentWidth * dpr));
+        const pixelWidth = Math.max(
+            1,
+            Math.floor(layoutInfo.contentWidth * dpr),
+        );
         const pixelHeight = Math.floor(scopeHeight * dpr);
         canvas.width = pixelWidth;
         canvas.height = pixelHeight;

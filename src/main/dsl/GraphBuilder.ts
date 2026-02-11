@@ -1125,7 +1125,7 @@ function replaceDeferred(
             if (resolved) {
                 return valueToSignal(resolved.resolve());
             } else {
-                return maybeResolvedModuleOutput.data
+                return maybeResolvedModuleOutput.data;
             }
         }
         return value;

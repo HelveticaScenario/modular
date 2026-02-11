@@ -23,11 +23,11 @@ Updated Findings: Befaco ADEnvelope
 The Befaco ADEnvelope (used by Percall and Kickall) is very similar to your percussion envelope but has key improvements:
 
 Befaco ADEnvelope vs Your Percussion Envelope
-Feature	Your Perc Envelope	Befaco ADEnvelope
-Decay curve	Fixed exponential (e^(-t/τ))	Variable via shape param (t^shape)
-Attack phase	❌ None	✅ Configurable attack time & shape
-Retrigger	Resets to peak	Smooth - continues from current value
-Shape control	❌ Fixed	✅ 0.5 (log) → 1.0 (linear) → 3.0 (expo)
+Feature Your Perc Envelope Befaco ADEnvelope
+Decay curve Fixed exponential (e^(-t/τ)) Variable via shape param (t^shape)
+Attack phase ❌ None ✅ Configurable attack time & shape
+Retrigger Resets to peak Smooth - continues from current value
+Shape control ❌ Fixed ✅ 0.5 (log) → 1.0 (linear) → 3.0 (expo)
 Key Ideas to Adapt
 Add shape parameter — Use pow(t, shape) instead of fixed exponential. With shape > 1 it approximates exponential; shape < 1 gives snappier attack-style curves.
 

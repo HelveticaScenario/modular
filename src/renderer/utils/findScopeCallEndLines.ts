@@ -6,7 +6,6 @@ export type ScopeCallEnd = {
     endLineText: string;
 };
 
-
 export function findScopeCallEndLines(code: string): ScopeCallEnd[] {
     // Identify comment spans so we can ignore commented-out scope calls
     const commentRanges: Array<{ start: number; end: number }> = [];
@@ -46,7 +45,10 @@ export function findScopeCallEndLines(code: string): ScopeCallEnd[] {
 
             if (inBlockComment) {
                 if (ch === '*' && next === '/') {
-                    commentRanges.push({ start: blockCommentStart, end: i + 2 });
+                    commentRanges.push({
+                        start: blockCommentStart,
+                        end: i + 2,
+                    });
                     inBlockComment = false;
                     i += 2;
                     continue;
@@ -104,7 +106,9 @@ export function findScopeCallEndLines(code: string): ScopeCallEnd[] {
             const mid = Math.floor((low + high) / 2);
             const start = lineStarts[mid];
             const nextStart =
-                mid + 1 < lineStarts.length ? lineStarts[mid + 1] : code.length + 1;
+                mid + 1 < lineStarts.length
+                    ? lineStarts[mid + 1]
+                    : code.length + 1;
             if (idx >= start && idx < nextStart) return mid + 1; // 1-based line number
             if (idx < start) {
                 high = mid - 1;

@@ -82,12 +82,12 @@ function createLogInterceptor(level: MainLogLevel) {
     return (...args: unknown[]) => {
         // Always call original console method first
         originalConsole[level](...args);
-        
+
         // Forward to renderer (serialize args to handle non-transferable values)
         const entry: MainLogEntry = {
             level,
             timestamp: Date.now(),
-            args: args.map(arg => serializeForIPC(arg)),
+            args: args.map((arg) => serializeForIPC(arg)),
         };
         sendLogToRenderer(entry);
     };
@@ -96,36 +96,48 @@ function createLogInterceptor(level: MainLogLevel) {
 /**
  * Serialize a value for IPC transfer, handling non-transferable types
  */
-function serializeForIPC(value: unknown, seen = new WeakSet<object>()): unknown {
+function serializeForIPC(
+    value: unknown,
+    seen = new WeakSet<object>(),
+): unknown {
     // Handle primitives
     if (value === null || value === undefined) {
         return value;
     }
-    
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+
+    if (
+        typeof value === 'string' ||
+        typeof value === 'number' ||
+        typeof value === 'boolean'
+    ) {
         return value;
     }
-    
+
     // Handle BigInt by converting to string with 'n' suffix for clarity
     if (typeof value === 'bigint') {
         return `${value}n`;
     }
-    
+
     // Handle symbols
     if (typeof value === 'symbol') {
         return value.toString();
     }
-    
+
     // Handle functions
     if (typeof value === 'function') {
         return `[Function: ${value.name || 'anonymous'}]`;
     }
-    
+
     // Handle Error objects specially
     if (value instanceof Error) {
-        return { __error: true, name: value.name, message: value.message, stack: value.stack };
+        return {
+            __error: true,
+            name: value.name,
+            message: value.message,
+            stack: value.stack,
+        };
     }
-    
+
     // Handle objects and arrays
     if (typeof value === 'object') {
         // Detect circular references
@@ -133,17 +145,17 @@ function serializeForIPC(value: unknown, seen = new WeakSet<object>()): unknown 
             return '[Circular]';
         }
         seen.add(value);
-        
+
         // Handle arrays
         if (Array.isArray(value)) {
-            return value.map(item => serializeForIPC(item, seen));
+            return value.map((item) => serializeForIPC(item, seen));
         }
-        
+
         // Handle Date
         if (value instanceof Date) {
             return value.toISOString();
         }
-        
+
         // Handle Map
         if (value instanceof Map) {
             const obj: Record<string, unknown> = { __type: 'Map' };
@@ -152,20 +164,26 @@ function serializeForIPC(value: unknown, seen = new WeakSet<object>()): unknown 
             }
             return obj;
         }
-        
+
         // Handle Set
         if (value instanceof Set) {
-            return { __type: 'Set', values: Array.from(value).map(v => serializeForIPC(v, seen)) };
+            return {
+                __type: 'Set',
+                values: Array.from(value).map((v) => serializeForIPC(v, seen)),
+            };
         }
-        
+
         // Handle plain objects
         const result: Record<string, unknown> = {};
         for (const key of Object.keys(value)) {
-            result[key] = serializeForIPC((value as Record<string, unknown>)[key], seen);
+            result[key] = serializeForIPC(
+                (value as Record<string, unknown>)[key],
+                seen,
+            );
         }
         return result;
     }
-    
+
     // Fallback
     return String(value);
 }
@@ -257,13 +275,15 @@ const AppConfigSchema = z.object({
     fontSize: z.number().min(8).max(72).optional(),
     prettier: z.record(z.string(), z.unknown()).optional(),
     lastOpenedFolder: z.string().optional(),
-    audioConfig: z.object({
-        hostId: z.string().optional(),
-        inputDeviceId: z.string().nullable().optional(),
-        outputDeviceId: z.string().optional(),
-        sampleRate: z.number().optional(),
-        bufferSize: z.number().optional(),
-    }).optional(),
+    audioConfig: z
+        .object({
+            hostId: z.string().optional(),
+            inputDeviceId: z.string().nullable().optional(),
+            outputDeviceId: z.string().optional(),
+            sampleRate: z.number().optional(),
+            bufferSize: z.number().optional(),
+        })
+        .optional(),
 });
 
 type AppConfig = z.infer<typeof AppConfigSchema>;
@@ -296,13 +316,17 @@ function saveConfig(config: AppConfig) {
 
 // Load saved config to pass to synthesizer
 const savedConfig = loadConfig();
-const audioConfigOptions: AudioConfigOptions | undefined = savedConfig.audioConfig ? {
-    hostId: savedConfig.audioConfig.hostId ?? undefined,
-    outputDeviceId: savedConfig.audioConfig.outputDeviceId ?? undefined,
-    inputDeviceId: savedConfig.audioConfig.inputDeviceId ?? undefined,
-    sampleRate: savedConfig.audioConfig.sampleRate ?? undefined,
-    bufferSize: savedConfig.audioConfig.bufferSize ?? undefined,
-} : undefined;
+const audioConfigOptions: AudioConfigOptions | undefined =
+    savedConfig.audioConfig
+        ? {
+              hostId: savedConfig.audioConfig.hostId ?? undefined,
+              outputDeviceId:
+                  savedConfig.audioConfig.outputDeviceId ?? undefined,
+              inputDeviceId: savedConfig.audioConfig.inputDeviceId ?? undefined,
+              sampleRate: savedConfig.audioConfig.sampleRate ?? undefined,
+              bufferSize: savedConfig.audioConfig.bufferSize ?? undefined,
+          }
+        : undefined;
 
 // Initialize the synthesizer instance with saved config
 console.log('Initializing Synthesizer with config:', audioConfigOptions);
@@ -314,15 +338,20 @@ console.log('Actual audio state after construction:', actualAudioState);
 
 // Check for fallback warning and update saved config if devices changed
 if (actualAudioState.fallbackWarning) {
-    console.warn('Audio device fallback occurred:', actualAudioState.fallbackWarning);
+    console.warn(
+        'Audio device fallback occurred:',
+        actualAudioState.fallbackWarning,
+    );
 }
 
 // Update saved config with actual devices used (in case of fallback)
 const actualConfig = loadConfig();
-const configNeedsUpdate = 
+const configNeedsUpdate =
     actualConfig.audioConfig?.hostId !== actualAudioState.hostId ||
-    actualConfig.audioConfig?.outputDeviceId !== actualAudioState.outputDeviceId ||
-    actualConfig.audioConfig?.inputDeviceId !== actualAudioState.inputDeviceId ||
+    actualConfig.audioConfig?.outputDeviceId !==
+        actualAudioState.outputDeviceId ||
+    actualConfig.audioConfig?.inputDeviceId !==
+        actualAudioState.inputDeviceId ||
     actualConfig.audioConfig?.sampleRate !== actualAudioState.sampleRate ||
     actualConfig.audioConfig?.bufferSize !== actualAudioState.bufferSize;
 
@@ -343,7 +372,7 @@ function saveAudioConfig() {
     try {
         const config = loadConfig();
         const state = synth.getCurrentAudioState();
-        
+
         config.audioConfig = {
             hostId: state.hostId,
             outputDeviceId: state.outputDeviceId ?? undefined,
@@ -540,11 +569,15 @@ registerIPCHandler('GET_DSL_LIB_SOURCE', () => {
 registerIPCHandler('DSL_EXECUTE', (source, sourceId): DSLExecuteResult => {
     try {
         const schemas = getSchemas();
-        const { patch, sourceLocationMap, interpolationResolutions, sliders } = executePatchScript(source, schemas);
+        const { patch, sourceLocationMap, interpolationResolutions, sliders } =
+            executePatchScript(source, schemas);
         patch.moduleIdRemaps = [];
 
         // Convert Map to Record for IPC serialization
-        const sourceLocationRecord: Record<string, { line: number; column: number; idIsExplicit: boolean }> = {};
+        const sourceLocationRecord: Record<
+            string,
+            { line: number; column: number; idIsExplicit: boolean }
+        > = {};
         for (const [moduleId, loc] of sourceLocationMap) {
             sourceLocationRecord[moduleId] = loc;
         }
@@ -560,13 +593,17 @@ registerIPCHandler('DSL_EXECUTE', (source, sourceId): DSLExecuteResult => {
 
         if (DEBUG_LOG) {
             if (!sourceId) {
-                console.log('[patch-remap] no sourceId; reconciliation disabled');
+                console.log(
+                    '[patch-remap] no sourceId; reconciliation disabled',
+                );
             } else if (!shouldReconcile) {
                 console.log(
                     `[patch-remap] source changed (${lastAppliedSourceId ?? 'none'} -> ${sourceId}); reconciliation disabled`,
                 );
             } else {
-                console.log(`[patch-remap] reconciling for sourceId=${sourceId}`);
+                console.log(
+                    `[patch-remap] reconciling for sourceId=${sourceId}`,
+                );
             }
         }
 
@@ -576,7 +613,9 @@ registerIPCHandler('DSL_EXECUTE', (source, sourceId): DSLExecuteResult => {
             {
                 matchThreshold: PATCH_REMAP_THRESHOLD,
                 ambiguityMargin: PATCH_REMAP_MARGIN,
-                debugLog: DEBUG_LOG ? (message) => console.log(message) : undefined,
+                debugLog: DEBUG_LOG
+                    ? (message) => console.log(message)
+                    : undefined,
             },
         );
 
@@ -596,10 +635,12 @@ registerIPCHandler('DSL_EXECUTE', (source, sourceId): DSLExecuteResult => {
         }
 
         // Send remap hints along with the desired patch
-        patch.moduleIdRemaps = Object.entries(moduleIdRemap).map(([from, to]) => ({
-            from,
-            to,
-        }));
+        patch.moduleIdRemaps = Object.entries(moduleIdRemap).map(
+            ([from, to]) => ({
+                from,
+                to,
+            }),
+        );
 
         const errors = synth.updatePatch(patch);
 
@@ -630,7 +671,8 @@ registerIPCHandler('DSL_EXECUTE', (source, sourceId): DSLExecuteResult => {
             sliders,
         };
     } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage =
+            error instanceof Error ? error.message : String(error);
         return {
             success: false,
             errorMessage,
@@ -757,15 +799,23 @@ registerIPCHandler('AUDIO_GET_CURRENT_STATE', () => {
     return synth.getCurrentAudioState();
 });
 
-registerIPCHandler('AUDIO_RECREATE_STREAMS', (
-    outputDeviceId: string,
-    sampleRate: number,
-    bufferSize: number | null,
-    inputDeviceId: string | null,
-) => {
-    synth.recreateStreams(outputDeviceId, sampleRate, bufferSize ?? undefined, inputDeviceId ?? undefined);
-    saveAudioConfig();
-});
+registerIPCHandler(
+    'AUDIO_RECREATE_STREAMS',
+    (
+        outputDeviceId: string,
+        sampleRate: number,
+        bufferSize: number | null,
+        inputDeviceId: string | null,
+    ) => {
+        synth.recreateStreams(
+            outputDeviceId,
+            sampleRate,
+            bufferSize ?? undefined,
+            inputDeviceId ?? undefined,
+        );
+        saveAudioConfig();
+    },
+);
 
 // Legacy audio device operations (for backward compatibility)
 registerIPCHandler('AUDIO_REFRESH_DEVICE_LIST', () => {
@@ -1185,19 +1235,28 @@ registerIPCHandler('OPEN_HELP_WINDOW', async () => {
     createHelpWindow();
 });
 
-registerIPCHandler('OPEN_HELP_FOR_SYMBOL', async (symbolType: 'type' | 'module' | 'namespace', symbolName: string) => {
-    createHelpWindow();
-    // Send navigation message to help window after it loads
-    if (helpWindow) {
-        helpWindow.webContents.once('did-finish-load', () => {
-            helpWindow?.webContents.send('navigate-to-symbol', { symbolType, symbolName });
-        });
-        // If already loaded, send immediately
-        if (!helpWindow.webContents.isLoading()) {
-            helpWindow.webContents.send('navigate-to-symbol', { symbolType, symbolName });
+registerIPCHandler(
+    'OPEN_HELP_FOR_SYMBOL',
+    async (symbolType: 'type' | 'module' | 'namespace', symbolName: string) => {
+        createHelpWindow();
+        // Send navigation message to help window after it loads
+        if (helpWindow) {
+            helpWindow.webContents.once('did-finish-load', () => {
+                helpWindow?.webContents.send('navigate-to-symbol', {
+                    symbolType,
+                    symbolName,
+                });
+            });
+            // If already loaded, send immediately
+            if (!helpWindow.webContents.isLoading()) {
+                helpWindow.webContents.send('navigate-to-symbol', {
+                    symbolType,
+                    symbolName,
+                });
+            }
         }
-    }
-});
+    },
+);
 
 // Config IPC handlers
 registerIPCHandler('CONFIG_GET_PATH', () => {
@@ -1261,33 +1320,33 @@ const createMenu = (): void => {
         // App menu (macOS only)
         ...(isMac
             ? [
-                {
-                    label: app.name,
-                    submenu: [
-                        { role: 'about' as const },
-                        { type: 'separator' as const },
-                        {
-                            label: 'Settings...',
-                            accelerator: 'Cmd+,',
-                            click: () => {
-                                if (mainWindow && !mainWindow.isDestroyed()) {
-                                    mainWindow.webContents.send(
-                                        MENU_CHANNELS.OPEN_SETTINGS,
-                                    );
-                                }
-                            },
-                        },
-                        { type: 'separator' as const },
-                        { role: 'services' as const },
-                        { type: 'separator' as const },
-                        { role: 'hide' as const },
-                        { role: 'hideOthers' as const },
-                        { role: 'unhide' as const },
-                        { type: 'separator' as const },
-                        { role: 'quit' as const },
-                    ],
-                },
-            ]
+                  {
+                      label: app.name,
+                      submenu: [
+                          { role: 'about' as const },
+                          { type: 'separator' as const },
+                          {
+                              label: 'Settings...',
+                              accelerator: 'Cmd+,',
+                              click: () => {
+                                  if (mainWindow && !mainWindow.isDestroyed()) {
+                                      mainWindow.webContents.send(
+                                          MENU_CHANNELS.OPEN_SETTINGS,
+                                      );
+                                  }
+                              },
+                          },
+                          { type: 'separator' as const },
+                          { role: 'services' as const },
+                          { type: 'separator' as const },
+                          { role: 'hide' as const },
+                          { role: 'hideOthers' as const },
+                          { role: 'unhide' as const },
+                          { type: 'separator' as const },
+                          { role: 'quit' as const },
+                      ],
+                  },
+              ]
             : []),
         // File menu
         {
@@ -1343,15 +1402,15 @@ const createMenu = (): void => {
                 { role: 'paste' as const },
                 ...(isMac
                     ? [
-                        { role: 'pasteAndMatchStyle' as const },
-                        { role: 'delete' as const },
-                        { role: 'selectAll' as const },
-                    ]
+                          { role: 'pasteAndMatchStyle' as const },
+                          { role: 'delete' as const },
+                          { role: 'selectAll' as const },
+                      ]
                     : [
-                        { role: 'delete' as const },
-                        { type: 'separator' as const },
-                        { role: 'selectAll' as const },
-                    ]),
+                          { role: 'delete' as const },
+                          { type: 'separator' as const },
+                          { role: 'selectAll' as const },
+                      ]),
             ],
         },
         // View menu
@@ -1439,11 +1498,11 @@ const createMenu = (): void => {
                 { role: 'zoom' as const },
                 ...(isMac
                     ? [
-                        { type: 'separator' as const },
-                        { role: 'front' as const },
-                        { type: 'separator' as const },
-                        { role: 'window' as const },
-                    ]
+                          { type: 'separator' as const },
+                          { role: 'front' as const },
+                          { type: 'separator' as const },
+                          { role: 'window' as const },
+                      ]
                     : [{ role: 'close' as const }]),
             ],
         },

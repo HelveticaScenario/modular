@@ -11,5 +11,5 @@ should all non-signal params be multichannel expandable? are there params that a
 should channel count be determined at patch update time, or dynamic within the lifecycle of a patch?
 
 table stakes
-- seq should allow stacks and haps with overlapping times
 
+- seq should allow stacks and haps with overlapping times

@@ -91,13 +91,25 @@ export const drawOscilloscope = (
         const statsX = waveformRight + 8 * dpr;
         const lineHeight = 14 * dpr;
 
-        ctx.fillText(`min: ${stats.min.toFixed(2)}v`, statsX, h / 2 - lineHeight);
+        ctx.fillText(
+            `min: ${stats.min.toFixed(2)}v`,
+            statsX,
+            h / 2 - lineHeight,
+        );
         ctx.fillText(`max: ${stats.max.toFixed(2)}v`, statsX, h / 2);
-        ctx.fillText(`p-p: ${stats.peakToPeak.toFixed(2)}v`, statsX, h / 2 + lineHeight);
+        ctx.fillText(
+            `p-p: ${stats.peakToPeak.toFixed(2)}v`,
+            statsX,
+            h / 2 + lineHeight,
+        );
     }
 
     // Handle empty data
-    if (!channels || channels.length === 0 || channels.every(ch => ch.length === 0)) {
+    if (
+        !channels ||
+        channels.length === 0 ||
+        channels.every((ch) => ch.length === 0)
+    ) {
         ctx.fillStyle = mutedColor;
         ctx.font = `${13 * dpr}px "Fira Code", monospace`;
         ctx.textAlign = 'center';
@@ -123,7 +135,10 @@ export const drawOscilloscope = (
         for (let i = 0; i < sampleCount; i++) {
             const x = waveformLeft + stepX * i;
             const rawSample = data[i];
-            const s = Math.max(-maxAbsAmplitude, Math.min(maxAbsAmplitude, rawSample));
+            const s = Math.max(
+                -maxAbsAmplitude,
+                Math.min(maxAbsAmplitude, rawSample),
+            );
             const y = midY - s * pixelsPerUnit;
 
             if (i === 0) {

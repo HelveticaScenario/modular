@@ -1,5 +1,11 @@
 import { ModuleSchema, deriveChannelCount } from '@modular/core';
-import { GraphBuilder, ModuleNode, ModuleOutput, Collection, CollectionWithRange } from './GraphBuilder';
+import {
+    GraphBuilder,
+    ModuleNode,
+    ModuleOutput,
+    Collection,
+    CollectionWithRange,
+} from './GraphBuilder';
 import type { SourceSpan } from '../../shared/dsl/spanTypes';
 import type { SpanRegistry, CallSiteKey } from './sourceSpanAnalyzer';
 
@@ -84,12 +90,12 @@ function captureSourceLocation(): { line: number; column: number } | undefined {
 /**
  * Look up argument spans from the active span registry using the source location.
  * Returns undefined if no registry is set or no spans found for this call site.
- * 
+ *
  * @param sourceLocation - The line/column from captureSourceLocation()
  * @returns Map of argument names to their source spans, or undefined
  */
 function captureArgumentSpans(
-    sourceLocation: { line: number; column: number } | undefined
+    sourceLocation: { line: number; column: number } | undefined,
 ): ArgumentSpans | undefined {
     if (!activeSpanRegistry || !sourceLocation) {
         return undefined;
@@ -117,7 +123,8 @@ function captureArgumentSpans(
 // Return type for module factories - varies by output configuration
 type SingleOutput = ModuleOutput;
 type PolyOutput = Collection | CollectionWithRange;
-type MultiOutput = (SingleOutput | PolyOutput) & Record<string, ModuleOutput | Collection | CollectionWithRange>;
+type MultiOutput = (SingleOutput | PolyOutput) &
+    Record<string, ModuleOutput | Collection | CollectionWithRange>;
 type ModuleReturn = SingleOutput | PolyOutput | MultiOutput;
 
 type FactoryFunction = (...args: any[]) => ModuleReturn;
@@ -265,7 +272,10 @@ export class DSLContext {
         // Note: This adds overhead from channel count derivation but ensures consistency
         const factoryMap = new Map<string, FactoryFunction>();
         for (const schema of schemas) {
-            factoryMap.set(schema.name, this.factories[sanitizeIdentifier(schema.name)]);
+            factoryMap.set(
+                schema.name,
+                this.factories[sanitizeIdentifier(schema.name)],
+            );
         }
         this.builder.setFactoryRegistry(factoryMap);
 
@@ -325,7 +335,11 @@ export class DSLContext {
             }
 
             // Create the module node internally, passing source location
-            const node = this.builder.addModule(schema.name, id, sourceLocation);
+            const node = this.builder.addModule(
+                schema.name,
+                id,
+                sourceLocation,
+            );
 
             // Set all params
             for (const [key, value] of Object.entries(params)) {
@@ -337,7 +351,10 @@ export class DSLContext {
             // Derive channel count from params using Rust-side derivation (backed by LRU cache)
             // This handles modules with custom derivation logic (like mix, seq)
             // as well as standard inference from PolySignal inputs
-            const derivedChannels = deriveChannelCount(schema.name, node.getParamsSnapshot());
+            const derivedChannels = deriveChannelCount(
+                schema.name,
+                node.getParamsSnapshot(),
+            );
 
             if (derivedChannels !== null) {
                 node._setDerivedChannelCount(derivedChannels);
@@ -354,11 +371,18 @@ export class DSLContext {
             } else {
                 // Multiple outputs - create hybrid object extending the default output
                 // Find the default output (or use first if none marked)
-                const defaultOutput = outputs.find((o) => o.default) || outputs[0];
-                const defaultValue = node._output(defaultOutput.name, defaultOutput.polyphonic ?? false);
+                const defaultOutput =
+                    outputs.find((o) => o.default) || outputs[0];
+                const defaultValue = node._output(
+                    defaultOutput.name,
+                    defaultOutput.polyphonic ?? false,
+                );
 
                 // Create the additional output properties
-                const additionalOutputs: Record<string, ModuleOutput | Collection | CollectionWithRange> = {};
+                const additionalOutputs: Record<
+                    string,
+                    ModuleOutput | Collection | CollectionWithRange
+                > = {};
                 for (const output of outputs) {
                     if (output.name === defaultOutput.name) continue;
                     const safeName = sanitizeOutputName(output.name);
@@ -383,9 +407,16 @@ export class DSLContext {
 
     scope<T extends ModuleOutput | Collection | CollectionWithRange>(
         target: T,
-        config?: { msPerFrame?: number; triggerThreshold?: number; scale?: number },
+        config?: {
+            msPerFrame?: number;
+            triggerThreshold?: number;
+            scale?: number;
+        },
     ): T {
-        if (target instanceof Collection || target instanceof CollectionWithRange) {
+        if (
+            target instanceof Collection ||
+            target instanceof CollectionWithRange
+        ) {
             this.builder.addScope([...target], config);
         } else {
             this.builder.addScope(target, config);

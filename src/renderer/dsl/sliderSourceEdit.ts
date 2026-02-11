@@ -23,7 +23,10 @@ export interface SourceSpanResult {
  * @param label  - The label string to match against
  * @returns The start/end offsets of the value argument literal, or null if not found
  */
-export function findSliderValueSpan(source: string, label: string): SourceSpanResult | null {
+export function findSliderValueSpan(
+    source: string,
+    label: string,
+): SourceSpanResult | null {
     // Build regex to find $slider( with the exact label string.
     // The label is a validated string literal, so we escape it for regex safety.
     const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -45,7 +48,9 @@ export function findSliderValueSpan(source: string, label: string): SourceSpanRe
         if (start >= source.length) continue;
 
         // Parse the numeric literal: optional minus, digits, optional decimal + digits
-        const numMatch = source.slice(start).match(/^-?\d+(\.\d+)?([eE][+-]?\d+)?/);
+        const numMatch = source
+            .slice(start)
+            .match(/^-?\d+(\.\d+)?([eE][+-]?\d+)?/);
         if (!numMatch) continue;
 
         return {

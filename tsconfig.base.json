@@ -1,15 +1,15 @@
 {
-  "compilerOptions": {
-    "target": "esnext",
-    "allowJs": true,
-    "module": "commonjs",
-    "skipLibCheck": true,
-    "esModuleInterop": true,
-    "noImplicitAny": true,
-    "sourceMap": true,
-    "outDir": "dist",
-    "moduleResolution": "node",
-    "resolveJsonModule": true,
-    "strict": true
-  }
+    "compilerOptions": {
+        "target": "esnext",
+        "allowJs": true,
+        "module": "commonjs",
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+        "noImplicitAny": true,
+        "sourceMap": true,
+        "outDir": "dist",
+        "moduleResolution": "node",
+        "resolveJsonModule": true,
+        "strict": true
+    }
 }
