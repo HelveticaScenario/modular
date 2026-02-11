@@ -1,6 +1,6 @@
 {
     "name": "@modular/app",
-    "productName": "Switchboard",
+    "productName": "Operator",
     "version": "0.0.11",
     "description": "My Electron application description",
     "main": ".webpack/main",

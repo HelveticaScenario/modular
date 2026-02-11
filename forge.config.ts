@@ -22,7 +22,7 @@ const config: ForgeConfig = {
         asar: {
             unpack: '**/*.node',
         },
-        executableName: 'Switchboard',
+        executableName: 'Operator',
         osxSign: {
             identity: 'Developer ID Application: Daniel Lewis (HA98TTLCR7)',
             optionsForFile: () => {
@@ -89,24 +89,24 @@ const config: ForgeConfig = {
     },
     makers: [
         new MakerSquirrel({
-            name: 'Switchboard',
+            name: 'Operator',
         }),
         new MakerZIP({}, ['darwin']),
         new MakerRpm({
             options: {
-                bin: 'Switchboard',
+                bin: 'Operator',
             },
         }),
         new MakerDeb({
             options: {
-                bin: 'Switchboard',
+                bin: 'Operator',
             },
         }),
         // new MakerFlatpak({
         //   // @ts-ignore
         //   options: {
-        //     bin: 'Switchboard',
-        //     id: 'com.helveticascenario.switchboard',
+        //     bin: 'Operator',
+        //     id: 'com.helveticascenario.operator',
         //   },
         // }),
     ],
