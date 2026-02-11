@@ -18,7 +18,11 @@ pub struct FixedRoot {
 impl FixedRoot {
     /// Create a new fixed root.
     pub fn new(letter: char, accidental: Option<char>) -> Self {
-        Self { letter, accidental, octave: None }
+        Self {
+            letter,
+            accidental,
+            octave: None,
+        }
     }
 
     /// Parse from a string like "c", "c#", "bb", "c3", "c#4", "db3".
@@ -37,8 +41,14 @@ impl FixedRoot {
         let mut idx = 1;
         let accidental = if idx < chars.len() {
             match chars[idx] {
-                '#' | 's' => { idx += 1; Some('#') }
-                'b' | 'f' => { idx += 1; Some('b') }
+                '#' | 's' => {
+                    idx += 1;
+                    Some('#')
+                }
+                'b' | 'f' => {
+                    idx += 1;
+                    Some('b')
+                }
                 _ => None,
             }
         } else {
@@ -52,7 +62,11 @@ impl FixedRoot {
             None
         };
 
-        Some(Self { letter, accidental, octave })
+        Some(Self {
+            letter,
+            accidental,
+            octave,
+        })
     }
 
     /// Get the pitch class (0-11, C=0).
@@ -221,15 +235,12 @@ impl ScaleSnapper {
     /// A ScaleSnapper configured for the custom scale.
     pub fn from_intervals(root: &FixedRoot, intervals: &[i8]) -> Self {
         let root_pc = root.pitch_class();
-        
+
         // Normalize intervals to 0-11 range and deduplicate
-        let mut scale_degrees: Vec<i8> = intervals
-            .iter()
-            .map(|&i| ((i % 12) + 12) % 12)
-            .collect();
+        let mut scale_degrees: Vec<i8> = intervals.iter().map(|&i| ((i % 12) + 12) % 12).collect();
         scale_degrees.sort();
         scale_degrees.dedup();
-        
+
         // Ensure root is included
         if !scale_degrees.contains(&0) {
             scale_degrees.insert(0, 0);
@@ -353,7 +364,7 @@ pub fn validate_scale_type(name: &str) -> bool {
     if name.to_lowercase() == "chromatic" {
         return true;
     }
-    
+
     // Try to parse with a C root - if it works, the scale type is valid
     Scale::from_regex(&format!("C {}", name)).is_ok()
 }
@@ -492,7 +503,7 @@ mod tests {
         assert!(validate_scale_type("harmonic minor"));
         assert!(validate_scale_type("harmonicminor"));
         assert!(validate_scale_type("chromatic"));
-        
+
         // Diatonic modes
         assert!(validate_scale_type("ionian"));
         assert!(validate_scale_type("phrygian"));
@@ -500,14 +511,14 @@ mod tests {
         assert!(validate_scale_type("mixolydian"));
         assert!(validate_scale_type("aeolian"));
         assert!(validate_scale_type("locrian"));
-        
+
         // Additional scale types
         assert!(validate_scale_type("melodic minor"));
         assert!(validate_scale_type("pentatonic major"));
         assert!(validate_scale_type("pentatonic minor"));
         assert!(validate_scale_type("blues"));
         assert!(validate_scale_type("whole tone"));
-        
+
         // Abbreviations supported by rust_music_theory
         assert!(validate_scale_type("maj"));
         assert!(validate_scale_type("min"));
@@ -516,7 +527,7 @@ mod tests {
         assert!(validate_scale_type("har minor"));
         assert!(validate_scale_type("mel minor"));
         assert!(validate_scale_type("wholetone"));
-        
+
         // Invalid scale types should fail
         assert!(!validate_scale_type("unknown_scale"));
         assert!(!validate_scale_type("fake_mode"));

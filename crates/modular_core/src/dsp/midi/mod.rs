@@ -5,10 +5,12 @@
 
 use std::collections::HashMap;
 
-use crate::types::{ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor};
+use crate::types::{
+    ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor,
+};
 
-pub mod midi_cv;
 pub mod midi_cc;
+pub mod midi_cv;
 
 pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     midi_cv::MidiCv::install_constructor(map);
@@ -26,8 +28,5 @@ pub fn install_channel_count_derivers(map: &mut HashMap<String, ChannelCountDeri
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {
-    vec![
-        midi_cv::MidiCv::get_schema(),
-        midi_cc::MidiCc::get_schema(),
-    ]
+    vec![midi_cv::MidiCv::get_schema(), midi_cc::MidiCc::get_schema()]
 }

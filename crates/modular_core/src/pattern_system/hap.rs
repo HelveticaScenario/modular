@@ -65,7 +65,9 @@ impl HapContext {
             combined.modifier_spans.push(span.clone());
         }
         // Add all of other's modifier spans
-        combined.modifier_spans.extend(other.modifier_spans.iter().cloned());
+        combined
+            .modifier_spans
+            .extend(other.modifier_spans.iter().cloned());
         combined
     }
 
@@ -232,19 +234,17 @@ impl<T: Clone> Hap<T> {
     /// Get whole begin time as f64 (or part begin if no whole).
     #[inline]
     pub fn whole_begin_f64(&self) -> f64 {
-        self.whole.as_ref().map_or_else(
-            || self.part.begin_f64(),
-            |w| w.begin_f64(),
-        )
+        self.whole
+            .as_ref()
+            .map_or_else(|| self.part.begin_f64(), |w| w.begin_f64())
     }
 
     /// Get whole end time as f64 (or part end if no whole).
     #[inline]
     pub fn whole_end_f64(&self) -> f64 {
-        self.whole.as_ref().map_or_else(
-            || self.part.end_f64(),
-            |w| w.end_f64(),
-        )
+        self.whole
+            .as_ref()
+            .map_or_else(|| self.part.end_f64(), |w| w.end_f64())
     }
 
     /// Check if time t is within the part span [begin, end).
@@ -410,7 +410,6 @@ mod tests {
         assert_eq!(spans[1], (10, 15)); // Original modifier span
         assert_eq!(spans[2], (20, 25)); // Combined from ctx2
     }
-
 
     // ===== Fast-Path / DSP Tests =====
 

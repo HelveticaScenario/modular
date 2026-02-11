@@ -240,11 +240,14 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     {
         let this = self.clone();
         let f = f.clone();
-        other.reset_join(move |b| {
-            let f = f.clone();
-            let b = b.clone();
-            this.fmap(move |a| f(a, &b))
-        }, false)
+        other.reset_join(
+            move |b| {
+                let f = f.clone();
+                let b = b.clone();
+                this.fmap(move |a| f(a, &b))
+            },
+            false,
+        )
     }
 
     /// Apply binary operation with Restart alignment.
@@ -259,11 +262,14 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     {
         let this = self.clone();
         let f = f.clone();
-        other.reset_join(move |b| {
-            let f = f.clone();
-            let b = b.clone();
-            this.fmap(move |a| f(a, &b))
-        }, true)
+        other.reset_join(
+            move |b| {
+                let f = f.clone();
+                let b = b.clone();
+                this.fmap(move |a| f(a, &b))
+            },
+            true,
+        )
     }
 
     /// Apply binary operation with SqueezeOut alignment.
@@ -289,8 +295,8 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pattern_system::constructors::{pure, silence};
     use crate::pattern_system::Fraction;
+    use crate::pattern_system::constructors::{pure, silence};
 
     #[test]
     fn test_app_both() {

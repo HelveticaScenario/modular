@@ -30,22 +30,22 @@ mod hap;
 mod state;
 mod timespan;
 
-pub mod constructors;
-pub mod combinators;
-pub mod temporal;
 pub mod applicative;
-pub mod monadic;
-pub mod random;
+pub mod combinators;
+pub mod constructors;
 pub mod euclidean;
 pub mod mini;
+pub mod monadic;
+pub mod random;
+pub mod temporal;
 
 pub use fraction::Fraction;
 pub use hap::{DspHap, Hap, HapContext, SourceSpan};
 pub use state::{Controls, State};
 pub use timespan::TimeSpan;
 
-pub use constructors::{pure, pure_with_span, silence, signal};
 pub use combinators::{fastcat, slowcat, stack, timecat};
+pub use constructors::{pure, pure_with_span, signal, silence};
 
 // Re-export mini notation types
 pub use mini::{FromMiniAtom, HasRest};
@@ -294,12 +294,8 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     {
         let query = self.query.clone();
         let steps = self.steps.clone();
-        let mut result = Pattern::new(move |state| {
-            query(state)
-                .into_iter()
-                .filter(|hap| pred(hap))
-                .collect()
-        });
+        let mut result =
+            Pattern::new(move |state| query(state).into_iter().filter(|hap| pred(hap)).collect());
         if let Some(s) = steps {
             result.steps = Some(s);
         }
@@ -554,7 +550,6 @@ mod tests {
         assert_eq!(haps3.len(), 1);
         assert_eq!(haps3[0].value, 0);
     }
-
 
     // ===== DSP Fast-Path Pattern Methods =====
 

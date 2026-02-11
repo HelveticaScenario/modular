@@ -4,7 +4,7 @@
 //! based on time. The same query at the same time always returns the
 //! same value, enabling reproducible randomness in patterns.
 
-use super::{constructors::signal_with_controls, Fraction, Pattern};
+use super::{Fraction, Pattern, constructors::signal_with_controls};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
@@ -101,13 +101,12 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
         let rand_pat = rand();
 
         // Use app_left to preserve structure from self
-        pat.app_left(&rand_pat, move |val, r| {
-            if *r < prob {
-                Some(val.clone())
-            } else {
-                None
-            }
-        })
+        pat.app_left(
+            &rand_pat,
+            move |val, r| {
+                if *r < prob { Some(val.clone()) } else { None }
+            },
+        )
         .filter_values(|v| v.is_some())
         .fmap(|v| v.clone().unwrap())
     }
@@ -128,11 +127,7 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
 
         // Use app_left to preserve structure from self
         pat.app_left(&rand_pat, move |val, r| {
-            if *r < prob {
-                val.clone()
-            } else {
-                rest.clone()
-            }
+            if *r < prob { val.clone() } else { rest.clone() }
         })
     }
 
@@ -203,8 +198,10 @@ mod tests {
         // Multiple queries in different cycles
         let mut found = std::collections::HashSet::new();
         for i in 0..20 {
-            let haps =
-                pat.query_arc(Fraction::from_integer(i), Fraction::from_integer(i) + Fraction::new(1, 100));
+            let haps = pat.query_arc(
+                Fraction::from_integer(i),
+                Fraction::from_integer(i) + Fraction::new(1, 100),
+            );
             if !haps.is_empty() {
                 found.insert(haps[0].value);
             }
@@ -222,8 +219,7 @@ mod tests {
         let mut present_count = 0;
         for i in 0..100 {
             let degraded = pat.degrade();
-            let haps =
-                degraded.query_arc(Fraction::from_integer(i), Fraction::from_integer(i + 1));
+            let haps = degraded.query_arc(Fraction::from_integer(i), Fraction::from_integer(i + 1));
             if !haps.is_empty() {
                 present_count += 1;
             }
@@ -245,7 +241,12 @@ mod tests {
         for i in 0..10 {
             let haps = degraded.query_arc(Fraction::from_integer(i), Fraction::from_integer(i + 1));
             // Should always have exactly one hap (the rest)
-            assert_eq!(haps.len(), 1, "Should have a hap (rest value) at cycle {}", i);
+            assert_eq!(
+                haps.len(),
+                1,
+                "Should have a hap (rest value) at cycle {}",
+                i
+            );
             assert_eq!(haps[0].value, rest_value, "Value should be the rest value");
         }
 
@@ -263,7 +264,11 @@ mod tests {
         for i in 0..100 {
             let haps = mixed.query_arc(Fraction::from_integer(i), Fraction::from_integer(i + 1));
             // Should always have exactly one hap
-            assert_eq!(haps.len(), 1, "Should always have a hap (either value or rest)");
+            assert_eq!(
+                haps.len(),
+                1,
+                "Should always have a hap (either value or rest)"
+            );
             if haps[0].value == 42 {
                 kept_count += 1;
             }

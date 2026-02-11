@@ -1058,11 +1058,9 @@ impl AudioState {
       }
 
       // Also add param update with precomputed channel count
-      let channel_count = crate::lookup_or_derive_channel_count(
-        &module_state.module_type,
-        &module_state.params,
-      )
-      .unwrap_or(1);
+      let channel_count =
+        crate::lookup_or_derive_channel_count(&module_state.module_type, &module_state.params)
+          .unwrap_or(1);
       update
         .param_updates
         .push((id.clone(), module_state.params.clone(), channel_count));

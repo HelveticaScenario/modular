@@ -9,11 +9,10 @@ use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::{
-    PolySignal,
-    dsp::utils::{TempGate, TempGateState, GATE_HIGH_VOLTAGE, GATE_LOW_VOLTAGE},
-    poly::{PolyOutput, PORT_MAX_CHANNELS},
+    Patch, PolySignal,
+    dsp::utils::{GATE_HIGH_VOLTAGE, GATE_LOW_VOLTAGE, TempGate, TempGateState},
+    poly::{PORT_MAX_CHANNELS, PolyOutput},
     types::Connect,
-    Patch,
 };
 
 use super::scale::{FixedRoot, ScaleSnapper, validate_scale_type};
@@ -70,7 +69,7 @@ impl ScaleParam {
     /// Shared parse implementation.
     fn parse_inner(source: &str, allow_octave: bool) -> Option<Self> {
         let source = source.trim();
-        
+
         if source.is_empty() {
             return Some(Self {
                 snapper: None,
@@ -93,14 +92,14 @@ impl ScaleParam {
         // Parse "root(scale_type)" or "root(intervals)"
         let open_paren = source.find('(')?;
         let close_paren = source.rfind(')')?;
-        
+
         if close_paren <= open_paren {
             return None;
         }
 
         let root_str = &source[..open_paren];
         let scale_spec = &source[open_paren + 1..close_paren];
-        
+
         let root = FixedRoot::parse(root_str)?;
 
         // Reject octave when not allowed
@@ -119,12 +118,12 @@ impl ScaleParam {
                 .split_whitespace()
                 .map(|s| s.parse::<i8>().ok())
                 .collect();
-            
+
             let intervals = intervals?;
             if intervals.is_empty() {
                 return None;
             }
-            
+
             ScaleSnapper::from_intervals(&root, &intervals)
         };
 
@@ -259,16 +258,16 @@ impl Quantizer {
         for ch in 0..num_channels {
             let input = self.params.input.get(ch).get_value() as f64;
             let offset = self.params.offset.get(ch).get_value() as f64;
-            
+
             let combined = input + offset;
-            
+
             let quantized = if let Some(snapper) = self.params.scale.snapper() {
                 snapper.snap_voct(combined)
             } else {
                 // No scale configured, pass through
                 combined
             };
-            
+
             // Check if the note changed
             let state = &mut self.channels[ch];
             let note_changed = match state.prev_quantized {
@@ -276,12 +275,14 @@ impl Quantizer {
                 None => true, // First sample counts as a change
             };
             state.prev_quantized = Some(quantized);
-            
+
             // Set gate and trigger on note change
             if note_changed {
-                state.trigger.set_state(TempGateState::High, TempGateState::Low);
+                state
+                    .trigger
+                    .set_state(TempGateState::High, TempGateState::Low);
             }
-            
+
             self.outputs.output.set(ch, quantized as f32);
             self.outputs.trig.set(ch, state.trigger.process());
         }
@@ -348,12 +349,12 @@ mod tests {
     fn test_scale_param_quantize_c_major() {
         let scale = ScaleParam::parse("C(major)").unwrap();
         let snapper = scale.snapper().unwrap();
-        
+
         // C4 = MIDI 60 = V/Oct 0.0, should stay C
         let c4_voct = (60.0 - 60.0) / 12.0;
         let snapped = snapper.snap_voct(c4_voct);
         assert!((snapped - c4_voct).abs() < 0.001);
-        
+
         // C#4 = MIDI 61 = V/Oct 0.0833, should snap to C
         let cs4_voct = (61.0 - 60.0) / 12.0;
         let snapped = snapper.snap_voct(cs4_voct);
@@ -367,7 +368,7 @@ mod tests {
             prev_quantized: None,
             trigger: TempGate::new_gate(TempGateState::Low),
         };
-        
+
         // First sample - should detect change (None -> Some)
         let note_changed = match state.prev_quantized {
             Some(prev) => (0.0_f64 - prev).abs() > 1e-6,
@@ -375,14 +376,14 @@ mod tests {
         };
         assert!(note_changed, "first sample should count as change");
         state.prev_quantized = Some(0.0);
-        
+
         // Second sample, same note - should NOT detect change
         let note_changed = match state.prev_quantized {
             Some(prev) => (0.0_f64 - prev).abs() > 1e-6,
             None => true,
         };
         assert!(!note_changed, "same note should not trigger change");
-        
+
         // Third sample, different note - should detect change
         let note_changed = match state.prev_quantized {
             Some(prev) => (1.0_f64 / 12.0 - prev).abs() > 1e-6,
@@ -395,14 +396,22 @@ mod tests {
     fn test_temp_gate_trigger_behavior() {
         // Test that TempGate produces correct single-sample pulse
         let mut trigger = TempGate::new_gate(TempGateState::Low);
-        
+
         // Initially low
         assert_eq!(trigger.process(), GATE_LOW_VOLTAGE);
-        
+
         // Trigger a pulse (High then Low)
         trigger.set_state(TempGateState::High, TempGateState::Low);
-        assert_eq!(trigger.process(), GATE_HIGH_VOLTAGE, "should be high on first process after trigger");
-        assert_eq!(trigger.process(), GATE_LOW_VOLTAGE, "should return to low on second process");
+        assert_eq!(
+            trigger.process(),
+            GATE_HIGH_VOLTAGE,
+            "should be high on first process after trigger"
+        );
+        assert_eq!(
+            trigger.process(),
+            GATE_LOW_VOLTAGE,
+            "should return to low on second process"
+        );
         assert_eq!(trigger.process(), GATE_LOW_VOLTAGE, "should stay low");
     }
 }

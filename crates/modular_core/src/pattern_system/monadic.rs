@@ -18,11 +18,9 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
         F: Fn(&T) -> Pattern<U> + Send + Sync + 'static,
     {
         self.bind_whole(
-            |outer_whole, inner_whole| {
-                match (outer_whole, inner_whole) {
-                    (Some(o), Some(i)) => o.intersection(i),
-                    _ => None,
-                }
+            |outer_whole, inner_whole| match (outer_whole, inner_whole) {
+                (Some(o), Some(i)) => o.intersection(i),
+                _ => None,
             },
             f,
         )
@@ -199,9 +197,10 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
                     let outer_whole = outer_hap.whole_or_part();
 
                     // For inner whole: intersect if discrete, else None
-                    let new_whole = inner_hap.whole.as_ref().and_then(|w| {
-                        w.intersection(outer_whole)
-                    });
+                    let new_whole = inner_hap
+                        .whole
+                        .as_ref()
+                        .and_then(|w| w.intersection(outer_whole));
 
                     // For inner part: must intersect with outer hap's part
                     if let Some(new_part) = inner_hap.part.intersection(&outer_hap.part) {
@@ -269,9 +268,10 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
 
                 for inner_hap in inner_haps {
                     if let Some(new_part) = inner_hap.part.intersection(&outer_hap.part) {
-                        let new_whole = inner_hap.whole.as_ref().and_then(|w| {
-                            w.intersection(outer_hap.whole_or_part())
-                        });
+                        let new_whole = inner_hap
+                            .whole
+                            .as_ref()
+                            .and_then(|w| w.intersection(outer_hap.whole_or_part()));
 
                         let combined_context = outer_hap.combine_context(&inner_hap);
                         result.push(Hap::with_context(
@@ -305,9 +305,9 @@ impl<T: Clone + Send + Sync + 'static> Pattern<Pattern<T>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pattern_system::Fraction;
     use crate::pattern_system::combinators::fastcat;
     use crate::pattern_system::constructors::pure;
-    use crate::pattern_system::Fraction;
 
     #[test]
     fn test_bind_basic() {
@@ -350,7 +350,11 @@ mod tests {
         let haps = result.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
 
         // Should have at least 4 events (may have more due to boundary handling)
-        assert!(haps.len() >= 4, "Expected at least 4 events, got {}", haps.len());
+        assert!(
+            haps.len() >= 4,
+            "Expected at least 4 events, got {}",
+            haps.len()
+        );
 
         // Verify we have the expected values
         let values: Vec<_> = haps.iter().map(|h| h.value).collect();
@@ -372,12 +376,19 @@ mod tests {
 
         // Should have events squeezed into [0.5, 1)
         // Due to focus_span implementation via early/fast/late, we may get more events
-        assert!(haps.len() >= 2, "Expected at least 2 events, got {}", haps.len());
+        assert!(
+            haps.len() >= 2,
+            "Expected at least 2 events, got {}",
+            haps.len()
+        );
 
         // At least some events should be in the [0.5, 1) range
-        let in_range_count = haps.iter().filter(|h| {
-            h.part.begin >= Fraction::new(1, 2) && h.part.end <= Fraction::from_integer(1)
-        }).count();
+        let in_range_count = haps
+            .iter()
+            .filter(|h| {
+                h.part.begin >= Fraction::new(1, 2) && h.part.end <= Fraction::from_integer(1)
+            })
+            .count();
         assert!(in_range_count >= 1, "Expected events in [0.5, 1) range");
     }
 

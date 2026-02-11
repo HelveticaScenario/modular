@@ -131,12 +131,16 @@ pub fn fastcat<T: Clone + Send + Sync + 'static>(pats: Vec<Pattern<T>>) -> Patte
                     .flat_map(|i| {
                         let i_frac = Fraction::from_integer(i as i64);
                         let cycle_start = cycle_span.begin.floor();
-                        
+
                         // This pattern's portion: [cycle + i/n, cycle + (i+1)/n)
                         let part_begin = &cycle_start + &i_frac / &n_frac;
-                        let part_end = &cycle_start + (&i_frac + Fraction::from_integer(1)) / &n_frac;
-                        let part_span = TimeSpan { begin: part_begin.clone(), end: part_end.clone() };
-                        
+                        let part_end =
+                            &cycle_start + (&i_frac + Fraction::from_integer(1)) / &n_frac;
+                        let part_span = TimeSpan {
+                            begin: part_begin.clone(),
+                            end: part_end.clone(),
+                        };
+
                         // Intersect with the query span
                         if let Some(query_part) = cycle_span.intersection(&part_span) {
                             // Transform times so pattern sees [cycle, cycle+1)
@@ -144,9 +148,9 @@ pub fn fastcat<T: Clone + Send + Sync + 'static>(pats: Vec<Pattern<T>>) -> Patte
                             let query_transformed = query_part.with_time(|t| {
                                 (t - &cycle_start) * &n_frac - &i_frac + &cycle_start
                             });
-                            
+
                             let haps = pats[i].query(&state.set_span(query_transformed));
-                            
+
                             // Transform results back
                             haps.into_iter()
                                 .map(|hap| {
@@ -238,9 +242,7 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
         let factor_pat = factor.into_pattern();
         let pat = self.clone();
 
-        factor_pat.inner_join(move |f| {
-            pat._fast(f.clone())
-        })
+        factor_pat.inner_join(move |f| pat._fast(f.clone()))
     }
 
     /// Internal constant-factor fast (no pattern overhead).
@@ -274,9 +276,7 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
         let factor_pat = factor.into_pattern();
         let pat = self.clone();
 
-        factor_pat.inner_join(move |f| {
-            pat._slow(f.clone())
-        })
+        factor_pat.inner_join(move |f| pat._slow(f.clone()))
     }
 
     /// Internal constant-factor slow (no pattern overhead).

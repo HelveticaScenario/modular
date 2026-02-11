@@ -9,13 +9,17 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
+    Patch,
     dsp::utils::midi_to_voct_f64,
     pattern_system::{
-        mini::{ast::AtomValue, convert::{ConvertError, HasRest}, FromMiniAtom},
         Pattern,
+        mini::{
+            FromMiniAtom,
+            ast::AtomValue,
+            convert::{ConvertError, HasRest},
+        },
     },
     types::{Connect, Signal},
-    Patch,
 };
 
 /// A value in a sequence pattern.
@@ -68,7 +72,13 @@ impl SeqValue {
 
     /// Check if this is a sample-and-hold signal.
     pub fn is_sample_and_hold(&self) -> bool {
-        matches!(self, SeqValue::Signal { sample_and_hold: true, .. })
+        matches!(
+            self,
+            SeqValue::Signal {
+                sample_and_hold: true,
+                ..
+            }
+        )
     }
 }
 
@@ -128,7 +138,10 @@ impl FromMiniAtom for SeqValue {
                     Err(ConvertError::InvalidAtom(format!(
                         "Invalid note: {}{}{}",
                         letter,
-                        accidental.as_ref().map(|s| s.to_string()).unwrap_or_default(),
+                        accidental
+                            .as_ref()
+                            .map(|s| s.to_string())
+                            .unwrap_or_default(),
                         octave.map(|o| o.to_string()).unwrap_or_default()
                     )))
                 }
@@ -156,9 +169,10 @@ impl FromMiniAtom for SeqValue {
                 if s.len() == 1 {
                     let c = s.chars().next().unwrap().to_ascii_lowercase();
                     if ('a'..='g').contains(&c)
-                        && let Some(midi) = note_to_midi(c, None, None) {
-                            return Ok(SeqValue::Voltage(midi_to_voct_f64(midi)));
-                        }
+                        && let Some(midi) = note_to_midi(c, None, None)
+                    {
+                        return Ok(SeqValue::Voltage(midi_to_voct_f64(midi)));
+                    }
                 }
                 Err(ConvertError::InvalidAtom(format!(
                     "Cannot convert '{}' to SeqValue",
@@ -291,15 +305,14 @@ impl SeqPatternParam {
     /// Parse a pattern string and collect signals.
     fn parse(source: &str) -> Result<Self, String> {
         // Parse mini notation AST first (for span collection)
-        let ast = crate::pattern_system::mini::parse_ast(source)
-            .map_err(|e| e.to_string())?;
+        let ast = crate::pattern_system::mini::parse_ast(source).map_err(|e| e.to_string())?;
 
         // Collect all leaf spans from AST
         let all_spans = crate::pattern_system::mini::collect_leaf_spans(&ast);
 
         // Convert AST to pattern
-        let pattern = crate::pattern_system::mini::convert::<SeqValue>(&ast)
-            .map_err(|e| e.to_string())?;
+        let pattern =
+            crate::pattern_system::mini::convert::<SeqValue>(&ast).map_err(|e| e.to_string())?;
 
         // TODO: Collect signals from pattern - this requires walking the pattern
         // For now, signals will be connected via the Connect trait on individual values
@@ -365,7 +378,11 @@ mod tests {
 
         // C4 + 50 cents = MIDI 60.5 -> voltage = (60.5 - 33) / 12 = 2.2917
         let c4_50_cents_voltage = midi_to_voct_f64(60.5);
-        assert!((SeqValue::Voltage(c4_50_cents_voltage).to_voltage().unwrap() - c4_50_cents_voltage).abs() < 0.001);
+        assert!(
+            (SeqValue::Voltage(c4_50_cents_voltage).to_voltage().unwrap() - c4_50_cents_voltage)
+                .abs()
+                < 0.001
+        );
 
         assert_eq!(SeqValue::Rest.to_voltage(), None);
     }
@@ -387,14 +404,30 @@ mod tests {
     #[test]
     fn test_parse_module_ref() {
         let sig = parse_module_ref("module(osc1:output:0)").unwrap();
-        assert!(matches!(sig, SeqValue::Signal { sample_and_hold: false, .. }));
+        assert!(matches!(
+            sig,
+            SeqValue::Signal {
+                sample_and_hold: false,
+                ..
+            }
+        ));
 
         let sh_sig = parse_module_ref("module(osc1:output:0)=").unwrap();
-        assert!(matches!(sh_sig, SeqValue::Signal { sample_and_hold: true, .. }));
+        assert!(matches!(
+            sh_sig,
+            SeqValue::Signal {
+                sample_and_hold: true,
+                ..
+            }
+        ));
 
         // Test with channel > 0
         let sig_ch1 = parse_module_ref("module(osc1:output:1)").unwrap();
-        if let SeqValue::Signal { signal: Signal::Cable { channel, .. }, .. } = sig_ch1 {
+        if let SeqValue::Signal {
+            signal: Signal::Cable { channel, .. },
+            ..
+        } = sig_ch1
+        {
             assert_eq!(channel, 1);
         } else {
             panic!("Expected Signal::Cable");
@@ -425,8 +458,8 @@ mod tests {
 
     #[test]
     fn test_note_octaves_different() {
-        use crate::pattern_system::mini::parse;
         use crate::pattern_system::Fraction;
+        use crate::pattern_system::mini::parse;
 
         // Parse "a1 a2 a3 a4" and check each note has different voltage
         let pattern: crate::pattern_system::Pattern<SeqValue> =
@@ -436,21 +469,22 @@ mod tests {
 
         assert_eq!(haps.len(), 4, "Should have 4 haps");
 
-        let voltages: Vec<f64> = haps
-            .iter()
-            .filter_map(|h| h.value.to_voltage())
-            .collect();
+        let voltages: Vec<f64> = haps.iter().filter_map(|h| h.value.to_voltage()).collect();
 
         // a1 = MIDI 33 = 0V, a2 = MIDI 45 = 1V, a3 = MIDI 57 = 2V, a4 = MIDI 69 = 3V
         let expected = [
-            midi_to_voct_f64(33.0),  // a1
-            midi_to_voct_f64(45.0),  // a2
-            midi_to_voct_f64(57.0),  // a3
-            midi_to_voct_f64(69.0),  // a4
+            midi_to_voct_f64(33.0), // a1
+            midi_to_voct_f64(45.0), // a2
+            midi_to_voct_f64(57.0), // a3
+            midi_to_voct_f64(69.0), // a4
         ];
-        
+
         for (i, (actual, expected)) in voltages.iter().zip(expected.iter()).enumerate() {
-            assert!((actual - expected).abs() < 0.001, "a{} voltage mismatch", i + 1);
+            assert!(
+                (actual - expected).abs() < 0.001,
+                "a{} voltage mismatch",
+                i + 1
+            );
         }
     }
 
@@ -460,7 +494,10 @@ mod tests {
         // SeqValue should support rests
         assert!(SeqValue::supports_rest());
         assert!(<SeqValue as FromMiniAtom>::rest_value().is_some());
-        assert!(matches!(<SeqValue as FromMiniAtom>::rest_value(), Some(SeqValue::Rest)));
+        assert!(matches!(
+            <SeqValue as FromMiniAtom>::rest_value(),
+            Some(SeqValue::Rest)
+        ));
     }
 
     #[test]
@@ -473,8 +510,8 @@ mod tests {
 
     #[test]
     fn test_seq_value_euclidean() {
-        use crate::pattern_system::mini::parse;
         use crate::pattern_system::Fraction;
+        use crate::pattern_system::mini::parse;
 
         // Test that euclidean patterns work with SeqValue
         // c(2,4) means 2 pulses in 4 steps, so we should get:
@@ -483,28 +520,31 @@ mod tests {
             parse("c(2,4)").expect("Should parse euclidean pattern");
 
         let haps = pattern.query_arc(Fraction::from(0), Fraction::from(1));
-        
+
         println!("Euclidean c(2,4) haps:");
         for hap in &haps {
-            println!("  {:?} at {:?}-{:?}", hap.value, 
+            println!(
+                "  {:?} at {:?}-{:?}",
+                hap.value,
                 hap.whole.as_ref().map(|w| w.begin.to_string()),
-                hap.whole.as_ref().map(|w| w.end.to_string()));
+                hap.whole.as_ref().map(|w| w.end.to_string())
+            );
         }
 
         assert_eq!(haps.len(), 4, "Should have 4 haps (2 notes, 2 rests)");
-        
+
         // Count notes and rests
         let notes: Vec<_> = haps.iter().filter(|h| !h.value.is_rest()).collect();
         let rests: Vec<_> = haps.iter().filter(|h| h.value.is_rest()).collect();
-        
+
         assert_eq!(notes.len(), 2, "Should have 2 note haps");
         assert_eq!(rests.len(), 2, "Should have 2 rest haps");
     }
 
     #[test]
     fn test_seq_value_rest_in_pattern() {
-        use crate::pattern_system::mini::parse;
         use crate::pattern_system::Fraction;
+        use crate::pattern_system::mini::parse;
 
         // SeqValue should allow rest (~) in patterns
         let pattern: crate::pattern_system::Pattern<SeqValue> =
@@ -512,15 +552,15 @@ mod tests {
 
         let haps = pattern.query_arc(Fraction::from(0), Fraction::from(1));
         assert_eq!(haps.len(), 3, "Should have 3 haps including rest");
-        
+
         // Second hap should be a rest
         assert!(haps[1].value.is_rest(), "Second hap should be a rest");
     }
 
     #[test]
     fn test_seq_value_degrade_in_pattern() {
-        use crate::pattern_system::mini::parse;
         use crate::pattern_system::Fraction;
+        use crate::pattern_system::mini::parse;
 
         // SeqValue should allow degrade (?) in patterns
         let pattern: crate::pattern_system::Pattern<SeqValue> =
@@ -529,24 +569,29 @@ mod tests {
         // Query multiple times - should always get a hap (either note or rest)
         for i in 0..10 {
             let haps = pattern.query_arc(Fraction::from(i), Fraction::from(i + 1));
-            assert_eq!(haps.len(), 1, "Should always have exactly 1 hap at cycle {}", i);
+            assert_eq!(
+                haps.len(),
+                1,
+                "Should always have exactly 1 hap at cycle {}",
+                i
+            );
         }
     }
 
     #[test]
     fn test_seq_value_euclidean_in_pattern() {
-        use crate::pattern_system::mini::parse;
         use crate::pattern_system::Fraction;
+        use crate::pattern_system::mini::parse;
 
         // SeqValue should allow euclidean in patterns
         let pattern: crate::pattern_system::Pattern<SeqValue> =
             parse("c4(3,8)").expect("Should parse with euclidean");
 
         let haps = pattern.query_arc(Fraction::from(0), Fraction::from(1));
-        
+
         // Should have 8 haps (3 notes + 5 rests)
         assert_eq!(haps.len(), 8, "Should have 8 haps (euclidean 3,8)");
-        
+
         // Count pulses (non-rests)
         let pulse_count = haps.iter().filter(|h| !h.value.is_rest()).count();
         assert_eq!(pulse_count, 3, "Should have 3 pulses");

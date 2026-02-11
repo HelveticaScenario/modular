@@ -22,9 +22,7 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
         let offset_pat = offset.into_pattern();
         let pat = self.clone();
 
-        offset_pat.inner_join(move |o| {
-            pat._early(o.clone())
-        })
+        offset_pat.inner_join(move |o| pat._early(o.clone()))
     }
 
     /// Internal constant-offset early (no pattern overhead).
@@ -64,9 +62,7 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
         let offset_pat = offset.into_pattern();
         let pat = self.clone();
 
-        offset_pat.inner_join(move |o| {
-            pat._late(o.clone())
-        })
+        offset_pat.inner_join(move |o| pat._late(o.clone()))
     }
 
     /// Internal constant-offset late (no pattern overhead).
@@ -99,9 +95,7 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
                     let next_cycle = cycle_span.begin.next_sam();
 
                     // Reflect a time around the cycle center
-                    let reflect = |t: &Fraction| -> Fraction {
-                        &cycle + &(&next_cycle - t)
-                    };
+                    let reflect = |t: &Fraction| -> Fraction { &cycle + &(&next_cycle - t) };
 
                     // Reflect the query span (swap begin and end after reflection)
                     let reflected_begin = reflect(&cycle_span.end);
@@ -114,14 +108,17 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
                     // Reflect the results back
                     haps.into_iter()
                         .map(|hap| {
-                            let new_part = TimeSpan::new(
-                                reflect(&hap.part.end),
-                                reflect(&hap.part.begin),
-                            );
-                            let new_whole = hap.whole.map(|w| {
-                                TimeSpan::new(reflect(&w.end), reflect(&w.begin))
-                            });
-                            Hap::with_context(new_whole, new_part, hap.value.clone(), hap.context.clone())
+                            let new_part =
+                                TimeSpan::new(reflect(&hap.part.end), reflect(&hap.part.begin));
+                            let new_whole = hap
+                                .whole
+                                .map(|w| TimeSpan::new(reflect(&w.end), reflect(&w.begin)));
+                            Hap::with_context(
+                                new_whole,
+                                new_part,
+                                hap.value.clone(),
+                                hap.context.clone(),
+                            )
                         })
                         .collect::<Vec<_>>()
                 })
@@ -216,9 +213,7 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
         let n_pat = n.into_pattern();
         let pat = self.clone();
 
-        n_pat.inner_join(move |n_frac| {
-            pat._segment(n_frac.clone())
-        })
+        n_pat.inner_join(move |n_frac| pat._segment(n_frac.clone()))
     }
 
     /// Internal constant-n segment (no pattern overhead).
@@ -252,11 +247,7 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
                         ));
 
                         if let Some(hap) = pat.query(&sample_state).into_iter().next() {
-                            result.push(Hap::new(
-                                Some(event_span),
-                                part,
-                                hap.value.clone(),
-                            ));
+                            result.push(Hap::new(Some(event_span), part, hap.value.clone()));
                         }
                     }
                 }
@@ -270,7 +261,7 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pattern_system::{constructors::pure, combinators::fastcat};
+    use crate::pattern_system::{combinators::fastcat, constructors::pure};
 
     #[test]
     fn test_early() {

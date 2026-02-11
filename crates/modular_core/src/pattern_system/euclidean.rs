@@ -6,7 +6,7 @@
 //! The Bjorklund algorithm implementation is ported from the Haskell Music
 //! Theory module by Rohan Drape.
 
-use super::{combinators::fastcat, constructors::pure, Pattern};
+use super::{Pattern, combinators::fastcat, constructors::pure};
 
 /// Generate a Euclidean rhythm pattern using the Bjorklund algorithm.
 ///
@@ -161,7 +161,9 @@ pub fn euclid<T: Clone + Send + Sync + 'static>(
         })
         .collect();
 
-    fastcat(patterns).filter_values(|v| v.is_some()).fmap(|v| v.clone().unwrap())
+    fastcat(patterns)
+        .filter_values(|v| v.is_some())
+        .fmap(|v| v.clone().unwrap())
 }
 
 /// Create a boolean pattern from a Euclidean rhythm.
@@ -180,16 +182,16 @@ pub fn euclid_struct(pulses: i32, steps: u32, rotation: Option<i32>) -> Pattern<
     let rhythm = euclidean_rhythm(pulses, steps, rotation);
     let patterns: Vec<Pattern<Option<()>>> = rhythm
         .into_iter()
-        .map(|is_pulse| {
-            if is_pulse {
-                pure(Some(()))
-            } else {
-                pure(None)
-            }
-        })
+        .map(
+            |is_pulse| {
+                if is_pulse { pure(Some(())) } else { pure(None) }
+            },
+        )
         .collect();
 
-    fastcat(patterns).filter_values(|v| v.is_some()).fmap(|_| ())
+    fastcat(patterns)
+        .filter_values(|v| v.is_some())
+        .fmap(|_| ())
 }
 
 impl<T: Clone + Send + Sync + 'static> Pattern<T> {
@@ -197,7 +199,7 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     ///
     /// The pattern's events are distributed according to the Euclidean rhythm.
     /// Non-pulse positions are filtered out (no hap returned).
-    /// 
+    ///
     /// For patterns that support rests, use `euclid_with_rest` instead to
     /// ensure queries always return a hap.
     pub fn euclid(&self, pulses: i32, steps: u32) -> Pattern<T> {
@@ -205,7 +207,7 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     }
 
     /// Apply Euclidean rhythm structure with rotation.
-    /// 
+    ///
     /// Non-pulse positions are filtered out (no hap returned).
     /// For patterns that support rests, use `euclid_rot_with_rest` instead.
     pub fn euclid_rot(&self, pulses: i32, steps: u32, rotation: i32) -> Pattern<T> {
@@ -224,14 +226,20 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     ///
     /// Non-pulse positions produce the rest value instead of being filtered.
     /// This ensures the pattern always returns a hap when queried.
-    pub fn euclid_rot_with_rest(&self, pulses: i32, steps: u32, rotation: i32, rest: T) -> Pattern<T> {
+    pub fn euclid_rot_with_rest(
+        &self,
+        pulses: i32,
+        steps: u32,
+        rotation: i32,
+        rest: T,
+    ) -> Pattern<T> {
         let bool_pat = euclid_bool(pulses, steps, Some(rotation));
-        
+
         // Use app_right to take structure from bool_pat (the euclidean rhythm steps)
         // while querying self for values at each position
         let pat = self.clone();
         let rest_val = rest.clone();
-        
+
         pat.app_right(&bool_pat, move |val, is_pulse| {
             if *is_pulse {
                 val.clone()
@@ -278,9 +286,8 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
                 let rest = rest.clone();
                 let steps = *s;
 
-                rotation_pat.inner_join(move |r| {
-                    pat.euclid_rot_with_rest(pulses, steps, *r, rest.clone())
-                })
+                rotation_pat
+                    .inner_join(move |r| pat.euclid_rot_with_rest(pulses, steps, *r, rest.clone()))
             })
         })
     }

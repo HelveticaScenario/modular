@@ -2,7 +2,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    PORT_MAX_CHANNELS, dsp::utils::{changed, voct_to_hz}, poly::{PolyOutput, PolySignal}
+    PORT_MAX_CHANNELS,
+    dsp::utils::{changed, voct_to_hz},
+    poly::{PolyOutput, PolySignal},
 };
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]

@@ -7,7 +7,11 @@ use std::sync::Arc;
 use napi::Result;
 use parking_lot::Mutex;
 
-use crate::{Sampleable, poly::PolyOutput, types::{MessageHandler, WellKnownModule}};
+use crate::{
+    Sampleable,
+    poly::PolyOutput,
+    types::{MessageHandler, WellKnownModule},
+};
 
 #[derive(Default)]
 pub struct AudioIn {

@@ -979,7 +979,7 @@ impl ArgumentSpan {
     pub fn new(start: u32, end: u32) -> Self {
         Self { start, end }
     }
-    
+
     /// Check if this span is empty/unset
     pub fn is_empty(&self) -> bool {
         self.start == 0 && self.end == 0

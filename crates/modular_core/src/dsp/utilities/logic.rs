@@ -29,11 +29,7 @@ struct EdgeChannelState {
     last_input: f32,
 }
 
-#[module(
-    name = "$rising",
-    description = "Rising Edge Detector",
-    args(input)
-)]
+#[module(name = "$rising", description = "Rising Edge Detector", args(input))]
 #[derive(Default)]
 pub struct RisingEdgeDetector {
     outputs: EdgeDetectorOutputs,

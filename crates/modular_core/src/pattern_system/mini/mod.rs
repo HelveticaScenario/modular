@@ -55,9 +55,9 @@ pub mod ast;
 pub mod convert;
 pub mod parser;
 
-pub use ast::{collect_leaf_spans, AtomValue, Located, MiniAST};
-pub use convert::{convert, ConvertError, FromMiniAtom, HasRest};
-pub use parser::{parse as parse_ast, ParseError};
+pub use ast::{AtomValue, Located, MiniAST, collect_leaf_spans};
+pub use convert::{ConvertError, FromMiniAtom, HasRest, convert};
+pub use parser::{ParseError, parse as parse_ast};
 
 use crate::pattern_system::Pattern;
 
@@ -105,7 +105,7 @@ mod tests {
         // Euclidean should fail for f64 patterns because f64 doesn't support rests
         let result: Result<Pattern<f64>, _> = parse("1(3,8)");
         assert!(result.is_err(), "Euclidean should fail for f64 patterns");
-        
+
         let err = result.unwrap_err();
         assert!(
             matches!(err, ConvertError::RestNotSupported(_)),
@@ -119,7 +119,7 @@ mod tests {
         // Degrade should fail for f64 patterns
         let result: Result<Pattern<f64>, _> = parse("1?");
         assert!(result.is_err(), "Degrade should fail for f64 patterns");
-        
+
         let err = result.unwrap_err();
         assert!(
             matches!(err, ConvertError::RestNotSupported(_)),
@@ -133,7 +133,7 @@ mod tests {
         // Rest (~) should fail for f64 patterns
         let result: Result<Pattern<f64>, _> = parse("1 ~ 2");
         assert!(result.is_err(), "Rest should fail for f64 patterns");
-        
+
         let err = result.unwrap_err();
         assert!(
             matches!(err, ConvertError::RestNotSupported(_)),

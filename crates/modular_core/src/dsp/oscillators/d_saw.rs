@@ -68,7 +68,7 @@ impl DSawOscillator {
             // Take absolute value and clamp to Nyquist limit (0.5 = half the sample period)
             // to prevent artifacts from unrealistic phase increments
             phase_increment = phase_increment.abs().clamp(0.0, 0.5);
-            
+
             state.prev_phase = phase;
 
             // Shape parameter: 0 = saw, 2.5 = triangle, 5 = ramp (reversed saw)

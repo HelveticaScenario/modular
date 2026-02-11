@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::types::{ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor};
+use crate::types::{
+    ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor,
+};
 
 pub mod adsr;
 pub mod clock_divider;

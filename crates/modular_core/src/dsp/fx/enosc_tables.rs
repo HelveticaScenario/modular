@@ -103,30 +103,31 @@ pub static CHEBY_TABLES: LazyLock<[[f32; CHEBY_SIZE]; CHEBY_TABLES_COUNT]> = Laz
 /// Triangle segment lookup tables (8 shapes).
 /// Each shape has 9 control points defining a piecewise linear transfer function.
 /// Values are in 12ths of an octave, converted to normalized [-1, 1] range.
-pub static TRIANGLE_TABLES: LazyLock<[[f32; TRIANGLE_SIZE]; TRIANGLE_TABLES_COUNT]> = LazyLock::new(|| {
-    // Original values in 12ths of an octave (musical intervals)
-    let triangles_12ths: [[i32; TRIANGLE_SIZE]; TRIANGLE_TABLES_COUNT] = [
-        [-12, -9, -6, -3, 0, 3, 6, 9, 12],       // Linear (identity)
-        [-12, -12, -8, -4, 0, 4, 8, 12, 12],     // Compressed edges
-        [-12, -12, -12, -6, 0, 6, 12, 12, 12],   // More compression
-        [-12, -12, -12, -12, 0, 12, 12, 12, 12], // Square-ish
-        [-12, -6, -12, -6, 0, 6, 12, 6, 12],     // Rippled
-        [-12, -6, 0, -12, 0, 12, 0, 6, 12],      // More rippled
-        [-12, -6, 12, -12, 0, 12, -12, 6, 12],   // Extreme ripple
-        [12, -12, 12, -12, 0, 12, -12, 12, -12], // Alternating
-    ];
+pub static TRIANGLE_TABLES: LazyLock<[[f32; TRIANGLE_SIZE]; TRIANGLE_TABLES_COUNT]> =
+    LazyLock::new(|| {
+        // Original values in 12ths of an octave (musical intervals)
+        let triangles_12ths: [[i32; TRIANGLE_SIZE]; TRIANGLE_TABLES_COUNT] = [
+            [-12, -9, -6, -3, 0, 3, 6, 9, 12],       // Linear (identity)
+            [-12, -12, -8, -4, 0, 4, 8, 12, 12],     // Compressed edges
+            [-12, -12, -12, -6, 0, 6, 12, 12, 12],   // More compression
+            [-12, -12, -12, -12, 0, 12, 12, 12, 12], // Square-ish
+            [-12, -6, -12, -6, 0, 6, 12, 6, 12],     // Rippled
+            [-12, -6, 0, -12, 0, 12, 0, 6, 12],      // More rippled
+            [-12, -6, 12, -12, 0, 12, -12, 6, 12],   // Extreme ripple
+            [12, -12, 12, -12, 0, 12, -12, 12, -12], // Alternating
+        ];
 
-    let mut tables = [[0.0f32; TRIANGLE_SIZE]; TRIANGLE_TABLES_COUNT];
+        let mut tables = [[0.0f32; TRIANGLE_SIZE]; TRIANGLE_TABLES_COUNT];
 
-    for shape in 0..TRIANGLE_TABLES_COUNT {
-        for i in 0..TRIANGLE_SIZE {
-            // Convert from 12ths to normalized [-1, 1]
-            tables[shape][i] = triangles_12ths[shape][i] as f32 / 12.0;
+        for shape in 0..TRIANGLE_TABLES_COUNT {
+            for i in 0..TRIANGLE_SIZE {
+                // Convert from 12ths to normalized [-1, 1]
+                tables[shape][i] = triangles_12ths[shape][i] as f32 / 12.0;
+            }
         }
-    }
 
-    tables
-});
+        tables
+    });
 
 /// Interpolate a value from a lookup table.
 /// `phase` is in range [0, 1], table wraps at boundaries.

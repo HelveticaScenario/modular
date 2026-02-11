@@ -1,4 +1,6 @@
-use crate::types::{ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor};
+use crate::types::{
+    ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor,
+};
 use std::collections::HashMap;
 
 pub mod bandpass;

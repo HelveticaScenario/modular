@@ -4,14 +4,14 @@ use crate::types::{ChannelCountDeriver, ModuleSchema, ParamsValidator, Sampleabl
 
 pub mod consts;
 pub mod core;
-pub mod fx;
-pub mod oscillators;
 pub mod filters;
+pub mod fx;
+pub mod midi;
+pub mod oscillators;
 pub mod phase;
+pub mod seq;
 pub mod utilities;
 pub mod utils;
-pub mod seq;
-pub mod midi;
 
 // #[cfg(test)]
 mod test_overlap;

@@ -959,9 +959,7 @@ static CHANNEL_COUNT_CACHE: OnceLock<Mutex<LruCache<(String, serde_json::Value),
   OnceLock::new();
 
 fn get_channel_count_cache() -> &'static Mutex<LruCache<(String, serde_json::Value), usize>> {
-  CHANNEL_COUNT_CACHE.get_or_init(|| {
-    Mutex::new(LruCache::new(NonZeroUsize::new(500).unwrap()))
-  })
+  CHANNEL_COUNT_CACHE.get_or_init(|| Mutex::new(LruCache::new(NonZeroUsize::new(500).unwrap())))
 }
 
 /// Look up the channel count for a module type + params in the LRU cache,

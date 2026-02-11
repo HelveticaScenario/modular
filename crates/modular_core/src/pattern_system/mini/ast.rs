@@ -312,21 +312,24 @@ impl AtomValue {
 
         // Check for Hz suffix
         if (s.ends_with("hz") || s.ends_with("Hz"))
-            && let Ok(n) = s[..s.len() - 2].parse::<f64>() {
-                return AtomValue::Hz(n);
-            }
+            && let Ok(n) = s[..s.len() - 2].parse::<f64>()
+        {
+            return AtomValue::Hz(n);
+        }
 
         // Check for voltage suffix
         if (s.ends_with('v') || s.ends_with('V'))
-            && let Ok(n) = s[..s.len() - 1].parse::<f64>() {
-                return AtomValue::Volts(n);
-            }
+            && let Ok(n) = s[..s.len() - 1].parse::<f64>()
+        {
+            return AtomValue::Volts(n);
+        }
 
         // Check for MIDI prefix
         if (s.starts_with('m') || s.starts_with('M'))
-            && let Ok(n) = s[1..].parse::<i32>() {
-                return AtomValue::Midi(n);
-            }
+            && let Ok(n) = s[1..].parse::<i32>()
+        {
+            return AtomValue::Midi(n);
+        }
 
         // Try parsing as note
         if let Some(note) = parse_note(s) {
@@ -499,7 +502,7 @@ mod tests {
     #[test]
     fn test_collect_leaf_spans_includes_modifiers() {
         use super::super::parser::parse;
-        
+
         // Pattern: "c*[1 2]" - both 'c' and '1', '2' should have spans
         // "c*[1 2]" positions:
         //  c at 0-1
@@ -511,12 +514,29 @@ mod tests {
         //  ] at 6
         let ast = parse("c*[1 2]").unwrap();
         let spans = collect_leaf_spans(&ast);
-        
+
         // Should have 3 spans: c, 1, and 2
-        assert_eq!(spans.len(), 3, "Expected 3 spans (c, 1, 2), got {:?}", spans);
-        assert!(spans.contains(&(0, 1)), "Missing span for 'c' at 0-1: {:?}", spans);
-        assert!(spans.contains(&(3, 4)), "Missing span for '1' at 3-4: {:?}", spans);
-        assert!(spans.contains(&(5, 6)), "Missing span for '2' at 5-6: {:?}", spans);
+        assert_eq!(
+            spans.len(),
+            3,
+            "Expected 3 spans (c, 1, 2), got {:?}",
+            spans
+        );
+        assert!(
+            spans.contains(&(0, 1)),
+            "Missing span for 'c' at 0-1: {:?}",
+            spans
+        );
+        assert!(
+            spans.contains(&(3, 4)),
+            "Missing span for '1' at 3-4: {:?}",
+            spans
+        );
+        assert!(
+            spans.contains(&(5, 6)),
+            "Missing span for '2' at 5-6: {:?}",
+            spans
+        );
     }
 }
 
@@ -566,7 +586,12 @@ fn collect_leaf_spans_recursive(ast: &MiniAST, spans: &mut Vec<(usize, usize)>) 
         MiniAST::Degrade(pattern, _prob) => {
             collect_leaf_spans_recursive(pattern, spans);
         }
-        MiniAST::Euclidean { pattern, pulses, steps, rotation } => {
+        MiniAST::Euclidean {
+            pattern,
+            pulses,
+            steps,
+            rotation,
+        } => {
             collect_leaf_spans_recursive(pattern, spans);
             collect_u32_spans(pulses, spans);
             collect_u32_spans(steps, spans);
@@ -615,7 +640,12 @@ fn collect_f64_spans(ast: &MiniASTF64, spans: &mut Vec<(usize, usize)>) {
         MiniASTF64::Degrade(pattern, _prob) => {
             collect_f64_spans(pattern, spans);
         }
-        MiniASTF64::Euclidean { pattern, pulses, steps, rotation } => {
+        MiniASTF64::Euclidean {
+            pattern,
+            pulses,
+            steps,
+            rotation,
+        } => {
             collect_f64_spans(pattern, spans);
             collect_u32_spans(pulses, spans);
             collect_u32_spans(steps, spans);
@@ -664,7 +694,12 @@ fn collect_u32_spans(ast: &MiniASTU32, spans: &mut Vec<(usize, usize)>) {
         MiniASTU32::Degrade(pattern, _prob) => {
             collect_u32_spans(pattern, spans);
         }
-        MiniASTU32::Euclidean { pattern, pulses, steps, rotation } => {
+        MiniASTU32::Euclidean {
+            pattern,
+            pulses,
+            steps,
+            rotation,
+        } => {
             collect_u32_spans(pattern, spans);
             collect_u32_spans(pulses, spans);
             collect_u32_spans(steps, spans);
@@ -713,7 +748,12 @@ fn collect_i32_spans(ast: &MiniASTI32, spans: &mut Vec<(usize, usize)>) {
         MiniASTI32::Degrade(pattern, _prob) => {
             collect_i32_spans(pattern, spans);
         }
-        MiniASTI32::Euclidean { pattern, pulses, steps, rotation } => {
+        MiniASTI32::Euclidean {
+            pattern,
+            pulses,
+            steps,
+            rotation,
+        } => {
             collect_i32_spans(pattern, spans);
             collect_u32_spans(pulses, spans);
             collect_u32_spans(steps, spans);

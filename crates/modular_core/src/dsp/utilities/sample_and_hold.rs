@@ -26,11 +26,7 @@ struct SampleAndHoldChannelState {
     held_value: f32,
 }
 
-#[module(
-    name = "$sah",
-    description = "Sample and Hold",
-    args(input, trigger)
-)]
+#[module(name = "$sah", description = "Sample and Hold", args(input, trigger))]
 #[derive(Default)]
 pub struct SampleAndHold {
     outputs: SampleAndHoldOutputs,

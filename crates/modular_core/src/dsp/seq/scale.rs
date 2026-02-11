@@ -5,9 +5,7 @@
 //! - Re-exports from utilities/scale.rs for backwards compatibility
 
 // Re-export from utilities for backwards compatibility
-pub use crate::dsp::utilities::scale::{
-    FixedRoot, ScaleSnapper, validate_scale_type,
-};
+pub use crate::dsp::utilities::scale::{FixedRoot, ScaleSnapper, validate_scale_type};
 
 use crate::pattern_system::Pattern;
 
@@ -28,9 +26,7 @@ impl ScaleRoot {
     pub fn root_at(&self, time: f64) -> Option<FixedRoot> {
         match self {
             ScaleRoot::Fixed(root) => Some(root.clone()),
-            ScaleRoot::Pattern(pat) => {
-                pat.query_at_first(time).map(|hap| hap.value.clone())
-            }
+            ScaleRoot::Pattern(pat) => pat.query_at_first(time).map(|hap| hap.value.clone()),
         }
     }
 }

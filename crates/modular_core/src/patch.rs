@@ -169,7 +169,11 @@ mod tests {
             "dummy"
         }
 
-        fn try_update_params(&self, _params: serde_json::Value, _channel_count: usize) -> Result<()> {
+        fn try_update_params(
+            &self,
+            _params: serde_json::Value,
+            _channel_count: usize,
+        ) -> Result<()> {
             Ok(())
         }
 

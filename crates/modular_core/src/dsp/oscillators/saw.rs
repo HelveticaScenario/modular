@@ -30,7 +30,11 @@ struct ChannelState {
     shape: Clickless,
 }
 
-#[module(name = "$saw", description = "Sawtooth/Triangle/Ramp oscillator", args(freq))]
+#[module(
+    name = "$saw",
+    description = "Sawtooth/Triangle/Ramp oscillator",
+    args(freq)
+)]
 #[derive(Default)]
 pub struct SawOscillator {
     outputs: SawOscillatorOutputs,

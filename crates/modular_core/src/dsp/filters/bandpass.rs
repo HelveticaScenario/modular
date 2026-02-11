@@ -2,7 +2,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    PORT_MAX_CHANNELS, dsp::utils::{changed, voct_to_hz}, poly::{PolyOutput, PolySignal}
+    PORT_MAX_CHANNELS,
+    dsp::utils::{changed, voct_to_hz},
+    poly::{PolyOutput, PolySignal},
 };
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
@@ -98,9 +100,7 @@ impl BandpassFilter {
                 let c = self.params.center.get_value_or(i, 4.0);
                 let r = self.params.resonance.get_value_or(i, 1.0);
 
-                if changed(c, self.channels[i].last_center)
-                    || changed(r, self.channels[i].last_q)
-                {
+                if changed(c, self.channels[i].last_center) || changed(r, self.channels[i].last_q) {
                     self.channels[i].coeffs = compute_bpf_biquad(c, r, sample_rate);
                     self.channels[i].last_center = c;
                     self.channels[i].last_q = r;

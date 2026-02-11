@@ -558,9 +558,9 @@ mod tests {
     fn test_pitch_arbitrary_fractional_midi_f64() {
         // C4 = MIDI 60 = 0V
         let cases = [
-            (69.5, 0.75 + 0.5 / 12.0),     // A4 + 50 cents
-            (60.25, 0.25 / 12.0),          // C4 + 25 cents
-            (72.0, 1.0),                   // C5 = 1V
+            (69.5, 0.75 + 0.5 / 12.0), // A4 + 50 cents
+            (60.25, 0.25 / 12.0),      // C4 + 25 cents
+            (72.0, 1.0),               // C5 = 1V
         ];
         for (midi, expected_voct) in cases {
             let voct = midi_to_voct_f64(midi);
@@ -575,7 +575,7 @@ mod tests {
     fn test_pitch_arbitrary_fractional_midi_f32() {
         // C4 = MIDI 60 = 0V
         let cases = [
-            (69.5_f32, 0.75_f32 + 0.5_f32 / 12.0_f32),  // A4 + 50 cents
+            (69.5_f32, 0.75_f32 + 0.5_f32 / 12.0_f32), // A4 + 50 cents
             (60.25_f32, 0.25_f32 / 12.0_f32),          // C4 + 25 cents
             (72.0_f32, 1.0_f32),                       // C5 = 1V
         ];

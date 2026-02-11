@@ -270,7 +270,7 @@ fn eval_f64(ast: &MiniASTF64) -> f64 {
 ///
 /// This properly handles patterned values like `[2 3]` instead of
 /// reducing them to a single scalar.
-/// 
+///
 /// Now preserves source spans for modifier pattern highlighting.
 fn convert_f64_pattern(ast: &MiniASTF64) -> Pattern<Fraction> {
     match ast {
@@ -307,8 +307,10 @@ fn convert_f64_pattern(ast: &MiniASTF64) -> Pattern<Fraction> {
                 timecat(weighted)
             } else {
                 // Use fastcat for unweighted sequences
-                let pats: Vec<Pattern<Fraction>> =
-                    elements.iter().map(|(e, _)| convert_f64_pattern(e)).collect();
+                let pats: Vec<Pattern<Fraction>> = elements
+                    .iter()
+                    .map(|(e, _)| convert_f64_pattern(e))
+                    .collect();
                 fastcat(pats)
             }
         }
@@ -324,7 +326,8 @@ fn convert_f64_pattern(ast: &MiniASTF64) -> Pattern<Fraction> {
                     other => vec![other],
                 })
                 .collect();
-            let pats: Vec<Pattern<Fraction>> = expanded.iter().map(|e| convert_f64_pattern(e)).collect();
+            let pats: Vec<Pattern<Fraction>> =
+                expanded.iter().map(|e| convert_f64_pattern(e)).collect();
             slowcat(pats)
         }
 
@@ -377,17 +380,14 @@ fn convert_u32_pattern(ast: &MiniASTU32) -> Pattern<u32> {
     use crate::pattern_system::constructors::pure;
 
     match ast {
-        MiniASTU32::Pure(Located { node, span }) => {
-            pure_with_span(*node, span.clone())
-        }
+        MiniASTU32::Pure(Located { node, span }) => pure_with_span(*node, span.clone()),
 
         MiniASTU32::Rest(span) => pure_with_span(0, span.clone()),
 
-        MiniASTU32::List(Located { node, .. }) => {
-            node.first()
-                .map(convert_u32_pattern)
-                .unwrap_or_else(|| pure(0))
-        }
+        MiniASTU32::List(Located { node, .. }) => node
+            .first()
+            .map(convert_u32_pattern)
+            .unwrap_or_else(|| pure(0)),
 
         MiniASTU32::Sequence(elements) | MiniASTU32::FastCat(elements) => {
             if elements.is_empty() {
@@ -406,8 +406,10 @@ fn convert_u32_pattern(ast: &MiniASTU32) -> Pattern<u32> {
                     .collect();
                 timecat(weighted)
             } else {
-                let pats: Vec<Pattern<u32>> =
-                    elements.iter().map(|(e, _)| convert_u32_pattern(e)).collect();
+                let pats: Vec<Pattern<u32>> = elements
+                    .iter()
+                    .map(|(e, _)| convert_u32_pattern(e))
+                    .collect();
                 fastcat(pats)
             }
         }
@@ -460,9 +462,7 @@ fn convert_u32_pattern(ast: &MiniASTU32) -> Pattern<u32> {
             convert_u32_pattern(pattern)
         }
 
-        MiniASTU32::Euclidean { pattern, .. } => {
-            convert_u32_pattern(pattern)
-        }
+        MiniASTU32::Euclidean { pattern, .. } => convert_u32_pattern(pattern),
     }
 }
 
@@ -473,17 +473,14 @@ fn convert_i32_pattern(ast: &MiniASTI32) -> Pattern<i32> {
     use crate::pattern_system::constructors::pure;
 
     match ast {
-        MiniASTI32::Pure(Located { node, span }) => {
-            pure_with_span(*node, span.clone())
-        }
+        MiniASTI32::Pure(Located { node, span }) => pure_with_span(*node, span.clone()),
 
         MiniASTI32::Rest(span) => pure_with_span(0, span.clone()),
 
-        MiniASTI32::List(Located { node, .. }) => {
-            node.first()
-                .map(convert_i32_pattern)
-                .unwrap_or_else(|| pure(0))
-        }
+        MiniASTI32::List(Located { node, .. }) => node
+            .first()
+            .map(convert_i32_pattern)
+            .unwrap_or_else(|| pure(0)),
 
         MiniASTI32::Sequence(elements) | MiniASTI32::FastCat(elements) => {
             if elements.is_empty() {
@@ -502,8 +499,10 @@ fn convert_i32_pattern(ast: &MiniASTI32) -> Pattern<i32> {
                     .collect();
                 timecat(weighted)
             } else {
-                let pats: Vec<Pattern<i32>> =
-                    elements.iter().map(|(e, _)| convert_i32_pattern(e)).collect();
+                let pats: Vec<Pattern<i32>> = elements
+                    .iter()
+                    .map(|(e, _)| convert_i32_pattern(e))
+                    .collect();
                 fastcat(pats)
             }
         }
@@ -551,13 +550,9 @@ fn convert_i32_pattern(ast: &MiniASTI32) -> Pattern<i32> {
             fastcat(pats)
         }
 
-        MiniASTI32::Degrade(pattern, _prob) => {
-            convert_i32_pattern(pattern)
-        }
+        MiniASTI32::Degrade(pattern, _prob) => convert_i32_pattern(pattern),
 
-        MiniASTI32::Euclidean { pattern, .. } => {
-            convert_i32_pattern(pattern)
-        }
+        MiniASTI32::Euclidean { pattern, .. } => convert_i32_pattern(pattern),
     }
 }
 
@@ -567,9 +562,13 @@ fn eval_u32(ast: &MiniASTU32) -> u32 {
         MiniASTU32::Pure(Located { node, .. }) => *node,
         MiniASTU32::Rest(_) => 0, // Rest evaluates to 0
         MiniASTU32::List(Located { node, .. }) => node.first().map(eval_u32).unwrap_or(0),
-        MiniASTU32::Sequence(elements) | MiniASTU32::FastCat(elements) => elements.first().map(|(e, _)| eval_u32(e)).unwrap_or(0),
+        MiniASTU32::Sequence(elements) | MiniASTU32::FastCat(elements) => {
+            elements.first().map(|(e, _)| eval_u32(e)).unwrap_or(0)
+        }
         MiniASTU32::SlowCat(elements) => elements.first().map(eval_u32).unwrap_or(0),
-        MiniASTU32::RandomChoice(elements) | MiniASTU32::Stack(elements) => elements.first().map(eval_u32).unwrap_or(0),
+        MiniASTU32::RandomChoice(elements) | MiniASTU32::Stack(elements) => {
+            elements.first().map(eval_u32).unwrap_or(0)
+        }
         MiniASTU32::Fast(pattern, _) => eval_u32(pattern),
         MiniASTU32::Slow(pattern, _) => eval_u32(pattern),
         MiniASTU32::Replicate(pattern, _count) => eval_u32(pattern),
@@ -584,9 +583,13 @@ fn eval_i32(ast: &MiniASTI32) -> i32 {
         MiniASTI32::Pure(Located { node, .. }) => *node,
         MiniASTI32::Rest(_) => 0, // Rest evaluates to 0
         MiniASTI32::List(Located { node, .. }) => node.first().map(eval_i32).unwrap_or(0),
-        MiniASTI32::Sequence(elements) | MiniASTI32::FastCat(elements) => elements.first().map(|(e, _)| eval_i32(e)).unwrap_or(0),
+        MiniASTI32::Sequence(elements) | MiniASTI32::FastCat(elements) => {
+            elements.first().map(|(e, _)| eval_i32(e)).unwrap_or(0)
+        }
         MiniASTI32::SlowCat(elements) => elements.first().map(eval_i32).unwrap_or(0),
-        MiniASTI32::RandomChoice(elements) | MiniASTI32::Stack(elements) => elements.first().map(eval_i32).unwrap_or(0),
+        MiniASTI32::RandomChoice(elements) | MiniASTI32::Stack(elements) => {
+            elements.first().map(eval_i32).unwrap_or(0)
+        }
         MiniASTI32::Fast(pattern, _) => eval_i32(pattern),
         MiniASTI32::Slow(pattern, _) => eval_i32(pattern),
         MiniASTI32::Replicate(pattern, _count) => eval_i32(pattern),
@@ -702,9 +705,7 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
 
             if has_weights {
                 // timecat expects (Fraction, Pattern) pairs
-                Ok(timecat(
-                    weights.into_iter().zip(patterns).collect(),
-                ))
+                Ok(timecat(weights.into_iter().zip(patterns).collect()))
             } else {
                 Ok(fastcat(patterns))
             }
@@ -941,7 +942,7 @@ mod tests {
         // Regression test: `<[c e]>` should play both c and e every cycle
         // (not alternate between c and e like `<c e>` would)
         // This tests that [c e] grouping is preserved when nested inside <...>
-        
+
         // Pattern: <[c e]> should be slowcat of one fastcat element
         // c=60, e=64
         let ast = parse("<[c e]>").unwrap();
@@ -964,11 +965,11 @@ mod tests {
         // For comparison, <c e> should alternate (1 event per cycle)
         let ast2 = parse("<c e>").unwrap();
         let pat2: Pattern<f64> = convert(&ast2).unwrap();
-        
+
         let haps2_0 = pat2.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
         assert_eq!(haps2_0.len(), 1, "<c e> should have 1 event per cycle");
         assert_eq!(haps2_0[0].value, 60.0, "<c e> cycle 0 should be c");
-        
+
         let haps2_1 = pat2.query_arc(Fraction::from_integer(1), Fraction::from_integer(2));
         assert_eq!(haps2_1.len(), 1, "<c e> should have 1 event per cycle");
         assert_eq!(haps2_1[0].value, 64.0, "<c e> cycle 1 should be e");
@@ -1226,18 +1227,26 @@ mod tests {
         //  space at 4
         //  2 at 5-6
         //  ] at 6
-        
+
         // Each hap should have:
         // - source_span for the main value ('c') at position 0-1
         // - modifier_spans containing the factor value ('1' at 3-4 or '2' at 5-6)
         for hap in &haps {
-            let source = hap.context.source_span.as_ref()
+            let source = hap
+                .context
+                .source_span
+                .as_ref()
                 .expect("Main value should have source span");
-            assert_eq!((source.start, source.end), (0, 1), 
-                "source_span should be 'c' at position 0-1");
-            
-            assert!(!hap.context.modifier_spans.is_empty(),
-                "Fast factor should be tracked in modifier_spans");
+            assert_eq!(
+                (source.start, source.end),
+                (0, 1),
+                "source_span should be 'c' at position 0-1"
+            );
+
+            assert!(
+                !hap.context.modifier_spans.is_empty(),
+                "Fast factor should be tracked in modifier_spans"
+            );
         }
 
         // Check that the modifier spans contain the factor values
@@ -1246,15 +1255,21 @@ mod tests {
             .flat_map(|h| h.context.modifier_spans.iter())
             .map(|s| (s.start, s.end))
             .collect();
-        
+
         // Should contain spans for both '1' and '2'
         assert!(
-            all_modifier_spans.iter().any(|&(start, end)| start == 3 && end == 4),
-            "Should have modifier span for '1' at position 3-4: {:?}", all_modifier_spans
+            all_modifier_spans
+                .iter()
+                .any(|&(start, end)| start == 3 && end == 4),
+            "Should have modifier span for '1' at position 3-4: {:?}",
+            all_modifier_spans
         );
         assert!(
-            all_modifier_spans.iter().any(|&(start, end)| start == 5 && end == 6),
-            "Should have modifier span for '2' at position 5-6: {:?}", all_modifier_spans
+            all_modifier_spans
+                .iter()
+                .any(|&(start, end)| start == 5 && end == 6),
+            "Should have modifier span for '2' at position 5-6: {:?}",
+            all_modifier_spans
         );
     }
 
@@ -1356,10 +1371,7 @@ mod tests {
     fn test_eval_f64_sequence() {
         let ast = MiniASTF64::Sequence(vec![
             (MiniASTF64::Pure(Located::new(3.0, 0, 1)), None),
-            (
-                MiniASTF64::Pure(Located::new(4.0, 2, 3)),
-                Some(2.0),
-            ),
+            (MiniASTF64::Pure(Located::new(4.0, 2, 3)), Some(2.0)),
         ]);
         assert!((eval_f64(&ast) - 3.0).abs() < 0.001); // Returns first element
     }
@@ -1402,10 +1414,7 @@ mod tests {
 
     #[test]
     fn test_eval_f64_replicate() {
-        let ast = MiniASTF64::Replicate(
-            Box::new(MiniASTF64::Pure(Located::new(11.0, 0, 2))),
-            3,
-        );
+        let ast = MiniASTF64::Replicate(Box::new(MiniASTF64::Pure(Located::new(11.0, 0, 2))), 3);
         assert!((eval_f64(&ast) - 11.0).abs() < 0.001);
     }
 
@@ -1561,10 +1570,7 @@ mod tests {
     fn test_eval_u32_sequence() {
         let ast = MiniASTU32::Sequence(vec![
             (MiniASTU32::Pure(Located::new(3, 0, 1)), None),
-            (
-                MiniASTU32::Pure(Located::new(4, 2, 3)),
-                Some(2.0),
-            ),
+            (MiniASTU32::Pure(Located::new(4, 2, 3)), Some(2.0)),
         ]);
         assert_eq!(eval_u32(&ast), 3);
     }
@@ -1607,10 +1613,7 @@ mod tests {
 
     #[test]
     fn test_eval_u32_replicate() {
-        let ast = MiniASTU32::Replicate(
-            Box::new(MiniASTU32::Pure(Located::new(11, 0, 2))),
-            3,
-        );
+        let ast = MiniASTU32::Replicate(Box::new(MiniASTU32::Pure(Located::new(11, 0, 2))), 3);
         assert_eq!(eval_u32(&ast), 11);
     }
 
@@ -1859,18 +1862,18 @@ mod tests {
     fn test_euclidean_with_patterned_pulses() {
         // c([2 3], 8) should alternate between 2-in-8 and 3-in-8 euclidean patterns
         use crate::dsp::seq::SeqValue;
-        
+
         let ast = parse("c([2 3], 8)").unwrap();
         let pat: Pattern<SeqValue> = convert(&ast).unwrap();
 
         // Query cycle 0 - should use first pulse value (2)
         let haps0 = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
         let hits0 = haps0.iter().filter(|h| !h.value.is_rest()).count();
-        
+
         // Query cycle 1 - should use second pulse value (3)
         let haps1 = pat.query_arc(Fraction::from_integer(1), Fraction::from_integer(2));
         let hits1 = haps1.iter().filter(|h| !h.value.is_rest()).count();
-        
+
         // The inner_join causes the pulse pattern to be sampled per-step,
         // alternating between 2-in-8 and 3-in-8 for alternating steps
         // This test just verifies we get different hit counts
@@ -1886,20 +1889,20 @@ mod tests {
     fn test_euclidean_with_patterned_steps() {
         // c(3, [4 8]) should alternate between 3-in-4 and 3-in-8 patterns
         use crate::dsp::seq::SeqValue;
-        
+
         let ast = parse("c(3, <4 8>)").unwrap();
         let pat: Pattern<SeqValue> = convert(&ast).unwrap();
 
         // Query cycle 0 - should use steps=4
         let haps0 = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
-        
+
         // Query cycle 1 - should use steps=8
         let haps1 = pat.query_arc(Fraction::from_integer(1), Fraction::from_integer(2));
-        
+
         // With slowcat <4 8>, cycle 0 uses 4 steps, cycle 1 uses 8 steps
         assert_eq!(haps0.len(), 4, "Cycle 0: 3-in-4 should have 4 events");
         assert_eq!(haps1.len(), 8, "Cycle 1: 3-in-8 should have 8 events");
-        
+
         // Both should have 3 hits
         let hits0 = haps0.iter().filter(|h| !h.value.is_rest()).count();
         let hits1 = haps1.iter().filter(|h| !h.value.is_rest()).count();

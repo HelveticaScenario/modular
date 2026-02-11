@@ -18,7 +18,6 @@ enum NoiseKind {
     Brown,
 }
 
-
 impl crate::types::Connect for NoiseKind {
     fn connect(&mut self, _patch: &crate::Patch) {}
 }
@@ -68,7 +67,11 @@ impl LcgRng {
     }
 }
 
-#[module(name = "$noise", description = "Noise generator with selectable color", args(color))]
+#[module(
+    name = "$noise",
+    description = "Noise generator with selectable color",
+    args(color)
+)]
 pub struct Noise {
     outputs: NoiseOutputs,
     params: NoiseParams,

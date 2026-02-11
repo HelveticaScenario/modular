@@ -48,17 +48,20 @@ impl Controls {
 
     /// Set a float control value.
     pub fn set_float(&mut self, key: &str, value: f64) {
-        self.values.insert(key.to_string(), ControlValue::Float(value));
+        self.values
+            .insert(key.to_string(), ControlValue::Float(value));
     }
 
     /// Set an integer control value.
     pub fn set_int(&mut self, key: &str, value: i64) {
-        self.values.insert(key.to_string(), ControlValue::Int(value));
+        self.values
+            .insert(key.to_string(), ControlValue::Int(value));
     }
 
     /// Set a string control value.
     pub fn set_string(&mut self, key: &str, value: String) {
-        self.values.insert(key.to_string(), ControlValue::String(value));
+        self.values
+            .insert(key.to_string(), ControlValue::String(value));
     }
 
     /// Get a float control value.
