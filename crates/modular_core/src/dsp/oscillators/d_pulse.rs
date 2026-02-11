@@ -31,7 +31,7 @@ struct ChannelState {
 }
 
 #[module(
-    name = "dPulse",
+    name = "$dPulse",
     description = "A phase-driven pulse/square oscillator with PWM",
     args(phase)
 )]

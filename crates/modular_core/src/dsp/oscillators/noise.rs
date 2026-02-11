@@ -68,7 +68,7 @@ impl LcgRng {
     }
 }
 
-#[module(name = "noise", description = "Noise generator with selectable color", args(color))]
+#[module(name = "$noise", description = "Noise generator with selectable color", args(color))]
 pub struct Noise {
     outputs: NoiseOutputs,
     params: NoiseParams,

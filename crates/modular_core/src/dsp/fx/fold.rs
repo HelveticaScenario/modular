@@ -40,7 +40,7 @@ struct ChannelState {
 /// creating harmonic-rich tones. Uses a 6x overfolding lookup table
 /// for smooth, musical results.
 #[module(
-    name = "fold",
+    name = "$fold",
     description = "Wavefolder effect adapted from 4ms Ensemble Oscillator",
     args(input, amount?)
 )]

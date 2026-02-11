@@ -1100,7 +1100,8 @@ function getOutputType(output: { polyphonic?: boolean; minValue?: number; maxVal
 function getMultiOutputInterfaceName(moduleSchema: ModuleSchema): string {
     const parts = moduleSchema.name.split('.').filter((p: string) => p.length > 0);
     const baseName = parts[parts.length - 1];
-    return `${capitalizeName(baseName)}Outputs`;
+    const baseNameWithoutPrefix = baseName.startsWith('$') ? baseName.slice(1) : baseName;
+    return `${capitalizeName(baseNameWithoutPrefix)}Outputs`;
 }
 
 /**
@@ -1164,10 +1165,8 @@ function renderFactoryFunction(
     moduleSchema: ModuleSchema,
     _interfaceName: string,
     indent: string,
-    prefixFunction: boolean = false,
 ): string[] {
-    const baseFunctionName = moduleSchema.name.split('.').pop()!;
-    const functionName = prefixFunction ? `$${baseFunctionName}` : baseFunctionName;
+    const functionName = moduleSchema.name.split('.').pop()!;
 
     let args: string[] = [];
     // @ts-ignore
@@ -1280,7 +1279,6 @@ function renderInterface(
     baseName: string,
     classSpec: ClassSpec,
     indent: string,
-    prefixFunction: boolean = false,
 ): string[] {
     const lines: string[] = [];
 
@@ -1293,12 +1291,12 @@ function renderInterface(
 
     // Render the factory function
     lines.push(
-        ...renderFactoryFunction(classSpec.moduleSchema, '', indent, prefixFunction),
+        ...renderFactoryFunction(classSpec.moduleSchema, '', indent),
     );
     return lines;
 }
 
-function renderTree(node: NamespaceNode, indentLevel: number = 0, prefixTopLevel: boolean = false): string[] {
+function renderTree(node: NamespaceNode, indentLevel: number = 0): string[] {
     const indent = '  '.repeat(indentLevel);
     const lines: string[] = [];
 
@@ -1306,17 +1304,15 @@ function renderTree(node: NamespaceNode, indentLevel: number = 0, prefixTopLevel
         if (item.kind === 'class') {
             const classSpec = node.classes.get(item.name);
             if (!classSpec) continue;
-            const shouldPrefix = prefixTopLevel && indentLevel === 0;
-            lines.push(...renderInterface(item.name, classSpec, indent, shouldPrefix));
+            lines.push(...renderInterface(item.name, classSpec, indent));
             lines.push('');
             continue;
         }
 
         const child = node.namespaces.get(item.name);
         if (!child) continue;
-        const namespaceName = (prefixTopLevel && indentLevel === 0) ? `$${item.name}` : item.name;
-        lines.push(`${indent}export namespace ${namespaceName} {`);
-        lines.push(...renderTree(child, indentLevel + 1, false));
+        lines.push(`${indent}export namespace ${item.name} {`);
+        lines.push(...renderTree(child, indentLevel + 1));
         lines.push(`${indent}}`);
         lines.push('');
     }
@@ -1333,9 +1329,9 @@ export function generateDSL(schemas: ModuleSchema[]): string {
         throw new Error('generateDSL expects an array of ModuleSchema');
     }
     const tree = buildTreeFromSchemas(schemas);
-    const lines = renderTree(tree, 0, true); // Enable top-level prefixing
+    const lines = renderTree(tree, 0);
 
-    const clockSchema = schemas.find((s) => s.name === 'clock');
+    const clockSchema = schemas.find((s) => s.name === '$clock');
     if (clockSchema) {
         lines.push('');
         lines.push('/** Default clock module running at 120 BPM. */');
@@ -1345,7 +1341,7 @@ export function generateDSL(schemas: ModuleSchema[]): string {
         );
     }
 
-    const signalSchema = schemas.find((s) => s.name === 'signal');
+    const signalSchema = schemas.find((s) => s.name === '$signal');
     if (signalSchema) {
         lines.push('');
         lines.push('/** Input signals. */');

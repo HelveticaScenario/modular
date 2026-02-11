@@ -1,5 +1,5 @@
 /**
- * Definition of a slider control created by the `slider()` DSL function.
+ * Definition of a slider control created by the `$slider()` DSL function.
  */
 export interface SliderDefinition {
     /** Backing signal module ID */

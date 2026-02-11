@@ -30,7 +30,7 @@ export interface DSLExecutionResult {
     sourceLocationMap: Map<string, SourceLocation>;
     /** Interpolation resolution map for template literal const redirects */
     interpolationResolutions: InterpolationResolutionMap;
-    /** Slider definitions created by slider() DSL function calls */
+    /** Slider definitions created by $slider() DSL function calls */
     sliders: SliderDefinition[];
 }
 
@@ -45,14 +45,14 @@ export function executePatchScript(
     // console.log('Executing DSL script with schemas:', schemas);
     const context = new DSLContext(schemas);
 
-    const clock = context.namespaceTree['clock'];
+    const clock = context.namespaceTree['$clock'];
     if (typeof clock !== 'function') {
         throw new Error(
             'DSL execution error: "clock" module not found in schemas',
         );
     }
 
-    const signal = context.namespaceTree['signal'];
+    const signal = context.namespaceTree['$signal'];
     if (typeof signal !== 'function') {
         throw new Error(
             'DSL execution error: "signal" module not found in schemas',
@@ -100,7 +100,7 @@ export function executePatchScript(
         return new DeferredCollection(...items);
     };
 
-    // Slider collector — populated by slider() calls during execution
+    // Slider collector — populated by $slider() calls during execution
     const sliders: SliderDefinition[] = [];
 
     /**
@@ -113,19 +113,19 @@ export function executePatchScript(
      */
     const slider = (label: string, value: number, min: number, max: number) => {
         if (typeof label !== 'string') {
-            throw new Error('slider() label must be a string literal');
+            throw new Error('$slider() label must be a string literal');
         }
         if (typeof value !== 'number' || !isFinite(value)) {
-            throw new Error('slider() value must be a finite number literal');
+            throw new Error('$slider() value must be a finite number literal');
         }
         if (typeof min !== 'number' || !isFinite(min)) {
-            throw new Error('slider() min must be a finite number');
+            throw new Error('$slider() min must be a finite number');
         }
         if (typeof max !== 'number' || !isFinite(max)) {
-            throw new Error('slider() max must be a finite number');
+            throw new Error('$slider() max must be a finite number');
         }
         if (min >= max) {
-            throw new Error(`slider() min (${min}) must be less than max (${max})`);
+            throw new Error(`$slider() min (${min}) must be less than max (${max})`);
         }
 
         const moduleId = `__slider_${label.replace(/[^a-zA-Z0-9_]/g, '_')}`;
@@ -138,16 +138,10 @@ export function executePatchScript(
         return result;
     };
 
-    // Prefix all top-level entries from the namespace tree with $
-    const prefixedNamespaceTree: Record<string, any> = {};
-    for (const [key, value] of Object.entries(context.namespaceTree)) {
-        prefixedNamespaceTree[`$${key}`] = value;
-    }
-
     // Create the execution environment with all DSL functions
     const dslGlobals = {
         // Prefixed namespace tree (modules and namespaces)
-        ...prefixedNamespaceTree,
+        ...context.namespaceTree,
         // Helper functions with $ prefix
         $hz: hz,
         $note: note,
