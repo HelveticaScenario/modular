@@ -121,6 +121,9 @@ export function executePatchScript(
         if (typeof label !== 'string') {
             throw new Error('$slider() label must be a string literal');
         }
+        if (sliders.find((s) => s.label === label)) {
+            throw new Error(`$slider() label "${label}" must be unique`);
+        }
         if (typeof value !== 'number' || !isFinite(value)) {
             throw new Error('$slider() value must be a finite number literal');
         }
