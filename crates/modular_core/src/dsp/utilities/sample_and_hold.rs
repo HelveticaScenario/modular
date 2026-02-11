@@ -27,7 +27,7 @@ struct SampleAndHoldChannelState {
 }
 
 #[module(
-    name = "sah",
+    name = "$sah",
     description = "Sample and Hold",
     args(input, trigger)
 )]
@@ -82,7 +82,7 @@ struct TrackAndHoldChannelState {
     gate: SchmittTrigger,
 }
 
-#[module(name = "tah", description = "Track and Hold", args(input, gate))]
+#[module(name = "$tah", description = "Track and Hold", args(input, gate))]
 #[derive(Default)]
 pub struct TrackAndHold {
     outputs: TrackAndHoldOutputs,

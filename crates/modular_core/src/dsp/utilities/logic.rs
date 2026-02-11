@@ -30,7 +30,7 @@ struct EdgeChannelState {
 }
 
 #[module(
-    name = "rising",
+    name = "$rising",
     description = "Rising Edge Detector",
     args(input)
 )]
@@ -59,7 +59,7 @@ impl RisingEdgeDetector {
 
 message_handlers!(impl RisingEdgeDetector {});
 
-#[module(name = "falling", description = "Falling Edge Detector", args(input))]
+#[module(name = "$falling", description = "Falling Edge Detector", args(input))]
 #[derive(Default)]
 pub struct FallingEdgeDetector {
     outputs: EdgeDetectorOutputs,

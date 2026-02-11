@@ -30,7 +30,7 @@ export interface DSLExecutionResult {
     sourceLocationMap: Map<string, SourceLocation>;
     /** Interpolation resolution map for template literal const redirects */
     interpolationResolutions: InterpolationResolutionMap;
-    /** Slider definitions created by slider() DSL function calls */
+    /** Slider definitions created by $slider() DSL function calls */
     sliders: SliderDefinition[];
 }
 
@@ -45,14 +45,14 @@ export function executePatchScript(
     // console.log('Executing DSL script with schemas:', schemas);
     const context = new DSLContext(schemas);
 
-    const clock = context.namespaceTree['clock'];
+    const clock = context.namespaceTree['$clock'];
     if (typeof clock !== 'function') {
         throw new Error(
             'DSL execution error: "clock" module not found in schemas',
         );
     }
 
-    const signal = context.namespaceTree['signal'];
+    const signal = context.namespaceTree['$signal'];
     if (typeof signal !== 'function') {
         throw new Error(
             'DSL execution error: "signal" module not found in schemas',
@@ -91,7 +91,9 @@ export function executePatchScript(
      */
     const deferred = (channels: number = 1): DeferredCollection => {
         if (channels < 1 || channels > 16) {
-            throw new Error(`deferred() channels must be between 1 and 16, got ${channels}`);
+            throw new Error(
+                `deferred() channels must be between 1 and 16, got ${channels}`,
+            );
         }
         const items: DeferredModuleOutput[] = [];
         for (let i = 0; i < channels; i++) {
@@ -100,7 +102,7 @@ export function executePatchScript(
         return new DeferredCollection(...items);
     };
 
-    // Slider collector — populated by slider() calls during execution
+    // Slider collector — populated by $slider() calls during execution
     const sliders: SliderDefinition[] = [];
 
     /**
@@ -113,19 +115,21 @@ export function executePatchScript(
      */
     const slider = (label: string, value: number, min: number, max: number) => {
         if (typeof label !== 'string') {
-            throw new Error('slider() label must be a string literal');
+            throw new Error('$slider() label must be a string literal');
         }
         if (typeof value !== 'number' || !isFinite(value)) {
-            throw new Error('slider() value must be a finite number literal');
+            throw new Error('$slider() value must be a finite number literal');
         }
         if (typeof min !== 'number' || !isFinite(min)) {
-            throw new Error('slider() min must be a finite number');
+            throw new Error('$slider() min must be a finite number');
         }
         if (typeof max !== 'number' || !isFinite(max)) {
-            throw new Error('slider() max must be a finite number');
+            throw new Error('$slider() max must be a finite number');
         }
         if (min >= max) {
-            throw new Error(`slider() min (${min}) must be less than max (${max})`);
+            throw new Error(
+                `$slider() min (${min}) must be less than max (${max})`,
+            );
         }
 
         const moduleId = `__slider_${label.replace(/[^a-zA-Z0-9_]/g, '_')}`;
@@ -138,28 +142,27 @@ export function executePatchScript(
         return result;
     };
 
-    console.log(context.namespaceTree)
-
     // Create the execution environment with all DSL functions
     const dslGlobals = {
-        $: { ...context.namespaceTree },
-        // Helper functions
-        hz,
-        note,
-        bpm,
+        // Prefixed namespace tree (modules and namespaces)
+        ...context.namespaceTree,
+        // Helper functions with $ prefix
+        $hz: hz,
+        $note: note,
+        $bpm: bpm,
         // Collection helpers
         $c,
         $r,
         // Deferred signal helper
-        deferred,
+        $deferred: deferred,
         // Slider control
-        slider,
+        $slider: slider,
         // Global settings
-        setTempo,
-        setOutputGain,
+        $setTempo: setTempo,
+        $setOutputGain: setOutputGain,
         // Built-in modules
-        rootClock,
-        input: rootInput,
+        $rootClock: rootClock,
+        $input: rootInput,
     };
 
     // console.log(dslGlobals);
@@ -177,7 +180,13 @@ export function executePatchScript(
 
     // Analyze source code to extract argument spans before execution
     // The registry maps call-site keys (line:column) to argument span info
-    const { registry: spanRegistry, interpolationResolutions } = analyzeSourceSpans(source, schemas, wrapperLineCount, firstLineColumnOffset);
+    const { registry: spanRegistry, interpolationResolutions } =
+        analyzeSourceSpans(
+            source,
+            schemas,
+            wrapperLineCount,
+            firstLineColumnOffset,
+        );
     setActiveSpanRegistry(spanRegistry);
     setActiveInterpolationResolutions(interpolationResolutions);
 

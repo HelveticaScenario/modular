@@ -226,7 +226,7 @@ struct SeqOutputs {
 }
 
 #[module(
-    name = "cycle",
+    name = "$cycle",
     description = "A strudel/tidalcycles style sequencer",
     channels_derive = seq_derive_channel_count,
     args(pattern),

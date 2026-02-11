@@ -30,7 +30,7 @@ struct ChannelState {
 }
 
 #[module(
-    name = "dSaw",
+    name = "$dSaw",
     description = "A phase-driven sawtooth/triangle/ramp oscillator",
     args(phase)
 )]

@@ -273,7 +273,7 @@ struct ModuleAttr {
 /// Idiomatic key=value syntax:
 /// ```text
 /// #[module(
-///     name = "sine",
+///     name = "$sine",
 ///     description = "A sine wave oscillator",
 ///     channels = 2,
 ///     args(freq, engine?),
@@ -540,7 +540,7 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
 ///
 /// ```rust,ignore
 /// #[module(
-///     name = "sine",
+///     name = "$sine",
 ///     description = "A sine wave oscillator",
 ///     // Channel count configuration (at most one):
 ///     // channels = 2,                         // hardcoded

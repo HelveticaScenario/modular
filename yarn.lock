@@ -1656,6 +1656,8 @@ __metadata:
     events: "npm:^3.3.0"
     fork-ts-checker-webpack-plugin: "npm:^9.1.0"
     globals: "npm:^16.5.0"
+    husky: "npm:^9.1.7"
+    lint-staged: "npm:^16.2.7"
     monaco-editor: "npm:^0.55.1"
     monaco-editor-webpack-plugin: "npm:^7.1.1"
     node-loader: "npm:^2.1.0"
@@ -8330,7 +8332,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"lint-staged@npm:^16.1.6":
+"lint-staged@npm:^16.1.6, lint-staged@npm:^16.2.7":
   version: 16.2.7
   resolution: "lint-staged@npm:16.2.7"
   dependencies:

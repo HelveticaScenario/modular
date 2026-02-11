@@ -43,7 +43,7 @@ struct ChannelState {
 /// At low amounts, the phase passes through unchanged.
 /// At high amounts, creates narrow compressed phase patterns.
 #[module(
-    name = "pulsar",
+    name = "$pulsar",
     description = "Pulsar synthesis phase-distortion adapted from 4ms Ensemble Oscillator",
     args(input, amount?)
 )]

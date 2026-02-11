@@ -22,7 +22,7 @@ struct ScaleAndShiftOutputs {
     sample: PolyOutput,
 }
 
-#[module(name = "scaleAndShift", description = "attenuate, invert, offset", args(input, scale?, shift?))]
+#[module(name = "$scaleAndShift", description = "attenuate, invert, offset", args(input, scale?, shift?))]
 #[derive(Default)]
 pub struct ScaleAndShift {
     outputs: ScaleAndShiftOutputs,

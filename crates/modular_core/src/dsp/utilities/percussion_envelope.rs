@@ -28,7 +28,7 @@ struct ChannelState {
 }
 
 #[module(
-    name = "perc",
+    name = "$perc",
     description = "Percussion envelope with exponential decay",
     args(trigger)
 )]

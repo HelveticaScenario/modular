@@ -294,18 +294,18 @@ interface ModuleOutput {
   /**
    * Scale the signal by a factor. Creates a util.scaleAndShift module internally.
    * @param factor - Scale factor as {@link Poly<Signal>}
-   * @returns The scaled {@link ModuleOutput} for chaining
+   * @returns The scaled {@link Collection} for chaining
    * @example osc.gain(0.5)  // Half amplitude
    */
-  gain(factor: Poly<Signal>): ModuleOutput;
+  gain(factor: Poly<Signal>): Collection;
   
   /**
    * Add a DC offset to the signal. Creates a util.scaleAndShift module internally.
    * @param offset - Offset value as {@link Poly<Signal>}
-   * @returns The shifted {@link ModuleOutput} for chaining
+   * @returns The shifted {@link Collection} for chaining
    * @example lfo.shift(2.5)  // Shift to 0-5V range
    */
-  shift(offset: Poly<Signal>): ModuleOutput;
+  shift(offset: Poly<Signal>): Collection;
   
   /**
    * Add scope visualization for this output.
@@ -510,29 +510,29 @@ interface CollectionWithRange extends Iterable<ModuleOutputWithRange> {
  * Convert a frequency in Hertz to a voltage value (1V/octave).
  * @param frequency - Frequency in Hz
  * @returns Voltage value for use as a {@link Signal}
- * @example hz(440)  // A4
- * @example hz(261.63)  // ~C4
+ * @example $hz(440)  // A4
+ * @example $hz(261.63)  // ~C4
  */
-function hz(frequency: number): number;
+function $hz(frequency: number): number;
 
 /**
  * Convert a note name string to a voltage value (1V/octave).
  * @param noteName - Note name like "C4", "A#3", "Bb5"
  * @returns Voltage value for use as a {@link Signal}
- * @example note("C4")  // Middle C
- * @example note("A4")  // 440 Hz
+ * @example $note("C4")  // Middle C
+ * @example $note("A4")  // 440 Hz
  */
-function note(noteName: string): number;
+function $note(noteName: string): number;
 
 /**
  * Convert beats per minute to a frequency in Hz.
  * Useful for setting clock tempo.
  * @param beatsPerMinute - Tempo in BPM
  * @returns Frequency in Hz
- * @example bpm(120)  // 2 Hz
- * @see {@link setTempo}
+ * @example $bpm(120)  // 2 Hz
+ * @see {@link $setTempo}
  */
-function bpm(beatsPerMinute: number): number;
+function $bpm(beatsPerMinute: number): number;
 
 /**
  * Create a {@link Collection} from {@link ModuleOutput} instances.
@@ -555,27 +555,27 @@ function $c(...args: ModuleOutput[]): Collection;
  * @returns A {@link CollectionWithRange} of the outputs
  * @example $r(lfo1, lfo2).range(0, 5)  // Uses stored ranges
  * @example $r(...seq.gates).range(0, 1)
- * @see {@link $} - for outputs without known ranges
+ * @see {@link $c} - for outputs without known ranges
  */
 function $r(...args: ModuleOutputWithRange[]): CollectionWithRange;
 
 /**
  * Set the global tempo for the root clock.
- * @param tempo - Tempo as a Signal (use bpm() helper, e.g., setTempo(bpm(140)))
- * @example setTempo(bpm(120)) // 120 beats per minute
- * @example setTempo(hz(2)) // 2 Hz = 120 BPM
- * @example setTempo(lfo.sine) // modulate tempo from LFO
+ * @param tempo - Tempo as a Signal (use $bpm() helper, e.g., $setTempo($bpm(140)))
+ * @example $setTempo($bpm(120)) // 120 beats per minute
+ * @example $setTempo($hz(2)) // 2 Hz = 120 BPM
+ * @example $setTempo(lfo.sine) // modulate tempo from LFO
  */
-function setTempo(tempo: Signal): void;
+function $setTempo(tempo: Signal): void;
 
 /**
  * Set the global output gain applied to the final mix.
  * @param gain - Gain as a Signal (2.5 is default, 5.0 is unity gain)
- * @example setOutputGain(2.5) // 50% gain (default)
- * @example setOutputGain(5.0) // unity gain
- * @example setOutputGain(env.out) // modulate gain from envelope
+ * @example $setOutputGain(2.5) // 50% gain (default)
+ * @example $setOutputGain(5.0) // unity gain
+ * @example $setOutputGain(env.out) // modulate gain from envelope
  */
-function setOutputGain(gain: Signal): void;
+function $setOutputGain(gain: Signal): void;
 
 /**
  * DeferredModuleOutput is a placeholder for a signal that will be assigned later.
@@ -588,31 +588,6 @@ interface DeferredModuleOutput extends ModuleOutput {
    * @param signal - The signal to resolve to (number, string, or ModuleOutput)
    */
   set(signal: Signal): void;
-  /**
-   * Scale the resolved output by a factor.
-   * The transform is stored and applied during resolution.
-   */
-  gain(factor: Poly<Signal>): Collection;
-  /**
-   * Shift the resolved output by an offset.
-   * The transform is stored and applied during resolution.
-   */
-  shift(offset: Poly<Signal>): Collection;
-  /**
-   * Add scope visualization for the resolved output.
-   * The side effect is stored and executed during resolution.
-   */
-  scope(config?: { msPerFrame?: number; triggerThreshold?: number; range?: [number, number] }): this;
-  /**
-   * Send the resolved output to speakers as stereo.
-   * The side effect is stored and executed during resolution.
-   */
-  out(baseChannel?: number, options?: StereoOutOptions): this;
-  /**
-   * Send the resolved output to speakers as mono.
-   * The side effect is stored and executed during resolution.
-   */
-  outMono(channel?: number, gain?: Poly<Signal>): this;
 }
 
 /**
@@ -655,11 +630,11 @@ interface DeferredCollection extends Iterable<DeferredModuleOutput> {
  * Useful for feedback loops and forward references.
  * @param channels - Number of deferred outputs (1-16, default 1)
  * @example
- * const feedback = deferred();
- * const delayed = delay(osc.out, feedback[0]);
+ * const feedback = $deferred();
+ * const delayed = $delay(osc.out, feedback[0]);
  * feedback.set(delayed);
  */
-function deferred(channels?: number): DeferredCollection;
+function $deferred(channels?: number): DeferredCollection;
 
 /**
  * Create a slider control that binds a UI slider to a signal module.
@@ -674,14 +649,14 @@ function deferred(channels?: number): DeferredCollection;
  * @returns A ModuleOutput carrying the slider's current value as a signal
  *
  * @example
- * const vol = slider("Volume", 0.5, 0, 1);
- * sine(440).gain(vol).out();
+ * const vol = $slider("Volume", 0.5, 0, 1);
+ * $sine(440).gain(vol).out();
  *
  * @example
- * const freq = slider("Frequency", 440, 20, 20000);
- * sine(freq).out();
+ * const freq = $slider("Frequency", 440, 20, 20000);
+ * $sine(freq).out();
  */
-function slider(label: string, value: number, min: number, max: number): ModuleOutput;
+function $slider(label: string, value: number, min: number, max: number): ModuleOutput;
 `;
 
 export function buildLibSource(schemas: ModuleSchema[]): string {
@@ -795,9 +770,13 @@ function schemaToTypeExpr(schema: JSONSchema, rootSchema: JSONSchema): string {
         const variants = schema.oneOf || schema.anyOf;
         if (Array.isArray(variants)) {
             // Check if this is an enum (all variants have 'const')
-            const isEnum = variants.every((v: JSONSchema) => v.const !== undefined);
+            const isEnum = variants.every(
+                (v: JSONSchema) => v.const !== undefined,
+            );
             if (isEnum) {
-                return variants.map((v: any) => JSON.stringify(v.const)).join(' | ');
+                return variants
+                    .map((v: any) => JSON.stringify(v.const))
+                    .join(' | ');
             }
 
             const types = variants.map((v: JSONSchema) => {
@@ -830,7 +809,8 @@ function schemaToTypeExpr(schema: JSONSchema, rootSchema: JSONSchema): string {
         if (nonNullTypes.length === 1) {
             // This is a nullable type, treat it as the non-null type (optional in TS)
             const singleType = nonNullTypes[0];
-            if (singleType === 'integer' || singleType === 'number') return 'number';
+            if (singleType === 'integer' || singleType === 'number')
+                return 'number';
             if (singleType === 'string') return 'string';
             if (singleType === 'boolean') return 'boolean';
         }
@@ -915,7 +895,10 @@ function schemaToTypeExpr(schema: JSONSchema, rootSchema: JSONSchema): string {
         if (schema.const !== undefined) {
             return JSON.stringify(schema.const);
         }
-        console.error('Schema with missing type:', JSON.stringify(schema, null, 2));
+        console.error(
+            'Schema with missing type:',
+            JSON.stringify(schema, null, 2),
+        );
         throw new Error('Unsupported schema: missing type');
     }
 
@@ -1058,7 +1041,9 @@ function renderParamsInterface(
  * Convert snake_case to camelCase
  */
 function toCamelCase(str: string): string {
-    return str.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+    return str.replace(/_([a-z])/g, (_, letter: string) =>
+        letter.toUpperCase(),
+    );
 }
 
 /**
@@ -1111,8 +1096,13 @@ function sanitizeOutputName(name: string): string {
 /**
  * Get the output type for a single output definition
  */
-function getOutputType(output: { polyphonic?: boolean; minValue?: number; maxValue?: number }): string {
-    const hasRange = output.minValue !== undefined && output.maxValue !== undefined;
+function getOutputType(output: {
+    polyphonic?: boolean;
+    minValue?: number;
+    maxValue?: number;
+}): string {
+    const hasRange =
+        output.minValue !== undefined && output.maxValue !== undefined;
     if (output.polyphonic) {
         return hasRange ? 'CollectionWithRange' : 'Collection';
     }
@@ -1123,22 +1113,34 @@ function getOutputType(output: { polyphonic?: boolean; minValue?: number; maxVal
  * Generate interface name for multi-output modules
  */
 function getMultiOutputInterfaceName(moduleSchema: ModuleSchema): string {
-    const parts = moduleSchema.name.split('.').filter((p: string) => p.length > 0);
+    const parts = moduleSchema.name
+        .split('.')
+        .filter((p: string) => p.length > 0);
     const baseName = parts[parts.length - 1];
-    return `${capitalizeName(baseName)}Outputs`;
+    const baseNameWithoutPrefix = baseName.startsWith('$')
+        ? baseName.slice(1)
+        : baseName;
+    return `${capitalizeName(baseNameWithoutPrefix)}Outputs`;
 }
 
 /**
  * Generate interface definition for multi-output modules.
  * The interface extends from the default output's type and includes properties for other outputs.
  */
-function generateMultiOutputInterface(moduleSchema: ModuleSchema, indent: string): string[] {
+function generateMultiOutputInterface(
+    moduleSchema: ModuleSchema,
+    indent: string,
+): string[] {
     const outputs = moduleSchema.outputs || [];
     if (outputs.length <= 1) return [];
 
     // Find the default output
     const defaultOutput = outputs.find((o: any) => o.default) || outputs[0];
-    const defaultOutputMeta = defaultOutput as { polyphonic?: boolean; minValue?: number; maxValue?: number };
+    const defaultOutputMeta = defaultOutput as {
+        polyphonic?: boolean;
+        minValue?: number;
+        maxValue?: number;
+    };
     const baseType = getOutputType(defaultOutputMeta);
 
     const interfaceName = getMultiOutputInterfaceName(moduleSchema);
@@ -1146,15 +1148,24 @@ function generateMultiOutputInterface(moduleSchema: ModuleSchema, indent: string
     const lines: string[] = [];
     lines.push(`${indent}/**`);
     lines.push(`${indent} * Output type for ${moduleSchema.name} module.`);
-    lines.push(`${indent} * Extends ${baseType} (default output: ${defaultOutput.name})`);
+    lines.push(
+        `${indent} * Extends ${baseType} (default output: ${defaultOutput.name})`,
+    );
     lines.push(`${indent} */`);
-    lines.push(`${indent}export interface ${interfaceName} extends ${baseType} {`);
+    lines.push(
+        `${indent}export interface ${interfaceName} extends ${baseType} {`,
+    );
 
     // Add properties for non-default outputs
     for (const output of outputs) {
         if (output.name === defaultOutput.name) continue;
 
-        const outputMeta = output as { polyphonic?: boolean; minValue?: number; maxValue?: number; description?: string };
+        const outputMeta = output as {
+            polyphonic?: boolean;
+            minValue?: number;
+            maxValue?: number;
+            description?: string;
+        };
         const outputType = getOutputType(outputMeta);
         const safeName = sanitizeOutputName(output.name);
 
@@ -1177,7 +1188,11 @@ function getFactoryReturnType(moduleSchema: ModuleSchema): string {
     if (outputs.length === 0) {
         return 'void';
     } else if (outputs.length === 1) {
-        const output = outputs[0] as { polyphonic?: boolean; minValue?: number; maxValue?: number };
+        const output = outputs[0] as {
+            polyphonic?: boolean;
+            minValue?: number;
+            maxValue?: number;
+        };
         return getOutputType(output);
     } else {
         // Multiple outputs - return the generated interface name
@@ -1307,16 +1322,17 @@ function renderInterface(
     const lines: string[] = [];
 
     // Generate multi-output interface if needed
-    const multiOutputInterface = generateMultiOutputInterface(classSpec.moduleSchema, indent);
+    const multiOutputInterface = generateMultiOutputInterface(
+        classSpec.moduleSchema,
+        indent,
+    );
     if (multiOutputInterface.length > 0) {
         lines.push(...multiOutputInterface);
         lines.push('');
     }
 
     // Render the factory function
-    lines.push(
-        ...renderFactoryFunction(classSpec.moduleSchema, '', indent),
-    );
+    lines.push(...renderFactoryFunction(classSpec.moduleSchema, '', indent));
     return lines;
 }
 
@@ -1354,27 +1370,21 @@ export function generateDSL(schemas: ModuleSchema[]): string {
     }
     const tree = buildTreeFromSchemas(schemas);
     const lines = renderTree(tree, 0);
-    lines.unshift('namespace $ {');
 
-    lines.push('}');
-    const clockSchema = schemas.find((s) => s.name === 'clock');
+    const clockSchema = schemas.find((s) => s.name === '$clock');
     if (clockSchema) {
         lines.push('');
         lines.push('/** Default clock module running at 120 BPM. */');
         const clockReturnType = getFactoryReturnType(clockSchema);
-        lines.push(
-            `export const rootClock: $.${clockReturnType};`,
-        );
+        lines.push(`export const $rootClock: ${clockReturnType};`);
     }
 
-    const signalSchema = schemas.find((s) => s.name === 'signal');
+    const signalSchema = schemas.find((s) => s.name === '$signal');
     if (signalSchema) {
         lines.push('');
         lines.push('/** Input signals. */');
         const signalReturnType = getFactoryReturnType(signalSchema);
-        lines.push(
-            `export const input: Readonly<${signalReturnType}>;`,
-        );
+        lines.push(`export const $input: Readonly<${signalReturnType}>;`);
     }
 
     return lines.join('\n') + '\n';

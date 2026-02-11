@@ -443,7 +443,7 @@ struct IntervalSeqOutputs {
 }
 
 #[module(
-    name = "iCycle",
+    name = "$iCycle",
     description = "A scale-degree sequencer with interval and add patterns",
     channels_derive = interval_seq_derive_channel_count,
     args(intervalPattern, scale),
