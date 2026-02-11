@@ -197,6 +197,14 @@ export interface MidiInputInfo {
   index: number
 }
 
+/**
+ * Validate a PatchGraph against the module schemas.
+ *
+ * Returns an array of validation errors (empty = valid).
+ * This is a pure function: no audio hardware or Synthesizer instance needed.
+ */
+export declare function validatePatchGraph(patch: PatchGraph): Array<ValidationError>
+
 /** Detailed validation error for patch validation */
 export interface ValidationError {
   field: string

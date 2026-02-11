@@ -4,9 +4,20 @@
 
 import type { ElectronAPI } from '../preload/preload';
 
+interface TestAPI {
+    getEditorValue: () => string;
+    setEditorValue: (code: string) => void;
+    executePatch: () => Promise<void>;
+    getLastPatchResult: () => any;
+    getScopeData: () => Promise<any>;
+    getAudioHealth: () => Promise<any>;
+    isClockRunning: () => boolean;
+}
+
 declare global {
     interface Window {
         electronAPI: ElectronAPI;
+        __TEST_API__?: TestAPI;
     }
 }
 

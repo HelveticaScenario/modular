@@ -117,6 +117,60 @@ impl Patch {
             0.0
         }
     }
+
+    /// Build a Patch from a [`PatchGraph`] for testing.
+    ///
+    /// Replicates the logic of `AudioState::apply_patch()` without the command
+    /// queue or audio-thread indirection: instantiate modules, set params,
+    /// connect cables, and fire `on_patch_update`.
+    pub fn from_graph(
+        graph: &crate::types::PatchGraph,
+        sample_rate: f32,
+    ) -> Result<Self, String> {
+        use crate::dsp::{get_channel_count_derivers, get_constructors};
+
+        let constructors = get_constructors();
+        let channel_count_derivers = get_channel_count_derivers();
+        let mut patch = Patch::new();
+
+        // 1. Instantiate all modules
+        for module_state in &graph.modules {
+            let constructor = constructors
+                .get(&module_state.module_type)
+                .ok_or_else(|| format!("Unknown module type: {}", module_state.module_type))?;
+            let module = constructor(&module_state.id, sample_rate)
+                .map_err(|e| format!("Failed to create {}: {}", module_state.id, e))?;
+            patch.sampleables.insert(module_state.id.clone(), module);
+        }
+
+        // 2. Set params on each module (derive channel count from params)
+        for module_state in &graph.modules {
+            if let Some(module) = patch.sampleables.get(&module_state.id) {
+                let channel_count = channel_count_derivers
+                    .get(&module_state.module_type)
+                    .and_then(|derive| derive(&module_state.params))
+                    .unwrap_or(1);
+                module
+                    .try_update_params(module_state.params.clone(), channel_count)
+                    .map_err(|e| {
+                        format!("Failed to set params on {}: {}", module_state.id, e)
+                    })?;
+            }
+        }
+
+        // 3. Connect all modules (resolves Cable weak pointers)
+        for module in patch.sampleables.values() {
+            module.connect(&patch);
+        }
+
+        // 4. Notify modules that patch is ready
+        for module in patch.sampleables.values() {
+            module.on_patch_update();
+        }
+
+        patch.rebuild_message_listeners();
+        Ok(patch)
+    }
 }
 
 #[cfg(test)]

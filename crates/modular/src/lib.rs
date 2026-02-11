@@ -940,6 +940,21 @@ pub fn get_schemas() -> Result<Vec<modular_core::types::ModuleSchema>> {
   Ok(schema())
 }
 
+/// Validate a PatchGraph against the module schemas.
+///
+/// Returns an array of validation errors (empty = valid).
+/// This is a pure function: no audio hardware or Synthesizer instance needed.
+#[napi]
+pub fn validate_patch_graph(
+  patch: modular_core::types::PatchGraph,
+) -> Vec<crate::validation::ValidationError> {
+  let schemas = schema();
+  match crate::validation::validate_patch(&patch, &schemas) {
+    Ok(()) => vec![],
+    Err(errors) => errors,
+  }
+}
+
 // Static registry for channel count derivers
 use modular_core::types::ChannelCountDeriver;
 use std::sync::OnceLock;

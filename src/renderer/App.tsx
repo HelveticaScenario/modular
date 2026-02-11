@@ -118,6 +118,7 @@ function App() {
 
     const editorRef = useRef<editor.IStandaloneCodeEditor>(null);
     const scopeCanvasMapRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
+    const lastPatchResultRef = useRef<any>(null);
 
     const handleSliderChange = useCallback(
         (label: string, newValue: number) => {
@@ -392,6 +393,7 @@ function App() {
                     patchCodeValue,
                     activeBufferId,
                 );
+                lastPatchResultRef.current = result;
 
                 if (!result.success) {
                     // Still set interpolation resolutions even on validation errors
@@ -465,6 +467,24 @@ function App() {
             }
         };
     }, [activeBufferId]);
+
+    // Expose test API for E2E tests
+    useEffect(() => {
+        window.__TEST_API__ = {
+            getEditorValue: () => editorRef.current?.getValue() ?? '',
+            setEditorValue: (code: string) => editorRef.current?.setValue(code),
+            executePatch: async () => {
+                handleSubmitRef.current();
+            },
+            getLastPatchResult: () => lastPatchResultRef.current,
+            getScopeData: () => electronAPI.synthesizer.getScopes(),
+            getAudioHealth: () => electronAPI.synthesizer.getHealth(),
+            isClockRunning: () => isClockRunningRef.current,
+        };
+        return () => {
+            delete window.__TEST_API__;
+        };
+    }, []);
 
     const handleStopRef = useRef(() => {});
     useEffect(() => {

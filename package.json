@@ -15,7 +15,12 @@
         "make": "yarn build-native && electron-forge make",
         "forge-publish": "yarn build-native && electron-forge publish",
         "deploy": "./release.sh",
-        "test": "yarn build-native && ava",
+        "test": "yarn test:unit",
+        "test:unit": "vitest run",
+        "test:rust": "cargo test --package modular_core --test dsp_fresh_tests",
+        "test:e2e": "playwright test",
+        "test:e2e:update": "playwright test --update-snapshots",
+        "test:all": "yarn test:unit && yarn test:rust && yarn test:e2e",
         "typecheck": "yarn build-native && tsc -b",
         "rebuild": "yarn build-native && electron-rebuild -f -w modular-core",
         "lint": "eslint .",
@@ -44,14 +49,13 @@
         "@electron/fuses": "^1.8.0",
         "@electron/notarize": "^3.1.1",
         "@electron/osx-sign": "^2.3.0",
-        "@oxc-node/core": "^0.0.35",
+        "@playwright/test": "^1.58.2",
         "@types/electron-squirrel-startup": "^1.0.2",
         "@types/react": "^19.2.7",
         "@types/react-dom": "^19.2.3",
         "@typescript-eslint/eslint-plugin": "^5.62.0",
         "@typescript-eslint/parser": "^5.62.0",
         "@vercel/webpack-asset-relocator-loader": "^1.10.0",
-        "ava": "^6.4.1",
         "css-loader": "^6.11.0",
         "electron": "39.2.7",
         "eslint": "^8.57.1",
@@ -63,7 +67,8 @@
         "node-loader": "^2.1.0",
         "style-loader": "^3.3.4",
         "ts-loader": "^9.5.4",
-        "tsx": "^4.21.0"
+        "tsx": "^4.21.0",
+        "vitest": "^4.0.18"
     },
     "dependencies": {
         "@fontsource/anonymous-pro": "^5.2.8",
@@ -105,23 +110,6 @@
     "workspaces": [
         "crates/*"
     ],
-    "ava": {
-        "files": [
-            "src/__tests__/**/*.spec.ts"
-        ],
-        "extensions": {
-            "ts": "commonjs"
-        },
-        "timeout": "2m",
-        "workerThreads": false,
-        "environmentVariables": {
-            "OXC_TSCONFIG_PATH": "./tsconfig.json"
-        },
-        "nodeArguments": [
-            "--import",
-            "@oxc-node/core/register"
-        ]
-    },
     "lint-staged": {
         "*.{ts,tsx,js,jsx,mjs,json,css,md}": "prettier --write",
         "crates/modular/*.rs": [

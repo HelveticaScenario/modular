@@ -575,9 +575,10 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { Synthesizer, deriveChannelCount, getMiniLeafSpans, getPatternPolyphony, getSchemas } = nativeBinding
+const { Synthesizer, deriveChannelCount, getMiniLeafSpans, getPatternPolyphony, getSchemas, validatePatchGraph } = nativeBinding
 export { Synthesizer }
 export { deriveChannelCount }
 export { getMiniLeafSpans }
 export { getPatternPolyphony }
 export { getSchemas }
+export { validatePatchGraph }

@@ -50,7 +50,7 @@
         "format:rs": "cargo fmt",
         "lint": "oxlint .",
         "prepublishOnly": "napi prepublish -t npm",
-        "test": "ava",
+        "test": "vitest run",
         "preversion": "napi build --platform && git add .",
         "version": "napi version",
         "prepare": "husky"
@@ -62,7 +62,6 @@
         "@oxc-node/core": "^0.0.35",
         "@taplo/cli": "^0.7.0",
         "@tybys/wasm-util": "^0.10.0",
-        "ava": "^6.4.1",
         "chalk": "^5.6.2",
         "husky": "^9.1.7",
         "lint-staged": "^16.1.6",
@@ -77,20 +76,6 @@
         ],
         "*.toml": [
             "taplo format"
-        ]
-    },
-    "ava": {
-        "extensions": {
-            "ts": "module"
-        },
-        "timeout": "2m",
-        "workerThreads": false,
-        "environmentVariables": {
-            "OXC_TSCONFIG_PATH": "./__test__/tsconfig.json"
-        },
-        "nodeArguments": [
-            "--import",
-            "@oxc-node/core/register"
         ]
     },
     "stableVersion": "1.0.0"
