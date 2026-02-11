@@ -88,6 +88,10 @@ jobs:
                   # Verify the identity is available
                   security find-identity -v -p codesigning $KEYCHAIN_PATH
 
+            - name: Build native module
+              run: yarn build
+              working-directory: crates/modular
+
             - name: Run tests
               run: yarn test
 
