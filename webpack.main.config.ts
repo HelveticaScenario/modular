@@ -1,9 +1,7 @@
 import type { Configuration } from 'webpack';
 
 import { rules } from './webpack.rules';
-
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const ForkTsCheckerWebpackPlugin: typeof import('fork-ts-checker-webpack-plugin') = require('fork-ts-checker-webpack-plugin');
+import { plugins } from './webpack.plugins';
 
 export const mainConfig: Configuration = {
     /**
@@ -30,15 +28,7 @@ export const mainConfig: Configuration = {
             },
         ],
     },
-    plugins: [
-        new ForkTsCheckerWebpackPlugin({
-            logger: 'webpack-infrastructure',
-            typescript: {
-                configFile: 'src/main/tsconfig.json',
-                build: true,
-            },
-        }),
-    ],
+    plugins,
     resolve: {
         extensions: ['.js', '.ts', '.jsx', '.tsx', '.css', '.json'],
     },

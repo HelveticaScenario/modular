@@ -1,9 +1,21 @@
 {
-    "files": [],
-    "references": [
-        { "path": "src/shared" },
-        { "path": "src/main" },
-        { "path": "src/preload" },
-        { "path": "src/renderer" }
-    ]
+    "compilerOptions": {
+        "target": "esnext",
+        "allowJs": true,
+        "module": "commonjs",
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+        "noImplicitAny": true,
+        "sourceMap": true,
+        "baseUrl": ".",
+        "outDir": "dist",
+        "moduleResolution": "node",
+        "resolveJsonModule": true,
+        "jsx": "react-jsx",
+        "strict": true,
+        "paths": {
+            "*": ["node_modules/*"]
+        }
+    },
+    "include": ["src/**/*"]
 }
