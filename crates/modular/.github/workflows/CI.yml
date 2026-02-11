@@ -148,7 +148,7 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           name: bindings-${{ matrix.settings.target }}
-          path: .
+          path: crates/modular
       - name: List packages
         run: ls -R .
         shell: bash
@@ -202,7 +202,7 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           name: bindings-${{ matrix.target }}
-          path: .
+          path: crates/modular
       - name: List packages
         run: ls -R .
         shell: bash
