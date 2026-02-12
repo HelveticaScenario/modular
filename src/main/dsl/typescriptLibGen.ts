@@ -593,6 +593,25 @@ function $setTempo(tempo: Signal): void;
 function $setOutputGain(gain: Signal): void;
 
 /**
+ * Set the run gate for the root clock.
+ * When connected, the Schmitt trigger controls whether the clock runs.
+ * @param run - Signal value for run gate (5 = running, 0 = stopped)
+ * @example $setClockRun(5) // clock running (default)
+ * @example $setClockRun(0) // clock stopped
+ * @example $setClockRun(lfo.square) // gate clock from LFO
+ */
+function $setClockRun(run: Signal): void;
+
+/**
+ * Set the reset trigger for the root clock.
+ * A rising edge resets the clock phase to zero.
+ * @param reset - Signal value for reset trigger (rising edge resets)
+ * @example $setClockReset(0) // no reset (default)
+ * @example $setClockReset(trigger) // reset clock from trigger signal
+ */
+function $setClockReset(reset: Signal): void;
+
+/**
  * DeferredModuleOutput is a placeholder for a signal that will be assigned later.
  * Useful for feedback loops and forward references in the DSL.
  * Supports the same chainable methods as ModuleOutput (gain, shift, scope, out, outMono).

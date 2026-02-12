@@ -82,6 +82,12 @@ export function executePatchScript(
     const $setOutputGain = (gain: Signal) => {
         builder.setOutputGain(gain);
     };
+    const $setClockRun = (run: Signal) => {
+        builder.setClockRun(run);
+    };
+    const $setClockReset = (reset: Signal) => {
+        builder.setClockReset(reset);
+    };
 
     /**
      * Create a DeferredCollection with placeholder signals that can be assigned later.
@@ -167,6 +173,8 @@ export function executePatchScript(
         // Global settings
         $setTempo,
         $setOutputGain,
+        $setClockRun,
+        $setClockReset,
         // Built-in modules
         $rootClock: $rootClock,
         $input: rootInput,

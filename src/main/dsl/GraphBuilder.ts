@@ -281,6 +281,10 @@ export class GraphBuilder {
     private tempo: Signal = bpm(120); // hz(2) = bpm(120), using constant to avoid circular dep
     /** Global output gain signal (default: 0.5) */
     private outputGain: Signal = 0.5;
+    /** Global run signal for ROOT_CLOCK (default: 5 = running) */
+    private clockRun: Signal | undefined;
+    /** Global reset signal for ROOT_CLOCK (default: 0 = no reset) */
+    private clockReset: Signal | undefined;
 
     constructor(schemas: ModuleSchema[]) {
         this.schemas = processSchemas(schemas);
@@ -404,6 +408,22 @@ export class GraphBuilder {
     }
 
     /**
+     * Set the run gate for ROOT_CLOCK
+     * @param run - Signal value for run gate (5 = running, 0 = stopped)
+     */
+    setClockRun(run: Signal): void {
+        this.clockRun = run;
+    }
+
+    /**
+     * Set the reset trigger for ROOT_CLOCK
+     * @param reset - Signal value for reset trigger (rising edge resets clock)
+     */
+    setClockReset(reset: Signal): void {
+        this.clockReset = reset;
+    }
+
+    /**
      * Get a factory function by module type name.
      * Returns undefined if factories haven't been registered yet.
      */
@@ -522,6 +542,12 @@ export class GraphBuilder {
         const rootClock = this.modules.get('ROOT_CLOCK');
         if (rootClock) {
             rootClock.params.tempo = this.tempo;
+            if (this.clockRun !== undefined) {
+                rootClock.params.run = this.clockRun;
+            }
+            if (this.clockReset !== undefined) {
+                rootClock.params.reset = this.clockReset;
+            }
         }
 
         // Build a map of deferred output strings to their resolved output strings
@@ -595,6 +621,8 @@ export class GraphBuilder {
         this.deferredOutputs.clear();
         this.tempo = 2; // hz(2) = bpm(120)
         this.outputGain = 2.5;
+        this.clockRun = undefined;
+        this.clockReset = undefined;
     }
 
     /**
