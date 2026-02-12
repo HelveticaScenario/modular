@@ -239,6 +239,46 @@ fn impl_enum_tag_macro(ast: &DeriveInput) -> TokenStream {
     generated.into()
 }
 
+/// Extract `///` doc comments from a list of attributes.
+/// In Rust, `/// text` desugars to `#[doc = "text"]`.
+fn extract_doc_comments(attrs: &[Attribute]) -> Option<String> {
+    let docs: Vec<String> = attrs
+        .iter()
+        .filter_map(|attr| {
+            if attr.path().is_ident("doc") {
+                if let syn::Meta::NameValue(nv) = &attr.meta {
+                    if let syn::Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Str(s),
+                        ..
+                    }) = &nv.value
+                    {
+                        return Some(s.value());
+                    }
+                }
+            }
+            None
+        })
+        .collect();
+    if docs.is_empty() {
+        None
+    } else {
+        // Each doc comment line has a leading space (" text") — trim it.
+        // Join with newlines to preserve paragraph structure.
+        Some(
+            docs.iter()
+                .map(|line| {
+                    if let Some(stripped) = line.strip_prefix(' ') {
+                        stripped.to_string()
+                    } else {
+                        line.clone()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+    }
+}
+
 fn unwrap_attr(attrs: &Vec<Attribute>, ident: &str) -> Option<TokenStream2> {
     attrs
         .iter()
@@ -1124,6 +1164,13 @@ fn impl_module_macro_attr(
     let module_name = &attr_args.module.name;
     let module_description = &attr_args.module.description;
 
+    // Extract /// doc comments from the module struct for detailed documentation
+    let module_documentation = extract_doc_comments(&ast.attrs);
+    let module_documentation_token = match &module_documentation {
+        Some(doc) => quote! { Some(#doc.to_string()) },
+        None => quote! { None },
+    };
+
     // Store channels info for channel_count generation
     let hardcoded_channels = attr_args.module.channels;
     let channels_param_name = attr_args.module.channels_param.clone();
@@ -1627,6 +1674,7 @@ fn impl_module_macro_attr(
                 crate::types::ModuleSchema {
                     name: #module_name.to_string(),
                     description: #module_description.to_string(),
+                    documentation: #module_documentation_token,
                     params_schema: crate::types::SchemaContainer {
                         schema: params_schema,
                     },

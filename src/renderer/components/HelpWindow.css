@@ -48,6 +48,44 @@
     border-radius: 4px;
 }
 
+.module-documentation {
+    margin: 8px 0 12px;
+    padding: 0 4px;
+    font-size: 0.95em;
+    line-height: 1.5;
+    color: #ccc;
+}
+
+.module-documentation pre {
+    background: #1a1a1a;
+    padding: 8px 12px;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-size: 0.9em;
+}
+
+.module-documentation code {
+    background: #383838;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+
+.module-documentation pre code {
+    background: none;
+    padding: 0;
+}
+
+.module-documentation p {
+    margin: 4px 0;
+}
+
+.module-documentation ul,
+.module-documentation ol {
+    margin: 4px 0;
+    padding-left: 20px;
+}
+
 h2 {
     margin-top: 0;
 }

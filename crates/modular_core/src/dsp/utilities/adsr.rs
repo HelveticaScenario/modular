@@ -54,6 +54,23 @@ impl Default for ChannelState {
     }
 }
 
+/// An Attack-Decay-Sustain-Release envelope generator.
+///
+/// Generates a control voltage envelope driven by a **gate** input.
+/// When the gate goes high (>1V) the envelope enters the attack phase;
+/// when the gate goes low it enters release.
+///
+/// - **attack** / **decay** / **release** — time in seconds
+/// - **sustain** — level in volts (0–5V)
+///
+/// Output range is **0–5V**.
+///
+/// ## Example
+///
+/// ```js
+/// const env = adsr(clock.gate, { attack: 0.01, decay: 0.2, sustain: 3, release: 0.5 });
+/// sine(note("C4")).mul(env).out();
+/// ```
 #[module(name = "$adsr", description = "ADSR envelope generator", args(gate))]
 #[derive(Default)]
 pub struct Adsr {

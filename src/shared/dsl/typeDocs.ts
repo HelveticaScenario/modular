@@ -24,7 +24,8 @@ export interface TypeDocumentation {
  */
 export const DSL_TYPE_NAMES = [
     'Signal',
-    'PolySignal',
+    'Poly<Signal>',
+    'Mono<Signal>',
     'ModuleOutput',
     'ModuleOutputWithRange',
     'Collection',
@@ -57,7 +58,8 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             'sine("4s(C:major)")  // Scale pattern',
         ],
         seeAlso: [
-            'PolySignal',
+            'Poly<Signal>',
+            'Mono<Signal>',
             'ModuleOutput',
             'Note',
             'HZ',
@@ -66,8 +68,8 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         ],
     },
 
-    PolySignal: {
-        name: 'PolySignal',
+    'Poly<Signal>': {
+        name: 'Poly<Signal>',
         description:
             'A potentially multi-channel signal. Can be an array of Signals for polyphonic patches, ' +
             'or an iterable of ModuleOutputs. When used as input to a module, arrays are expanded to create multiple voices.',
@@ -77,7 +79,24 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             'osc.saw([...seq.pitch])                           // Spread sequencer outputs',
             'mix.add(osc1.out, osc2.out, osc3.out)             // Multiple ModuleOutputs',
         ],
-        seeAlso: ['Signal', 'ModuleOutput', 'Collection'],
+        seeAlso: ['Signal', 'Mono<Signal>', 'ModuleOutput', 'Collection'],
+    },
+
+    'Mono<Signal>': {
+        name: 'Mono<Signal>',
+        description:
+            'A signal input that accepts polyphonic connections but sums all channels down to a single mono value. ' +
+            'Structurally identical to Poly<Signal>, but signals that the module will not produce per-voice output from this parameter. ' +
+            'Used for control parameters like tempo, stereo width, or math variables where a single combined value is needed.',
+        definition: 'Signal | Signal[] | Iterable<ModuleOutput>',
+        examples: [
+            '$clock(120)                                      // Single value as tempo',
+            '$clock(lfo.range(80, 160))                       // Modulated tempo, summed to mono',
+            '$clockDivider(clock.trigger, 4)                  // Clock signal summed to mono',
+            '$stereoMix(osc, { width: lfo })                  // Width control summed to mono',
+            '$math("x + y", { x: osc1, y: osc2 })            // Variables summed to single values',
+        ],
+        seeAlso: ['Signal', 'Poly<Signal>', 'ModuleOutput'],
     },
 
     ModuleOutput: {
@@ -98,14 +117,14 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         methods: [
             {
                 name: 'gain',
-                signature: 'gain(factor: PolySignal): ModuleOutput',
+                signature: 'gain(factor: Poly<Signal>): ModuleOutput',
                 description:
                     'Scale the signal by a factor. Creates a util.scaleAndShift module internally.',
                 example: 'osc.gain(0.5)  // Half amplitude',
             },
             {
                 name: 'shift',
-                signature: 'shift(offset: PolySignal): ModuleOutput',
+                signature: 'shift(offset: Poly<Signal>): ModuleOutput',
                 description:
                     'Add a DC offset to the signal. Creates a util.scaleAndShift module internally.',
                 example: 'lfo.shift(2.5)  // Shift LFO to 0-5V range',
@@ -129,7 +148,8 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             },
             {
                 name: 'outMono',
-                signature: 'outMono(channel?: number, gain?: PolySignal): this',
+                signature:
+                    'outMono(channel?: number, gain?: Poly<Signal>): this',
                 description:
                     'Send this output to a single speaker channel as mono audio.',
                 example: 'lfo.outMono(2, 0.3)',
@@ -155,7 +175,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             {
                 name: 'range',
                 signature:
-                    'range(outMin: PolySignal, outMax: PolySignal): ModuleOutput',
+                    'range(outMin: Poly<Signal>, outMax: Poly<Signal>): ModuleOutput',
                 description:
                     'Remap the output from its native range (minValue, maxValue) to a new range (outMin, outMax). ' +
                     'Unlike Collection.range(), this uses the stored min/max values automatically.',
@@ -180,17 +200,17 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             '[...voices]                          // Spread to array',
             'voices[0]                            // Index access',
         ],
-        seeAlso: ['CollectionWithRange', 'ModuleOutput', 'PolySignal'],
+        seeAlso: ['CollectionWithRange', 'ModuleOutput', 'Poly<Signal>'],
         methods: [
             {
                 name: 'gain',
-                signature: 'gain(factor: PolySignal): Collection',
+                signature: 'gain(factor: Poly<Signal>): Collection',
                 description: 'Scale all signals in the collection by a factor.',
                 example: '$(osc1, osc2).gain(0.5)',
             },
             {
                 name: 'shift',
-                signature: 'shift(offset: PolySignal): Collection',
+                signature: 'shift(offset: Poly<Signal>): Collection',
                 description:
                     'Add a DC offset to all signals in the collection.',
                 example: '$(lfo1, lfo2).shift(2.5)',
@@ -213,7 +233,8 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             },
             {
                 name: 'outMono',
-                signature: 'outMono(channel?: number, gain?: PolySignal): this',
+                signature:
+                    'outMono(channel?: number, gain?: Poly<Signal>): this',
                 description:
                     'Send all outputs to a single speaker channel as mono, summed together.',
                 example: '$(osc1, osc2).outMono(0, 0.3)',
@@ -221,7 +242,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             {
                 name: 'range',
                 signature:
-                    'range(inMin: PolySignal, inMax: PolySignal, outMin: PolySignal, outMax: PolySignal): Collection',
+                    'range(inMin: Poly<Signal>, inMax: Poly<Signal>, outMin: Poly<Signal>, outMax: Poly<Signal>): Collection',
                 description:
                     'Remap all outputs from input range to output range. Requires explicit input min/max.',
                 example: '$(lfo1, lfo2).range(-5, 5, 0, 1)',
@@ -244,7 +265,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             {
                 name: 'range',
                 signature:
-                    'range(outMin: PolySignal, outMax: PolySignal): Collection',
+                    'range(outMin: Poly<Signal>, outMax: Poly<Signal>): Collection',
                 description:
                     'Remap all outputs from their native ranges to a new range. ' +
                     "Uses each output's stored minValue/maxValue.",
@@ -257,7 +278,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         name: 'Note',
         description:
             'A musical note string in scientific pitch notation. ' +
-            'Consists of a note name (A-G), optional accidental (#/b), and optional octave number. ' +
+            'Consists of a note name (A-G or a-g), optional accidental (#/b), and optional octave number. ' +
             'If octave is omitted, defaults to octave 4.',
         definition: '`${NoteName}${Accidental}${Octave}`',
         examples: [
@@ -265,6 +286,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             '"A#3"  // A sharp in octave 3',
             '"Bb5"  // B flat in octave 5',
             '"G"    // G4 (octave 4 is default)',
+            '"c#"    // C#4 (octave 4 is default)',
         ],
         seeAlso: ['Signal', 'HZ', 'MidiNote'],
     },
@@ -319,14 +341,14 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             'Options for stereo output routing via the out() method. ' +
             'Controls gain, panning, and stereo width.',
         definition:
-            'interface { gain?: PolySignal; pan?: PolySignal; width?: Signal }',
+            'interface { gain?: Poly<Signal>; pan?: Poly<Signal>; width?: Signal }',
         examples: [
-            'osc.out(0, { gain: 0.5 })           // 50% gain',
-            'osc.out(0, { pan: -2.5 })           // Pan left',
-            'osc.out(0, { width: 5 })            // Full stereo spread',
-            'osc.out(0, { gain: env.out, pan: lfo.out })  // Modulated',
+            "$sine('c').out(0, { gain: 0.5 })           // 50% gain",
+            "$sine('c').out(0, { pan: -2.5 })           // Pan left",
+            "$sine('c').out(0, { width: 5 })            // Full stereo spread",
+            "$sine('c').out(0, { gain: $perc($pulse('8hz')), pan: $sine('1hz') })  // Modulated",
         ],
-        seeAlso: ['ModuleOutput', 'Collection', 'PolySignal'],
+        seeAlso: ['ModuleOutput', 'Collection', 'Poly<Signal>'],
     },
 };
 

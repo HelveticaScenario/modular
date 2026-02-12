@@ -6,6 +6,7 @@ import React, {
     ReactNode,
 } from 'react';
 import { ModuleSchema } from '@modular/core';
+import Markdown from 'react-markdown';
 import electronAPI from '../electronAPI';
 import {
     TYPE_DOCS,
@@ -14,15 +15,23 @@ import {
     TypeDocumentation,
     isDslType,
 } from '../../shared/dsl/typeDocs';
+import { schemaToTypeExpr } from '../../shared/dsl/schemaTypeResolver';
 import './HelpWindow.css';
 
 type Page = 'getting-started' | 'hotkeys' | 'globals' | 'types' | 'reference';
 
 /**
  * Regex pattern matching all DSL type names for linkification.
- * Uses word boundaries to avoid matching partial words.
+ * Sorted longest-first so `Poly<Signal>` matches before `Signal`.
+ * Uses lookaround instead of \b since type names contain non-word chars (<>).
  */
-const TYPE_PATTERN = new RegExp(`\\b(${DSL_TYPE_NAMES.join('|')})\\b`, 'g');
+const SORTED_TYPE_NAMES = [...DSL_TYPE_NAMES].sort(
+    (a, b) => b.length - a.length,
+);
+const TYPE_PATTERN = new RegExp(
+    `(?<!\\w)(${SORTED_TYPE_NAMES.join('|')})(?!\\w)`,
+    'g',
+);
 
 interface TypeLinkProps {
     typeName: DslTypeName;
@@ -263,15 +272,23 @@ export const HelpWindow: React.FC = () => {
         );
     }, [schemas, searchQuery]);
 
-    const getParamNames = (module: ModuleSchema) => {
-        const paramsSchema = module.paramsSchema?.schema;
-        if (!paramsSchema) return [];
-        // Handle RootSchema (has .schema property) or SchemaObject (has .properties)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const schemaObj = paramsSchema as any;
-        const props =
-            schemaObj.properties || schemaObj.schema?.properties || {};
-        return Object.keys(props);
+    const getParams = (module: ModuleSchema) => {
+        const properties = Object.entries(
+            module.paramsSchema?.properties ?? {},
+        );
+        return properties.map(([name, schema]) => {
+            let type: string | undefined;
+            try {
+                type = schemaToTypeExpr(schema, module.paramsSchema);
+            } catch {
+                // Fall back to no type annotation for unsupported schemas
+            }
+            return {
+                name,
+                type,
+                description: schema.description as string | undefined,
+            };
+        });
     };
 
     const renderContent = () => {
@@ -338,35 +355,77 @@ export const HelpWindow: React.FC = () => {
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="search-input"
                         />
-                        {filteredModules.map((module) => (
-                            <div key={module.name} className="module-card">
-                                <h3>{module.name}</h3>
-                                <p style={{ whiteSpace: 'pre-wrap' }}>
-                                    <LinkifyTypes
-                                        text={module.description}
-                                        onTypeClick={handleTypeClick}
-                                    />
-                                </p>
-                                <h4>Inputs</h4>
-                                <ul>
-                                    {getParamNames(module).map((param) => (
-                                        <li key={param}>{param}</li>
-                                    ))}
-                                </ul>
-                                <h4>Outputs</h4>
-                                <ul>
-                                    {module.outputs.map((out) => (
-                                        <li key={out.name}>
-                                            <strong>{out.name}</strong>:{' '}
-                                            <LinkifyTypes
-                                                text={out.description}
-                                                onTypeClick={handleTypeClick}
-                                            />
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        ))}
+                        {filteredModules.map((module) => {
+                            // console.log(module);
+                            const params = getParams(module);
+                            return (
+                                <div key={module.name} className="module-card">
+                                    <h3>{module.name}</h3>
+                                    <p style={{ whiteSpace: 'pre-wrap' }}>
+                                        <LinkifyTypes
+                                            text={module.description}
+                                            onTypeClick={handleTypeClick}
+                                        />
+                                    </p>
+                                    {module.documentation && (
+                                        <div className="module-documentation">
+                                            <Markdown>
+                                                {module.documentation}
+                                            </Markdown>
+                                        </div>
+                                    )}
+                                    <h4>Inputs</h4>
+                                    <ul>
+                                        {params.map(
+                                            ({ name, type, description }) => (
+                                                <li key={name}>
+                                                    <strong>
+                                                        {name}
+                                                        {type && (
+                                                            <>
+                                                                {': '}
+                                                                <LinkifyTypes
+                                                                    text={type}
+                                                                    onTypeClick={
+                                                                        handleTypeClick
+                                                                    }
+                                                                />
+                                                            </>
+                                                        )}
+                                                    </strong>
+                                                    {description && (
+                                                        <>
+                                                            {' '}
+                                                            &mdash;{' '}
+                                                            {description}
+                                                        </>
+                                                    )}
+                                                </li>
+                                            ),
+                                        )}
+                                    </ul>
+                                    <h4>Outputs</h4>
+                                    <ul>
+                                        {module.outputs.map((out) => (
+                                            <li key={out.name}>
+                                                <strong>
+                                                    {out.default
+                                                        ? 'main'
+                                                        : out.name}
+                                                </strong>
+                                                :{' '}
+                                                <LinkifyTypes
+                                                    text={`${out.description}`}
+                                                    onTypeClick={
+                                                        handleTypeClick
+                                                    }
+                                                />
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            );
+                        })}
                     </div>
                 );
         }

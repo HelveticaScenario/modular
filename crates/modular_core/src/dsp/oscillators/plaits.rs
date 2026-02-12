@@ -211,28 +211,28 @@ impl Default for PlaitsChannelState {
 /// Full-featured Plaits macro-oscillator with all 24 engines, LPG, and modulation routing.
 ///
 /// Engines (selected via `engine` param, 0-23):
-/// - 0: Virtual analog VCF (classic subtractive)
-/// - 1: Phase distortion
-/// - 2-4: Six-op FM (3 banks)
-/// - 5: Wave terrain
-/// - 6: String machine
-/// - 7: Chiptune
-/// - 8: Virtual analog (dual oscillator)
-/// - 9: Waveshaping
-/// - 10: Two-operator FM
-/// - 11: Granular formant
-/// - 12: Harmonic/additive
-/// - 13: Wavetable
-/// - 14: Chords
-/// - 15: Vowel/speech synthesis
-/// - 16: Swarm
-/// - 17: Filtered noise
-/// - 18: Particle noise
-/// - 19: Inharmonic strings
-/// - 20: Modal resonator
-/// - 21: Analog bass drum
-/// - 22: Analog snare drum
-/// - 23: Analog hi-hat
+/// - Virtual analog VCF (classic subtractive)
+/// - Phase distortion
+/// - Six-op FM (3 banks)
+/// - Wave terrain
+/// - String machine
+/// - Chiptune
+/// - Virtual analog (dual oscillator)
+/// - Waveshaping
+/// - Two-operator FM
+/// - Granular formant
+/// - Harmonic/additive
+/// - Wavetable
+/// - Chords
+/// - Vowel/speech synthesis
+/// - Swarm
+/// - Filtered noise
+/// - Particle noise
+/// - Inharmonic strings
+/// - Modal resonator
+/// - Analog bass drum
+/// - Analog snare drum
+/// - Analog hi-hat
 #[module(
     name = "$macro",
     description = "Mutable Instruments Plaits - Full macro-oscillator with 24 engines, LPG, and modulation",

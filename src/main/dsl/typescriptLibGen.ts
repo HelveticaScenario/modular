@@ -1,4 +1,9 @@
 import { ModuleSchema } from '@modular/core';
+import {
+    JSONSchema,
+    resolveRef,
+    schemaToTypeExpr,
+} from '../../shared/dsl/schemaTypeResolver';
 
 const BASE_LIB_SOURCE = `
 /** The **\`console\`** object provides access to the debugging console (e.g., the Web console in Firefox). */
@@ -251,6 +256,16 @@ type Signal = number | Note | HZ | MidiNote | Scale | ModuleOutput;
 type Poly<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
 
 
+/**
+ * A signal input that sums all channels to a single mono value.
+ * Structurally identical to {@link Poly}, but signals that the module
+ * combines all voices into one control signal rather than preserving polyphony.
+ *
+ * @example $clock(120)                    // Constant tempo
+ * @example $stereoMix(osc, { width: lfo }) // Width summed to mono
+ * @see {@link Poly} - for polyphonic signals that preserve per-voice data
+ * @see {@link Signal} - for single-channel signals
+ */
 type Mono<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
 
 /**
@@ -665,8 +680,6 @@ export function buildLibSource(schemas: ModuleSchema[]): string {
     return `declare global {\n${BASE_LIB_SOURCE}\n\n${schemaLib} \n}\n\n export {};\n`;
 }
 
-type JSONSchema = any;
-
 type ClassSpec = {
     description?: string;
     outputs: Array<{ name: string; description?: string }>;
@@ -723,186 +736,6 @@ function extractParamNamesFromDoc(description?: string): string[] {
         names.push(match[1]);
     }
     return names;
-}
-
-function resolveRef(
-    ref: string,
-    rootSchema: JSONSchema,
-): JSONSchema | 'Signal' | 'Poly<Signal>' | 'Mono<Signal>' {
-    if (ref === 'Signal') return 'Signal';
-
-    const defsPrefix = '#/$defs/';
-    if (!ref.startsWith(defsPrefix)) {
-        throw new Error(`Unsupported $ref: ${ref}`);
-    }
-
-    const defName = ref.slice(defsPrefix.length);
-    if (defName === 'Signal') return 'Signal';
-    if (defName === 'PolySignal') return 'Poly<Signal>';
-    if (defName === 'MonoSignal') return 'Mono<Signal>';
-
-    const defs = rootSchema?.$defs;
-    if (!defs || typeof defs !== 'object') {
-        throw new Error(`Unresolved $ref: ${ref}`);
-    }
-
-    const resolved = defs[defName];
-    if (!resolved) {
-        throw new Error(`Unresolved $ref: ${ref}`);
-    }
-
-    if (resolved?.title === 'Signal') return 'Signal';
-    if (resolved?.title === 'PolySignal') return 'Poly<Signal>';
-    if (resolved?.title === 'MonoSignal') return 'Mono<Signal>';
-    return resolved;
-}
-
-function schemaToTypeExpr(schema: JSONSchema, rootSchema: JSONSchema): string {
-    if (schema === null || schema === undefined) {
-        throw new Error('Unsupported schema: null/undefined');
-    }
-    if (typeof schema === 'boolean') {
-        throw new Error('Unsupported schema: boolean schema');
-    }
-
-    // Handle oneOf/anyOf - check if all variants resolve to Signal
-    if (schema.oneOf || schema.anyOf) {
-        const variants = schema.oneOf || schema.anyOf;
-        if (Array.isArray(variants)) {
-            // Check if this is an enum (all variants have 'const')
-            const isEnum = variants.every(
-                (v: JSONSchema) => v.const !== undefined,
-            );
-            if (isEnum) {
-                return variants
-                    .map((v: any) => JSON.stringify(v.const))
-                    .join(' | ');
-            }
-
-            const types = variants.map((v: JSONSchema) => {
-                try {
-                    return schemaToTypeExpr(v, rootSchema);
-                } catch {
-                    return 'any';
-                }
-            });
-            // If all variants are Signal, return Signal
-            if (types.every((t) => t === 'Signal')) {
-                return 'Poly<Signal>';
-            }
-            // If it's a mix but includes Signal[], treat as Signal (for Poly<Signal>)
-            if (types.includes('Signal') && types.includes('Signal[]')) {
-                return 'Poly<Signal>';
-            }
-        }
-        console.log('schema:', schema);
-        return 'any';
-    }
-    if (schema.allOf) {
-        console.log('schema:', schema);
-        return 'any';
-    }
-    if (Array.isArray(schema.type)) {
-        // Handle union type arrays like ["integer", "null"] or ["string", "null"]
-        const types = schema.type as string[];
-        const nonNullTypes = types.filter((t) => t !== 'null');
-        if (nonNullTypes.length === 1) {
-            // This is a nullable type, treat it as the non-null type (optional in TS)
-            const singleType = nonNullTypes[0];
-            if (singleType === 'integer' || singleType === 'number')
-                return 'number';
-            if (singleType === 'string') return 'string';
-            if (singleType === 'boolean') return 'boolean';
-        }
-        // Fall back to union of all non-null types
-        const mapped = nonNullTypes.map((t) => {
-            if (t === 'integer' || t === 'number') return 'number';
-            if (t === 'string') return 'string';
-            if (t === 'boolean') return 'boolean';
-            return 'any';
-        });
-        return mapped.length > 0 ? mapped.join(' | ') : 'any';
-    }
-
-    if (schema.$ref) {
-        const resolved = resolveRef(String(schema.$ref), rootSchema);
-        if (resolved === 'Signal') return 'Signal';
-        if (resolved === 'Poly<Signal>') return 'Poly<Signal>';
-        if (resolved === 'Mono<Signal>') return 'Mono<Signal>';
-        return schemaToTypeExpr(resolved, rootSchema);
-    }
-
-    if (schema.enum) {
-        if (!Array.isArray(schema.enum) || schema.enum.length === 0) {
-            throw new Error('Unsupported enum schema');
-        }
-        return schema.enum.map((v: any) => JSON.stringify(v)).join(' | ');
-    }
-
-    const type = schema.type;
-
-    if (type === 'integer' || type === 'number') return 'number';
-    if (type === 'string') return 'string';
-    if (type === 'boolean') return 'boolean';
-
-    const looksLikeObject =
-        type === 'object' ||
-        (!!schema.properties && typeof schema.properties === 'object');
-    if (looksLikeObject) {
-        const props = schema.properties;
-        if (!props || typeof props !== 'object') return '{}';
-
-        const requiredSet = new Set<string>(
-            Array.isArray(schema.required) ? schema.required : [],
-        );
-        const entries = Object.entries(props as Record<string, JSONSchema>);
-        if (entries.length === 0) return '{}';
-
-        const parts: string[] = [];
-        for (const [propName, propSchema] of entries) {
-            const optional = requiredSet.has(propName) ? '' : '?';
-            parts.push(
-                `${renderPropertyKey(propName)}${optional}: ${schemaToTypeExpr(propSchema, rootSchema)}`,
-            );
-        }
-        return `{ ${parts.join('; ')} }`;
-    }
-
-    if (type === 'array') {
-        if (Array.isArray(schema.prefixItems)) {
-            const items = schema.prefixItems as JSONSchema[];
-            const tuple = items
-                .map((s) => schemaToTypeExpr(s, rootSchema))
-                .join(', ');
-            return `[${tuple}]`;
-        }
-        if (schema.items) {
-            return `${schemaToTypeExpr(schema.items, rootSchema)}[]`;
-        }
-        throw new Error('Unsupported array schema: missing items/prefixItems');
-    }
-
-    if (type === undefined) {
-        // If there's a $ref we didn't catch, or other structural hints, try to handle
-        if (schema.$ref) {
-            const resolved = resolveRef(String(schema.$ref), rootSchema);
-            if (resolved === 'Signal') return 'Signal';
-            if (resolved === 'Poly<Signal>') return 'Poly<Signal>';
-            if (resolved === 'Mono<Signal>') return 'Mono<Signal>';
-            return schemaToTypeExpr(resolved, rootSchema);
-        }
-        // Schema with only 'const' (used in tagged unions)
-        if (schema.const !== undefined) {
-            return JSON.stringify(schema.const);
-        }
-        console.error(
-            'Schema with missing type:',
-            JSON.stringify(schema, null, 2),
-        );
-        throw new Error('Unsupported schema: missing type');
-    }
-
-    throw new Error(`Unsupported scalar type: ${type}`);
 }
 
 function getMethodArgsForProperty(
@@ -1215,6 +1048,14 @@ function renderFactoryFunction(
     const docLines: string[] = [];
     if (moduleSchema.description) {
         docLines.push(...moduleSchema.description.split(/\r?\n/));
+    }
+
+    // Append detailed documentation from doc comments (separated by blank line)
+    if (moduleSchema.documentation) {
+        if (docLines.length > 0) {
+            docLines.push('');
+        }
+        docLines.push(...moduleSchema.documentation.split(/\r?\n/));
     }
 
     for (const arg of positionalArgs) {

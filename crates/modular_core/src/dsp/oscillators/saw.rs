@@ -30,6 +30,21 @@ struct ChannelState {
     shape: Clickless,
 }
 
+/// A variable-waveshape oscillator that morphs between saw, triangle, and ramp.
+///
+/// The `shape` parameter controls the waveform continuously:
+/// - **0** — Saw (descending ramp)
+/// - **2.5** — Triangle
+/// - **5** — Ramp (ascending ramp)
+///
+/// The `freq` input follows the **V/Oct** standard (0V = C4).
+/// Output range is **±5V**.
+///
+/// ## Example
+///
+/// ```js
+/// saw(note("A3"), { shape: 2.5 }).out(); // triangle wave
+/// ```
 #[module(
     name = "$saw",
     description = "Sawtooth/Triangle/Ramp oscillator",
