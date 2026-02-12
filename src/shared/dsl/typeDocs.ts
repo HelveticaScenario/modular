@@ -108,10 +108,10 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         definition:
             'interface { moduleId: string; portName: string; channel: number; ... }',
         examples: [
-            'const osc = osc.sine("C4")',
+            'const osc = $sine("c4")',
             'osc.gain(0.5).out()           // Chain methods',
             'osc.scope().out()             // Add visualization',
-            'filter.lpf(osc, { q: 4 })     // Use as input to another module',
+            "$lpf(osc, 'c3', { q: 4 })     // Use as input to another module",
         ],
         seeAlso: ['ModuleOutputWithRange', 'Collection', 'Signal'],
         methods: [
@@ -119,14 +119,14 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 name: 'gain',
                 signature: 'gain(factor: Poly<Signal>): ModuleOutput',
                 description:
-                    'Scale the signal by a factor. Creates a util.scaleAndShift module internally.',
-                example: 'osc.gain(0.5)  // Half amplitude',
+                    'Scale the signal by a factor. Creates a $scaleAndShift module internally.',
+                example: 'osc.gain(2.5)  // Half amplitude',
             },
             {
                 name: 'shift',
                 signature: 'shift(offset: Poly<Signal>): ModuleOutput',
                 description:
-                    'Add a DC offset to the signal. Creates a util.scaleAndShift module internally.',
+                    'Add a DC offset to the signal. Creates a $scaleAndShift module internally.',
                 example: 'lfo.shift(2.5)  // Shift LFO to 0-5V range',
             },
             {
@@ -166,9 +166,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         definition:
             'interface extends ModuleOutput { minValue: number; maxValue: number; range(...): ModuleOutput }',
         examples: [
-            'const lfo = lfo.sine(2)              // LFO outputs -5 to +5',
-            'lfo.range(200, 2000)                 // Remap to 200-2000 for filter cutoff',
-            'env.adsr({ attack: 0.1 }).range(0, 1)  // Envelope 0-1 range',
+            "const lfo = $sine('1hz').range(0, 5)              // LFO outputs 0 to +5",
         ],
         seeAlso: ['ModuleOutput', 'CollectionWithRange'],
         methods: [
@@ -180,7 +178,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                     'Remap the output from its native range (minValue, maxValue) to a new range (outMin, outMax). ' +
                     'Unlike Collection.range(), this uses the stored min/max values automatically.',
                 example:
-                    'lfo.range(note("C3"), note("C5"))  // Remap LFO to pitch range',
+                    'lfo.range(note("c3"), note("c5"))  // Remap LFO to pitch range',
             },
         ],
     },
@@ -194,8 +192,8 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         definition:
             'interface extends Iterable<ModuleOutput> { length: number; [index]: ModuleOutput; ... }',
         examples: [
-            '$(osc1, osc2, osc3).gain(0.5).out()  // Apply gain to all, send to output',
-            'const voices = $(osc1, osc2, osc3)',
+            '$c(osc1, osc2, osc3).gain(0.5).out()  // Apply gain to all, send to output',
+            'const voices = $c(osc1, osc2, osc3)',
             'for (const v of voices) { ... }      // Iterate over outputs',
             '[...voices]                          // Spread to array',
             'voices[0]                            // Index access',
@@ -206,14 +204,14 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 name: 'gain',
                 signature: 'gain(factor: Poly<Signal>): Collection',
                 description: 'Scale all signals in the collection by a factor.',
-                example: '$(osc1, osc2).gain(0.5)',
+                example: '$c(osc1, osc2).gain(0.5)',
             },
             {
                 name: 'shift',
                 signature: 'shift(offset: Poly<Signal>): Collection',
                 description:
                     'Add a DC offset to all signals in the collection.',
-                example: '$(lfo1, lfo2).shift(2.5)',
+                example: '$c(lfo1, lfo2).shift(2.5)',
             },
             {
                 name: 'scope',
@@ -221,7 +219,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                     'scope(config?: { msPerFrame?: number; triggerThreshold?: number; range?: [number, number] }): this',
                 description:
                     'Add scope visualization for the first output in the collection.',
-                example: '$(osc1, osc2).scope().out()',
+                example: '$c(osc1, osc2).scope().out()',
             },
             {
                 name: 'out',
@@ -229,7 +227,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                     'out(baseChannel?: number, options?: StereoOutOptions): this',
                 description:
                     'Send all outputs to speakers as stereo, summed together.',
-                example: '$(osc1, osc2, osc3).out()',
+                example: '$c(osc1, osc2, osc3).out()',
             },
             {
                 name: 'outMono',
@@ -237,7 +235,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                     'outMono(channel?: number, gain?: Poly<Signal>): this',
                 description:
                     'Send all outputs to a single speaker channel as mono, summed together.',
-                example: '$(osc1, osc2).outMono(0, 0.3)',
+                example: '$c(osc1, osc2).outMono(0, 0.3)',
             },
             {
                 name: 'range',
@@ -245,7 +243,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                     'range(inMin: Poly<Signal>, inMax: Poly<Signal>, outMin: Poly<Signal>, outMax: Poly<Signal>): Collection',
                 description:
                     'Remap all outputs from input range to output range. Requires explicit input min/max.',
-                example: '$(lfo1, lfo2).range(-5, 5, 0, 1)',
+                example: '$c(lfo1, lfo2).range(-5, 5, 0, 1)',
             },
         ],
     },
