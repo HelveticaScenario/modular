@@ -16,14 +16,7 @@ import {
 } from '../../shared/dsl/typeDocs';
 import './HelpWindow.css';
 
-type Page =
-    | 'hotkeys'
-    | 'syntax'
-    | 'math'
-    | 'types'
-    | 'output'
-    | 'clock'
-    | 'reference';
+type Page = 'getting-started' | 'hotkeys' | 'globals' | 'types' | 'reference';
 
 /**
  * Regex pattern matching all DSL type names for linkification.
@@ -303,27 +296,6 @@ export const HelpWindow: React.FC = () => {
                         </ul>
                     </div>
                 );
-            case 'syntax':
-                return (
-                    <div>
-                        <h2>Sequence Syntax</h2>
-                        <p>The sequencer uses a DSL to define patterns.</p>
-                        <pre>
-                            "C4 D4 E4 F4" // Notes{'\n'}
-                            "C4 - - -" // Holds{'\n'}
-                            "C4 . . ." // Rests
-                        </pre>
-                    </div>
-                );
-            case 'math':
-                return (
-                    <div>
-                        <h2>Math Module</h2>
-                        <p>Evaluates mathematical expressions.</p>
-                        <p>Inputs: x, y, z</p>
-                        <p>Variable: t (time)</p>
-                    </div>
-                );
             case 'types':
                 return (
                     <div>
@@ -353,42 +325,6 @@ export const HelpWindow: React.FC = () => {
                                 );
                             })}
                         </div>
-                    </div>
-                );
-            case 'output':
-                return (
-                    <div>
-                        <h2>Sound Output</h2>
-                        <p>
-                            Use{' '}
-                            <TypeLink
-                                typeName="ModuleOutput"
-                                onTypeClick={handleTypeClick}
-                            />
-                            's <code>.out()</code> method to send audio to the
-                            speakers. Multiple signals can be sent to output and
-                            will be summed together.
-                        </p>
-                        <p>
-                            For stereo output, use{' '}
-                            <code>.out(channel, options)</code> where options is
-                            a{' '}
-                            <TypeLink
-                                typeName="StereoOutOptions"
-                                onTypeClick={handleTypeClick}
-                            />{' '}
-                            object.
-                        </p>
-                    </div>
-                );
-            case 'clock':
-                return (
-                    <div>
-                        <h2>Root Clock</h2>
-                        <p>
-                            The system has a global clock that drives
-                            sequencers.
-                        </p>
                     </div>
                 );
             case 'reference':
@@ -446,34 +382,10 @@ export const HelpWindow: React.FC = () => {
                     Hotkeys
                 </button>
                 <button
-                    className={activePage === 'syntax' ? 'active' : ''}
-                    onClick={() => setActivePage('syntax')}
-                >
-                    Sequence Syntax
-                </button>
-                <button
-                    className={activePage === 'math' ? 'active' : ''}
-                    onClick={() => setActivePage('math')}
-                >
-                    Math Module
-                </button>
-                <button
                     className={activePage === 'types' ? 'active' : ''}
                     onClick={() => setActivePage('types')}
                 >
                     Types
-                </button>
-                <button
-                    className={activePage === 'output' ? 'active' : ''}
-                    onClick={() => setActivePage('output')}
-                >
-                    Sound Output
-                </button>
-                <button
-                    className={activePage === 'clock' ? 'active' : ''}
-                    onClick={() => setActivePage('clock')}
-                >
-                    Root Clock
                 </button>
                 <button
                     className={activePage === 'reference' ? 'active' : ''}
