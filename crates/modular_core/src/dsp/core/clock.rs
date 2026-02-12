@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::{
     PolyOutput,
-    dsp::utils::{hz_to_voct, voct_to_hz_f64},
+    dsp::utils::{SchmittTrigger, hz_to_voct, voct_to_hz_f64},
     poly::MonoSignal,
     types::ClockMessages,
 };
@@ -14,6 +14,10 @@ use crate::{
 struct ClockParams {
     /// tempo in v/oct (tempo)
     tempo: MonoSignal,
+    /// run gate input (high = running, low = stopped). Defaults to 5V (running).
+    run: MonoSignal,
+    /// reset trigger input (rising edge resets phase). Defaults to 0V (no reset).
+    reset: MonoSignal,
 }
 
 #[module(name = "$clock", description = "A tempo clock with multiple outputs", channels = 2, args(tempo?))]
@@ -27,6 +31,8 @@ pub struct Clock {
     running: bool,
     params: ClockParams,
     loop_index: u64,
+    run_trigger: SchmittTrigger,
+    reset_trigger: SchmittTrigger,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -58,6 +64,8 @@ impl Default for Clock {
             running: true,
             params: ClockParams::default(),
             loop_index: 0,
+            run_trigger: SchmittTrigger::default(),
+            reset_trigger: SchmittTrigger::default(),
             _channel_count: 0,
         }
     }
@@ -73,6 +81,25 @@ lazy_static! {
 
 impl Clock {
     fn update(&mut self, sample_rate: f32) {
+        // Process run param through Schmitt trigger when connected
+        // When disconnected, message-based control (ClockMessages) remains in effect
+        if !self.params.run.is_disconnected() {
+            let run_value = self.params.run.get_value();
+            let (run_high, _) = self.run_trigger.process_with_edge(run_value);
+            self.running = run_high;
+        }
+
+        // Process reset param through Schmitt trigger (default 0V = no reset)
+        let reset_value = self.params.reset.get_value_or(0.0);
+        if self.reset_trigger.process(reset_value) {
+            // Rising edge on reset: reset phase
+            self.phase = 0.0;
+            self.ppq_phase = 0.0;
+            self.loop_index = 0;
+            self.last_bar_trigger = false;
+            self.last_ppq_trigger = false;
+        }
+
         // Smooth frequency parameter to avoid clicks
         self.freq = self.params.tempo.get_value_or(*BPM_120_VOCT);
 
@@ -177,5 +204,53 @@ mod tests {
 
         c.update(sr);
         assert!(c.phase > 0.0);
+    }
+
+    #[test]
+    fn clock_run_param_stops_clock() {
+        let mut c = Clock::default();
+        let sr = 48_000.0;
+
+        // Default: run is disconnected, defaults to 5V (running)
+        c.update(sr);
+        assert!(c.phase > 0.0);
+
+        // Set run param to 0V (stopped)
+        c.params.run = serde_json::from_str("0.0").unwrap();
+        let phase_before = c.phase;
+        for _ in 0..128 {
+            c.update(sr);
+        }
+        assert!((c.phase - phase_before).abs() < 1e-9, "Clock should be stopped when run is 0V");
+
+        // Set run param back to 5V (running)
+        c.params.run = serde_json::from_str("5.0").unwrap();
+        let phase_before = c.phase;
+        c.update(sr);
+        assert!(c.phase > phase_before, "Clock should resume when run is 5V");
+    }
+
+    #[test]
+    fn clock_reset_param_resets_phase() {
+        let mut c = Clock::default();
+        let sr = 48_000.0;
+
+        // Advance clock to build up phase
+        for _ in 0..1000 {
+            c.update(sr);
+        }
+        assert!(c.phase > 0.0, "Clock should have advanced");
+
+        // Send reset trigger (rising edge from 0 to 5V)
+        c.params.reset = serde_json::from_str("5.0").unwrap();
+        c.update(sr);
+        // Phase should be reset to 0 (plus one sample of advancement since reset happens before phase update)
+        assert!(c.phase < 0.001, "Phase should be near zero after reset");
+        assert_eq!(c.loop_index, 0, "Loop index should be reset");
+
+        // Keep reset high - no further resets (no new rising edge)
+        let phase_after_reset = c.phase;
+        c.update(sr);
+        assert!(c.phase > phase_after_reset, "Clock should continue advancing after reset");
     }
 }
