@@ -82,11 +82,11 @@ lazy_static! {
 impl Clock {
     fn update(&mut self, sample_rate: f32) {
         // Process run param through Schmitt trigger when connected
-        // When disconnected, message-based control (ClockMessages) remains in effect
+        // We need process_with_edge to get the continuous high/low state (not just rising edge)
         if !self.params.run.is_disconnected() {
             let run_value = self.params.run.get_value();
-            let (run_high, _) = self.run_trigger.process_with_edge(run_value);
-            self.running = run_high;
+            let (is_high, _) = self.run_trigger.process_with_edge(run_value);
+            self.running = is_high;
         }
 
         // Process reset param through Schmitt trigger (default 0V = no reset)
