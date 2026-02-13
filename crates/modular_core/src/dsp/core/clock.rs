@@ -33,6 +33,7 @@ pub struct Clock {
     loop_index: u64,
     run_trigger: SchmittTrigger,
     reset_trigger: SchmittTrigger,
+    was_run_connected: bool,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -66,6 +67,7 @@ impl Default for Clock {
             loop_index: 0,
             run_trigger: SchmittTrigger::default(),
             reset_trigger: SchmittTrigger::default(),
+            was_run_connected: false,
             _channel_count: 0,
         }
     }
@@ -87,6 +89,13 @@ impl Clock {
             let run_value = self.params.run.get_value();
             let (is_high, _) = self.run_trigger.process_with_edge(run_value);
             self.running = is_high;
+            self.was_run_connected = true;
+        } else if self.was_run_connected {
+            // Run was connected but is now disconnected (cable removed):
+            // restore default running state and reset the Schmitt trigger
+            self.running = true;
+            self.run_trigger.reset();
+            self.was_run_connected = false;
         }
 
         // Process reset param through Schmitt trigger (default 0V = no reset)
@@ -228,6 +237,24 @@ mod tests {
         let phase_before = c.phase;
         c.update(sr);
         assert!(c.phase > phase_before, "Clock should resume when run is 5V");
+    }
+
+    #[test]
+    fn clock_run_disconnect_resumes_running() {
+        let mut c = Clock::default();
+        let sr = 48_000.0;
+
+        // Connect run at 0V (stopped)
+        c.params.run = serde_json::from_str("0.0").unwrap();
+        for _ in 0..128 {
+            c.update(sr);
+        }
+        assert!(!c.running, "Clock should be stopped when run is 0V");
+
+        // Disconnect run (back to default) — clock should resume
+        c.params.run = MonoSignal::default();
+        c.update(sr);
+        assert!(c.running, "Clock should resume when run is disconnected");
     }
 
     #[test]
