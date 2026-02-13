@@ -455,6 +455,28 @@ describe('global settings', () => {
     test('$setOutputGain does not throw', () => {
         expect(() => execPatch('$setOutputGain(5.0)')).not.toThrow();
     });
+
+    test('$setClockRun does not throw', () => {
+        expect(() => execPatch('$setClockRun(5)')).not.toThrow();
+    });
+
+    test('$setClockRun sets run param on ROOT_CLOCK', () => {
+        const patch = execPatch('$setClockRun(0)');
+        const rootClock = patch.modules.find((m) => m.id === 'ROOT_CLOCK');
+        expect(rootClock).toBeDefined();
+        expect(rootClock!.params.run).toBe(0);
+    });
+
+    test('$setClockReset does not throw', () => {
+        expect(() => execPatch('$setClockReset(0)')).not.toThrow();
+    });
+
+    test('$setClockReset sets reset param on ROOT_CLOCK', () => {
+        const patch = execPatch('$setClockReset(5)');
+        const rootClock = patch.modules.find((m) => m.id === 'ROOT_CLOCK');
+        expect(rootClock).toBeDefined();
+        expect(rootClock!.params.reset).toBe(5);
+    });
 });
 
 // ─── Built-in modules ────────────────────────────────────────────────────────

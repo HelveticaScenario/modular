@@ -279,7 +279,7 @@ interface StereoOutOptions {
   /** Pan position (-5 = left, 0 = center, +5 = right). Default 0 */
   pan?: Poly<Signal>;
   /** Stereo width/spread (0 = no spread, 5 = full spread). Default 0 */
-  width?: Signal;
+  width?: Mono<Signal>;
 }
 
 /**
@@ -576,21 +576,40 @@ function $r(...args: ModuleOutputWithRange[]): CollectionWithRange;
 
 /**
  * Set the global tempo for the root clock.
- * @param tempo - Tempo as a Signal (use $bpm() helper, e.g., $setTempo($bpm(140)))
+ * @param tempo - Tempo as a Mono<Signal> (use $bpm() helper, e.g., $setTempo($bpm(140)))
  * @example $setTempo($bpm(120)) // 120 beats per minute
  * @example $setTempo($hz(2)) // 2 Hz = 120 BPM
  * @example $setTempo(lfo.sine) // modulate tempo from LFO
  */
-function $setTempo(tempo: Signal): void;
+function $setTempo(tempo: Mono<Signal>): void;
 
 /**
  * Set the global output gain applied to the final mix.
- * @param gain - Gain as a Signal (2.5 is default, 5.0 is unity gain)
+ * @param gain - Gain as a Mono<Signal> (2.5 is default, 5.0 is unity gain)
  * @example $setOutputGain(2.5) // 50% gain (default)
  * @example $setOutputGain(5.0) // unity gain
  * @example $setOutputGain(env.out) // modulate gain from envelope
  */
-function $setOutputGain(gain: Signal): void;
+function $setOutputGain(gain: Mono<Signal>): void;
+
+/**
+ * Set the run gate for the root clock.
+ * When connected, the Schmitt trigger controls whether the clock runs.
+ * @param run - Mono<Signal> value for run gate (5 = running, 0 = stopped)
+ * @example $setClockRun(5) // clock running (default)
+ * @example $setClockRun(0) // clock stopped
+ * @example $setClockRun(lfo.square) // gate clock from LFO
+ */
+function $setClockRun(run: Mono<Signal>): void;
+
+/**
+ * Set the reset trigger for the root clock.
+ * A rising edge resets the clock phase to zero.
+ * @param reset - Mono<Signal> value for reset trigger (rising edge resets)
+ * @example $setClockReset(0) // no reset (default)
+ * @example $setClockReset(trigger) // reset clock from trigger signal
+ */
+function $setClockReset(reset: Mono<Signal>): void;
 
 /**
  * DeferredModuleOutput is a placeholder for a signal that will be assigned later.
@@ -666,10 +685,6 @@ function $deferred(channels?: number): DeferredCollection;
  * @example
  * const vol = $slider("Volume", 0.5, 0, 1);
  * $sine(440).gain(vol).out();
- *
- * @example
- * const freq = $slider("Frequency", 440, 20, 20000);
- * $sine(freq).out();
  */
 function $slider(label: string, value: number, min: number, max: number): ModuleOutput;
 `;

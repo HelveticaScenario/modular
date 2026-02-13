@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::{
     PolyOutput,
-    dsp::utils::{hz_to_voct, voct_to_hz_f64},
+    dsp::utils::{SchmittTrigger, hz_to_voct, voct_to_hz_f64},
     poly::MonoSignal,
     types::ClockMessages,
 };
@@ -14,6 +14,10 @@ use crate::{
 struct ClockParams {
     /// tempo in v/oct (tempo)
     tempo: MonoSignal,
+    /// run gate input (high = running, low = stopped). Defaults to 5V (running).
+    run: MonoSignal,
+    /// reset trigger input (rising edge resets phase). Defaults to 0V (no reset).
+    reset: MonoSignal,
 }
 
 #[module(name = "$clock", description = "A tempo clock with multiple outputs", channels = 2, args(tempo?))]
@@ -27,6 +31,8 @@ pub struct Clock {
     running: bool,
     params: ClockParams,
     loop_index: u64,
+    run_trigger: SchmittTrigger,
+    reset_trigger: SchmittTrigger,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -58,6 +64,8 @@ impl Default for Clock {
             running: true,
             params: ClockParams::default(),
             loop_index: 0,
+            run_trigger: SchmittTrigger::default(),
+            reset_trigger: SchmittTrigger::default(),
             _channel_count: 0,
         }
     }
@@ -73,6 +81,31 @@ lazy_static! {
 
 impl Clock {
     fn update(&mut self, sample_rate: f32) {
+        // Process run param through Schmitt trigger when connected
+        // We need process_with_edge to get the continuous high/low state (not just rising edge)
+        let running = if !self.params.run.is_disconnected() {
+            let run_value = self.params.run.get_value();
+            let (is_high, _) = self.run_trigger.process_with_edge(run_value);
+            is_high && self.running
+        } else {
+            self.run_trigger.reset();
+            self.running
+        };
+
+        // Process reset param through Schmitt trigger (default 0V = no reset)
+        let reset_value = self.params.reset.get_value_or(0.0);
+        if self.reset_trigger.process(reset_value) {
+            // Rising edge on reset: reset phase
+            self.phase = 0.0;
+            self.ppq_phase = 0.0;
+            self.loop_index = 0;
+            self.last_bar_trigger = false;
+            self.last_ppq_trigger = false;
+        }
+
+        if !running {
+            return; // If not running, skip the rest of the update to keep outputs where they are until clock starts
+        }
         // Smooth frequency parameter to avoid clicks
         self.freq = self.params.tempo.get_value_or(*BPM_120_VOCT);
 
@@ -85,21 +118,18 @@ impl Clock {
         let bar_frequency = frequency_hz / 4.0;
         let phase_increment = bar_frequency / sample_rate as f64;
 
-        // Update phase if running
-        if self.running {
-            self.phase += phase_increment;
-            self.ppq_phase += phase_increment;
+        self.phase += phase_increment;
+        self.ppq_phase += phase_increment;
 
-            // Wrap phase at 1.0
-            if self.phase >= 1.0 {
-                self.phase -= 1.0;
-                self.loop_index += 1;
-            }
+        // Wrap phase at 1.0
+        if self.phase >= 1.0 {
+            self.phase -= 1.0;
+            self.loop_index += 1;
+        }
 
-            // PPQ phase wraps more frequently (48 times per bar)
-            if self.ppq_phase >= 1.0 / 48.0 {
-                self.ppq_phase -= 1.0 / 48.0;
-            }
+        // PPQ phase wraps more frequently (48 times per bar)
+        if self.ppq_phase >= 1.0 / 48.0 {
+            self.ppq_phase -= 1.0 / 48.0;
         }
         self.outputs.playhead.set(0, self.phase as f32);
         self.outputs.playhead.set(1, self.loop_index as f32);
@@ -108,7 +138,7 @@ impl Clock {
         self.outputs.ramp = self.phase as f32 * 5.0;
 
         // Generate bar trigger (trigger at start of bar)
-        let should_bar_trigger = self.phase < phase_increment && self.running;
+        let should_bar_trigger = self.phase < phase_increment;
         if should_bar_trigger && !self.last_bar_trigger {
             self.outputs.bar_trigger = 5.0;
         } else {
@@ -117,7 +147,7 @@ impl Clock {
         self.last_bar_trigger = should_bar_trigger;
 
         // Generate PPQ trigger (48 times per bar)
-        let should_ppq_trigger = self.ppq_phase < phase_increment && self.running;
+        let should_ppq_trigger = self.ppq_phase < phase_increment;
         if should_ppq_trigger && !self.last_ppq_trigger {
             self.outputs.ppq_trigger = 5.0;
         } else {
@@ -177,5 +207,97 @@ mod tests {
 
         c.update(sr);
         assert!(c.phase > 0.0);
+    }
+
+    #[test]
+    fn clock_run_param_stops_clock() {
+        let mut c = Clock::default();
+        let sr = 48_000.0;
+
+        // Default: run is disconnected, defaults to 5V (running)
+        c.update(sr);
+        assert!(c.phase > 0.0);
+
+        // Set run param to 0V (stopped)
+        c.params.run = serde_json::from_str("0.0").unwrap();
+        assert!(
+            !c.params.run.is_disconnected(),
+            "Run param should be connected"
+        );
+        let phase_before = c.phase;
+        for _ in 0..128 {
+            c.update(sr);
+        }
+        assert!(
+            (c.phase - phase_before).abs() < 1e-9,
+            "Clock should be stopped when run is 0V"
+        );
+
+        // Set run param back to 5V (running)
+        c.params.run = serde_json::from_str("5.0").unwrap();
+        let phase_before = c.phase;
+        c.update(sr);
+        assert!(c.phase > phase_before, "Clock should resume when run is 5V");
+    }
+
+    #[test]
+    fn clock_run_disconnect_resumes_running() {
+        let mut c = Clock::default();
+        let sr = 48_000.0;
+        c.params.tempo = serde_json::from_str("0").unwrap(); // Set tempo to 1 Hz to make phase changes more obvious
+        // Connect run at 0V (stopped)
+        c.params.run = serde_json::from_str("0.0").unwrap();
+        let initial_phase = c.phase;
+        let did_not_change = (0..128)
+            .map(|_| {
+                c.update(sr);
+                c.phase
+            })
+            .all(|v| v == initial_phase);
+        assert!(did_not_change, "Clock should be stopped when run is 0V");
+
+        // Disconnect run (back to default) — clock should resume
+        c.params.run = MonoSignal::default();
+        assert!(
+            c.params.run.is_disconnected(),
+            "Run param should be disconnected"
+        );
+        let did_not_change = (0..128)
+            .map(|_| {
+                c.update(sr);
+                c.phase
+            })
+            .all(|v| v == initial_phase);
+        assert!(
+            !did_not_change,
+            "Clock should resume when run is disconnected"
+        );
+    }
+
+    #[test]
+    fn clock_reset_param_resets_phase() {
+        let mut c = Clock::default();
+        let sr = 48_000.0;
+
+        // Advance clock to build up phase
+        for _ in 0..1000 {
+            c.update(sr);
+        }
+        assert!(c.phase > 0.0, "Clock should have advanced");
+
+        // Send reset trigger (rising edge from 0 to 5V)
+        c.params.reset = serde_json::from_str("5.0").unwrap();
+        c.update(sr);
+        // Phase should be reset to 0 (plus one sample of advancement since reset happens before phase update)
+        assert!(c.phase < 0.001, "Phase should be near zero after reset");
+        assert_eq!(c.loop_index, 0, "Loop index should be reset");
+
+        // Keep reset high - no further resets (no new rising edge)
+        let phase_after_reset = c.phase;
+        c.update(sr);
+        assert!(
+            c.phase > phase_after_reset,
+            "Clock should continue advancing after reset"
+        );
     }
 }
