@@ -197,11 +197,13 @@ function App() {
                 .filter(Boolean)
                 .join(', ');
 
-            const shouldSave = window.confirm(
-                `You have unsaved changes in: ${fileList}. Save changes before switching workspace?`,
-            );
+            const response =
+                await electronAPI.showUnsavedChangesDialog(fileList);
 
-            if (shouldSave) {
+            if (response === 2) {
+                // Cancel / Escape: abort the open workspace operation
+                return;
+            } else if (response === 0) {
                 // Save all dirty file buffers
                 for (const buffer of dirtyFileBuffers) {
                     if (buffer.kind === 'file') {
@@ -220,7 +222,7 @@ function App() {
                     ),
                 );
             } else {
-                // Discard changes: remove dirty file buffers from the list
+                // Don't Save: discard dirty file buffers
                 setBuffers((prev) =>
                     prev.filter((b) => !(b.kind === 'file' && b.dirty)),
                 );
