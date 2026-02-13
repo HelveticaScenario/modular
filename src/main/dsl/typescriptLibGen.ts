@@ -348,6 +348,26 @@ interface ModuleOutput {
    * @example lfo.outMono(2, 0.3)
    */
   outMono(channel?: number, gain?: Poly<Signal>): this;
+
+  /**
+   * Pipe this output through a transform function.
+   *
+   * Passes \`this\` to \`pipeFn\` and returns the result, enabling inline
+   * functional transforms and reusable signal-processing helpers.
+   *
+   * @param pipeFn - A function that receives this output and returns a transformed value
+   * @returns The return value of \`pipeFn\`
+   *
+   * @example
+   * // Inline transform
+   * $sine('a').p(s => s.gain(0.5).shift(1))
+   *
+   * @example
+   * // Reusable helper
+   * const tremolo = (c) => c.gain($sine('10hz').range(4, 5))
+   * $saw('c').p(tremolo).out()
+   */
+  p<T>(pipeFn: (self: this) => T): T;
 }
 
 /**
@@ -440,15 +460,24 @@ interface BaseCollection<T extends ModuleOutput> extends Iterable<T> {
   outMono(channel?: number, gain?: Poly<Signal>): this;
 
   /**
-   * Remap all outputs from input range to output range.
-   * Requires explicit input min/max values.
-   * @param inMin - Input minimum as {@link Poly<Signal>}
-   * @param inMax - Input maximum as {@link Poly<Signal>}
-   * @param outMin - Output minimum as {@link Poly<Signal>}
-   * @param outMax - Output maximum as {@link Poly<Signal>}
-   * @see {@link CollectionWithRange.range} - for automatic input range
+   * Pipe this collection through a transform function.
+   *
+   * Passes \`this\` to \`pipeFn\` and returns the result, enabling inline
+   * functional transforms and reusable signal-processing helpers.
+   *
+   * @param pipeFn - A function that receives this collection and returns a transformed value
+   * @returns The return value of \`pipeFn\`
+   *
+   * @example
+   * // Inline transform on a collection
+   * $(osc1, osc2).p(all => all.gain(2.5)).out()
+   *
+   * @example
+   * // Reusable helper applied to a collection
+   * const tremolo = (c) => c.gain($sine('10hz').range(4, 5))
+   * $r($saw('220hz'), $saw('221hz')).p(tremolo).out()
    */
-  range(inMin: Poly<Signal>, inMax: Poly<Signal>, outMin: Poly<Signal>, outMax: Poly<Signal>): Collection;
+  p<T>(pipeFn: (self: this) => T): T;
 }
 
 /**
@@ -565,7 +594,7 @@ function $bpm(beatsPerMinute: number): number;
  * @example [...$c(osc1, osc2)]      // Spread to array
  * @see {@link $r} - for ranged outputs
  */
-function $c(...args: ModuleOutput[]): Collection;
+function $c(...args: (ModuleOutput | Iterable<ModuleOutput>)[]): Collection;
 
 /**
  * Create a {@link CollectionWithRange} from {@link ModuleOutputWithRange} instances.
@@ -577,7 +606,7 @@ function $c(...args: ModuleOutput[]): Collection;
  * @example $r(...seq.gates).range(0, 1)
  * @see {@link $c} - for outputs without known ranges
  */
-function $r(...args: ModuleOutputWithRange[]): CollectionWithRange;
+function $r(...args: (ModuleOutputWithRange | Iterable<ModuleOutputWithRange>)[]): CollectionWithRange;
 
 /**
  * Set the global tempo for the root clock.
@@ -873,6 +902,7 @@ const RESERVED_OUTPUT_NAMES = new Set([
     'scope',
     'out',
     'outMono',
+    'p',
     'toString',
     // ModuleOutputWithRange properties
     'minValue',

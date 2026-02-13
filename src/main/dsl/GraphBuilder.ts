@@ -166,6 +166,10 @@ export class BaseCollection<T extends ModuleOutput> {
         return this;
     }
 
+    p<T>(pipelineFunc: (self: this) => T): T {
+        return pipelineFunc(this);
+    }
+
     toString(): string {
         return `[${this.items.map((item) => item.toString()).join(',')}]`;
     }
@@ -229,14 +233,26 @@ export class CollectionWithRange extends BaseCollection<ModuleOutputWithRange> {
 /**
  * Create a Collection from ModuleOutput instances
  */
-export const $c = (...args: ModuleOutput[]): Collection =>
-    new Collection(...args);
+export const $c = (
+    ...args: (ModuleOutput | Iterable<ModuleOutput>)[]
+): Collection =>
+    new Collection(
+        ...args.flatMap((arg) =>
+            arg instanceof ModuleOutput ? [arg] : [...arg],
+        ),
+    );
 
 /**
  * Create a CollectionWithRange from ModuleOutputWithRange instances
  */
-export const $r = (...args: ModuleOutputWithRange[]): CollectionWithRange =>
-    new CollectionWithRange(...args);
+export const $r = (
+    ...args: (ModuleOutputWithRange | Iterable<ModuleOutputWithRange>)[]
+): CollectionWithRange =>
+    new CollectionWithRange(
+        ...args.flatMap((arg) =>
+            arg instanceof ModuleOutputWithRange ? [arg] : [...arg],
+        ),
+    );
 
 /**
  * Factory function type for creating modules via DSL.
@@ -912,6 +928,10 @@ export class ModuleOutput {
     outMono(channel: number = 0, gain?: PolySignal): this {
         this.builder.addOutMono(this, { channel, gain });
         return this;
+    }
+
+    p<T>(pipelineFunc: (self: this) => T): T {
+        return pipelineFunc(this);
     }
 
     toString(): string {

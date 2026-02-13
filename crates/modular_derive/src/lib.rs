@@ -471,6 +471,7 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
         "out",
         "outMono",
         "out_mono",
+        "p",
         "o",
         "toString",
         "to_string",

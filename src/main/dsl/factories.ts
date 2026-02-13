@@ -173,6 +173,7 @@ const RESERVED_OUTPUT_NAMES = new Set([
     'scope',
     'out',
     'outMono',
+    'p',
     'toString',
     // ModuleOutputWithRange properties
     'minValue',
