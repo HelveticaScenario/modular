@@ -496,7 +496,7 @@ interface Collection extends BaseCollection<ModuleOutput> {
  * @see {@link ModuleOutputWithRange} - individual ranged outputs
  * @see {@link $r} - helper to create CollectionWithRange
  */
-interface CollectionWithRange extends Iterable<ModuleOutputWithRange> {
+interface CollectionWithRange extends BaseCollection<ModuleOutputWithRange> {
   constructor(...outputs: ModuleOutputWithRange[]): this;
 
   /**
@@ -513,9 +513,9 @@ interface CollectionWithRange extends Iterable<ModuleOutputWithRange> {
  * DeferredCollection is a collection of DeferredModuleOutput instances.
  * Provides a .set() method to assign signals to all contained deferred outputs.
  */
-interface DeferredCollection extends Iterable<DeferredModuleOutput> {
+interface DeferredCollection extends BaseCollection<DeferredModuleOutput> {
   constructor(...outputs: DeferredModuleOutput[]): this;
-  
+
   /**
    * Set the signals for all deferred outputs in this collection.
    * @param polySignal - A Poly<Signal> (single signal, array, or iterable) to distribute across outputs
