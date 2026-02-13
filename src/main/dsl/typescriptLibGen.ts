@@ -351,6 +351,19 @@ interface ModuleOutput {
 }
 
 /**
+ * DeferredModuleOutput is a placeholder for a signal that will be assigned later.
+ * Useful for feedback loops and forward references in the DSL.
+ * Supports the same chainable methods as ModuleOutput (gain, shift, scope, out, outMono).
+ */
+interface DeferredModuleOutput extends ModuleOutput {
+  /**
+   * Set the actual signal this deferred output should resolve to.
+   * @param signal - The signal to resolve to (number, string, or ModuleOutput)
+   */
+  set(signal: Signal): void;
+}
+
+/**
  * A {@link ModuleOutput} that knows its output value range (minValue, maxValue).
  * 
  * Typically returned by LFOs, envelopes, and other modulation sources.
@@ -381,6 +394,63 @@ interface ModuleOutputWithRange extends ModuleOutput {
   range(outMin: Poly<Signal>, outMax: Poly<Signal>): ModuleOutput;
 }
 
+
+interface BaseCollection<T extends ModuleOutput> extends Iterable<T> {
+  /** Number of outputs in the collection */
+  readonly length: number;
+  /** Index access to individual elements */
+  readonly [index: number]: T;
+  [Symbol.iterator](): Iterator<T>;
+
+  /**
+   * Scale all signals by a factor.
+   * @param factor - Scale factor as {@link Poly<Signal>}
+   * @see {@link ModuleOutput.gain}
+   */
+  gain(factor: Poly<Signal>): Collection;
+
+  /**
+   * Add DC offset to all signals.
+   * @param offset - Offset as {@link Poly<Signal>}
+   * @see {@link ModuleOutput.shift}
+   */
+  shift(offset: Poly<Signal>): Collection;
+
+  /**
+   * Add scope visualization for the first output in the collection.
+   * @param config - Scope configuration options
+   * @param config.msPerFrame - Time window in milliseconds (default 500)
+   * @param config.triggerThreshold - Trigger threshold in volts (optional)
+   * @param config.range - Voltage range for display as [min, max] tuple (default [-5, 5])
+   */
+  scope(config?: { msPerFrame?: number; triggerThreshold?: number; range?: [number, number] }): this;
+
+  /**
+   * Send all outputs to speakers as stereo, summed together.
+   * @param baseChannel - Base output channel (0-14, default 0)
+   * @param options - Stereo output options ({@link StereoOutOptions})
+   */
+  out(baseChannel?: number, options?: StereoOutOptions): this;
+
+  /**
+   * Send all outputs to speakers as mono, summed together.
+   * @param channel - Output channel (0-15, default 0)
+   * @param gain - Output gain as {@link Poly<Signal>} (optional)
+   */
+  outMono(channel?: number, gain?: Poly<Signal>): this;
+
+  /**
+   * Remap all outputs from input range to output range.
+   * Requires explicit input min/max values.
+   * @param inMin - Input minimum as {@link Poly<Signal>}
+   * @param inMax - Input maximum as {@link Poly<Signal>}
+   * @param outMin - Output minimum as {@link Poly<Signal>}
+   * @param outMax - Output maximum as {@link Poly<Signal>}
+   * @see {@link CollectionWithRange.range} - for automatic input range
+   */
+  range(inMin: Poly<Signal>, inMax: Poly<Signal>, outMin: Poly<Signal>, outMax: Poly<Signal>): Collection;
+}
+
 /**
  * A collection of {@link ModuleOutput} instances with chainable DSP methods.
  * 
@@ -397,50 +467,9 @@ interface ModuleOutputWithRange extends ModuleOutput {
  * @see {@link ModuleOutput} - individual outputs
  * @see {@link $} - helper to create Collection
  */
-interface Collection extends Iterable<ModuleOutput> {
-  /** Number of outputs in the collection */
-  readonly length: number;
-  /** Index access to individual {@link ModuleOutput}s */
-  readonly [index: number]: ModuleOutput;
-  [Symbol.iterator](): Iterator<ModuleOutput>;
-  
-  /**
-   * Scale all signals by a factor.
-   * @param factor - Scale factor as {@link Poly<Signal>}
-   * @see {@link ModuleOutput.gain}
-   */
-  gain(factor: Poly<Signal>): Collection;
-  
-  /**
-   * Add DC offset to all signals.
-   * @param offset - Offset as {@link Poly<Signal>}
-   * @see {@link ModuleOutput.shift}
-   */
-  shift(offset: Poly<Signal>): Collection;
-  
-  /**
-   * Add scope visualization for the first output in the collection.
-   * @param config - Scope configuration options
-   * @param config.msPerFrame - Time window in milliseconds (default 500)
-   * @param config.triggerThreshold - Trigger threshold in volts (optional)
-   * @param config.range - Voltage range for display as [min, max] tuple (default [-5, 5])
-   */
-  scope(config?: { msPerFrame?: number; triggerThreshold?: number; range?: [number, number] }): this;
-  
-  /**
-   * Send all outputs to speakers as stereo, summed together.
-   * @param baseChannel - Base output channel (0-14, default 0)
-   * @param options - Stereo output options ({@link StereoOutOptions})
-   */
-  out(baseChannel?: number, options?: StereoOutOptions): this;
-  
-  /**
-   * Send all outputs to speakers as mono, summed together.
-   * @param channel - Output channel (0-15, default 0)
-   * @param gain - Output gain as {@link Poly<Signal>} (optional)
-   */
-  outMono(channel?: number, gain?: Poly<Signal>): this;
-  
+interface Collection extends BaseCollection<ModuleOutput> {
+  constructor(...outputs: ModuleOutput[]): this;
+
   /**
    * Remap all outputs from input range to output range.
    * Requires explicit input min/max values.
@@ -468,47 +497,8 @@ interface Collection extends Iterable<ModuleOutput> {
  * @see {@link $r} - helper to create CollectionWithRange
  */
 interface CollectionWithRange extends Iterable<ModuleOutputWithRange> {
-  /** Number of outputs in the collection */
-  readonly length: number;
-  /** Index access to individual {@link ModuleOutputWithRange}s */
-  readonly [index: number]: ModuleOutputWithRange;
-  [Symbol.iterator](): Iterator<ModuleOutputWithRange>;
-  
-  /**
-   * Scale all signals by a factor.
-   * @param factor - Scale factor as {@link Poly<Signal>}
-   */
-  gain(factor: Poly<Signal>): Collection;
-  
-  /**
-   * Add DC offset to all signals.
-   * @param offset - Offset as {@link Poly<Signal>}
-   */
-  shift(offset: Poly<Signal>): Collection;
-  
-  /**
-   * Add scope visualization for the first output in the collection.
-   * @param config - Scope configuration options
-   * @param config.msPerFrame - Time window in milliseconds (default 500)
-   * @param config.triggerThreshold - Trigger threshold in volts (optional)
-   * @param config.range - Voltage range for display as [min, max] tuple (default [-5, 5])
-   */
-  scope(config?: { msPerFrame?: number; triggerThreshold?: number; range?: [number, number] }): this;
-  
-  /**
-   * Send all outputs to speakers as stereo, summed together.
-   * @param baseChannel - Base output channel (0-14, default 0)
-   * @param options - Stereo output options ({@link StereoOutOptions})
-   */
-  out(baseChannel?: number, options?: StereoOutOptions): this;
-  
-  /**
-   * Send all outputs to speakers as mono, summed together.
-   * @param channel - Output channel (0-15, default 0)
-   * @param gain - Output gain as {@link Poly<Signal>} (optional)
-   */
-  outMono(channel?: number, gain?: Poly<Signal>): this;
-  
+  constructor(...outputs: ModuleOutputWithRange[]): this;
+
   /**
    * Remap all outputs from their native ranges to a new range.
    * Uses each output's stored minValue/maxValue.
@@ -518,6 +508,21 @@ interface CollectionWithRange extends Iterable<ModuleOutputWithRange> {
    */
   range(outMin: Poly<Signal>, outMax: Poly<Signal>): Collection;
 }
+
+/**
+ * DeferredCollection is a collection of DeferredModuleOutput instances.
+ * Provides a .set() method to assign signals to all contained deferred outputs.
+ */
+interface DeferredCollection extends Iterable<DeferredModuleOutput> {
+  constructor(...outputs: DeferredModuleOutput[]): this;
+  
+  /**
+   * Set the signals for all deferred outputs in this collection.
+   * @param polySignal - A Poly<Signal> (single signal, array, or iterable) to distribute across outputs
+   */
+  set(polySignal: Poly<Signal>): void;
+}
+
 
 // Helper functions exposed by the DSL runtime
 
@@ -610,54 +615,6 @@ function $setClockRun(run: Mono<Signal>): void;
  * @example $setClockReset(trigger) // reset clock from trigger signal
  */
 function $setClockReset(reset: Mono<Signal>): void;
-
-/**
- * DeferredModuleOutput is a placeholder for a signal that will be assigned later.
- * Useful for feedback loops and forward references in the DSL.
- * Supports the same chainable methods as ModuleOutput (gain, shift, scope, out, outMono).
- */
-interface DeferredModuleOutput extends ModuleOutput {
-  /**
-   * Set the actual signal this deferred output should resolve to.
-   * @param signal - The signal to resolve to (number, string, or ModuleOutput)
-   */
-  set(signal: Signal): void;
-}
-
-/**
- * DeferredCollection is a collection of DeferredModuleOutput instances.
- * Provides a .set() method to assign signals to all contained deferred outputs.
- */
-interface DeferredCollection extends Iterable<DeferredModuleOutput> {
-  readonly length: number;
-  readonly [index: number]: DeferredModuleOutput;
-  [Symbol.iterator](): Iterator<DeferredModuleOutput>;
-  /**
-   * Set the signals for all deferred outputs in this collection.
-   * @param polySignal - A Poly<Signal> (single signal, array, or iterable) to distribute across outputs
-   */
-  set(polySignal: Poly<Signal>): void;
-  /**
-   * Scale all resolved outputs by a factor.
-   */
-  gain(factor: Poly<Signal>): Collection;
-  /**
-   * Shift all resolved outputs by an offset.
-   */
-  shift(offset: Poly<Signal>): Collection;
-  /**
-   * Add scope visualization for the first resolved output.
-   */
-  scope(config?: { msPerFrame?: number; triggerThreshold?: number; range?: [number, number] }): this;
-  /**
-   * Send all resolved outputs to speakers as stereo.
-   */
-  out(baseChannel?: number, options?: StereoOutOptions): this;
-  /**
-   * Send all resolved outputs to speakers as mono.
-   */
-  outMono(channel?: number, gain?: Poly<Signal>): this;
-}
 
 /**
  * Create a DeferredCollection with placeholder signals that can be assigned later.
