@@ -103,6 +103,9 @@ impl Clock {
             self.last_ppq_trigger = false;
         }
 
+        if !running {
+            return; // If not running, skip the rest of the update to keep outputs where they are until clock starts
+        }
         // Smooth frequency parameter to avoid clicks
         self.freq = self.params.tempo.get_value_or(*BPM_120_VOCT);
 
@@ -115,21 +118,18 @@ impl Clock {
         let bar_frequency = frequency_hz / 4.0;
         let phase_increment = bar_frequency / sample_rate as f64;
 
-        // Update phase if running
-        if running {
-            self.phase += phase_increment;
-            self.ppq_phase += phase_increment;
+        self.phase += phase_increment;
+        self.ppq_phase += phase_increment;
 
-            // Wrap phase at 1.0
-            if self.phase >= 1.0 {
-                self.phase -= 1.0;
-                self.loop_index += 1;
-            }
+        // Wrap phase at 1.0
+        if self.phase >= 1.0 {
+            self.phase -= 1.0;
+            self.loop_index += 1;
+        }
 
-            // PPQ phase wraps more frequently (48 times per bar)
-            if self.ppq_phase >= 1.0 / 48.0 {
-                self.ppq_phase -= 1.0 / 48.0;
-            }
+        // PPQ phase wraps more frequently (48 times per bar)
+        if self.ppq_phase >= 1.0 / 48.0 {
+            self.ppq_phase -= 1.0 / 48.0;
         }
         self.outputs.playhead.set(0, self.phase as f32);
         self.outputs.playhead.set(1, self.loop_index as f32);
@@ -138,7 +138,7 @@ impl Clock {
         self.outputs.ramp = self.phase as f32 * 5.0;
 
         // Generate bar trigger (trigger at start of bar)
-        let should_bar_trigger = self.phase < phase_increment && running;
+        let should_bar_trigger = self.phase < phase_increment;
         if should_bar_trigger && !self.last_bar_trigger {
             self.outputs.bar_trigger = 5.0;
         } else {
@@ -147,7 +147,7 @@ impl Clock {
         self.last_bar_trigger = should_bar_trigger;
 
         // Generate PPQ trigger (48 times per bar)
-        let should_ppq_trigger = self.ppq_phase < phase_increment && running;
+        let should_ppq_trigger = self.ppq_phase < phase_increment;
         if should_ppq_trigger && !self.last_ppq_trigger {
             self.outputs.ppq_trigger = 5.0;
         } else {
