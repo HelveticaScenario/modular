@@ -502,6 +502,9 @@ function App() {
     }, []);
 
     useEffect(() => {
+        const cleanupNewFile = electronAPI.onMenuNewFile(() => {
+            createUntitledFile();
+        });
         const cleanupSave = electronAPI.onMenuSave(() => {
             handleSaveFileRef.current();
         });
@@ -535,6 +538,7 @@ function App() {
         });
 
         return () => {
+            cleanupNewFile();
             cleanupSave();
             cleanupStop();
             cleanupUpdate();

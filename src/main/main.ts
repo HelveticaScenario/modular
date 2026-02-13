@@ -1357,6 +1357,17 @@ const createMenu = (): void => {
             label: 'File',
             submenu: [
                 {
+                    label: 'New File',
+                    accelerator: 'CmdOrCtrl+N',
+                    click: (_item, focusedWindow) => {
+                        if (focusedWindow) {
+                            BrowserWindow.fromId(
+                                focusedWindow.id,
+                            )?.webContents.send(MENU_CHANNELS.NEW_FILE);
+                        }
+                    },
+                },
+                {
                     label: 'Open Workspace...',
                     accelerator: 'CmdOrCtrl+O',
                     click: (_item, focusedWindow) => {

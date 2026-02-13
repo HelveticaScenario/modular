@@ -104,6 +104,16 @@ export function MonacoPatchEditor({
         ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period, () => {
             window.electronAPI.triggerMenuAction('STOP');
         });
+
+        // Ctrl+N -> New File
+        ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyN, () => {
+            window.electronAPI.triggerMenuAction('NEW_FILE');
+        });
+
+        // Ctrl+W -> Close Buffer
+        ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyW, () => {
+            window.electronAPI.triggerMenuAction('CLOSE_BUFFER');
+        });
     };
 
     useEffect(() => {

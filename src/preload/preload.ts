@@ -155,6 +155,7 @@ export interface ElectronAPI {
         >;
     };
     // Menu events
+    onMenuNewFile: (callback: () => void) => () => void;
     onMenuSave: (callback: () => void) => () => void;
     onMenuStop: (callback: () => void) => () => void;
     onMenuUpdatePatch: (callback: () => void) => () => void;
@@ -347,6 +348,7 @@ const electronAPI: ElectronAPI = {
     },
 
     // Menu events
+    onMenuNewFile: menuEventHandler(MENU_CHANNELS.NEW_FILE),
     onMenuSave: menuEventHandler(MENU_CHANNELS.SAVE),
     onMenuStop: menuEventHandler(MENU_CHANNELS.STOP),
     onMenuUpdatePatch: menuEventHandler(MENU_CHANNELS.UPDATE_PATCH),

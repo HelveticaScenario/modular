@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { v4 } from 'uuid';
 import electronAPI from '../../electronAPI';
 import type { EditorBuffer } from '../../types/editor';
@@ -35,6 +35,8 @@ export function useEditorBuffers({
     const [usedUntitledNumbers, setUsedUntitledNumbers] = useState<Set<number>>(
         new Set(),
     );
+    const usedUntitledNumbersRef = useRef(usedUntitledNumbers);
+    usedUntitledNumbersRef.current = usedUntitledNumbers;
 
     const [renamingPath, setRenamingPath] = useState<string | null>(null);
 
@@ -134,8 +136,11 @@ export function useEditorBuffers({
     );
 
     const createUntitledFile = useCallback(() => {
+        // Read from the ref so we always see the latest value synchronously,
+        // avoiding both stale closures and React StrictMode double-invocation.
+        const currentUsed = usedUntitledNumbersRef.current;
         let nextIdNum = 1;
-        while (usedUntitledNumbers.has(nextIdNum)) {
+        while (currentUsed.has(nextIdNum)) {
             nextIdNum++;
         }
 
@@ -147,15 +152,15 @@ export function useEditorBuffers({
             dirty: false,
         };
 
-        setUsedUntitledNumbers((prev) => {
-            const next = new Set(prev);
-            next.add(nextIdNum);
-            return next;
-        });
+        // Eagerly update the ref so a second rapid call sees this number as taken.
+        const next = new Set(currentUsed);
+        next.add(nextIdNum);
+        usedUntitledNumbersRef.current = next;
 
+        setUsedUntitledNumbers(next);
         setBuffers((prev) => [...prev, newBuffer]);
         setActiveBufferId(nextId);
-    }, [usedUntitledNumbers]);
+    }, []);
 
     const saveFile = useCallback(
         async (targetId?: string) => {
@@ -452,11 +457,17 @@ export function useEditorBuffers({
                 }
 
                 if (activeBufferId === bufferId) {
+                    const idx = buffers.findIndex(
+                        (b) => getBufferId(b) === bufferId,
+                    );
                     const remaining = buffers.filter(
                         (b) => getBufferId(b) !== bufferId,
                     );
                     if (remaining.length > 0) {
-                        setActiveBufferId(getBufferId(remaining[0]));
+                        // Select the buffer that was immediately after the closed one,
+                        // or the last one if we closed the tail.
+                        const nextIdx = Math.min(idx, remaining.length - 1);
+                        setActiveBufferId(getBufferId(remaining[nextIdx]));
                     } else {
                         setActiveBufferId(undefined);
                     }

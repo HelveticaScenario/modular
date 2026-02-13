@@ -285,6 +285,7 @@ export const IPC_CHANNELS = {
 } as const;
 
 export const MENU_CHANNELS = {
+    NEW_FILE: 'modular:menu:new-file',
     SAVE: 'modular:menu:save',
     STOP: 'modular:menu:stop',
     UPDATE_PATCH: 'modular:menu:update-patch',
