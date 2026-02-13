@@ -179,21 +179,12 @@ use crate::types::Signal;
 /// - 0 = disconnected (no signals)
 /// - 1 = monophonic (single signal)
 /// - 2-16 = polyphonic (multiple signals)
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PolySignal {
     /// Signal values for each channel
     signals: [Signal; PORT_MAX_CHANNELS],
     /// Number of active channels: 0 = disconnected, 1 = mono, 2-16 = poly
     channels: usize,
-}
-
-impl Default for PolySignal {
-    fn default() -> Self {
-        Self {
-            signals: std::array::from_fn(|_| Signal::Disconnected),
-            channels: 0,
-        }
-    }
 }
 
 impl PolySignal {
@@ -445,6 +436,14 @@ mod tests {
     use crate::dsp::utils::hz_to_voct;
 
     use super::*;
+
+    #[test]
+    fn test_poly_signal_default() {
+        let sig = PolySignal::default();
+        assert_eq!(sig.channels(), 0);
+        assert!(sig.is_disconnected());
+        assert_eq!(sig.get_value(0), 0.0);
+    }
 
     #[test]
     fn test_poly_signal_deserialize_string() {

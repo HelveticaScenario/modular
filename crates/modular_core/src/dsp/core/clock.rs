@@ -33,7 +33,6 @@ pub struct Clock {
     loop_index: u64,
     run_trigger: SchmittTrigger,
     reset_trigger: SchmittTrigger,
-    was_run_connected: bool,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -67,7 +66,6 @@ impl Default for Clock {
             loop_index: 0,
             run_trigger: SchmittTrigger::default(),
             reset_trigger: SchmittTrigger::default(),
-            was_run_connected: false,
             _channel_count: 0,
         }
     }
@@ -85,18 +83,14 @@ impl Clock {
     fn update(&mut self, sample_rate: f32) {
         // Process run param through Schmitt trigger when connected
         // We need process_with_edge to get the continuous high/low state (not just rising edge)
-        if !self.params.run.is_disconnected() {
+        let running = if !self.params.run.is_disconnected() {
             let run_value = self.params.run.get_value();
             let (is_high, _) = self.run_trigger.process_with_edge(run_value);
-            self.running = is_high;
-            self.was_run_connected = true;
-        } else if self.was_run_connected {
-            // Run was connected but is now disconnected (cable removed):
-            // restore default running state and reset the Schmitt trigger
-            self.running = true;
+            is_high && self.running
+        } else {
             self.run_trigger.reset();
-            self.was_run_connected = false;
-        }
+            self.running
+        };
 
         // Process reset param through Schmitt trigger (default 0V = no reset)
         let reset_value = self.params.reset.get_value_or(0.0);
@@ -122,7 +116,7 @@ impl Clock {
         let phase_increment = bar_frequency / sample_rate as f64;
 
         // Update phase if running
-        if self.running {
+        if running {
             self.phase += phase_increment;
             self.ppq_phase += phase_increment;
 
@@ -144,7 +138,7 @@ impl Clock {
         self.outputs.ramp = self.phase as f32 * 5.0;
 
         // Generate bar trigger (trigger at start of bar)
-        let should_bar_trigger = self.phase < phase_increment && self.running;
+        let should_bar_trigger = self.phase < phase_increment && running;
         if should_bar_trigger && !self.last_bar_trigger {
             self.outputs.bar_trigger = 5.0;
         } else {
@@ -153,7 +147,7 @@ impl Clock {
         self.last_bar_trigger = should_bar_trigger;
 
         // Generate PPQ trigger (48 times per bar)
-        let should_ppq_trigger = self.ppq_phase < phase_increment && self.running;
+        let should_ppq_trigger = self.ppq_phase < phase_increment && running;
         if should_ppq_trigger && !self.last_ppq_trigger {
             self.outputs.ppq_trigger = 5.0;
         } else {
@@ -226,11 +220,18 @@ mod tests {
 
         // Set run param to 0V (stopped)
         c.params.run = serde_json::from_str("0.0").unwrap();
+        assert!(
+            !c.params.run.is_disconnected(),
+            "Run param should be connected"
+        );
         let phase_before = c.phase;
         for _ in 0..128 {
             c.update(sr);
         }
-        assert!((c.phase - phase_before).abs() < 1e-9, "Clock should be stopped when run is 0V");
+        assert!(
+            (c.phase - phase_before).abs() < 1e-9,
+            "Clock should be stopped when run is 0V"
+        );
 
         // Set run param back to 5V (running)
         c.params.run = serde_json::from_str("5.0").unwrap();
@@ -243,18 +244,34 @@ mod tests {
     fn clock_run_disconnect_resumes_running() {
         let mut c = Clock::default();
         let sr = 48_000.0;
-
+        c.params.tempo = serde_json::from_str("0").unwrap(); // Set tempo to 1 Hz to make phase changes more obvious
         // Connect run at 0V (stopped)
         c.params.run = serde_json::from_str("0.0").unwrap();
-        for _ in 0..128 {
-            c.update(sr);
-        }
-        assert!(!c.running, "Clock should be stopped when run is 0V");
+        let initial_phase = c.phase;
+        let did_not_change = (0..128)
+            .map(|_| {
+                c.update(sr);
+                c.phase
+            })
+            .all(|v| v == initial_phase);
+        assert!(did_not_change, "Clock should be stopped when run is 0V");
 
         // Disconnect run (back to default) — clock should resume
         c.params.run = MonoSignal::default();
-        c.update(sr);
-        assert!(c.running, "Clock should resume when run is disconnected");
+        assert!(
+            c.params.run.is_disconnected(),
+            "Run param should be disconnected"
+        );
+        let did_not_change = (0..128)
+            .map(|_| {
+                c.update(sr);
+                c.phase
+            })
+            .all(|v| v == initial_phase);
+        assert!(
+            !did_not_change,
+            "Clock should resume when run is disconnected"
+        );
     }
 
     #[test]
@@ -278,6 +295,9 @@ mod tests {
         // Keep reset high - no further resets (no new rising edge)
         let phase_after_reset = c.phase;
         c.update(sr);
-        assert!(c.phase > phase_after_reset, "Clock should continue advancing after reset");
+        assert!(
+            c.phase > phase_after_reset,
+            "Clock should continue advancing after reset"
+        );
     }
 }
