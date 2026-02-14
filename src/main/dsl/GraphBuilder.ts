@@ -77,7 +77,7 @@ export type OutGroup = StereoOutGroup | MonoOutGroup;
  * BaseCollection provides iterable, indexable container for ModuleOutput arrays
  * with chainable DSP methods (gain, shift, scope, out).
  */
-export class BaseCollection<T extends ModuleOutput> {
+export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
     [index: number]: T;
     readonly items: T[] = [];
 
@@ -166,7 +166,7 @@ export class BaseCollection<T extends ModuleOutput> {
         return this;
     }
 
-    p<T>(pipelineFunc: (self: this) => T): T {
+    pipe<T>(pipelineFunc: (self: this) => T): T {
         return pipelineFunc(this);
     }
 
@@ -930,7 +930,7 @@ export class ModuleOutput {
         return this;
     }
 
-    p<T>(pipelineFunc: (self: this) => T): T {
+    pipe<T>(pipelineFunc: (self: this) => T): T {
         return pipelineFunc(this);
     }
 

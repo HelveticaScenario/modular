@@ -360,14 +360,14 @@ interface ModuleOutput {
    *
    * @example
    * // Inline transform
-   * $sine('a').p(s => s.gain(0.5).shift(1))
+   * $sine('a').pipe(s => s.gain(0.5).shift(1))
    *
    * @example
    * // Reusable helper
    * const tremolo = (c) => c.gain($sine('10hz').range(4, 5))
-   * $saw('c').p(tremolo).out()
+   * $saw('c').pipe(tremolo).out()
    */
-  p<T>(pipeFn: (self: this) => T): T;
+  pipe<T>(pipeFn: (self: this) => T): T;
 }
 
 /**
@@ -415,7 +415,7 @@ interface ModuleOutputWithRange extends ModuleOutput {
 }
 
 
-interface BaseCollection<T extends ModuleOutput> extends Iterable<T> {
+class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
   /** Number of outputs in the collection */
   readonly length: number;
   /** Index access to individual elements */
@@ -459,6 +459,18 @@ interface BaseCollection<T extends ModuleOutput> extends Iterable<T> {
    */
   outMono(channel?: number, gain?: Poly<Signal>): this;
 
+
+  /**
+   * Remap all outputs from input range to output range.
+   * Requires explicit input min/max values.
+   * @param inMin - Input minimum as {@link Poly<Signal>}
+   * @param inMax - Input maximum as {@link Poly<Signal>}
+   * @param outMin - Output minimum as {@link Poly<Signal>}
+   * @param outMax - Output maximum as {@link Poly<Signal>}
+   * @see {@link CollectionWithRange.range} - for automatic input range
+   */
+  range(inMin: Poly<Signal>, inMax: Poly<Signal>, outMin: Poly<Signal>, outMax: Poly<Signal>): Collection;
+
   /**
    * Pipe this collection through a transform function.
    *
@@ -470,14 +482,14 @@ interface BaseCollection<T extends ModuleOutput> extends Iterable<T> {
    *
    * @example
    * // Inline transform on a collection
-   * $(osc1, osc2).p(all => all.gain(2.5)).out()
+   * $(osc1, osc2).pipe(all => all.gain(2.5)).out()
    *
    * @example
    * // Reusable helper applied to a collection
    * const tremolo = (c) => c.gain($sine('10hz').range(4, 5))
-   * $r($saw('220hz'), $saw('221hz')).p(tremolo).out()
+   * $r($saw('220hz'), $saw('221hz')).pipe(tremolo).out()
    */
-  p<T>(pipeFn: (self: this) => T): T;
+  pipe<T>(pipeFn: (self: this) => T): T;
 }
 
 /**
@@ -496,19 +508,8 @@ interface BaseCollection<T extends ModuleOutput> extends Iterable<T> {
  * @see {@link ModuleOutput} - individual outputs
  * @see {@link $} - helper to create Collection
  */
-interface Collection extends BaseCollection<ModuleOutput> {
-  constructor(...outputs: ModuleOutput[]): this;
-
-  /**
-   * Remap all outputs from input range to output range.
-   * Requires explicit input min/max values.
-   * @param inMin - Input minimum as {@link Poly<Signal>}
-   * @param inMax - Input maximum as {@link Poly<Signal>}
-   * @param outMin - Output minimum as {@link Poly<Signal>}
-   * @param outMax - Output maximum as {@link Poly<Signal>}
-   * @see {@link CollectionWithRange.range} - for automatic input range
-   */
-  range(inMin: Poly<Signal>, inMax: Poly<Signal>, outMin: Poly<Signal>, outMax: Poly<Signal>): Collection;
+class Collection extends BaseCollection<ModuleOutput> {
+  constructor(...outputs: ModuleOutput[]);
 }
 
 /**
@@ -525,8 +526,8 @@ interface Collection extends BaseCollection<ModuleOutput> {
  * @see {@link ModuleOutputWithRange} - individual ranged outputs
  * @see {@link $r} - helper to create CollectionWithRange
  */
-interface CollectionWithRange extends BaseCollection<ModuleOutputWithRange> {
-  constructor(...outputs: ModuleOutputWithRange[]): this;
+class CollectionWithRange extends BaseCollection<ModuleOutputWithRange> {
+  constructor(...outputs: ModuleOutputWithRange[]);
 
   /**
    * Remap all outputs from their native ranges to a new range.
@@ -535,15 +536,15 @@ interface CollectionWithRange extends BaseCollection<ModuleOutputWithRange> {
    * @param outMax - Output maximum as {@link Poly<Signal>}
    * @see {@link Collection.range} - for explicit input range
    */
-  range(outMin: Poly<Signal>, outMax: Poly<Signal>): Collection;
+  override range(outMin: Poly<Signal>, outMax: Poly<Signal>): Collection;
 }
 
 /**
  * DeferredCollection is a collection of DeferredModuleOutput instances.
  * Provides a .set() method to assign signals to all contained deferred outputs.
  */
-interface DeferredCollection extends BaseCollection<DeferredModuleOutput> {
-  constructor(...outputs: DeferredModuleOutput[]): this;
+class DeferredCollection extends BaseCollection<DeferredModuleOutput> {
+  constructor(...outputs: DeferredModuleOutput[]);
 
   /**
    * Set the signals for all deferred outputs in this collection.
