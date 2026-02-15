@@ -1044,12 +1044,15 @@ pub enum ScopeItem {
 }
 
 /// Statistics computed from scope buffer data
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 #[napi(object)]
 pub struct ScopeStats {
     pub min: f64,
     pub max: f64,
     pub peak_to_peak: f64,
+    pub buffer_idx: u32,
+    pub trigger_threshold: Option<f64>,
+    pub trigger_idx: Vec<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

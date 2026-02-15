@@ -6,14 +6,14 @@ export const scopeKeyFromSubscription = (subscription: ScopeItem) => {
 };
 
 export interface ScopeDrawOptions {
-    range?: [number, number];
-    stats?: ScopeStats;
+    range: [number, number];
+    stats: ScopeStats;
 }
 
 export const drawOscilloscope = (
     channels: Float32Array[],
     canvas: HTMLCanvasElement,
-    options: ScopeDrawOptions = {},
+    options: ScopeDrawOptions,
 ) => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -132,13 +132,13 @@ export const drawOscilloscope = (
         return;
     }
 
-    const windowSize = 1024;
+    const windowSize = 2048;
 
     // Draw all channels (same color, overlaid)
     ctx.strokeStyle = accentColor;
     ctx.lineWidth = 1.5 * dpr;
 
-    for (const data of channels) {
+    for (const [ch, data] of channels.entries()) {
         if (!data || data.length < 2) continue;
 
         const sampleCount = Math.min(windowSize, data.length);
@@ -147,8 +147,10 @@ export const drawOscilloscope = (
         ctx.beginPath();
 
         for (let i = 0; i < sampleCount; i++) {
+            let dataIndex =
+                (i + stats.triggerIdx[ch] + windowSize) % data.length;
             const x = waveformLeft + stepX * i;
-            const rawSample = data[i];
+            const rawSample = data[dataIndex];
             const clampedSample = Math.max(
                 minVoltage,
                 Math.min(maxVoltage, rawSample),

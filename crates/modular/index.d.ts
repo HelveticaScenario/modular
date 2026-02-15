@@ -294,4 +294,7 @@ export interface ScopeStats {
   min: number
   max: number
   peakToPeak: number
+  bufferIdx: number
+  triggerThreshold?: number
+  triggerIdx: Array<number>
 }

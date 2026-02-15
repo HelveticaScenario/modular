@@ -600,7 +600,7 @@ const AUDIO_OUTPUT_ATTENUATION: f32 = 0.2;
 /// the [-5, 5] volt range used by DSP modules (inverse of AUDIO_OUTPUT_ATTENUATION).
 const AUDIO_INPUT_GAIN: f32 = 1.0 / AUDIO_OUTPUT_ATTENUATION;
 
-const SCOPE_CAPACITY: u32 = 1024;
+const SCOPE_CAPACITY: u32 = 2048 * 2;
 
 use modular_core::types::ScopeStats;
 
@@ -609,10 +609,11 @@ pub struct ScopeBuffer {
   sample_counter: u32,
   skip_rate: u32,
   trigger_threshold: Option<f32>,
-  trigger: SchmittTrigger,
+  trigger: [SchmittTrigger; PORT_MAX_CHANNELS],
   /// Multi-channel buffers: one buffer per channel
   buffers: Vec<[f32; SCOPE_CAPACITY as usize]>,
   buffer_idx: usize,
+  trigger_idx: [usize; PORT_MAX_CHANNELS],
   /// Current number of channels being captured
   num_channels: usize,
 }
@@ -623,7 +624,7 @@ fn ms_to_samples(ms: u32, sample_rate: f32) -> u32 {
 
 // A function that calculates the skip rate needed to capture target samples over total samples
 fn calculate_skip_rate(total_samples: u32) -> u32 {
-  total_samples / SCOPE_CAPACITY
+  total_samples / (SCOPE_CAPACITY / 2)
 }
 
 impl ScopeBuffer {
@@ -633,16 +634,19 @@ impl ScopeBuffer {
       sample_counter: 0,
       skip_rate: 0,
       trigger_threshold: None,
-      trigger: SchmittTrigger::new(0.0, 0.0),
+      trigger: [SchmittTrigger::new(0.0, 0.0); PORT_MAX_CHANNELS],
       buffer_idx: 0,
+      trigger_idx: [0; PORT_MAX_CHANNELS],
       num_channels: 1,
     };
 
     sb.update(scope, sample_rate);
-    sb.trigger = SchmittTrigger::new(
-      sb.trigger_threshold.unwrap_or(0.0),
-      sb.trigger_threshold.unwrap_or(0.0) + 0.001,
-    );
+    for ch in 0..PORT_MAX_CHANNELS {
+      sb.trigger[ch] = SchmittTrigger::new(
+        sb.trigger_threshold.unwrap_or(0.0),
+        sb.trigger_threshold.unwrap_or(0.0) + 0.001,
+      );
+    }
 
     sb
   }
@@ -651,13 +655,19 @@ impl ScopeBuffer {
     let threshold = threshold.map(|t| (t as f32) / 1000.0);
     self.trigger_threshold = threshold;
     if let Some(thresh) = threshold {
-      self.trigger.set_thresholds(thresh, thresh + 0.001);
-      self.trigger.reset();
+      for ch in 0..PORT_MAX_CHANNELS {
+        self.trigger[ch].set_thresholds(thresh, thresh + 0.001);
+        self.trigger[ch].reset();
+      }
     }
   }
 
   fn update_skip_rate(&mut self, ms_per_frame: u32, sample_rate: f32) {
     self.skip_rate = calculate_skip_rate(ms_to_samples(ms_per_frame, sample_rate));
+    println!(
+      "Scope skip rate updated: {} (ms/frame: {}, sample_rate: {})",
+      self.skip_rate, ms_per_frame, sample_rate
+    );
   }
 
   /// Push samples for all channels at once
@@ -673,41 +683,37 @@ impl ScopeBuffer {
       }
       self.num_channels = num_channels;
     }
+    self.buffer_idx %= SCOPE_CAPACITY as usize; // Wrap buffer index
+    for ch in 0..num_channels {
+      // Use first channel for triggering
+      let trigger_value = values.get(ch).copied().unwrap_or(0.0);
 
-    // Use first channel for triggering
-    let trigger_value = values.first().copied().unwrap_or(0.0);
-
-    if self.buffer_idx >= SCOPE_CAPACITY as usize {
       let mut triggered = false;
 
       if self.trigger_threshold.is_none() {
         triggered = true;
-      } else if self.trigger.process(trigger_value) {
+      } else if self.trigger[ch].process(trigger_value) {
         triggered = true;
       }
 
       if triggered {
-        self.trigger.reset();
-        self.buffer_idx = 0;
+        self.trigger[ch].reset();
+        self.trigger_idx[ch] = self.buffer_idx;
       }
     }
 
-    if self.buffer_idx < SCOPE_CAPACITY as usize {
-      if self.sample_counter == 0 {
-        // Store all channel values
-        for (ch, &val) in values.iter().enumerate().take(self.num_channels as usize) {
-          if ch < self.buffers.len() {
-            self.buffers[ch][self.buffer_idx] = val;
-          }
-        }
-        if (self.buffer_idx + 1) <= SCOPE_CAPACITY as usize {
-          self.buffer_idx += 1;
+    if self.sample_counter == 0 {
+      // Store all channel values
+      for (ch, &val) in values.iter().enumerate().take(self.num_channels as usize) {
+        if ch < self.buffers.len() {
+          self.buffers[ch][self.buffer_idx] = val;
         }
       }
-      self.sample_counter += 1;
-      if self.sample_counter > self.skip_rate {
-        self.sample_counter = 0;
-      }
+      self.buffer_idx += 1;
+    }
+    self.sample_counter += 1;
+    if self.sample_counter > self.skip_rate {
+      self.sample_counter = 0;
     }
   }
 
@@ -756,6 +762,9 @@ impl ScopeBuffer {
       min: min as f64,
       max: max as f64,
       peak_to_peak: (max - min) as f64,
+      buffer_idx: self.buffer_idx as u32,
+      trigger_threshold: self.trigger_threshold.map(|t| t as f64),
+      trigger_idx: self.trigger_idx.iter().map(|e| *e as u32).collect(),
     }
   }
 }
