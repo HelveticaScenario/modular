@@ -6,7 +6,7 @@ use crate::poly::{PolyOutput, PolySignal};
 #[derive(Deserialize, Default, JsonSchema, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct SignalParams {
-    /// signal input (polyphonic)
+    /// Input signal to forward.
     source: PolySignal,
 }
 
@@ -19,13 +19,14 @@ impl crate::types::Connect for SignalParams {
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct SignalOutputs {
-    #[output("output", "signal output", default)]
+    #[output("output", "forwarded signal", default)]
     sample: PolyOutput,
 }
 
+/// Utility module for routing, naming, and exposing signals in a patch.
 #[module(
     name = "$signal",
-    description = "a polyphonic signal passthrough",
+    description = "Forward a signal unchanged",
     args(source)
 )]
 #[derive(Default)]

@@ -9,21 +9,20 @@ use serde::Deserialize;
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct StereoMixerParams {
-    /// Polyphonic input signal to mix down to stereo
+    /// Input signal to place in the stereo field.
     input: PolySignal,
-    /// Pan position for each channel (-5 = left, 0 = center, +5 = right).
-    /// Cycles across input channels if fewer pan channels are provided.
+    /// Pan position per channel (-5 = left, 0 = center, +5 = right).
     pan: PolySignal,
-    /// Stereo width (0 = no spread, 5 = full spread across voices).
-    /// Voices are auto-panned relative to their base pan position.
+    /// Stereo spread across channels (0 = no spread, 5 = widest spread).
+    /// Width offsets each channel around its base pan position.
     width: MonoSignal,
 }
 
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct StereoMixerOutputs {
-    /// Stereo output (channel 0 = left, channel 1 = right)
-    #[output("output", "stereo output", default)]
+    /// Stereo output (left on channel 0, right on channel 1).
+    #[output("output", "stereo mix output", default)]
     sample: PolyOutput,
 }
 
@@ -34,7 +33,7 @@ struct ChannelState {
 
 #[module(
     name = "$stereoMix",
-    description = "Mix polyphonic signal to stereo",
+    description = "Pan and spread a signal into stereo",
     channels = 2,
     args(input)
 )]

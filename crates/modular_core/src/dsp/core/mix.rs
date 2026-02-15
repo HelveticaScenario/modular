@@ -1,9 +1,3 @@
-//! Mix module - merges multiple polyphonic signals into a single polyphonic output.
-//!
-//! Mixes corresponding channels from each input together (channel 0 from each input
-//! is mixed to output channel 0, etc.). Inputs with fewer channels contribute 0.0
-//! for missing channels (no cycling). The gain parameter can extend the output
-//! channel count beyond the max input channels, cycling the pre-gain mixed values.
 
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -13,18 +7,18 @@ use crate::{
     types::Clickless,
 };
 
-/// Mixing mode for combining channels
+/// Mixing mode for combining input signals.
 #[derive(Clone, Copy, Debug, Default, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum MixMode {
-    /// Sum all inputs at each channel
+    /// Sum all inputs.
     #[default]
     Sum,
-    /// Average all inputs at each channel
+    /// Average all inputs.
     Average,
-    /// Take the maximum absolute value at each channel
+    /// Keep the strongest input.
     Max,
-    /// Take the minimum absolute value at each channel
+    /// Keep the weakest non-zero input.
     Min,
 }
 
@@ -35,19 +29,21 @@ impl crate::types::Connect for MixMode {
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 pub struct MixParams {
-    /// Polyphonic inputs to mix together
+    /// Input signals to mix channel-by-channel.
+    ///
+    /// Channel `n` from every input is mixed into output channel `n`.
     pub inputs: Vec<PolySignal>,
-    /// Mixing mode (applied per-channel across all inputs)
+    /// How inputs are combined.
     mode: MixMode,
-    /// Output gain/attenuation (polyphonic - can extend output channels)
+    /// Final output level.
     pub gain: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct MixOutputs {
-    /// Mixed polyphonic output
-    #[output("output", "mixed polyphonic output", default)]
+    /// Mixed multichannel output.
+    #[output("output", "multichannel mix: each output channel mixes the same channel index from all inputs (not a mono fold-down)", default)]
     sample: PolyOutput,
 }
 
@@ -77,7 +73,12 @@ pub fn mix_derive_channel_count(params: &MixParams) -> usize {
     .min(PORT_MAX_CHANNELS)
 }
 
-#[module(name = "$mix", description = "Mix multiple polyphonic signals together", channels_derive = mix_derive_channel_count, args(inputs))]
+/// Mix module for combining multiple signals into a single mix bus.
+///
+/// Use this when you want to blend several multichannel modulation/audio sources.
+/// It mixes channel `n` across all inputs into output channel `n`, rather than
+/// folding all channels into a single mono channel.
+#[module(name = "$mix", description = "Mix multichannel signals together channel-by-channel", channels_derive = mix_derive_channel_count, args(inputs))]
 #[derive(Default)]
 pub struct Mix {
     outputs: MixOutputs,

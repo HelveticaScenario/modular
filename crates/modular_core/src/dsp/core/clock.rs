@@ -12,15 +12,16 @@ use crate::{
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct ClockParams {
-    /// tempo in v/oct (tempo)
+    /// Tempo control in V/Oct. Defaults to 120 BPM when unpatched.
     tempo: MonoSignal,
-    /// run gate input (high = running, low = stopped). Defaults to 5V (running).
+    /// Run gate. High runs the clock, low stops it. Defaults to high when unpatched.
     run: MonoSignal,
-    /// reset trigger input (rising edge resets phase). Defaults to 0V (no reset).
+    /// Reset trigger. A rising edge restarts the bar.
     reset: MonoSignal,
 }
 
-#[module(name = "$clock", description = "A tempo clock with multiple outputs", channels = 2, args(tempo?))]
+/// Tempo-synced transport clock for driving sequencers, envelopes, and synced modulation.
+#[module(name = "$clock", description = "Tempo clock with bar and subdivision timing outputs", channels = 2, args(tempo?))]
 pub struct Clock {
     outputs: ClockOutputs,
     phase: f64,
@@ -40,15 +41,15 @@ pub struct Clock {
 struct ClockOutputs {
     #[output(
         "playhead",
-        "how many bars have elapsed. 2 channel output with phase and loop index",
+        "Bar playhead: channel 0 is bar phase (0..1), channel 1 is completed bar count",
         default
     )]
     playhead: PolyOutput,
-    #[output("barTrigger", "trigger output every bar", range = (0.0, 5.0))]
+    #[output("barTrigger", "5V trigger at the start of each bar", range = (0.0, 5.0))]
     bar_trigger: f32,
-    #[output("ramp", "ramp from 0 to 5V every bar", range = (0.0, 5.0))]
+    #[output("ramp", "0..5V ramp that resets every bar", range = (0.0, 5.0))]
     ramp: f32,
-    #[output("ppqTrigger", "trigger output at 48 PPQ", range = (0.0, 5.0))]
+    #[output("ppqTrigger", "5V trigger at 48 pulses per quarter note", range = (0.0, 5.0))]
     ppq_trigger: f32,
 }
 
