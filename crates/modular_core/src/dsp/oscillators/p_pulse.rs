@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
-struct DPulseOscillatorParams {
+struct PPulseOscillatorParams {
     /// phase input (0-1, will be wrapped)
     phase: PolySignal,
     /// pulse width (0-5, 2.5 is square)
@@ -19,7 +19,7 @@ struct DPulseOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-struct DPulseOscillatorOutputs {
+struct PPulseOscillatorOutputs {
     #[output("output", "signal output", default, range = (-5.0, 5.0))]
     sample: PolyOutput,
 }
@@ -31,18 +31,18 @@ struct ChannelState {
 }
 
 #[module(
-    name = "$dPulse",
+    name = "$pPulse",
     description = "A phase-driven pulse/square oscillator with PWM",
     args(phase)
 )]
 #[derive(Default)]
-pub struct DPulseOscillator {
-    outputs: DPulseOscillatorOutputs,
+pub struct PPulseOscillator {
+    outputs: PPulseOscillatorOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],
-    params: DPulseOscillatorParams,
+    params: PPulseOscillatorParams,
 }
 
-impl DPulseOscillator {
+impl PPulseOscillator {
     fn update(&mut self, _sample_rate: f32) {
         let num_channels = self.channel_count();
 
@@ -66,4 +66,4 @@ impl DPulseOscillator {
     }
 }
 
-message_handlers!(impl DPulseOscillator {});
+message_handlers!(impl PPulseOscillator {});

@@ -10,30 +10,30 @@ use serde::Deserialize;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
-struct DSineOscillatorParams {
+struct PSineOscillatorParams {
     /// phase input (0-1, will be wrapped)
     phase: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-struct DSineOscillatorOutputs {
+struct PSineOscillatorOutputs {
     #[output("output", "signal output", default, range = (-5.0, 5.0))]
     sample: PolyOutput,
 }
 
 #[module(
-    name = "$dSine",
+    name = "$pSine",
     description = "A phase-driven sine wave oscillator",
     args(phase)
 )]
 #[derive(Default)]
-pub struct DSineOscillator {
-    outputs: DSineOscillatorOutputs,
-    params: DSineOscillatorParams,
+pub struct PSineOscillator {
+    outputs: PSineOscillatorOutputs,
+    params: PSineOscillatorParams,
 }
 
-impl DSineOscillator {
+impl PSineOscillator {
     fn update(&mut self, _sample_rate: f32) {
         let num_channels = self.channel_count();
 
@@ -45,4 +45,4 @@ impl DSineOscillator {
     }
 }
 
-message_handlers!(impl DSineOscillator {});
+message_handlers!(impl PSineOscillator {});

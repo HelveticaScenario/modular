@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use simple_easing;
 
-use crate::PolyOutput;
+use crate::{MonoSignal, PolyOutput};
 use crate::poly::PolySignal;
 use crate::types::{InterpolationType, Signal};
 
@@ -11,7 +11,7 @@ use crate::types::{InterpolationType, Signal};
 struct TrackParams {
     /// Playhead input - sums channels 0 and 1 for position
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
-    playhead: PolySignal,
+    playhead: MonoSignal,
     /// Keyframes as (polysignal, time) tuples. Must be sorted by time.
     keyframes: Vec<(PolySignal, f32)>,
     interpolation_type: InterpolationType,
@@ -43,8 +43,7 @@ pub struct Track {
 impl Track {
     fn update(&mut self, _sample_rate: f32) {
         // Sum channels 0 and 1 of the playhead
-        let playhead_value = self.params.playhead.get(0).get_value() as f64
-            + self.params.playhead.get(1).get_value() as f64;
+        let playhead_value = self.params.playhead.get_value_f64();
 
         let t = playhead_value.fract().abs() as f32;
         let channel_count = self.channel_count();

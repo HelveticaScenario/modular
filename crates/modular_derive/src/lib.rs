@@ -981,6 +981,19 @@ fn is_poly_signal_type(ty: &Type) -> bool {
     }
 }
 
+/// Check if a type is exactly MonoSignal (for default_connection code generation)
+fn is_mono_signal_type(ty: &Type) -> bool {
+    match ty {
+        Type::Path(tp) => tp
+            .path
+            .segments
+            .last()
+            .map(|seg| seg.ident == "MonoSignal")
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
 fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
     let name = &ast.ident;
 
@@ -1003,8 +1016,9 @@ fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
                                     let module = &dc.module;
                                     let port = &dc.port;
                                     let is_poly = is_poly_signal_type(&field.ty);
+                                    let is_mono = is_mono_signal_type(&field.ty);
 
-                                    if is_poly {
+                                    if is_poly || is_mono {
                                         // Generate PolySignal default
                                         let cable_exprs: Vec<TokenStream2> = dc
                                             .channels
@@ -1015,13 +1029,23 @@ fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
                                                 }
                                             })
                                             .collect();
-                                        default_stmts.extend(quote_spanned! {field.span()=>
-                                            if self.#field_ident.is_disconnected() {
-                                                self.#field_ident = crate::poly::PolySignal::poly(&[
-                                                    #(#cable_exprs),*
-                                                ]);
-                                            }
-                                        });
+                                        if is_poly {
+                                            default_stmts.extend(quote_spanned! {field.span()=>
+                                                if self.#field_ident.is_disconnected() {
+                                                    self.#field_ident = crate::poly::PolySignal::poly(&[
+                                                        #(#cable_exprs),*
+                                                    ]);
+                                                }
+                                            });
+                                        } else {
+                                            default_stmts.extend(quote_spanned! {field.span()=>
+                                                if self.#field_ident.is_disconnected() {
+                                                    self.#field_ident = crate::poly::MonoSignal::from_poly(crate::poly::PolySignal::poly(&[
+                                                        #(#cable_exprs),*
+                                                    ]));
+                                                }
+                                            });
+                                        }
                                     } else {
                                         // Generate Signal default (single channel)
                                         let ch = dc.channels.first().copied().unwrap_or(0);

@@ -274,6 +274,12 @@ impl PolySignal {
     }
 }
 
+impl From<MonoSignal> for PolySignal {
+    fn from(mono: MonoSignal) -> PolySignal {
+        mono.inner
+    }
+}
+
 // === Connect implementation for PolySignal ===
 
 impl crate::types::Connect for PolySignal {
@@ -387,6 +393,30 @@ impl MonoSignal {
         } else {
             self.get_value()
         }
+    }
+
+    /// Get the summed value of all channels
+    pub fn get_value_f64(&self) -> f64 {
+        self.inner
+            .signals
+            .iter()
+            .map(|ch| ch.get_value() as f64)
+            .sum::<f64>()
+    }
+
+    /// Get value with fallback for disconnected inputs (normalled input)
+    pub fn get_value_or_f64(&self, default: f64) -> f64 {
+        if self.is_disconnected() {
+            default
+        } else {
+            self.get_value_f64()
+        }
+    }
+}
+
+impl From<PolySignal> for MonoSignal {
+    fn from(poly: PolySignal) -> MonoSignal {
+        MonoSignal { inner: poly }
     }
 }
 

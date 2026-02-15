@@ -18,12 +18,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    Patch, PolySignal,
-    dsp::utilities::quantizer::ScaleParam,
-    dsp::utils::{TempGate, TempGateState, midi_to_voct_f64},
-    pattern_system::{DspHap, Fraction, Pattern},
-    poly::{PORT_MAX_CHANNELS, PolyOutput},
-    types::Connect,
+    MonoSignal, Patch, PolySignal, dsp::{utilities::quantizer::ScaleParam, utils::{TempGate, TempGateState, midi_to_voct_f64}}, pattern_system::{DspHap, Fraction, Pattern}, poly::{PORT_MAX_CHANNELS, PolyOutput}, types::Connect
 };
 
 /// Scale parameter for IntervalSeq that supports an optional octave in the root.
@@ -303,7 +298,7 @@ pub struct IntervalSeqParams {
     scale: IntervalScaleParam,
     /// 2 channel control signal, sums the first 2 channels
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
-    playhead: PolySignal,
+    playhead: MonoSignal,
     /// Number of polyphonic voices (1-16)
     #[serde(default = "default_channels")]
     pub channels: usize,
@@ -698,8 +693,7 @@ impl IntervalSeq {
 
 impl IntervalSeq {
     fn update(&mut self, _sample_rate: f32) {
-        let playhead = self.params.playhead.get(0).get_value() as f64
-            + self.params.playhead.get(1).get_value() as f64;
+        let playhead = self.params.playhead.get_value_f64();
 
         let num_channels = self.channel_count();
 

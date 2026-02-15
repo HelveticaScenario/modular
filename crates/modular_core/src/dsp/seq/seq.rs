@@ -16,7 +16,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    PolySignal,
+    MonoSignal, PolySignal,
     dsp::utils::{TempGate, TempGateState},
     pattern_system::{DspHap, Fraction},
     poly::{PORT_MAX_CHANNELS, PolyOutput},
@@ -139,7 +139,7 @@ pub struct SeqParams {
     pattern: SeqPatternParam,
     /// 2 channel control signal, sums the first 2 channels
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
-    playhead: PolySignal,
+    playhead: MonoSignal,
     /// Number of polyphonic voices (1-16)
     pub channels: Option<usize>,
     /// The pattern string (used for serialization)
@@ -266,8 +266,7 @@ impl Seq {
     }
 
     fn update(&mut self, _sample_rate: f32) {
-        let playhead = self.params.playhead.get(0).get_value() as f64
-            + self.params.playhead.get(1).get_value() as f64;
+        let playhead = self.params.playhead.get_value_f64();
 
         // Use precomputed channel count from _channel_count (set by try_update_params)
         let num_channels = self.channel_count();

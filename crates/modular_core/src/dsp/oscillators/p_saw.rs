@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
-struct DSawOscillatorParams {
+struct PSawOscillatorParams {
     /// phase input (0-1, will be wrapped)
     phase: PolySignal,
     /// waveform shape: 0=saw, 2.5=triangle, 5=ramp
@@ -17,7 +17,7 @@ struct DSawOscillatorParams {
 
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-struct DSawOscillatorOutputs {
+struct PSawOscillatorOutputs {
     #[output("output", "signal output", default, range = (-5.0, 5.0))]
     sample: PolyOutput,
 }
@@ -30,18 +30,18 @@ struct ChannelState {
 }
 
 #[module(
-    name = "$dSaw",
+    name = "$pSaw",
     description = "A phase-driven sawtooth/triangle/ramp oscillator",
     args(phase)
 )]
 #[derive(Default)]
-pub struct DSawOscillator {
-    outputs: DSawOscillatorOutputs,
+pub struct PSawOscillator {
+    outputs: PSawOscillatorOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],
-    params: DSawOscillatorParams,
+    params: PSawOscillatorParams,
 }
 
-impl DSawOscillator {
+impl PSawOscillator {
     fn update(&mut self, _sample_rate: f32) {
         let num_channels = self.channel_count();
 
@@ -163,4 +163,4 @@ fn generate_triangle(phase: f32, phase_increment: f32) -> f32 {
     triangle
 }
 
-message_handlers!(impl DSawOscillator {});
+message_handlers!(impl PSawOscillator {});
