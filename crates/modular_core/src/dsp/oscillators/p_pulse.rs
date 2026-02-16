@@ -24,10 +24,11 @@ struct PPulseOscillatorOutputs {
     sample: PolyOutput,
 }
 
-/// Per-channel state for width smoothing
+/// Per-channel state for width smoothing and phase tracking
 #[derive(Default, Clone, Copy)]
 struct ChannelState {
     width: Clickless,
+    prev_phase: f32,
 }
 
 /// Phase-driven pulse/square oscillator with pulse width modulation.
@@ -66,15 +67,57 @@ impl PPulseOscillator {
 
             let phase = wrap(0.0..1.0, self.params.phase.get_value(ch));
 
+            // Derive phase increment from external phasor
+            let mut phase_increment = phase - state.prev_phase;
+            if phase_increment < -0.5 {
+                phase_increment += 1.0;
+            } else if phase_increment > 0.5 {
+                phase_increment -= 1.0;
+            }
+            phase_increment = phase_increment.abs().clamp(0.0, 0.5);
+
+            state.prev_phase = phase;
+
             // Pulse width (0.0 to 1.0, 0.5 is square wave)
             let pulse_width = (*state.width / 5.0).clamp(0.01, 0.99);
 
-            // Naive pulse wave (no anti-aliasing)
-            let pulse = if phase < pulse_width { 1.0 } else { -1.0 };
+            // Naive pulse wave
+            let mut pulse = if phase < pulse_width { 1.0 } else { -1.0 };
+
+            // Apply PolyBLEP at the rising edge (phase = 0)
+            pulse += poly_blep(phase, phase_increment);
+
+            // Apply PolyBLEP at the falling edge (phase = pulse_width)
+            pulse -= poly_blep(
+                if phase >= pulse_width {
+                    phase - pulse_width
+                } else {
+                    phase - pulse_width + 1.0
+                },
+                phase_increment,
+            );
 
             self.outputs.sample.set(ch, pulse * 5.0);
         }
     }
+}
+
+/// PolyBLEP (Polynomial Band-Limited Step) correction.
+/// Smooths step discontinuities by replacing the hard edge with a
+/// polynomial residual within one sample of the transition.
+#[inline(always)]
+fn poly_blep(phase: f32, phase_increment: f32) -> f32 {
+    if phase_increment < 1.0e-7 {
+        return 0.0;
+    }
+    if phase < phase_increment {
+        let t = phase / phase_increment;
+        return t + t - t * t - 1.0;
+    } else if phase > 1.0 - phase_increment {
+        let t = (phase - 1.0) / phase_increment;
+        return t * t + t + t + 1.0;
+    }
+    0.0
 }
 
 message_handlers!(impl PPulseOscillator {});
