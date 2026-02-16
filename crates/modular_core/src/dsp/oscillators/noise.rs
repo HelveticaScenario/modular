@@ -12,9 +12,12 @@ struct NoiseParams {
 #[serde(rename_all = "camelCase")]
 #[derive(Default)]
 enum NoiseKind {
+    /// equal energy across all frequencies
     #[default]
     White,
+    /// rolled-off highs (−3 dB/octave), natural-sounding
     Pink,
+    /// deep rumble (−6 dB/octave)
     Brown,
 }
 
@@ -67,6 +70,20 @@ impl LcgRng {
     }
 }
 
+/// Noise generator with selectable color.
+///
+/// Generates random noise in one of three spectral colors:
+/// - **White**: equal energy across all frequencies (bright, hissy)
+/// - **Pink**: equal energy per octave (warm, balanced — good for “ocean” textures)
+/// - **Brown**: steep low-frequency emphasis (deep, rumbling)
+///
+/// Output range is **±5V**.
+///
+/// ## Example
+///
+/// ```js
+/// $noise("pink").out()
+/// ```
 #[module(
     name = "$noise",
     description = "Noise generator with selectable color",

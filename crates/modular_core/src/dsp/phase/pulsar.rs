@@ -16,9 +16,9 @@ use crate::types::Clickless;
 struct PulsarParams {
     /// input phase (0 to 1)
     input: PolySignal,
-    /// compression amount (0-5, where 0 = no compression, 5 = 64x compression)
+    /// compression amount (0-5, where 0 = no compression, 5 = maximum compression)
     amount: PolySignal,
-    /// frequency in v/oct (optional, enables anti-aliasing when connected)
+    /// pitch in V/Oct (optional, reduces aliasing at high frequencies)
     freq: PolySignal,
 }
 
@@ -34,17 +34,24 @@ struct ChannelState {
     amount: Clickless,
 }
 
-/// Pulsar synthesis phase-distortion effect adapted from 4ms Ensemble Oscillator.
+/// Phase effect: pulsar synthesis distortion.
 ///
-/// Takes a phase (0-1) and applies phase compression/multiplication.
-/// The phase is multiplied by a factor (1 to 64) and saturated, creating
-/// compressed phase ramps.
+/// Transforms a 0–1 phase signal by compressing the active portion of each
+/// cycle into a narrower window, leaving the rest silent. Feed the output
+/// into a phase oscillator (`$pSine`, `$pSaw`, `$pPulse`) to hear pulsed
+/// waveforms — at higher amounts the pulse becomes extremely narrow,
+/// producing bright, impulse-like timbres useful for excitation signals
+/// and metallic tones.
 ///
-/// At low amounts, the phase passes through unchanged.
-/// At high amounts, creates narrow compressed phase patterns.
+/// # Example
+///
+/// ```js
+/// // Compress the phase with pulsar and convert to audio
+/// $pSine($pulsar($ramp('c3'), 3)).out()
+/// ```
 #[module(
     name = "$pulsar",
-    description = "Pulsar synthesis phase-distortion adapted from 4ms Ensemble Oscillator",
+    description = "Pulsar synthesis phase distortion",
     args(input, amount?)
 )]
 #[derive(Default)]

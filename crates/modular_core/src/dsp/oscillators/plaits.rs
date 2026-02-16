@@ -163,10 +163,10 @@ struct PlaitsParams {
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct PlaitsOutputs {
-    #[output("output", "main synthesis output", default)]
+    #[output("output", "main synthesis output", default, range = (-5.0, 5.0))]
     out: PolyOutput,
 
-    #[output("aux", "auxiliary output - varies per engine")]
+    #[output("aux", "auxiliary output — varies per engine", range = (-5.0, 5.0))]
     aux: PolyOutput,
 }
 
@@ -210,7 +210,10 @@ impl Default for PlaitsChannelState {
 
 /// Full-featured Plaits macro-oscillator with all 24 engines, LPG, and modulation routing.
 ///
-/// Engines (selected via `engine` param, 0-23):
+/// For detailed engine descriptions and parameter behavior, see the
+/// [Mutable Instruments Plaits documentation](https://pichenettes.github.io/mutable-instruments-documentation/modules/plaits/).
+///
+/// Engines (selected via `engine` param):
 /// - Virtual analog VCF (classic subtractive)
 /// - Phase distortion
 /// - Six-op FM (3 banks)

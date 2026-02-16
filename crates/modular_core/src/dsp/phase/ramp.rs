@@ -11,7 +11,7 @@ use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct RampParams {
-    /// frequency in v/oct
+    /// pitch in V/Oct (0V = C4)
     freq: PolySignal,
 }
 
@@ -33,7 +33,7 @@ struct ChannelState {
 /// Produces a rising sawtooth phase signal from 0 to 1 at the given frequency.
 /// This is the fundamental building block for phase-based synthesis:
 /// feed its output into phase-distortion modules (crush, feedback, pulsar)
-/// and then into a waveshaper (e.g. `osc.dSine`) to produce audio.
+/// and then into a waveshaper (e.g. `$pSine`) to produce audio.
 #[module(
     name = "$ramp",
     description = "Phase ramp generator (0 to 1)",

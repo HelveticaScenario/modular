@@ -10,7 +10,7 @@ use crate::{
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct SawOscillatorParams {
-    /// frequency in v/oct
+    /// pitch in V/Oct (0V = C4)
     freq: PolySignal,
     /// waveform shape: 0=saw, 2.5=triangle, 5=ramp
     shape: PolySignal,
@@ -43,7 +43,7 @@ struct ChannelState {
 /// ## Example
 ///
 /// ```js
-/// saw(note("A3"), { shape: 2.5 }).out(); // triangle wave
+/// $saw('a3', { shape: 2.5 }).out() // triangle wave
 /// ```
 #[module(
     name = "$saw",

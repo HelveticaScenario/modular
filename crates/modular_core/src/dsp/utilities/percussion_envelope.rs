@@ -27,6 +27,18 @@ struct ChannelState {
     in_attack: bool,
 }
 
+/// Simple envelope for percussive sounds.
+///
+/// A rising edge on **trigger** starts the envelope at 5 V, which then
+/// decays exponentially to 0 V over the **decay** time. Perfect for
+/// hi-hats, kicks, and other transient sounds.
+///
+/// Output range is **0–5 V**.
+///
+/// ```js
+/// // short percussive hit
+/// $noise("white").mul($perc($rootClock.gate, { decay: 0.1 }))
+/// ```
 #[module(
     name = "$perc",
     description = "Percussion envelope with exponential decay",

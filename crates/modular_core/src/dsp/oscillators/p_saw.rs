@@ -9,7 +9,7 @@ use serde::Deserialize;
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct PSawOscillatorParams {
-    /// phase input (0-1, will be wrapped)
+    /// phasor input (0–1, wraps at boundaries)
     phase: PolySignal,
     /// waveform shape: 0=saw, 2.5=triangle, 5=ramp
     shape: PolySignal,
@@ -29,6 +29,16 @@ struct ChannelState {
     prev_phase: f32,
 }
 
+/// Phase-driven sawtooth/triangle/ramp oscillator.
+///
+/// Instead of a frequency input, this oscillator is driven by an external
+/// phasor signal (0–1). Connect a `ramp` or other phase source to `phase`
+/// and use phase-distortion modules between them for complex timbres.
+///
+/// The `shape` parameter blends continuously between waveforms:
+/// 0 = saw, 2.5 = triangle, 5 = ramp.
+///
+/// Output range is **±5V**.
 #[module(
     name = "$pSaw",
     description = "A phase-driven sawtooth/triangle/ramp oscillator",

@@ -12,9 +12,9 @@ use crate::{
 struct BandpassFilterParams {
     /// signal input
     input: PolySignal,
-    /// center frequency in v/oct
+    /// center frequency in V/Oct (0V = C4)
     center: PolySignal,
-    /// filter Q (bandwidth control, 0-5)
+    /// filter resonance — controls bandwidth (0–5)
     resonance: PolySignal,
 }
 
@@ -69,7 +69,21 @@ fn compute_bpf_biquad(center: f32, resonance: f32, sample_rate: f32) -> BiquadCo
     }
 }
 
-#[module(name = "$bpf", description = "12dB/octave bandpass filter", args(input, center, resonance?))]
+/// Bandpass filter that passes frequencies near the center frequency and
+/// attenuates everything else.
+///
+/// Use it to isolate a frequency region, create vowel-like tones, or
+/// build resonant "wah" effects by sweeping the center frequency.
+///
+/// - **center** — center frequency in V/Oct (0 V = C4).
+/// - **resonance** — controls bandwidth (0–5). Higher values narrow the
+///   passband for a more pronounced, ringing sound.
+///
+/// ```js
+/// // resonant bandpass sweep on noise
+/// $bpf($noise("white"), $sine('0.5hz').range('440hz', '1200hz'), 3)
+/// ```
+#[module(name = "$bpf", description = "12dB/octave bandpass filter with resonance", args(input, center, resonance?))]
 #[derive(Default)]
 pub struct BandpassFilter {
     outputs: BandpassFilterOutputs,

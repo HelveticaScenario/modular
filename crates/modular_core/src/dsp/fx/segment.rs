@@ -18,7 +18,7 @@ struct SegmentParams {
     input: PolySignal,
     /// segment shape amount (0-5, morphs between 8 shapes)
     amount: PolySignal,
-    /// frequency in v/oct (optional, enables anti-aliasing when connected)
+    /// pitch of the source signal in V/Oct (optional, reduces aliasing at high frequencies)
     freq: PolySignal,
 }
 
@@ -34,22 +34,13 @@ struct ChannelState {
     amount: Clickless,
 }
 
-/// Triangle segment morphing effect adapted from 4ms Ensemble Oscillator.
-///
-/// Applies piecewise linear transfer functions that morph between 8 shapes:
-/// 1. Linear (identity)
-/// 2. Compressed edges
-/// 3. More compression
-/// 4. Square-ish
-/// 5. Rippled
-/// 6. More rippled
-/// 7. Extreme ripple
-/// 8. Alternating
-///
-/// Creates stepped, quantized timbral variations based on musical intervals.
+/// Waveshaper that morphs through 8 distinct tonal shapes as you sweep the
+/// amount control. Low settings pass the signal cleanly; mid settings compress
+/// and square it off; high settings introduce stepped, ripple-like overtone
+/// patterns. Works best on simple waveforms like sines or triangles.
 #[module(
     name = "$segment",
-    description = "Triangle segment morpher adapted from 4ms Ensemble Oscillator",
+    description = "Segment morpher — sweeps through stepped waveshaping patterns",
     args(input, amount?)
 )]
 #[derive(Default)]

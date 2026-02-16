@@ -12,7 +12,7 @@ use crate::{
 struct LowpassFilterParams {
     /// signal input
     input: PolySignal,
-    /// cutoff frequency in v/oct
+    /// cutoff frequency in V/Oct (0V = C4)
     cutoff: PolySignal,
     /// filter resonance (0-5)
     resonance: PolySignal,
@@ -25,6 +25,21 @@ struct LowpassFilterOutputs {
     sample: PolyOutput,
 }
 
+/// Lowpass filter that attenuates frequencies above the cutoff point.
+///
+/// Use it to tame bright timbres, create bass-heavy sounds, or build classic
+/// subtractive synth patches. Sweeping the cutoff with an envelope or LFO
+/// produces the familiar filter-sweep effect.
+///
+/// - **cutoff** — set in V/Oct (0 V = C4). Accepts modulation for filter sweeps.
+/// - **resonance** — boosts frequencies near the cutoff (0–5). High values
+///   produce a ringing peak; very high values cause self-oscillation.
+///
+/// ```js
+/// // subtractive bass: saw through a lowpass with envelope on cutoff
+/// let env = $adsr($rootClock.barTrigger, { attack: 0.01, decay: 0.3, sustain: 1, release: 0.4 })
+/// $lpf($saw('c2'), env.range('200hz', '2000hz'))
+/// ```
 #[module(name = "$lpf", description = "12dB/octave lowpass filter with resonance", args(input, cutoff, resonance?))]
 #[derive(Default)]
 pub struct LowpassFilter {

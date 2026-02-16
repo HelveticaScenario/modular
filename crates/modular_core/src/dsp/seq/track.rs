@@ -2,18 +2,19 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use simple_easing;
 
-use crate::{MonoSignal, PolyOutput};
 use crate::poly::PolySignal;
-use crate::types::{InterpolationType, Signal};
+use crate::types::InterpolationType;
+use crate::{MonoSignal, PolyOutput};
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct TrackParams {
-    /// Playhead input - sums channels 0 and 1 for position
+    /// playhead position (wraps from 0 to 1)
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
     playhead: MonoSignal,
-    /// Keyframes as (polysignal, time) tuples. Must be sorted by time.
+    /// keyframe values and their positions (0–1)
     keyframes: Vec<(PolySignal, f32)>,
+    /// interpolation curve between keyframes
     interpolation_type: InterpolationType,
 }
 
@@ -29,11 +30,25 @@ fn derive_track_channel_count(params: &TrackParams) -> usize {
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct TrackOutputs {
-    #[output("output", "signal output", default)]
+    #[output(
+        "output",
+        "interpolated value at the current playhead position",
+        default
+    )]
     sample: PolyOutput,
 }
 
-#[module(name = "$track", description = "A sequencer track", args(keyframes), channels_derive = derive_track_channel_count)]
+/// Automation track that interpolates between keyframed values.
+///
+/// Place keyframes at positions within a cycle (0–1) and the track
+/// smoothly interpolates between them at the current playhead position according to the chosen
+/// **interpolationType** (linear, ease-in, ease-out, etc.).
+///
+/// ```js
+/// // automate filter cutoff over one cycle
+/// $lpf(osc, $track([['c2', 0], ['c5', 0.5], ['c3', 1]]))
+/// ```
+#[module(name = "$track", description = "Automation track that interpolates between keyframed values", args(keyframes), channels_derive = derive_track_channel_count)]
 #[derive(Default)]
 pub struct Track {
     outputs: TrackOutputs,
@@ -45,7 +60,8 @@ impl Track {
         // Sum channels 0 and 1 of the playhead
         let playhead_value = self.params.playhead.get_value_f64();
 
-        let t = playhead_value.fract().abs() as f32;
+        let t = playhead_value.fract() as f32;
+        let t = if t < 0.0 { t + 1.0 } else { t };
         let channel_count = self.channel_count();
 
         for channel in 0..channel_count {
@@ -59,12 +75,12 @@ impl Track {
             let first = &self.params.keyframes[0];
             if t <= first.1 {
                 self.outputs.sample.set(channel, first.0.get_value(channel));
-                return;
+                continue;
             }
             let last = self.params.keyframes.last().unwrap();
             if t >= last.1 {
                 self.outputs.sample.set(channel, last.0.get_value(channel));
-                return;
+                continue;
             }
 
             // Find the segment [curr, next] such that curr.time <= t <= next.time

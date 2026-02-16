@@ -11,11 +11,11 @@ use crate::{
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct PulseOscillatorParams {
-    /// frequency in v/oct
+    /// pitch in V/Oct (0V = C4)
     freq: PolySignal,
     /// pulse width (0-5, 2.5 is square)
     width: PolySignal,
-    /// pulse width modulation input
+    /// pulse width modulation CV — added to the width parameter
     pwm: PolySignal,
 }
 
@@ -33,6 +33,20 @@ struct PulseChannelState {
     width: Clickless,
 }
 
+/// Pulse/square wave oscillator with pulse width modulation.
+///
+/// The `freq` input follows the **V/Oct** standard (0V = C4).
+/// The `width` parameter sets the duty cycle: 0 = narrow pulse,
+/// 2.5 = square wave, 5 = inverted narrow pulse.
+/// `pwm` is added to `width` for modulation.
+///
+/// Output range is **±5V**.
+///
+/// ## Example
+///
+/// ```js
+/// $pulse('c3', { width: 2.5 }).out()
+/// ```
 #[module(
     name = "$pulse",
     description = "Pulse/Square oscillator with PWM",

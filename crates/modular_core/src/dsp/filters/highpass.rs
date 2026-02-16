@@ -12,7 +12,7 @@ use crate::{
 struct HighpassFilterParams {
     /// signal input
     input: PolySignal,
-    /// cutoff frequency in v/oct
+    /// cutoff frequency in V/Oct (0V = C4)
     cutoff: PolySignal,
     /// filter resonance (0-5)
     resonance: PolySignal,
@@ -69,6 +69,20 @@ fn compute_hpf_biquad(cutoff: f32, resonance: f32, sample_rate: f32) -> BiquadCo
     }
 }
 
+/// Highpass filter that attenuates frequencies below the cutoff point.
+///
+/// Use it to remove low-end rumble, thin out a sound, or create rising
+/// filter effects. Pairs well with lowpass filters for isolating a
+/// frequency band.
+///
+/// - **cutoff** — set in V/Oct (0 V = C4). Accepts modulation for filter sweeps.
+/// - **resonance** — boosts frequencies near the cutoff (0–5). High values
+///   produce a ringing peak.
+///
+/// ```js
+/// // remove low end from a noise source
+/// $hpf($noise("white"), 'a3', 1)
+/// ```
 #[module(name = "$hpf", description = "12dB/octave highpass filter with resonance", args(input, cutoff, resonance?))]
 #[derive(Default)]
 pub struct HighpassFilter {

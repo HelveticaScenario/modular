@@ -90,9 +90,13 @@ impl Connect for MathExpressionParam {
 #[derive(Deserialize, Default, JsonSchema, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct MathParams {
+    /// math expression to evaluate (e.g. "x * 2 + sin(t)")
     expression: MathExpressionParam,
+    /// first input variable, referenced as `x` in the expression
     x: MonoSignal,
+    /// second input variable, referenced as `y` in the expression
     y: MonoSignal,
+    /// third input variable, referenced as `z` in the expression
     z: MonoSignal,
 }
 
@@ -112,6 +116,27 @@ struct MathOutputs {
     output: f32,
 }
 
+/// Evaluates a math expression every sample, giving you arbitrary control
+/// voltage transformations.
+///
+/// Write an expression string using `x`, `y`, `z` as input variables.
+/// The built-in variable `t` (time in seconds) is also available.
+///
+/// **Functions:** `sin`, `cos`, `tan`, `asin`, `acos`, `atan`,
+/// `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`,
+/// `log(base?, val)`, `abs`, `sign`, `int`, `ceil`, `floor`,
+/// `round(modulus?, val)`, `min(val, ...)`, `max(val, ...)`,
+/// `e()`, `pi()`, `vToHz(volts)`, `hzToV(hz)`
+///
+/// **Operators** (highest to lowest precedence):
+/// `^`, `%`, `/`, `*`, `-`, `+`,
+/// `== != < <= >= >`,
+/// `&& and`, `|| or`
+///
+/// ```js
+/// // crossfade between two oscillators
+/// $math("x * sin(t) + y * cos(t)", { x: $saw('c3'), y: $pulse('c3') })
+/// ```
 #[module(
     name = "$math",
     description = "Math expression evaluator",

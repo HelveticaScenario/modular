@@ -135,9 +135,9 @@ fn default_channels() -> usize {
 #[derive(Deserialize, Default, ChannelCount, JsonSchema, Connect, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct SeqParams {
-    /// Strudel/tidalcycles style pattern string
+    /// pattern string in mini-notation
     pattern: SeqPatternParam,
-    /// 2 channel control signal, sums the first 2 channels
+    /// playhead position (driven by the global clock)
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
     playhead: MonoSignal,
     /// Number of polyphonic voices (1-16)
@@ -217,17 +217,31 @@ pub fn seq_derive_channel_count(params: &SeqParams) -> usize {
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct SeqOutputs {
-    #[output("cv", "control voltage output", default)]
+    #[output("cv", "pitch output in V/Oct", default)]
     cv: PolyOutput,
-    #[output("gate", "gate output", range = (0.0, 5.0))]
+    #[output("gate", "high (5 V) while a note is active, low (0 V) otherwise", range = (0.0, 5.0))]
     gate: PolyOutput,
-    #[output("trig", "trigger output", range = (0.0, 5.0))]
+    #[output("trig", "short pulse (5 V) at the start of each note", range = (0.0, 5.0))]
     trig: PolyOutput,
 }
 
+/// Pattern sequencer using mini-notation strings.
+///
+/// Write rhythmic and melodic patterns using a compact text syntax (inspired
+/// by TidalCycles/Strudel). The pattern loops each cycle and supports
+/// polyphony — overlapping notes are automatically allocated to separate
+/// output channels.
+///
+/// Outputs **cv** (V/Oct pitch), **gate** (5 V while a note sounds), and
+/// **trig** (single-sample 5 V pulse at note onset).
+///
+/// ```js
+/// // simple melodic pattern
+/// $cycle("c3 e3 g3 b3")
+/// ```
 #[module(
     name = "$cycle",
-    description = "A strudel/tidalcycles style sequencer",
+    description = "Pattern sequencer using mini-notation strings",
     channels_derive = seq_derive_channel_count,
     args(pattern),
     stateful,
@@ -353,7 +367,6 @@ impl Seq {
             // Find the next available voice using round-robin with LRU voice stealing.
             let voice_idx = allocate_voice();
             let voice = &mut self.voices[voice_idx];
-            println!("Allocating voice {}", voice_idx);
             voice.cached_hap = Some(cached);
             voice.active = true;
             voice

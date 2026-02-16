@@ -18,7 +18,7 @@ struct FoldParams {
     input: PolySignal,
     /// fold amount (0-5, where 0 = bypass, 5 = maximum folding)
     amount: PolySignal,
-    /// frequency in v/oct (optional, enables anti-aliasing when connected)
+    /// pitch of the source signal in V/Oct (optional, reduces aliasing at high frequencies)
     freq: PolySignal,
 }
 
@@ -34,14 +34,12 @@ struct ChannelState {
     amount: Clickless,
 }
 
-/// Wavefolding effect adapted from 4ms Ensemble Oscillator.
-///
-/// Folds the input signal back on itself when it exceeds thresholds,
-/// creating harmonic-rich tones. Uses a 6x overfolding lookup table
-/// for smooth, musical results.
+/// Wavefolder that reflects the signal back when it exceeds a threshold,
+/// producing dense, harmonically rich tones. Higher amounts create more
+/// complex, metallic timbres.
 #[module(
     name = "$fold",
-    description = "Wavefolder effect adapted from 4ms Ensemble Oscillator",
+    description = "Wavefolder — reflects signals back on themselves to create harmonic-rich tones",
     args(input, amount?)
 )]
 #[derive(Default)]

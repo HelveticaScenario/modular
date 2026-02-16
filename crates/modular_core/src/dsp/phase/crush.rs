@@ -14,7 +14,7 @@ use crate::types::Clickless;
 struct CrushParams {
     /// input phase (0 to 1)
     input: PolySignal,
-    /// crush amount (0-5, where 0 = clean, 5 = maximum XOR distortion)
+    /// crush amount (0-5, where 0 = clean, 5 = maximum distortion)
     amount: PolySignal,
 }
 
@@ -30,17 +30,23 @@ struct ChannelState {
     amount: Clickless,
 }
 
-/// Bit-crushing XOR phase-distortion effect adapted from 4ms Ensemble Oscillator.
+/// Phase effect: digital bit-crush distortion.
 ///
-/// Takes a phase (0-1) and applies XOR-based bit manipulation,
-/// creating digital/crushed phase patterns. Unlike traditional bitcrushing,
-/// this uses XOR operations between the phase and scaled versions of itself.
+/// Transforms a 0–1 phase signal by quantizing it into coarse steps,
+/// creating glitchy, staircase-like phase patterns. Feed the output into
+/// a phase oscillator (`$pSine`, `$pSaw`, `$pPulse`) to hear the result
+/// as gritty digital artifacts — fractured harmonics at low settings,
+/// aggressive bit-reduction at high settings.
 ///
-/// No anti-aliasing is applied—the aliasing artifacts are intentional
-/// and part of the character.
+/// # Example
+///
+/// ```js
+/// // Bit-crush a ramp phase and convert to audio with $pSine
+/// $pSine($crush($ramp('c3'), 2)).out()
+/// ```
 #[module(
     name = "$crush",
-    description = "XOR bit-crush phase-distortion adapted from 4ms Ensemble Oscillator",
+    description = "Digital bit-crush phase distortion",
     args(input, amount?)
 )]
 #[derive(Default)]

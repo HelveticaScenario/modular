@@ -11,7 +11,7 @@ use serde::Deserialize;
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct PSineOscillatorParams {
-    /// phase input (0-1, will be wrapped)
+    /// phasor input (0–1, wraps at boundaries)
     phase: PolySignal,
 }
 
@@ -22,6 +22,13 @@ struct PSineOscillatorOutputs {
     sample: PolyOutput,
 }
 
+/// Phase-driven sine wave oscillator.
+///
+/// Instead of a frequency input, this oscillator is driven by an external
+/// phasor signal (0–1). Connect a `ramp` or other phase source to `phase`
+/// and use phase-distortion modules between them for complex timbres.
+///
+/// Output range is **±5V**.
 #[module(
     name = "$pSine",
     description = "A phase-driven sine wave oscillator",

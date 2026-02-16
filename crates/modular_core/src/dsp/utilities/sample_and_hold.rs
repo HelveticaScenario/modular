@@ -9,14 +9,16 @@ use serde::Deserialize;
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct SampleAndHoldParams {
+    /// signal to sample
     input: PolySignal,
+    /// rising edge captures the current input value
     trigger: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct SampleAndHoldOutputs {
-    #[output("output", "output", default)]
+    #[output("output", "held voltage", default)]
     sample: PolyOutput,
 }
 
@@ -26,6 +28,22 @@ struct SampleAndHoldChannelState {
     held_value: f32,
 }
 
+/// Captures and holds a voltage on each trigger.
+///
+/// When **trigger** receives a rising edge, the current value of **input**
+/// is sampled and held at the output until the next trigger. Classic
+/// use: sample random noise to generate stepped random melodies.
+///
+/// ```js
+/// // stepped random melody
+/// $sine(
+///  $quantizer(
+///    $sah($noise('white').range(0, 1), $pulse('2hz')),
+///    0,
+///    'c(maj)',
+///  ),
+/// )
+/// ```
 #[module(name = "$sah", description = "Sample and Hold", args(input, trigger))]
 #[derive(Default)]
 pub struct SampleAndHold {
@@ -62,14 +80,16 @@ message_handlers!(impl SampleAndHold {});
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct TrackAndHoldParams {
+    /// signal to track
     input: PolySignal,
+    /// while gate is low the output follows the input; when gate goes high the last value is held
     gate: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct TrackAndHoldOutputs {
-    #[output("output", "output", default)]
+    #[output("output", "tracked or held voltage", default)]
     sample: PolyOutput,
 }
 
@@ -78,6 +98,16 @@ struct TrackAndHoldChannelState {
     gate: SchmittTrigger,
 }
 
+/// Follows the input while the gate is low, and holds the value when the
+/// gate goes high.
+///
+/// The complement of Sample and Hold: the output continuously tracks
+/// **input** until **gate** rises, then freezes until the gate falls again.
+///
+/// ```js
+/// // hold a slow sine value while the gate is high
+/// $tah($sine('2hz'), gate)
+/// ```
 #[module(name = "$tah", description = "Track and Hold", args(input, gate))]
 #[derive(Default)]
 pub struct TrackAndHold {

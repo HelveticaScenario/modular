@@ -290,16 +290,16 @@ fn default_channels() -> usize {
 #[derive(Deserialize, Default, ChannelCount, JsonSchema, Connect, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct IntervalSeqParams {
-    /// Primary interval/degree pattern
+    /// primary interval/degree pattern
     interval_pattern: IntervalPatternParam,
-    /// Offset pattern added to interval_pattern
+    /// offset pattern added to interval_pattern
     add_pattern: IntervalPatternParam,
-    /// Scale for quantizing degrees to pitches (supports optional octave, e.g. "C3(major)")
+    /// scale for quantizing degrees to pitches (supports optional octave, e.g. "c3(major)")
     scale: IntervalScaleParam,
-    /// 2 channel control signal, sums the first 2 channels
+    /// playhead position
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
     playhead: MonoSignal,
-    /// Number of polyphonic voices (1-16)
+    /// number of polyphonic voices (1–16)
     #[serde(default = "default_channels")]
     pub channels: usize,
 }
@@ -429,17 +429,30 @@ fn derive_combined_polyphony(
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct IntervalSeqOutputs {
-    #[output("cv", "control voltage output", default)]
+    #[output("cv", "pitch output in V/Oct (quantized to scale)", default)]
     cv: PolyOutput,
-    #[output("gate", "gate output", range = (0.0, 5.0))]
+    #[output("gate", "high (5 V) while a note is active, low (0 V) otherwise", range = (0.0, 5.0))]
     gate: PolyOutput,
-    #[output("trig", "trigger output", range = (0.0, 5.0))]
+    #[output("trig", "short pulse (5 V) at the start of each note", range = (0.0, 5.0))]
     trig: PolyOutput,
 }
 
+/// Scale-degree sequencer with two additive patterns.
+///
+/// Uses two mini-notation patterns — **intervalPattern** and **addPattern** —
+/// whose values are summed as scale degree indices, then quantized to the
+/// configured **scale**. Overlapping notes from the Cartesian product of both
+/// patterns are polyphonically allocated.
+///
+/// Outputs **cv** (V/Oct pitch), **gate**, and **trig**.
+///
+/// ```js
+/// // arpeggiate chords using additive patterns
+/// $iCycle("0 2 4", "C(major)", { addPattern: "0 3" })
+/// ```
 #[module(
     name = "$iCycle",
-    description = "A scale-degree sequencer with interval and add patterns",
+    description = "Scale-degree sequencer with interval and add patterns",
     channels_derive = interval_seq_derive_channel_count,
     args(intervalPattern, scale),
     stateful,

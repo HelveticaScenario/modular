@@ -24,7 +24,7 @@ pub enum PolyMode {
     Rotate,
     /// Reuse voice playing same note before rotating
     Reuse,
-    /// Always start from channel 0
+    /// Always start from the first voice
     Reset,
     /// MPE mode: MIDI channel maps directly to output channel
     Mpe,
@@ -73,7 +73,7 @@ struct VoiceState {
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct MidiCvParams {
-    /// MIDI device name to receive from (None = all devices)
+    /// MIDI device name to receive from (leave unset to receive from all devices)
     #[serde(default)]
     device: Option<String>,
 
@@ -81,7 +81,7 @@ struct MidiCvParams {
     #[serde(default = "default_channels")]
     channels: usize,
 
-    /// MIDI channel filter (1-16, None = omni/all channels)
+    /// MIDI channel to listen on (1–16, leave unset for omni/all channels)
     #[serde(default)]
     channel: Option<u8>,
 
@@ -89,7 +89,7 @@ struct MidiCvParams {
     #[serde(default)]
     poly_mode: PolyMode,
 
-    /// Monophonic note priority (when channels = 1)
+    /// Monophonic note priority (used when only one voice is active)
     #[serde(default)]
     mono_mode: MonoMode,
 
@@ -109,7 +109,11 @@ fn default_pitch_bend_range() -> u8 {
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct MidiCvOutputs {
-    #[output("pitch", "pitch CV in 1V/octave (0V = C4)", default)]
+    #[output(
+        "pitch",
+        "pitch CV in 1V/octave (0V = C4, includes pitch bend)",
+        default
+    )]
     pitch: PolyOutput,
     #[output("gate", "gate output (0V or 5V)", range = (0.0, 5.0))]
     gate: PolyOutput,
@@ -119,12 +123,52 @@ struct MidiCvOutputs {
     aftertouch: PolyOutput,
     #[output("retrigger", "retrigger pulse (5V for 1ms on new note)", range = (0.0, 5.0))]
     retrigger: PolyOutput,
-    #[output("pitchWheel", "pitch wheel (-5V to +5V, unscaled)", range = (-5.0, 5.0))]
+    #[output("pitchWheel", "pitch wheel position (-5V to +5V)", range = (-5.0, 5.0))]
     pitch_wheel: PolyOutput,
     #[output("modWheel", "mod wheel (0-5V)", range = (0.0, 5.0))]
     mod_wheel: PolyOutput,
 }
 
+/// Converts MIDI note input into control voltages for driving synthesizer modules.
+/// Supports polyphonic voice allocation with up to 16 voices.
+///
+/// ## Outputs
+///
+/// | Output | Signal | Range |
+/// |---|---|---|
+/// | `pitch` | V/Oct pitch (0V = C4), includes pitch bend | — |
+/// | `gate` | High while a note is held | 0–5V |
+/// | `velocity` | Note-on velocity | 0–5V |
+/// | `aftertouch` | Channel or polyphonic aftertouch | 0–5V |
+/// | `retrigger` | 5V pulse for 1ms on each new note | 0–5V |
+/// | `pitchWheel` | Pitch bend wheel position | -5V–+5V |
+/// | `modWheel` | Mod wheel (CC 1) | 0–5V |
+///
+/// ## Polyphonic modes (`polyMode`)
+///
+/// - `"rotate"` — cycles through voices round-robin
+/// - `"reuse"` — reuses the voice that last played the same note
+/// - `"reset"` — always starts allocation from voice 1
+/// - `"mpe"` — one voice per MIDI channel (for MPE controllers)
+///
+/// ## Monophonic modes (`monoMode`, when `channels: 1`)
+///
+/// - `"last"` — most recently pressed note wins
+/// - `"first"` — first pressed note wins
+/// - `"lowest"` — lowest held note wins
+/// - `"highest"` — highest held note wins
+///
+/// ## Example
+///
+/// ```js
+/// // 4-voice polyphonic MIDI synth
+/// const midi = $midiCV({ channels: 4 });
+/// $sine(midi.pitch).gain($adsr(midi.gate,{attack: 0.01, decay: 0.1, sustain: 0.8, release: 0.5})).out();
+///
+/// // Mono lead with pitch bend
+/// const lead = $midiCV({ channels: 1, pitchBendRange: 12 });
+/// $saw(lead.pitch).gain($adsr(lead.gate,{attack: 0.01, decay: 0.1, sustain: 0.8, release: 0.5})).out();
+/// ```
 #[module(
     name = "$midiCV",
     description = "MIDI to CV converter with polyphonic voice allocation",
@@ -193,7 +237,7 @@ impl MidiCv {
         (note as f32 - 60.0) / 12.0
     }
 
-    /// Convert velocity (0-127) to voltage (0-10V)
+    /// Convert velocity (0-127) to voltage (0-5V)
     fn velocity_to_cv(velocity: u8) -> f32 {
         velocity as f32 / 127.0 * 5.0
     }

@@ -212,23 +212,22 @@ struct ChannelState {
     trigger: TempGate,
 }
 
-/// Quantizer module - snaps V/Oct input to scale degrees.
+/// Snaps a V/Oct signal to the nearest note in a given scale.
 ///
-/// # Inputs
-/// - `input`: V/Oct signal to quantize (polyphonic)
-/// - `offset`: V/Oct offset to add before quantization (polyphonic)
-/// - `scale`: Scale specification string
+/// Feed any continuous pitch signal into **input** and choose a **scale** —
+/// the output locks to the closest scale degree. A **trig** pulse fires
+/// whenever the quantized note changes, useful for re-triggering envelopes.
 ///
-/// # Outputs
-/// - `output`: Quantized V/Oct signal
-/// - `gate`: Single-sample gate pulse when note changes
-/// - `trig`: Trigger pulse when note changes
+/// Scale format examples:
+/// - `"chromatic"` — all 12 semitones
+/// - `"C(major)"` — C major scale
+/// - `"C#(minor)"` — C# minor scale
+/// - `"D(0 2 4 5 7 9 11)"` — custom intervals from root
 ///
-/// # Scale Format
-/// - `"chromatic"` - all 12 semitones (no snapping)
-/// - `"C(major)"` - C major scale
-/// - `"C#(minor)"` - C# minor scale
-/// - `"D(0 2 4 5 7 9 11)"` - custom scale with semitone intervals from root
+/// ```js
+/// // quantize a random signal to C major
+/// $sine($quantizer($sine(".1hz").range(0,3), 0, "C(major)"))
+/// ```
 #[module(name = "$quantizer", description = "Quantizes V/Oct input to scale degrees", args(input, offset?, scale?))]
 pub struct Quantizer {
     outputs: QuantizerOutputs,

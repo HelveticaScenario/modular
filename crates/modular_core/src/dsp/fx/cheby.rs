@@ -16,9 +16,9 @@ use crate::types::Clickless;
 struct ChebyParams {
     /// input signal to shape (bipolar, typically -5 to 5)
     input: PolySignal,
-    /// harmonic order amount (0-5, where 0 = fundamental only, 5 = 16th harmonic)
+    /// harmonic richness (0–5). At 0 the signal is clean; at 5 the highest harmonic content dominates
     amount: PolySignal,
-    /// frequency in v/oct (optional, enables anti-aliasing when connected)
+    /// pitch of the source signal in V/Oct (optional, reduces aliasing at high frequencies)
     freq: PolySignal,
 }
 
@@ -34,18 +34,14 @@ struct ChannelState {
     amount: Clickless,
 }
 
-/// Chebyshev polynomial waveshaping effect adapted from 4ms Ensemble Oscillator.
+/// Harmonic waveshaping effect that adds controlled overtone content.
 ///
-/// Applies Chebyshev polynomials T₁ through T₁₆ to add specific harmonic content:
-/// - T₁(x) = x (fundamental)
-/// - T₂(x) = 2x² - 1 (2nd harmonic)
-/// - Tₙ(x) follows recurrence relation
-///
-/// The amount parameter crossfades between polynomial orders, allowing smooth
-/// timbral transitions from pure fundamental to rich harmonic content.
+/// At low amounts the signal passes through cleanly; turning it up
+/// progressively emphasizes higher harmonics (2nd, 3rd, … up to 16th),
+/// thickening and brightening the tone.
 #[module(
     name = "$cheby",
-    description = "Chebyshev waveshaper adapted from 4ms Ensemble Oscillator",
+    description = "Harmonic waveshaper — smoothly adds upper partials to any signal",
     args(input, amount?)
 )]
 #[derive(Default)]

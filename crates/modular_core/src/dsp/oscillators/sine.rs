@@ -11,7 +11,7 @@ use serde::Deserialize;
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct SineOscillatorParams {
-    /// frequency in v/oct
+    /// pitch in V/Oct (0V = C4)
     freq: PolySignal,
 }
 
@@ -28,17 +28,12 @@ struct ChannelState {
     phase: f32,
 }
 
-/// A basic sine wave oscillator using wavetable lookup.
-///
-/// The `freq` input follows the **V/Oct** standard where 0V corresponds
-/// to C4 (~261.63 Hz). Each additional volt doubles the frequency.
-///
-/// Outputs a clean sine wave in the range **±5V**.
+/// A sine wave oscillator.
 ///
 /// ## Example
 ///
 /// ```js
-/// sine(note("C4")).out();
+/// $sine('c4').out()
 /// ```
 #[module(name = "$sine", description = "A sine wave oscillator", args(freq))]
 #[derive(Default)]

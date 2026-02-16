@@ -26,7 +26,18 @@ struct RemapOutputs {
     sample: PolyOutput,
 }
 
-#[module(name = "$remap", description = "remap a signal from one range to another", args(input, inMin?, inMax?, outMin?, outMax?))]
+/// Linearly rescales a signal from one voltage range to another.
+///
+/// Maps **input** from \[inMin, inMax\] to \[outMin, outMax\]. Useful for
+/// converting between different voltage standards or reshaping control
+/// signals.
+///
+/// ```js
+/// // convert a 0–5 V envelope to a -5–5 V bipolar signal
+/// $remap(env, 0, 5, -5, 5)
+/// 
+/// ```
+#[module(name = "$remap", description = "Remap a signal from one voltage range to another", args(input, inMin?, inMax?, outMin?, outMax?))]
 #[derive(Default)]
 pub struct Remap {
     outputs: RemapOutputs,

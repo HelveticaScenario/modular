@@ -8,7 +8,9 @@ use crate::types::ClockMessages;
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct ClockDividerParams {
+    /// division factor (e.g. 2 = output fires every other tick)
     pub division: u32,
+    /// clock signal to divide
     pub input: MonoSignal,
 }
 
@@ -19,6 +21,16 @@ struct ClockDividerOutputs {
     pub output: f32,
 }
 
+/// Divides an incoming clock signal so it fires less often.
+///
+/// Feed it a clock and set **division** to an integer — the output will
+/// tick once every *n* input ticks. Useful for creating slower rhythmic
+/// subdivisions from a master clock.
+///
+/// ```js
+/// // Pulses every other bar of the root clock:
+/// $clockDivider($rootClock.barTrigger, 2)
+/// ```
 #[module(
     name = "$clockDivider",
     description = "Divides an incoming clock signal by a specified integer value",

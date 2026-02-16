@@ -6,7 +6,7 @@ use serde::Deserialize;
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct AdsrParams {
-    /// gate input (expects >0V for on)
+    /// gate input — rising edge starts the envelope, falling edge triggers release
     gate: PolySignal,
     /// attack time in seconds
     attack: PolySignal,
@@ -68,8 +68,8 @@ impl Default for ChannelState {
 /// ## Example
 ///
 /// ```js
-/// const env = adsr(clock.gate, { attack: 0.01, decay: 0.2, sustain: 3, release: 0.5 });
-/// sine(note("C4")).mul(env).out();
+/// const env = $adsr($rootClock.barTrigger, { attack: 0.01, decay: 0.2, sustain: 3, release: 0.5 })
+/// $sine('c4').gain(env).out()
 /// ```
 #[module(name = "$adsr", description = "ADSR envelope generator", args(gate))]
 #[derive(Default)]

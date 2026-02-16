@@ -20,7 +20,7 @@ struct FeedbackParams {
     input: PolySignal,
     /// feedback amount (0-5, where 0 = no feedback, 5 = maximum feedback FM)
     amount: PolySignal,
-    /// frequency in v/oct (optional, enables anti-aliasing when connected)
+    /// pitch in V/Oct (optional, reduces aliasing at high frequencies)
     freq: PolySignal,
 }
 
@@ -37,17 +37,23 @@ struct ChannelState {
     lp_state: f32, // One-pole LP filter state (matches IOnePoleLp<s1_15, 2>)
 }
 
-/// FM feedback phase-distortion effect adapted from 4ms Ensemble Oscillator.
+/// Phase effect: FM feedback distortion.
 ///
-/// Takes a phase (0-1) and applies feedback FM distortion to it.
-/// The previous sine of the output phase is fed back and added to the phase,
-/// creating complex, evolving phase patterns.
+/// Transforms a 0–1 phase signal by feeding the output back into itself,
+/// progressively adding harmonic complexity and chaotic motion. Feed the
+/// result into a phase oscillator (`$pSine`, `$pSaw`, `$pPulse`) to hear
+/// the effect. At low amounts the timbre gains subtle overtones; at high
+/// amounts it becomes chaotic and noisy.
 ///
-/// At low amounts, the phase passes through with minimal change.
-/// At high amounts, creates chaotic, complex phase distortion.
+/// # Example
+///
+/// ```js
+/// // Apply feedback distortion to a ramp phase and convert to audio
+/// $pSine($feedback($ramp('c3'), 3)).out()
+/// ```
 #[module(
     name = "$feedback",
-    description = "FM feedback phase-distortion adapted from 4ms Ensemble Oscillator",
+    description = "FM feedback phase distortion",
     args(input, amount?)
 )]
 #[derive(Default)]

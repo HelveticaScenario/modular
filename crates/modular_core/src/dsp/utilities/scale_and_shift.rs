@@ -7,11 +7,11 @@ use crate::types::Clickless;
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct ScaleAndShiftParams {
-    /// signal input
+    /// signal to scale and shift
     input: PolySignal,
-    /// scale factor
+    /// scale factor (0–10V range; 5V = unity gain, 0V = silence, -5V = inverted, 10V = 2x)
     scale: PolySignal,
-    /// shift amount
+    /// DC offset added to the scaled signal (in volts)
     shift: PolySignal,
 }
 
@@ -22,7 +22,17 @@ struct ScaleAndShiftOutputs {
     sample: PolyOutput,
 }
 
-#[module(name = "$scaleAndShift", description = "attenuate, invert, offset", args(input, scale?, shift?))]
+/// Scales and offsets a signal — the classic attenuverter + DC offset.
+///
+/// - **scale** — gain factor (0–10 V; 5 V = unity, 0 V = silence,
+///   values above 5 V amplify, negative values invert).
+/// - **shift** — DC offset added after scaling (in volts).
+///
+/// ```js
+/// // invert a slow sine and shift it into 0–5 V range
+/// $scaleAndShift($sine('1hz'), -5, 2.5)
+/// ```
+#[module(name = "$scaleAndShift", description = "Attenuate, invert, and offset a signal", args(input, scale?, shift?))]
 #[derive(Default)]
 pub struct ScaleAndShift {
     outputs: ScaleAndShiftOutputs,

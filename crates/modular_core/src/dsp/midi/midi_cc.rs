@@ -12,7 +12,7 @@ use crate::types::{MidiControlChange, MidiControlChange14Bit};
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct MidiCcParams {
-    /// MIDI device name to receive from (None = all devices)
+    /// MIDI device name to receive from (leave unset to receive from all devices)
     #[serde(default)]
     device: Option<String>,
 
@@ -20,7 +20,7 @@ struct MidiCcParams {
     #[serde(default)]
     cc: u8,
 
-    /// MIDI channel filter (1-16, None = omni/all channels)
+    /// MIDI channel to listen on (1–16, leave unset for omni/all channels)
     #[serde(default)]
     channel: Option<u8>,
 
@@ -36,10 +36,27 @@ struct MidiCcParams {
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct MidiCcOutputs {
-    #[output("output", "CC value as voltage", default, range = (0.0, 5.0))]
+    #[output("output", "CC value as voltage (0-5V)", default, range = (0.0, 5.0))]
     output: f32,
 }
 
+/// Converts a MIDI continuous controller (CC) message into a smooth control voltage (0–5V).
+///
+/// Use the `cc` parameter to select which CC number to listen to (0–127).
+/// Optional `smoothingMs` applies a slew filter to reduce stepping artifacts.
+/// Enable `highResolution` for 14-bit CC precision (pairs CC 0–31 with 32–63).
+///
+/// ## Example
+///
+/// ```js
+/// // Use mod wheel (CC 1) to sweep a filter cutoff
+/// const mod = $midiCC({ cc: 1 });
+/// $lpf($saw('c3'), mod.range('c2', 'c6')).out();
+///
+/// // High-resolution breath controller with smoothing
+/// const breath = $midiCC({ cc: 2, highResolution: true, smoothingMs: 10 });
+/// $sine('c4').gain(breath).out();
+/// ```
 #[module(name = "$midiCC", description = "MIDI CC to CV converter", args())]
 #[derive(Default)]
 pub struct MidiCc {
