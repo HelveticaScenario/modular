@@ -328,10 +328,11 @@ interface ModuleOutput {
    * @param config - Scope configuration options
    * @param config.msPerFrame - Time window in milliseconds (default 500)
    * @param config.triggerThreshold - Trigger threshold in volts (optional)
+   * @param config.triggerWaitToRender - Whether the scope should wait to render until the buffer fills (default true). Only applicable if triggerThreshold is set.
    * @param config.range - Voltage range for display as [min, max] tuple (default [-5, 5])
    * @example osc.scope({ msPerFrame: 100, range: [-10, 10] }).out()
    */
-  scope(config?: { msPerFrame?: number; triggerThreshold?: number; range?: [number, number] }): this;
+  scope(config?: { msPerFrame?: number; triggerThreshold?: number; triggerWaitToRender?: boolean; range?: [number, number] }): this;
   
   /**
    * Send this output to speakers as stereo.
@@ -441,9 +442,10 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
    * @param config - Scope configuration options
    * @param config.msPerFrame - Time window in milliseconds (default 500)
    * @param config.triggerThreshold - Trigger threshold in volts (optional)
+   * @param config.triggerWaitToRender - Whether the scope should wait to render until the buffer fills (default true). Only applicable if triggerThreshold is set.
    * @param config.range - Voltage range for display as [min, max] tuple (default [-5, 5])
    */
-  scope(config?: { msPerFrame?: number; triggerThreshold?: number; range?: [number, number] }): this;
+  scope(config?: { msPerFrame?: number; triggerThreshold?: number; triggerWaitToRender?: boolean; range?: [number, number] }): this;
 
   /**
    * Send all outputs to speakers as stereo, summed together.

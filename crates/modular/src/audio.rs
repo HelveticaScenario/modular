@@ -14,6 +14,7 @@ use modular_core::dsp::utils::SchmittTrigger;
 use modular_core::types::ClockMessages;
 use modular_core::types::Message;
 use modular_core::types::Scope;
+use modular_core::types::ScopeMode;
 use modular_core::types::WellKnownModule;
 use napi::Result;
 use napi::bindgen_prelude::Float32Array;
@@ -600,20 +601,22 @@ const AUDIO_OUTPUT_ATTENUATION: f32 = 0.2;
 /// the [-5, 5] volt range used by DSP modules (inverse of AUDIO_OUTPUT_ATTENUATION).
 const AUDIO_INPUT_GAIN: f32 = 1.0 / AUDIO_OUTPUT_ATTENUATION;
 
-const SCOPE_CAPACITY: u32 = 2048 * 2;
+const SCOPE_CAPACITY: u32 = 1024;
 
 use modular_core::types::ScopeStats;
 
 // Adapted from https://github.com/VCVRack/Fundamental/blob/e819498fd388755efcb876b37d1e33fddf4a29ac/src/Scope.cpp
 pub struct ScopeBuffer {
-  sample_counter: u32,
+  sample_counter: [u32; PORT_MAX_CHANNELS],
   skip_rate: u32,
-  trigger_threshold: Option<f32>,
+  trigger_threshold: Option<(f32, ScopeMode)>,
   trigger: [SchmittTrigger; PORT_MAX_CHANNELS],
-  /// Multi-channel buffers: one buffer per channel
-  buffers: Vec<[f32; SCOPE_CAPACITY as usize]>,
-  buffer_idx: usize,
-  trigger_idx: [usize; PORT_MAX_CHANNELS],
+  /// Multi-channel buffers: 2 buffers per channel, used in ping-pong fashion to allow reading one buffer while filling the other
+  buffers: Vec<[[f32; SCOPE_CAPACITY as usize]; 2]>,
+  buffer_select: [bool; PORT_MAX_CHANNELS], // false = buffer 0 active, true = buffer 1 active
+  recording: [bool; PORT_MAX_CHANNELS],     // whether currently recording for each channel
+  buffer_idx: [usize; PORT_MAX_CHANNELS],
+  read_idx: [usize; PORT_MAX_CHANNELS],
   /// Current number of channels being captured
   num_channels: usize,
 }
@@ -624,39 +627,46 @@ fn ms_to_samples(ms: u32, sample_rate: f32) -> u32 {
 
 // A function that calculates the skip rate needed to capture target samples over total samples
 fn calculate_skip_rate(total_samples: u32) -> u32 {
-  total_samples / (SCOPE_CAPACITY / 2)
+  total_samples / SCOPE_CAPACITY
 }
 
 impl ScopeBuffer {
   pub fn new(scope: &Scope, sample_rate: f32) -> Self {
     let mut sb = Self {
-      buffers: vec![[0.0; SCOPE_CAPACITY as usize]; 1], // Start with 1 channel
-      sample_counter: 0,
+      buffers: vec![[[0.0; SCOPE_CAPACITY as usize]; 2]; 1], // Start with 1 channel, 2 buffers per channel
+      sample_counter: [0; PORT_MAX_CHANNELS],
       skip_rate: 0,
       trigger_threshold: None,
       trigger: [SchmittTrigger::new(0.0, 0.0); PORT_MAX_CHANNELS],
-      buffer_idx: 0,
-      trigger_idx: [0; PORT_MAX_CHANNELS],
+      buffer_idx: [0; PORT_MAX_CHANNELS],
+      buffer_select: [false; PORT_MAX_CHANNELS],
+      recording: [false; PORT_MAX_CHANNELS],
+      read_idx: [0; PORT_MAX_CHANNELS],
       num_channels: 1,
     };
 
     sb.update(scope, sample_rate);
     for ch in 0..PORT_MAX_CHANNELS {
       sb.trigger[ch] = SchmittTrigger::new(
-        sb.trigger_threshold.unwrap_or(0.0),
-        sb.trigger_threshold.unwrap_or(0.0) + 0.001,
+        sb.trigger_threshold
+          .map(|(thresh, _)| thresh)
+          .unwrap_or(0.0),
+        sb.trigger_threshold
+          .map(|(thresh, _)| thresh)
+          .unwrap_or(0.0)
+          + 0.001,
       );
     }
 
     sb
   }
 
-  fn update_trigger_threshold(&mut self, threshold: Option<i32>) {
-    let threshold = threshold.map(|t| (t as f32) / 1000.0);
+  fn update_trigger_threshold(&mut self, threshold: Option<(i32, ScopeMode)>) {
+    let threshold = threshold.map(|(t, mode)| ((t as f32) / 1000.0, mode));
     self.trigger_threshold = threshold;
-    if let Some(thresh) = threshold {
+    if let Some((thresh, _)) = threshold {
       for ch in 0..PORT_MAX_CHANNELS {
-        self.trigger[ch].set_thresholds(thresh, thresh + 0.001);
+        self.trigger[ch].set_thresholds(thresh, thresh);
         self.trigger[ch].reset();
       }
     }
@@ -670,6 +680,20 @@ impl ScopeBuffer {
     );
   }
 
+  fn write_buffer_idx(&self, ch: usize) -> usize {
+    if self.buffer_select[ch] { 1 } else { 0 }
+  }
+
+  fn read_buffer_idx(&self, ch: usize) -> usize {
+    let write_buffer = self.write_buffer_idx(ch);
+    let other_buffer = if write_buffer == 0 { 1 } else { 0 };
+    match self.trigger_threshold {
+      Some((_, ScopeMode::Wait)) => other_buffer, // Read from the buffer that is not currently being written to
+      Some((_, ScopeMode::Roll)) => write_buffer, // Read from the active buffer, which is continuously recording and rolling over
+      None => write_buffer,                       // No trigger mode, just return active buffer
+    }
+  }
+
   /// Push samples for all channels at once
   pub fn push_poly(&mut self, values: &[f32], num_channels: usize) {
     // Dynamically resize buffers if channel count changes
@@ -678,42 +702,57 @@ impl ScopeBuffer {
       if new_count > self.buffers.len() {
         // Add new channel buffers
         for _ in self.buffers.len()..new_count {
-          self.buffers.push([0.0; SCOPE_CAPACITY as usize]);
+          self.buffers.push([[0.0; SCOPE_CAPACITY as usize]; 2]);
         }
       }
       self.num_channels = num_channels;
     }
-    self.buffer_idx %= SCOPE_CAPACITY as usize; // Wrap buffer index
     for ch in 0..num_channels {
-      // Use first channel for triggering
-      let trigger_value = values.get(ch).copied().unwrap_or(0.0);
-
-      let mut triggered = false;
+      let current_value = values.get(ch).copied().unwrap_or(0.0);
 
       if self.trigger_threshold.is_none() {
-        triggered = true;
-      } else if self.trigger[ch].process(trigger_value) {
-        triggered = true;
-      }
-
-      if triggered {
         self.trigger[ch].reset();
-        self.trigger_idx[ch] = self.buffer_idx;
+        self.recording[ch] = true;
+        self.read_idx[ch] = self.buffer_idx[ch]; // Start reading from current write position
+      } else if self.trigger[ch].process(current_value) && !self.recording[ch] {
+        self.trigger[ch].reset();
+        self.recording[ch] = true;
+        self.buffer_idx[ch] = 0;
+        self.read_idx[ch] = 0; // Start reading from beginning of buffer on new trigger
+        self.sample_counter[ch] = 0;
       }
-    }
 
-    if self.sample_counter == 0 {
-      // Store all channel values
-      for (ch, &val) in values.iter().enumerate().take(self.num_channels as usize) {
-        if ch < self.buffers.len() {
-          self.buffers[ch][self.buffer_idx] = val;
+      self.buffer_idx[ch] %= SCOPE_CAPACITY as usize; // Wrap buffer index
+      self.read_idx[ch] %= SCOPE_CAPACITY as usize; // Wrap read index
+
+      let write_buffer_idx = self.write_buffer_idx(ch);
+      if self.recording[ch] {
+        if self.sample_counter[ch] == 0 {
+          // Store all channel values
+          if ch < self.buffers.len() {
+            self.buffers[ch][write_buffer_idx][self.buffer_idx[ch]] = current_value;
+          }
+          self.buffer_idx[ch] += 1;
+          if self.buffer_idx[ch] >= SCOPE_CAPACITY as usize {
+            match self.trigger_threshold {
+              Some((_, ScopeMode::Wait)) => {
+                self.recording[ch] = false; // Stop recording until next trigger
+                self.buffer_select[ch] = !self.buffer_select[ch]; // Switch buffers
+              }
+              Some((_, ScopeMode::Roll)) => {
+                self.recording[ch] = false; // Stop recording until next trigger
+              }
+              None => {
+                // No trigger mode, keep recording continuously
+              }
+            }
+          }
+        }
+        self.sample_counter[ch] += 1;
+        if self.sample_counter[ch] > self.skip_rate {
+          self.sample_counter[ch] = 0;
         }
       }
-      self.buffer_idx += 1;
-    }
-    self.sample_counter += 1;
-    if self.sample_counter > self.skip_rate {
-      self.sample_counter = 0;
     }
   }
 
@@ -728,7 +767,8 @@ impl ScopeBuffer {
       .buffers
       .iter()
       .take(self.num_channels as usize)
-      .map(|buf| Float32Array::new(buf.to_vec()))
+      .enumerate()
+      .map(|(ch, buf)| Float32Array::new(buf[self.read_buffer_idx(ch)].to_vec()))
       .collect()
   }
 
@@ -739,7 +779,7 @@ impl ScopeBuffer {
 
     for ch in 0..self.num_channels as usize {
       if ch < self.buffers.len() {
-        for &val in self.buffers[ch].iter() {
+        for &val in self.buffers[ch][self.read_buffer_idx(ch)].iter() {
           if val < min {
             min = val;
           }
@@ -762,9 +802,7 @@ impl ScopeBuffer {
       min: min as f64,
       max: max as f64,
       peak_to_peak: (max - min) as f64,
-      buffer_idx: self.buffer_idx as u32,
-      trigger_threshold: self.trigger_threshold.map(|t| t as f64),
-      trigger_idx: self.trigger_idx.iter().map(|e| *e as u32).collect(),
+      read_offset: self.read_idx.iter().map(|&idx| idx as u32).collect(),
     }
   }
 }

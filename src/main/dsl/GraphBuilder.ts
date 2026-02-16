@@ -3,6 +3,7 @@ import type {
     ModuleState,
     PatchGraph,
     Scope,
+    ScopeMode,
 } from '@modular/core';
 import type { ProcessedModuleSchema } from './paramsSchema';
 import { processSchemas } from './paramsSchema';
@@ -126,6 +127,7 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
     scope(config?: {
         msPerFrame?: number;
         triggerThreshold?: number;
+        triggerWaitToRender?: boolean;
         range?: [number, number];
     }): this {
         if (this.items.length > 0) {
@@ -712,6 +714,7 @@ export class GraphBuilder {
         config: {
             msPerFrame?: number;
             triggerThreshold?: number;
+            triggerWaitToRender?: boolean;
             range?: [number, number];
         } = {},
     ) {
@@ -726,6 +729,14 @@ export class GraphBuilder {
         } else {
             output = value;
         }
+        const triggerWaitToRender = config.triggerWaitToRender ?? true;
+        let thresh: [number, ScopeMode] | undefined = undefined;
+        if (realTriggerThreshold !== undefined) {
+            thresh = [
+                realTriggerThreshold,
+                triggerWaitToRender ? 'Wait' : 'Roll',
+            ];
+        }
         this.scopes.push({
             item: {
                 type: 'ModuleOutput',
@@ -733,7 +744,7 @@ export class GraphBuilder {
                 portName: output.portName,
             },
             msPerFrame,
-            triggerThreshold: realTriggerThreshold,
+            triggerThreshold: thresh,
             range,
         });
     }
@@ -902,6 +913,7 @@ export class ModuleOutput {
     scope(config?: {
         msPerFrame?: number;
         triggerThreshold?: number;
+        triggerWaitToRender?: boolean;
         range?: [number, number];
     }): this {
         this.builder.addScope(this, config);

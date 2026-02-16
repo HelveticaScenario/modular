@@ -281,7 +281,7 @@ export interface PositionalArg {
 export interface Scope {
   item: ScopeItem
   msPerFrame: number
-  triggerThreshold?: number
+  triggerThreshold?: [number, ScopeMode]
   /** Voltage range for display (default [-5.0, 5.0]). The scope displays from range[0] to range[1]. */
   range: [number, number]
 }
@@ -289,12 +289,13 @@ export interface Scope {
 export type ScopeItem =
   | { type: 'ModuleOutput', moduleId: string, portName: string }
 
+export type ScopeMode =  'Wait'|
+'Roll';
+
 /** Statistics computed from scope buffer data */
 export interface ScopeStats {
   min: number
   max: number
   peakToPeak: number
-  bufferIdx: number
-  triggerThreshold?: number
-  triggerIdx: Array<number>
+  readOffset: Array<number>
 }

@@ -132,7 +132,7 @@ export const drawOscilloscope = (
         return;
     }
 
-    const windowSize = 2048;
+    const windowSize = 1024;
 
     // Draw all channels (same color, overlaid)
     ctx.strokeStyle = accentColor;
@@ -147,8 +147,7 @@ export const drawOscilloscope = (
         ctx.beginPath();
 
         for (let i = 0; i < sampleCount; i++) {
-            let dataIndex =
-                (i + stats.triggerIdx[ch] + windowSize) % data.length;
+            let dataIndex = (i + stats.readOffset[ch]) % data.length;
             const x = waveformLeft + stepX * i;
             const rawSample = data[dataIndex];
             const clampedSample = Math.max(

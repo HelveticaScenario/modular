@@ -1043,16 +1043,21 @@ pub enum ScopeItem {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[napi(string_enum)]
+pub enum ScopeMode {
+    Wait,
+    Roll,
+}
+
 /// Statistics computed from scope buffer data
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[napi(object)]
 pub struct ScopeStats {
     pub min: f64,
     pub max: f64,
     pub peak_to_peak: f64,
-    pub buffer_idx: u32,
-    pub trigger_threshold: Option<f64>,
-    pub trigger_idx: Vec<u32>,
+    pub read_offset: Vec<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1060,7 +1065,7 @@ pub struct ScopeStats {
 pub struct Scope {
     pub item: ScopeItem,
     pub ms_per_frame: u32,
-    pub trigger_threshold: Option<i32>,
+    pub trigger_threshold: Option<(i32, ScopeMode)>,
     /// Voltage range for display (default [-5.0, 5.0]). The scope displays from range[0] to range[1].
     #[serde(default = "default_scope_range")]
     pub range: (f64, f64),
