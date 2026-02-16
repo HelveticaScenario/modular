@@ -171,22 +171,32 @@ impl Mix {
 mod tests {
     use super::*;
     use crate::poly::PolySignal;
-    use crate::types::Signal;
+    use crate::types::{OutputStruct, Signal};
+
+    /// Create a Mix with params and properly initialize _channel_count and output channels.
+    fn make_mix(params: MixParams) -> Mix {
+        let channels = mix_derive_channel_count(&params);
+        let mut outputs = MixOutputs::default();
+        outputs.set_all_channels(channels);
+        Mix {
+            params,
+            outputs,
+            _channel_count: channels,
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn test_mix_single_poly_sum() {
-        let mut mixer = Mix {
-            params: MixParams {
-                inputs: vec![PolySignal::poly(&[
-                    Signal::Volts(1.0),
-                    Signal::Volts(2.0),
-                    Signal::Volts(3.0),
-                ])],
-                mode: MixMode::Sum,
-                gain: PolySignal::default(),
-            },
-            ..Default::default()
-        };
+        let mut mixer = make_mix(MixParams {
+            inputs: vec![PolySignal::poly(&[
+                Signal::Volts(1.0),
+                Signal::Volts(2.0),
+                Signal::Volts(3.0),
+            ])],
+            mode: MixMode::Sum,
+            gain: PolySignal::default(),
+        });
         mixer.update(48000.0);
         assert_eq!(mixer.outputs.sample.channels(), 3);
         assert_eq!(mixer.outputs.sample.get(0), 1.0);
@@ -197,21 +207,18 @@ mod tests {
     #[test]
     fn test_mix_two_poly_sum() {
         // A: 2 channels [1, 2], B: 3 channels [10, 20, 30]
-        let mut mixer = Mix {
-            params: MixParams {
-                inputs: vec![
-                    PolySignal::poly(&[Signal::Volts(1.0), Signal::Volts(2.0)]),
-                    PolySignal::poly(&[
-                        Signal::Volts(10.0),
-                        Signal::Volts(20.0),
-                        Signal::Volts(30.0),
-                    ]),
-                ],
-                mode: MixMode::Sum,
-                gain: PolySignal::default(),
-            },
-            ..Default::default()
-        };
+        let mut mixer = make_mix(MixParams {
+            inputs: vec![
+                PolySignal::poly(&[Signal::Volts(1.0), Signal::Volts(2.0)]),
+                PolySignal::poly(&[
+                    Signal::Volts(10.0),
+                    Signal::Volts(20.0),
+                    Signal::Volts(30.0),
+                ]),
+            ],
+            mode: MixMode::Sum,
+            gain: PolySignal::default(),
+        });
         mixer.update(48000.0);
         // Output should be 3 channels
         assert_eq!(mixer.outputs.sample.channels(), 3);
@@ -226,17 +233,14 @@ mod tests {
     #[test]
     fn test_mix_average_mode() {
         // A: 2 channels [2, 4], B: 2 channels [6, 8]
-        let mut mixer = Mix {
-            params: MixParams {
-                inputs: vec![
-                    PolySignal::poly(&[Signal::Volts(2.0), Signal::Volts(4.0)]),
-                    PolySignal::poly(&[Signal::Volts(6.0), Signal::Volts(8.0)]),
-                ],
-                mode: MixMode::Average,
-                gain: PolySignal::default(),
-            },
-            ..Default::default()
-        };
+        let mut mixer = make_mix(MixParams {
+            inputs: vec![
+                PolySignal::poly(&[Signal::Volts(2.0), Signal::Volts(4.0)]),
+                PolySignal::poly(&[Signal::Volts(6.0), Signal::Volts(8.0)]),
+            ],
+            mode: MixMode::Average,
+            gain: PolySignal::default(),
+        });
         mixer.update(48000.0);
         assert_eq!(mixer.outputs.sample.channels(), 2);
         // Channel 0: (2 + 6) / 2 = 4
@@ -248,21 +252,18 @@ mod tests {
     #[test]
     fn test_mix_gain_extends_channels() {
         // A: 1 channel [5], B: 2 channels [10, 20], gain: 3 channels [1, 2, 0.5]
-        let mut mixer = Mix {
-            params: MixParams {
-                inputs: vec![
-                    PolySignal::mono(Signal::Volts(5.0)),
-                    PolySignal::poly(&[Signal::Volts(10.0), Signal::Volts(20.0)]),
-                ],
-                mode: MixMode::Sum,
-                gain: PolySignal::poly(&[
-                    Signal::Volts(5.0),
-                    Signal::Volts(10.0),
-                    Signal::Volts(2.5),
-                ]),
-            },
-            ..Default::default()
-        };
+        let mut mixer = make_mix(MixParams {
+            inputs: vec![
+                PolySignal::mono(Signal::Volts(5.0)),
+                PolySignal::poly(&[Signal::Volts(10.0), Signal::Volts(20.0)]),
+            ],
+            mode: MixMode::Sum,
+            gain: PolySignal::poly(&[
+                Signal::Volts(5.0),
+                Signal::Volts(10.0),
+                Signal::Volts(2.5),
+            ]),
+        });
         mixer.update(48000.0);
         // Output channels = max(2 input channels, 3 gain channels) = 3
         assert_eq!(mixer.outputs.sample.channels(), 3);
@@ -276,18 +277,15 @@ mod tests {
 
     #[test]
     fn test_mix_empty_inputs() {
-        let mut mixer = Mix {
-            params: MixParams {
-                inputs: vec![],
-                mode: MixMode::Sum,
-                gain: PolySignal::poly(&[
-                    Signal::Volts(1.0),
-                    Signal::Volts(2.0),
-                    Signal::Volts(3.0),
-                ]),
-            },
-            ..Default::default()
-        };
+        let mut mixer = make_mix(MixParams {
+            inputs: vec![],
+            mode: MixMode::Sum,
+            gain: PolySignal::poly(&[
+                Signal::Volts(1.0),
+                Signal::Volts(2.0),
+                Signal::Volts(3.0),
+            ]),
+        });
         mixer.update(48000.0);
         // Empty inputs with 3-channel gain -> 3 channels of silence
         assert_eq!(mixer.outputs.sample.channels(), 3);
@@ -298,7 +296,7 @@ mod tests {
 
     #[test]
     fn test_mix_empty_inputs_no_gain() {
-        let mut mixer = Mix::default();
+        let mut mixer = make_mix(MixParams::default());
         mixer.update(48000.0);
         // Empty inputs with no gain -> 1 channel of silence
         assert_eq!(mixer.outputs.sample.channels(), 1);
@@ -307,17 +305,14 @@ mod tests {
 
     #[test]
     fn test_mix_max_mode() {
-        let mut mixer = Mix {
-            params: MixParams {
-                inputs: vec![
-                    PolySignal::poly(&[Signal::Volts(1.0), Signal::Volts(-5.0)]),
-                    PolySignal::poly(&[Signal::Volts(-3.0), Signal::Volts(2.0)]),
-                ],
-                mode: MixMode::Max,
-                gain: PolySignal::default(),
-            },
-            ..Default::default()
-        };
+        let mut mixer = make_mix(MixParams {
+            inputs: vec![
+                PolySignal::poly(&[Signal::Volts(1.0), Signal::Volts(-5.0)]),
+                PolySignal::poly(&[Signal::Volts(-3.0), Signal::Volts(2.0)]),
+            ],
+            mode: MixMode::Max,
+            gain: PolySignal::default(),
+        });
         mixer.update(48000.0);
         assert_eq!(mixer.outputs.sample.channels(), 2);
         // Channel 0: max by abs(1, -3) = -3

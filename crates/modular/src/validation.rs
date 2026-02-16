@@ -608,7 +608,7 @@ mod tests {
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "sine-1".to_string(),
-        module_type: "sine".to_string(),
+        module_type: "$sine".to_string(),
         id_is_explicit: None,
         params: json!({
             "freq": 4.0
@@ -650,7 +650,7 @@ mod tests {
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "sine-1".to_string(),
-        module_type: "sine".to_string(),
+        module_type: "$sine".to_string(),
         id_is_explicit: None,
         params: json!({
             "unknown_param": {"type": "volts", "value": 1.0}
@@ -674,7 +674,7 @@ mod tests {
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "root".to_string(),
-        module_type: "signal".to_string(),
+        module_type: "$signal".to_string(),
         id_is_explicit: None,
         params: json!({
             "source": {"type": "cable", "module": "nonexistent", "port": "output"}
@@ -699,7 +699,7 @@ mod tests {
       modules: vec![
         ModuleState {
           id: "sine-1".to_string(),
-          module_type: "sine".to_string(),
+          module_type: "$sine".to_string(),
           id_is_explicit: None,
           params: json!({
               "freq": 4.0
@@ -707,7 +707,7 @@ mod tests {
         },
         ModuleState {
           id: "root".to_string(),
-          module_type: "signal".to_string(),
+          module_type: "$signal".to_string(),
           id_is_explicit: None,
           params: json!({
               "source": {"type": "cable", "module": "sine-1", "port": "invalid_port"}
@@ -736,7 +736,7 @@ mod tests {
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "nested-1".to_string(),
-        module_type: "mix".to_string(),
+        module_type: "$mix".to_string(),
         id_is_explicit: None,
         params: json!({
             "inputs": [
@@ -754,7 +754,7 @@ mod tests {
     let errors = result.unwrap_err();
     assert!(errors.iter().any(|e| {
       // Location is now formatted as "moduleName(...)" for auto-generated IDs
-      e.location.as_deref() == Some("mix(...)")
+      e.location.as_deref() == Some("$mix(...)")
         && e.field == "params.inputs"
         && e.message.contains("not found for cable source")
     }));
@@ -767,7 +767,7 @@ mod tests {
       modules: vec![
         ModuleState {
           id: "sine-1".to_string(),
-          module_type: "sine".to_string(),
+          module_type: "$sine".to_string(),
           id_is_explicit: None,
           params: json!({
               "freq": 4.0
@@ -775,7 +775,7 @@ mod tests {
         },
         ModuleState {
           id: "nested-1".to_string(),
-          module_type: "mix".to_string(),
+          module_type: "$mix".to_string(),
           id_is_explicit: None,
           params: json!({
               "inputs": [
@@ -799,7 +799,7 @@ mod tests {
       modules: vec![
         ModuleState {
           id: "sine-1".to_string(),
-          module_type: "sine".to_string(),
+          module_type: "$sine".to_string(),
           id_is_explicit: None,
           params: json!({
               "freq": 4.0
@@ -807,7 +807,7 @@ mod tests {
         },
         ModuleState {
           id: "signal-1".to_string(),
-          module_type: "signal".to_string(),
+          module_type: "$signal".to_string(),
           id_is_explicit: None,
           params: json!({
               "source": {"type": "cable", "module": "sine-1", "port": "output"}
@@ -828,7 +828,7 @@ mod tests {
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "sine-1".to_string(),
-        module_type: "sine".to_string(),
+        module_type: "$sine".to_string(),
         id_is_explicit: None,
         params: json!({
             "unknown1": 1.0,
@@ -869,7 +869,7 @@ mod tests {
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "noise-1".to_string(),
-        module_type: "noise".to_string(),
+        module_type: "$noise".to_string(),
         id_is_explicit: None,
         params: json!({
             "color": "invalid_color"
@@ -884,10 +884,10 @@ mod tests {
     assert!(result.is_err());
     let errors = result.unwrap_err();
 
-    // Location is formatted as "noise(...)" for auto-generated IDs
+    // Location is formatted as "$noise(...)" for auto-generated IDs
     assert!(errors.iter().any(|e| {
       e.field == "params"
-        && e.location.as_deref() == Some("noise(...)")
+        && e.location.as_deref() == Some("$noise(...)")
         && e.message.contains("unknown variant")
     }));
   }
@@ -901,7 +901,7 @@ mod tests {
     let patch = PatchGraph {
       modules: vec![ModuleState {
         id: "noise-1".to_string(),
-        module_type: "noise".to_string(),
+        module_type: "$noise".to_string(),
         id_is_explicit: None,
         params: serde_json::Value::Null,
       }],
