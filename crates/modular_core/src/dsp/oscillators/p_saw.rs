@@ -29,14 +29,17 @@ struct ChannelState {
     prev_phase: f32,
 }
 
-/// Phase-driven sawtooth/triangle/ramp oscillator.
+/// Phase-driven variable-symmetry triangle oscillator.
 ///
 /// Instead of a frequency input, this oscillator is driven by an external
 /// phasor signal (0–1). Connect a `ramp` or other phase source to `phase`
 /// and use phase-distortion modules between them for complex timbres.
 ///
-/// The `shape` parameter blends continuously between waveforms:
-/// 0 = saw, 2.5 = triangle, 5 = ramp.
+/// The `shape` parameter shifts the peak position of a triangle wave,
+/// smoothly morphing between waveforms by adjusting attack/release time:
+/// - **0** — Saw (all rise, instant drop)
+/// - **2.5** — Triangle (symmetric)
+/// - **5** — Ramp (instant rise, all fall)
 ///
 /// Output range is **±5V**.
 #[module(
@@ -58,7 +61,7 @@ impl PSawOscillator {
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
 
-            // Update shape with cycling - clamp to valid range
+            // Update shape with smoothing - clamp to valid range
             let shape_val = self.params.shape.get_value_or(ch, 0.0).clamp(0.0, 5.0);
             state.shape.update(shape_val);
 
@@ -68,109 +71,61 @@ impl PSawOscillator {
             // Handle phase wrapping correctly
             let mut phase_increment = phase - state.prev_phase;
             if phase_increment < -0.5 {
-                // Phase wrapped forward (0.9 -> 0.1): add 1.0 to get actual increment
                 phase_increment += 1.0;
             } else if phase_increment > 0.5 {
-                // Phase wrapped backward (0.1 -> 0.9): subtract 1.0 to get negative increment
-                // This is unlikely in normal use but we handle it for completeness
                 phase_increment -= 1.0;
             }
-            // Take absolute value and clamp to Nyquist limit (0.5 = half the sample period)
-            // to prevent artifacts from unrealistic phase increments
             phase_increment = phase_increment.abs().clamp(0.0, 0.5);
 
-            state.prev_phase = phase;
+            // Convert shape (0–5) to symmetry (peak position):
+            // 0 = saw (peak at 1.0), 2.5 = triangle (peak at 0.5), 5 = ramp (peak at 0.0)
+            let s = (1.0 - *state.shape * 0.2).clamp(0.001, 0.999);
 
-            // Shape parameter: 0 = saw, 2.5 = triangle, 5 = ramp (reversed saw)
-            let shape_norm = *state.shape * 0.2; // /5.0 -> *0.2 for performance
-
-            let raw_output = if shape_norm < 0.5 {
-                // Blend from saw (0.0) to triangle (0.5)
-                let blend = shape_norm * 2.0;
-                let saw = generate_saw(phase, phase_increment);
-                let triangle = generate_triangle(phase, phase_increment);
-                saw + (triangle - saw) * blend
+            // DPW (Differentiated Polynomial Waveform) method:
+            // Compute the smooth anti-derivative of the waveform at both the
+            // previous and current phase, then differentiate numerically.
+            // The numeric differentiation naturally band-limits the output.
+            let raw_output = if phase_increment > 1.0e-7 {
+                let integral_old = triangle_integral(state.prev_phase, s);
+                let integral_new = triangle_integral(phase, s);
+                (integral_new - integral_old) / phase_increment
             } else {
-                // Blend from triangle (0.5) to ramp (1.0)
-                let blend = (shape_norm - 0.5) * 2.0;
-                let triangle = generate_triangle(phase, phase_increment);
-                let ramp = generate_ramp(phase, phase_increment);
-                triangle + (ramp - triangle) * blend
+                // Near-DC fallback: use naive waveform (no aliasing at low freq)
+                naive_triangle(phase, s)
             };
+
+            state.prev_phase = phase;
             self.outputs.sample.set(ch, raw_output * 5.0);
         }
     }
 }
 
-/// PolyBLEP (Polynomial Band-Limited Step) function
-/// Reduces aliasing at discontinuities
+/// Anti-derivative of the variable-symmetry triangle waveform.
+///
+/// This is a continuous, differentiable, periodic piecewise-parabolic function
+/// (F(0) = F(1) = 0). Used by the DPW method: the numeric differentiation
+/// `(F[n] - F[n-1]) / dt` naturally band-limits the output without requiring
+/// any explicit PolyBLEP/PolyBLAMP corrections.
 #[inline(always)]
-fn poly_blep(phase: f32, phase_increment: f32) -> f32 {
-    // Detect discontinuity at phase wrap (0.0)
-    if phase < phase_increment {
-        let t = phase / phase_increment;
-        return t + t - t * t - 1.0;
-    }
-    // Detect discontinuity at phase = 1.0
-    else if phase > 1.0 - phase_increment {
-        let t = (phase - 1.0) / phase_increment;
-        return t * t + t + t + 1.0;
-    }
-    0.0
-}
-
-/// Generate band-limited sawtooth wave
-#[inline(always)]
-fn generate_saw(phase: f32, phase_increment: f32) -> f32 {
-    let mut saw = 2.0 * phase - 1.0;
-    saw -= poly_blep(phase, phase_increment);
-    saw
-}
-
-/// Generate band-limited ramp wave (reversed sawtooth)
-#[inline(always)]
-fn generate_ramp(phase: f32, phase_increment: f32) -> f32 {
-    let mut ramp = 1.0 - 2.0 * phase;
-    ramp += poly_blep(phase, phase_increment);
-    ramp
-}
-
-/// Integrated PolyBLEP for triangle wave
-#[inline(always)]
-fn poly_blep_integrated(phase: f32, phase_increment: f32) -> f32 {
-    if phase < phase_increment {
-        let t = phase / phase_increment;
-        return (t * t * t) / 3.0 - (t * t) / 2.0 + t / 2.0;
-    } else if phase > 1.0 - phase_increment {
-        let t = (phase - 1.0) / phase_increment;
-        return -(t * t * t) / 3.0 - (t * t) / 2.0 - t / 2.0;
-    }
-    0.0
-}
-
-/// Generate band-limited triangle wave
-#[inline(always)]
-fn generate_triangle(phase: f32, phase_increment: f32) -> f32 {
-    // Triangle is the integral of a square wave
-    // We can generate it by integrating a PolyBLEP pulse
-    let mut triangle = if phase < 0.5 {
-        4.0 * phase - 1.0
+fn triangle_integral(phase: f32, s: f32) -> f32 {
+    if phase < s {
+        // Integral of rising segment: f(p) = 2p/s - 1  →  F(p) = p²/s - p
+        phase * phase / s - phase
     } else {
-        3.0 - 4.0 * phase
-    };
+        // Integral of falling segment: f(p) = 1 - 2(p-s)/(1-s)  →  F(p) = p - (p-s)²/(1-s) - s
+        let d = phase - s;
+        phase - d * d / (1.0 - s) - s
+    }
+}
 
-    // Apply PolyBLEP correction at the peak (phase = 0.5)
-    triangle += poly_blep_integrated(phase, phase_increment);
-    triangle -= poly_blep_integrated(
-        if phase >= 0.5 {
-            phase - 0.5
-        } else {
-            phase + 0.5
-        },
-        phase_increment,
-    );
-
-    triangle
+/// Naive variable-symmetry triangle (used as fallback at near-zero frequency).
+#[inline(always)]
+fn naive_triangle(phase: f32, s: f32) -> f32 {
+    if phase < s {
+        2.0 * phase / s - 1.0
+    } else {
+        1.0 - 2.0 * (phase - s) / (1.0 - s)
+    }
 }
 
 message_handlers!(impl PSawOscillator {});
