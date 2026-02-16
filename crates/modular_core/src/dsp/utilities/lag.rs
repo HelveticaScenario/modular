@@ -8,17 +8,18 @@ use serde::Deserialize;
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct LagProcessorParams {
+    /// signal input
     input: PolySignal,
-    /// rise time in seconds (default 0.01s)
+    /// rise rate — seconds to slew 1 volt upward (default 0.01)
     rise: PolySignal,
-    /// fall time in seconds (default 0.01s)
+    /// fall rate — seconds to slew 1 volt downward (default 0.01)
     fall: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct LagProcessorOutputs {
-    #[output("output", "output", default)]
+    #[output("output", "slewed signal", default)]
     sample: PolyOutput,
 }
 
@@ -27,9 +28,24 @@ struct SlewChannelState {
     current_value: f32,
 }
 
+/// Slew limiter that smooths abrupt voltage changes.
+///
+/// Separate **rise** and **fall** times control how quickly the output can
+/// increase or decrease. Times are specified in **seconds per volt** — the
+/// time the output takes to slew by 1 V. For example, a rise time of `0.1`
+/// means the output climbs 1 V in 0.1 s; a 5 V gate signal would therefore
+/// take 0.5 s to reach full height.
+///
+/// Use `$slew` to add portamento to pitch signals, smooth noisy control
+/// voltages, or create envelope-like shapes from gate signals.
+///
+/// ```js
+/// // portamento: glide between notes (0.1 s per volt of pitch change)
+/// $sine($slew(sequencer.pitch, { rise: 0.1, fall: 0.1 }))
+/// ```
 #[module(
     name = "$slew",
-    description = "Lag Processor (Slew Limiter)",
+    description = "Slew limiter — smooths voltage transitions with adjustable rise and fall times",
     args(input)
 )]
 #[derive(Default)]
@@ -55,11 +71,11 @@ impl LagProcessor {
             };
 
             // Calculate max change per sample
-            // time is seconds for 10V change (full scale)
-            // Slew rate = 10.0 / time (V/s)
+            // time is seconds for 1.0v change (full scale)
+            // Slew rate = 1.0 / time (V/s)
             // Max delta per sample = Slew rate / sample_rate
-            let max_rise = 10.0 / (rise_time * sample_rate);
-            let max_fall = 10.0 / (fall_time * sample_rate);
+            let max_rise = 1.0 / (rise_time * sample_rate);
+            let max_fall = 1.0 / (fall_time * sample_rate);
 
             let diff = input - state.current_value;
 
