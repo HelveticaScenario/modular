@@ -437,19 +437,81 @@ struct IntervalSeqOutputs {
     trig: PolyOutput,
 }
 
-/// Scale-degree sequencer with two additive patterns.
+/// Scale-degree sequencer using a compact text syntax ported
+/// from TidalCycles/Strudel. 
 ///
-/// Uses two mini-notation patterns — **intervalPattern** and **addPattern** —
-/// whose values are summed as scale degree indices, then quantized to the
-/// configured **scale**. Overlapping notes from the Cartesian product of both
-/// patterns are polyphonically allocated.
+/// Works with **scale degree numbers** instead of note names. Two patterns —
+/// **intervalPattern** (the main pattern) and an optional **addPattern** —
+/// are evaluated independently, and their values are summed as 0-indexed
+/// scale-degree indices. The result is quantized to the configured **scale**
+/// with automatic octave wrapping.
 ///
-/// Outputs **cv** (V/Oct pitch), **gate**, and **trig**.
+/// ## Cycles
+///
+/// A **cycle** is one full traversal of a pattern. The playhead position
+/// determines timing: its integer part selects the current cycle number and
+/// the fractional part selects the position within that cycle.
+/// Both **intervalPattern** and **addPattern** share the same cycle clock.
+///
+/// ## Scale degrees
+///
+/// Values are **0-indexed** degrees of the chosen scale. `0` is the root,
+/// `1` is the second scale tone, `2` the third, and so on. Negative values
+/// move downward; values beyond the scale length wrap into higher/lower
+/// octaves automatically.
+///
+/// ## Mini-notation
+///
+/// | Syntax | Meaning | Example |
+/// |--------|---------|---------|
+/// | Bare number | Scale degree (0-indexed) | `0`, `2`, `4` |
+/// | `~` | Rest (gate low, no change in pitch) | `'0 ~ 2 ~'` |
+/// | `[a b c]` | Fast subsequence — subdivides parent time slot | `'[0 2 4]'` |
+/// | `<a b c>` | Slow / alternating — one element per cycle | `'<0 4 7>'` |
+/// | `a\|b\|c` | Random choice each time the slot is reached | `'0\|2\|4'` |
+/// | `a, b` | Stack — comma-separated patterns play simultaneously | `'0 2, 4 7'` |
+///
+/// Grouping, stacks, and random choice nest arbitrarily.
+///
+/// ## Per-element modifiers
+///
+/// Modifiers attach directly to an element (no spaces). Multiple modifiers
+/// can be chained in any order.
+///
+/// | Modifier | Syntax | Meaning |
+/// |----------|--------|---------|
+/// | Weight | `@n` | Relative duration within a sequence (default 1). `0@2 2` gives `0` twice the time. |
+/// | Speed up | `*n` | Repeat/subdivide `n` times within the slot. `0*3` plays degree 0 three times. |
+/// | Slow down | `/n` | Stretch over `n` cycles. `0/2` plays every other cycle. |
+/// | Replicate | `!n` | Duplicate the element `n` times (default 2). `0!3` is equivalent to `0 0 0`. |
+/// | Degrade | `?` or `?n` | Randomly drop the element. `0?` drops ~50 % of the time; `0?0.8` drops 80 %. |
+/// | Euclidean | `(k,n)` or `(k,n,offset)` | Distribute `k` pulses over `n` steps (Bjorklund algorithm). |
+///
+/// Modifier operands can also be subpatterns: `0*[2 3]` alternates between
+/// doubling and tripling each slot.
+///
+/// ## Polyphony via Cartesian product
+///
+/// When **intervalPattern** and **addPattern** produce overlapping notes at
+/// the same point in time, every combination (Cartesian product) is
+/// generated and polyphonically allocated to separate output channels.
 ///
 /// ```js
-/// // arpeggiate chords using additive patterns
-/// $iCycle("0 2 4", "C(major)", { addPattern: "0 3" })
+/// // intervalPattern has one note per slot, addPattern adds two offsets →
+/// // two simultaneous voices per slot (root + fifth)
+/// $iCycle("0 2 4", "C4(major)", { addPattern: "0,4" })
 /// ```
+///
+/// ```js
+/// // slow alternation in addPattern shifts the chord each cycle
+/// $iCycle("0,2,4", "C4(major)", { addPattern: "<0 3>" })
+/// ```
+///
+/// ## Outputs
+///
+/// - **cv** — V/Oct pitch quantized to the scale (C4 = 0 V).
+/// - **gate** — 5 V while a note is active, 0 V otherwise.
+/// - **trig** — single-sample 5 V pulse at each note onset.
 #[module(
     name = "$iCycle",
     description = "Scale-degree sequencer with interval and add patterns",

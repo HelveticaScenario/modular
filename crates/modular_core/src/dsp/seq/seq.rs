@@ -227,18 +227,99 @@ struct SeqOutputs {
 
 /// Pattern sequencer using mini-notation strings.
 ///
-/// Write rhythmic and melodic patterns using a compact text syntax (inspired
-/// by TidalCycles/Strudel). The pattern loops each cycle and supports
+/// Write rhythmic and melodic patterns using a compact text syntax ported
+/// from TidalCycles/Strudel. The pattern loops each **cycle** and supports
 /// polyphony — overlapping notes are automatically allocated to separate
 /// output channels.
 ///
-/// Outputs **cv** (V/Oct pitch), **gate** (5 V while a note sounds), and
-/// **trig** (single-sample 5 V pulse at note onset).
+/// ## Cycles
+///
+/// A **cycle** is one full traversal of the pattern. The playhead position
+/// determines timing: its integer part selects the current cycle number and
+/// the fractional part selects the position within that cycle. Space-separated
+/// values divide the cycle into equal time slots.
+///
+/// ## Values
+///
+/// | Syntax | Meaning | Example |
+/// |--------|---------|---------|
+/// | Note name | Pitch (octave defaults to 3) | `'c4'`, `'a#3'`, `'db5'` |
+/// | Bare number | MIDI note number | `60`, `72` |
+/// | `Xhz` | Frequency | `'440hz'` |
+/// | `Xv` | Explicit voltage | `'0v'`, `'1v'`, `'-0.5v'` |
+/// | `~` | Rest (gate low, no change in CV) | `'c4 ~ e4 ~'` |
+///
+/// Bare numbers are MIDI note numbers (A0 = MIDI 33 = 0 V).
+///
+/// ## Grouping
+///
+/// - **`[a b c]`** — fast subsequence: subdivides the parent time slot so all
+///   elements play within it.
+/// - **`<a b c>`** — slow / alternating: plays one element per cycle,
+///   advancing each time the pattern loops.
 ///
 /// ```js
-/// // simple melodic pattern
-/// $cycle("c3 e3 g3 b3")
+/// $cycle("c4 [d4 e4]")   // c4 for half the cycle, d4 & e4 share the other half
+/// $cycle("<c4 g4> e4")   // cycle 1: c4 e4, cycle 2: g4 e4, …
 /// ```
+///
+/// ## Stacks
+///
+/// **`a b, c d`** — comma-separated patterns play **simultaneously** (layered).
+/// Each sub-pattern has its own independent timing.
+///
+/// ```js
+/// $cycle("c4 e4, g4 b4")   // two patterns layered on top of each other
+/// $cycle("c4 d4 e4, g3")   // three-note melody over a pedal tone
+/// ```
+///
+/// ## Random choice
+///
+/// **`a|b|c`** — randomly selects one option each time the slot is reached.
+///
+/// ```js
+/// $cycle("c4|d4|e4 g4")  // first slot is a random pick each cycle
+/// ```
+///
+/// ## Nesting
+///
+/// Grouping, stacks, and random choice nest arbitrarily:
+///
+/// ```js
+/// $cycle("<c4 [d4 e4]> [f4|g4 a4]")  // slow + fast + random combined
+/// $cycle("[c4 e4, g4] a4")            // stack inside a fast subsequence
+/// ```
+///
+/// ## Per-element modifiers
+///
+/// Modifiers attach directly to an element (no spaces). Multiple modifiers
+/// can be chained in any order.
+///
+/// | Modifier | Syntax | Meaning |
+/// |----------|--------|---------|
+/// | Weight | `@n` | Relative duration within a sequence (default 1). `c4@2 e4` gives c4 twice the time. |
+/// | Speed up | `*n` | Repeat/subdivide `n` times within the slot. `c4*3` plays c4 three times. |
+/// | Slow down | `/n` | Stretch over `n` cycles. `c4/2` plays every other cycle. |
+/// | Replicate | `!n` | Duplicate the element `n` times (default 2). `c4!3` is equivalent to `c4 c4 c4`. |
+/// | Degrade | `?` or `?n` | Randomly drop the element. `c4?` drops ~50 % of the time; `c4?0.8` drops 80 %. |
+/// | Euclidean | `(k,n)` or `(k,n,offset)` | Distribute `k` pulses over `n` steps using the Bjorklund algorithm. Optional `offset` rotates the pattern. |
+///
+/// ```js
+/// $cycle("c4*2 e4 g4")        // c4 plays twice in its slot
+/// $cycle("c4@3 e4 g4")        // c4 gets 3/5 of the cycle, e4 and g4 get 1/5 each
+/// $cycle("c4? e4 g4")         // c4 randomly drops out ~50 % of the time
+/// $cycle("c4(3,8) e4")        // Euclidean: 3 hits spread over 8 steps
+/// $cycle("[c4 d4 e4 f4](3,8)") // Euclidean applied to a subpattern
+/// ```
+///
+/// Modifier operands can also be subpatterns: `c4*[2 3]` alternates between
+/// doubling and tripling each slot.
+///
+/// ## Outputs
+///
+/// - **cv** — V/Oct pitch (C4 = 0 V).
+/// - **gate** — 5 V while a note is active, 0 V otherwise.
+/// - **trig** — single-sample 5 V pulse at each note onset.
 #[module(
     name = "$cycle",
     description = "Pattern sequencer using mini-notation strings",
