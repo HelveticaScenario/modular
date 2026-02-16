@@ -26,6 +26,7 @@ struct LagProcessorOutputs {
 #[derive(Default, Clone, Copy)]
 struct SlewChannelState {
     current_value: f32,
+    initialized: bool,
 }
 
 /// Slew limiter that smooths abrupt voltage changes.
@@ -62,6 +63,10 @@ impl LagProcessor {
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
             let input = self.params.input.get_value_or(ch, 0.0);
+            if !state.initialized {
+                state.current_value = input;
+                state.initialized = true;
+            }
 
             let fall_time = self.params.fall.get_value_or(ch, 0.01).max(0.001);
             let rise_time = if self.params.rise.is_disconnected() {
