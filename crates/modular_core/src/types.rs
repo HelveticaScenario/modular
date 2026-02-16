@@ -505,8 +505,8 @@ fn parse_note_str(s: &str) -> StdResult<ParsedNote, String> {
     let acc = &caps[2];
     let octave: i32 = caps
         .get(3)
-        .map(|m| m.as_str().parse().unwrap_or(3))
-        .unwrap_or(3);
+        .map(|m| m.as_str().parse().unwrap_or(4))
+        .unwrap_or(4);
 
     let pitch_str = format!("{}{}", name, acc);
     let pitch = Pitch::from_str(&pitch_str).ok_or("Invalid pitch".to_string())?;

@@ -102,7 +102,7 @@ fn note_to_midi(letter: char, accidental: Option<char>, octave: Option<i32>) -> 
     };
 
     // Default octave to 4 if not specified
-    let oct = octave.unwrap_or(3);
+    let oct = octave.unwrap_or(4);
     Some(((oct + 1) * 12 + base + acc_offset) as f64)
 }
 
