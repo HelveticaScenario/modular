@@ -276,6 +276,25 @@ export const HelpWindow: React.FC = () => {
         );
     }, [schemas, searchQuery]);
 
+    const getSignature = (module: ModuleSchema): string => {
+        const positionalArgs = module.positionalArgs || [];
+        const positionalKeys = new Set(positionalArgs.map((a) => a.name));
+
+        const parts: string[] = positionalArgs.map((a) =>
+            a.optional ? `${a.name}?` : a.name,
+        );
+
+        const configKeys = Object.keys(
+            (module.paramsSchema as any)?.properties ?? {},
+        ).filter((k) => !positionalKeys.has(k));
+
+        if (configKeys.length > 0) {
+            parts.push(`{ ${configKeys.map((k) => `${k}?`).join(', ')} }`);
+        }
+
+        return `${module.name}(${parts.join(', ')})`;
+    };
+
     const getParams = (module: ModuleSchema) => {
         const properties = Object.entries(
             module.paramsSchema?.properties ?? {},
@@ -371,7 +390,9 @@ export const HelpWindow: React.FC = () => {
                             const params = getParams(module);
                             return (
                                 <div key={module.name} className="module-card">
-                                    <h3>{module.name}</h3>
+                                    <h3>
+                                        <code>{getSignature(module)}</code>
+                                    </h3>
                                     <div className="module-documentation">
                                         <Markdown>
                                             {module.documentation}
