@@ -54,6 +54,71 @@ export function resolveRef(
 }
 
 /**
+ * Information about a single variant in an enum-style JSON Schema.
+ */
+export interface EnumVariantInfo {
+    /** The JSON-serialized const value (e.g., `"vaVcf"`) */
+    value: string;
+    /** The raw const value */
+    rawValue: unknown;
+    /** Description from the Rust `///` doc comment on the variant, if any */
+    description?: string;
+}
+
+/**
+ * Extract enum variant information (including descriptions) from a JSON Schema node.
+ *
+ * Returns an array of `EnumVariantInfo` if the schema represents an enum,
+ * or `null` if it does not.  Follows `$ref` pointers, handling the
+ * Signal/Poly/Mono sentinel types gracefully (returns `null` for those).
+ */
+export function getEnumVariants(
+    schema: JSONSchema,
+    rootSchema: JSONSchema,
+): EnumVariantInfo[] | null {
+    if (
+        schema === null ||
+        schema === undefined ||
+        typeof schema === 'boolean'
+    ) {
+        return null;
+    }
+
+    // Follow $ref
+    if (schema.$ref) {
+        const resolved = resolveRef(String(schema.$ref), rootSchema);
+        // Sentinel strings mean it's a signal type, not an enum
+        if (typeof resolved === 'string') return null;
+        return getEnumVariants(resolved, rootSchema);
+    }
+
+    // oneOf / anyOf with all-const variants (schemars output for documented enums)
+    const variants = schema.oneOf || schema.anyOf;
+    if (Array.isArray(variants)) {
+        const isEnum = variants.every((v: JSONSchema) => v.const !== undefined);
+        if (isEnum) {
+            return variants.map((v: JSONSchema) => ({
+                value: JSON.stringify(v.const),
+                rawValue: v.const,
+                description: v.description as string | undefined,
+            }));
+        }
+        return null;
+    }
+
+    // Bare enum array (schemars output for undocumented enums)
+    if (Array.isArray(schema.enum) && schema.enum.length > 0) {
+        return schema.enum.map((v: unknown) => ({
+            value: JSON.stringify(v),
+            rawValue: v,
+            description: undefined,
+        }));
+    }
+
+    return null;
+}
+
+/**
  * Convert a JSON Schema node into a human-readable TypeScript type expression.
  *
  * Handles: `$ref` (Signal/PolySignal/MonoSignal + arbitrary defs), `oneOf`/`anyOf`

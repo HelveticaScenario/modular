@@ -270,3 +270,42 @@ pre {
 .see-also-links .type-link:hover {
     background: #2a2a2a;
 }
+
+/* Enum variant documentation */
+.enum-variants {
+    margin: 4px 0 2px;
+    padding-left: 20px;
+    font-size: 0.9em;
+    list-style: none;
+}
+
+.enum-variants ul {
+    margin: 4px 0 0;
+    padding-left: 0;
+    list-style: none;
+}
+
+.enum-variants li {
+    margin: 2px 0;
+    color: #bbb;
+}
+
+.enum-variants code {
+    background: #383838;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.9em;
+    color: #ce9178;
+    font-family: monospace;
+}
+
+.enum-variants summary {
+    cursor: pointer;
+    color: #999;
+    font-size: 0.9em;
+    margin: 4px 0;
+}
+
+.enum-variants summary:hover {
+    color: #ccc;
+}

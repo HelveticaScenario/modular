@@ -15,7 +15,11 @@ import {
     TypeDocumentation,
     isDslType,
 } from '../../shared/dsl/typeDocs';
-import { schemaToTypeExpr } from '../../shared/dsl/schemaTypeResolver';
+import {
+    schemaToTypeExpr,
+    getEnumVariants,
+    EnumVariantInfo,
+} from '../../shared/dsl/schemaTypeResolver';
 import './HelpWindow.css';
 
 type Page = 'getting-started' | 'hotkeys' | 'globals' | 'types' | 'reference';
@@ -283,10 +287,17 @@ export const HelpWindow: React.FC = () => {
             } catch {
                 // Fall back to no type annotation for unsupported schemas
             }
+            let variants: EnumVariantInfo[] | null = null;
+            try {
+                variants = getEnumVariants(schema, module.paramsSchema);
+            } catch {
+                // Fall back to no variant info
+            }
             return {
                 name,
                 type,
                 description: schema.description as string | undefined,
+                variants,
             };
         });
     };
@@ -377,7 +388,12 @@ export const HelpWindow: React.FC = () => {
                                     <h4>Inputs</h4>
                                     <ul>
                                         {params.map(
-                                            ({ name, type, description }) => (
+                                            ({
+                                                name,
+                                                type,
+                                                description,
+                                                variants,
+                                            }) => (
                                                 <li key={name}>
                                                     <strong>
                                                         {name}
@@ -400,6 +416,76 @@ export const HelpWindow: React.FC = () => {
                                                             {description}
                                                         </>
                                                     )}
+                                                    {variants &&
+                                                        variants.some(
+                                                            (v) =>
+                                                                v.description,
+                                                        ) &&
+                                                        (variants.length > 8 ? (
+                                                            <details className="enum-variants">
+                                                                <summary>
+                                                                    {
+                                                                        variants.length
+                                                                    }{' '}
+                                                                    values
+                                                                    (click to
+                                                                    expand)
+                                                                </summary>
+                                                                <ul>
+                                                                    {variants.map(
+                                                                        (v) => (
+                                                                            <li
+                                                                                key={
+                                                                                    v.value
+                                                                                }
+                                                                            >
+                                                                                <code>
+                                                                                    {
+                                                                                        v.rawValue as string
+                                                                                    }
+                                                                                </code>
+                                                                                {v.description && (
+                                                                                    <>
+                                                                                        {' '}
+                                                                                        &mdash;{' '}
+                                                                                        {
+                                                                                            v.description
+                                                                                        }
+                                                                                    </>
+                                                                                )}
+                                                                            </li>
+                                                                        ),
+                                                                    )}
+                                                                </ul>
+                                                            </details>
+                                                        ) : (
+                                                            <ul className="enum-variants">
+                                                                {variants.map(
+                                                                    (v) => (
+                                                                        <li
+                                                                            key={
+                                                                                v.value
+                                                                            }
+                                                                        >
+                                                                            <code>
+                                                                                {
+                                                                                    v.rawValue as string
+                                                                                }
+                                                                            </code>
+                                                                            {v.description && (
+                                                                                <>
+                                                                                    {' '}
+                                                                                    &mdash;{' '}
+                                                                                    {
+                                                                                        v.description
+                                                                                    }
+                                                                                </>
+                                                                            )}
+                                                                        </li>
+                                                                    ),
+                                                                )}
+                                                            </ul>
+                                                        ))}
                                                 </li>
                                             ),
                                         )}

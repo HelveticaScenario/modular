@@ -3,6 +3,7 @@ import {
     JSONSchema,
     resolveRef,
     schemaToTypeExpr,
+    getEnumVariants,
 } from '../../shared/dsl/schemaTypeResolver';
 
 const BASE_LIB_SOURCE = `
@@ -1081,6 +1082,20 @@ function renderFactoryFunction(
         } else {
             docLines.push(`@param ${arg.name}`);
         }
+
+        // Append enum variant descriptions as sub-bullets
+        if (propSchema) {
+            const variants = getEnumVariants(
+                propSchema,
+                moduleSchema.paramsSchema,
+            );
+            if (variants && variants.some((v) => v.description)) {
+                for (const v of variants) {
+                    const desc = v.description ? ` — ${v.description}` : '';
+                    docLines.push(`  - \`${v.value}\`${desc}`);
+                }
+            }
+        }
     }
 
     // @ts-ignore
@@ -1109,6 +1124,18 @@ function renderFactoryFunction(
             if (description) {
                 const firstLine = description.split(/\r?\n/)[0];
                 configParamDocs.push(`${key} - ${firstLine}`);
+            }
+
+            // Append enum variant descriptions as sub-bullets
+            const variants = getEnumVariants(
+                propSchema,
+                moduleSchema.paramsSchema,
+            );
+            if (variants && variants.some((v) => v.description)) {
+                for (const v of variants) {
+                    const desc = v.description ? ` — ${v.description}` : '';
+                    configParamDocs.push(`    - \`${v.value}\`${desc}`);
+                }
             }
         }
     }
