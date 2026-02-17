@@ -53,7 +53,6 @@ struct ChannelState {
 /// ```
 #[module(
     name = "$feedback",
-    description = "FM feedback phase distortion",
     args(input, amount?)
 )]
 #[derive(Default)]

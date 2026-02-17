@@ -31,7 +31,6 @@ struct PSineOscillatorOutputs {
 /// Output range is **±5V**.
 #[module(
     name = "$pSine",
-    description = "A phase-driven sine wave oscillator",
     args(phase)
 )]
 #[derive(Default)]

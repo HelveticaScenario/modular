@@ -21,7 +21,7 @@ struct ClockParams {
 }
 
 /// Tempo-synced transport clock for driving sequencers, envelopes, and synced modulation.
-#[module(name = "$clock", description = "Tempo clock with bar and subdivision timing outputs", channels = 2, args(tempo?))]
+#[module(name = "$clock", channels = 2, args(tempo?))]
 pub struct Clock {
     outputs: ClockOutputs,
     phase: f64,

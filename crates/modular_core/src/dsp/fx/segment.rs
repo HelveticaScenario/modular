@@ -40,7 +40,6 @@ struct ChannelState {
 /// patterns. Works best on simple waveforms like sines or triangles.
 #[module(
     name = "$segment",
-    description = "Segment morpher — sweeps through stepped waveshaping patterns",
     args(input, amount?)
 )]
 #[derive(Default)]

@@ -686,7 +686,6 @@ export function buildLibSource(schemas: ModuleSchema[]): string {
 }
 
 type ClassSpec = {
-    description?: string;
     outputs: Array<{ name: string; description?: string }>;
     properties: Array<{
         name: string;
@@ -835,7 +834,6 @@ function buildTreeFromSchemas(schemas: ModuleSchema[]): NamespaceNode {
             .filter((o) => o.name.length > 0);
 
         node.classes.set(className, {
-            description: moduleSchema.description,
             outputs,
             properties,
             rootSchema: paramsSchema,
@@ -1052,15 +1050,7 @@ function renderFactoryFunction(
 
     // Build docstring lines
     const docLines: string[] = [];
-    if (moduleSchema.description) {
-        docLines.push(...moduleSchema.description.split(/\r?\n/));
-    }
-
-    // Append detailed documentation from doc comments (separated by blank line)
     if (moduleSchema.documentation) {
-        if (docLines.length > 0) {
-            docLines.push('');
-        }
         docLines.push(...moduleSchema.documentation.split(/\r?\n/));
     }
 

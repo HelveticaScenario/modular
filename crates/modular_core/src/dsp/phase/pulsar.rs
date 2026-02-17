@@ -51,7 +51,6 @@ struct ChannelState {
 /// ```
 #[module(
     name = "$pulsar",
-    description = "Pulsar synthesis phase distortion",
     args(input, amount?)
 )]
 #[derive(Default)]

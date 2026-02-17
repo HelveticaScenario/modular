@@ -26,7 +26,6 @@ struct SignalOutputs {
 /// Utility module for routing, naming, and exposing signals in a patch.
 #[module(
     name = "$signal",
-    description = "Forward a signal unchanged",
     args(source)
 )]
 #[derive(Default)]

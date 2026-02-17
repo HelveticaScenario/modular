@@ -57,7 +57,7 @@ struct MidiCcOutputs {
 /// const breath = $midiCC({ cc: 2, highResolution: true, smoothingMs: 10 });
 /// $sine('c4').gain(breath).out();
 /// ```
-#[module(name = "$midiCC", description = "MIDI CC to CV converter", args())]
+#[module(name = "$midiCC", args())]
 #[derive(Default)]
 pub struct MidiCc {
     outputs: MidiCcOutputs,

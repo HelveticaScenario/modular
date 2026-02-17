@@ -228,7 +228,7 @@ struct ChannelState {
 /// // quantize a random signal to C major
 /// $sine($quantizer($sine(".1hz").range(0,3), 0, "C(major)"))
 /// ```
-#[module(name = "$quantizer", description = "Quantizes V/Oct input to scale degrees", args(input, offset?, scale?))]
+#[module(name = "$quantizer", args(input, offset?, scale?))]
 pub struct Quantizer {
     outputs: QuantizerOutputs,
     params: QuantizerParams,

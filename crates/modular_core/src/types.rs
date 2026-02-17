@@ -999,10 +999,8 @@ pub struct PositionalArg {
 #[napi(object)]
 pub struct ModuleSchema {
     pub name: String,
-    pub description: String,
-    /// Detailed documentation extracted from `///` doc comments on the module struct.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub documentation: Option<String>,
+    /// Documentation extracted from `///` doc comments on the module struct.
+    pub documentation: String,
     #[napi(ts_type = "Record<string, unknown>")]
     pub params_schema: SchemaContainer,
     pub outputs: Vec<OutputSchema>,

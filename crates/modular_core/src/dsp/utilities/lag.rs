@@ -46,7 +46,6 @@ struct SlewChannelState {
 /// ```
 #[module(
     name = "$slew",
-    description = "Slew limiter — smooths voltage transitions with adjustable rise and fall times",
     args(input)
 )]
 #[derive(Default)]

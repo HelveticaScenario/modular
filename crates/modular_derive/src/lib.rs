@@ -295,7 +295,6 @@ fn unwrap_attr(attrs: &Vec<Attribute>, ident: &str) -> Option<TokenStream2> {
 /// Parsed module attribute data
 struct ModuleAttr {
     name: LitStr,
-    description: Option<LitStr>,
     channels: Option<u8>,
     channels_param: Option<LitStr>,
     channels_param_default: Option<u8>,
@@ -314,7 +313,6 @@ struct ModuleAttr {
 /// ```text
 /// #[module(
 ///     name = "$sine",
-///     description = "A sine wave oscillator",
 ///     channels = 2,
 ///     args(freq, engine?),
 ///     stateful,
@@ -335,7 +333,6 @@ struct ModuleAttrArgs {
 impl syn::parse::Parse for ModuleAttrArgs {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut name: Option<LitStr> = None;
-        let mut description: Option<LitStr> = None;
         let mut channels: Option<u8> = None;
         let mut channels_param: Option<LitStr> = None;
         let mut channels_param_default: Option<u8> = None;
@@ -352,10 +349,6 @@ impl syn::parse::Parse for ModuleAttrArgs {
                 "name" => {
                     input.parse::<Token![=]>()?;
                     name = Some(input.parse()?);
-                }
-                "description" => {
-                    input.parse::<Token![=]>()?;
-                    description = Some(input.parse()?);
                 }
                 "channels" => {
                     input.parse::<Token![=]>()?;
@@ -397,7 +390,7 @@ impl syn::parse::Parse for ModuleAttrArgs {
                         ident.span(),
                         format!(
                             "Unknown module attribute '{other}'. Expected one of: \
-                             name, description, channels, channels_param, \
+                             name, channels, channels_param, \
                              channels_param_default, channels_derive, args, \
                              stateful, patch_update, has_init"
                         ),
@@ -419,7 +412,6 @@ impl syn::parse::Parse for ModuleAttrArgs {
         Ok(ModuleAttrArgs {
             module: ModuleAttr {
                 name,
-                description,
                 channels,
                 channels_param,
                 channels_param_default,
@@ -1187,14 +1179,16 @@ fn impl_module_macro_attr(
 ) -> syn::Result<TokenStream2> {
     let name = &ast.ident;
     let module_name = &attr_args.module.name;
-    let module_description = &attr_args.module.description;
 
-    // Extract /// doc comments from the module struct for detailed documentation
-    let module_documentation = extract_doc_comments(&ast.attrs);
-    let module_documentation_token = match &module_documentation {
-        Some(doc) => quote! { Some(#doc.to_string()) },
-        None => quote! { None },
-    };
+    // Extract /// doc comments from the module struct for documentation (required)
+    let module_documentation = extract_doc_comments(&ast.attrs)
+        .unwrap_or_else(|| {
+            panic!(
+                "Module struct `{}` must have `///` doc comments for documentation",
+                name
+            )
+        });
+    let module_documentation_token = quote! { #module_documentation.to_string() };
 
     // Store channels info for channel_count generation
     let hardcoded_channels = attr_args.module.channels;
@@ -1698,7 +1692,6 @@ fn impl_module_macro_attr(
 
                 crate::types::ModuleSchema {
                     name: #module_name.to_string(),
-                    description: #module_description.to_string(),
                     documentation: #module_documentation_token,
                     params_schema: crate::types::SchemaContainer {
                         schema: params_schema,

@@ -31,9 +31,9 @@ struct ChannelState {
     pan: Clickless,
 }
 
+/// Pan and spread a signal into stereo.
 #[module(
     name = "$stereoMix",
-    description = "Pan and spread a signal into stereo",
     channels = 2,
     args(input)
 )]

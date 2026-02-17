@@ -49,7 +49,6 @@ struct PulseChannelState {
 /// ```
 #[module(
     name = "$pulse",
-    description = "Pulse/Square oscillator with PWM",
     args(freq)
 )]
 #[derive(Default)]

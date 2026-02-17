@@ -39,7 +39,6 @@ struct ChannelState {
 /// complex, metallic timbres.
 #[module(
     name = "$fold",
-    description = "Wavefolder — reflects signals back on themselves to create harmonic-rich tones",
     args(input, amount?)
 )]
 #[derive(Default)]

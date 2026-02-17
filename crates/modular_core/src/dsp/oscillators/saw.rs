@@ -48,7 +48,6 @@ struct ChannelState {
 /// ```
 #[module(
     name = "$saw",
-    description = "Sawtooth/Triangle/Ramp oscillator",
     args(freq)
 )]
 #[derive(Default)]

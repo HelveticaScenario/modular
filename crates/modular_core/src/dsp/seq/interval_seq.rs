@@ -514,7 +514,6 @@ struct IntervalSeqOutputs {
 /// - **trig** — single-sample 5 V pulse at each note onset.
 #[module(
     name = "$iCycle",
-    description = "Scale-degree sequencer with interval and add patterns",
     channels_derive = interval_seq_derive_channel_count,
     args(intervalPattern, scale),
     stateful,

@@ -32,7 +32,7 @@ struct ScaleAndShiftOutputs {
 /// // invert a slow sine and shift it into 0–5 V range
 /// $scaleAndShift($sine('1hz'), -5, 2.5)
 /// ```
-#[module(name = "$scaleAndShift", description = "Attenuate, invert, and offset a signal", args(input, scale?, shift?))]
+#[module(name = "$scaleAndShift", args(input, scale?, shift?))]
 #[derive(Default)]
 pub struct ScaleAndShift {
     outputs: ScaleAndShiftOutputs,

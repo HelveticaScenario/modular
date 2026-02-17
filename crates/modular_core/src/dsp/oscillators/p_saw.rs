@@ -44,7 +44,6 @@ struct ChannelState {
 /// Output range is **±5V**.
 #[module(
     name = "$pSaw",
-    description = "A phase-driven sawtooth/triangle/ramp oscillator",
     args(phase)
 )]
 #[derive(Default)]

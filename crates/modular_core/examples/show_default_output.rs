@@ -13,7 +13,7 @@ fn main() {
     // Find modules with multiple outputs
     for schema in schemas.iter() {
         if schema.outputs.len() > 1 {
-            println!("Module: {} ({})", schema.name, schema.description);
+            println!("Module: {}", schema.name);
             println!("  Outputs:");
             for output in &schema.outputs {
                 let default_marker = if output.default { " [DEFAULT]" } else { "" };
@@ -32,7 +32,7 @@ fn main() {
 
     if let Some(svf) = schemas.iter().find(|s| s.name == "state-variable-filter") {
         println!("Module: {}", svf.name);
-        println!("Description: {}", svf.description);
+        println!("Documentation: {}", svf.documentation);
         println!("\nOutputs:");
         for output in &svf.outputs {
             println!("  - Name: {}", output.name);

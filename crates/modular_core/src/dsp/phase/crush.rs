@@ -46,7 +46,6 @@ struct ChannelState {
 /// ```
 #[module(
     name = "$crush",
-    description = "Digital bit-crush phase distortion",
     args(input, amount?)
 )]
 #[derive(Default)]

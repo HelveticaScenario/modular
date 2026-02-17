@@ -44,7 +44,6 @@ struct ChannelState {
 /// Output range is **±5V**.
 #[module(
     name = "$pPulse",
-    description = "A phase-driven pulse/square oscillator with PWM",
     args(phase)
 )]
 #[derive(Default)]

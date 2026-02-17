@@ -37,7 +37,7 @@ struct RemapOutputs {
 /// $remap(env, 0, 5, -5, 5)
 /// 
 /// ```
-#[module(name = "$remap", description = "Remap a signal from one voltage range to another", args(input, inMin?, inMax?, outMin?, outMax?))]
+#[module(name = "$remap", args(input, inMin?, inMax?, outMin?, outMax?))]
 #[derive(Default)]
 pub struct Remap {
     outputs: RemapOutputs,

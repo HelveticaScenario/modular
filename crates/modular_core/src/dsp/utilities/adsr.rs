@@ -71,7 +71,7 @@ impl Default for ChannelState {
 /// const env = $adsr($rootClock.barTrigger, { attack: 0.01, decay: 0.2, sustain: 3, release: 0.5 })
 /// $sine('c4').gain(env).out()
 /// ```
-#[module(name = "$adsr", description = "ADSR envelope generator", args(gate))]
+#[module(name = "$adsr", args(gate))]
 #[derive(Default)]
 pub struct Adsr {
     outputs: AdsrOutputs,

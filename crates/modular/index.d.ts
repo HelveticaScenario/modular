@@ -233,9 +233,8 @@ export interface ModuleIdRemap {
 
 export interface ModuleSchema {
   name: string
-  description: string
-  /** Detailed documentation extracted from `///` doc comments on the module struct. */
-  documentation?: string
+  /** Documentation extracted from `///` doc comments on the module struct. */
+  documentation: string
   paramsSchema: Record<string, unknown>
   outputs: Array<OutputSchema>
   positionalArgs: Array<PositionalArg>

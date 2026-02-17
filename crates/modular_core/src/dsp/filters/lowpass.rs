@@ -40,7 +40,7 @@ struct LowpassFilterOutputs {
 /// let env = $adsr($rootClock.barTrigger, { attack: 0.01, decay: 0.3, sustain: 1, release: 0.4 })
 /// $lpf($saw('c2'), env.range('200hz', '2000hz'))
 /// ```
-#[module(name = "$lpf", description = "12dB/octave lowpass filter with resonance", args(input, cutoff, resonance?))]
+#[module(name = "$lpf", args(input, cutoff, resonance?))]
 #[derive(Default)]
 pub struct LowpassFilter {
     outputs: LowpassFilterOutputs,

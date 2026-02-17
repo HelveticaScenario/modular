@@ -48,7 +48,7 @@ struct TrackOutputs {
 /// // automate filter cutoff over one cycle
 /// $lpf(osc, $track([['c2', 0], ['c5', 0.5], ['c3', 1]]))
 /// ```
-#[module(name = "$track", description = "Automation track that interpolates between keyframed values", args(keyframes), channels_derive = derive_track_channel_count)]
+#[module(name = "$track", args(keyframes), channels_derive = derive_track_channel_count)]
 #[derive(Default)]
 pub struct Track {
     outputs: TrackOutputs,

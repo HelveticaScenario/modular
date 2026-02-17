@@ -302,12 +302,12 @@ fn schema_names_match_constructors() {
 }
 
 #[test]
-fn schemas_have_non_empty_descriptions() {
+fn schemas_have_non_empty_documentation() {
     use modular_core::dsp::schema;
     for s in schema() {
         assert!(
-            !s.description.is_empty(),
-            "schema '{}' has an empty description",
+            !s.documentation.is_empty(),
+            "schema '{}' has empty documentation",
             s.name
         );
     }

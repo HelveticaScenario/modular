@@ -322,7 +322,6 @@ struct SeqOutputs {
 /// - **trig** — single-sample 5 V pulse at each note onset.
 #[module(
     name = "$cycle",
-    description = "Pattern sequencer using mini-notation strings",
     channels_derive = seq_derive_channel_count,
     args(pattern),
     stateful,

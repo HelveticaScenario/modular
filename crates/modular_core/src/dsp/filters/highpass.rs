@@ -83,7 +83,7 @@ fn compute_hpf_biquad(cutoff: f32, resonance: f32, sample_rate: f32) -> BiquadCo
 /// // remove low end from a noise source
 /// $hpf($noise("white"), 'a3', 1)
 /// ```
-#[module(name = "$hpf", description = "12dB/octave highpass filter with resonance", args(input, cutoff, resonance?))]
+#[module(name = "$hpf", args(input, cutoff, resonance?))]
 #[derive(Default)]
 pub struct HighpassFilter {
     outputs: HighpassFilterOutputs,

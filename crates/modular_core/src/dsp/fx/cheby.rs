@@ -41,7 +41,6 @@ struct ChannelState {
 /// thickening and brightening the tone.
 #[module(
     name = "$cheby",
-    description = "Harmonic waveshaper — smoothly adds upper partials to any signal",
     args(input, amount?)
 )]
 #[derive(Default)]

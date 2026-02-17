@@ -29,11 +29,11 @@ describe('getSchemas', () => {
         const schemas = getSchemas();
         for (const s of schemas) {
             expect(s).toHaveProperty('name');
-            expect(s).toHaveProperty('description');
+            expect(s).toHaveProperty('documentation');
             expect(s).toHaveProperty('paramsSchema');
             expect(s).toHaveProperty('outputs');
             expect(typeof s.name).toBe('string');
-            expect(typeof s.description).toBe('string');
+            expect(typeof s.documentation).toBe('string');
         }
     });
 

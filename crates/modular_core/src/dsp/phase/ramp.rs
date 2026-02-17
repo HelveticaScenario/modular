@@ -36,7 +36,6 @@ struct ChannelState {
 /// and then into a waveshaper (e.g. `$pSine`) to produce audio.
 #[module(
     name = "$ramp",
-    description = "Phase ramp generator (0 to 1)",
     args(freq)
 )]
 #[derive(Default)]

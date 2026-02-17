@@ -139,7 +139,6 @@ struct MathOutputs {
 /// ```
 #[module(
     name = "$math",
-    description = "Math expression evaluator",
     args(expression)
 )]
 pub struct Math {

@@ -270,7 +270,7 @@ export const HelpWindow: React.FC = () => {
         return Object.values(schemas).filter(
             (schema) =>
                 schema.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                schema.description
+                schema.documentation
                     .toLowerCase()
                     .includes(searchQuery.toLowerCase()),
         );
@@ -372,19 +372,11 @@ export const HelpWindow: React.FC = () => {
                             return (
                                 <div key={module.name} className="module-card">
                                     <h3>{module.name}</h3>
-                                    <p style={{ whiteSpace: 'pre-wrap' }}>
-                                        <LinkifyTypes
-                                            text={module.description}
-                                            onTypeClick={handleTypeClick}
-                                        />
-                                    </p>
-                                    {module.documentation && (
-                                        <div className="module-documentation">
-                                            <Markdown>
-                                                {module.documentation}
-                                            </Markdown>
-                                        </div>
-                                    )}
+                                    <div className="module-documentation">
+                                        <Markdown>
+                                            {module.documentation}
+                                        </Markdown>
+                                    </div>
                                     <h4>Inputs</h4>
                                     <ul>
                                         {params.map(
