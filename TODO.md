@@ -24,3 +24,5 @@
 - [ ] more utilities
 - [ ] more everything
 - [ ] pass whole buffers through modules, not just one sample at a time
+- [ ] end of chain parametric eq
+- [ ] send-return channels
