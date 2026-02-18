@@ -36,7 +36,8 @@ export function AudioControls({
                 >
                     ⏹ Stop
                 </button>
-
+                {/* 
+                // Recording is currently disabled pending implementation of multi-track recording and UI for managing recordings
                 {isRecording ? (
                     <button
                         onClick={onStopRecording}
@@ -52,7 +53,7 @@ export function AudioControls({
                     >
                         ⏺ Record
                     </button>
-                )}
+                )} */}
 
                 <button
                     onClick={() => electronAPI.openHelpWindow()}
