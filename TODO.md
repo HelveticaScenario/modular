@@ -1,12 +1,10 @@
-- [x] zeroconf
-- [x] license?
-- [x] indicator of what file is currently running
-- [ ] better way of scaling output to a range? would need to know the period of the oscilator
+- [ ] make Clickless sample rate aware
+- [x] better way of scaling output to a range? would need to know the period of the oscilator
 - [x] make scope narrower
 - [ ] make custom scope for track
-- [ ] make seq type (cv + gate with mini (mondo?) notation)
+- [x] make seq type (cv + gate with mini (mondo?) notation)
 - [ ] make seq scope
-- [ ] give scope a speed option, for slow moving signals that need to be seen over long periods
+- [x] give scope a speed option, for slow moving signals that need to be seen over long periods
 - [ ] reverb (erbe verb?)
 - [ ] fix filters
 - [ ] other effects (chorus, delay, waveshaper, distortion, etc.)
@@ -14,11 +12,11 @@
 - [ ] sample loading into buffer
 - [ ] live recording into buffer
 - [x] arbitrary param types (like enum) (not modulatable)
-- [ ] polyphony?
+- [x] polyphony?
 - [ ] some sort of "make module" composition system
-- [ ] midi in (notes would pretend to be seq, cc would be signal)
-- [ ] midi out (no idea how to do this. some sort of sample and hold?)
-- [ ] signal in
+- [x] midi in (notes would pretend to be seq, cc would be signal)
+- [x] midi out (no idea how to do this. some sort of sample and hold?)
+- [x] signal in
 - [ ] more oscillators
 - [ ] more filters
 - [ ] more effects

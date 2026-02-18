@@ -5,6 +5,7 @@ use crate::{
     PORT_MAX_CHANNELS,
     dsp::utils::{changed, voct_to_hz},
     poly::{PolyOutput, PolySignal},
+    types::Clickless,
 };
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
@@ -41,6 +42,8 @@ struct HpfChannelState {
     coeffs: BiquadCoeffs,
     last_cutoff: f32,
     last_resonance: f32,
+    smooth_cutoff: Clickless,
+    smooth_resonance: Clickless,
 }
 
 fn compute_hpf_biquad(cutoff: f32, resonance: f32, sample_rate: f32) -> BiquadCoeffs {
@@ -92,6 +95,8 @@ pub struct HighpassFilter {
     coeffs_mono: BiquadCoeffs,
     last_cutoff_mono: f32,
     last_resonance_mono: f32,
+    smooth_cutoff_mono: Clickless,
+    smooth_resonance_mono: Clickless,
     params: HighpassFilterParams,
 }
 
@@ -99,10 +104,14 @@ impl HighpassFilter {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
 
-        // Update coefficients
+        // Update coefficients with smoothed params to prevent clicks
         if self.params.cutoff.is_monophonic() && self.params.resonance.is_monophonic() {
-            let c = self.params.cutoff.get_value_or(0, 4.0);
-            let r = self.params.resonance.get_value_or(0, 0.0);
+            self.smooth_cutoff_mono
+                .update(self.params.cutoff.get_value_or(0, 4.0));
+            self.smooth_resonance_mono
+                .update(self.params.resonance.get_value_or(0, 0.0));
+            let c = *self.smooth_cutoff_mono;
+            let r = *self.smooth_resonance_mono;
 
             if changed(c, self.last_cutoff_mono) || changed(r, self.last_resonance_mono) {
                 self.coeffs_mono = compute_hpf_biquad(c, r, sample_rate);
@@ -111,8 +120,14 @@ impl HighpassFilter {
             }
         } else {
             for i in 0..num_channels {
-                let c = self.params.cutoff.get_value_or(i, 4.0);
-                let r = self.params.resonance.get_value_or(i, 0.0);
+                self.channels[i]
+                    .smooth_cutoff
+                    .update(self.params.cutoff.get_value_or(i, 4.0));
+                self.channels[i]
+                    .smooth_resonance
+                    .update(self.params.resonance.get_value_or(i, 0.0));
+                let c = *self.channels[i].smooth_cutoff;
+                let r = *self.channels[i].smooth_resonance;
 
                 if changed(c, self.channels[i].last_cutoff)
                     || changed(r, self.channels[i].last_resonance)

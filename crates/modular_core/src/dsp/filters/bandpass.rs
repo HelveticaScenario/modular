@@ -5,6 +5,7 @@ use crate::{
     PORT_MAX_CHANNELS,
     dsp::utils::{changed, voct_to_hz},
     poly::{PolyOutput, PolySignal},
+    types::Clickless,
 };
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
@@ -41,6 +42,8 @@ struct BpfChannelState {
     coeffs: BiquadCoeffs,
     last_center: f32,
     last_q: f32,
+    smooth_center: Clickless,
+    smooth_resonance: Clickless,
 }
 
 fn compute_bpf_biquad(center: f32, resonance: f32, sample_rate: f32) -> BiquadCoeffs {
@@ -92,6 +95,8 @@ pub struct BandpassFilter {
     coeffs_mono: BiquadCoeffs,
     last_center_mono: f32,
     last_q_mono: f32,
+    smooth_center_mono: Clickless,
+    smooth_resonance_mono: Clickless,
     params: BandpassFilterParams,
 }
 
@@ -99,10 +104,14 @@ impl BandpassFilter {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
 
-        // Update coefficients
+        // Update coefficients with smoothed params to prevent clicks
         if self.params.center.is_monophonic() && self.params.resonance.is_monophonic() {
-            let c = self.params.center.get_value_or(0, 4.0);
-            let r = self.params.resonance.get_value_or(0, 1.0);
+            self.smooth_center_mono
+                .update(self.params.center.get_value_or(0, 4.0));
+            self.smooth_resonance_mono
+                .update(self.params.resonance.get_value_or(0, 1.0));
+            let c = *self.smooth_center_mono;
+            let r = *self.smooth_resonance_mono;
 
             if changed(c, self.last_center_mono) || changed(r, self.last_q_mono) {
                 self.coeffs_mono = compute_bpf_biquad(c, r, sample_rate);
@@ -111,8 +120,14 @@ impl BandpassFilter {
             }
         } else {
             for i in 0..num_channels {
-                let c = self.params.center.get_value_or(i, 4.0);
-                let r = self.params.resonance.get_value_or(i, 1.0);
+                self.channels[i]
+                    .smooth_center
+                    .update(self.params.center.get_value_or(i, 4.0));
+                self.channels[i]
+                    .smooth_resonance
+                    .update(self.params.resonance.get_value_or(i, 1.0));
+                let c = *self.channels[i].smooth_center;
+                let r = *self.channels[i].smooth_resonance;
 
                 if changed(c, self.channels[i].last_center) || changed(r, self.channels[i].last_q) {
                     self.channels[i].coeffs = compute_bpf_biquad(c, r, sample_rate);
