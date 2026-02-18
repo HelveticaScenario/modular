@@ -287,14 +287,13 @@ impl ScaleSnapper {
     /// Snap a MIDI note to the nearest scale degree.
     ///
     /// # Arguments
-    /// * `midi` - The MIDI note number (can be fractional for cents)
+    /// * `midi` - The MIDI note number (can be fractional)
     ///
     /// # Returns
-    /// The snapped MIDI note number.
+    /// The snapped MIDI note number (always an exact integer — no fractional cents).
     pub fn snap_midi(&self, midi: f64) -> f64 {
-        // Split into integer and fractional parts
-        let midi_int = midi.floor() as i32;
-        let cents = midi - midi_int as f64;
+        // Round to nearest semitone so e.g. 59.9 resolves as C4 (60) not B3 (59)
+        let midi_int = midi.round() as i32;
 
         // Convert MIDI to pitch class (C=0, C#=1, ..., B=11)
         // MIDI 60 = C4, so midi % 12 gives pitch class with C=0
@@ -306,11 +305,8 @@ impl ScaleSnapper {
         // Look up snap offset
         let snap_offset = self.snap_table[pc_in_scale as usize];
 
-        // Apply snap
-        let snapped = midi_int + snap_offset as i32;
-
-        // Add back cents (microtuning preserved)
-        snapped as f64 + cents
+        // Apply snap — return clean integer MIDI note (no cents)
+        (midi_int + snap_offset as i32) as f64
     }
 
     /// Snap a V/Oct voltage to the nearest scale degree.
@@ -331,7 +327,7 @@ impl ScaleSnapper {
 
     /// Check if a MIDI note is in the scale.
     pub fn is_in_scale(&self, midi: f64) -> bool {
-        let midi_int = midi.floor() as i32;
+        let midi_int = midi.round() as i32;
         let midi_pc = ((midi_int % 12) + 12) % 12;
         let pc_in_scale = ((midi_pc - self.root_offset as i32) % 12 + 12) % 12;
         self.snap_table[pc_in_scale as usize] == 0
@@ -460,13 +456,38 @@ mod tests {
     }
 
     #[test]
-    fn test_scale_snapper_preserves_cents() {
+    fn test_scale_snapper_discards_cents() {
         let root = FixedRoot::parse("c").unwrap();
         let snapper = ScaleSnapper::new(&root, "major").unwrap();
 
-        // 60.5 (C + 50 cents) should stay around 60.5
-        let snapped = snapper.snap_midi(60.5);
-        assert!((snapped - 60.5).abs() < 1.0);
+        // 60.3 (C + 30 cents) should snap to exactly 60.0 (C)
+        assert_eq!(snapper.snap_midi(60.3), 60.0);
+
+        // 60.6 (closer to 61 = C#, which snaps to C in C major) → 60.0
+        assert_eq!(snapper.snap_midi(60.6), 60.0);
+
+        // 61.4 (C# + 40 cents, rounds to 61, snaps to C) → 60.0
+        assert_eq!(snapper.snap_midi(61.4), 60.0);
+
+        // 61.6 (closer to 62 = D, which is in C major) → 62.0
+        assert_eq!(snapper.snap_midi(61.6), 62.0);
+    }
+
+    #[test]
+    fn test_scale_snapper_stable_within_semitone() {
+        let root = FixedRoot::parse("c").unwrap();
+        let snapper = ScaleSnapper::new(&root, "major").unwrap();
+
+        // Sweeping from 60.0 to 60.49 should always produce 60.0 (C)
+        // since all round to MIDI 60
+        for i in 0..50 {
+            let midi = 60.0 + i as f64 * 0.01;
+            assert_eq!(
+                snapper.snap_midi(midi),
+                60.0,
+                "MIDI {midi} should snap to 60.0"
+            );
+        }
     }
 
     #[test]

@@ -17,6 +17,12 @@ use crate::{
 
 use super::scale::{FixedRoot, ScaleSnapper, validate_scale_type};
 
+/// Hysteresis amount in V/Oct (~10 cents).
+/// Once a note is selected, the input must overshoot the snap boundary by this
+/// amount before the quantizer will transition to a new note. Prevents rapid
+/// toggling when the input hovers near a boundary.
+const HYSTERESIS_VOCT: f64 = 10.0 / 1200.0;
+
 /// Scale parameter that parses scale notation.
 ///
 /// Supports formats:
@@ -226,9 +232,9 @@ struct ChannelState {
 ///
 /// ```js
 /// // quantize a random signal to C major
-/// $sine($quantizer($sine(".1hz").range(0,3), 0, "C(major)"))
+/// $sine($quantizer($sine(".1hz").range(0,3), "C(major)"))
 /// ```
-#[module(name = "$quantizer", args(input, offset?, scale?))]
+#[module(name = "$quantizer", args(input, scale?))]
 pub struct Quantizer {
     outputs: QuantizerOutputs,
     params: QuantizerParams,
@@ -261,7 +267,33 @@ impl Quantizer {
             let combined = input + offset;
 
             let quantized = if let Some(snapper) = self.params.scale.snapper() {
-                snapper.snap_voct(combined)
+                let raw_quantized = snapper.snap_voct(combined);
+                let state = &self.channels[ch];
+
+                // Apply hysteresis: only change note if input overshoots the
+                // snap boundary by at least HYSTERESIS_VOCT.
+                if let Some(prev) = state.prev_quantized {
+                    if (raw_quantized - prev).abs() > 1e-6 {
+                        // The raw snap wants a different note — re-snap with a
+                        // small bias toward the current note to see if the
+                        // input has truly crossed the threshold.
+                        let bias = if raw_quantized > prev {
+                            -HYSTERESIS_VOCT
+                        } else {
+                            HYSTERESIS_VOCT
+                        };
+                        let biased = snapper.snap_voct(combined + bias);
+                        if (biased - prev).abs() > 1e-6 {
+                            raw_quantized // even with bias, still new note → accept
+                        } else {
+                            prev // bias pulls it back → stay on current note
+                        }
+                    } else {
+                        raw_quantized // same note, no change
+                    }
+                } else {
+                    raw_quantized // first sample
+                }
             } else {
                 // No scale configured, pass through
                 combined
@@ -412,5 +444,90 @@ mod tests {
             "should return to low on second process"
         );
         assert_eq!(trigger.process(), GATE_LOW_VOLTAGE, "should stay low");
+    }
+
+    #[test]
+    fn test_snap_voct_output_is_clean_step() {
+        // Sweeping input within a single semitone should produce a constant output
+        let scale = ScaleParam::parse("C(major)").unwrap();
+        let snapper = scale.snapper().unwrap();
+
+        let c4_voct = 0.0; // C4
+        // Sweep from C4 to ~C4 + 49 cents — all should snap to exactly C4
+        for i in 0..50 {
+            let input = c4_voct + (i as f64 * 0.01) / 12.0; // fractional semitone in V/Oct
+            let snapped = snapper.snap_voct(input);
+            assert!(
+                (snapped - c4_voct).abs() < 1e-9,
+                "input V/Oct {input} should snap to C4 (0.0), got {snapped}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_hysteresis_prevents_boundary_chatter() {
+        // Simulate the quantizer's hysteresis logic at the C/D boundary in C major.
+        // C4 = 0.0 V/Oct,  D4 = 2/12 V/Oct ≈ 0.16667
+        // Midpoint ≈ 1/12 ≈ 0.08333 V/Oct  (MIDI 61, C#, snaps to C or D)
+        // With hysteresis the note should not flip until input overshoots by HYSTERESIS_VOCT.
+
+        let scale = ScaleParam::parse("C(major)").unwrap();
+        let snapper = scale.snapper().unwrap();
+
+        let c4: f64 = 0.0;
+        let d4: f64 = 2.0 / 12.0;
+
+        // Boundary sits at 1.5 semitones above C in V/Oct = 1.5/12
+        let boundary = 1.5 / 12.0;
+
+        // Simulate: start on C4, slowly increase toward D4
+        let mut prev_quantized: f64 = c4;
+
+        // Just below boundary + hysteresis → should stay on C
+        let input_just_below = boundary + HYSTERESIS_VOCT * 0.5;
+        let raw = snapper.snap_voct(input_just_below);
+        let quantized = if (raw - prev_quantized).abs() > 1e-6 {
+            let bias = if raw > prev_quantized {
+                -HYSTERESIS_VOCT
+            } else {
+                HYSTERESIS_VOCT
+            };
+            let biased = snapper.snap_voct(input_just_below + bias);
+            if (biased - prev_quantized).abs() > 1e-6 {
+                raw
+            } else {
+                prev_quantized
+            }
+        } else {
+            raw
+        };
+        assert!(
+            (quantized - c4).abs() < 1e-6,
+            "near boundary should stay on C4 due to hysteresis, got {quantized}"
+        );
+
+        // Well past boundary + hysteresis → should switch to D
+        prev_quantized = c4;
+        let input_well_past = boundary + HYSTERESIS_VOCT * 3.0;
+        let raw = snapper.snap_voct(input_well_past);
+        let quantized = if (raw - prev_quantized).abs() > 1e-6 {
+            let bias = if raw > prev_quantized {
+                -HYSTERESIS_VOCT
+            } else {
+                HYSTERESIS_VOCT
+            };
+            let biased = snapper.snap_voct(input_well_past + bias);
+            if (biased - prev_quantized).abs() > 1e-6 {
+                raw
+            } else {
+                prev_quantized
+            }
+        } else {
+            raw
+        };
+        assert!(
+            (quantized - d4).abs() < 1e-6,
+            "well past boundary should switch to D4, got {quantized}"
+        );
     }
 }
