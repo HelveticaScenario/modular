@@ -172,17 +172,13 @@ pub fn interpolate_cheby(x: f32, amount: f32) -> f32 {
 pub fn interpolate_segment(x: f32, amount: f32) -> f32 {
     // Map amount to table index range [0, 7]
     let scaled = amount * (TRIANGLE_TABLES_COUNT - 1) as f32;
-    let idx = scaled as usize;
-    let frac = scaled - idx as f32;
-
-    let idx = idx.min(TRIANGLE_TABLES_COUNT - 2);
+    let idx = (scaled as usize).min(TRIANGLE_TABLES_COUNT - 2);
+    let frac = (scaled - idx as f32).clamp(0.0, 1.0);
 
     // Map input x [-1, 1] to segment index [0, 8]
     let x_scaled = (x + 1.0) * 0.5 * (TRIANGLE_SIZE - 1) as f32;
-    let x_idx = x_scaled as usize;
-    let x_frac = x_scaled - x_idx as f32;
-
-    let x_idx = x_idx.min(TRIANGLE_SIZE - 2);
+    let x_idx = (x_scaled as usize).min(TRIANGLE_SIZE - 2);
+    let x_frac = (x_scaled - x_idx as f32).clamp(0.0, 1.0);
 
     // Interpolate within each table
     let t1 = &TRIANGLE_TABLES[idx];
@@ -296,5 +292,67 @@ mod tests {
             let expected = (i as f32 * 2.0) / (TRIANGLE_SIZE - 1) as f32 - 1.0;
             assert!((table[i] - expected).abs() < 0.001);
         }
+    }
+
+    #[test]
+    fn test_interpolate_segment_identity_passthrough() {
+        // amount=0 selects the linear (identity) shape — output should equal input
+        for &x in &[-1.0, -0.5, 0.0, 0.5, 1.0] {
+            let y = interpolate_segment(x, 0.0);
+            assert!(
+                (y - x).abs() < 0.001,
+                "Identity passthrough failed: x={}, y={}",
+                x,
+                y
+            );
+        }
+    }
+
+    #[test]
+    fn test_interpolate_segment_boundary_no_spike() {
+        // Regression: x=1.0 must not produce a spike (was returning 0.75 instead of 1.0)
+        let y = interpolate_segment(1.0, 0.0);
+        assert!(
+            (y - 1.0).abs() < 0.001,
+            "Boundary spike at x=1.0: got {} expected 1.0",
+            y
+        );
+
+        let y = interpolate_segment(-1.0, 0.0);
+        assert!(
+            (y - (-1.0)).abs() < 0.001,
+            "Boundary spike at x=-1.0: got {} expected -1.0",
+            y
+        );
+    }
+
+    #[test]
+    fn test_interpolate_segment_boundary_max_amount() {
+        // amount=1.0 selects the last shape — should not panic or produce NaN at boundaries
+        let y = interpolate_segment(1.0, 1.0);
+        assert!(y.is_finite(), "NaN/Inf at x=1.0, amount=1.0");
+
+        let y = interpolate_segment(-1.0, 1.0);
+        assert!(y.is_finite(), "NaN/Inf at x=-1.0, amount=1.0");
+
+        let y = interpolate_segment(0.0, 1.0);
+        assert!(
+            y.abs() < 0.001,
+            "Center should be ~0 for all shapes, got {}",
+            y
+        );
+    }
+
+    #[test]
+    fn test_interpolate_segment_continuity_near_boundary() {
+        // Values near x=1.0 should be close to the value at x=1.0 (no discontinuity)
+        let y_at_1 = interpolate_segment(1.0, 0.0);
+        let y_near_1 = interpolate_segment(0.999, 0.0);
+        assert!(
+            (y_at_1 - y_near_1).abs() < 0.01,
+            "Discontinuity near x=1.0: at={}, near={}",
+            y_at_1,
+            y_near_1
+        );
     }
 }
