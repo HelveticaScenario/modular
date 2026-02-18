@@ -224,7 +224,7 @@ pub fn lookup_fold(x: f32, amount: f32) -> f32 {
 #[inline]
 pub fn aa_fold(freq_norm: f32, amount: f32) -> f32 {
     let base = (1.0 - 8.0 * freq_norm).max(0.0);
-    (amount * base * base * base * base).max(0.004)
+    amount * base * base * base * base
 }
 
 /// AA for cheby warp: `amount × max(1−6f, 0)`.

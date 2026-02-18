@@ -66,10 +66,6 @@ impl Fold {
             // Normalize amount from [0, 5] to [0, 1] for table lookup
             let amount_norm = (amount / 5.0).clamp(0.0, 1.0);
 
-            // Apply reference scaling curve: 0.9 * x^2 + 0.004
-            // Gives quadratic onset and a small offset so fold is never fully off
-            let amount_norm = amount_norm * amount_norm * 0.9 + 0.004;
-
             // Apply anti-aliasing when freq is connected
             let amount_norm = if freq_connected {
                 let freq_hz = voct_to_hz(self.params.freq.get_value(ch));
