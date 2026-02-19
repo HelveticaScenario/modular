@@ -352,7 +352,7 @@ fn convert_f64_pattern(ast: &MiniASTF64) -> Pattern<Fraction> {
 
         MiniASTF64::RandomChoice(elements, seed) => {
             let pats: Vec<Pattern<Fraction>> = elements.iter().map(convert_f64_pattern).collect();
-            choose_with_seed(pats, *seed).inner_join(|p| p.clone())
+            choose_with_seed(pats, *seed).inner_join(Clone::clone)
         }
 
         MiniASTF64::Stack(elements) => {
