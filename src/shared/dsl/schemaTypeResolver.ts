@@ -165,6 +165,9 @@ export function schemaToTypeExpr(
             if (types.includes('Signal') && types.includes('Signal[]')) {
                 return 'Poly<Signal>';
             }
+
+            // Otherwise, return the union of all variant types
+            return types.length > 0 ? types.join(' | ') : 'any';
         }
         return 'any';
     }
