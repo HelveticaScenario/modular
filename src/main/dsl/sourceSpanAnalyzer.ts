@@ -526,6 +526,36 @@ export function analyzeSourceSpans(
             const arg = args[i];
             const argDef = positionalArgs[i];
 
+            // Array literal: register per-element spans as "argName.0", "argName.1", etc.
+            if (Node.isArrayLiteralExpression(arg)) {
+                const elements = arg.getElements();
+                for (let j = 0; j < elements.length; j++) {
+                    const elem = elements[j];
+                    const elemSpan = getTrackableSpan(elem, constMap);
+                    if (elemSpan) {
+                        argsMap.set(`${argDef.name}.${j}`, elemSpan);
+
+                        // Resolve interpolations for template expressions
+                        const elemNode = getTrackableNode(elem, constNodeMap);
+                        if (elemNode) {
+                            const resolutions = resolveInterpolations(
+                                elemNode,
+                                constNodeMap,
+                                constMap,
+                            );
+                            if (resolutions) {
+                                const spanKey = `${elemSpan.start}:${elemSpan.end}`;
+                                interpolationResolutions.set(
+                                    spanKey,
+                                    resolutions,
+                                );
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+
             // Track literals directly, or resolve const variable references
             const span = getTrackableSpan(arg, constMap);
             if (span) {
