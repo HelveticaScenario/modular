@@ -347,7 +347,12 @@ describe('sequencing', () => {
         expect(findModules(patch, '$track').length).toBe(1);
     });
 
-    test('$iCycle with interval pattern', () => {
+    test('$iCycle with interval pattern (array)', () => {
+        const patch = execPatch('$iCycle(["0 2 4 5 7"], "major").out()');
+        expect(findModules(patch, '$iCycle').length).toBe(1);
+    });
+
+    test('$iCycle with interval pattern (string)', () => {
         const patch = execPatch('$iCycle("0 2 4 5 7", "major").out()');
         expect(findModules(patch, '$iCycle').length).toBe(1);
     });

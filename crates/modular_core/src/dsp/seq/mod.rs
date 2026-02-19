@@ -2,7 +2,7 @@
 //!
 //! This module provides:
 //! - `Seq`: A Strudel/TidalCycles style sequencer using the new pattern system
-//! - `IntervalSeq`: A scale-degree sequencer with two additive patterns
+//! - `IntervalSeq`: A scale-degree sequencer with additive patterns
 
 use std::collections::HashMap;
 

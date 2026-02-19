@@ -39,8 +39,14 @@ fn cycle_hash(time: &Fraction, seed: u64) -> u64 {
 /// // Query at different times gives different values
 /// ```
 pub fn rand() -> Pattern<f64> {
-    signal_with_controls(|t, controls| {
-        let hash = time_hash(t, controls.rand_seed);
+    rand_with_offset(0)
+}
+
+/// Like `rand()`, but with an additional offset mixed into the seed so that
+/// two patterns created with different offsets produce independent streams.
+pub fn rand_with_offset(offset: u64) -> Pattern<f64> {
+    signal_with_controls(move |t, controls| {
+        let hash = time_hash(t, controls.rand_seed.wrapping_add(offset));
         hash_to_float(hash)
     })
 }
@@ -49,19 +55,37 @@ pub fn rand() -> Pattern<f64> {
 ///
 /// All queries within the same cycle return the same random value.
 pub fn rand_cycle() -> Pattern<f64> {
-    signal_with_controls(|t, controls| {
-        let hash = cycle_hash(t, controls.rand_seed);
+    rand_cycle_with_offset(0)
+}
+
+/// Like `rand_cycle()`, but with an additional offset mixed into the seed.
+pub fn rand_cycle_with_offset(offset: u64) -> Pattern<f64> {
+    signal_with_controls(move |t, controls| {
+        let hash = cycle_hash(t, controls.rand_seed.wrapping_add(offset));
         hash_to_float(hash)
     })
 }
 
 /// Choose randomly from a list of values (changes per cycle).
+///
+/// Uses seed 0. For independent streams in mini-notation, use `choose_with_seed`.
 pub fn choose<T: Clone + Send + Sync + 'static>(values: Vec<T>) -> Pattern<T> {
+    choose_with_seed(values, 0)
+}
+
+/// Choose randomly from a list of values with a specific seed offset.
+///
+/// Different seeds produce independent random streams, ensuring that multiple
+/// `|` operators in a pattern don't correlate.
+pub fn choose_with_seed<T: Clone + Send + Sync + 'static>(
+    values: Vec<T>,
+    seed: u64,
+) -> Pattern<T> {
     if values.is_empty() {
         panic!("choose requires at least one value");
     }
     let len = values.len();
-    let rand_pat = rand_cycle();
+    let rand_pat = rand_cycle_with_offset(seed);
     rand_pat.fmap(move |r| {
         let idx = (r * len as f64).floor() as usize;
         values[idx.min(len - 1)].clone()
@@ -69,7 +93,17 @@ pub fn choose<T: Clone + Send + Sync + 'static>(values: Vec<T>) -> Pattern<T> {
 }
 
 /// Choose randomly with weights.
+///
+/// Uses seed 0. For independent streams in mini-notation, use `wchoose_with_seed`.
 pub fn wchoose<T: Clone + Send + Sync + 'static>(weighted: Vec<(T, f64)>) -> Pattern<T> {
+    wchoose_with_seed(weighted, 0)
+}
+
+/// Choose randomly with weights and a specific seed offset.
+pub fn wchoose_with_seed<T: Clone + Send + Sync + 'static>(
+    weighted: Vec<(T, f64)>,
+    seed: u64,
+) -> Pattern<T> {
     if weighted.is_empty() {
         panic!("wchoose requires at least one value");
     }
@@ -78,7 +112,7 @@ pub fn wchoose<T: Clone + Send + Sync + 'static>(weighted: Vec<(T, f64)>) -> Pat
     let values: Vec<T> = weighted.iter().map(|(v, _)| v.clone()).collect();
     let weights: Vec<f64> = weighted.iter().map(|(_, w)| *w).collect();
 
-    rand_cycle().fmap(move |r| {
+    rand_cycle_with_offset(seed).fmap(move |r| {
         let target = r * total_weight;
         let mut acc = 0.0;
         for (i, &w) in weights.iter().enumerate() {
@@ -94,11 +128,18 @@ pub fn wchoose<T: Clone + Send + Sync + 'static>(weighted: Vec<(T, f64)>) -> Pat
 impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     /// Randomly drop events with given probability.
     ///
+    /// Uses seed 0. For independent streams in mini-notation, use `degrade_by_with_seed`.
+    ///
     /// # Arguments
     /// * `prob` - Probability of keeping an event (0.0 to 1.0)
     pub fn degrade_by(&self, prob: f64) -> Pattern<T> {
+        self.degrade_by_with_seed(prob, 0)
+    }
+
+    /// Randomly drop events with given probability and a specific seed offset.
+    pub fn degrade_by_with_seed(&self, prob: f64, seed: u64) -> Pattern<T> {
         let pat = self.clone();
-        let rand_pat = rand();
+        let rand_pat = rand_with_offset(seed);
 
         // Use app_left to preserve structure from self
         pat.app_left(
@@ -113,6 +154,9 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
 
     /// Randomly replace events with a rest value based on probability.
     ///
+    /// Uses seed 0. For independent streams in mini-notation, use
+    /// `degrade_by_with_rest_seeded`.
+    ///
     /// Unlike `degrade_by` which filters out events entirely, this method
     /// replaces degraded events with the provided rest value, preserving the
     /// time slot. This is important for sequencers where we want the degraded
@@ -122,8 +166,16 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
     /// * `prob` - Probability of keeping the original event (0.0 to 1.0)
     /// * `rest` - Value to use when the event is degraded
     pub fn degrade_by_with_rest(&self, prob: f64, rest: T) -> Pattern<T> {
+        self.degrade_by_with_rest_seeded(prob, rest, 0)
+    }
+
+    /// Randomly replace events with a rest value, using a specific seed offset.
+    ///
+    /// Different seeds produce independent random streams, ensuring that multiple
+    /// `?` operators in a pattern don't correlate.
+    pub fn degrade_by_with_rest_seeded(&self, prob: f64, rest: T, seed: u64) -> Pattern<T> {
         let pat = self.clone();
-        let rand_pat = rand();
+        let rand_pat = rand_with_offset(seed);
 
         // Use app_left to preserve structure from self
         pat.app_left(&rand_pat, move |val, r| {
@@ -276,5 +328,103 @@ mod tests {
         // With 50% probability, should have roughly 50% kept
         assert!(kept_count > 20, "Should have some kept values");
         assert!(kept_count < 80, "Should have some rest values");
+    }
+
+    #[test]
+    fn test_degrade_independence_in_fastcat() {
+        // Simulates [0?, 1?, 2?] — three degraded elements in a fastcat.
+        // Each should get an independent random stream even though fastcat
+        // normalises their inner times to the same values.
+        // Uses explicit seeds (as the mini-notation parser would assign).
+        use crate::pattern_system::combinators::fastcat;
+        use crate::pattern_system::constructors::pure;
+
+        let elements: Vec<Pattern<i32>> = (0..3)
+            .map(|i| pure(i).degrade_by_with_rest_seeded(0.5, -1, i as u64))
+            .collect();
+        let pat = fastcat(elements);
+
+        // Collect keep/drop decisions across many cycles.
+        // For each cycle we get 3 events (one per fastcat element).
+        // If they were correlated, the 3 decisions within a cycle would
+        // always be identical.
+        let mut all_same_count = 0;
+        let num_cycles = 200;
+        for c in 0..num_cycles {
+            let haps = pat.query_arc(
+                Fraction::from_integer(c),
+                Fraction::from_integer(c + 1),
+            );
+            assert_eq!(haps.len(), 3, "fastcat of 3 should yield 3 haps");
+            let decisions: Vec<bool> = haps.iter().map(|h| h.value != -1).collect();
+            if decisions[0] == decisions[1] && decisions[1] == decisions[2] {
+                all_same_count += 1;
+            }
+        }
+        // With independent 50/50 decisions, P(all same) = 0.25 per cycle.
+        // Over 200 cycles expect ~50.  If correlated, all_same_count = 200.
+        assert!(
+            all_same_count < 100,
+            "Degraded elements in fastcat appear correlated: {all_same_count}/200 cycles had all-same decisions"
+        );
+    }
+
+    #[test]
+    fn test_choose_independence_in_fastcat() {
+        // Simulates [a|b, a|b] — two random-choice elements in a fastcat.
+        // Each should pick independently.
+        // Uses explicit seeds (as the mini-notation parser would assign).
+        use crate::pattern_system::combinators::fastcat;
+
+        let elements: Vec<Pattern<&str>> = (0..2)
+            .map(|i| choose_with_seed(vec!["a", "b"], i as u64))
+            .collect();
+        let pat = fastcat(elements);
+
+        let mut combos = std::collections::HashMap::<String, usize>::new();
+        let num_cycles = 400;
+        for c in 0..num_cycles {
+            let haps = pat.query_arc(
+                Fraction::from_integer(c),
+                Fraction::from_integer(c + 1),
+            );
+            assert_eq!(haps.len(), 2);
+            let key = format!("{}{}", haps[0].value, haps[1].value);
+            *combos.entry(key).or_default() += 1;
+        }
+        // With independence, expect ~100 each of aa, ab, ba, bb.
+        // If correlated, we'd only see aa and bb.
+        assert!(
+            combos.len() == 4,
+            "Expected all 4 combinations (aa, ab, ba, bb), got: {:?}",
+            combos
+        );
+        for (combo, count) in &combos {
+            assert!(
+                *count > 50 && *count < 200,
+                "Combination {combo} has {count}/400 — expected ~100"
+            );
+        }
+    }
+
+    #[test]
+    fn test_deterministic_seeds_from_parse() {
+        // Verify that parsing the same pattern twice produces identical
+        // seed assignments, and that different patterns get different seeds.
+        use crate::pattern_system::mini::parser::parse;
+
+        let ast1 = parse("a? b?").unwrap();
+        let ast2 = parse("a? b?").unwrap();
+        // Same input → identical AST (including seeds)
+        assert_eq!(ast1, ast2, "Same pattern should produce identical ASTs");
+
+        // Verify seeds are distinct within the pattern
+        if let crate::pattern_system::mini::ast::MiniAST::Sequence(elements) = &ast1 {
+            if let (crate::pattern_system::mini::ast::MiniAST::Degrade(_, _, seed0), _) = &elements[0] {
+                if let (crate::pattern_system::mini::ast::MiniAST::Degrade(_, _, seed1), _) = &elements[1] {
+                    assert_ne!(seed0, seed1, "Different ? operators should get different seeds");
+                }
+            }
+        }
     }
 }

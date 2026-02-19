@@ -1,11 +1,9 @@
-//! IntervalSeq module - A scale-degree sequencer with two additive patterns.
+//! IntervalSeq module - A scale-degree sequencer with additive patterns.
 //!
-//! This module sequences scale degrees using two mini notation patterns:
-//! - `interval_pattern`: Primary scale degree pattern
-//! - `add_pattern`: Offset pattern added to interval_pattern
-//!
-//! The sum of both patterns is treated as a scale degree index, quantized to
-//! the configured scale with octave wrapping.
+//! This module sequences scale degrees using one or more mini notation patterns
+//! combined via left-fold `app_left` addition (matching Strudel's `.add.in`).
+//! The first pattern determines rhythmic structure; subsequent patterns add
+//! their values at each event.
 //!
 //! The sequencer outputs:
 //! - CV: V/Oct pitch (quantized to scale)
@@ -18,7 +16,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    MonoSignal, Patch, PolySignal, dsp::{utilities::quantizer::ScaleParam, utils::{TempGate, TempGateState, midi_to_voct_f64}}, pattern_system::{DspHap, Fraction, Pattern}, poly::{PORT_MAX_CHANNELS, PolyOutput}, types::Connect
+    MonoSignal, Patch, dsp::{utilities::quantizer::ScaleParam, utils::{TempGate, TempGateState, midi_to_voct_f64}}, pattern_system::{Fraction, Pattern}, poly::{PORT_MAX_CHANNELS, PolyOutput}, types::Connect
 };
 
 /// Scale parameter for IntervalSeq that supports an optional octave in the root.
@@ -141,74 +139,153 @@ impl crate::pattern_system::mini::convert::HasRest for IntervalValue {
     }
 }
 
+/// Source representation for interval patterns: either a single pattern
+/// string or an array of strings that get combined via `app_left` addition.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum IntervalPatternSource {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+impl Default for IntervalPatternSource {
+    fn default() -> Self {
+        Self::Single(String::new())
+    }
+}
+
+impl IntervalPatternSource {
+    /// Get the individual source strings.
+    fn sources(&self) -> Vec<&str> {
+        match self {
+            Self::Single(s) => vec![s.as_str()],
+            Self::Multiple(v) => v.iter().map(|s| s.as_str()).collect(),
+        }
+    }
+}
+
+/// Per-source metadata retained for span tracking.
+#[derive(Debug, Default)]
+pub struct SourceMeta {
+    source: String,
+    all_spans: Vec<(usize, usize)>,
+}
+
 /// A pattern parameter for interval/degree patterns.
 ///
-/// This struct is serialized as a simple string but contains the parsed pattern.
-#[derive(Default, JsonSchema, Debug)]
-#[serde(transparent)]
-#[schemars(transparent)]
+/// Accepts either a single pattern string or an array of strings.
+/// Multiple strings are parsed individually then combined via `app_left`
+/// addition (left-fold), matching Strudel's `.add.in` behavior.
+#[derive(Debug)]
 pub struct IntervalPatternParam {
-    /// The source pattern string
+    /// The source value (string or array of strings) — drives the JSON schema
     #[allow(dead_code)]
-    source: String,
+    source: IntervalPatternSource,
 
-    /// The parsed pattern
-    #[serde(skip, default)]
-    #[schemars(skip)]
-    pub(crate) pattern: Option<Pattern<IntervalValue>>,
+    /// The combined pattern (after left-fold for Multiple)
+    combined_pattern: Option<Pattern<IntervalValue>>,
 
-    /// All leaf spans in the pattern (character offsets within the pattern string).
-    /// Computed once at parse time for creating Monaco tracked decorations.
-    ///
-    /// These differ from the "spans" returned in module state:
-    /// - `all_spans`: All pattern leaves, used to create decorations that track edits
-    /// - `spans` (in get_state): Currently active/playing spans, used for highlighting
-    #[serde(skip, default)]
-    #[schemars(skip)]
-    pub(crate) all_spans: Vec<(usize, usize)>,
+    /// Per-source metadata for span tracking
+    per_source: Vec<SourceMeta>,
+
+    /// Number of source strings that contributed to the combined pattern
+    num_sources: usize,
+}
+
+impl Default for IntervalPatternParam {
+    fn default() -> Self {
+        Self {
+            source: IntervalPatternSource::default(),
+            combined_pattern: None,
+            per_source: Vec::new(),
+            num_sources: 0,
+        }
+    }
 }
 
 impl IntervalPatternParam {
-    /// Parse a pattern string.
-    fn parse(source: &str) -> Result<Self, String> {
-        if source.is_empty() {
+    /// Parse a single pattern string into a `Pattern<IntervalValue>` and collect leaf spans.
+    fn parse_one(source: &str) -> Result<(Pattern<IntervalValue>, Vec<(usize, usize)>), String> {
+        let ast = crate::pattern_system::mini::parse_ast(source).map_err(|e| e.to_string())?;
+        let all_spans = crate::pattern_system::mini::collect_leaf_spans(&ast);
+        let pattern = crate::pattern_system::mini::convert::<IntervalValue>(&ast)
+            .map_err(|e| e.to_string())?;
+        Ok((pattern, all_spans))
+    }
+
+    /// Build from an `IntervalPatternSource`, parsing and combining patterns.
+    fn from_source(source: IntervalPatternSource) -> Result<Self, String> {
+        let sources = source.sources();
+
+        // Filter out empty strings
+        let non_empty: Vec<&str> = sources.iter().copied().filter(|s| !s.is_empty()).collect();
+
+        if non_empty.is_empty() {
             return Ok(Self {
-                source: source.to_string(),
-                pattern: None,
-                all_spans: Vec::new(),
+                per_source: sources
+                    .iter()
+                    .map(|s| SourceMeta {
+                        source: s.to_string(),
+                        all_spans: Vec::new(),
+                    })
+                    .collect(),
+                num_sources: sources.len(),
+                source,
+                combined_pattern: None,
             });
         }
 
-        // Parse mini notation AST first (for span collection)
-        let ast = crate::pattern_system::mini::parse_ast(source).map_err(|e| e.to_string())?;
+        // Parse each source string
+        let mut parsed: Vec<Pattern<IntervalValue>> = Vec::new();
+        let mut per_source: Vec<SourceMeta> = Vec::new();
 
-        // Collect all leaf spans from AST
-        let all_spans = crate::pattern_system::mini::collect_leaf_spans(&ast);
+        for s in &sources {
+            if s.is_empty() {
+                per_source.push(SourceMeta {
+                    source: s.to_string(),
+                    all_spans: Vec::new(),
+                });
+            } else {
+                let (pattern, all_spans) = Self::parse_one(s)?;
+                per_source.push(SourceMeta {
+                    source: s.to_string(),
+                    all_spans,
+                });
+                parsed.push(pattern);
+            }
+        }
 
-        // Convert AST to pattern
-        let pattern = crate::pattern_system::mini::convert::<IntervalValue>(&ast)
-            .map_err(|e| e.to_string())?;
+        // Left-fold the parsed patterns with app_left + add_interval_values.
+        // strip_modifier_spans() ensures that internal modifier spans from
+        // sub-expressions (e.g. euclidean notation) don't leak into the
+        // positional index that extract_pattern_spans relies on.
+        let mut combined = parsed[0].strip_modifier_spans();
+        for p in &parsed[1..] {
+            combined = combined.app_left(&p.strip_modifier_spans(), add_interval_values);
+        }
 
+        let num_sources = sources.len();
         Ok(Self {
-            source: source.to_string(),
-            pattern: Some(pattern),
-            all_spans,
+            source,
+            combined_pattern: Some(combined),
+            per_source,
+            num_sources,
         })
     }
 
-    /// Get the parsed pattern.
+    /// Get the combined pattern.
     pub fn pattern(&self) -> Option<&Pattern<IntervalValue>> {
-        self.pattern.as_ref()
+        self.combined_pattern.as_ref()
     }
 
-    /// Get the source pattern string.
-    pub fn source(&self) -> &str {
-        &self.source
+    /// Number of source patterns that were combined.
+    pub fn num_sources(&self) -> usize {
+        self.num_sources
     }
 
-    /// Get all leaf spans in the pattern (for frontend tracked decorations).
-    pub fn all_spans(&self) -> &[(usize, usize)] {
-        &self.all_spans
+    /// Per-source metadata for span tracking.
+    pub fn per_source(&self) -> &[SourceMeta] {
+        &self.per_source
     }
 }
 
@@ -217,11 +294,17 @@ impl<'de> Deserialize<'de> for IntervalPatternParam {
     where
         D: serde::Deserializer<'de>,
     {
-        let source = String::deserialize(deserializer)?;
-        if source.is_empty() {
-            return Ok(Self::default());
-        }
-        Self::parse(&source).map_err(serde::de::Error::custom)
+        let source = IntervalPatternSource::deserialize(deserializer)?;
+        Self::from_source(source).map_err(serde::de::Error::custom)
+    }
+}
+
+impl JsonSchema for IntervalPatternParam {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        IntervalPatternSource::schema_name()
+    }
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        IntervalPatternSource::json_schema(generator)
     }
 }
 
@@ -241,10 +324,8 @@ struct CachedIntervalHap {
     /// Hap timing
     whole_begin: f64,
     whole_end: f64,
-    /// Source spans from interval pattern
-    interval_spans: Vec<(usize, usize)>,
-    /// Source spans from add pattern
-    add_spans: Vec<(usize, usize)>,
+    /// Source spans per input pattern (index 0 = first pattern, etc.)
+    pattern_spans: Vec<Vec<(usize, usize)>>,
 }
 
 impl CachedIntervalHap {
@@ -290,10 +371,9 @@ fn default_channels() -> usize {
 #[derive(Deserialize, Default, ChannelCount, JsonSchema, Connect, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct IntervalSeqParams {
-    /// primary interval/degree pattern
-    interval_pattern: IntervalPatternParam,
-    /// offset pattern added to interval_pattern
-    add_pattern: IntervalPatternParam,
+    /// patterns to combine (left-fold with appLeft addition); accepts a single
+    /// pattern string or an array of pattern strings
+    patterns: IntervalPatternParam,
     /// scale for quantizing degrees to pitches (supports optional octave, e.g. "c3(major)")
     scale: IntervalScaleParam,
     /// playhead position
@@ -306,106 +386,51 @@ pub struct IntervalSeqParams {
 
 /// Channel count derivation for IntervalSeq.
 ///
-/// Analyzes both patterns together to determine maximum polyphony.
-/// Since overlapping haps produce the Cartesian product (all combinations),
-/// we must compute the combined haps and find max simultaneous events.
+/// Queries the pre-built combined pattern and uses a sweep-line algorithm
+/// to find the maximum number of simultaneous events.
 pub fn interval_seq_derive_channel_count(params: &IntervalSeqParams) -> usize {
     // If channels was explicitly set (non-default), use that
     if params.channels != default_channels() {
         return params.channels.clamp(1, PORT_MAX_CHANNELS);
     }
 
-    derive_combined_polyphony(
-        params.interval_pattern.pattern(),
-        params.add_pattern.pattern(),
-    )
+    derive_combined_polyphony(&params.patterns)
 }
 
-/// Derive polyphony by computing combined haps from both patterns.
-fn derive_combined_polyphony(
-    interval_pattern: Option<&Pattern<IntervalValue>>,
-    add_pattern: Option<&Pattern<IntervalValue>>,
-) -> usize {
+/// Derive polyphony from a single `IntervalPatternParam` whose combined
+/// pattern is already built at parse time.
+fn derive_combined_polyphony(param: &IntervalPatternParam) -> usize {
     const NUM_CYCLES: i64 = 90;
     const MAX_POLYPHONY: usize = 16;
 
-    // Query both patterns
-    let interval_haps = interval_pattern
-        .map(|p| {
-            p.query_arc(
-                Fraction::from_integer(0),
-                Fraction::from_integer(NUM_CYCLES),
-            )
-        })
-        .unwrap_or_default();
+    let combined = match param.pattern() {
+        Some(p) => p,
+        None => return 1,
+    };
 
-    let add_haps = add_pattern
-        .map(|p| {
-            p.query_arc(
-                Fraction::from_integer(0),
-                Fraction::from_integer(NUM_CYCLES),
-            )
-        })
-        .unwrap_or_default();
+    let haps = combined.query_arc(
+        Fraction::from_integer(0),
+        Fraction::from_integer(NUM_CYCLES),
+    );
 
-    // If both are empty, return 1
-    if interval_haps.is_empty() && add_haps.is_empty() {
+    // Collect part spans for non-rest haps
+    let mut events: Vec<(Fraction, i32)> = Vec::new();
+
+    for hap in &haps {
+        if !hap.value.is_rest() {
+            events.push((hap.part.begin.clone(), 1));
+            events.push((hap.part.end.clone(), -1));
+        }
+    }
+
+    if events.is_empty() {
         return 1;
     }
 
-    // Collect combined hap spans (as Fraction pairs for precision)
-    // Use `part` spans since those are always present (whole can be None for continuous)
-    let mut combined_spans: Vec<(Fraction, Fraction)> = Vec::new();
-
-    if add_haps.is_empty() {
-        // Only interval pattern: use its haps directly
-        for hap in &interval_haps {
-            if !hap.value.is_rest() {
-                combined_spans.push((hap.part.begin.clone(), hap.part.end.clone()));
-            }
-        }
-    } else if interval_haps.is_empty() {
-        // Only add pattern: use its haps directly
-        for hap in &add_haps {
-            if !hap.value.is_rest() {
-                combined_spans.push((hap.part.begin.clone(), hap.part.end.clone()));
-            }
-        }
-    } else {
-        // Both patterns: compute Cartesian product of overlapping haps
-        for int_hap in &interval_haps {
-            for add_hap in &add_haps {
-                // Check for overlap using part spans
-                if add_hap.part.begin < int_hap.part.end && add_hap.part.end > int_hap.part.begin {
-                    // Both must be non-rest to produce a combined note
-                    if !int_hap.value.is_rest() && !add_hap.value.is_rest() {
-                        // Intersection of part spans
-                        let begin = int_hap.part.begin.clone().max(add_hap.part.begin.clone());
-                        let end = int_hap.part.end.clone().min(add_hap.part.end.clone());
-                        combined_spans.push((begin, end));
-                    }
-                }
-            }
-        }
-    }
-
-    if combined_spans.is_empty() {
-        return 1;
-    }
-
-    // Sweep line algorithm on combined spans
-    let mut events: Vec<(Fraction, i32)> = Vec::with_capacity(combined_spans.len() * 2);
-
-    for (begin, end) in combined_spans {
-        events.push((begin, 1)); // start
-        events.push((end, -1)); // end
-    }
-
-    events.sort_by(|a, b| {
-        match a.0.cmp(&b.0) {
-            Ordering::Equal => a.1.cmp(&b.1), // ends before starts at same time
-            other => other,
-        }
+    // Sweep line algorithm
+    events.sort_by(|a, b| match a.0.cmp(&b.0) {
+        Ordering::Equal => a.1.cmp(&b.1), // ends before starts at same time
+        other => other,
     });
 
     let mut current: usize = 0;
@@ -426,6 +451,54 @@ fn derive_combined_polyphony(
     max_simultaneous.max(1)
 }
 
+/// Add two `IntervalValue`s. Rest + anything = Rest.
+fn add_interval_values(a: &IntervalValue, b: &IntervalValue) -> IntervalValue {
+    match (a.degree(), b.degree()) {
+        (Some(da), Some(db)) => IntervalValue::Degree(da + db),
+        _ => IntervalValue::Rest,
+    }
+}
+
+/// Extract per-pattern source spans from a combined hap's context.
+///
+/// After a left-fold of N patterns via `app_left`, the merged `HapContext`
+/// has:
+/// - `source_span` = pattern 0's leaf span
+/// - `modifier_spans[i]` = pattern (i+1)'s leaf span
+fn extract_pattern_spans(
+    context: &crate::pattern_system::HapContext,
+    num_patterns: usize,
+) -> Vec<Vec<(usize, usize)>> {
+    let mut result = Vec::with_capacity(num_patterns);
+
+    // Pattern 0's span = source_span
+    if num_patterns > 0 {
+        result.push(
+            context
+                .source_span
+                .iter()
+                .map(|s| s.to_tuple())
+                .collect(),
+        );
+    }
+
+    // Patterns 1..N spans = modifier_spans in order
+    let modifier_limit = context
+        .modifier_spans
+        .len()
+        .min(num_patterns.saturating_sub(1));
+    for i in 0..modifier_limit {
+        result.push(vec![context.modifier_spans[i].to_tuple()]);
+    }
+
+    // Pad with empty vecs if needed
+    while result.len() < num_patterns {
+        result.push(Vec::new());
+    }
+
+    result
+}
+
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct IntervalSeqOutputs {
@@ -438,20 +511,23 @@ struct IntervalSeqOutputs {
 }
 
 /// Scale-degree sequencer using a compact text syntax ported
-/// from TidalCycles/Strudel. 
+/// from TidalCycles/Strudel.
 ///
-/// Works with **scale degree numbers** instead of note names. Two patterns —
-/// **intervalPattern** (the main pattern) and an optional **addPattern** —
-/// are evaluated independently, and their values are summed as 0-indexed
-/// scale-degree indices. The result is quantized to the configured **scale**
-/// with automatic octave wrapping.
+/// Works with **scale degree numbers** instead of note names. One or more
+/// **patterns** are combined by recursively folding the patterns into each other.
+/// This is adapted from the default way that patterns are combined in Strudel:
+/// 2 patterns are aligned in a cycle and the events of the second pattern are applied to the first.
+/// Here this happens recursively (where n pattern is applied to n-1), adding
+/// the values of those patterns' events together. The result is a single combined
+/// pattern of scale degrees that can be sampled at the current playhead position to produce output CV/gate/trig.
+/// Scale degrees outside the configured **scale** are automatically wrapped into the appropriate octave.
 ///
 /// ## Cycles
 ///
 /// A **cycle** is one full traversal of a pattern. The playhead position
 /// determines timing: its integer part selects the current cycle number and
 /// the fractional part selects the position within that cycle.
-/// Both **intervalPattern** and **addPattern** share the same cycle clock.
+/// All patterns share the same cycle clock.
 ///
 /// ## Scale degrees
 ///
@@ -490,21 +566,22 @@ struct IntervalSeqOutputs {
 /// Modifier operands can also be subpatterns: `0*[2 3]` alternates between
 /// doubling and tripling each slot.
 ///
-/// ## Polyphony via Cartesian product
+/// ## Polyphony
 ///
-/// When **intervalPattern** and **addPattern** produce overlapping notes at
-/// the same point in time, every combination (Cartesian product) is
-/// generated and polyphonically allocated to separate output channels.
+/// The first pattern's structure is preserved. When subsequent patterns
+/// contain stacks (simultaneous events), one combined
+/// event is created per left×right pair, all sharing the first pattern's timing. This
+/// can create polyphonic output.
 ///
 /// ```js
-/// // intervalPattern has one note per slot, addPattern adds two offsets →
-/// // two simultaneous voices per slot (root + fifth)
-/// $iCycle("0 2 4", "C4(major)", { addPattern: "0,4" })
+/// // first pattern: one note per slot
+/// // second pattern: two simultaneous offsets → two voices per slot
+/// $iCycle(["0 2 4", "0,4"], "c4(major)")
 /// ```
 ///
 /// ```js
-/// // slow alternation in addPattern shifts the chord each cycle
-/// $iCycle("0,2,4", "C4(major)", { addPattern: "<0 3>" })
+/// // slow alternation in second pattern shifts the chord each cycle
+/// $iCycle(["0,2,4", "<0 3>"], "c4(major)")
 /// ```
 ///
 /// ## Outputs
@@ -515,7 +592,7 @@ struct IntervalSeqOutputs {
 #[module(
     name = "$iCycle",
     channels_derive = interval_seq_derive_channel_count,
-    args(intervalPattern, scale),
+    args(patterns, scale),
     stateful,
     patch_update,
 )]
@@ -536,20 +613,18 @@ pub struct IntervalSeq {
     base_midi: i32,
 }
 
-/// A combined hap from both patterns
+/// A combined hap from the folded pattern, ready for voice allocation.
 #[derive(Clone, Debug)]
 struct CombinedHap {
     whole_begin: f64,
     whole_end: f64,
     part_begin: f64,
     part_end: f64,
-    /// Combined degree (interval + add), None if rest or missing
+    /// Combined degree, None if rest
     degree: Option<i32>,
     has_onset: bool,
-    /// Source spans from interval pattern
-    interval_spans: Vec<(usize, usize)>,
-    /// Source spans from add pattern
-    add_spans: Vec<(usize, usize)>,
+    /// Source spans per input pattern (index 0 = first pattern, etc.)
+    pattern_spans: Vec<Vec<(usize, usize)>>,
 }
 
 impl Default for IntervalSeq {
@@ -575,145 +650,33 @@ impl IntervalSeq {
         self.cached_combined_haps.clear();
     }
 
-    /// Refresh the cycle cache by querying both patterns and combining.
+    /// Refresh the cycle cache by querying the combined pattern.
     fn refresh_cache(&mut self, cycle: i64) {
         self.cached_combined_haps.clear();
 
-        let interval_haps = self
-            .params
-            .interval_pattern
-            .pattern()
-            .map(|p| p.query_cycle_all(cycle))
-            .unwrap_or_default();
-
-        let add_haps = self
-            .params
-            .add_pattern
-            .pattern()
-            .map(|p| p.query_cycle_all(cycle))
-            .unwrap_or_default();
-
-        // If both patterns are empty, nothing to do
-        if interval_haps.is_empty() && add_haps.is_empty() {
-            self.cached_cycle = Some(cycle);
-            return;
-        }
-
-        // If only one pattern is provided (the other is entirely absent),
-        // use the present pattern's haps directly instead of silencing them.
-        if interval_haps.is_empty() {
-            // Only add_pattern provided: use its haps directly
-            for add_hap in &add_haps {
-                self.cached_combined_haps.push(CombinedHap {
-                    whole_begin: add_hap.whole_begin,
-                    whole_end: add_hap.whole_end,
-                    part_begin: add_hap.part_begin,
-                    part_end: add_hap.part_end,
-                    degree: add_hap.value.degree(),
-                    has_onset: add_hap.has_onset(),
-                    interval_spans: Vec::new(),
-                    add_spans: add_hap.get_active_spans(),
-                });
+        let combined = match self.params.patterns.pattern() {
+            Some(p) => p,
+            None => {
+                self.cached_cycle = Some(cycle);
+                return;
             }
-            self.cached_cycle = Some(cycle);
-            return;
-        }
+        };
 
-        if add_haps.is_empty() {
-            // Only interval_pattern provided: use its haps directly
-            for int_hap in &interval_haps {
-                self.cached_combined_haps.push(CombinedHap {
-                    whole_begin: int_hap.whole_begin,
-                    whole_end: int_hap.whole_end,
-                    part_begin: int_hap.part_begin,
-                    part_end: int_hap.part_end,
-                    degree: int_hap.value.degree(),
-                    has_onset: int_hap.has_onset(),
-                    interval_spans: int_hap.get_active_spans(),
-                    add_spans: Vec::new(),
-                });
-            }
-            self.cached_cycle = Some(cycle);
-            return;
-        }
+        let haps = combined.query_cycle_all(cycle);
+        let num_patterns = self.params.patterns.num_sources();
 
-        // Both patterns present: combine haps via Cartesian product of overlaps
-        for int_hap in &interval_haps {
-            let int_degree = int_hap.value.degree();
+        for hap in &haps {
+            let pattern_spans = extract_pattern_spans(&hap.context, num_patterns);
 
-            // Find add_haps that overlap with this interval hap's whole span
-            let overlapping_add: Vec<&DspHap<IntervalValue>> = add_haps
-                .iter()
-                .filter(|add| {
-                    add.whole_begin < int_hap.whole_end && add.whole_end > int_hap.whole_begin
-                })
-                .collect();
-
-            if overlapping_add.is_empty() {
-                // No add hap at this time -> silence
-                self.cached_combined_haps.push(CombinedHap {
-                    whole_begin: int_hap.whole_begin,
-                    whole_end: int_hap.whole_end,
-                    part_begin: int_hap.part_begin,
-                    part_end: int_hap.part_end,
-                    degree: None,
-                    has_onset: int_hap.has_onset(),
-                    interval_spans: int_hap.get_active_spans(),
-                    add_spans: Vec::new(),
-                });
-            } else {
-                for add_hap in overlapping_add {
-                    let add_degree = add_hap.value.degree();
-
-                    // Calculate intersection of whole spans
-                    let combined_begin = int_hap.whole_begin.max(add_hap.whole_begin);
-                    let combined_end = int_hap.whole_end.min(add_hap.whole_end);
-
-                    // Onset at intersection start if either has onset there
-                    let has_onset = (int_hap.has_onset()
-                        && int_hap.part_begin >= combined_begin
-                        && int_hap.part_begin < combined_end)
-                        || (add_hap.has_onset()
-                            && add_hap.part_begin >= combined_begin
-                            && add_hap.part_begin < combined_end);
-
-                    let combined_degree = match (int_degree, add_degree) {
-                        (Some(i), Some(a)) => Some(i + a),
-                        _ => None, // Either is rest -> silence
-                    };
-
-                    self.cached_combined_haps.push(CombinedHap {
-                        whole_begin: combined_begin,
-                        whole_end: combined_end,
-                        part_begin: combined_begin,
-                        part_end: combined_end,
-                        degree: combined_degree,
-                        has_onset,
-                        interval_spans: int_hap.get_active_spans(),
-                        add_spans: add_hap.get_active_spans(),
-                    });
-                }
-            }
-        }
-
-        // Check for add_haps that don't overlap any interval_hap -> silence
-        for add_hap in &add_haps {
-            let has_interval_overlap = interval_haps.iter().any(|int| {
-                int.whole_begin < add_hap.whole_end && int.whole_end > add_hap.whole_begin
+            self.cached_combined_haps.push(CombinedHap {
+                whole_begin: hap.whole_begin,
+                whole_end: hap.whole_end,
+                part_begin: hap.part_begin,
+                part_end: hap.part_end,
+                degree: hap.value.degree(),
+                has_onset: hap.has_onset(),
+                pattern_spans,
             });
-
-            if !has_interval_overlap {
-                self.cached_combined_haps.push(CombinedHap {
-                    whole_begin: add_hap.whole_begin,
-                    whole_end: add_hap.whole_end,
-                    part_begin: add_hap.part_begin,
-                    part_end: add_hap.part_end,
-                    degree: None,
-                    has_onset: add_hap.has_onset(),
-                    interval_spans: Vec::new(),
-                    add_spans: add_hap.get_active_spans(),
-                });
-            }
         }
 
         self.cached_cycle = Some(cycle);
@@ -774,11 +737,8 @@ impl IntervalSeq {
         // Release voices whose haps have ended
         self.release_ended_voices(playhead, num_channels);
 
-        // Check if we have any patterns
-        let has_interval = self.params.interval_pattern.pattern().is_some();
-        let has_add = self.params.add_pattern.pattern().is_some();
-
-        if !has_interval && !has_add {
+        // Check if we have a combined pattern
+        if self.params.patterns.pattern().is_none() {
             for ch in 0..num_channels {
                 self.outputs.cv.set(ch, 0.0);
                 self.outputs.gate.set(ch, self.voices[ch].gate.process());
@@ -799,8 +759,7 @@ impl IntervalSeq {
             i32,
             f64,
             f64,
-            Vec<(usize, usize)>,
-            Vec<(usize, usize)>,
+            Vec<Vec<(usize, usize)>>,
         )> = self
             .cached_combined_haps
             .iter()
@@ -834,16 +793,13 @@ impl IntervalSeq {
                     degree,
                     combined.whole_begin,
                     combined.whole_end,
-                    combined.interval_spans.clone(),
-                    combined.add_spans.clone(),
+                    combined.pattern_spans.clone(),
                 ))
             })
             .collect();
 
         // Process collected events
-        for (hap_index, degree, whole_begin, whole_end, interval_spans, add_spans) in
-            events_to_process
-        {
+        for (hap_index, degree, whole_begin, whole_end, pattern_spans) in events_to_process {
             // Allocate voice
             let voice_idx = self.allocate_voice(playhead, num_channels);
 
@@ -856,8 +812,7 @@ impl IntervalSeq {
                 cached_cycle: current_cycle,
                 whole_begin,
                 whole_end,
-                interval_spans,
-                add_spans,
+                pattern_spans,
             });
             voice.cached_voltage = voltage;
             voice.active = true;
@@ -928,16 +883,23 @@ impl IntervalSeq {
 impl crate::types::StatefulModule for IntervalSeq {
     fn get_state(&self) -> Option<serde_json::Value> {
         let num_channels = self.channel_count().clamp(1, PORT_MAX_CHANNELS);
-        let mut interval_spans: Vec<(usize, usize)> = Vec::new();
-        let mut add_spans: Vec<(usize, usize)> = Vec::new();
+        let per_source = self.params.patterns.per_source();
+        let num_sources = per_source.len();
+
+        // Collect per-pattern active spans from all active voices
+        let mut per_pattern_spans: Vec<Vec<(usize, usize)>> =
+            vec![Vec::new(); num_sources];
         let mut any_active = false;
 
         for voice in self.voices.iter().take(num_channels) {
             if voice.active {
                 if let Some(ref cached) = voice.cached_hap {
                     any_active = true;
-                    interval_spans.extend(cached.interval_spans.iter().cloned());
-                    add_spans.extend(cached.add_spans.iter().cloned());
+                    for (i, spans) in cached.pattern_spans.iter().enumerate() {
+                        if i < num_sources {
+                            per_pattern_spans[i].extend(spans.iter().cloned());
+                        }
+                    }
                 }
             }
         }
@@ -945,29 +907,32 @@ impl crate::types::StatefulModule for IntervalSeq {
         if !any_active {
             None
         } else {
-            // Deduplicate spans
-            interval_spans.sort();
-            interval_spans.dedup();
-            add_spans.sort();
-            add_spans.dedup();
+            // Deduplicate spans per pattern
+            for spans in &mut per_pattern_spans {
+                spans.sort();
+                spans.dedup();
+            }
 
-            // Generic param_spans format: map of param name -> { spans, source, all_spans }
-            // - spans: currently active spans (for highlighting)
-            // - source: the evaluated pattern string
-            // - all_spans: all leaf spans in the pattern (for creating tracked decorations at patch time)
+            // Build param_spans map keyed by "patterns.0", "patterns.1", etc.
+            let mut param_spans = serde_json::Map::new();
+            for (i, meta) in per_source.iter().enumerate() {
+                let key = if num_sources == 1 {
+                    "patterns".to_string()
+                } else {
+                    format!("patterns.{}", i)
+                };
+                param_spans.insert(
+                    key,
+                    serde_json::json!({
+                        "spans": per_pattern_spans.get(i).unwrap_or(&Vec::new()),
+                        "source": meta.source,
+                        "all_spans": meta.all_spans,
+                    }),
+                );
+            }
+
             Some(serde_json::json!({
-                "param_spans": {
-                    "intervalPattern": {
-                        "spans": interval_spans,
-                        "source": self.params.interval_pattern.source(),
-                        "all_spans": self.params.interval_pattern.all_spans(),
-                    },
-                    "addPattern": {
-                        "spans": add_spans,
-                        "source": self.params.add_pattern.source(),
-                        "all_spans": self.params.add_pattern.all_spans(),
-                    }
-                },
+                "param_spans": param_spans,
                 "num_channels": num_channels,
             }))
         }
@@ -978,6 +943,7 @@ impl crate::types::PatchUpdateHandler for IntervalSeq {
     fn on_patch_update(&mut self) {
         self.invalidate_cache();
         self.update_scale_cache();
+        // Combined pattern is already built at parse time inside IntervalPatternParam
     }
 }
 
@@ -1000,12 +966,87 @@ mod tests {
     }
 
     #[test]
-    fn test_interval_pattern_parse() {
-        let param = IntervalPatternParam::parse("0 1 2 3").unwrap();
+    fn test_from_source_single_string() {
+        let param =
+            IntervalPatternParam::from_source(IntervalPatternSource::Single("0 1 2 3".into()))
+                .unwrap();
         assert!(param.pattern().is_some());
+        assert_eq!(param.num_sources(), 1);
+        assert_eq!(param.per_source().len(), 1);
+        assert_eq!(param.per_source()[0].source, "0 1 2 3");
+    }
 
-        let param = IntervalPatternParam::parse("").unwrap();
+    #[test]
+    fn test_from_source_empty_string() {
+        let param =
+            IntervalPatternParam::from_source(IntervalPatternSource::Single("".into())).unwrap();
         assert!(param.pattern().is_none());
+        assert_eq!(param.num_sources(), 1);
+    }
+
+    #[test]
+    fn test_from_source_multiple() {
+        let param = IntervalPatternParam::from_source(IntervalPatternSource::Multiple(vec![
+            "0 2 4".into(),
+            "1".into(),
+        ]))
+        .unwrap();
+        assert!(param.pattern().is_some());
+        assert_eq!(param.num_sources(), 2);
+        assert_eq!(param.per_source().len(), 2);
+        assert_eq!(param.per_source()[0].source, "0 2 4");
+        assert_eq!(param.per_source()[1].source, "1");
+
+        // Combined: 0+1=1, 2+1=3, 4+1=5
+        let combined = param.pattern().unwrap();
+        let haps = combined.query_cycle_all(0);
+        let onsets: Vec<_> = haps.iter().filter(|h| h.has_onset()).collect();
+        assert_eq!(onsets.len(), 3);
+
+        let mut degrees: Vec<i32> = onsets.iter().filter_map(|h| h.value.degree()).collect();
+        degrees.sort();
+        assert_eq!(degrees, vec![1, 3, 5]);
+    }
+
+    #[test]
+    fn test_from_source_three_patterns() {
+        let param = IntervalPatternParam::from_source(IntervalPatternSource::Multiple(vec![
+            "0 2".into(),
+            "1".into(),
+            "10".into(),
+        ]))
+        .unwrap();
+
+        let combined = param.pattern().unwrap();
+        let haps = combined.query_cycle_all(0);
+        let onsets: Vec<_> = haps.iter().filter(|h| h.has_onset()).collect();
+        assert_eq!(onsets.len(), 2);
+
+        let mut degrees: Vec<i32> = onsets.iter().filter_map(|h| h.value.degree()).collect();
+        degrees.sort();
+        // 0+1+10=11, 2+1+10=13
+        assert_eq!(degrees, vec![11, 13]);
+    }
+
+    #[test]
+    fn test_from_source_polyphony_via_stack() {
+        // First pattern: 1 event per cycle
+        // Second pattern: stack with 2 simultaneous events
+        // app_left should produce 2 output events (polyphony)
+        let param = IntervalPatternParam::from_source(IntervalPatternSource::Multiple(vec![
+            "0".into(),
+            "0, 4".into(),
+        ]))
+        .unwrap();
+
+        let combined = param.pattern().unwrap();
+        let haps = combined.query_cycle_all(0);
+        let onsets: Vec<_> = haps.iter().filter(|h| h.has_onset()).collect();
+        assert_eq!(onsets.len(), 2);
+
+        let mut degrees: Vec<i32> = onsets.iter().filter_map(|h| h.value.degree()).collect();
+        degrees.sort();
+        assert_eq!(degrees, vec![0, 4]);
     }
 
     #[test]
@@ -1070,5 +1111,58 @@ mod tests {
 
         let scale = ScaleParam::parse_with_octave("D(major)").unwrap();
         assert_eq!(scale.base_midi(), 62);
+    }
+
+    #[test]
+    fn test_add_interval_values() {
+        let a = IntervalValue::Degree(3);
+        let b = IntervalValue::Degree(4);
+        let result = add_interval_values(&a, &b);
+        assert!(matches!(result, IntervalValue::Degree(7)));
+
+        let result = add_interval_values(&IntervalValue::Rest, &IntervalValue::Degree(1));
+        assert!(result.is_rest());
+
+        let result = add_interval_values(&IntervalValue::Degree(1), &IntervalValue::Rest);
+        assert!(result.is_rest());
+
+        let result = add_interval_values(&IntervalValue::Rest, &IntervalValue::Rest);
+        assert!(result.is_rest());
+    }
+
+    #[test]
+    fn test_derive_combined_polyphony_single() {
+        let param =
+            IntervalPatternParam::from_source(IntervalPatternSource::Single("0 2 4".into()))
+                .unwrap();
+        let count = derive_combined_polyphony(&param);
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_derive_combined_polyphony_with_stack() {
+        let param = IntervalPatternParam::from_source(IntervalPatternSource::Multiple(vec![
+            "0".into(),
+            "0, 4".into(),
+        ]))
+        .unwrap();
+        let count = derive_combined_polyphony(&param);
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_deserialize_patterns_from_string() {
+        let json = serde_json::json!({ "patterns": "0 2 4" });
+        let params: IntervalSeqParams = serde_json::from_value(json).unwrap();
+        assert!(params.patterns.pattern().is_some());
+        assert_eq!(params.patterns.num_sources(), 1);
+    }
+
+    #[test]
+    fn test_deserialize_patterns_from_array() {
+        let json = serde_json::json!({ "patterns": ["0 2 4", "0 3"] });
+        let params: IntervalSeqParams = serde_json::from_value(json).unwrap();
+        assert!(params.patterns.pattern().is_some());
+        assert_eq!(params.patterns.num_sources(), 2);
     }
 }

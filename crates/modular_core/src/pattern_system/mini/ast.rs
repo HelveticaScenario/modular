@@ -39,14 +39,14 @@ pub enum MiniASTI32 {
     /// Fast subsequence from [...] syntax (explicit fastcat).
     FastCat(Vec<(MiniASTI32, Option<f64>)>), // (pattern, optional weight)
 
-    /// Slow subsequence (one item per cycle).
-    SlowCat(Vec<MiniASTI32>),
+    /// Slow subsequence (one item per cycle, with optional @ weight).
+    SlowCat(Vec<(MiniASTI32, Option<f64>)>),
 
     /// Stack: comma-separated patterns play simultaneously.
     Stack(Vec<MiniASTI32>),
 
     /// Random choice between values.
-    RandomChoice(Vec<MiniASTI32>),
+    RandomChoice(Vec<MiniASTI32>, u64),
 
     /// Fast modifier: pattern * factor.
     Fast(Box<MiniASTI32>, Box<MiniASTF64>),
@@ -58,7 +58,7 @@ pub enum MiniASTI32 {
     Replicate(Box<MiniASTI32>, u32),
 
     /// Degrade: pattern ? prob (randomly drop with probability).
-    Degrade(Box<MiniASTI32>, Option<f64>),
+    Degrade(Box<MiniASTI32>, Option<f64>, u64),
 
     /// Euclidean rhythm: pattern(pulses, steps, rotation?).
     Euclidean {
@@ -88,14 +88,14 @@ pub enum MiniASTU32 {
     /// Fast subsequence from [...] syntax (explicit fastcat).
     FastCat(Vec<(MiniASTU32, Option<f64>)>), // (pattern, optional weight)
 
-    /// Slow subsequence (one item per cycle).
-    SlowCat(Vec<MiniASTU32>),
+    /// Slow subsequence (one item per cycle, with optional @ weight).
+    SlowCat(Vec<(MiniASTU32, Option<f64>)>),
 
     /// Stack: comma-separated patterns play simultaneously.
     Stack(Vec<MiniASTU32>),
 
     /// Random choice between values.
-    RandomChoice(Vec<MiniASTU32>),
+    RandomChoice(Vec<MiniASTU32>, u64),
 
     /// Fast modifier: pattern * factor.
     Fast(Box<MiniASTU32>, Box<MiniASTF64>),
@@ -108,7 +108,7 @@ pub enum MiniASTU32 {
     Replicate(Box<MiniASTU32>, u32),
 
     /// Degrade: pattern ? prob (randomly drop with probability).
-    Degrade(Box<MiniASTU32>, Option<f64>),
+    Degrade(Box<MiniASTU32>, Option<f64>, u64),
 
     /// Euclidean rhythm: pattern(pulses, steps, rotation?).
     Euclidean {
@@ -137,14 +137,14 @@ pub enum MiniASTF64 {
     /// Fast subsequence from [...] syntax (explicit fastcat).
     FastCat(Vec<(MiniASTF64, Option<f64>)>), // (pattern, optional weight)
 
-    /// Slow subsequence (one item per cycle).
-    SlowCat(Vec<MiniASTF64>),
+    /// Slow subsequence (one item per cycle, with optional @ weight).
+    SlowCat(Vec<(MiniASTF64, Option<f64>)>),
 
     /// Stack: comma-separated patterns play simultaneously.
     Stack(Vec<MiniASTF64>),
 
     /// Random choice between values.
-    RandomChoice(Vec<MiniASTF64>),
+    RandomChoice(Vec<MiniASTF64>, u64),
 
     /// Fast modifier: pattern * factor.
     Fast(Box<MiniASTF64>, Box<MiniASTF64>),
@@ -157,7 +157,7 @@ pub enum MiniASTF64 {
     Replicate(Box<MiniASTF64>, u32),
 
     /// Degrade: pattern ? prob (randomly drop with probability).
-    Degrade(Box<MiniASTF64>, Option<f64>),
+    Degrade(Box<MiniASTF64>, Option<f64>, u64),
 
     /// Euclidean rhythm: pattern(pulses, steps, rotation?).
     Euclidean {
@@ -190,14 +190,14 @@ pub enum MiniAST {
     /// not slowcat of two elements.
     FastCat(Vec<(MiniAST, Option<f64>)>), // (pattern, optional weight)
 
-    /// Slow subsequence (one item per cycle).
-    SlowCat(Vec<MiniAST>),
+    /// Slow subsequence (one item per cycle, with optional @ weight).
+    SlowCat(Vec<(MiniAST, Option<f64>)>),
 
     /// Stack: comma-separated patterns play simultaneously.
     Stack(Vec<MiniAST>),
 
     /// Random choice between values.
-    RandomChoice(Vec<MiniAST>),
+    RandomChoice(Vec<MiniAST>, u64),
 
     /// Fast modifier: pattern * factor.
     Fast(Box<MiniAST>, Box<MiniASTF64>),
@@ -210,7 +210,7 @@ pub enum MiniAST {
     Replicate(Box<MiniAST>, u32),
 
     /// Degrade: pattern ? prob (randomly drop with probability).
-    Degrade(Box<MiniAST>, Option<f64>),
+    Degrade(Box<MiniAST>, Option<f64>, u64),
 
     /// Euclidean rhythm: pattern(pulses, steps, rotation?).
     Euclidean {
@@ -566,7 +566,12 @@ fn collect_leaf_spans_recursive(ast: &MiniAST, spans: &mut Vec<(usize, usize)>) 
                 collect_leaf_spans_recursive(child, spans);
             }
         }
-        MiniAST::SlowCat(items) | MiniAST::RandomChoice(items) | MiniAST::Stack(items) => {
+        MiniAST::SlowCat(items) => {
+            for (child, _weight) in items {
+                collect_leaf_spans_recursive(child, spans);
+            }
+        }
+        MiniAST::RandomChoice(items, _) | MiniAST::Stack(items) => {
             for child in items {
                 collect_leaf_spans_recursive(child, spans);
             }
@@ -583,7 +588,7 @@ fn collect_leaf_spans_recursive(ast: &MiniAST, spans: &mut Vec<(usize, usize)>) 
         MiniAST::Replicate(pattern, _count) => {
             collect_leaf_spans_recursive(pattern, spans);
         }
-        MiniAST::Degrade(pattern, _prob) => {
+        MiniAST::Degrade(pattern, _prob, _) => {
             collect_leaf_spans_recursive(pattern, spans);
         }
         MiniAST::Euclidean {
@@ -621,7 +626,12 @@ fn collect_f64_spans(ast: &MiniASTF64, spans: &mut Vec<(usize, usize)>) {
                 collect_f64_spans(child, spans);
             }
         }
-        MiniASTF64::SlowCat(items) | MiniASTF64::RandomChoice(items) | MiniASTF64::Stack(items) => {
+        MiniASTF64::SlowCat(items) => {
+            for (child, _weight) in items {
+                collect_f64_spans(child, spans);
+            }
+        }
+        MiniASTF64::RandomChoice(items, _) | MiniASTF64::Stack(items) => {
             for child in items {
                 collect_f64_spans(child, spans);
             }
@@ -637,7 +647,7 @@ fn collect_f64_spans(ast: &MiniASTF64, spans: &mut Vec<(usize, usize)>) {
         MiniASTF64::Replicate(pattern, _count) => {
             collect_f64_spans(pattern, spans);
         }
-        MiniASTF64::Degrade(pattern, _prob) => {
+        MiniASTF64::Degrade(pattern, _prob, _) => {
             collect_f64_spans(pattern, spans);
         }
         MiniASTF64::Euclidean {
@@ -675,7 +685,12 @@ fn collect_u32_spans(ast: &MiniASTU32, spans: &mut Vec<(usize, usize)>) {
                 collect_u32_spans(child, spans);
             }
         }
-        MiniASTU32::SlowCat(items) | MiniASTU32::RandomChoice(items) | MiniASTU32::Stack(items) => {
+        MiniASTU32::SlowCat(items) => {
+            for (child, _weight) in items {
+                collect_u32_spans(child, spans);
+            }
+        }
+        MiniASTU32::RandomChoice(items, _) | MiniASTU32::Stack(items) => {
             for child in items {
                 collect_u32_spans(child, spans);
             }
@@ -691,7 +706,7 @@ fn collect_u32_spans(ast: &MiniASTU32, spans: &mut Vec<(usize, usize)>) {
         MiniASTU32::Replicate(pattern, _count) => {
             collect_u32_spans(pattern, spans);
         }
-        MiniASTU32::Degrade(pattern, _prob) => {
+        MiniASTU32::Degrade(pattern, _prob, _) => {
             collect_u32_spans(pattern, spans);
         }
         MiniASTU32::Euclidean {
@@ -729,7 +744,12 @@ fn collect_i32_spans(ast: &MiniASTI32, spans: &mut Vec<(usize, usize)>) {
                 collect_i32_spans(child, spans);
             }
         }
-        MiniASTI32::SlowCat(items) | MiniASTI32::RandomChoice(items) | MiniASTI32::Stack(items) => {
+        MiniASTI32::SlowCat(items) => {
+            for (child, _weight) in items {
+                collect_i32_spans(child, spans);
+            }
+        }
+        MiniASTI32::RandomChoice(items, _) | MiniASTI32::Stack(items) => {
             for child in items {
                 collect_i32_spans(child, spans);
             }
@@ -745,7 +765,7 @@ fn collect_i32_spans(ast: &MiniASTI32, spans: &mut Vec<(usize, usize)>) {
         MiniASTI32::Replicate(pattern, _count) => {
             collect_i32_spans(pattern, spans);
         }
-        MiniASTI32::Degrade(pattern, _prob) => {
+        MiniASTI32::Degrade(pattern, _prob, _) => {
             collect_i32_spans(pattern, spans);
         }
         MiniASTI32::Euclidean {
@@ -759,6 +779,231 @@ fn collect_i32_spans(ast: &MiniASTI32, spans: &mut Vec<(usize, usize)>) {
             collect_u32_spans(steps, spans);
             if let Some(rot) = rotation {
                 collect_i32_spans(rot, spans);
+            }
+        }
+    }
+}
+
+/// Assign deterministic seeds to all `RandomChoice` and `Degrade` nodes.
+///
+/// Called after parsing to ensure that the same pattern string always produces
+/// the same seed assignments, regardless of construction order or concurrent
+/// parses. The counter is incremented depth-first, matching the left-to-right
+/// source order of `?` and `|` operators (like Strudel's `var seed = 0`).
+pub fn assign_seeds(ast: &mut MiniAST, counter: &mut u64) {
+    match ast {
+        MiniAST::Pure(_) | MiniAST::Rest(_) => {}
+        MiniAST::List(located) => {
+            for child in &mut located.node {
+                assign_seeds(child, counter);
+            }
+        }
+        MiniAST::Sequence(items) | MiniAST::FastCat(items) | MiniAST::SlowCat(items) => {
+            for (child, _) in items {
+                assign_seeds(child, counter);
+            }
+        }
+        MiniAST::Stack(items) => {
+            for child in items {
+                assign_seeds(child, counter);
+            }
+        }
+        MiniAST::RandomChoice(items, seed) => {
+            *seed = *counter;
+            *counter += 1;
+            for child in items {
+                assign_seeds(child, counter);
+            }
+        }
+        MiniAST::Fast(pattern, factor) => {
+            assign_seeds(pattern, counter);
+            assign_seeds_f64(factor, counter);
+        }
+        MiniAST::Slow(pattern, factor) => {
+            assign_seeds(pattern, counter);
+            assign_seeds(factor, counter);
+        }
+        MiniAST::Replicate(pattern, _) => {
+            assign_seeds(pattern, counter);
+        }
+        MiniAST::Degrade(pattern, _, seed) => {
+            *seed = *counter;
+            *counter += 1;
+            assign_seeds(pattern, counter);
+        }
+        MiniAST::Euclidean {
+            pattern,
+            pulses,
+            steps,
+            rotation,
+        } => {
+            assign_seeds(pattern, counter);
+            assign_seeds_u32(pulses, counter);
+            assign_seeds_u32(steps, counter);
+            if let Some(rot) = rotation {
+                assign_seeds_i32(rot, counter);
+            }
+        }
+    }
+}
+
+/// Assign deterministic seeds to `RandomChoice`/`Degrade` nodes in an f64 AST.
+pub fn assign_seeds_f64(ast: &mut MiniASTF64, counter: &mut u64) {
+    match ast {
+        MiniASTF64::Pure(_) | MiniASTF64::Rest(_) => {}
+        MiniASTF64::List(located) => {
+            for child in &mut located.node {
+                assign_seeds_f64(child, counter);
+            }
+        }
+        MiniASTF64::Sequence(items) | MiniASTF64::FastCat(items) | MiniASTF64::SlowCat(items) => {
+            for (child, _) in items {
+                assign_seeds_f64(child, counter);
+            }
+        }
+        MiniASTF64::Stack(items) => {
+            for child in items {
+                assign_seeds_f64(child, counter);
+            }
+        }
+        MiniASTF64::RandomChoice(items, seed) => {
+            *seed = *counter;
+            *counter += 1;
+            for child in items {
+                assign_seeds_f64(child, counter);
+            }
+        }
+        MiniASTF64::Fast(pattern, factor) | MiniASTF64::Slow(pattern, factor) => {
+            assign_seeds_f64(pattern, counter);
+            assign_seeds_f64(factor, counter);
+        }
+        MiniASTF64::Replicate(pattern, _) => {
+            assign_seeds_f64(pattern, counter);
+        }
+        MiniASTF64::Degrade(pattern, _, seed) => {
+            *seed = *counter;
+            *counter += 1;
+            assign_seeds_f64(pattern, counter);
+        }
+        MiniASTF64::Euclidean {
+            pattern,
+            pulses,
+            steps,
+            rotation,
+        } => {
+            assign_seeds_f64(pattern, counter);
+            assign_seeds_u32(pulses, counter);
+            assign_seeds_u32(steps, counter);
+            if let Some(rot) = rotation {
+                assign_seeds_i32(rot, counter);
+            }
+        }
+    }
+}
+
+/// Assign deterministic seeds to `RandomChoice`/`Degrade` nodes in a u32 AST.
+pub fn assign_seeds_u32(ast: &mut MiniASTU32, counter: &mut u64) {
+    match ast {
+        MiniASTU32::Pure(_) | MiniASTU32::Rest(_) => {}
+        MiniASTU32::List(located) => {
+            for child in &mut located.node {
+                assign_seeds_u32(child, counter);
+            }
+        }
+        MiniASTU32::Sequence(items) | MiniASTU32::FastCat(items) | MiniASTU32::SlowCat(items) => {
+            for (child, _) in items {
+                assign_seeds_u32(child, counter);
+            }
+        }
+        MiniASTU32::Stack(items) => {
+            for child in items {
+                assign_seeds_u32(child, counter);
+            }
+        }
+        MiniASTU32::RandomChoice(items, seed) => {
+            *seed = *counter;
+            *counter += 1;
+            for child in items {
+                assign_seeds_u32(child, counter);
+            }
+        }
+        MiniASTU32::Fast(pattern, factor) | MiniASTU32::Slow(pattern, factor) => {
+            assign_seeds_u32(pattern, counter);
+            assign_seeds_f64(factor, counter);
+        }
+        MiniASTU32::Replicate(pattern, _) => {
+            assign_seeds_u32(pattern, counter);
+        }
+        MiniASTU32::Degrade(pattern, _, seed) => {
+            *seed = *counter;
+            *counter += 1;
+            assign_seeds_u32(pattern, counter);
+        }
+        MiniASTU32::Euclidean {
+            pattern,
+            pulses,
+            steps,
+            rotation,
+        } => {
+            assign_seeds_u32(pattern, counter);
+            assign_seeds_u32(pulses, counter);
+            assign_seeds_u32(steps, counter);
+            if let Some(rot) = rotation {
+                assign_seeds_i32(rot, counter);
+            }
+        }
+    }
+}
+
+/// Assign deterministic seeds to `RandomChoice`/`Degrade` nodes in an i32 AST.
+pub fn assign_seeds_i32(ast: &mut MiniASTI32, counter: &mut u64) {
+    match ast {
+        MiniASTI32::Pure(_) | MiniASTI32::Rest(_) => {}
+        MiniASTI32::List(located) => {
+            for child in &mut located.node {
+                assign_seeds_i32(child, counter);
+            }
+        }
+        MiniASTI32::Sequence(items) | MiniASTI32::FastCat(items) | MiniASTI32::SlowCat(items) => {
+            for (child, _) in items {
+                assign_seeds_i32(child, counter);
+            }
+        }
+        MiniASTI32::Stack(items) => {
+            for child in items {
+                assign_seeds_i32(child, counter);
+            }
+        }
+        MiniASTI32::RandomChoice(items, seed) => {
+            *seed = *counter;
+            *counter += 1;
+            for child in items {
+                assign_seeds_i32(child, counter);
+            }
+        }
+        MiniASTI32::Fast(pattern, factor) | MiniASTI32::Slow(pattern, factor) => {
+            assign_seeds_i32(pattern, counter);
+            assign_seeds_f64(factor, counter);
+        }
+        MiniASTI32::Replicate(pattern, _) => {
+            assign_seeds_i32(pattern, counter);
+        }
+        MiniASTI32::Degrade(pattern, _, seed) => {
+            *seed = *counter;
+            *counter += 1;
+            assign_seeds_i32(pattern, counter);
+        }
+        MiniASTI32::Euclidean {
+            pattern,
+            pulses,
+            steps,
+            rotation,
+        } => {
+            assign_seeds_i32(pattern, counter);
+            assign_seeds_u32(pulses, counter);
+            assign_seeds_u32(steps, counter);
+            if let Some(rot) = rotation {
+                assign_seeds_i32(rot, counter);
             }
         }
     }

@@ -208,6 +208,28 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
         result
     }
 
+    /// Remove all modifier spans from haps in this pattern.
+    /// Used before combining patterns so that inner modifier spans
+    /// (e.g. from euclidean sub-expressions) don't shift the positional
+    /// index that `extract_pattern_spans` relies on.
+    pub fn strip_modifier_spans(&self) -> Pattern<T> {
+        let query = self.query.clone();
+        let steps = self.steps.clone();
+        let mut result = Pattern::new(move |state| {
+            query(state)
+                .into_iter()
+                .map(|mut hap| {
+                    hap.context.modifier_spans.clear();
+                    hap
+                })
+                .collect()
+        });
+        if let Some(s) = steps {
+            result.steps = Some(s);
+        }
+        result
+    }
+
     // ===== Query Transformations =====
 
     /// Transform the query span before querying.

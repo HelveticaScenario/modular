@@ -53,7 +53,16 @@ pub fn parse(input: &str) -> Result<MiniAST, ParseError> {
         span: None,
     })?;
 
-    parse_program(program)
+    let mut ast = parse_program(program)?;
+
+    // Assign deterministic seeds to RandomChoice and Degrade nodes.
+    // The counter starts at 0 and increments depth-first (left-to-right
+    // in source order), so the same pattern string always gets the same
+    // seed assignments regardless of concurrent parses.
+    let mut seed_counter = 0u64;
+    super::ast::assign_seeds(&mut ast, &mut seed_counter);
+
+    Ok(ast)
 }
 
 fn parse_program(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseError> {
@@ -371,8 +380,7 @@ fn parse_slow_sub(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseErr
     // e.g., <a b, e f> becomes stack(slowcat(a, b), slowcat(e, f))
     match ast {
         MiniAST::Sequence(elements) => {
-            let patterns: Vec<MiniAST> = elements.into_iter().map(|(p, _)| p).collect();
-            Ok(MiniAST::SlowCat(patterns))
+            Ok(MiniAST::SlowCat(elements))
         }
         MiniAST::Stack(stack_elements) => {
             // Stack inside <>: apply slowcat to each stack element, then stack them
@@ -380,16 +388,14 @@ fn parse_slow_sub(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseErr
                 .into_iter()
                 .map(|elem| match elem {
                     MiniAST::Sequence(seq_elements) => {
-                        let patterns: Vec<MiniAST> =
-                            seq_elements.into_iter().map(|(p, _)| p).collect();
-                        MiniAST::SlowCat(patterns)
+                        MiniAST::SlowCat(seq_elements)
                     }
-                    other => MiniAST::SlowCat(vec![other]),
+                    other => MiniAST::SlowCat(vec![(other, None)]),
                 })
                 .collect();
             Ok(MiniAST::Stack(slowcat_elements))
         }
-        other => Ok(MiniAST::SlowCat(vec![other])),
+        other => Ok(MiniAST::SlowCat(vec![(other, None)])),
     }
 }
 
@@ -678,7 +684,7 @@ fn parse_atom_f64(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTF64, Parse
                 .into_inner()
                 .map(parse_choice_element_f64)
                 .collect::<Result<_, ParseError>>()?;
-            Ok(MiniASTF64::RandomChoice(values))
+            Ok(MiniASTF64::RandomChoice(values, 0))
         }
         Rule::value | Rule::number => {
             let n: f64 = inner.as_str().parse().unwrap_or(0.0);
@@ -752,7 +758,7 @@ fn apply_modifier_f64(
             } else {
                 None
             };
-            Ok(MiniASTF64::Degrade(Box::new(ast), prob))
+            Ok(MiniASTF64::Degrade(Box::new(ast), prob, 0))
         }
         Rule::euclidean => {
             let mut operands = inner.into_inner();
@@ -800,24 +806,21 @@ fn parse_slow_sub_f64(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTF64, P
     // Stack inside <>: each element slowcatted separately, then stacked
     match ast {
         MiniASTF64::Sequence(elements) => {
-            let patterns: Vec<MiniASTF64> = elements.into_iter().map(|(p, _)| p).collect();
-            Ok(MiniASTF64::SlowCat(patterns))
+            Ok(MiniASTF64::SlowCat(elements))
         }
         MiniASTF64::Stack(stack_elements) => {
             let slowcat_elements: Vec<MiniASTF64> = stack_elements
                 .into_iter()
                 .map(|elem| match elem {
                     MiniASTF64::Sequence(seq_elements) => {
-                        let patterns: Vec<MiniASTF64> =
-                            seq_elements.into_iter().map(|(p, _)| p).collect();
-                        MiniASTF64::SlowCat(patterns)
+                        MiniASTF64::SlowCat(seq_elements)
                     }
-                    other => MiniASTF64::SlowCat(vec![other]),
+                    other => MiniASTF64::SlowCat(vec![(other, None)]),
                 })
                 .collect();
             Ok(MiniASTF64::Stack(slowcat_elements))
         }
-        other => Ok(MiniASTF64::SlowCat(vec![other])),
+        other => Ok(MiniASTF64::SlowCat(vec![(other, None)])),
     }
 }
 
@@ -1106,7 +1109,7 @@ fn parse_atom_u32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTU32, Parse
                 .into_inner()
                 .map(parse_choice_element_u32)
                 .collect::<Result<_, ParseError>>()?;
-            Ok(MiniASTU32::RandomChoice(values))
+            Ok(MiniASTU32::RandomChoice(values, 0))
         }
         Rule::value | Rule::number => {
             let n: u32 = inner.as_str().parse().unwrap_or(0);
@@ -1180,7 +1183,7 @@ fn apply_modifier_u32(
             } else {
                 None
             };
-            Ok(MiniASTU32::Degrade(Box::new(ast), prob))
+            Ok(MiniASTU32::Degrade(Box::new(ast), prob, 0))
         }
         Rule::euclidean => {
             let mut operands = inner.into_inner();
@@ -1228,24 +1231,21 @@ fn parse_slow_sub_u32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTU32, P
     // Stack inside <>: each element slowcatted separately, then stacked
     match ast {
         MiniASTU32::Sequence(elements) => {
-            let patterns: Vec<MiniASTU32> = elements.into_iter().map(|(p, _)| p).collect();
-            Ok(MiniASTU32::SlowCat(patterns))
+            Ok(MiniASTU32::SlowCat(elements))
         }
         MiniASTU32::Stack(stack_elements) => {
             let slowcat_elements: Vec<MiniASTU32> = stack_elements
                 .into_iter()
                 .map(|elem| match elem {
                     MiniASTU32::Sequence(seq_elements) => {
-                        let patterns: Vec<MiniASTU32> =
-                            seq_elements.into_iter().map(|(p, _)| p).collect();
-                        MiniASTU32::SlowCat(patterns)
+                        MiniASTU32::SlowCat(seq_elements)
                     }
-                    other => MiniASTU32::SlowCat(vec![other]),
+                    other => MiniASTU32::SlowCat(vec![(other, None)]),
                 })
                 .collect();
             Ok(MiniASTU32::Stack(slowcat_elements))
         }
-        other => Ok(MiniASTU32::SlowCat(vec![other])),
+        other => Ok(MiniASTU32::SlowCat(vec![(other, None)])),
     }
 }
 
@@ -1534,7 +1534,7 @@ fn parse_atom_i32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTI32, Parse
                 .into_inner()
                 .map(parse_choice_element_i32)
                 .collect::<Result<_, ParseError>>()?;
-            Ok(MiniASTI32::RandomChoice(values))
+            Ok(MiniASTI32::RandomChoice(values, 0))
         }
         Rule::value | Rule::number => {
             let n: i32 = inner.as_str().parse().unwrap_or(0);
@@ -1608,7 +1608,7 @@ fn apply_modifier_i32(
             } else {
                 None
             };
-            Ok(MiniASTI32::Degrade(Box::new(ast), prob))
+            Ok(MiniASTI32::Degrade(Box::new(ast), prob, 0))
         }
         Rule::euclidean => {
             let mut operands = inner.into_inner();
@@ -1656,24 +1656,21 @@ fn parse_slow_sub_i32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTI32, P
     // Stack inside <>: each element slowcatted separately, then stacked
     match ast {
         MiniASTI32::Sequence(elements) => {
-            let patterns: Vec<MiniASTI32> = elements.into_iter().map(|(p, _)| p).collect();
-            Ok(MiniASTI32::SlowCat(patterns))
+            Ok(MiniASTI32::SlowCat(elements))
         }
         MiniASTI32::Stack(stack_elements) => {
             let slowcat_elements: Vec<MiniASTI32> = stack_elements
                 .into_iter()
                 .map(|elem| match elem {
                     MiniASTI32::Sequence(seq_elements) => {
-                        let patterns: Vec<MiniASTI32> =
-                            seq_elements.into_iter().map(|(p, _)| p).collect();
-                        MiniASTI32::SlowCat(patterns)
+                        MiniASTI32::SlowCat(seq_elements)
                     }
-                    other => MiniASTI32::SlowCat(vec![other]),
+                    other => MiniASTI32::SlowCat(vec![(other, None)]),
                 })
                 .collect();
             Ok(MiniASTI32::Stack(slowcat_elements))
         }
-        other => Ok(MiniASTI32::SlowCat(vec![other])),
+        other => Ok(MiniASTI32::SlowCat(vec![(other, None)])),
     }
 }
 
@@ -1711,7 +1708,7 @@ fn apply_modifier(
             } else {
                 None
             };
-            Ok(MiniAST::Degrade(Box::new(ast), prob))
+            Ok(MiniAST::Degrade(Box::new(ast), prob, 0))
         }
         Rule::euclidean => {
             let mut operands = inner.into_inner();
@@ -1843,7 +1840,7 @@ fn parse_atom(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseError> 
                 .into_inner()
                 .map(|p| parse_choice_element(p))
                 .collect::<Result<_, ParseError>>()?;
-            Ok(MiniAST::RandomChoice(values))
+            Ok(MiniAST::RandomChoice(values, 0))
         }
 
         Rule::value => {
@@ -2129,7 +2126,7 @@ mod tests {
                     letter, accidental, ..
                 },
                 ..
-            }) = &elements[0]
+            }) = &elements[0].0
             {
                 assert_eq!(*letter, 'a');
                 assert!(accidental.is_none(), "'a' should have no accidental");
@@ -2142,7 +2139,7 @@ mod tests {
                     letter, accidental, ..
                 },
                 ..
-            }) = &elements[1]
+            }) = &elements[1].0
             {
                 assert_eq!(*letter, 'b');
                 assert!(
@@ -2250,7 +2247,7 @@ mod tests {
                 );
 
                 // Second element of the slowcat should be another SlowCat
-                let second_elem = &slowcat_elems[1];
+                let (second_elem, _) = &slowcat_elems[1];
                 if let MiniAST::SlowCat(inner_slowcat) = second_elem {
                     assert_eq!(
                         inner_slowcat.len(),
@@ -2312,7 +2309,7 @@ mod tests {
         let result = parse("c4?");
         assert!(result.is_ok(), "c4? should parse: {:?}", result);
         let ast = result.unwrap();
-        assert!(matches!(ast, MiniAST::Degrade(_, None)));
+        assert!(matches!(ast, MiniAST::Degrade(_, None, _)));
     }
 
     #[test]
@@ -2320,7 +2317,7 @@ mod tests {
         let result = parse("c4?0.3");
         assert!(result.is_ok(), "c4?0.3 should parse: {:?}", result);
         let ast = result.unwrap();
-        if let MiniAST::Degrade(_, Some(prob)) = ast {
+        if let MiniAST::Degrade(_, Some(prob), _) = ast {
             assert!((prob - 0.3).abs() < 0.001, "Expected 0.3, got {}", prob);
         } else {
             panic!("Expected Degrade with Some probability, got {:?}", ast);
@@ -2335,7 +2332,7 @@ mod tests {
             assert_eq!(elements.len(), 4);
             // Third element should be Degrade
             let (third, _) = &elements[2];
-            assert!(matches!(third, MiniAST::Degrade(_, None)));
+            assert!(matches!(third, MiniAST::Degrade(_, None, _)));
         } else {
             panic!("Expected Sequence");
         }
@@ -2346,7 +2343,7 @@ mod tests {
         let result = parse("c4|~");
         assert!(result.is_ok(), "c4|~ should parse: {:?}", result);
         let ast = result.unwrap();
-        if let MiniAST::RandomChoice(choices) = ast {
+        if let MiniAST::RandomChoice(choices, _) = ast {
             assert_eq!(choices.len(), 2);
             assert!(matches!(&choices[0], MiniAST::Pure(_)));
             assert!(matches!(&choices[1], MiniAST::Rest(_)));
@@ -2360,7 +2357,7 @@ mod tests {
         let result = parse("~|c4");
         assert!(result.is_ok(), "~|c4 should parse: {:?}", result);
         let ast = result.unwrap();
-        if let MiniAST::RandomChoice(choices) = ast {
+        if let MiniAST::RandomChoice(choices, _) = ast {
             assert_eq!(choices.len(), 2);
             assert!(matches!(&choices[0], MiniAST::Rest(_)));
             assert!(matches!(&choices[1], MiniAST::Pure(_)));
@@ -2374,7 +2371,7 @@ mod tests {
         let result = parse("c4|~|d4|~");
         assert!(result.is_ok(), "c4|~|d4|~ should parse: {:?}", result);
         let ast = result.unwrap();
-        if let MiniAST::RandomChoice(choices) = ast {
+        if let MiniAST::RandomChoice(choices, _) = ast {
             assert_eq!(choices.len(), 4);
             assert!(matches!(&choices[0], MiniAST::Pure(_)));
             assert!(matches!(&choices[1], MiniAST::Rest(_)));
@@ -2393,7 +2390,7 @@ mod tests {
             assert_eq!(elements.len(), 4);
             // Third element should be RandomChoice with rest
             let (third, _) = &elements[2];
-            if let MiniAST::RandomChoice(choices) = third {
+            if let MiniAST::RandomChoice(choices, _) = third {
                 assert_eq!(choices.len(), 2);
                 assert!(matches!(&choices[1], MiniAST::Rest(_)));
             } else {
@@ -2435,7 +2432,7 @@ mod tests {
             // First element should be Degrade with weight 2
             let (first, weight) = &elements[0];
             assert!(
-                matches!(first, MiniAST::Degrade(_, _)),
+                matches!(first, MiniAST::Degrade(_, _, _)),
                 "First element should be Degrade"
             );
             assert_eq!(*weight, Some(2.0), "Weight should be 2");
@@ -2454,7 +2451,7 @@ mod tests {
             // First element should be Degrade with weight 2
             let (first, weight) = &elements[0];
             assert!(
-                matches!(first, MiniAST::Degrade(_, _)),
+                matches!(first, MiniAST::Degrade(_, _, _)),
                 "First element should be Degrade"
             );
             assert_eq!(*weight, Some(2.0), "Weight should be 2");
@@ -2567,7 +2564,7 @@ mod tests {
         // Degrade with probability: prob is now a plain f64
         let result = parse("c4?0.75");
         assert!(result.is_ok());
-        if let MiniAST::Degrade(_, Some(prob)) = result.unwrap() {
+        if let MiniAST::Degrade(_, Some(prob), _) = result.unwrap() {
             assert!((prob - 0.75).abs() < 0.001);
         } else {
             panic!("Expected Degrade with prob");
@@ -2806,7 +2803,7 @@ mod tests {
         assert!(result.is_ok());
         // This should parse as: Degrade(Replicate(Fast(c4, 2), 3), 0.5)
         let ast = result.unwrap();
-        if let MiniAST::Degrade(inner, prob) = ast {
+        if let MiniAST::Degrade(inner, prob, _) = ast {
             // Check prob is now f64
             assert!(prob.is_some());
             assert!((prob.unwrap() - 0.5).abs() < 0.001);
@@ -2846,7 +2843,7 @@ mod tests {
         let result = parse("[c4 e4 g4]?");
         assert!(result.is_ok(), "Failed to parse [c4 e4 g4]?: {:?}", result);
         let ast = result.unwrap();
-        if let MiniAST::Degrade(inner, prob) = ast {
+        if let MiniAST::Degrade(inner, prob, _) = ast {
             // Default prob is None (which means 0.5)
             assert!(prob.is_none());
             // Inner should be a FastCat (fastcat)
@@ -2866,7 +2863,7 @@ mod tests {
         let result = parse("<c4 e4 g4>?");
         assert!(result.is_ok(), "Failed to parse <c4 e4 g4>?: {:?}", result);
         let ast = result.unwrap();
-        if let MiniAST::Degrade(inner, prob) = ast {
+        if let MiniAST::Degrade(inner, prob, _) = ast {
             assert!(prob.is_none());
             assert!(
                 matches!(*inner, MiniAST::SlowCat(_)),

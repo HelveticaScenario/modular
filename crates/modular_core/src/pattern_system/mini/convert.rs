@@ -10,7 +10,7 @@ use crate::pattern_system::{
     combinators::{fastcat, slowcat, stack, timecat},
     constructors,
     constructors::pure_with_span,
-    random::choose,
+    random::choose_with_seed,
 };
 
 /// Trait for types that support rest values.
@@ -253,15 +253,15 @@ fn eval_f64(ast: &MiniASTF64) -> f64 {
             // Return first element or 0
             elements.first().map(|(e, _)| eval_f64(e)).unwrap_or(0.0)
         }
-        MiniASTF64::SlowCat(elements) => elements.first().map(eval_f64).unwrap_or(0.0),
-        MiniASTF64::RandomChoice(elements) | MiniASTF64::Stack(elements) => {
+        MiniASTF64::SlowCat(elements) => elements.first().map(|(e, _)| eval_f64(e)).unwrap_or(0.0),
+        MiniASTF64::RandomChoice(elements, _) | MiniASTF64::Stack(elements) => {
             // For deterministic evaluation, just take first
             elements.first().map(eval_f64).unwrap_or(0.0)
         }
         MiniASTF64::Fast(pattern, _) => eval_f64(pattern),
         MiniASTF64::Slow(pattern, _) => eval_f64(pattern),
         MiniASTF64::Replicate(pattern, _) => eval_f64(pattern),
-        MiniASTF64::Degrade(pattern, _) => eval_f64(pattern),
+        MiniASTF64::Degrade(pattern, _, _) => eval_f64(pattern),
         MiniASTF64::Euclidean { pattern, .. } => eval_f64(pattern),
     }
 }
@@ -317,23 +317,42 @@ fn convert_f64_pattern(ast: &MiniASTF64) -> Pattern<Fraction> {
 
         MiniASTF64::SlowCat(elements) => {
             // Expand Replicate nodes within SlowCat (see MiniAST::SlowCat for details)
-            let expanded: Vec<&MiniASTF64> = elements
+            let expanded: Vec<(&MiniASTF64, Option<f64>)> = elements
                 .iter()
-                .flat_map(|p| match p {
+                .flat_map(|(p, w)| match p {
                     MiniASTF64::Replicate(inner, count) => {
-                        std::iter::repeat_n(inner.as_ref(), *count as usize).collect::<Vec<_>>()
+                        std::iter::repeat_n((inner.as_ref(), None), *count as usize)
+                            .collect::<Vec<_>>()
                     }
-                    other => vec![other],
+                    other => vec![(other, *w)],
                 })
                 .collect();
-            let pats: Vec<Pattern<Fraction>> =
-                expanded.iter().map(|e| convert_f64_pattern(e)).collect();
-            slowcat(pats)
+
+            let has_weights = expanded.iter().any(|(_, w)| w.is_some());
+
+            if has_weights {
+                let total_weight: f64 = expanded
+                    .iter()
+                    .map(|(_, w)| w.unwrap_or(1.0))
+                    .sum();
+                let weighted: Vec<(Fraction, Pattern<Fraction>)> = expanded
+                    .iter()
+                    .map(|(e, w)| {
+                        let weight = w.unwrap_or(1.0);
+                        (Fraction::from(weight), convert_f64_pattern(e))
+                    })
+                    .collect();
+                timecat(weighted)._slow(Fraction::from(total_weight))
+            } else {
+                let pats: Vec<Pattern<Fraction>> =
+                    expanded.iter().map(|(e, _)| convert_f64_pattern(e)).collect();
+                slowcat(pats)
+            }
         }
 
-        MiniASTF64::RandomChoice(elements) => {
+        MiniASTF64::RandomChoice(elements, seed) => {
             let pats: Vec<Pattern<Fraction>> = elements.iter().map(convert_f64_pattern).collect();
-            choose(pats).bind(|p| p.clone())
+            choose_with_seed(pats, *seed).inner_join(|p| p.clone())
         }
 
         MiniASTF64::Stack(elements) => {
@@ -359,7 +378,7 @@ fn convert_f64_pattern(ast: &MiniASTF64) -> Pattern<Fraction> {
             fastcat(pats)
         }
 
-        MiniASTF64::Degrade(pattern, _prob) => {
+        MiniASTF64::Degrade(pattern, _prob, _seed) => {
             // For Fraction patterns, degrade doesn't make much sense
             // Just return the pattern without degrading
             convert_f64_pattern(pattern)
@@ -416,22 +435,42 @@ fn convert_u32_pattern(ast: &MiniASTU32) -> Pattern<u32> {
 
         MiniASTU32::SlowCat(elements) => {
             // Expand Replicate nodes within SlowCat (see MiniAST::SlowCat for details)
-            let expanded: Vec<&MiniASTU32> = elements
+            let expanded: Vec<(&MiniASTU32, Option<f64>)> = elements
                 .iter()
-                .flat_map(|p| match p {
+                .flat_map(|(p, w)| match p {
                     MiniASTU32::Replicate(inner, count) => {
-                        std::iter::repeat_n(inner.as_ref(), *count as usize).collect::<Vec<_>>()
+                        std::iter::repeat_n((inner.as_ref(), None), *count as usize)
+                            .collect::<Vec<_>>()
                     }
-                    other => vec![other],
+                    other => vec![(other, *w)],
                 })
                 .collect();
-            let pats: Vec<Pattern<u32>> = expanded.iter().map(|e| convert_u32_pattern(e)).collect();
-            slowcat(pats)
+
+            let has_weights = expanded.iter().any(|(_, w)| w.is_some());
+
+            if has_weights {
+                let total_weight: f64 = expanded
+                    .iter()
+                    .map(|(_, w)| w.unwrap_or(1.0))
+                    .sum();
+                let weighted: Vec<(Fraction, Pattern<u32>)> = expanded
+                    .iter()
+                    .map(|(e, w)| {
+                        let weight = w.unwrap_or(1.0);
+                        (Fraction::from(weight), convert_u32_pattern(e))
+                    })
+                    .collect();
+                timecat(weighted)._slow(Fraction::from(total_weight))
+            } else {
+                let pats: Vec<Pattern<u32>> =
+                    expanded.iter().map(|(e, _)| convert_u32_pattern(e)).collect();
+                slowcat(pats)
+            }
         }
 
-        MiniASTU32::RandomChoice(elements) => {
+        MiniASTU32::RandomChoice(elements, seed) => {
             let pats: Vec<Pattern<u32>> = elements.iter().map(convert_u32_pattern).collect();
-            choose(pats).bind(|p| p.clone())
+            choose_with_seed(pats, *seed).inner_join(|p| p.clone())
         }
 
         MiniASTU32::Stack(elements) => {
@@ -457,7 +496,7 @@ fn convert_u32_pattern(ast: &MiniASTU32) -> Pattern<u32> {
             fastcat(pats)
         }
 
-        MiniASTU32::Degrade(pattern, _prob) => {
+        MiniASTU32::Degrade(pattern, _prob, _seed) => {
             // For u32 patterns, degrade doesn't make much sense
             convert_u32_pattern(pattern)
         }
@@ -509,22 +548,42 @@ fn convert_i32_pattern(ast: &MiniASTI32) -> Pattern<i32> {
 
         MiniASTI32::SlowCat(elements) => {
             // Expand Replicate nodes within SlowCat (see MiniAST::SlowCat for details)
-            let expanded: Vec<&MiniASTI32> = elements
+            let expanded: Vec<(&MiniASTI32, Option<f64>)> = elements
                 .iter()
-                .flat_map(|p| match p {
+                .flat_map(|(p, w)| match p {
                     MiniASTI32::Replicate(inner, count) => {
-                        std::iter::repeat_n(inner.as_ref(), *count as usize).collect::<Vec<_>>()
+                        std::iter::repeat_n((inner.as_ref(), None), *count as usize)
+                            .collect::<Vec<_>>()
                     }
-                    other => vec![other],
+                    other => vec![(other, *w)],
                 })
                 .collect();
-            let pats: Vec<Pattern<i32>> = expanded.iter().map(|e| convert_i32_pattern(e)).collect();
-            slowcat(pats)
+
+            let has_weights = expanded.iter().any(|(_, w)| w.is_some());
+
+            if has_weights {
+                let total_weight: f64 = expanded
+                    .iter()
+                    .map(|(_, w)| w.unwrap_or(1.0))
+                    .sum();
+                let weighted: Vec<(Fraction, Pattern<i32>)> = expanded
+                    .iter()
+                    .map(|(e, w)| {
+                        let weight = w.unwrap_or(1.0);
+                        (Fraction::from(weight), convert_i32_pattern(e))
+                    })
+                    .collect();
+                timecat(weighted)._slow(Fraction::from(total_weight))
+            } else {
+                let pats: Vec<Pattern<i32>> =
+                    expanded.iter().map(|(e, _)| convert_i32_pattern(e)).collect();
+                slowcat(pats)
+            }
         }
 
-        MiniASTI32::RandomChoice(elements) => {
+        MiniASTI32::RandomChoice(elements, seed) => {
             let pats: Vec<Pattern<i32>> = elements.iter().map(convert_i32_pattern).collect();
-            choose(pats).bind(|p| p.clone())
+            choose_with_seed(pats, *seed).inner_join(|p| p.clone())
         }
 
         MiniASTI32::Stack(elements) => {
@@ -550,7 +609,7 @@ fn convert_i32_pattern(ast: &MiniASTI32) -> Pattern<i32> {
             fastcat(pats)
         }
 
-        MiniASTI32::Degrade(pattern, _prob) => convert_i32_pattern(pattern),
+        MiniASTI32::Degrade(pattern, _prob, _seed) => convert_i32_pattern(pattern),
 
         MiniASTI32::Euclidean { pattern, .. } => convert_i32_pattern(pattern),
     }
@@ -565,14 +624,14 @@ fn eval_u32(ast: &MiniASTU32) -> u32 {
         MiniASTU32::Sequence(elements) | MiniASTU32::FastCat(elements) => {
             elements.first().map(|(e, _)| eval_u32(e)).unwrap_or(0)
         }
-        MiniASTU32::SlowCat(elements) => elements.first().map(eval_u32).unwrap_or(0),
-        MiniASTU32::RandomChoice(elements) | MiniASTU32::Stack(elements) => {
+        MiniASTU32::SlowCat(elements) => elements.first().map(|(e, _)| eval_u32(e)).unwrap_or(0),
+        MiniASTU32::RandomChoice(elements, _) | MiniASTU32::Stack(elements) => {
             elements.first().map(eval_u32).unwrap_or(0)
         }
         MiniASTU32::Fast(pattern, _) => eval_u32(pattern),
         MiniASTU32::Slow(pattern, _) => eval_u32(pattern),
         MiniASTU32::Replicate(pattern, _count) => eval_u32(pattern),
-        MiniASTU32::Degrade(pattern, _) => eval_u32(pattern),
+        MiniASTU32::Degrade(pattern, _, _) => eval_u32(pattern),
         MiniASTU32::Euclidean { pattern, .. } => eval_u32(pattern),
     }
 }
@@ -586,14 +645,14 @@ fn eval_i32(ast: &MiniASTI32) -> i32 {
         MiniASTI32::Sequence(elements) | MiniASTI32::FastCat(elements) => {
             elements.first().map(|(e, _)| eval_i32(e)).unwrap_or(0)
         }
-        MiniASTI32::SlowCat(elements) => elements.first().map(eval_i32).unwrap_or(0),
-        MiniASTI32::RandomChoice(elements) | MiniASTI32::Stack(elements) => {
+        MiniASTI32::SlowCat(elements) => elements.first().map(|(e, _)| eval_i32(e)).unwrap_or(0),
+        MiniASTI32::RandomChoice(elements, _) | MiniASTI32::Stack(elements) => {
             elements.first().map(eval_i32).unwrap_or(0)
         }
         MiniASTI32::Fast(pattern, _) => eval_i32(pattern),
         MiniASTI32::Slow(pattern, _) => eval_i32(pattern),
         MiniASTI32::Replicate(pattern, _count) => eval_i32(pattern),
-        MiniASTI32::Degrade(pattern, _) => eval_i32(pattern),
+        MiniASTI32::Degrade(pattern, _, _) => eval_i32(pattern),
         MiniASTI32::Euclidean { pattern, .. } => eval_i32(pattern),
     }
 }
@@ -715,30 +774,53 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
             // Expand Replicate nodes within SlowCat.
             // In Strudel/Tidal, <a!3 b> means "slowcat of a, a, a, b" (each on separate cycles),
             // not "slowcat of fastcat(a,a,a), b" (which would be 3 a's in cycle 1, b in cycle 2).
-            let expanded: Vec<&MiniAST> = patterns
+            let expanded: Vec<(&MiniAST, Option<f64>)> = patterns
                 .iter()
-                .flat_map(|p| match p {
+                .flat_map(|(p, w)| match p {
                     MiniAST::Replicate(inner, count) => {
-                        // Expand the replicate into multiple references to the inner pattern
-                        std::iter::repeat_n(inner.as_ref(), *count as usize).collect::<Vec<_>>()
+                        // Replicated entries each get weight 1 (or None)
+                        std::iter::repeat_n((inner.as_ref(), None), *count as usize)
+                            .collect::<Vec<_>>()
                     }
-                    other => vec![other],
+                    other => vec![(other, *w)],
                 })
                 .collect();
-            let converted: Vec<Pattern<T>> = expanded
-                .iter()
-                .map(|p| convert_inner(p))
-                .collect::<Result<_, _>>()?;
-            Ok(slowcat(converted))
+
+            let has_weights = expanded.iter().any(|(_, w)| w.is_some());
+
+            if has_weights {
+                // Weighted slow: timecat(pairs).slow(total_weight)
+                // Each element with weight w occupies w cycles out of every total cycles.
+                let total_weight: f64 = expanded
+                    .iter()
+                    .map(|(_, w)| w.unwrap_or(1.0))
+                    .sum();
+                let weighted: Vec<(Fraction, Pattern<T>)> = expanded
+                    .iter()
+                    .map(|(p, w)| {
+                        let weight = w.unwrap_or(1.0);
+                        Ok((Fraction::from(weight), convert_inner(p)?))
+                    })
+                    .collect::<Result<_, ConvertError>>()?;
+                Ok(timecat(weighted)._slow(Fraction::from(total_weight)))
+            } else {
+                let converted: Vec<Pattern<T>> = expanded
+                    .iter()
+                    .map(|(p, _)| convert_inner(p))
+                    .collect::<Result<_, _>>()?;
+                Ok(slowcat(converted))
+            }
         }
 
-        MiniAST::RandomChoice(patterns) => {
+        MiniAST::RandomChoice(patterns, seed) => {
             let converted: Vec<Pattern<T>> = patterns
                 .iter()
                 .map(convert_inner)
                 .collect::<Result<_, _>>()?;
-            // Use choose for random selection
-            Ok(choose(converted).bind(|p| p.clone()))
+            // Use choose_with_seed for random selection — inner_join preserves the inner
+            // pattern's discrete timing (whole span), matching Strudel's
+            // chooseInWith(...).innerJoin() semantics.
+            Ok(choose_with_seed(converted, *seed).inner_join(|p| p.clone()))
         }
 
         MiniAST::Stack(patterns) => {
@@ -772,7 +854,7 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
             Ok(fastcat(pats))
         }
 
-        MiniAST::Degrade(pattern, prob) => {
+        MiniAST::Degrade(pattern, prob, seed) => {
             if !T::supports_rest() {
                 return Err(ConvertError::RestNotSupported("? (degrade)".to_string()));
             }
@@ -781,7 +863,7 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
             // Safe to unwrap because supports_rest() returned true
             let rest =
                 T::rest_value().expect("supports_rest() returned true but rest_value() is None");
-            Ok(pat.degrade_by_with_rest(probability, rest))
+            Ok(pat.degrade_by_with_rest_seeded(probability, rest, *seed))
         }
 
         MiniAST::Euclidean {
@@ -853,7 +935,7 @@ fn ast_to_string(ast: &MiniAST) -> String {
                 "<{}>",
                 patterns
                     .iter()
-                    .map(ast_to_string)
+                    .map(|(p, _)| ast_to_string(p))
                     .collect::<Vec<_>>()
                     .join(" ")
             )
@@ -1379,8 +1461,8 @@ mod tests {
     #[test]
     fn test_eval_f64_slowcat() {
         let ast = MiniASTF64::SlowCat(vec![
-            MiniASTF64::Pure(Located::new(5.0, 0, 1)),
-            MiniASTF64::Pure(Located::new(6.0, 2, 3)),
+            (MiniASTF64::Pure(Located::new(5.0, 0, 1)), None),
+            (MiniASTF64::Pure(Located::new(6.0, 2, 3)), None),
         ]);
         assert!((eval_f64(&ast) - 5.0).abs() < 0.001);
     }
@@ -1390,7 +1472,7 @@ mod tests {
         let ast = MiniASTF64::RandomChoice(vec![
             MiniASTF64::Pure(Located::new(7.0, 0, 1)),
             MiniASTF64::Pure(Located::new(8.0, 2, 3)),
-        ]);
+        ], 0);
         assert!((eval_f64(&ast) - 7.0).abs() < 0.001); // Deterministic: returns first
     }
 
@@ -1423,13 +1505,14 @@ mod tests {
         let ast = MiniASTF64::Degrade(
             Box::new(MiniASTF64::Pure(Located::new(12.0, 0, 2))),
             Some(0.5),
+            0,
         );
         assert!((eval_f64(&ast) - 12.0).abs() < 0.001);
     }
 
     #[test]
     fn test_eval_f64_degrade_no_prob() {
-        let ast = MiniASTF64::Degrade(Box::new(MiniASTF64::Pure(Located::new(13.0, 0, 2))), None);
+        let ast = MiniASTF64::Degrade(Box::new(MiniASTF64::Pure(Located::new(13.0, 0, 2))), None, 0);
         assert!((eval_f64(&ast) - 13.0).abs() < 0.001);
     }
 
@@ -1489,8 +1572,8 @@ mod tests {
     fn test_eval_f64_replicate_with_slowcat() {
         let ast = MiniASTF64::Replicate(
             Box::new(MiniASTF64::SlowCat(vec![
-                MiniASTF64::Pure(Located::new(24.0, 0, 2)),
-                MiniASTF64::Pure(Located::new(25.0, 3, 5)),
+                (MiniASTF64::Pure(Located::new(24.0, 0, 2)), None),
+                (MiniASTF64::Pure(Located::new(25.0, 3, 5)), None),
             ])),
             3,
         );
@@ -1503,8 +1586,9 @@ mod tests {
             Box::new(MiniASTF64::RandomChoice(vec![
                 MiniASTF64::Pure(Located::new(26.0, 0, 2)),
                 MiniASTF64::Pure(Located::new(27.0, 3, 5)),
-            ])),
+            ], 0)),
             Some(0.5),
+            0,
         );
         assert!((eval_f64(&ast) - 26.0).abs() < 0.001);
     }
@@ -1578,8 +1662,8 @@ mod tests {
     #[test]
     fn test_eval_u32_slowcat() {
         let ast = MiniASTU32::SlowCat(vec![
-            MiniASTU32::Pure(Located::new(5, 0, 1)),
-            MiniASTU32::Pure(Located::new(6, 2, 3)),
+            (MiniASTU32::Pure(Located::new(5, 0, 1)), None),
+            (MiniASTU32::Pure(Located::new(6, 2, 3)), None),
         ]);
         assert_eq!(eval_u32(&ast), 5);
     }
@@ -1589,7 +1673,7 @@ mod tests {
         let ast = MiniASTU32::RandomChoice(vec![
             MiniASTU32::Pure(Located::new(7, 0, 1)),
             MiniASTU32::Pure(Located::new(8, 2, 3)),
-        ]);
+        ], 0);
         assert_eq!(eval_u32(&ast), 7); // Deterministic: returns first
     }
 
@@ -1622,13 +1706,14 @@ mod tests {
         let ast = MiniASTU32::Degrade(
             Box::new(MiniASTU32::Pure(Located::new(12, 0, 2))),
             Some(0.5),
+            0,
         );
         assert_eq!(eval_u32(&ast), 12);
     }
 
     #[test]
     fn test_eval_u32_degrade_no_prob() {
-        let ast = MiniASTU32::Degrade(Box::new(MiniASTU32::Pure(Located::new(13, 0, 2))), None);
+        let ast = MiniASTU32::Degrade(Box::new(MiniASTU32::Pure(Located::new(13, 0, 2))), None, 0);
         assert_eq!(eval_u32(&ast), 13);
     }
 
@@ -1688,8 +1773,8 @@ mod tests {
     fn test_eval_u32_replicate_with_slowcat() {
         let ast = MiniASTU32::Replicate(
             Box::new(MiniASTU32::SlowCat(vec![
-                MiniASTU32::Pure(Located::new(24, 0, 2)),
-                MiniASTU32::Pure(Located::new(25, 3, 5)),
+                (MiniASTU32::Pure(Located::new(24, 0, 2)), None),
+                (MiniASTU32::Pure(Located::new(25, 3, 5)), None),
             ])),
             3,
         );
@@ -1702,8 +1787,9 @@ mod tests {
             Box::new(MiniASTU32::RandomChoice(vec![
                 MiniASTU32::Pure(Located::new(26, 0, 2)),
                 MiniASTU32::Pure(Located::new(27, 3, 5)),
-            ])),
+            ], 0)),
             Some(0.5),
+            0,
         );
         assert_eq!(eval_u32(&ast), 26);
     }
@@ -1745,8 +1831,8 @@ mod tests {
         // f64 pattern with complex u32 params
         let ast = MiniASTF64::Euclidean {
             pattern: Box::new(MiniASTF64::SlowCat(vec![
-                MiniASTF64::Pure(Located::new(100.0, 0, 3)),
-                MiniASTF64::Pure(Located::new(200.0, 4, 7)),
+                (MiniASTF64::Pure(Located::new(100.0, 0, 3)), None),
+                (MiniASTF64::Pure(Located::new(200.0, 4, 7)), None),
             ])),
             pulses: Box::new(MiniASTU32::Fast(
                 Box::new(MiniASTU32::Pure(Located::new(3, 8, 9))),
@@ -1755,10 +1841,11 @@ mod tests {
             steps: Box::new(MiniASTU32::RandomChoice(vec![
                 MiniASTU32::Pure(Located::new(8, 12, 13)),
                 MiniASTU32::Pure(Located::new(16, 14, 16)),
-            ])),
+            ], 0)),
             rotation: Some(Box::new(MiniASTI32::Degrade(
                 Box::new(MiniASTI32::Pure(Located::new(2, 17, 18))),
                 None,
+                0,
             ))),
         };
         assert!((eval_f64(&ast) - 100.0).abs() < 0.001);
@@ -2070,6 +2157,16 @@ mod tests {
                 Fraction::from_integer(cycle),
                 Fraction::from_integer(cycle + 1),
             );
+            assert!(!haps.is_empty(), "cycle {} should produce haps", cycle);
+            // Events from random choice must be discrete (have a whole span)
+            assert!(
+                haps[0].whole.is_some(),
+                "random choice hap should have whole span (discrete event)"
+            );
+            assert!(
+                haps[0].has_onset(),
+                "random choice hap should have onset"
+            );
             if let Some(val) = haps[0].value {
                 seen.insert(val as i32);
             }
@@ -2079,6 +2176,49 @@ mod tests {
         assert!(seen.contains(&1), "Should see value 1");
         assert!(seen.contains(&2), "Should see value 2");
         assert!(seen.contains(&3), "Should see value 3");
+    }
+
+    #[test]
+    fn test_random_choice_in_sequence_has_onsets() {
+        // "a b|c d" parses as a (b|c) d — all three positions should produce
+        // discrete events with onsets (previously b|c produced whole: None).
+        let ast = parse("1 2|3 4").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        for cycle in 0..20 {
+            let haps = pat.query_arc(
+                Fraction::from_integer(cycle),
+                Fraction::from_integer(cycle + 1),
+            );
+
+            // All haps should be discrete
+            for (i, hap) in haps.iter().enumerate() {
+                assert!(
+                    hap.whole.is_some(),
+                    "cycle {} hap {} should have whole span",
+                    cycle, i
+                );
+            }
+
+            // Should have 3 onset-bearing haps per cycle
+            let onsets: Vec<_> = haps.iter().filter(|h| h.has_onset()).collect();
+            assert_eq!(
+                onsets.len(),
+                3,
+                "cycle {}: expected 3 onsets, got {}",
+                cycle,
+                onsets.len()
+            );
+
+            // First and third should be 1.0 and 4.0; middle is 2.0 or 3.0
+            assert_eq!(onsets[0].value, Some(1.0));
+            assert!(
+                onsets[1].value == Some(2.0) || onsets[1].value == Some(3.0),
+                "middle value should be 2 or 3, got {:?}",
+                onsets[1].value
+            );
+            assert_eq!(onsets[2].value, Some(4.0));
+        }
     }
 
     #[test]
@@ -2372,5 +2512,64 @@ mod tests {
 
         assert_eq!(ones, 3, "Should have 3 hits of value 1.0");
         assert_eq!(twos, 1, "Should have 1 hit of value 2.0");
+    }
+
+    #[test]
+    fn test_weighted_slowcat() {
+        // <[1 2 3]@3 [4 5 6 7]> should give:
+        //   cycles 0-2: values from [1 2 3] (one value per cycle)
+        //   cycle 3: values from [4 5 6 7] (all in one cycle)
+        // Period = 4 cycles
+        let ast = parse("<[1 2 3]@3 [4 5 6 7]>").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        // Cycle 0: should produce value 1
+        let haps = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+        assert_eq!(haps.len(), 1, "Cycle 0 should have 1 event");
+        assert_eq!(haps[0].value, Some(1.0), "Cycle 0 should be 1");
+
+        // Cycle 1: should produce value 2
+        let haps = pat.query_arc(Fraction::from_integer(1), Fraction::from_integer(2));
+        assert_eq!(haps.len(), 1, "Cycle 1 should have 1 event");
+        assert_eq!(haps[0].value, Some(2.0), "Cycle 1 should be 2");
+
+        // Cycle 2: should produce value 3
+        let haps = pat.query_arc(Fraction::from_integer(2), Fraction::from_integer(3));
+        assert_eq!(haps.len(), 1, "Cycle 2 should have 1 event");
+        assert_eq!(haps[0].value, Some(3.0), "Cycle 2 should be 3");
+
+        // Cycle 3: should produce values 4, 5, 6, 7
+        let haps = pat.query_arc(Fraction::from_integer(3), Fraction::from_integer(4));
+        assert_eq!(haps.len(), 4, "Cycle 3 should have 4 events");
+        let vals: Vec<Option<f64>> = haps.iter().map(|h| h.value).collect();
+        assert_eq!(
+            vals,
+            vec![Some(4.0), Some(5.0), Some(6.0), Some(7.0)],
+            "Cycle 3 should be [4, 5, 6, 7]"
+        );
+
+        // Cycle 4: should repeat — back to 1
+        let haps = pat.query_arc(Fraction::from_integer(4), Fraction::from_integer(5));
+        assert_eq!(haps.len(), 1, "Cycle 4 should repeat cycle 0");
+        assert_eq!(haps[0].value, Some(1.0), "Cycle 4 should be 1");
+    }
+
+    #[test]
+    fn test_unweighted_slowcat_unchanged() {
+        // <a b c> (no weights) should still be a standard slowcat:
+        // cycle 0 = a, cycle 1 = b, cycle 2 = c
+        let ast = parse("<1 2 3>").unwrap();
+        let pat: Pattern<Option<f64>> = convert(&ast).unwrap();
+
+        let h0 = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+        let h1 = pat.query_arc(Fraction::from_integer(1), Fraction::from_integer(2));
+        let h2 = pat.query_arc(Fraction::from_integer(2), Fraction::from_integer(3));
+
+        assert_eq!(h0.len(), 1);
+        assert_eq!(h0[0].value, Some(1.0));
+        assert_eq!(h1.len(), 1);
+        assert_eq!(h1[0].value, Some(2.0));
+        assert_eq!(h2.len(), 1);
+        assert_eq!(h2[0].value, Some(3.0));
     }
 }
