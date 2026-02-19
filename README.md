@@ -60,8 +60,8 @@ carrier.out();
 **With a UI Slider:**
 
 ```javascript
-const freq = $slider('Frequency', 440, 100, 2000);
-$sine(freq).out();
+const shape = $slider('Shape', 0, 0, 5);
+$saw('a3', { shape }).out();
 ```
 
 ## Project Structure
