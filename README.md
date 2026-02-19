@@ -40,20 +40,20 @@ This builds the native Rust audio module and launches the Electron app.
 **Simple Sine Wave:**
 
 ```javascript
-$sine($hz(440)).out();
+$sine('440hz').out();
 ```
 
 **Musical Note:**
 
 ```javascript
-$sine($note('A3')).out();
+$sine('a3').out();
 ```
 
 **FM Synthesis:**
 
 ```javascript
-const mod = $sine($hz(220));
-const carrier = $sine($hz(440)).phase(mod.gain(0.5));
+const mod = $sine('220hz');
+const carrier = $sine('440hz').phase(mod.gain(0.5));
 carrier.out();
 ```
 
