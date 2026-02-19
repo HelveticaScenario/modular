@@ -22,6 +22,7 @@ use crate::audio::{
   AudioState, CurrentAudioState, DeviceCacheSnapshot, HostDeviceInfo, HostInfo, InputBufferReader,
   InputBufferWriter, create_audio_channels, create_input_ring_buffer, find_input_device_in_host,
   find_output_device_in_host, get_host_by_preference, make_input_stream, make_stream,
+  preferred_default_sample_rate,
 };
 use crate::commands::GraphCommand;
 use crate::midi::MidiInputManager;
@@ -415,26 +416,40 @@ impl Synthesizer {
       napi::Error::from_reason(format!("Failed to get default output config: {}", err))
     })?;
 
-    // Determine sample rate (use requested if valid, else device default)
+    // Determine sample rate (use requested if valid, else a sensible default)
     let sample_rate = if let Some(requested_rate) = config.sample_rate {
       // Check if the requested rate is supported
       if let Some(device_info) = device_cache.find_output_device(&output_device_id) {
         if device_info.supported_sample_rates.contains(&requested_rate) {
           requested_rate
         } else {
+          let preferred = preferred_default_sample_rate(
+            output_config.sample_rate(),
+            &device_info.supported_sample_rates,
+          );
           fallback_warning = Some(format!(
-            "{}Requested sample rate {}Hz not supported, using default {}Hz. ",
+            "{}Requested sample rate {}Hz not supported, using {}Hz. ",
             fallback_warning.unwrap_or_default(),
             requested_rate,
-            output_config.sample_rate()
+            preferred,
           ));
-          output_config.sample_rate()
+          preferred
         }
       } else {
         output_config.sample_rate()
       }
     } else {
-      output_config.sample_rate()
+      // No sample rate in config (new user / empty config) — pick a
+      // sensible default: use the device's native rate but cap it so
+      // new users don't accidentally start at 96 kHz+.
+      if let Some(device_info) = device_cache.find_output_device(&output_device_id) {
+        preferred_default_sample_rate(
+          output_config.sample_rate(),
+          &device_info.supported_sample_rates,
+        )
+      } else {
+        output_config.sample_rate()
+      }
     };
 
     // Prepare input device info if available

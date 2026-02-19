@@ -203,16 +203,22 @@ export const AudioSettingsTab = forwardRef<
 
     // Update sample rate and buffer size when device selection changes
     useEffect(() => {
-        // Auto-select highest sample rate if not in available list
+        // Auto-select a sensible sample rate if the current one is not available.
+        // Prefer the output device's native/default rate (from cpal) so we
+        // match what the OS considers optimal for this device.
         if (
             selectedSampleRate === null ||
             !availableSampleRates.includes(selectedSampleRate)
         ) {
-            const highest =
-                availableSampleRates.length > 0
-                    ? Math.max(...availableSampleRates)
-                    : null;
-            setSelectedSampleRate(highest);
+            const deviceDefault = selectedOutputDevice?.sampleRate ?? null;
+            const preferred =
+                deviceDefault !== null &&
+                availableSampleRates.includes(deviceDefault)
+                    ? deviceDefault
+                    : availableSampleRates.length > 0
+                      ? availableSampleRates[availableSampleRates.length - 1]
+                      : null;
+            setSelectedSampleRate(preferred);
         }
 
         // Auto-select lowest buffer size if not in available list

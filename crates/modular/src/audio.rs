@@ -99,6 +99,33 @@ pub struct AudioDeviceInfo {
 /// Common sample rates to check for support
 const COMMON_SAMPLE_RATES: &[u32] = &[44100, 48000, 88200, 96000, 176400, 192000];
 
+/// Maximum sample rate to use as a default for new users / missing config.
+/// If the OS/device reports a default above this, we pick the highest
+/// supported rate at or below this cap instead.
+const PREFERRED_MAX_DEFAULT_SAMPLE_RATE: u32 = 48_000;
+
+/// Choose a sensible default sample rate for the given device.
+///
+/// Uses the device's cpal-reported default (`device_default`) when it is
+/// at or below `PREFERRED_MAX_DEFAULT_SAMPLE_RATE`.  When the device default
+/// is higher (common on macOS when Audio MIDI Setup is set to 96 kHz+),
+/// we pick the highest rate from `supported_rates` that is still ≤ the cap.
+/// If no supported rate is ≤ the cap (very unlikely), we fall back to the
+/// device default so audio still works.
+pub fn preferred_default_sample_rate(device_default: u32, supported_rates: &[u32]) -> u32 {
+  if device_default <= PREFERRED_MAX_DEFAULT_SAMPLE_RATE {
+    return device_default;
+  }
+
+  // Device default is too high — pick the best rate at or below the cap.
+  supported_rates
+    .iter()
+    .copied()
+    .filter(|&r| r <= PREFERRED_MAX_DEFAULT_SAMPLE_RATE)
+    .max()
+    .unwrap_or(device_default)
+}
+
 // ============================================================================
 // Device Cache
 // ============================================================================
