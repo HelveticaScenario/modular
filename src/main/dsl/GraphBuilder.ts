@@ -297,8 +297,8 @@ export class GraphBuilder {
     private deferredOutputs: Map<string, DeferredModuleOutput> = new Map();
     /** Global tempo signal for ROOT_CLOCK (default: bpm(120) = hz(2)) */
     private tempo: Signal = bpm(120); // hz(2) = bpm(120), using constant to avoid circular dep
-    /** Global output gain signal (default: 0.5) */
-    private outputGain: Signal = 0.5;
+    /** Global output gain signal (default: 2.5) */
+    private outputGain: Signal = 2.5;
     /** Global run signal for ROOT_CLOCK (default: 5 = running) */
     private clockRun: Signal | undefined;
     /** Global reset signal for ROOT_CLOCK (default: 0 = no reset) */
