@@ -1,15 +1,15 @@
 # Modular Synthesizer
 
-A real-time modular synthesizer with a JavaScript DSL for live-coding audio patches.
+A real-time modular synthesizer desktop app with a JavaScript DSL for live-coding audio patches, built with Electron and a Rust DSP engine.
 
 ## Features
 
-- **JavaScript DSL** - Expressive, fluent API for building synthesis patches
-- **Real-time Audio** - Low-latency audio processing in Rust
+- **JavaScript DSL** - Expressive, fluent API with `$`-prefixed functions for building synthesis patches
+- **Real-time Audio** - Low-latency audio processing in Rust via N-API, running directly in-process
 - **Live Coding** - Update patches on-the-fly with Alt+Enter
-- **WebSocket Streaming** - Real-time audio streaming to browser
-- **Visual Feedback** - Built-in oscilloscope for waveform visualization
-- **Module Library** - Oscillators, filters, utilities, and more
+- **Monaco Editor** - Full-featured code editor with autocomplete, inline error highlighting, and oscilloscope overlays
+- **UI Sliders** - Bind real-time UI sliders to signal parameters with `$slider()`
+- **Module Library** - Oscillators, filters, effects, sequencers, envelopes, and more
 
 ## Quick Start
 
@@ -19,28 +19,18 @@ A real-time modular synthesizer with a JavaScript DSL for live-coding audio patc
 - Node.js 24.12+
 - Yarn (latest)
 
-### Running the Server
+### Running the App
 
 ```bash
-cd modular_server
-cargo run
-```
-
-The server will start on `http://localhost:3000`
-
-### Running the Frontend
-
-```bash
-cd modular_web
 yarn install
-yarn dev
+yarn start
 ```
 
-The frontend will be available at `http://localhost:5173`
+This builds the native Rust audio module and launches the Electron app.
 
 ## Usage
 
-1. Open the web interface
+1. Launch the app with `yarn start`
 2. Write a patch using the JavaScript DSL (see examples below)
 3. Press **Alt+Enter** to execute and hear the result
 4. Press **Alt+.** to stop audio
@@ -50,87 +40,99 @@ The frontend will be available at `http://localhost:5173`
 **Simple Sine Wave:**
 
 ```javascript
-const osc = sine('440hz');
-out.source(osc);
+$sine($hz(440)).out();
 ```
 
 **Musical Note:**
 
 ```javascript
-const osc = sine('a3');
-out.source(osc);
+$sine($note('A3')).out();
 ```
 
 **FM Synthesis:**
 
 ```javascript
-const modulator = sine('a3');
-const carrier = sine('a3').phase(modulator.scale(0.5));
-out.source(carrier);
+const mod = $sine($hz(220));
+const carrier = $sine($hz(440)).phase(mod.gain(0.5));
+carrier.out();
 ```
 
-## Documentation
+**With a UI Slider:**
 
-- [DSL Guide](docs/DSL_GUIDE.md) - Complete DSL reference and examples
-- [Migration Plan](docs/patch-dsl-migration-plan.md) - Technical migration details
+```javascript
+const freq = $slider('Frequency', 440, 100, 2000);
+$sine(freq).out();
+```
 
 ## Project Structure
 
 ```
 modular/
-├── modular_core/       # Core audio engine (Rust)
-├── modular_server/     # WebSocket server (Rust)
-├── modular_web/        # Web frontend (React + TypeScript)
-│   └── src/dsl/        # DSL runtime
-└── docs/               # Documentation
+├── crates/
+│   ├── modular_core/      # Core DSP engine (Rust)
+│   ├── modular/           # N-API bindings + audio thread (Rust)
+│   └── modular_derive/    # Proc macros for the module system (Rust)
+├── src/
+│   ├── main/              # Electron main process (TypeScript)
+│   │   └── dsl/           # DSL executor, factories, type generation
+│   ├── renderer/          # React renderer (TypeScript)
+│   ├── preload/           # Electron preload scripts
+│   └── shared/            # Shared types between main and renderer
+└── docs/                  # Documentation
 ```
 
 ## Architecture
 
-### Backend (Rust)
+### Rust DSP Engine
 
-- **modular_core** - Audio DSP engine with module system
-- **modular_server** - WebSocket server, patch validation, audio streaming
+- **modular_core** - Audio DSP engine: oscillators, filters, effects, sequencers, envelopes
+- **modular** - N-API bindings exposing the engine to Node.js; runs the audio callback via cpal; streams scope data back to the renderer
+- **modular_derive** - Proc macros for the module output system
 
-### Frontend (TypeScript/React)
+### Electron App (TypeScript/React)
 
-- **DSL Runtime** - Executes JavaScript patches, generates PatchGraph JSON
-- **Editor** - Monaco-based editor with autocomplete and oscilloscopes
-- **WebSocket Client** - Communicates with server
+- **DSL Runtime** - Executes JavaScript patches via `new Function(...)`, generates `PatchGraph` JSON
+- **Editor** - Monaco-based editor with autocomplete, inline error display, and waveform overlays
+- **IPC** - Patch graphs are sent from the renderer to the main process over Electron IPC, which forwards them to the Rust synthesizer
 
 ## Development
 
 ### Type Generation
 
-After modifying Rust types:
+After modifying Rust N-API types, regenerate the DSL type definitions:
 
 ```bash
-cd modular_web
-yarn run codegen
+yarn generate-lib
 ```
 
 ### Building
 
 ```bash
-# Backend
-cargo build
+# Build native Rust module only
+yarn build-native
 
-# Frontend
-cd modular_web
-yarn run build
+# Build and launch the full app
+yarn start
 ```
 
 ### Testing
 
 ```bash
-# Backend tests
-cargo test
+# Rust DSP unit tests
+yarn test:rust
 
-# Frontend tests
-cd modular_web
-yarn test
+# JavaScript unit/integration tests (Vitest)
+yarn test:unit
+
+# End-to-end tests (Playwright + Electron)
+yarn test:e2e
+
+# All tests
+yarn test:all
 ```
+
+See [TESTING.md](TESTING.md) for more details on the test infrastructure.
 
 ## License
 
-MIT
+AGPL-3.0
