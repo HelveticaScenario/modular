@@ -1494,13 +1494,21 @@ impl AudioProcessor {
 
   /// Collect states from modules that implement StatefulModule (e.g., Seq).
   /// Uses try_lock to avoid blocking the audio thread if the main thread is reading.
+  /// Reuses HashMap entries to avoid repeated String allocation on the audio thread.
   fn collect_module_states(&self) {
     // Use try_lock to avoid blocking audio if main thread is reading
     if let Some(mut states) = self.module_states.try_lock() {
-      states.clear();
+      // Remove entries for modules that no longer exist
+      states.retain(|id, _| self.patch.sampleables.contains_key(id));
+
+      // Update existing entries and add new ones
       for (id, module) in &self.patch.sampleables {
         if let Some(state) = module.get_state() {
-          states.insert(id.clone(), state);
+          if let Some(existing) = states.get_mut(id.as_str()) {
+            *existing = state;
+          } else {
+            states.insert(id.clone(), state);
+          }
         }
       }
     }
