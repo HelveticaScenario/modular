@@ -19,10 +19,10 @@ use napi_derive::napi;
 
 use crate::audio::{
   ApplyPatchError, AudioBudgetSnapshot, AudioDeviceCache, AudioDeviceInfo, AudioSharedState,
-  AudioState, CurrentAudioState, DeviceCacheSnapshot, HostDeviceInfo, HostInfo, InputBufferReader,
-  InputBufferWriter, create_audio_channels, create_input_ring_buffer, find_input_device_in_host,
-  find_output_device_in_host, get_host_by_preference, make_input_stream, make_stream,
-  preferred_default_sample_rate,
+  AudioState, CurrentAudioState, DeviceCacheSnapshot, GarbageProducer, HostDeviceInfo, HostInfo,
+  InputBufferReader, InputBufferWriter, create_audio_channels, create_input_ring_buffer,
+  find_input_device_in_host, find_output_device_in_host, get_host_by_preference,
+  make_input_stream, make_stream, preferred_default_sample_rate,
 };
 use crate::commands::GraphCommand;
 use crate::midi::MidiInputManager;
@@ -222,21 +222,22 @@ fn build_output_stream(
   sample_format: cpal::SampleFormat,
   command_rx: crate::audio::CommandConsumer,
   error_tx: crate::audio::ErrorProducer,
+  garbage_tx: GarbageProducer,
   shared: AudioSharedState,
   input_reader: InputBufferReader,
 ) -> Result<cpal::Stream> {
   match sample_format {
     cpal::SampleFormat::I8 => {
-      make_stream::<i8>(device, config, command_rx, error_tx, shared, input_reader)
+      make_stream::<i8>(device, config, command_rx, error_tx, garbage_tx, shared, input_reader)
     }
     cpal::SampleFormat::I16 => {
-      make_stream::<i16>(device, config, command_rx, error_tx, shared, input_reader)
+      make_stream::<i16>(device, config, command_rx, error_tx, garbage_tx, shared, input_reader)
     }
     cpal::SampleFormat::I32 => {
-      make_stream::<i32>(device, config, command_rx, error_tx, shared, input_reader)
+      make_stream::<i32>(device, config, command_rx, error_tx, garbage_tx, shared, input_reader)
     }
     cpal::SampleFormat::F32 => {
-      make_stream::<f32>(device, config, command_rx, error_tx, shared, input_reader)
+      make_stream::<f32>(device, config, command_rx, error_tx, garbage_tx, shared, input_reader)
     }
     _ => Err(napi::Error::from_reason(format!(
       "Unsupported output sample format: {:?}",
@@ -304,13 +305,15 @@ fn setup_streams(params: StreamSetupParams) -> Result<StreamSetupResult> {
     buffer_size: stream_buffer_size,
   };
 
-  // Create command and error queues for audio thread communication
-  let (command_tx, command_rx, error_tx, error_rx) = create_audio_channels();
+  // Create command, error, and garbage queues for audio thread communication
+  let (command_tx, command_rx, error_tx, error_rx, garbage_tx, garbage_rx) =
+    create_audio_channels();
 
   // Create audio state handle (main thread side)
   let state = Arc::new(AudioState::new_with_channels(
     command_tx,
     error_rx,
+    garbage_rx,
     params.sample_rate as f32,
     channels,
     params.midi_manager.clone(),
@@ -336,6 +339,7 @@ fn setup_streams(params: StreamSetupParams) -> Result<StreamSetupResult> {
     params.output_config.sample_format(),
     command_rx,
     error_tx,
+    garbage_tx,
     shared,
     input_reader,
   )?;
@@ -545,6 +549,9 @@ impl Synthesizer {
     // Extract MIDI device names from MIDI modules and sync connections
     self.sync_midi_devices_from_patch(&patch);
 
+    // Drain deferred deallocations from the audio thread
+    self.state.drain_garbage();
+
     self.state.handle_set_patch(patch, self.sample_rate)
   }
 
@@ -629,6 +636,8 @@ impl Synthesizer {
 
   #[napi]
   pub fn get_health(&self) -> AudioBudgetSnapshot {
+    // Drain deferred deallocations from the audio thread (called periodically from JS)
+    self.state.drain_garbage();
     self.state.take_audio_thread_budget_snapshot_and_reset()
   }
 

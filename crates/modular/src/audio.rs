@@ -42,7 +42,8 @@ use modular_core::types::{ROOT_OUTPUT_PORT, ScopeItem};
 use std::time::Instant;
 
 use crate::commands::{
-  AudioError, COMMAND_QUEUE_CAPACITY, ERROR_QUEUE_CAPACITY, GraphCommand, PatchUpdate,
+  AudioError, COMMAND_QUEUE_CAPACITY, ERROR_QUEUE_CAPACITY, GARBAGE_QUEUE_CAPACITY, GarbageItem,
+  GraphCommand, PatchUpdate,
 };
 use crate::midi::MidiInputManager;
 
@@ -848,16 +849,24 @@ pub type ErrorProducer = RtrbProducer<AudioError>;
 /// Consumer end of the error queue (main thread ← audio thread)
 pub type ErrorConsumer = RtrbConsumer<AudioError>;
 
-/// Create the command and error queues for audio thread communication
+/// Producer end of the garbage queue (audio thread → main thread)
+pub type GarbageProducer = RtrbProducer<GarbageItem>;
+/// Consumer end of the garbage queue (main thread ← audio thread)
+pub type GarbageConsumer = RtrbConsumer<GarbageItem>;
+
+/// Create the command, error, and garbage queues for audio thread communication
 pub fn create_audio_channels() -> (
   CommandProducer,
   CommandConsumer,
   ErrorProducer,
   ErrorConsumer,
+  GarbageProducer,
+  GarbageConsumer,
 ) {
   let (cmd_prod, cmd_cons) = RingBuffer::new(COMMAND_QUEUE_CAPACITY);
   let (err_prod, err_cons) = RingBuffer::new(ERROR_QUEUE_CAPACITY);
-  (cmd_prod, cmd_cons, err_prod, err_cons)
+  let (garbage_prod, garbage_cons) = RingBuffer::new(GARBAGE_QUEUE_CAPACITY);
+  (cmd_prod, cmd_cons, err_prod, err_cons, garbage_prod, garbage_cons)
 }
 
 // ============================================================================
@@ -870,6 +879,8 @@ pub struct AudioState {
   command_tx: Mutex<CommandProducer>,
   /// Error queue consumer (main thread ← audio thread)
   error_rx: Mutex<ErrorConsumer>,
+  /// Garbage queue consumer - drains deferred deallocations from audio thread
+  garbage_rx: Mutex<GarbageConsumer>,
   /// Stopped flag - shared with audio thread for quick reads
   stopped: Arc<AtomicBool>,
   /// Scope collection - shared with audio thread for UI reads
@@ -906,6 +917,7 @@ impl AudioState {
   pub fn new_with_channels(
     command_tx: CommandProducer,
     error_rx: ErrorConsumer,
+    garbage_rx: GarbageConsumer,
     sample_rate: f32,
     channels: u16,
     midi_manager: Arc<MidiInputManager>,
@@ -913,6 +925,7 @@ impl AudioState {
     Self {
       command_tx: Mutex::new(command_tx),
       error_rx: Mutex::new(error_rx),
+      garbage_rx: Mutex::new(garbage_rx),
       stopped: Arc::new(AtomicBool::new(true)),
       scope_collection: Arc::new(Mutex::new(HashMap::new())),
       recording_writer: Arc::new(Mutex::new(None)),
@@ -941,6 +954,15 @@ impl AudioState {
       errors.push(err);
     }
     errors
+  }
+
+  /// Drain deferred deallocations from the audio thread.
+  /// Items are simply dropped on the main thread where allocation/deallocation is safe.
+  pub fn drain_garbage(&self) {
+    let mut rx = self.garbage_rx.lock();
+    while let Ok(_item) = rx.pop() {
+      // Item is dropped here on the main thread - this is the whole point
+    }
   }
 
   pub fn take_audio_thread_budget_snapshot_and_reset(&self) -> AudioBudgetSnapshot {
@@ -1215,6 +1237,8 @@ struct AudioProcessor {
   command_rx: CommandConsumer,
   /// Error queue producer
   error_tx: ErrorProducer,
+  /// Garbage queue producer (audio thread → main thread)
+  garbage_tx: GarbageProducer,
   /// Shared stopped flag
   stopped: Arc<AtomicBool>,
   /// Shared scope collection
@@ -1226,11 +1250,17 @@ struct AudioProcessor {
 }
 
 impl AudioProcessor {
-  fn new(command_rx: CommandConsumer, error_tx: ErrorProducer, shared: AudioSharedState) -> Self {
+  fn new(
+    command_rx: CommandConsumer,
+    error_tx: ErrorProducer,
+    garbage_tx: GarbageProducer,
+    shared: AudioSharedState,
+  ) -> Self {
     Self {
       patch: Patch::new(),
       command_rx,
       error_tx,
+      garbage_tx,
       stopped: shared.stopped,
       scope_collection: shared.scope_collection,
       module_states: shared.module_states,
@@ -1286,7 +1316,19 @@ impl AudioProcessor {
           // Stop is handled via the stopped flag
         }
         GraphCommand::ClearPatch => {
-          self.patch.sampleables.clear();
+          // Defer deallocation of all non-reserved modules to main thread
+          let ids_to_remove: Vec<String> = self
+            .patch
+            .sampleables
+            .keys()
+            .filter(|id| !is_reserved_module_id(id))
+            .cloned()
+            .collect();
+          for id in ids_to_remove {
+            if let Some(module) = self.patch.sampleables.remove(&id) {
+              let _ = self.garbage_tx.push(GarbageItem::Module(module));
+            }
+          }
           self.patch.insert_audio_in();
           self.patch.rebuild_message_listeners();
         }
@@ -1329,12 +1371,23 @@ impl AudioProcessor {
     }
 
     // Remove modules that are no longer in the desired graph.
-    // This handles the case where a module was removed from the patch — without this,
-    // stale modules would keep running on the audio thread and reporting state.
-    self
+    // Stale modules are sent to the garbage queue for deallocation on the main thread,
+    // avoiding Drop running in the audio callback.
+    let stale_ids: Vec<String> = self
       .patch
       .sampleables
-      .retain(|id, _| is_reserved_module_id(id) || desired_ids.contains(id));
+      .keys()
+      .filter(|id| !is_reserved_module_id(id) && !desired_ids.contains(*id))
+      .cloned()
+      .collect();
+    for id in stale_ids {
+      if let Some(module) = self.patch.sampleables.remove(&id) {
+        if self.garbage_tx.push(GarbageItem::Module(module)).is_err() {
+          // Garbage queue full - log but don't block audio thread.
+          // Module will be dropped here as fallback (not ideal but safe).
+        }
+      }
+    }
 
     // Update params for all modules
     for (id, params, channel_count) in &update.param_updates {
@@ -1476,6 +1529,7 @@ pub fn make_stream<T>(
   config: &cpal::StreamConfig,
   command_rx: CommandConsumer,
   error_tx: ErrorProducer,
+  garbage_tx: GarbageProducer,
   shared: AudioSharedState,
   mut input_reader: InputBufferReader,
 ) -> Result<cpal::Stream>
@@ -1494,7 +1548,7 @@ where
   let audio_budget_meter = shared.audio_budget_meter.clone();
 
   // Create the audio processor that owns the patch
-  let mut audio_processor = AudioProcessor::new(command_rx, error_tx, shared);
+  let mut audio_processor = AudioProcessor::new(command_rx, error_tx, garbage_tx, shared);
 
   let mut final_state_processor = FinalStateProcessor::new(num_channels);
 
@@ -1861,7 +1915,7 @@ mod tests {
   #[test]
   fn test_audio_processor_owns_patch() {
     // Verify AudioProcessor can be created and owns patch exclusively
-    let (cmd_producer, cmd_consumer, err_producer, _err_consumer) = create_audio_channels();
+    let (cmd_producer, cmd_consumer, err_producer, _err_consumer, garbage_producer, _garbage_consumer) = create_audio_channels();
 
     // Drop the command producer since we won't use it in this test
     drop(cmd_producer);
@@ -1875,7 +1929,7 @@ mod tests {
       midi_manager: Arc::new(MidiInputManager::new()),
     };
 
-    let processor = AudioProcessor::new(cmd_consumer, err_producer, shared);
+    let processor = AudioProcessor::new(cmd_consumer, err_producer, garbage_producer, shared);
 
     // Processor starts with empty patch (may have hidden audio_in)
     assert!(processor.patch.sampleables.is_empty() || processor.patch.sampleables.len() == 1);

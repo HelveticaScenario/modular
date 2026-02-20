@@ -3,7 +3,9 @@
 //! This module defines the commands sent from the main thread to the audio thread,
 //! and the errors reported back from the audio thread.
 
-use modular_core::types::{Message, ModuleIdRemap, Scope, ScopeItem};
+use std::sync::Arc;
+
+use modular_core::types::{Message, ModuleIdRemap, Sampleable, Scope, ScopeItem};
 use serde_json::Value;
 
 /// A single atomic patch update - always processed as a complete unit.
@@ -127,3 +129,16 @@ pub const COMMAND_QUEUE_CAPACITY: usize = 1024;
 
 /// Capacity for the error queue (audio → main)
 pub const ERROR_QUEUE_CAPACITY: usize = 256;
+
+/// Items to be deallocated on the main thread instead of the audio thread.
+/// The audio thread pushes removed modules here; the main thread drains and drops them.
+/// Fields are intentionally never read — the value of this type is in its `Drop`.
+#[allow(dead_code)]
+pub enum GarbageItem {
+  /// A module removed from the patch
+  Module(Arc<Box<dyn Sampleable>>),
+}
+
+/// Capacity for the garbage queue (audio → main).
+/// Generous to avoid blocking the audio thread if main thread is slow to drain.
+pub const GARBAGE_QUEUE_CAPACITY: usize = 4096;
