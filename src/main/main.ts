@@ -1500,29 +1500,17 @@ const createMenu = (): void => {
                     },
                 },
                 { type: 'separator' as const },
-                {
-                    label: 'Toggle Recording',
-                    accelerator: 'Ctrl+R',
-                    click: (_item, focusedWindow) => {
-                        if (focusedWindow) {
-                            BrowserWindow.fromId(
-                                focusedWindow.id,
-                            )?.webContents.send(MENU_CHANNELS.TOGGLE_RECORDING);
-                        }
-                    },
-                },
-                { type: 'separator' as const },
-                {
-                    label: 'Audio Settings...',
-                    accelerator: isMac ? undefined : 'CmdOrCtrl+,',
-                    click: (_item, focusedWindow) => {
-                        if (focusedWindow) {
-                            BrowserWindow.fromId(
-                                focusedWindow.id,
-                            )?.webContents.send(MENU_CHANNELS.OPEN_SETTINGS);
-                        }
-                    },
-                },
+                // {
+                //     label: 'Toggle Recording',
+                //     accelerator: 'Ctrl+R',
+                //     click: (_item, focusedWindow) => {
+                //         if (focusedWindow) {
+                //             BrowserWindow.fromId(
+                //                 focusedWindow.id,
+                //             )?.webContents.send(MENU_CHANNELS.TOGGLE_RECORDING);
+                //         }
+                //     },
+                // },
             ],
         },
         // Window menu
