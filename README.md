@@ -19,6 +19,8 @@ A real-time modular synthesizer desktop app with a JavaScript DSL for live-codin
 - Node.js 24.12+
 - Yarn (latest)
 
+> **Note:** This project uses [Volta](https://volta.sh/) to manage the Node.js version. If you have Volta installed, it will automatically use the correct version pinned in `package.json`.
+
 ### Running the App
 
 ```bash
