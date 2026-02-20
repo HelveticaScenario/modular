@@ -6,6 +6,8 @@
 use std::sync::Arc;
 
 use modular_core::types::{Message, ModuleIdRemap, Sampleable, Scope, ScopeItem};
+
+use crate::audio::ScopeBuffer;
 use serde_json::Value;
 
 /// A single atomic patch update - always processed as a complete unit.
@@ -26,8 +28,8 @@ pub struct PatchUpdate {
   /// Param updates for existing modules (module_id, params_json, channel_count)
   pub param_updates: Vec<(String, Value, usize)>,
 
-  /// Scopes to add
-  pub scope_adds: Vec<Scope>,
+  /// Pre-built scope buffers to add (constructed on main thread)
+  pub scope_adds: Vec<(ScopeItem, ScopeBuffer)>,
 
   /// Scopes to remove
   pub scope_removes: Vec<ScopeItem>,
@@ -142,6 +144,8 @@ pub const ERROR_QUEUE_CAPACITY: usize = 256;
 pub enum GarbageItem {
   /// A module removed from the patch
   Module(Arc<Box<dyn Sampleable>>),
+  /// A scope buffer removed from the collection
+  Scope(ScopeBuffer),
 }
 
 /// Capacity for the garbage queue (audio → main).

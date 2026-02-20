@@ -1091,11 +1091,11 @@ impl AudioState {
         .cloned()
         .collect();
 
-      // Scopes to add
+      // Scopes to add (pre-build ScopeBuffers on main thread)
       update.scope_adds = desired_scope_items
         .difference(&current_scope_items)
         .filter_map(|item| desired_scopes.get(item))
-        .cloned()
+        .map(|scope| (scope.item.clone(), ScopeBuffer::new(scope, sample_rate)))
         .collect();
 
       // Scopes to update
@@ -1414,17 +1414,16 @@ impl AudioProcessor {
     {
       let mut scope_collection = self.scope_collection.lock();
 
-      // Remove scopes
+      // Remove scopes (defer deallocation to main thread)
       for scope_item in &update.scope_removes {
-        scope_collection.remove(scope_item);
+        if let Some(buffer) = scope_collection.remove(scope_item) {
+          let _ = self.garbage_tx.push(GarbageItem::Scope(buffer));
+        }
       }
 
-      // Add new scopes
-      for scope in &update.scope_adds {
-        scope_collection.insert(
-          scope.item.clone(),
-          ScopeBuffer::new(scope, update.sample_rate),
-        );
+      // Add new scopes (already constructed on main thread)
+      for (scope_item, buffer) in update.scope_adds {
+        scope_collection.insert(scope_item, buffer);
       }
 
       // Update existing scopes
