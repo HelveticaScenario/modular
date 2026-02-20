@@ -31,10 +31,7 @@ struct ClockDividerOutputs {
 /// // Pulses every other bar of the root clock:
 /// $clockDivider($rootClock.barTrigger, 2)
 /// ```
-#[module(
-    name = "$clockDivider",
-    args(input, division)
-)]
+#[module(name = "$clockDivider", args(input, division))]
 #[derive(Default)]
 pub struct ClockDivider {
     params: ClockDividerParams,

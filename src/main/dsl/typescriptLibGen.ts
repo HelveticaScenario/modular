@@ -370,6 +370,24 @@ interface ModuleOutput {
    * $saw('c').pipe(tremolo).out()
    */
   pipe<T>(pipeFn: (self: this) => T): T;
+
+  /**
+   * Pipe this output through a transform, then mix the original and transformed
+   * signals together using a \\$mix module.
+   *
+   * @param pipeFn - A function that receives this output and returns a signal to mix with the original
+   * @param mix - Optional crossfade as {@link Poly<Signal>}. 0 for only original, 5 for only transformed. Default is 2.5 for equal mix.
+   * @returns A Collection from the \\$mix output
+   *
+   * @example
+   * // Mix original with a filtered version
+   * $saw('c4').pipeMix(s => $lpf(s, '1000hz')).out()
+   *
+   * @example
+   * // Mix with custom balance
+   * $saw('c4').pipeMix(s => $lpf(s, '1000hz'), 1.0).out()
+   */
+  pipeMix(pipeFn: (self: this) => ModuleOutput | Collection, mix?: Poly<Signal> ): Collection;
 }
 
 /**
@@ -493,6 +511,24 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
    * $r($saw('220hz'), $saw('221hz')).pipe(tremolo).out()
    */
   pipe<T>(pipeFn: (self: this) => T): T;
+
+  /**
+   * Pipe this collection through a transform, then mix the original and transformed
+   * signals together using a \\$mix module.
+   *
+   * @param pipeFn - A function that receives this collection and returns a signal to mix with the original
+   * @param mix - Optional crossfade as {@link Poly<Signal>}. 0 for only original, 5 for only transformed. Default is 2.5 for equal mix.
+   * @returns A Collection from the \\$mix output
+   *
+   * @example
+   * // Mix collection with a filtered version
+   * $c(osc1, osc2).pipeMix(s => $lpf(s, '1000hz')).out()
+   *
+   * @example
+   * // Mix with different balance
+   * $c(osc1, osc2).pipeMix(s => $lpf(s, '1000hz'), 1).out()
+   */
+  pipeMix(pipeFn: (self: this) => ModuleOutput | Collection, mix?: Poly<Signal> ): Collection;
 }
 
 /**

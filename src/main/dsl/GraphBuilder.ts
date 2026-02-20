@@ -172,6 +172,36 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
         return pipelineFunc(this);
     }
 
+    pipeMix(
+        pipelineFunc: (
+            self: this,
+        ) => ModuleOutput | BaseCollection<ModuleOutput>,
+        mix: Value & PolySignal = 2.5,
+    ): Collection {
+        const clampFactory = this.items[0].builder.getFactory('$clamp');
+        if (!clampFactory) {
+            throw new Error('Factory for $clamp not registered');
+        }
+        const remapFactory = this.items[0].builder.getFactory('$remap');
+        if (!remapFactory) {
+            throw new Error('Factory for $remap not registered');
+        }
+        const mixFactory = this.items[0].builder.getFactory('$mix');
+        if (!mixFactory) {
+            throw new Error('Factory for $mix not registered');
+        }
+        const result = pipelineFunc(this);
+        // Remap mix from 0-5 to 5-0 for crossfade between original and transformed signals
+        return mixFactory([
+            this.gain(
+                clampFactory(remapFactory(mix, 0, 5, 5, 0), { min: 0, max: 5 }),
+            ),
+            result.gain(
+                clampFactory(mix, { min: 0, max: 5 }) as Value & PolySignal,
+            ),
+        ]) as Collection;
+    }
+
     toString(): string {
         return `[${this.items.map((item) => item.toString()).join(',')}]`;
     }
@@ -944,6 +974,20 @@ export class ModuleOutput {
 
     pipe<T>(pipelineFunc: (self: this) => T): T {
         return pipelineFunc(this);
+    }
+
+    pipeMix(
+        pipelineFunc: (
+            self: this,
+        ) => ModuleOutput | BaseCollection<ModuleOutput>,
+        options?: Record<string, unknown>,
+    ): Collection {
+        const mixFactory = this.builder.getFactory('$mix');
+        if (!mixFactory) {
+            throw new Error('Factory for $mix not registered');
+        }
+        const result = pipelineFunc(this);
+        return mixFactory([this, result], options) as Collection;
     }
 
     toString(): string {

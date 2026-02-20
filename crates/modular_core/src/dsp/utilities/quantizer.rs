@@ -9,13 +9,13 @@ use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::{
-    Patch, PolySignal,
-    dsp::utils::{GATE_HIGH_VOLTAGE, GATE_LOW_VOLTAGE, TempGate, TempGateState},
-    poly::{PORT_MAX_CHANNELS, PolyOutput},
+    dsp::utils::{TempGate, TempGateState, GATE_HIGH_VOLTAGE, GATE_LOW_VOLTAGE},
+    poly::{PolyOutput, PORT_MAX_CHANNELS},
     types::Connect,
+    Patch, PolySignal,
 };
 
-use super::scale::{FixedRoot, ScaleSnapper, validate_scale_type};
+use super::scale::{validate_scale_type, FixedRoot, ScaleSnapper};
 
 /// Hysteresis amount in V/Oct (~10 cents).
 /// Once a note is selected, the input must overshoot the snap boundary by this
@@ -453,7 +453,7 @@ mod tests {
         let snapper = scale.snapper().unwrap();
 
         let c4_voct = 0.0; // C4
-        // Sweep from C4 to ~C4 + 49 cents — all should snap to exactly C4
+                           // Sweep from C4 to ~C4 + 49 cents — all should snap to exactly C4
         for i in 0..50 {
             let input = c4_voct + (i as f64 * 0.01) / 12.0; // fractional semitone in V/Oct
             let snapped = snapper.snap_voct(input);

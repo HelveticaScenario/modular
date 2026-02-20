@@ -1,5 +1,5 @@
 use crate::dsp::utils::SchmittTrigger;
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
+use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -39,10 +39,7 @@ struct ChannelState {
 /// // short percussive hit
 /// $noise("white").mul($perc($rootClock.gate, { decay: 0.1 }))
 /// ```
-#[module(
-    name = "$perc",
-    args(trigger)
-)]
+#[module(name = "$perc", args(trigger))]
 #[derive(Default)]
 pub struct PercussionEnvelope {
     outputs: PercussionEnvelopeOutputs,

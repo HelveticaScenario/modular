@@ -1,7 +1,7 @@
 use crate::dsp::utils::{SchmittState, SchmittTrigger};
 use crate::{
-    PORT_MAX_CHANNELS,
     poly::{PolyOutput, PolySignal},
+    PORT_MAX_CHANNELS,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;

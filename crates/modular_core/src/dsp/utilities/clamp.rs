@@ -1,0 +1,71 @@
+use schemars::JsonSchema;
+use serde::Deserialize;
+
+use crate::poly::{PolyOutput, PolySignal};
+
+#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[serde(default, rename_all = "camelCase")]
+struct ClampParams {
+    /// signal to clamp
+    input: PolySignal,
+    /// lower bound — if omitted the signal is unclamped below
+    min: PolySignal,
+    /// upper bound — if omitted the signal is unclamped above
+    max: PolySignal,
+}
+
+#[derive(Outputs, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+struct ClampOutputs {
+    #[output("output", "clamped signal output", default)]
+    sample: PolyOutput,
+}
+
+/// Constrains a signal between a minimum and maximum value.
+///
+/// Bounds are independently optional — omit **min** or **max** to leave
+/// that side unclamped.
+///
+/// ```js
+/// // clamp a sine into the 0–5 V range
+/// $clamp($sine('440hz'), 0, 5)
+///
+/// // one-sided: floor at 0 V, no ceiling
+/// $clamp(signal, { min: 0 })
+/// ```
+#[module(name = "$clamp", args(input))]
+#[derive(Default)]
+pub struct Clamp {
+    outputs: ClampOutputs,
+    params: ClampParams,
+}
+
+impl Clamp {
+    fn update(&mut self, _sample_rate: f32) {
+        let channels = self.channel_count();
+        let has_min = !self.params.min.is_disconnected();
+        let has_max = !self.params.max.is_disconnected();
+
+        for i in 0..channels as usize {
+            let mut val = self.params.input.get_value(i);
+
+            if has_min {
+                let min_val = self.params.min.get_value(i);
+                if val < min_val {
+                    val = min_val;
+                }
+            }
+
+            if has_max {
+                let max_val = self.params.max.get_value(i);
+                if val > max_val {
+                    val = max_val;
+                }
+            }
+
+            self.outputs.sample.set(i, val);
+        }
+    }
+}
+
+message_handlers!(impl Clamp {});
