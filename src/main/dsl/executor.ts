@@ -88,6 +88,19 @@ export function executePatchScript(
     const $setClockReset = (reset: Signal) => {
         builder.setClockReset(reset);
     };
+    const $setTimeSignature = (numerator: number, denominator: number) => {
+        if (!Number.isInteger(numerator) || numerator < 1) {
+            throw new Error(
+                `$setTimeSignature: numerator must be a positive integer, got ${numerator}`,
+            );
+        }
+        if (!Number.isInteger(denominator) || denominator < 1) {
+            throw new Error(
+                `$setTimeSignature: denominator must be a positive integer, got ${denominator}`,
+            );
+        }
+        builder.setTimeSignature(numerator, denominator);
+    };
 
     /**
      * Create a DeferredCollection with placeholder signals that can be assigned later.
@@ -175,6 +188,7 @@ export function executePatchScript(
         $setOutputGain,
         $setClockRun,
         $setClockReset,
+        $setTimeSignature,
         // Built-in modules
         $rootClock: $rootClock,
         $input: rootInput,

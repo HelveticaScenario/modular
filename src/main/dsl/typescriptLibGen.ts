@@ -686,6 +686,19 @@ function $setClockRun(run: Mono<Signal>): void;
 function $setClockReset(reset: Mono<Signal>): void;
 
 /**
+ * Set the time signature for the root clock.
+ * Both values must be positive integers.
+ * @param numerator - Beats per bar (e.g. 3, 4, 6, 7)
+ * @param denominator - Beat value (e.g. 4 for quarter note, 8 for eighth note)
+ * @example $setTimeSignature(4, 4)  // 4/4 time (default)
+ * @example $setTimeSignature(3, 4)  // 3/4 waltz time
+ * @example $setTimeSignature(6, 8)  // 6/8 compound time
+ * @example $setTimeSignature(7, 8)  // 7/8 asymmetric time
+ * @example $setTimeSignature(5, 4)  // 5/4 time
+ */
+function $setTimeSignature(numerator: number, denominator: number): void;
+
+/**
  * Create a DeferredCollection with placeholder signals that can be assigned later.
  * Useful for feedback loops and forward references.
  * @param channels - Number of deferred outputs (1-16, default 1)

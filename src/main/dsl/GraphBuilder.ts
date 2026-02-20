@@ -333,6 +333,10 @@ export class GraphBuilder {
     private clockRun: Signal | undefined;
     /** Global reset signal for ROOT_CLOCK (default: 0 = no reset) */
     private clockReset: Signal | undefined;
+    /** Time signature numerator (beats per bar) for ROOT_CLOCK */
+    private timeSignatureNumerator: number | undefined;
+    /** Time signature denominator (beat value) for ROOT_CLOCK */
+    private timeSignatureDenominator: number | undefined;
 
     constructor(schemas: ModuleSchema[]) {
         this.schemas = processSchemas(schemas);
@@ -472,6 +476,16 @@ export class GraphBuilder {
     }
 
     /**
+     * Set the time signature for ROOT_CLOCK
+     * @param numerator - Beats per bar (positive integer)
+     * @param denominator - Beat value (positive integer)
+     */
+    setTimeSignature(numerator: number, denominator: number): void {
+        this.timeSignatureNumerator = numerator;
+        this.timeSignatureDenominator = denominator;
+    }
+
+    /**
      * Get a factory function by module type name.
      * Returns undefined if factories haven't been registered yet.
      */
@@ -596,6 +610,12 @@ export class GraphBuilder {
             if (this.clockReset !== undefined) {
                 rootClock.params.reset = this.clockReset;
             }
+            if (this.timeSignatureNumerator !== undefined) {
+                rootClock.params.numerator = this.timeSignatureNumerator;
+            }
+            if (this.timeSignatureDenominator !== undefined) {
+                rootClock.params.denominator = this.timeSignatureDenominator;
+            }
         }
 
         // Build a map of deferred output strings to their resolved output strings
@@ -671,6 +691,8 @@ export class GraphBuilder {
         this.outputGain = 2.5;
         this.clockRun = undefined;
         this.clockReset = undefined;
+        this.timeSignatureNumerator = undefined;
+        this.timeSignatureDenominator = undefined;
     }
 
     /**
