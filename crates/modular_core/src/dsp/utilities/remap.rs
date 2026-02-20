@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
+use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 use crate::types::Clickless;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
@@ -35,7 +35,7 @@ struct RemapOutputs {
 /// ```js
 /// // convert a 0–5 V envelope to a -5–5 V bipolar signal
 /// $remap(env, 0, 5, -5, 5)
-/// 
+///
 /// ```
 #[module(name = "$remap", args(input, inMin?, inMax?, outMin?, outMax?))]
 #[derive(Default)]

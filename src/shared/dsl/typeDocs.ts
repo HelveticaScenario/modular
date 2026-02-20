@@ -154,6 +154,15 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                     'Send this output to a single speaker channel as mono audio.',
                 example: 'lfo.outMono(2, 0.3)',
             },
+            {
+                name: 'pipeMix',
+                signature:
+                    'pipeMix(pipeFn: (self: this) => ModuleOutput | Collection, options?: { mode?: "sum" | "average" | "max" | "min"; gain?: Poly<Signal> }): Collection',
+                description:
+                    'Pipe this output through a transform, then mix the original and transformed signals together using a $mix module. ' +
+                    'The callback receives this output and returns a second signal; both are passed as inputs to $mix.',
+                example: "$saw('c4').pipeMix(s => $lpf(s, '1000hz')).out()",
+            },
         ],
     },
 
@@ -244,6 +253,15 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 description:
                     'Remap all outputs from input range to output range. Requires explicit input min/max.',
                 example: '$c(lfo1, lfo2).range(-5, 5, 0, 1)',
+            },
+            {
+                name: 'pipeMix',
+                signature:
+                    'pipeMix(pipeFn: (self: this) => ModuleOutput | Collection, options?: { mode?: "sum" | "average" | "max" | "min"; gain?: Poly<Signal> }): Collection',
+                description:
+                    'Pipe this collection through a transform, then mix the original and transformed signals together using a $mix module. ' +
+                    'The callback receives this collection and returns a second signal; both are passed as inputs to $mix.',
+                example: "$c(osc1, osc2).pipeMix(s => $lpf(s, '1000hz')).out()",
             },
         ],
     },
