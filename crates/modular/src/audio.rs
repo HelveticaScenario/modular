@@ -1330,6 +1330,7 @@ impl AudioProcessor {
   /// Apply a patch update command
   fn apply_patch_update(&mut self, update: PatchUpdate) {
     // Apply remaps first
+    let mut remapped_ids: Vec<String> = Vec::new();
     for remap in &update.remaps {
       // Skip reserved module IDs
       if is_reserved_module_id(&remap.from) || is_reserved_module_id(&remap.to) {
@@ -1342,15 +1343,21 @@ impl AudioProcessor {
         // Remove existing target if present
         self.patch.sampleables.remove(&remap.to);
         self.patch.sampleables.insert(remap.to.clone(), module);
+        // Track for incremental listener update
+        self.patch.remove_message_listeners_for_module(&remap.from);
+        remapped_ids.push(remap.to.clone());
       }
     }
 
     let desired_ids = &update.desired_ids;
 
     // Insert new modules (already Arc-wrapped on main thread)
+    let mut newly_inserted_ids: Vec<String> = Vec::new();
     for (id, module) in update.inserts {
-      // Check if module already exists - if so, skip (keep existing instance)
-      self.patch.sampleables.entry(id).or_insert(module);
+      if !self.patch.sampleables.contains_key(&id) {
+        newly_inserted_ids.push(id.clone());
+        self.patch.sampleables.insert(id, module);
+      }
     }
 
     // Remove modules that are no longer in the desired graph.
@@ -1365,6 +1372,7 @@ impl AudioProcessor {
       .collect();
     for id in stale_ids {
       if let Some(module) = self.patch.sampleables.remove(&id) {
+        self.patch.remove_message_listeners_for_module(&id);
         if self.garbage_tx.push(GarbageItem::Module(module)).is_err() {
           // Garbage queue full - log but don't block audio thread.
           // Module will be dropped here as fallback (not ideal but safe).
@@ -1384,8 +1392,13 @@ impl AudioProcessor {
       }
     }
 
-    // Rebuild message listeners after structural changes
-    self.patch.rebuild_message_listeners();
+    // Incrementally update message listeners for changed modules only.
+    // Stale entries were already removed above; now add entries for new and remapped modules.
+    for id in newly_inserted_ids.iter().chain(remapped_ids.iter()) {
+      if let Some(sampleable) = self.patch.sampleables.get(id).cloned() {
+        self.patch.add_message_listeners_for_module(id, &sampleable);
+      }
+    }
 
     // Connect all modules
     for module in self.patch.sampleables.values() {

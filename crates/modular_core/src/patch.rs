@@ -75,6 +75,30 @@ impl Patch {
         }
     }
 
+    /// Add message listener entries for a single module (incremental update).
+    pub fn add_message_listeners_for_module(
+        &mut self,
+        id: &str,
+        sampleable: &Arc<Box<dyn Sampleable>>,
+    ) {
+        for tag in sampleable.handled_message_tags() {
+            self.message_listeners
+                .entry(*tag)
+                .or_default()
+                .push(MessageListenerRef {
+                    id: id.to_string(),
+                    weak: Arc::downgrade(sampleable),
+                });
+        }
+    }
+
+    /// Remove all message listener entries for a given module id.
+    pub fn remove_message_listeners_for_module(&mut self, module_id: &str) {
+        for listeners in self.message_listeners.values_mut() {
+            listeners.retain(|r| r.id != module_id);
+        }
+    }
+
     /// Collect strong references to all modules currently in this patch that
     /// have registered to handle the given message tag.
     ///
