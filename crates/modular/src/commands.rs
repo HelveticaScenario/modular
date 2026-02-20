@@ -13,9 +13,12 @@ use serde_json::Value;
 /// This struct ensures the audio thread receives a complete, consistent batch of changes.
 /// The main thread computes the entire diff and sends it as one unit.
 pub struct PatchUpdate {
-  /// Modules to insert (pre-constructed on main thread).
-  /// The Box<dyn Sampleable> is Send so it can be transferred across thread boundary.
-  pub inserts: Vec<(String, Box<dyn modular_core::types::Sampleable>)>,
+  /// Modules to insert (pre-constructed and Arc-wrapped on main thread).
+  pub inserts: Vec<(String, Arc<Box<dyn modular_core::types::Sampleable>>)>,
+
+  /// Set of desired module IDs, pre-computed on the main thread.
+  /// Any existing module not in this set (and not reserved) is stale.
+  pub desired_ids: std::collections::HashSet<String>,
 
   /// ID remappings (applied before inserts/deletes)
   pub remaps: Vec<ModuleIdRemap>,
@@ -41,6 +44,7 @@ impl PatchUpdate {
   pub fn new(sample_rate: f32) -> Self {
     Self {
       inserts: Vec::new(),
+      desired_ids: std::collections::HashSet::new(),
       remaps: Vec::new(),
       param_updates: Vec::new(),
       scope_adds: Vec::new(),
@@ -53,6 +57,7 @@ impl PatchUpdate {
   /// Check if this update has any changes
   pub fn is_empty(&self) -> bool {
     self.inserts.is_empty()
+      && self.desired_ids.is_empty()
       && self.remaps.is_empty()
       && self.param_updates.is_empty()
       && self.scope_adds.is_empty()

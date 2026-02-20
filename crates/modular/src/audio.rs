@@ -1125,19 +1125,7 @@ impl AudioState {
       if let Some(constructor) = constructors.get(&module_state.module_type) {
         match constructor(id, sample_rate) {
           Ok(module) => {
-            // Extract the inner Box<dyn Sampleable> from the Arc
-            // This is safe because we just created it and hold the only reference
-            match Arc::try_unwrap(module) {
-              Ok(boxed) => {
-                update.inserts.push((id.clone(), boxed));
-              }
-              Err(_) => {
-                return Err(napi::Error::from_reason(format!(
-                  "Failed to unwrap Arc for module {}",
-                  id
-                )));
-              }
-            }
+            update.inserts.push((id.clone(), module));
           }
           Err(err) => {
             return Err(napi::Error::from_reason(format!(
@@ -1161,6 +1149,9 @@ impl AudioState {
         .param_updates
         .push((id.clone(), module_state.params.clone(), channel_count));
     }
+
+    // Pre-compute desired IDs on main thread to avoid HashSet allocation on audio thread
+    update.desired_ids = update.inserts.iter().map(|(id, _)| id.clone()).collect();
 
     // Send the update to audio thread
     self.send_command(GraphCommand::PatchUpdate(update))
@@ -1354,20 +1345,12 @@ impl AudioProcessor {
       }
     }
 
-    // Collect the set of desired module IDs from inserts before consuming them.
-    // apply_patch sends ALL desired modules as inserts, so any module not in this
-    // set (and not reserved) is stale and should be removed.
-    let desired_ids: std::collections::HashSet<String> =
-      update.inserts.iter().map(|(id, _)| id.clone()).collect();
+    let desired_ids = &update.desired_ids;
 
-    // Insert new modules - wrap Box in Arc
-    for (id, boxed_module) in update.inserts {
+    // Insert new modules (already Arc-wrapped on main thread)
+    for (id, module) in update.inserts {
       // Check if module already exists - if so, skip (keep existing instance)
-      self
-        .patch
-        .sampleables
-        .entry(id)
-        .or_insert_with(|| Arc::new(boxed_module));
+      self.patch.sampleables.entry(id).or_insert(module);
     }
 
     // Remove modules that are no longer in the desired graph.
