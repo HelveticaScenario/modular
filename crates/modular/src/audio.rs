@@ -866,7 +866,14 @@ pub fn create_audio_channels() -> (
   let (cmd_prod, cmd_cons) = RingBuffer::new(COMMAND_QUEUE_CAPACITY);
   let (err_prod, err_cons) = RingBuffer::new(ERROR_QUEUE_CAPACITY);
   let (garbage_prod, garbage_cons) = RingBuffer::new(GARBAGE_QUEUE_CAPACITY);
-  (cmd_prod, cmd_cons, err_prod, err_cons, garbage_prod, garbage_cons)
+  (
+    cmd_prod,
+    cmd_cons,
+    err_prod,
+    err_cons,
+    garbage_prod,
+    garbage_cons,
+  )
 }
 
 // ============================================================================
@@ -1331,7 +1338,7 @@ impl AudioProcessor {
   fn apply_patch_update(&mut self, update: PatchUpdate) {
     // Apply remaps first
     let mut remapped_ids: Vec<String> = Vec::new();
-    for remap in &update.remaps {
+    for remap in update.remaps {
       // Skip reserved module IDs
       if is_reserved_module_id(&remap.from) || is_reserved_module_id(&remap.to) {
         continue;
@@ -1342,10 +1349,9 @@ impl AudioProcessor {
       if let Some(module) = self.patch.sampleables.remove(&remap.from) {
         // Remove existing target if present
         self.patch.sampleables.remove(&remap.to);
-        self.patch.sampleables.insert(remap.to.clone(), module);
-        // Track for incremental listener update
         self.patch.remove_message_listeners_for_module(&remap.from);
-        remapped_ids.push(remap.to.clone());
+        self.patch.sampleables.insert(remap.to.clone(), module);
+        remapped_ids.push(remap.to);
       }
     }
 
@@ -1472,8 +1478,11 @@ impl AudioProcessor {
               && let Ok(poly) = module.get_poly_sample(port_name)
             {
               let num_channels = poly.channels();
-              let values: Vec<f32> = (0..num_channels).map(|ch| poly.get(ch)).collect();
-              scope_buffer.push_poly(&values, num_channels);
+              let mut values = [0.0f32; PORT_MAX_CHANNELS];
+              for ch in 0..num_channels {
+                values[ch] = poly.get(ch);
+              }
+              scope_buffer.push_poly(&values[..num_channels], num_channels);
             }
           }
         }
@@ -1638,13 +1647,15 @@ where
 {
   let err_fn = |err| eprintln!("Error building input sound stream: {err}");
 
+  let mut f32_buffer: Vec<f32> = Vec::new();
   let stream = device
     .build_input_stream(
       config,
       move |data: &[T], _info: &cpal::InputCallbackInfo| {
-        // Convert to f32 and write to ring buffer
-        let f32_data: Vec<f32> = data.iter().map(|&s| f32::from_sample(s)).collect();
-        input_writer.write(&f32_data);
+        // Convert to f32 and write to ring buffer (reuse allocation)
+        f32_buffer.clear();
+        f32_buffer.extend(data.iter().map(|&s| f32::from_sample(s)));
+        input_writer.write(&f32_buffer);
       },
       err_fn,
       None,
@@ -1918,7 +1929,14 @@ mod tests {
   #[test]
   fn test_audio_processor_owns_patch() {
     // Verify AudioProcessor can be created and owns patch exclusively
-    let (cmd_producer, cmd_consumer, err_producer, _err_consumer, garbage_producer, _garbage_consumer) = create_audio_channels();
+    let (
+      cmd_producer,
+      cmd_consumer,
+      err_producer,
+      _err_consumer,
+      garbage_producer,
+      _garbage_consumer,
+    ) = create_audio_channels();
 
     // Drop the command producer since we won't use it in this test
     drop(cmd_producer);
