@@ -1372,13 +1372,13 @@ impl AudioProcessor {
       }
     }
 
-    // Update params for all modules
-    for (id, params, channel_count) in &update.param_updates {
-      if let Some(module) = self.patch.sampleables.get(id)
-        && let Err(e) = module.try_update_params(params.clone(), *channel_count)
+    // Update params for all modules (consume by value to avoid cloning serde_json::Value)
+    for (id, params, channel_count) in update.param_updates {
+      if let Some(module) = self.patch.sampleables.get(&id)
+        && let Err(e) = module.try_update_params(params, channel_count)
       {
         let _ = self.error_tx.push(AudioError::ParamUpdateFailed {
-          module_id: id.clone(),
+          module_id: id,
           message: e.to_string(),
         });
       }
