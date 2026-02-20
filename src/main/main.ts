@@ -3,6 +3,7 @@ import {
     BrowserWindow,
     ipcMain,
     dialog,
+    globalShortcut,
     Menu,
     shell,
     MenuItem,
@@ -1557,6 +1558,20 @@ app.on('ready', () => {
 
     createWindow();
     createMenu();
+
+    // Dev-only: register a hotkey to restart the main process.
+    // Sends SIGUSR1 to the wrapper script, which injects `rs` into forge's stdin
+    // so the Vite dev server stays alive and only Electron restarts.
+    if (!app.isPackaged && process.env.DEV_WRAPPER_PID) {
+        globalShortcut.register('CommandOrControl+Shift+R', () => {
+            console.log('[dev] Restarting main process...');
+            process.kill(parseInt(process.env.DEV_WRAPPER_PID!), 'SIGUSR1');
+        });
+    }
+});
+
+app.on('will-quit', () => {
+    globalShortcut.unregisterAll();
 });
 
 // Quit when all windows are closed (on all platforms, including macOS)
