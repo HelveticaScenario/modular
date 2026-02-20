@@ -78,5 +78,9 @@
             "taplo format"
         ]
     },
-    "stableVersion": "1.0.0"
+    "stableVersion": "1.0.0",
+    "volta": {
+        "node": "24.12.0",
+        "yarn": "4.12.0"
+    }
 }

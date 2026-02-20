@@ -32,7 +32,29 @@ import { StrictMode } from 'react';
 import App from './App';
 import { HelpWindow } from './components/HelpWindow';
 import { ThemeProvider } from './themes/ThemeContext';
-import monaco from 'monaco-editor/esm/vs/editor/editor.main';
+
+// Configure Monaco Editor workers for Vite (replaces MonacoWebpackPlugin)
+import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
+import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
+import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
+import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
+
+(self as any).MonacoEnvironment = {
+    getWorker(_: string, label: string) {
+        if (label === 'typescript' || label === 'javascript') {
+            return new tsWorker();
+        }
+        if (label === 'json') {
+            return new jsonWorker();
+        }
+        if (label === 'css' || label === 'scss' || label === 'less') {
+            return new cssWorker();
+        }
+        return new editorWorker();
+    },
+};
+
+import * as monaco from 'monaco-editor';
 
 // Suppress Monaco Editor's harmless "Canceled" errors that occur during
 // normal operations like dismissing the "Go to Symbol" dialog with Escape.

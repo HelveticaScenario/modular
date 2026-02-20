@@ -6,14 +6,11 @@ import { MakerRpm } from '@electron-forge/maker-rpm';
 // import { MakerFlatpak } from '@electron-forge/maker-flatpak';
 import { PublisherGithub } from '@electron-forge/publisher-github';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
-import { WebpackPlugin } from '@electron-forge/plugin-webpack';
+import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import * as fs from 'fs';
 import * as path from 'path';
-
-import { mainConfig } from './webpack.main.config';
-import { rendererConfig } from './webpack.renderer.config';
 
 // if (process.env.APPLE_ID && process.env.APPLE_PASSWORD && process.env.APPLE_TEAM_ID) {
 
@@ -122,21 +119,26 @@ const config: ForgeConfig = {
     ],
     plugins: [
         new AutoUnpackNativesPlugin({}),
-        new WebpackPlugin({
-            mainConfig,
-            renderer: {
-                config: rendererConfig,
-                entryPoints: [
-                    {
-                        html: './src/renderer/index.html',
-                        js: './src/renderer/renderer.tsx',
-                        name: 'main_window',
-                        preload: {
-                            js: './src/preload/preload.ts',
-                        },
-                    },
-                ],
-            },
+        new VitePlugin({
+            // `build` can specify multiple entry points for the main process
+            build: [
+                {
+                    entry: 'src/main/main.ts',
+                    config: 'vite.main.config.ts',
+                    target: 'main',
+                },
+                {
+                    entry: 'src/preload/preload.ts',
+                    config: 'vite.preload.config.ts',
+                    target: 'preload',
+                },
+            ],
+            renderer: [
+                {
+                    name: 'main_window',
+                    config: 'vite.renderer.config.ts',
+                },
+            ],
         }),
         // Fuses are used to enable/disable various Electron functionality
         // at package time, before code signing the application

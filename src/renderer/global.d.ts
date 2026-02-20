@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 /**
  * Global type declarations for Electron IPC API
  */
