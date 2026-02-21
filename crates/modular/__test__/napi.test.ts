@@ -44,9 +44,9 @@ describe('getSchemas', () => {
         expect(sine!.outputs.length).toBeGreaterThan(0);
     });
 
-    test('schemas include $clock with expected positionalArgs', () => {
+    test('schemas include _clock with expected positionalArgs', () => {
         const schemas = getSchemas();
-        const clock = schemas.find((s) => s.name === '$clock');
+        const clock = schemas.find((s) => s.name === '_clock');
         expect(clock).toBeDefined();
         expect(clock!.positionalArgs).toBeDefined();
         expect(clock!.positionalArgs!.length).toBeGreaterThan(0);

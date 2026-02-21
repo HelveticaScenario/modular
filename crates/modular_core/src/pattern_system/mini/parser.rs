@@ -379,17 +379,13 @@ fn parse_slow_sub(pair: pest::iterators::Pair<Rule>) -> Result<MiniAST, ParseErr
     // then stacked together. This matches Strudel's polymeter_slowcat behavior.
     // e.g., <a b, e f> becomes stack(slowcat(a, b), slowcat(e, f))
     match ast {
-        MiniAST::Sequence(elements) => {
-            Ok(MiniAST::SlowCat(elements))
-        }
+        MiniAST::Sequence(elements) => Ok(MiniAST::SlowCat(elements)),
         MiniAST::Stack(stack_elements) => {
             // Stack inside <>: apply slowcat to each stack element, then stack them
             let slowcat_elements: Vec<MiniAST> = stack_elements
                 .into_iter()
                 .map(|elem| match elem {
-                    MiniAST::Sequence(seq_elements) => {
-                        MiniAST::SlowCat(seq_elements)
-                    }
+                    MiniAST::Sequence(seq_elements) => MiniAST::SlowCat(seq_elements),
                     other => MiniAST::SlowCat(vec![(other, None)]),
                 })
                 .collect();
@@ -805,16 +801,12 @@ fn parse_slow_sub_f64(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTF64, P
 
     // Stack inside <>: each element slowcatted separately, then stacked
     match ast {
-        MiniASTF64::Sequence(elements) => {
-            Ok(MiniASTF64::SlowCat(elements))
-        }
+        MiniASTF64::Sequence(elements) => Ok(MiniASTF64::SlowCat(elements)),
         MiniASTF64::Stack(stack_elements) => {
             let slowcat_elements: Vec<MiniASTF64> = stack_elements
                 .into_iter()
                 .map(|elem| match elem {
-                    MiniASTF64::Sequence(seq_elements) => {
-                        MiniASTF64::SlowCat(seq_elements)
-                    }
+                    MiniASTF64::Sequence(seq_elements) => MiniASTF64::SlowCat(seq_elements),
                     other => MiniASTF64::SlowCat(vec![(other, None)]),
                 })
                 .collect();
@@ -1230,16 +1222,12 @@ fn parse_slow_sub_u32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTU32, P
 
     // Stack inside <>: each element slowcatted separately, then stacked
     match ast {
-        MiniASTU32::Sequence(elements) => {
-            Ok(MiniASTU32::SlowCat(elements))
-        }
+        MiniASTU32::Sequence(elements) => Ok(MiniASTU32::SlowCat(elements)),
         MiniASTU32::Stack(stack_elements) => {
             let slowcat_elements: Vec<MiniASTU32> = stack_elements
                 .into_iter()
                 .map(|elem| match elem {
-                    MiniASTU32::Sequence(seq_elements) => {
-                        MiniASTU32::SlowCat(seq_elements)
-                    }
+                    MiniASTU32::Sequence(seq_elements) => MiniASTU32::SlowCat(seq_elements),
                     other => MiniASTU32::SlowCat(vec![(other, None)]),
                 })
                 .collect();
@@ -1655,16 +1643,12 @@ fn parse_slow_sub_i32(pair: pest::iterators::Pair<Rule>) -> Result<MiniASTI32, P
 
     // Stack inside <>: each element slowcatted separately, then stacked
     match ast {
-        MiniASTI32::Sequence(elements) => {
-            Ok(MiniASTI32::SlowCat(elements))
-        }
+        MiniASTI32::Sequence(elements) => Ok(MiniASTI32::SlowCat(elements)),
         MiniASTI32::Stack(stack_elements) => {
             let slowcat_elements: Vec<MiniASTI32> = stack_elements
                 .into_iter()
                 .map(|elem| match elem {
-                    MiniASTI32::Sequence(seq_elements) => {
-                        MiniASTI32::SlowCat(seq_elements)
-                    }
+                    MiniASTI32::Sequence(seq_elements) => MiniASTI32::SlowCat(seq_elements),
                     other => MiniASTI32::SlowCat(vec![(other, None)]),
                 })
                 .collect();

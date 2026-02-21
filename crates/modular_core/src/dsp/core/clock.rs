@@ -2,15 +2,14 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{
-    dsp::utils::{hz_to_voct, voct_to_hz_f64, SchmittTrigger},
-    poly::MonoSignal,
-    types::ClockMessages,
-    PolyOutput,
-};
+use crate::{PolyOutput, types::ClockMessages};
 
 fn default_four() -> u32 {
     4
+}
+
+fn default_tempo() -> f64 {
+    120.0
 }
 
 /// Deserialize a u32 that must be >= 1 (positive integer).
@@ -31,12 +30,9 @@ where
 #[derive(Deserialize, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct ClockParams {
-    /// Tempo control in V/Oct. Defaults to 120 BPM when unpatched.
-    tempo: MonoSignal,
-    /// Run gate. High runs the clock, low stops it. Defaults to high when unpatched.
-    run: MonoSignal,
-    /// Reset trigger. A rising edge restarts the bar.
-    reset: MonoSignal,
+    /// Tempo in BPM. Defaults to 120.
+    #[serde(default = "default_tempo")]
+    tempo: f64,
     /// Time signature numerator (beats per bar). Must be a positive integer. Defaults to 4.
     #[serde(
         default = "default_four",
@@ -54,9 +50,7 @@ struct ClockParams {
 impl Default for ClockParams {
     fn default() -> Self {
         Self {
-            tempo: MonoSignal::default(),
-            run: MonoSignal::default(),
-            reset: MonoSignal::default(),
+            tempo: 120.0,
             numerator: 4,
             denominator: 4,
         }
@@ -64,11 +58,10 @@ impl Default for ClockParams {
 }
 
 /// Tempo-synced transport clock for driving sequencers, envelopes, and synced modulation.
-#[module(name = "$clock", channels = 2, args(tempo?))]
+#[module(name = "_clock", channels = 2, args(tempo?))]
 pub struct Clock {
     outputs: ClockOutputs,
     phase: f64,
-    freq: f32,
     ppq_phase: f64,
     beat_phase: f64,
     last_bar_trigger: bool,
@@ -77,8 +70,6 @@ pub struct Clock {
     running: bool,
     params: ClockParams,
     loop_index: u64,
-    run_trigger: SchmittTrigger,
-    reset_trigger: SchmittTrigger,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -98,6 +89,8 @@ struct ClockOutputs {
     ramp: f32,
     #[output("ppqTrigger", "5V trigger at 48 pulses per quarter note", range = (0.0, 5.0))]
     ppq_trigger: f32,
+    #[output("beatInBar", "Current beat within the bar (0-indexed)")]
+    beat_in_bar: f32,
 }
 
 impl Default for Clock {
@@ -105,7 +98,6 @@ impl Default for Clock {
         Self {
             outputs: ClockOutputs::default(),
             phase: 0.0,
-            freq: 0.0,
             ppq_phase: 0.0,
             beat_phase: 0.0,
             last_bar_trigger: false,
@@ -114,8 +106,6 @@ impl Default for Clock {
             running: true,
             params: ClockParams::default(),
             loop_index: 0,
-            run_trigger: SchmittTrigger::default(),
-            reset_trigger: SchmittTrigger::default(),
             _channel_count: 0,
         }
     }
@@ -125,44 +115,15 @@ message_handlers!(impl Clock {
     Clock(m) => Clock::on_clock_message,
 });
 
-lazy_static! {
-    static ref BPM_120_VOCT: f32 = hz_to_voct(120.0 / 60.0);
-}
-
 impl Clock {
     fn update(&mut self, sample_rate: f32) {
-        // Process run param through Schmitt trigger when connected
-        // We need process_with_edge to get the continuous high/low state (not just rising edge)
-        let running = if !self.params.run.is_disconnected() {
-            let run_value = self.params.run.get_value();
-            let (is_high, _) = self.run_trigger.process_with_edge(run_value);
-            is_high && self.running
-        } else {
-            self.run_trigger.reset();
-            self.running
-        };
-
-        // Process reset param through Schmitt trigger (default 0V = no reset)
-        let reset_value = self.params.reset.get_value_or(0.0);
-        if self.reset_trigger.process(reset_value) {
-            // Rising edge on reset: reset phase
-            self.phase = 0.0;
-            self.ppq_phase = 0.0;
-            self.beat_phase = 0.0;
-            self.loop_index = 0;
-            self.last_bar_trigger = false;
-            self.last_ppq_trigger = false;
-            self.last_beat_trigger = false;
-        }
-
-        if !running {
+        if !self.running {
             return; // If not running, skip the rest of the update to keep outputs where they are until clock starts
         }
-        // Smooth frequency parameter to avoid clicks
-        self.freq = self.params.tempo.get_value_or(*BPM_120_VOCT);
 
-        // Convert V/Oct to Hz (use f64 for precision)
-        let frequency_hz = voct_to_hz_f64(self.freq as f64);
+        // Tempo is a plain BPM value
+        let bpm = self.params.tempo.max(1.0);
+        let frequency_hz = bpm / 60.0;
 
         // Time signature: numerator = beats per bar, denominator = beat value
         // Clamp to valid values (minimum 1) to avoid division by zero
@@ -198,6 +159,10 @@ impl Clock {
         if self.beat_phase >= beat_period {
             self.beat_phase -= beat_period;
         }
+
+        // Derive beat_in_bar from the bar phase
+        // phase goes from 0..1 over one bar, each beat occupies 1/numerator of the bar
+        self.outputs.beat_in_bar = (self.phase * numerator).floor() as f32;
 
         self.outputs.playhead.set(0, self.phase as f32);
         self.outputs.playhead.set(1, self.loop_index as f32);
@@ -246,6 +211,7 @@ impl Clock {
                 self.outputs.playhead.set(0, 0.0);
                 self.outputs.playhead.set(1, 0.0);
                 self.loop_index = 0;
+                self.outputs.beat_in_bar = 0.0;
                 self.last_bar_trigger = false;
                 self.last_ppq_trigger = false;
                 self.last_beat_trigger = false;
@@ -260,6 +226,7 @@ impl Clock {
                 self.outputs.playhead.set(0, 0.0);
                 self.outputs.playhead.set(1, 0.0);
                 self.loop_index = 0;
+                self.outputs.beat_in_bar = 0.0;
             }
         }
         Ok(())
@@ -291,98 +258,6 @@ mod tests {
         assert!(c.phase > 0.0);
     }
 
-    #[test]
-    fn clock_run_param_stops_clock() {
-        let mut c = Clock::default();
-        let sr = 48_000.0;
-
-        // Default: run is disconnected, defaults to 5V (running)
-        c.update(sr);
-        assert!(c.phase > 0.0);
-
-        // Set run param to 0V (stopped)
-        c.params.run = serde_json::from_str("0.0").unwrap();
-        assert!(
-            !c.params.run.is_disconnected(),
-            "Run param should be connected"
-        );
-        let phase_before = c.phase;
-        for _ in 0..128 {
-            c.update(sr);
-        }
-        assert!(
-            (c.phase - phase_before).abs() < 1e-9,
-            "Clock should be stopped when run is 0V"
-        );
-
-        // Set run param back to 5V (running)
-        c.params.run = serde_json::from_str("5.0").unwrap();
-        let phase_before = c.phase;
-        c.update(sr);
-        assert!(c.phase > phase_before, "Clock should resume when run is 5V");
-    }
-
-    #[test]
-    fn clock_run_disconnect_resumes_running() {
-        let mut c = Clock::default();
-        let sr = 48_000.0;
-        c.params.tempo = serde_json::from_str("0").unwrap(); // Set tempo to 1 Hz to make phase changes more obvious
-                                                             // Connect run at 0V (stopped)
-        c.params.run = serde_json::from_str("0.0").unwrap();
-        let initial_phase = c.phase;
-        let did_not_change = (0..128)
-            .map(|_| {
-                c.update(sr);
-                c.phase
-            })
-            .all(|v| v == initial_phase);
-        assert!(did_not_change, "Clock should be stopped when run is 0V");
-
-        // Disconnect run (back to default) — clock should resume
-        c.params.run = MonoSignal::default();
-        assert!(
-            c.params.run.is_disconnected(),
-            "Run param should be disconnected"
-        );
-        let did_not_change = (0..128)
-            .map(|_| {
-                c.update(sr);
-                c.phase
-            })
-            .all(|v| v == initial_phase);
-        assert!(
-            !did_not_change,
-            "Clock should resume when run is disconnected"
-        );
-    }
-
-    #[test]
-    fn clock_reset_param_resets_phase() {
-        let mut c = Clock::default();
-        let sr = 48_000.0;
-
-        // Advance clock to build up phase
-        for _ in 0..1000 {
-            c.update(sr);
-        }
-        assert!(c.phase > 0.0, "Clock should have advanced");
-
-        // Send reset trigger (rising edge from 0 to 5V)
-        c.params.reset = serde_json::from_str("5.0").unwrap();
-        c.update(sr);
-        // Phase should be reset to 0 (plus one sample of advancement since reset happens before phase update)
-        assert!(c.phase < 0.001, "Phase should be near zero after reset");
-        assert_eq!(c.loop_index, 0, "Loop index should be reset");
-
-        // Keep reset high - no further resets (no new rising edge)
-        let phase_after_reset = c.phase;
-        c.update(sr);
-        assert!(
-            c.phase > phase_after_reset,
-            "Clock should continue advancing after reset"
-        );
-    }
-
     /// Helper: count how many times beat_trigger fires 5V over a given number of samples
     fn count_beat_triggers(c: &mut Clock, sr: f32, samples: usize) -> usize {
         let mut count = 0;
@@ -412,6 +287,12 @@ mod tests {
         let c = Clock::default();
         assert_eq!(c.params.numerator, 4);
         assert_eq!(c.params.denominator, 4);
+    }
+
+    #[test]
+    fn clock_default_tempo_is_120() {
+        let c = Clock::default();
+        assert!((c.params.tempo - 120.0).abs() < 1e-9);
     }
 
     #[test]
@@ -496,6 +377,12 @@ mod tests {
     }
 
     #[test]
+    fn clock_tempo_deserialization() {
+        let params: ClockParams = serde_json::from_str(r#"{"tempo": 140}"#).unwrap();
+        assert!((params.tempo - 140.0).abs() < 1e-9);
+    }
+
+    #[test]
     fn clock_time_sig_defaults_when_missing() {
         // Verify defaults when not provided in JSON
         let params: ClockParams = serde_json::from_str("{}").unwrap();
@@ -550,5 +437,46 @@ mod tests {
         let result: std::result::Result<ClockParams, _> =
             serde_json::from_str(r#"{"denominator": 0}"#);
         assert!(result.is_err(), "denominator=0 should be rejected");
+    }
+
+    #[test]
+    fn clock_beat_in_bar_output() {
+        let mut c = Clock::default();
+        let sr = 48_000.0;
+        // 120 BPM, 4/4 time: one bar = 2 seconds = 96000 samples
+        // Each beat = 24000 samples
+
+        let _ = c.on_clock_message(&ClockMessages::Start);
+
+        // First sample: beat_in_bar should be 0
+        c.update(sr);
+        assert_eq!(c.outputs.beat_in_bar, 0.0, "First sample should be beat 0");
+
+        // Advance to halfway through beat 1 (sample 24000+12000=36000)
+        for _ in 1..36_000 {
+            c.update(sr);
+        }
+        assert_eq!(
+            c.outputs.beat_in_bar, 1.0,
+            "Should be on beat 1 at 36000 samples"
+        );
+
+        // Advance to beat 2 area
+        for _ in 0..24_000 {
+            c.update(sr);
+        }
+        assert_eq!(
+            c.outputs.beat_in_bar, 2.0,
+            "Should be on beat 2 at 60000 samples"
+        );
+
+        // Advance to beat 3 area
+        for _ in 0..24_000 {
+            c.update(sr);
+        }
+        assert_eq!(
+            c.outputs.beat_in_bar, 3.0,
+            "Should be on beat 3 at 84000 samples"
+        );
     }
 }

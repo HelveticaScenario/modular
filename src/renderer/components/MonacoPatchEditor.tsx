@@ -18,7 +18,10 @@ import {
     registerConfigSchema,
     registerConfigSchemaForFile,
 } from './monaco/jsonSchema';
-import { createScopeViewZones } from './monaco/scopeViewZones';
+import {
+    createScopeViewZones,
+    type ScopeViewZoneHandle,
+} from './monaco/scopeViewZones';
 import { startModuleStatePolling } from './monaco/moduleStateTracking';
 import { registerMidiCompletionProvider } from './monaco/midiCompletionProvider';
 import electronAPI from '../electronAPI';
@@ -29,6 +32,8 @@ export interface PatchEditorProps {
     onChange: (value: string) => void;
     editorRef: React.RefObject<editor.IStandaloneCodeEditor | null>;
     scopeViews?: ScopeView[];
+    /** Tracked decoration collection whose ranges correspond 1:1 with scopeViews. */
+    scopeDecorations?: editor.IEditorDecorationsCollection | null;
     onRegisterScopeCanvas?: (key: string, canvas: HTMLCanvasElement) => void;
     onUnregisterScopeCanvas?: (key: string) => void;
     runningBufferId?: string | null;
@@ -40,6 +45,7 @@ export function MonacoPatchEditor({
     onChange,
     editorRef,
     scopeViews = [],
+    scopeDecorations = null,
     onRegisterScopeCanvas,
     onUnregisterScopeCanvas,
     runningBufferId,
@@ -78,10 +84,49 @@ export function MonacoPatchEditor({
         });
     }, [editor, monaco, currentFile, runningBufferId]);
 
+    // Ref to hold the current scope view zone handle for repositioning
+    const scopeZoneHandleRef = useRef<ScopeViewZoneHandle | null>(null);
+
+    // Filter scope views to only those belonging to the active file
     const activeScopeViews = useMemo(
         () => scopeViews.filter((view) => view.file === currentFile),
         [scopeViews, currentFile],
     );
+
+    // Create / recreate scope view zones when the scope list changes
+    useEffect(() => {
+        if (!editor || !monaco) return;
+        const handle = createScopeViewZones({
+            editor,
+            monaco,
+            views: activeScopeViews,
+            scopeDecorations,
+            onRegisterScopeCanvas,
+            onUnregisterScopeCanvas,
+        });
+        scopeZoneHandleRef.current = handle;
+        return () => {
+            handle.dispose();
+            scopeZoneHandleRef.current = null;
+        };
+    }, [
+        editor,
+        monaco,
+        activeScopeViews,
+        scopeDecorations,
+        onRegisterScopeCanvas,
+        onUnregisterScopeCanvas,
+    ]);
+
+    // On every content change, re-read positions from tracked decorations and
+    // reposition view zones if any scope call has moved to a different line.
+    useEffect(() => {
+        if (!editor) return;
+        const disposable = editor.onDidChangeModelContent(() => {
+            scopeZoneHandleRef.current?.repositionZones();
+        });
+        return () => disposable.dispose();
+    }, [editor]);
 
     const handleMount: OnMount = (ed, monaco) => {
         setEditor(ed);
@@ -94,14 +139,21 @@ export function MonacoPatchEditor({
 
         // On Windows, Monaco swallows global accelerators, so we need to
         // register them as Monaco keybindings that trigger the Electron menu actions.
-        // Ctrl+Enter -> Update Patch
-        ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
-            // Trigger the same IPC that the Electron menu sends
+        // Ctrl+Enter -> Update Patch (next bar; if already queued, Rust discards old + applies new immediately)
+        ed.addCommand(monaco.KeyMod.WinCtrl | monaco.KeyCode.Enter, () => {
             window.electronAPI.triggerMenuAction('UPDATE_PATCH');
         });
 
+        // Ctrl+Shift+Enter -> Update Patch (next beat)
+        ed.addCommand(
+            monaco.KeyMod.WinCtrl | monaco.KeyMod.Shift | monaco.KeyCode.Enter,
+            () => {
+                window.electronAPI.triggerMenuAction('UPDATE_PATCH_NEXT_BEAT');
+            },
+        );
+
         // Ctrl+. -> Stop Sound
-        ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period, () => {
+        ed.addCommand(monaco.KeyMod.WinCtrl | monaco.KeyCode.Period, () => {
             window.electronAPI.triggerMenuAction('STOP');
         });
 
@@ -180,23 +232,6 @@ export function MonacoPatchEditor({
         );
         return () => midiProvider.dispose();
     }, [monaco]);
-
-    useEffect(() => {
-        if (!editor || !monaco) return;
-        return createScopeViewZones({
-            editor,
-            monaco,
-            views: activeScopeViews,
-            onRegisterScopeCanvas,
-            onUnregisterScopeCanvas,
-        });
-    }, [
-        editor,
-        monaco,
-        activeScopeViews,
-        onRegisterScopeCanvas,
-        onUnregisterScopeCanvas,
-    ]);
 
     // Define Monaco theme from the current app theme
     useEffect(() => {

@@ -1181,13 +1181,12 @@ fn impl_module_macro_attr(
     let module_name = &attr_args.module.name;
 
     // Extract /// doc comments from the module struct for documentation (required)
-    let module_documentation = extract_doc_comments(&ast.attrs)
-        .unwrap_or_else(|| {
-            panic!(
-                "Module struct `{}` must have `///` doc comments for documentation",
-                name
-            )
-        });
+    let module_documentation = extract_doc_comments(&ast.attrs).unwrap_or_else(|| {
+        panic!(
+            "Module struct `{}` must have `///` doc comments for documentation",
+            name
+        )
+    });
     let module_documentation_token = quote! { #module_documentation.to_string() };
 
     // Store channels info for channel_count generation

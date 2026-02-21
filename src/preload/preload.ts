@@ -14,6 +14,7 @@ import {
     DSLExecuteResult,
     MainLogEntry,
 } from '../shared/ipcTypes';
+import type { QueuedTrigger } from '../shared/ipcTypes';
 
 /**
  * Type-safe wrapper for IPC invoke calls
@@ -42,6 +43,7 @@ export interface ElectronAPI {
     executeDSL: (
         source: string,
         sourceId?: string,
+        trigger?: QueuedTrigger,
     ) => Promise<DSLExecuteResult>;
     getDslLibSource: () => Promise<string>;
 
@@ -74,6 +76,9 @@ export interface ElectronAPI {
         isStopped: Promisify<IPCHandlers[typeof IPC_CHANNELS.SYNTH_IS_STOPPED]>;
         setModuleParam: Promisify<
             IPCHandlers[typeof IPC_CHANNELS.SYNTH_SET_MODULE_PARAM]
+        >;
+        getTransportState: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_TRANSPORT_STATE]
         >;
     };
     // Audio device operations
@@ -158,7 +163,10 @@ export interface ElectronAPI {
     onMenuNewFile: (callback: () => void) => () => void;
     onMenuSave: (callback: () => void) => () => void;
     onMenuStop: (callback: () => void) => () => void;
-    onMenuUpdatePatch: (callback: () => void) => () => void;
+    onMenuUpdatePatch: (
+        callback: (trigger?: QueuedTrigger) => void,
+    ) => () => void;
+    onMenuUpdatePatchNextBeat: (callback: () => void) => () => void;
     onMenuOpenWorkspace: (callback: () => void) => () => void;
     onMenuCloseBuffer: (callback: () => void) => () => void;
     onMenuToggleRecording: (callback: () => void) => () => void;
@@ -206,8 +214,8 @@ const electronAPI: ElectronAPI = {
     getMiniLeafSpans: (...args) => invokeIPC('GET_MINI_LEAF_SPANS', ...args),
 
     // DSL operations
-    executeDSL: (source, sourceId) =>
-        invokeIPC('DSL_EXECUTE', source, sourceId),
+    executeDSL: (source, sourceId, trigger) =>
+        invokeIPC('DSL_EXECUTE', source, sourceId, trigger),
     getDslLibSource: () => invokeIPC('GET_DSL_LIB_SOURCE'),
 
     // Window operations
@@ -261,6 +269,9 @@ const electronAPI: ElectronAPI = {
 
         setModuleParam: (...args) =>
             invokeIPC('SYNTH_SET_MODULE_PARAM', ...args),
+
+        getTransportState: (...args) =>
+            invokeIPC('SYNTH_GET_TRANSPORT_STATE', ...args),
     },
 
     // Audio device operations
@@ -352,6 +363,9 @@ const electronAPI: ElectronAPI = {
     onMenuSave: menuEventHandler(MENU_CHANNELS.SAVE),
     onMenuStop: menuEventHandler(MENU_CHANNELS.STOP),
     onMenuUpdatePatch: menuEventHandler(MENU_CHANNELS.UPDATE_PATCH),
+    onMenuUpdatePatchNextBeat: menuEventHandler(
+        MENU_CHANNELS.UPDATE_PATCH_NEXT_BEAT,
+    ),
     onMenuOpenWorkspace: menuEventHandler(MENU_CHANNELS.OPEN_WORKSPACE),
     onMenuCloseBuffer: menuEventHandler(MENU_CHANNELS.CLOSE_BUFFER),
     onMenuToggleRecording: menuEventHandler(MENU_CHANNELS.TOGGLE_RECORDING),

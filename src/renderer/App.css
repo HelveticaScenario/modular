@@ -311,3 +311,68 @@
     color: var(--text-bright);
     border-color: var(--accent-primary);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Transport Display
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.transport-display {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-family: var(--font-mono);
+    font-size: var(--font-size);
+    color: var(--text-secondary);
+    margin-right: var(--sp-2);
+    -webkit-app-region: no-drag;
+}
+
+.transport-tempo {
+    color: var(--text-primary);
+    min-width: 2.5em;
+    text-align: right;
+}
+
+.transport-dim {
+    color: var(--text-muted);
+}
+
+.transport-position {
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+    min-width: 3em;
+    text-align: right;
+}
+
+.transport-pips {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.transport-pip {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--text-muted);
+    opacity: 0.3;
+    transition:
+        opacity 0.05s ease,
+        background-color 0.05s ease;
+}
+
+.transport-pip.active {
+    background-color: var(--accent-primary);
+    opacity: 1;
+}
+
+.transport-queued {
+    color: var(--color-warning, #e5c07b);
+    font-weight: 600;
+    font-size: 0.85em;
+    padding: 0 4px;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    line-height: 1.4;
+}

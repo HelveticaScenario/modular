@@ -90,8 +90,6 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             'Used for control parameters like tempo, stereo width, or math variables where a single combined value is needed.',
         definition: 'Signal | Signal[] | Iterable<ModuleOutput>',
         examples: [
-            '$clock(120)                                      // Single value as tempo',
-            '$clock(lfo.range(80, 160))                       // Modulated tempo, summed to mono',
             '$clockDivider(clock.trigger, 4)                  // Clock signal summed to mono',
             '$stereoMix(osc, { width: lfo })                  // Width control summed to mono',
             '$math("x + y", { x: osc1, y: osc2 })            // Variables summed to single values',

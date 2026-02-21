@@ -19,6 +19,8 @@ import type {
     HostDeviceInfo,
     CurrentAudioState,
     AudioConfigOptions,
+    TransportSnapshot,
+    QueuedTrigger,
     getSchemas,
     getMiniLeafSpans,
     Synthesizer,
@@ -36,6 +38,8 @@ export type {
     HostDeviceInfo,
     CurrentAudioState,
     AudioConfigOptions,
+    TransportSnapshot,
+    QueuedTrigger,
 };
 
 export interface AudioConfig {
@@ -121,6 +125,8 @@ export interface UpdatePatchResult {
     errors: ApplyPatchError[];
     appliedPatch: PatchGraph;
     moduleIdRemap: Record<string, string>;
+    /** Unique ID assigned to this patch update, used for deferred UI updates */
+    updateId: number;
 }
 
 /**
@@ -163,6 +169,10 @@ export interface DSLExecuteResult {
     >;
     /** Slider definitions created by $slider() DSL function calls */
     sliders?: SliderDefinition[];
+    /** Unique ID assigned to this patch update, used for deferred UI updates */
+    updateId?: number;
+    /** Full call expression spans for DSL methods, keyed by "line:column" */
+    callSiteSpans?: Record<string, { startLine: number; endLine: number }>;
 }
 
 /**
@@ -227,6 +237,7 @@ export const IPC_CHANNELS = {
     SYNTH_STOP: 'modular:synth:stop',
     SYNTH_IS_STOPPED: 'modular:synth:is-stopped',
     SYNTH_SET_MODULE_PARAM: 'modular:synth:set-module-param',
+    SYNTH_GET_TRANSPORT_STATE: 'modular:synth:get-transport-state',
 
     // Audio device operations
     AUDIO_REFRESH_DEVICE_CACHE: 'modular:audio:refresh-device-cache',
@@ -289,6 +300,7 @@ export const MENU_CHANNELS = {
     SAVE: 'modular:menu:save',
     STOP: 'modular:menu:stop',
     UPDATE_PATCH: 'modular:menu:update-patch',
+    UPDATE_PATCH_NEXT_BEAT: 'modular:menu:update-patch-next-beat',
     OPEN_WORKSPACE: 'modular:menu:open-workspace',
     CLOSE_BUFFER: 'modular:menu:close-buffer',
     TOGGLE_RECORDING: 'modular:menu:toggle-recording',
@@ -306,6 +318,7 @@ export interface IPCHandlers {
     [IPC_CHANNELS.DSL_EXECUTE]: (
         source: string,
         sourceId?: string,
+        trigger?: QueuedTrigger,
     ) => DSLExecuteResult;
     [IPC_CHANNELS.GET_DSL_LIB_SOURCE]: () => string;
 
@@ -319,6 +332,7 @@ export interface IPCHandlers {
     [IPC_CHANNELS.SYNTH_UPDATE_PATCH]: (
         patch: PatchGraph,
         sourceId?: string,
+        trigger?: QueuedTrigger,
     ) => UpdatePatchResult;
 
     [IPC_CHANNELS.SYNTH_START_RECORDING]: typeof Synthesizer.prototype.startRecording;
@@ -342,6 +356,8 @@ export interface IPCHandlers {
         moduleType: string,
         params: object,
     ) => void;
+
+    [IPC_CHANNELS.SYNTH_GET_TRANSPORT_STATE]: typeof Synthesizer.prototype.getTransportState;
 
     // Audio device operations
     [IPC_CHANNELS.AUDIO_REFRESH_DEVICE_CACHE]: typeof Synthesizer.prototype.refreshDeviceCache;

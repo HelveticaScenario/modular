@@ -13,7 +13,7 @@ export declare class Synthesizer {
   channels(): number
   inputChannels(): number
   getScopes(): Array<[ScopeItem, Array<Float32Array>, ScopeStats]>
-  updatePatch(patch: PatchGraph): Array<ApplyPatchError>
+  updatePatch(patch: PatchGraph, trigger?: QueuedTrigger | undefined | null): PatchUpdateResult
   /**
    * Lightweight single-module param update. Bypasses full patch rebuild —
    * only for modules already in the patch.
@@ -24,6 +24,7 @@ export declare class Synthesizer {
   isRecording(): boolean
   getHealth(): AudioBudgetSnapshot
   getModuleStates(): Record<string, any>
+  getTransportState(): TransportSnapshot
   /** Refresh the device cache (re-enumerates all hosts and devices) */
   refreshDeviceCache(): void
   /** Get the full device cache snapshot */
@@ -195,6 +196,42 @@ export interface HostInfo {
 export interface MidiInputInfo {
   name: string
   index: number
+}
+
+/** Result of a patch update, including any validation errors and the assigned update ID. */
+export interface PatchUpdateResult {
+  errors: Array<ApplyPatchError>
+  /** Unique ID for this update (as f64 since napi(object) doesn't support u64). */
+  updateId: number
+}
+
+/** When a queued patch update should be applied. */
+export type QueuedTrigger = /** Apply immediately (no waiting). */
+'Immediate'|
+/** Apply at the start of the next bar (ROOT_CLOCK bar_trigger). */
+'NextBar'|
+/** Apply at the next beat (ROOT_CLOCK beat_trigger). */
+'NextBeat';
+
+export interface TransportSnapshot {
+  /** Current bar phase (0..1 over one bar) */
+  barPhase: number
+  /** Completed bar count (0-indexed; display as bar + 1) */
+  bar: number
+  /** Current beat within the bar (0-indexed) */
+  beatInBar: number
+  /** Tempo in BPM */
+  bpm: number
+  /** Time signature numerator (beats per bar) */
+  timeSigNumerator: number
+  /** Time signature denominator (beat value) */
+  timeSigDenominator: number
+  /** Whether the clock is running */
+  isPlaying: boolean
+  /** Whether a queued patch update is pending */
+  hasQueuedUpdate: boolean
+  /** The update_id of the most recently applied patch update (as f64 for N-API compatibility) */
+  lastAppliedUpdateId: number
 }
 
 /**

@@ -84,10 +84,7 @@ impl LcgRng {
 /// ```js
 /// $noise("pink").out()
 /// ```
-#[module(
-    name = "$noise",
-    args(color)
-)]
+#[module(name = "$noise", args(color))]
 pub struct Noise {
     outputs: NoiseOutputs,
     params: NoiseParams,

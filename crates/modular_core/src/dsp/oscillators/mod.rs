@@ -4,10 +4,10 @@ use crate::types::{
     ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor,
 };
 
+pub mod noise;
 pub mod p_pulse;
 pub mod p_saw;
 pub mod p_sine;
-pub mod noise;
 pub mod plaits;
 pub mod pulse;
 pub mod saw;

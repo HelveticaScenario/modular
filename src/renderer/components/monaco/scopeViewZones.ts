@@ -6,32 +6,71 @@ type ScopeViewZoneParams = {
     editor: editor.IStandaloneCodeEditor;
     monaco: Monaco;
     views: ScopeView[];
+    /** Tracked decoration collection whose ranges correspond 1:1 with `views`. */
+    scopeDecorations: editor.IEditorDecorationsCollection | null;
     onRegisterScopeCanvas?: (key: string, canvas: HTMLCanvasElement) => void;
     onUnregisterScopeCanvas?: (key: string) => void;
 };
+
+export type ScopeViewZoneHandle = {
+    /** Tear down all view zones, canvases, and listeners. */
+    dispose: () => void;
+    /** Re-read positions from the tracked decoration collection and call
+     *  layoutZone for any view zone whose end-line has shifted. */
+    repositionZones: () => void;
+};
+
+/**
+ * Resolve the afterLineNumber for a scope view zone.
+ * Reads from the tracked decoration collection when available.
+ * Returns `null` if the decoration range has been deleted (empty/missing),
+ * signalling that the view zone should be hidden.
+ */
+function resolveLineNumber(
+    scopeDecorations: editor.IEditorDecorationsCollection | null,
+    index: number,
+): number | null {
+    if (scopeDecorations) {
+        const range = scopeDecorations.getRange(index);
+        if (range && !range.isEmpty()) {
+            return range.endLineNumber;
+        }
+    }
+    return null;
+}
 
 export function createScopeViewZones({
     editor,
     monaco,
     views,
+    scopeDecorations,
     onRegisterScopeCanvas,
     onUnregisterScopeCanvas,
-}: ScopeViewZoneParams) {
-    const viewZoneIds: string[] = [];
+}: ScopeViewZoneParams): ScopeViewZoneHandle {
+    const viewZoneIds: (string | null)[] = [];
+    /** Retained delegate objects so we can mutate afterLineNumber + layoutZone */
+    const viewZoneDelegates: (editor.IViewZone | null)[] = [];
+    /** Scope keys corresponding 1:1 with viewZoneIds, for canvas unregistration */
+    const viewKeys: string[] = [];
     const scopeCanvasMap = new Map<string, HTMLCanvasElement>();
     let layoutListener: ReturnType<
         editor.IStandaloneCodeEditor['onDidLayoutChange']
     > | null = null;
 
-    const disposeViewZones = () => {
-        if (viewZoneIds.length > 0) {
+    const dispose = () => {
+        const idsToRemove = viewZoneIds.filter(
+            (id): id is string => id !== null,
+        );
+        if (idsToRemove.length > 0) {
             editor.changeViewZones((accessor) => {
-                for (const id of viewZoneIds) {
+                for (const id of idsToRemove) {
                     accessor.removeZone(id);
                 }
             });
-            viewZoneIds.length = 0;
         }
+        viewZoneIds.length = 0;
+        viewZoneDelegates.length = 0;
+        viewKeys.length = 0;
 
         scopeCanvasMap.forEach((_canvas, key) => {
             onUnregisterScopeCanvas?.(key);
@@ -44,10 +83,15 @@ export function createScopeViewZones({
         }
     };
 
-    disposeViewZones();
+    dispose();
+
+    const noopHandle: ScopeViewZoneHandle = {
+        dispose,
+        repositionZones: () => {},
+    };
 
     if (views.length === 0) {
-        return disposeViewZones;
+        return noopHandle;
     }
 
     const dpr =
@@ -55,7 +99,7 @@ export function createScopeViewZones({
     const layoutInfo = editor.getLayoutInfo();
     const scopeHeight = 80; // Increased height for legend and stats
 
-    const zones = views.map((view) => {
+    const zones = views.map((view, index) => {
         const container = document.createElement('div');
         container.className = 'scope-view-zone';
         container.style.height = `${scopeHeight}px`;
@@ -82,21 +126,75 @@ export function createScopeViewZones({
         scopeCanvasMap.set(view.key, canvas);
         onRegisterScopeCanvas?.(view.key, canvas);
 
-        return { view, container };
+        const resolvedLine = resolveLineNumber(scopeDecorations, index);
+        const afterLineNumber = resolvedLine ?? 1;
+
+        const delegate: editor.IViewZone = {
+            afterLineNumber,
+            heightInPx: scopeHeight,
+            domNode: container,
+            marginDomNode: undefined,
+        };
+
+        return { delegate, key: view.key };
     });
 
     editor.changeViewZones((accessor) => {
-        zones.forEach(({ view, container }) => {
-            viewZoneIds.push(
-                accessor.addZone({
-                    afterLineNumber: Math.max(1, view.lineNumber),
-                    heightInPx: scopeHeight,
-                    domNode: container,
-                    marginDomNode: undefined,
-                }),
-            );
-        });
+        for (const { delegate, key } of zones) {
+            viewZoneDelegates.push(delegate);
+            viewZoneIds.push(accessor.addZone(delegate));
+            viewKeys.push(key);
+        }
     });
+
+    const repositionZones = () => {
+        if (!scopeDecorations || viewZoneIds.length === 0) return;
+
+        let needsLayout = false;
+        const idsToRemove: string[] = [];
+
+        for (let i = 0; i < viewZoneDelegates.length; i++) {
+            if (viewZoneIds[i] === null) continue; // already removed
+
+            const resolvedLine = resolveLineNumber(scopeDecorations, i);
+
+            if (resolvedLine === null) {
+                // Decoration was deleted — remove the view zone entirely and
+                // unregister the canvas so the renderer stops painting it.
+                idsToRemove.push(viewZoneIds[i]!);
+                viewZoneIds[i] = null;
+                viewZoneDelegates[i] = null;
+
+                const key = viewKeys[i];
+                if (scopeCanvasMap.has(key)) {
+                    onUnregisterScopeCanvas?.(key);
+                    scopeCanvasMap.delete(key);
+                }
+
+                needsLayout = true;
+                continue;
+            }
+
+            const delegate = viewZoneDelegates[i]!;
+            if (delegate.afterLineNumber !== resolvedLine) {
+                delegate.afterLineNumber = resolvedLine;
+                needsLayout = true;
+            }
+        }
+
+        if (needsLayout) {
+            editor.changeViewZones((accessor) => {
+                for (const id of idsToRemove) {
+                    accessor.removeZone(id);
+                }
+                for (let i = 0; i < viewZoneIds.length; i++) {
+                    if (viewZoneIds[i] !== null) {
+                        accessor.layoutZone(viewZoneIds[i]!);
+                    }
+                }
+            });
+        }
+    };
 
     const resizeCanvases = () => {
         const info = editor.getLayoutInfo();
@@ -110,5 +208,5 @@ export function createScopeViewZones({
 
     layoutListener = editor.onDidLayoutChange(resizeCanvases);
 
-    return disposeViewZones;
+    return { dispose, repositionZones };
 }

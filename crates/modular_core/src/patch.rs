@@ -147,10 +147,7 @@ impl Patch {
     /// Replicates the logic of `AudioState::apply_patch()` without the command
     /// queue or audio-thread indirection: instantiate modules, set params,
     /// connect cables, and fire `on_patch_update`.
-    pub fn from_graph(
-        graph: &crate::types::PatchGraph,
-        sample_rate: f32,
-    ) -> Result<Self, String> {
+    pub fn from_graph(graph: &crate::types::PatchGraph, sample_rate: f32) -> Result<Self, String> {
         use crate::dsp::{get_channel_count_derivers, get_constructors};
 
         let constructors = get_constructors();
@@ -176,9 +173,7 @@ impl Patch {
                     .unwrap_or(1);
                 module
                     .try_update_params(module_state.params.clone(), channel_count)
-                    .map_err(|e| {
-                        format!("Failed to set params on {}: {}", module_state.id, e)
-                    })?;
+                    .map_err(|e| format!("Failed to set params on {}: {}", module_state.id, e))?;
             }
         }
 

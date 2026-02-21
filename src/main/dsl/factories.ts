@@ -8,26 +8,20 @@ import {
 } from './GraphBuilder';
 import type { SourceSpan } from '../../shared/dsl/spanTypes';
 import type { SpanRegistry, CallSiteKey } from './sourceSpanAnalyzer';
+import {
+    captureSourceLocation,
+    setDSLWrapperLineOffset,
+    getDSLWrapperLineOffset,
+} from './captureSourceLocation';
+
+// Re-export so existing call sites (e.g. executor.ts) keep working.
+export { captureSourceLocation, setDSLWrapperLineOffset };
 
 /**
  * Key used for internal metadata field storing argument source spans.
  * Must match modular_core::types::ARGUMENT_SPANS_KEY in Rust.
  */
 const ARGUMENT_SPANS_KEY = '__argument_spans';
-
-/**
- * Line offset for DSL code wrapper.
- * The executePatchScript creates a function body with 'use strict' which adds lines
- * before user code. This offset is set by executor.ts at runtime.
- */
-export let DSL_WRAPPER_LINE_OFFSET = 4;
-
-/**
- * Configure the line offset for DSL code wrapper.
- */
-export function setDSLWrapperLineOffset(offset: number): void {
-    DSL_WRAPPER_LINE_OFFSET = offset;
-}
 
 /**
  * Active span registry for the current DSL execution.
@@ -51,43 +45,6 @@ export interface ArgumentSpans {
 }
 
 /**
- * Capture source location from the current stack trace.
- * Looks for the "<anonymous>" frame which corresponds to DSL code execution.
- * Returns undefined if source location cannot be determined.
- */
-function captureSourceLocation(): { line: number; column: number } | undefined {
-    const stackHolder: { stack?: string } = {};
-    Error.captureStackTrace(stackHolder, captureSourceLocation);
-
-    if (!stackHolder.stack) {
-        return undefined;
-    }
-
-    // Parse stack trace to find the DSL code frame
-    // Stack frames from evaluated code look like:
-    // "    at eval (eval at executePatchScript ..., <anonymous>:5:12)"
-    // or in some V8 versions:
-    // "    at <anonymous>:5:12"
-    const lines = stackHolder.stack.split('\n');
-
-    for (const line of lines) {
-        // Look for <anonymous>:line:col pattern
-        const anonymousMatch = line.match(/<anonymous>:(\d+):(\d+)/);
-        if (anonymousMatch) {
-            const rawLine = parseInt(anonymousMatch[1], 10);
-            const column = parseInt(anonymousMatch[2], 10);
-            // Adjust for wrapper code offset
-            const adjustedLine = rawLine - DSL_WRAPPER_LINE_OFFSET;
-            if (adjustedLine > 0) {
-                return { line: adjustedLine, column };
-            }
-        }
-    }
-
-    return undefined;
-}
-
-/**
  * Look up argument spans from the active span registry using the source location.
  * Returns undefined if no registry is set or no spans found for this call site.
  *
@@ -104,7 +61,7 @@ function captureArgumentSpans(
     // Build the call site key matching what ts-morph produced
     // ts-morph uses 1-based lines and columns, and the analyzer converts column to 0-based
     // Stack traces also use 1-based line/column, so we need to convert column to 0-based here too
-    const key: CallSiteKey = `${sourceLocation.line + DSL_WRAPPER_LINE_OFFSET}:${sourceLocation.column - 1}`;
+    const key: CallSiteKey = `${sourceLocation.line + getDSLWrapperLineOffset()}:${sourceLocation.column - 1}`;
 
     const entry = activeSpanRegistry.get(key);
     if (!entry) {
@@ -414,13 +371,14 @@ export class DSLContext {
             scale?: number;
         },
     ): T {
+        const loc = captureSourceLocation();
         if (
             target instanceof Collection ||
             target instanceof CollectionWithRange
         ) {
-            this.builder.addScope([...target], config);
+            this.builder.addScope([...target], config, loc);
         } else {
-            this.builder.addScope(target, config);
+            this.builder.addScope(target, config, loc);
         }
         return target;
     }

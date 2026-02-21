@@ -125,10 +125,8 @@ impl LowpassFilter {
             }
         } else {
             for i in 0..channels as usize {
-                self.smooth_cutoff[i]
-                    .update(self.params.cutoff.get_value_or(i, 0.0));
-                self.smooth_resonance[i]
-                    .update(self.params.resonance.get_value_or(i, 0.0));
+                self.smooth_cutoff[i].update(self.params.cutoff.get_value_or(i, 0.0));
+                self.smooth_resonance[i].update(self.params.resonance.get_value_or(i, 0.0));
                 let c = *self.smooth_cutoff[i];
                 let r = *self.smooth_resonance[i];
 

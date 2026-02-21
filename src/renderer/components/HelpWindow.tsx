@@ -327,18 +327,38 @@ export const HelpWindow: React.FC = () => {
                 return (
                     <div>
                         <h2>Hotkeys</h2>
+                        <h3>Patch Execution</h3>
                         <ul>
                             <li>
-                                <b>Ctrl + Enter</b>: Update Patch
+                                <b>Ctrl + Enter</b>: Update Patch (queued for
+                                next bar)
+                            </li>
+                            <li>
+                                <b>Ctrl + Shift + Enter</b>: Update Patch
+                                (queued for next beat)
                             </li>
                             <li>
                                 <b>Ctrl + .</b>: Stop Sound
                             </li>
+                        </ul>
+                        <p style={{ fontSize: '0.9em', opacity: 0.7 }}>
+                            Pressing Ctrl+Enter again while an update is already
+                            queued will discard the old update and apply the new
+                            one immediately.
+                        </p>
+                        <h3>Files</h3>
+                        <ul>
                             <li>
                                 <b>Cmd/Ctrl + S</b>: Save
                             </li>
                             <li>
                                 <b>Cmd/Ctrl + O</b>: Open Workspace
+                            </li>
+                            <li>
+                                <b>Cmd/Ctrl + N</b>: New File
+                            </li>
+                            <li>
+                                <b>Cmd/Ctrl + W</b>: Close Buffer
                             </li>
                         </ul>
                     </div>

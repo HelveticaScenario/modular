@@ -63,6 +63,24 @@ export type CallSiteKey = `${number}:${number}`;
 export type SpanRegistry = Map<CallSiteKey, CallSiteSpans>;
 
 /**
+ * Full source span of a call expression, in terms of editor line numbers.
+ * Used to position view zones after the closing paren of multi-line calls.
+ */
+export interface CallExpressionSpan {
+    /** 1-based start line of the call expression (in user source, before wrapper offset) */
+    startLine: number;
+    /** 1-based end line of the call expression (line containing the closing paren) */
+    endLine: number;
+}
+
+/**
+ * Registry mapping call site keys to their full expression spans.
+ * Covers DSL methods like .scope() and $slider() whose view zones need
+ * to know the end line of the entire call expression.
+ */
+export type CallSiteSpanRegistry = Map<CallSiteKey, CallExpressionSpan>;
+
+/**
  * Build a set of factory function names from module schemas.
  * Only includes modules that have positional arguments defined.
  */
@@ -435,6 +453,8 @@ export interface AnalysisResult {
     registry: SpanRegistry;
     /** Map from argument span key to resolved interpolations within that span */
     interpolationResolutions: InterpolationResolutionMap;
+    /** Registry mapping call site keys to full call expression spans (start/end lines) */
+    callSiteSpans: CallSiteSpanRegistry;
 }
 
 /**
@@ -453,6 +473,7 @@ export function analyzeSourceSpans(
 ): AnalysisResult {
     const registry: SpanRegistry = new Map();
     const interpolationResolutions: InterpolationResolutionMap = new Map();
+    const callSiteSpans: CallSiteSpanRegistry = new Map();
     const factoryNames = buildFactoryNames(schemas);
     const schemaMap = buildSchemaMap(schemas);
 
@@ -478,7 +499,7 @@ export function analyzeSourceSpans(
     sourceFile.forEachDescendant((node: Node) => {
         if (!Node.isCallExpression(node)) return;
 
-        const call = node as CallExpression;
+        const call = node;
         const funcName = getCalledFunctionName(call);
 
         // Validate $slider() calls: label (arg 0) and value (arg 1) must be literals
@@ -678,7 +699,60 @@ export function analyzeSourceSpans(
         });
     });
 
-    return { registry, interpolationResolutions };
+    // --- Pass 2: Track full call expression spans for DSL methods ---
+    // These are method calls like .scope() and standalone calls like $slider()
+    // whose view zones need to know the end line of the entire call expression.
+    const DSL_METHODS_TO_TRACK = new Set(['scope']);
+    const DSL_FUNCTIONS_TO_TRACK = new Set(['$slider']);
+
+    sourceFile.forEachDescendant((node: Node) => {
+        if (!Node.isCallExpression(node)) return;
+
+        const call = node;
+        const expression = call.getExpression();
+
+        let callStartPos: number;
+
+        if (Node.isPropertyAccessExpression(expression)) {
+            // Method call like .scope() — V8 reports position of the method name
+            const methodName = expression.getName();
+            if (!DSL_METHODS_TO_TRACK.has(methodName)) return;
+            callStartPos = expression.getNameNode().getStart();
+        } else if (Node.isIdentifier(expression)) {
+            // Standalone call like $slider()
+            const funcName = expression.getText();
+            if (!DSL_FUNCTIONS_TO_TRACK.has(funcName)) return;
+            callStartPos = call.getStart();
+        } else {
+            return;
+        }
+
+        // Compute key in user-source coordinates so the renderer can look up
+        // directly from captureSourceLocation's {line, column} values.
+        // Key format: "${userLine}:${v8Column}" where:
+        //   userLine = tsMorphLine (1-based, same as captureSourceLocation().line)
+        //   v8Column = tsMorphCol + firstLineColumnOffset for line 1, else tsMorphCol
+        //              (1-based, same as captureSourceLocation().column)
+        const { line: startTsMorphLine, column: startTsMorphCol } =
+            sourceFile.getLineAndColumnAtPos(callStartPos);
+        const v8Column =
+            startTsMorphCol +
+            (startTsMorphLine === 1 ? firstLineColumnOffset : 0);
+        const key: CallSiteKey = `${startTsMorphLine}:${v8Column}`;
+
+        // Compute the end line of the full call expression (including closing paren)
+        const callEnd = call.getEnd();
+        const { line: endTsMorphLine } = sourceFile.getLineAndColumnAtPos(
+            callEnd - 1,
+        );
+
+        callSiteSpans.set(key, {
+            startLine: startTsMorphLine,
+            endLine: endTsMorphLine,
+        });
+    });
+
+    return { registry, interpolationResolutions, callSiteSpans };
 }
 
 /**

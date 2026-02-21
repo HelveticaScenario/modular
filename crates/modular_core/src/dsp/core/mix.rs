@@ -1,4 +1,3 @@
-
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -43,7 +42,11 @@ pub struct MixParams {
 #[serde(rename_all = "camelCase")]
 struct MixOutputs {
     /// Mixed multichannel output.
-    #[output("output", "multichannel mix: each output channel mixes the same channel index from all inputs (not a mono fold-down)", default)]
+    #[output(
+        "output",
+        "multichannel mix: each output channel mixes the same channel index from all inputs (not a mono fold-down)",
+        default
+    )]
     sample: PolyOutput,
 }
 
@@ -258,11 +261,7 @@ mod tests {
                 PolySignal::poly(&[Signal::Volts(10.0), Signal::Volts(20.0)]),
             ],
             mode: MixMode::Sum,
-            gain: PolySignal::poly(&[
-                Signal::Volts(5.0),
-                Signal::Volts(10.0),
-                Signal::Volts(2.5),
-            ]),
+            gain: PolySignal::poly(&[Signal::Volts(5.0), Signal::Volts(10.0), Signal::Volts(2.5)]),
         });
         mixer.update(48000.0);
         // Output channels = max(2 input channels, 3 gain channels) = 3
@@ -280,11 +279,7 @@ mod tests {
         let mut mixer = make_mix(MixParams {
             inputs: vec![],
             mode: MixMode::Sum,
-            gain: PolySignal::poly(&[
-                Signal::Volts(1.0),
-                Signal::Volts(2.0),
-                Signal::Volts(3.0),
-            ]),
+            gain: PolySignal::poly(&[Signal::Volts(1.0), Signal::Volts(2.0), Signal::Volts(3.0)]),
         });
         mixer.update(48000.0);
         // Empty inputs with 3-channel gain -> 3 channels of silence

@@ -34,10 +34,7 @@ struct ChannelState {
 /// This is the fundamental building block for phase-based synthesis:
 /// feed its output into phase-distortion modules (crush, feedback, pulsar)
 /// and then into a waveshaper (e.g. `$pSine`) to produce audio.
-#[module(
-    name = "$ramp",
-    args(freq)
-)]
+#[module(name = "$ramp", args(freq))]
 #[derive(Default)]
 pub struct Ramp {
     outputs: RampOutputs,

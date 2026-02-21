@@ -77,10 +77,7 @@ pub fn choose<T: Clone + Send + Sync + 'static>(values: Vec<T>) -> Pattern<T> {
 ///
 /// Different seeds produce independent random streams, ensuring that multiple
 /// `|` operators in a pattern don't correlate.
-pub fn choose_with_seed<T: Clone + Send + Sync + 'static>(
-    values: Vec<T>,
-    seed: u64,
-) -> Pattern<T> {
+pub fn choose_with_seed<T: Clone + Send + Sync + 'static>(values: Vec<T>, seed: u64) -> Pattern<T> {
     if values.is_empty() {
         panic!("choose requires at least one value");
     }
@@ -351,10 +348,7 @@ mod tests {
         let mut all_same_count = 0;
         let num_cycles = 200;
         for c in 0..num_cycles {
-            let haps = pat.query_arc(
-                Fraction::from_integer(c),
-                Fraction::from_integer(c + 1),
-            );
+            let haps = pat.query_arc(Fraction::from_integer(c), Fraction::from_integer(c + 1));
             assert_eq!(haps.len(), 3, "fastcat of 3 should yield 3 haps");
             let decisions: Vec<bool> = haps.iter().map(|h| h.value != -1).collect();
             if decisions[0] == decisions[1] && decisions[1] == decisions[2] {
@@ -384,10 +378,7 @@ mod tests {
         let mut combos = std::collections::HashMap::<String, usize>::new();
         let num_cycles = 400;
         for c in 0..num_cycles {
-            let haps = pat.query_arc(
-                Fraction::from_integer(c),
-                Fraction::from_integer(c + 1),
-            );
+            let haps = pat.query_arc(Fraction::from_integer(c), Fraction::from_integer(c + 1));
             assert_eq!(haps.len(), 2);
             let key = format!("{}{}", haps[0].value, haps[1].value);
             *combos.entry(key).or_default() += 1;
@@ -420,9 +411,16 @@ mod tests {
 
         // Verify seeds are distinct within the pattern
         if let crate::pattern_system::mini::ast::MiniAST::Sequence(elements) = &ast1 {
-            if let (crate::pattern_system::mini::ast::MiniAST::Degrade(_, _, seed0), _) = &elements[0] {
-                if let (crate::pattern_system::mini::ast::MiniAST::Degrade(_, _, seed1), _) = &elements[1] {
-                    assert_ne!(seed0, seed1, "Different ? operators should get different seeds");
+            if let (crate::pattern_system::mini::ast::MiniAST::Degrade(_, _, seed0), _) =
+                &elements[0]
+            {
+                if let (crate::pattern_system::mini::ast::MiniAST::Degrade(_, _, seed1), _) =
+                    &elements[1]
+                {
+                    assert_ne!(
+                        seed0, seed1,
+                        "Different ? operators should get different seeds"
+                    );
                 }
             }
         }

@@ -1,18 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { MonacoPatchEditor as PatchEditor } from './components/MonacoPatchEditor';
 import { AudioControls } from './components/AudioControls';
+import { TransportDisplay } from './components/TransportDisplay';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { Settings } from './components/Settings';
 import './App.css';
-import type { editor } from 'monaco-editor';
-import { findScopeCallEndLines } from './utils/findScopeCallEndLines';
+// import type { editor } from 'monaco-editor';
+import { editor } from 'monaco-editor';
 import { getErrorMessage } from './utils/errorUtils';
 import { FileExplorer } from './components/FileExplorer';
 import { Sidebar } from './components/Sidebar';
 import { ControlPanel } from './components/ControlPanel';
 import electronAPI from './electronAPI';
 import { ValidationError } from '@modular/core';
-import type { FileTreeEntry, SourceLocationInfo } from '../shared/ipcTypes';
+import type { QueuedTrigger } from '@modular/core';
+import type {
+    FileTreeEntry,
+    SourceLocationInfo,
+    TransportSnapshot,
+} from '../shared/ipcTypes';
 import type { SliderDefinition } from '../shared/dsl/sliderTypes';
 import { findSliderValueSpan } from './dsl/sliderSourceEdit';
 import type { EditorBuffer, ScopeView } from './types/editor';
@@ -115,10 +121,29 @@ function App() {
     const [scopeViews, setScopeViews] = useState<ScopeView[]>([]);
     const [runningBufferId, setRunningBufferId] = useState<string | null>(null);
     const [sliderDefs, setSliderDefs] = useState<SliderDefinition[]>([]);
+    const [transportState, setTransportState] =
+        useState<TransportSnapshot | null>(null);
 
     const editorRef = useRef<editor.IStandaloneCodeEditor>(null);
     const scopeCanvasMapRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
     const lastPatchResultRef = useRef<any>(null);
+
+    /** Long-lived invisible tracked decorations spanning each scope() call.
+     *  Monaco automatically adjusts these ranges as the document is edited,
+     *  so we can always read the current position of a scope call from them. */
+    const scopeDecorationsRef =
+        useRef<editor.IEditorDecorationsCollection | null>(null);
+
+    /** Pending UI state waiting for the audio thread to apply a queued update */
+    const pendingUIStateRef = useRef<{
+        updateId: number;
+        scopeViews: ScopeView[];
+        sliderDefs: SliderDefinition[];
+        interpolationResolutions?: Map<string, any[]>;
+        /** Tracked decorations created at submit time, swapped into
+         *  scopeDecorationsRef when the pending state is committed. */
+        scopeDecorations: editor.IEditorDecorationsCollection | null;
+    } | null>(null);
 
     const handleSliderChange = useCallback(
         (label: string, newValue: number) => {
@@ -324,9 +349,11 @@ function App() {
     useEffect(() => {
         if (isClockRunningRef.current) {
             const tick = () => {
-                electronAPI.synthesizer
-                    .getScopes()
-                    .then((scopes) => {
+                Promise.all([
+                    electronAPI.synthesizer.getScopes(),
+                    electronAPI.synthesizer.getTransportState(),
+                ])
+                    .then(([scopes, transport]) => {
                         for (const [scopeItem, channels, stats] of scopes) {
                             const scopeKey =
                                 scopeKeyFromSubscription(scopeItem);
@@ -345,14 +372,34 @@ function App() {
                                 });
                             }
                         }
+                        setTransportState(transport);
+
+                        // Check if a pending UI state should be committed
+                        const pending = pendingUIStateRef.current;
+                        if (
+                            pending &&
+                            transport.lastAppliedUpdateId >= pending.updateId
+                        ) {
+                            pendingUIStateRef.current = null;
+                            // Swap decoration collections: dispose old, activate pending
+                            scopeDecorationsRef.current?.clear();
+                            scopeDecorationsRef.current =
+                                pending.scopeDecorations;
+                            setScopeViews(pending.scopeViews);
+                            setSliderDefs(pending.sliderDefs);
+                            if (pending.interpolationResolutions) {
+                                setActiveInterpolationResolutions(
+                                    pending.interpolationResolutions,
+                                );
+                            }
+                        }
+
                         if (isClockRunningRef.current) {
                             requestAnimationFrame(tick);
                         }
                     })
                     .catch((err) => {
                         console.error('Failed to get scopes:', err);
-                        // Continue loop even if one frame fails, or stop?
-                        // For now, let's try to continue but maybe with a delay or just next frame
                         if (isClockRunningRef.current) {
                             requestAnimationFrame(tick);
                         }
@@ -383,9 +430,9 @@ function App() {
         handleOpenWorkspaceRef.current = selectWorkspaceFolder;
     }, [selectWorkspaceFolder]);
 
-    const handleSubmitRef = useRef(() => {});
+    const handleSubmitRef = useRef((trigger?: QueuedTrigger) => {});
     useEffect(() => {
-        handleSubmitRef.current = async () => {
+        handleSubmitRef.current = async (trigger?: QueuedTrigger) => {
             if (!activeBufferId) return;
             try {
                 const patchCodeValue = patchCodeRef.current;
@@ -394,6 +441,7 @@ function App() {
                 const result = await electronAPI.executeDSL(
                     patchCodeValue,
                     activeBufferId,
+                    trigger,
                 );
                 lastPatchResultRef.current = result;
 
@@ -434,35 +482,99 @@ function App() {
                 setValidationErrors(null);
 
                 // Set interpolation resolutions in renderer for template literal highlighting
-                if (result.interpolationResolutions) {
-                    const map = new Map(
-                        Object.entries(result.interpolationResolutions),
-                    );
-                    setActiveInterpolationResolutions(map);
+                const interpolationMap = result.interpolationResolutions
+                    ? new Map(Object.entries(result.interpolationResolutions))
+                    : undefined;
+
+                const scopes = result.appliedPatch?.scopes || [];
+                const callSiteSpans = result.callSiteSpans;
+
+                const editorInstance = editorRef.current;
+                const model = editorInstance?.getModel();
+                const views: ScopeView[] = [];
+                const decorationDescs: editor.IModelDeltaDecoration[] = [];
+
+                for (let i = 0; i < scopes.length; i++) {
+                    const scope = scopes[i];
+                    const { moduleId, portName } = scope.item;
+
+                    const loc = (scope as any).sourceLocation as
+                        | { line: number; column: number }
+                        | undefined;
+
+                    views.push({
+                        key: `:module:${moduleId}:${portName}`,
+                        file: activeBufferId,
+                        range: scope.range ?? [-5, 5],
+                    });
+
+                    if (model && loc) {
+                        // Look up the full call expression span for this scope call.
+                        // The key matches captureSourceLocation's {line, column} format.
+                        const spanKey = `${loc.line}:${loc.column}`;
+                        const callSpan = callSiteSpans?.[spanKey];
+                        const endLine = callSpan?.endLine ?? loc.line;
+
+                        const endLineContent =
+                            model.getLineContent(endLine) ?? '';
+                        decorationDescs.push({
+                            range: {
+                                startLineNumber: loc.line,
+                                startColumn: loc.column,
+                                endLineNumber: endLine,
+                                endColumn: endLineContent.length + 1,
+                            },
+                            options: {
+                                stickiness:
+                                    editor.TrackedRangeStickiness
+                                        .NeverGrowsWhenTypingAtEdges,
+                            },
+                        });
+                    }
                 }
 
-                const scopeCalls = findScopeCallEndLines(patchCodeValue);
-                console.log('Found scope calls:', scopeCalls);
-                console.log('Patch scopes:', result.appliedPatch?.scopes);
-                const views: ScopeView[] = (result.appliedPatch?.scopes || [])
-                    .map((scope, idx) => {
-                        const call = scopeCalls[idx];
-                        if (!call) return null;
-                        const { moduleId, portName } = scope.item;
-                        return {
-                            key: `:module:${moduleId}:${portName}`,
-                            lineNumber: call.endLine,
-                            file: activeBufferId,
-                            range: scope.range ?? [-5, 5],
-                        };
-                    })
-                    .filter((v): v is ScopeView => v !== null);
-                console.log('Scope views:', views);
+                let newScopeDecorations: editor.IEditorDecorationsCollection | null =
+                    null;
+                if (editorInstance && decorationDescs.length > 0) {
+                    newScopeDecorations =
+                        editorInstance.createDecorationsCollection(
+                            decorationDescs,
+                        );
+                }
 
-                setScopeViews(views);
+                const newSliderDefs = result.sliders ?? [];
 
-                // Update slider definitions from DSL execution
-                setSliderDefs(result.sliders ?? []);
+                // For queued (non-immediate) triggers, defer UI state until the
+                // audio thread actually applies the patch update.
+                const isDeferred =
+                    trigger === 'NextBar' || trigger === 'NextBeat';
+
+                if (isDeferred && result.updateId != null) {
+                    // Stash both new decorations and UI state; keep old
+                    // decorations alive so the current view zones still work.
+                    // Any previously pending (but never committed) decorations
+                    // are cleaned up before storing the new pending state.
+                    pendingUIStateRef.current?.scopeDecorations?.clear();
+                    pendingUIStateRef.current = {
+                        updateId: result.updateId,
+                        scopeViews: views,
+                        sliderDefs: newSliderDefs,
+                        interpolationResolutions: interpolationMap,
+                        scopeDecorations: newScopeDecorations,
+                    };
+                } else {
+                    // Immediate trigger (or button click): swap decorations
+                    // and apply UI state right away.
+                    pendingUIStateRef.current?.scopeDecorations?.clear();
+                    pendingUIStateRef.current = null;
+                    scopeDecorationsRef.current?.clear();
+                    scopeDecorationsRef.current = newScopeDecorations;
+                    setScopeViews(views);
+                    setSliderDefs(newSliderDefs);
+                    if (interpolationMap) {
+                        setActiveInterpolationResolutions(interpolationMap);
+                    }
+                }
             } catch (err) {
                 setError(getErrorMessage(err, 'Unknown error'));
                 setValidationErrors(null);
@@ -512,8 +624,13 @@ function App() {
             handleStopRef.current();
         });
         const cleanupUpdate = electronAPI.onMenuUpdatePatch(() => {
-            handleSubmitRef.current();
+            handleSubmitRef.current('NextBar');
         });
+        const cleanupUpdateNextBeat = electronAPI.onMenuUpdatePatchNextBeat(
+            () => {
+                handleSubmitRef.current('NextBeat');
+            },
+        );
         const cleanupOpenWorkspace = electronAPI.onMenuOpenWorkspace(() => {
             handleOpenWorkspaceRef.current();
         });
@@ -542,6 +659,7 @@ function App() {
             cleanupSave();
             cleanupStop();
             cleanupUpdate();
+            cleanupUpdateNextBeat();
             cleanupOpenWorkspace();
             cleanupCloseBuffer();
             cleanupToggleRecording();
@@ -552,6 +670,7 @@ function App() {
     return (
         <div className="app">
             <header className="app-header">
+                <TransportDisplay transport={transportState} />
                 <AudioControls
                     isRunning={isClockRunning}
                     isRecording={isRecording}
@@ -564,7 +683,7 @@ function App() {
                         await electronAPI.synthesizer.stopRecording();
                         setIsRecording(false);
                     }}
-                    onUpdatePatch={handleSubmitRef.current}
+                    onUpdatePatch={() => handleSubmitRef.current()}
                 />
             </header>
 
@@ -599,6 +718,7 @@ function App() {
                                 onChange={handlePatchChange}
                                 editorRef={editorRef}
                                 scopeViews={scopeViews}
+                                scopeDecorations={scopeDecorationsRef.current}
                                 onRegisterScopeCanvas={registerScopeCanvas}
                                 onUnregisterScopeCanvas={unregisterScopeCanvas}
                             />

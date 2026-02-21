@@ -42,10 +42,7 @@ struct ChannelState {
 /// - **5** — Ramp (instant rise, all fall)
 ///
 /// Output range is **±5V**.
-#[module(
-    name = "$pSaw",
-    args(phase)
-)]
+#[module(name = "$pSaw", args(phase))]
 #[derive(Default)]
 pub struct PSawOscillator {
     outputs: PSawOscillatorOutputs,

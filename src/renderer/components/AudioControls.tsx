@@ -23,7 +23,7 @@ export function AudioControls({
                 <button
                     onClick={onUpdatePatch}
                     className="btn btn-primary"
-                    title="Ctrl+Enter / Cmd+Enter"
+                    title="Ctrl+Enter"
                 >
                     ▶ Update Patch
                 </button>
@@ -32,7 +32,7 @@ export function AudioControls({
                     onClick={onStop}
                     disabled={!isRunning}
                     className="btn btn-danger"
-                    title="Ctrl+. / Cmd+."
+                    title="Ctrl+."
                 >
                     ⏹ Stop
                 </button>

@@ -16,7 +16,14 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    MonoSignal, Patch, dsp::{utilities::quantizer::ScaleParam, utils::{TempGate, TempGateState, midi_to_voct_f64}}, pattern_system::{Fraction, Pattern}, poly::{PORT_MAX_CHANNELS, PolyOutput}, types::Connect
+    MonoSignal, Patch,
+    dsp::{
+        utilities::quantizer::ScaleParam,
+        utils::{TempGate, TempGateState, midi_to_voct_f64},
+    },
+    pattern_system::{Fraction, Pattern},
+    poly::{PORT_MAX_CHANNELS, PolyOutput},
+    types::Connect,
 };
 
 /// Scale parameter for IntervalSeq that supports an optional octave in the root.
@@ -473,13 +480,7 @@ fn extract_pattern_spans(
 
     // Pattern 0's span = source_span
     if num_patterns > 0 {
-        result.push(
-            context
-                .source_span
-                .iter()
-                .map(|s| s.to_tuple())
-                .collect(),
-        );
+        result.push(context.source_span.iter().map(|s| s.to_tuple()).collect());
     }
 
     // Patterns 1..N spans = modifier_spans in order
@@ -754,13 +755,7 @@ impl IntervalSeq {
         }
 
         // Collect events to process (avoids borrow conflicts in the loop)
-        let events_to_process: Vec<(
-            usize,
-            i32,
-            f64,
-            f64,
-            Vec<Vec<(usize, usize)>>,
-        )> = self
+        let events_to_process: Vec<(usize, i32, f64, f64, Vec<Vec<(usize, usize)>>)> = self
             .cached_combined_haps
             .iter()
             .enumerate()
@@ -887,8 +882,7 @@ impl crate::types::StatefulModule for IntervalSeq {
         let num_sources = per_source.len();
 
         // Collect per-pattern active spans from all active voices
-        let mut per_pattern_spans: Vec<Vec<(usize, usize)>> =
-            vec![Vec::new(); num_sources];
+        let mut per_pattern_spans: Vec<Vec<(usize, usize)>> = vec![Vec::new(); num_sources];
         let mut any_active = false;
 
         for voice in self.voices.iter().take(num_channels) {

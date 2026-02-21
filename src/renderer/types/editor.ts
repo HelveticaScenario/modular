@@ -30,7 +30,6 @@ export type UnsavedBufferSnapshot =
 
 export type ScopeView = {
     key: string;
-    lineNumber: number;
     file: string;
     range: [number, number];
 };

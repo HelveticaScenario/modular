@@ -331,10 +331,7 @@ fn convert_f64_pattern(ast: &MiniASTF64) -> Pattern<Fraction> {
             let has_weights = expanded.iter().any(|(_, w)| w.is_some());
 
             if has_weights {
-                let total_weight: f64 = expanded
-                    .iter()
-                    .map(|(_, w)| w.unwrap_or(1.0))
-                    .sum();
+                let total_weight: f64 = expanded.iter().map(|(_, w)| w.unwrap_or(1.0)).sum();
                 let weighted: Vec<(Fraction, Pattern<Fraction>)> = expanded
                     .iter()
                     .map(|(e, w)| {
@@ -344,8 +341,10 @@ fn convert_f64_pattern(ast: &MiniASTF64) -> Pattern<Fraction> {
                     .collect();
                 timecat(weighted)._slow(Fraction::from(total_weight))
             } else {
-                let pats: Vec<Pattern<Fraction>> =
-                    expanded.iter().map(|(e, _)| convert_f64_pattern(e)).collect();
+                let pats: Vec<Pattern<Fraction>> = expanded
+                    .iter()
+                    .map(|(e, _)| convert_f64_pattern(e))
+                    .collect();
                 slowcat(pats)
             }
         }
@@ -449,10 +448,7 @@ fn convert_u32_pattern(ast: &MiniASTU32) -> Pattern<u32> {
             let has_weights = expanded.iter().any(|(_, w)| w.is_some());
 
             if has_weights {
-                let total_weight: f64 = expanded
-                    .iter()
-                    .map(|(_, w)| w.unwrap_or(1.0))
-                    .sum();
+                let total_weight: f64 = expanded.iter().map(|(_, w)| w.unwrap_or(1.0)).sum();
                 let weighted: Vec<(Fraction, Pattern<u32>)> = expanded
                     .iter()
                     .map(|(e, w)| {
@@ -462,8 +458,10 @@ fn convert_u32_pattern(ast: &MiniASTU32) -> Pattern<u32> {
                     .collect();
                 timecat(weighted)._slow(Fraction::from(total_weight))
             } else {
-                let pats: Vec<Pattern<u32>> =
-                    expanded.iter().map(|(e, _)| convert_u32_pattern(e)).collect();
+                let pats: Vec<Pattern<u32>> = expanded
+                    .iter()
+                    .map(|(e, _)| convert_u32_pattern(e))
+                    .collect();
                 slowcat(pats)
             }
         }
@@ -562,10 +560,7 @@ fn convert_i32_pattern(ast: &MiniASTI32) -> Pattern<i32> {
             let has_weights = expanded.iter().any(|(_, w)| w.is_some());
 
             if has_weights {
-                let total_weight: f64 = expanded
-                    .iter()
-                    .map(|(_, w)| w.unwrap_or(1.0))
-                    .sum();
+                let total_weight: f64 = expanded.iter().map(|(_, w)| w.unwrap_or(1.0)).sum();
                 let weighted: Vec<(Fraction, Pattern<i32>)> = expanded
                     .iter()
                     .map(|(e, w)| {
@@ -575,8 +570,10 @@ fn convert_i32_pattern(ast: &MiniASTI32) -> Pattern<i32> {
                     .collect();
                 timecat(weighted)._slow(Fraction::from(total_weight))
             } else {
-                let pats: Vec<Pattern<i32>> =
-                    expanded.iter().map(|(e, _)| convert_i32_pattern(e)).collect();
+                let pats: Vec<Pattern<i32>> = expanded
+                    .iter()
+                    .map(|(e, _)| convert_i32_pattern(e))
+                    .collect();
                 slowcat(pats)
             }
         }
@@ -791,10 +788,7 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
             if has_weights {
                 // Weighted slow: timecat(pairs).slow(total_weight)
                 // Each element with weight w occupies w cycles out of every total cycles.
-                let total_weight: f64 = expanded
-                    .iter()
-                    .map(|(_, w)| w.unwrap_or(1.0))
-                    .sum();
+                let total_weight: f64 = expanded.iter().map(|(_, w)| w.unwrap_or(1.0)).sum();
                 let weighted: Vec<(Fraction, Pattern<T>)> = expanded
                     .iter()
                     .map(|(p, w)| {
@@ -1469,10 +1463,13 @@ mod tests {
 
     #[test]
     fn test_eval_f64_random_choice() {
-        let ast = MiniASTF64::RandomChoice(vec![
-            MiniASTF64::Pure(Located::new(7.0, 0, 1)),
-            MiniASTF64::Pure(Located::new(8.0, 2, 3)),
-        ], 0);
+        let ast = MiniASTF64::RandomChoice(
+            vec![
+                MiniASTF64::Pure(Located::new(7.0, 0, 1)),
+                MiniASTF64::Pure(Located::new(8.0, 2, 3)),
+            ],
+            0,
+        );
         assert!((eval_f64(&ast) - 7.0).abs() < 0.001); // Deterministic: returns first
     }
 
@@ -1512,7 +1509,11 @@ mod tests {
 
     #[test]
     fn test_eval_f64_degrade_no_prob() {
-        let ast = MiniASTF64::Degrade(Box::new(MiniASTF64::Pure(Located::new(13.0, 0, 2))), None, 0);
+        let ast = MiniASTF64::Degrade(
+            Box::new(MiniASTF64::Pure(Located::new(13.0, 0, 2))),
+            None,
+            0,
+        );
         assert!((eval_f64(&ast) - 13.0).abs() < 0.001);
     }
 
@@ -1583,10 +1584,13 @@ mod tests {
     #[test]
     fn test_eval_f64_degrade_with_random_choice() {
         let ast = MiniASTF64::Degrade(
-            Box::new(MiniASTF64::RandomChoice(vec![
-                MiniASTF64::Pure(Located::new(26.0, 0, 2)),
-                MiniASTF64::Pure(Located::new(27.0, 3, 5)),
-            ], 0)),
+            Box::new(MiniASTF64::RandomChoice(
+                vec![
+                    MiniASTF64::Pure(Located::new(26.0, 0, 2)),
+                    MiniASTF64::Pure(Located::new(27.0, 3, 5)),
+                ],
+                0,
+            )),
             Some(0.5),
             0,
         );
@@ -1670,10 +1674,13 @@ mod tests {
 
     #[test]
     fn test_eval_u32_random_choice() {
-        let ast = MiniASTU32::RandomChoice(vec![
-            MiniASTU32::Pure(Located::new(7, 0, 1)),
-            MiniASTU32::Pure(Located::new(8, 2, 3)),
-        ], 0);
+        let ast = MiniASTU32::RandomChoice(
+            vec![
+                MiniASTU32::Pure(Located::new(7, 0, 1)),
+                MiniASTU32::Pure(Located::new(8, 2, 3)),
+            ],
+            0,
+        );
         assert_eq!(eval_u32(&ast), 7); // Deterministic: returns first
     }
 
@@ -1784,10 +1791,13 @@ mod tests {
     #[test]
     fn test_eval_u32_degrade_with_random_choice() {
         let ast = MiniASTU32::Degrade(
-            Box::new(MiniASTU32::RandomChoice(vec![
-                MiniASTU32::Pure(Located::new(26, 0, 2)),
-                MiniASTU32::Pure(Located::new(27, 3, 5)),
-            ], 0)),
+            Box::new(MiniASTU32::RandomChoice(
+                vec![
+                    MiniASTU32::Pure(Located::new(26, 0, 2)),
+                    MiniASTU32::Pure(Located::new(27, 3, 5)),
+                ],
+                0,
+            )),
             Some(0.5),
             0,
         );
@@ -1838,10 +1848,13 @@ mod tests {
                 Box::new(MiniASTU32::Pure(Located::new(3, 8, 9))),
                 Box::new(MiniASTF64::Pure(Located::new(2.0, 10, 11))),
             )),
-            steps: Box::new(MiniASTU32::RandomChoice(vec![
-                MiniASTU32::Pure(Located::new(8, 12, 13)),
-                MiniASTU32::Pure(Located::new(16, 14, 16)),
-            ], 0)),
+            steps: Box::new(MiniASTU32::RandomChoice(
+                vec![
+                    MiniASTU32::Pure(Located::new(8, 12, 13)),
+                    MiniASTU32::Pure(Located::new(16, 14, 16)),
+                ],
+                0,
+            )),
             rotation: Some(Box::new(MiniASTI32::Degrade(
                 Box::new(MiniASTI32::Pure(Located::new(2, 17, 18))),
                 None,
@@ -2163,10 +2176,7 @@ mod tests {
                 haps[0].whole.is_some(),
                 "random choice hap should have whole span (discrete event)"
             );
-            assert!(
-                haps[0].has_onset(),
-                "random choice hap should have onset"
-            );
+            assert!(haps[0].has_onset(), "random choice hap should have onset");
             if let Some(val) = haps[0].value {
                 seen.insert(val as i32);
             }
@@ -2196,7 +2206,8 @@ mod tests {
                 assert!(
                     hap.whole.is_some(),
                     "cycle {} hap {} should have whole span",
-                    cycle, i
+                    cycle,
+                    i
                 );
             }
 

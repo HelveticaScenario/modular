@@ -52,7 +52,7 @@ describe('schema loading', () => {
         expect(names).toContain('$pulse');
         expect(names).toContain('$lpf');
         expect(names).toContain('$adsr');
-        expect(names).toContain('$clock');
+        expect(names).toContain('_clock');
         expect(names).toContain('$mix');
     });
 });
@@ -143,9 +143,9 @@ describe('signal input variants', () => {
         expect(findModules(patch, '$sine').length).toBe(1);
     });
 
-    test('$bpm() helper produces a number', () => {
-        const patch = execPatch('$setTempo($bpm(140))');
-        // Should not throw — $bpm(140) returns a valid signal
+    test('$setTempo() accepts plain BPM number', () => {
+        const patch = execPatch('$setTempo(140)');
+        // Should not throw — $setTempo(140) sets tempo as plain BPM
     });
 
     test('scale pattern string produces polyphonic module', () => {
@@ -184,13 +184,13 @@ describe('filters', () => {
 describe('envelopes', () => {
     test('$adsr with gate input and config', () => {
         const patch = execPatch(
-            '$adsr($rootClock.gate, { attack: 0.1, decay: 0.2, sustain: 3, release: 0.5 }).out()',
+            '$adsr($clock.gate, { attack: 0.1, decay: 0.2, sustain: 3, release: 0.5 }).out()',
         );
         expect(findModules(patch, '$adsr').length).toBe(1);
     });
 
     test('$perc with trigger', () => {
-        const patch = execPatch('$perc($rootClock.gate, { decay: 0.3 }).out()');
+        const patch = execPatch('$perc($clock.gate, { decay: 0.3 }).out()');
         expect(findModules(patch, '$perc').length).toBe(1);
     });
 });
@@ -324,7 +324,7 @@ describe('modulation routing', () => {
     test('subtractive synth voice (osc → env → filter)', () => {
         const source = `
             const osc = $saw("C3")
-            const env = $adsr($rootClock.gate, { attack: 0.01, decay: 0.3, sustain: 2, release: 0.5 })
+            const env = $adsr($clock.gate, { attack: 0.01, decay: 0.3, sustain: 2, release: 0.5 })
             $lpf(osc, env.range("C3", "C6")).out()
         `;
         const patch = execPatch(source);
@@ -372,13 +372,13 @@ describe('utilities', () => {
     });
 
     test('$sah (sample and hold)', () => {
-        const patch = execPatch('$sah($noise("white"), $rootClock.gate).out()');
+        const patch = execPatch('$sah($noise("white"), $clock.gate).out()');
         expect(findModules(patch, '$sah').length).toBe(1);
     });
 
     test('$slew', () => {
         const patch = execPatch(
-            '$slew($rootClock.gate, { rise: 0.01, fall: 0.01 }).out()',
+            '$slew($clock.gate, { rise: 0.01, fall: 0.01 }).out()',
         );
         expect(findModules(patch, '$slew').length).toBe(1);
     });
@@ -389,7 +389,7 @@ describe('utilities', () => {
     });
 
     test('$clockDivider', () => {
-        const patch = execPatch('$clockDivider($rootClock.trigger, 4).out()');
+        const patch = execPatch('$clockDivider($clock.trigger, 4).out()');
         expect(findModules(patch, '$clockDivider').length).toBe(1);
     });
 
@@ -454,50 +454,28 @@ describe('sliders', () => {
 
 describe('global settings', () => {
     test('$setTempo does not throw', () => {
-        expect(() => execPatch('$setTempo($bpm(140))')).not.toThrow();
+        expect(() => execPatch('$setTempo(140)')).not.toThrow();
     });
 
     test('$setOutputGain does not throw', () => {
         expect(() => execPatch('$setOutputGain(5.0)')).not.toThrow();
-    });
-
-    test('$setClockRun does not throw', () => {
-        expect(() => execPatch('$setClockRun(5)')).not.toThrow();
-    });
-
-    test('$setClockRun sets run param on ROOT_CLOCK', () => {
-        const patch = execPatch('$setClockRun(0)');
-        const rootClock = patch.modules.find((m) => m.id === 'ROOT_CLOCK');
-        expect(rootClock).toBeDefined();
-        expect(rootClock!.params.run).toBe(0);
-    });
-
-    test('$setClockReset does not throw', () => {
-        expect(() => execPatch('$setClockReset(0)')).not.toThrow();
-    });
-
-    test('$setClockReset sets reset param on ROOT_CLOCK', () => {
-        const patch = execPatch('$setClockReset(5)');
-        const rootClock = patch.modules.find((m) => m.id === 'ROOT_CLOCK');
-        expect(rootClock).toBeDefined();
-        expect(rootClock!.params.reset).toBe(5);
     });
 });
 
 // ─── Built-in modules ────────────────────────────────────────────────────────
 
 describe('built-in modules', () => {
-    test('$rootClock is available and has outputs', () => {
-        // Use $rootClock outputs as gate input to an envelope
+    test('$clock is available and has outputs', () => {
+        // Use $clock outputs as gate input to an envelope
         const patch = execPatch(
-            '$adsr($rootClock.gate, { attack: 0.01, decay: 0.1, sustain: 3, release: 0.2 }).out()',
+            '$adsr($clock.gate, { attack: 0.01, decay: 0.1, sustain: 3, release: 0.2 }).out()',
         );
         expect(patch.modules.find((m) => m.id === 'ROOT_CLOCK')).toBeDefined();
     });
 
-    test('$rootClock.gate can modulate another module', () => {
+    test('$clock.gate can modulate another module', () => {
         const patch = execPatch(
-            '$adsr($rootClock.gate, { attack: 0.01, decay: 0.1, sustain: 3, release: 0.2 }).out()',
+            '$adsr($clock.gate, { attack: 0.01, decay: 0.1, sustain: 3, release: 0.2 }).out()',
         );
         expect(patch.modules.find((m) => m.id === 'ROOT_CLOCK')).toBeDefined();
         expect(findModules(patch, '$adsr').length).toBe(1);
@@ -547,7 +525,7 @@ describe('complex patches', () => {
         const source = `
             const seq = $cycle("C3 E3 G3 B3")
             const osc = $saw(seq)
-            const env = $adsr($rootClock.gate, { attack: 0.01, decay: 0.2, sustain: 2, release: 0.3 })
+            const env = $adsr($clock.gate, { attack: 0.01, decay: 0.2, sustain: 2, release: 0.3 })
             $lpf(osc, env.range("C3", "C6")).out()
         `;
         const patch = execPatch(source);

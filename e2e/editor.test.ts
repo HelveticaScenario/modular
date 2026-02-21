@@ -3,7 +3,7 @@
  *
  * These tests exercise the core user workflow:
  *   1. Type DSL code into the editor
- *   2. Click "Update Patch" (or press Cmd+Enter)
+ *   2. Click "Update Patch" (or press Ctrl+Enter)
  *   3. Verify the patch runs (no error banner) or shows correct errors.
  */
 

@@ -3,7 +3,6 @@ import {
     DSLContext,
     hz,
     note,
-    bpm,
     setDSLWrapperLineOffset,
     setActiveSpanRegistry,
 } from './factories';
@@ -16,6 +15,7 @@ import {
     DeferredCollection,
 } from './GraphBuilder';
 import { analyzeSourceSpans } from './sourceSpanAnalyzer';
+import type { CallSiteSpanRegistry } from './sourceSpanAnalyzer';
 import type { InterpolationResolutionMap } from '../../shared/dsl/spanTypes';
 import { setActiveInterpolationResolutions } from '../../shared/dsl/spanTypes';
 import type { SliderDefinition } from '../../shared/dsl/sliderTypes';
@@ -32,6 +32,8 @@ export interface DSLExecutionResult {
     interpolationResolutions: InterpolationResolutionMap;
     /** Slider definitions created by $slider() DSL function calls */
     sliders: SliderDefinition[];
+    /** Full call expression spans for DSL methods (.scope(), $slider(), etc.) */
+    callSiteSpans: CallSiteSpanRegistry;
 }
 
 /**
@@ -45,10 +47,13 @@ export function executePatchScript(
     // console.log('Executing DSL script with schemas:', schemas);
     const context = new DSLContext(schemas);
 
-    const clock = context.namespaceTree['$clock'];
-    if (typeof clock !== 'function') {
+    // Create the execution environment with all DSL functions
+    // Remove _clock from user-facing namespace (it's internal, used only for ROOT_CLOCK)
+    const { _clock, ...userNamespaceTree } = context.namespaceTree;
+
+    if (typeof _clock !== 'function') {
         throw new Error(
-            'DSL execution error: "$clock" module not found in schemas',
+            'DSL execution error: "_clock" module not found in schemas',
         );
     }
 
@@ -60,7 +65,7 @@ export function executePatchScript(
     }
 
     // Create default clock module that runs at 120 BPM
-    const $rootClock = clock(bpm(120), {
+    const $clock = _clock(120, {
         id: 'ROOT_CLOCK',
     });
 
@@ -76,17 +81,11 @@ export function executePatchScript(
 
     // Create functions to set global tempo and output gain
     const builder = context.getBuilder();
-    const $setTempo = (tempo: Signal) => {
+    const $setTempo = (tempo: number) => {
         builder.setTempo(tempo);
     };
     const $setOutputGain = (gain: Signal) => {
         builder.setOutputGain(gain);
-    };
-    const $setClockRun = (run: Signal) => {
-        builder.setClockRun(run);
-    };
-    const $setClockReset = (reset: Signal) => {
-        builder.setClockReset(reset);
     };
     const $setTimeSignature = (numerator: number, denominator: number) => {
         if (!Number.isInteger(numerator) || numerator < 1) {
@@ -168,14 +167,12 @@ export function executePatchScript(
         return result;
     };
 
-    // Create the execution environment with all DSL functions
     const dslGlobals = {
-        // Prefixed namespace tree (modules and namespaces)
-        ...context.namespaceTree,
+        // Prefixed namespace tree (modules and namespaces, minus _clock)
+        ...userNamespaceTree,
         // Helper functions with $ prefix
         $hz: hz,
         $note: note,
-        $bpm: bpm,
         // Collection helpers
         $c,
         $r,
@@ -186,11 +183,9 @@ export function executePatchScript(
         // Global settings
         $setTempo,
         $setOutputGain,
-        $setClockRun,
-        $setClockReset,
         $setTimeSignature,
         // Built-in modules
-        $rootClock: $rootClock,
+        $clock,
         $input: rootInput,
     };
 
@@ -209,13 +204,16 @@ export function executePatchScript(
 
     // Analyze source code to extract argument spans before execution
     // The registry maps call-site keys (line:column) to argument span info
-    const { registry: spanRegistry, interpolationResolutions } =
-        analyzeSourceSpans(
-            source,
-            schemas,
-            wrapperLineCount,
-            firstLineColumnOffset,
-        );
+    const {
+        registry: spanRegistry,
+        interpolationResolutions,
+        callSiteSpans,
+    } = analyzeSourceSpans(
+        source,
+        schemas,
+        wrapperLineCount,
+        firstLineColumnOffset,
+    );
     setActiveSpanRegistry(spanRegistry);
     setActiveInterpolationResolutions(interpolationResolutions);
 
@@ -238,7 +236,13 @@ export function executePatchScript(
         const patch = builder.toPatch();
         const sourceLocationMap = builder.getSourceLocationMap();
 
-        return { patch, sourceLocationMap, interpolationResolutions, sliders };
+        return {
+            patch,
+            sourceLocationMap,
+            interpolationResolutions,
+            sliders,
+            callSiteSpans,
+        };
     } catch (error) {
         if (error instanceof Error) {
             throw new Error(`DSL execution error: ${error.message}`);

@@ -7,11 +7,20 @@ import type {
 } from '@modular/core';
 import type { ProcessedModuleSchema } from './paramsSchema';
 import { processSchemas } from './paramsSchema';
-import { bpm } from './factories';
+import { captureSourceLocation } from './captureSourceLocation';
 
 import z from 'zod';
 
 export const PORT_MAX_CHANNELS = 16;
+
+/**
+ * Scope with an optional source location captured at call time.
+ * The base Scope type comes from Rust (napi); the extra field is
+ * ignored by Rust but flows through to the renderer via IPC.
+ */
+export type ScopeWithLocation = Scope & {
+    sourceLocation?: { line: number; column: number };
+};
 
 // Extended OutputSchema interface that includes optional range
 export interface OutputSchemaWithRange {
@@ -131,7 +140,8 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
         range?: [number, number];
     }): this {
         if (this.items.length > 0) {
-            this.items[0].builder.addScope(this.items[0], config);
+            const loc = captureSourceLocation();
+            this.items[0].builder.addScope(this.items[0], config, loc);
         }
         return this;
     }
@@ -318,21 +328,17 @@ export class GraphBuilder {
     private counters: Map<string, number> = new Map();
     private schemas: ProcessedModuleSchema[] = [];
     private schemaByName: Map<string, ProcessedModuleSchema> = new Map();
-    private scopes: Scope[] = [];
+    private scopes: ScopeWithLocation[] = [];
     /** Output groups keyed by baseChannel */
     private outGroups: Map<number, OutGroup[]> = new Map();
     private factoryRegistry: Map<string, FactoryFunction> = new Map();
     private sourceLocationMap: Map<string, SourceLocation> = new Map();
     /** Track all deferred outputs for string replacement during toPatch */
     private deferredOutputs: Map<string, DeferredModuleOutput> = new Map();
-    /** Global tempo signal for ROOT_CLOCK (default: bpm(120) = hz(2)) */
-    private tempo: Signal = bpm(120); // hz(2) = bpm(120), using constant to avoid circular dep
+    /** Global tempo for ROOT_CLOCK in BPM (default: 120) */
+    private tempo: number = 120;
     /** Global output gain signal (default: 2.5) */
     private outputGain: Signal = 2.5;
-    /** Global run signal for ROOT_CLOCK (default: 5 = running) */
-    private clockRun: Signal | undefined;
-    /** Global reset signal for ROOT_CLOCK (default: 0 = no reset) */
-    private clockReset: Signal | undefined;
     /** Time signature numerator (beats per bar) for ROOT_CLOCK */
     private timeSignatureNumerator: number | undefined;
     /** Time signature denominator (beat value) for ROOT_CLOCK */
@@ -445,9 +451,9 @@ export class GraphBuilder {
 
     /**
      * Set the global tempo for ROOT_CLOCK
-     * @param tempo - Signal value for tempo (use bpm() or hz() helpers)
+     * @param tempo - Tempo in BPM (plain number)
      */
-    setTempo(tempo: Signal): void {
+    setTempo(tempo: number): void {
         this.tempo = tempo;
     }
 
@@ -457,22 +463,6 @@ export class GraphBuilder {
      */
     setOutputGain(gain: Signal): void {
         this.outputGain = gain;
-    }
-
-    /**
-     * Set the run gate for ROOT_CLOCK
-     * @param run - Signal value for run gate (5 = running, 0 = stopped)
-     */
-    setClockRun(run: Signal): void {
-        this.clockRun = run;
-    }
-
-    /**
-     * Set the reset trigger for ROOT_CLOCK
-     * @param reset - Signal value for reset trigger (rising edge resets clock)
-     */
-    setClockReset(reset: Signal): void {
-        this.clockReset = reset;
     }
 
     /**
@@ -604,12 +594,6 @@ export class GraphBuilder {
         const rootClock = this.modules.get('ROOT_CLOCK');
         if (rootClock) {
             rootClock.params.tempo = this.tempo;
-            if (this.clockRun !== undefined) {
-                rootClock.params.run = this.clockRun;
-            }
-            if (this.clockReset !== undefined) {
-                rootClock.params.reset = this.clockReset;
-            }
             if (this.timeSignatureNumerator !== undefined) {
                 rootClock.params.numerator = this.timeSignatureNumerator;
             }
@@ -655,7 +639,7 @@ export class GraphBuilder {
                     if (deferredOutput) {
                         const resolved = deferredOutput.resolve();
                         if (resolved) {
-                            const newScope: Scope = {
+                            const newScope: ScopeWithLocation = {
                                 ...scope,
                                 item: {
                                     type: 'ModuleOutput',
@@ -670,7 +654,10 @@ export class GraphBuilder {
                     }
                     return scope;
                 })
-                .filter((s: Scope | null): s is Scope => s !== null),
+                .filter(
+                    (s: ScopeWithLocation | null): s is ScopeWithLocation =>
+                        s !== null,
+                ),
         };
 
         console.log('Built PatchGraph:', ret);
@@ -687,10 +674,8 @@ export class GraphBuilder {
         this.outGroups.clear();
         this.sourceLocationMap.clear();
         this.deferredOutputs.clear();
-        this.tempo = 2; // hz(2) = bpm(120)
+        this.tempo = 120;
         this.outputGain = 2.5;
-        this.clockRun = undefined;
-        this.clockReset = undefined;
         this.timeSignatureNumerator = undefined;
         this.timeSignatureDenominator = undefined;
     }
@@ -769,6 +754,7 @@ export class GraphBuilder {
             triggerWaitToRender?: boolean;
             range?: [number, number];
         } = {},
+        sourceLocation?: { line: number; column: number },
     ) {
         const { msPerFrame = 500, triggerThreshold, range = [-5, 5] } = config;
         let realTriggerThreshold: number | undefined =
@@ -798,6 +784,7 @@ export class GraphBuilder {
             msPerFrame,
             triggerThreshold: thresh,
             range,
+            sourceLocation,
         });
     }
 }
@@ -968,7 +955,8 @@ export class ModuleOutput {
         triggerWaitToRender?: boolean;
         range?: [number, number];
     }): this {
-        this.builder.addScope(this, config);
+        const loc = captureSourceLocation();
+        this.builder.addScope(this, config, loc);
         return this;
     }
 

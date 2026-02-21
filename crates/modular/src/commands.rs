@@ -6,15 +6,30 @@
 use std::sync::Arc;
 
 use modular_core::types::{Message, ModuleIdRemap, Sampleable, Scope, ScopeItem};
+use napi_derive::napi;
 
 use crate::audio::ScopeBuffer;
 use serde_json::Value;
+
+/// When a queued patch update should be applied.
+#[napi(string_enum)]
+pub enum QueuedTrigger {
+  /// Apply immediately (no waiting).
+  Immediate,
+  /// Apply at the start of the next bar (ROOT_CLOCK bar_trigger).
+  NextBar,
+  /// Apply at the next beat (ROOT_CLOCK beat_trigger).
+  NextBeat,
+}
 
 /// A single atomic patch update - always processed as a complete unit.
 ///
 /// This struct ensures the audio thread receives a complete, consistent batch of changes.
 /// The main thread computes the entire diff and sends it as one unit.
 pub struct PatchUpdate {
+  /// Unique ID for this update, used to track apply/discard on the audio thread.
+  pub update_id: u64,
+
   /// Modules to insert (pre-constructed and Arc-wrapped on main thread).
   pub inserts: Vec<(String, Arc<Box<dyn modular_core::types::Sampleable>>)>,
 
@@ -45,6 +60,7 @@ impl PatchUpdate {
   /// Create an empty patch update
   pub fn new(sample_rate: f32) -> Self {
     Self {
+      update_id: 0,
       inserts: Vec::new(),
       desired_ids: std::collections::HashSet::new(),
       remaps: Vec::new(),
@@ -70,8 +86,13 @@ impl PatchUpdate {
 
 /// Commands sent to audio thread via the command queue.
 pub enum GraphCommand {
-  /// Atomic patch update - all changes applied together
-  PatchUpdate(PatchUpdate),
+  /// Queued patch update - stored and applied when the trigger condition is met.
+  /// `Immediate` applies on the next frame; `NextBar`/`NextBeat` wait for
+  /// ROOT_CLOCK's bar_trigger or beat_trigger output respectively.
+  QueuedPatchUpdate {
+    update: PatchUpdate,
+    trigger: QueuedTrigger,
+  },
 
   /// Lightweight param-only update for a single module (e.g., slider changes).
   /// Skips insert/retain/remap/scope/connect logic — only calls try_update_params.
@@ -146,6 +167,8 @@ pub enum GarbageItem {
   Module(Arc<Box<dyn Sampleable>>),
   /// A scope buffer removed from the collection
   Scope(ScopeBuffer),
+  /// A queued patch update that was superseded by a newer update before it fired
+  PatchUpdate(PatchUpdate),
 }
 
 /// Capacity for the garbage queue (audio → main).

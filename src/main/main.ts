@@ -572,119 +572,141 @@ registerIPCHandler('GET_DSL_LIB_SOURCE', () => {
 });
 
 // DSL execution in main process with direct N-API access
-registerIPCHandler('DSL_EXECUTE', (source, sourceId): DSLExecuteResult => {
-    try {
-        const schemas = getSchemas();
-        const { patch, sourceLocationMap, interpolationResolutions, sliders } =
-            executePatchScript(source, schemas);
-        patch.moduleIdRemaps = [];
+registerIPCHandler(
+    'DSL_EXECUTE',
+    (source, sourceId, trigger): DSLExecuteResult => {
+        try {
+            const schemas = getSchemas();
+            const {
+                patch,
+                sourceLocationMap,
+                interpolationResolutions,
+                sliders,
+                callSiteSpans,
+            } = executePatchScript(source, schemas);
+            patch.moduleIdRemaps = [];
 
-        // Convert Map to Record for IPC serialization
-        const sourceLocationRecord: Record<
-            string,
-            { line: number; column: number; idIsExplicit: boolean }
-        > = {};
-        for (const [moduleId, loc] of sourceLocationMap) {
-            sourceLocationRecord[moduleId] = loc;
-        }
+            // Convert Map to Record for IPC serialization
+            const sourceLocationRecord: Record<
+                string,
+                { line: number; column: number; idIsExplicit: boolean }
+            > = {};
+            for (const [moduleId, loc] of sourceLocationMap) {
+                sourceLocationRecord[moduleId] = loc;
+            }
 
-        // Convert interpolation resolutions Map to Record for IPC serialization
-        const interpolationResolutionsRecord: Record<string, any[]> = {};
-        for (const [key, resolutions] of interpolationResolutions) {
-            interpolationResolutionsRecord[key] = resolutions;
-        }
+            // Convert interpolation resolutions Map to Record for IPC serialization
+            const interpolationResolutionsRecord: Record<string, any[]> = {};
+            for (const [key, resolutions] of interpolationResolutions) {
+                interpolationResolutionsRecord[key] = resolutions;
+            }
 
-        // Requirement: assume a full change when a different file/buffer is evaluated.
-        const shouldReconcile = !!sourceId && lastAppliedSourceId === sourceId;
+            // Convert call site spans Map to Record for IPC serialization
+            const callSiteSpansRecord: Record<
+                string,
+                { startLine: number; endLine: number }
+            > = {};
+            for (const [key, span] of callSiteSpans) {
+                callSiteSpansRecord[key] = span;
+            }
 
-        if (DEBUG_LOG) {
-            if (!sourceId) {
+            // Requirement: assume a full change when a different file/buffer is evaluated.
+            const shouldReconcile =
+                !!sourceId && lastAppliedSourceId === sourceId;
+
+            if (DEBUG_LOG) {
+                if (!sourceId) {
+                    console.log(
+                        '[patch-remap] no sourceId; reconciliation disabled',
+                    );
+                } else if (!shouldReconcile) {
+                    console.log(
+                        `[patch-remap] source changed (${lastAppliedSourceId ?? 'none'} -> ${sourceId}); reconciliation disabled`,
+                    );
+                } else {
+                    console.log(
+                        `[patch-remap] reconciling for sourceId=${sourceId}`,
+                    );
+                }
+            }
+
+            const { moduleIdRemap } = reconcilePatchBySimilarity(
+                patch,
+                shouldReconcile ? lastAppliedPatchGraph : null,
+                {
+                    matchThreshold: PATCH_REMAP_THRESHOLD,
+                    ambiguityMargin: PATCH_REMAP_MARGIN,
+                    debugLog: DEBUG_LOG
+                        ? (message) => console.log(message)
+                        : undefined,
+                },
+            );
+
+            if (DEBUG_LOG) {
+                const remapCount = Object.keys(moduleIdRemap).length;
+                const thresholdInfo =
+                    PATCH_REMAP_THRESHOLD !== undefined
+                        ? PATCH_REMAP_THRESHOLD.toFixed(4)
+                        : 'default';
+                const marginInfo =
+                    PATCH_REMAP_MARGIN !== undefined
+                        ? PATCH_REMAP_MARGIN.toFixed(4)
+                        : 'default';
                 console.log(
-                    '[patch-remap] no sourceId; reconciliation disabled',
-                );
-            } else if (!shouldReconcile) {
-                console.log(
-                    `[patch-remap] source changed (${lastAppliedSourceId ?? 'none'} -> ${sourceId}); reconciliation disabled`,
-                );
-            } else {
-                console.log(
-                    `[patch-remap] reconciling for sourceId=${sourceId}`,
+                    `[patch-remap] summary shouldReconcile=${shouldReconcile} remaps=${remapCount} threshold=${thresholdInfo} margin=${marginInfo}`,
                 );
             }
-        }
 
-        const { moduleIdRemap } = reconcilePatchBySimilarity(
-            patch,
-            shouldReconcile ? lastAppliedPatchGraph : null,
-            {
-                matchThreshold: PATCH_REMAP_THRESHOLD,
-                ambiguityMargin: PATCH_REMAP_MARGIN,
-                debugLog: DEBUG_LOG
-                    ? (message) => console.log(message)
-                    : undefined,
-            },
-        );
-
-        if (DEBUG_LOG) {
-            const remapCount = Object.keys(moduleIdRemap).length;
-            const thresholdInfo =
-                PATCH_REMAP_THRESHOLD !== undefined
-                    ? PATCH_REMAP_THRESHOLD.toFixed(4)
-                    : 'default';
-            const marginInfo =
-                PATCH_REMAP_MARGIN !== undefined
-                    ? PATCH_REMAP_MARGIN.toFixed(4)
-                    : 'default';
-            console.log(
-                `[patch-remap] summary shouldReconcile=${shouldReconcile} remaps=${remapCount} threshold=${thresholdInfo} margin=${marginInfo}`,
+            // Send remap hints along with the desired patch
+            patch.moduleIdRemaps = Object.entries(moduleIdRemap).map(
+                ([from, to]) => ({
+                    from,
+                    to,
+                }),
             );
-        }
 
-        // Send remap hints along with the desired patch
-        patch.moduleIdRemaps = Object.entries(moduleIdRemap).map(
-            ([from, to]) => ({
-                from,
-                to,
-            }),
-        );
+            const { errors, updateId } = synth.updatePatch(patch, trigger);
 
-        const errors = synth.updatePatch(patch);
+            if (errors.length === 0) {
+                lastAppliedPatchGraph = patch;
+                lastAppliedSourceId = sourceId ?? null;
+            }
 
-        if (errors.length === 0) {
-            lastAppliedPatchGraph = patch;
-            lastAppliedSourceId = sourceId ?? null;
-        }
+            if (errors.length > 0) {
+                return {
+                    success: false,
+                    errors,
+                    appliedPatch: patch,
+                    moduleIdRemap,
+                    sourceLocationMap: sourceLocationRecord,
+                    interpolationResolutions: interpolationResolutionsRecord,
+                    sliders,
+                    updateId,
+                    callSiteSpans: callSiteSpansRecord,
+                };
+            }
 
-        if (errors.length > 0) {
             return {
-                success: false,
-                errors,
+                success: true,
+                errors: [],
                 appliedPatch: patch,
                 moduleIdRemap,
                 sourceLocationMap: sourceLocationRecord,
                 interpolationResolutions: interpolationResolutionsRecord,
                 sliders,
+                updateId,
+                callSiteSpans: callSiteSpansRecord,
+            };
+        } catch (error) {
+            const errorMessage =
+                error instanceof Error ? error.message : String(error);
+            return {
+                success: false,
+                errorMessage,
             };
         }
-
-        return {
-            success: true,
-            errors: [],
-            appliedPatch: patch,
-            moduleIdRemap,
-            sourceLocationMap: sourceLocationRecord,
-            interpolationResolutions: interpolationResolutionsRecord,
-            sliders,
-        };
-    } catch (error) {
-        const errorMessage =
-            error instanceof Error ? error.message : String(error);
-        return {
-            success: false,
-            errorMessage,
-        };
-    }
-});
+    },
+);
 
 registerIPCHandler('SYNTH_GET_SAMPLE_RATE', () => {
     return synth.sampleRate();
@@ -706,7 +728,7 @@ registerIPCHandler('GET_MINI_LEAF_SPANS', (source) => {
     return getMiniLeafSpans(source);
 });
 
-registerIPCHandler('SYNTH_UPDATE_PATCH', (patch, sourceId) => {
+registerIPCHandler('SYNTH_UPDATE_PATCH', (patch, sourceId, trigger) => {
     // Requirement: assume a full change when a different file/buffer is evaluated.
     const shouldReconcile = !!sourceId && lastAppliedSourceId === sourceId;
 
@@ -754,14 +776,14 @@ registerIPCHandler('SYNTH_UPDATE_PATCH', (patch, sourceId) => {
         to,
     }));
 
-    const errors = synth.updatePatch(patch);
+    const { errors, updateId } = synth.updatePatch(patch, trigger);
 
     if (errors.length === 0) {
         lastAppliedPatchGraph = patch;
         lastAppliedSourceId = sourceId ?? null;
     }
 
-    return { errors, appliedPatch: patch, moduleIdRemap };
+    return { errors, appliedPatch: patch, moduleIdRemap, updateId };
 });
 
 registerIPCHandler('SYNTH_START_RECORDING', (path) => {
@@ -790,6 +812,10 @@ registerIPCHandler('SYNTH_IS_STOPPED', () => {
 
 registerIPCHandler('SYNTH_SET_MODULE_PARAM', (moduleId, moduleType, params) => {
     synth.setModuleParam(moduleId, moduleType, params);
+});
+
+registerIPCHandler('SYNTH_GET_TRANSPORT_STATE', () => {
+    return synth.getTransportState();
 });
 
 // Audio device operations - new API
@@ -1486,6 +1512,19 @@ const createMenu = (): void => {
                             BrowserWindow.fromId(
                                 focusedWindow.id,
                             )?.webContents.send(MENU_CHANNELS.UPDATE_PATCH);
+                        }
+                    },
+                },
+                {
+                    label: 'Update Patch (Next Beat)',
+                    accelerator: 'Ctrl+Shift+Enter',
+                    click: (_item, focusedWindow) => {
+                        if (focusedWindow) {
+                            BrowserWindow.fromId(
+                                focusedWindow.id,
+                            )?.webContents.send(
+                                MENU_CHANNELS.UPDATE_PATCH_NEXT_BEAT,
+                            );
                         }
                     },
                 },

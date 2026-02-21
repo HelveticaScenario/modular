@@ -12,7 +12,7 @@ use std::{collections::HashMap, sync::Arc};
 use modular_core::{
   PatchGraph,
   dsp::schema,
-  types::{ScopeItem, ScopeStats},
+  types::{ROOT_CLOCK_ID, ScopeItem, ScopeStats},
 };
 use napi::Result;
 use napi_derive::napi;
@@ -20,11 +20,11 @@ use napi_derive::napi;
 use crate::audio::{
   ApplyPatchError, AudioBudgetSnapshot, AudioDeviceCache, AudioDeviceInfo, AudioSharedState,
   AudioState, CurrentAudioState, DeviceCacheSnapshot, GarbageProducer, HostDeviceInfo, HostInfo,
-  InputBufferReader, InputBufferWriter, create_audio_channels, create_input_ring_buffer,
-  find_input_device_in_host, find_output_device_in_host, get_host_by_preference,
-  make_input_stream, make_stream, preferred_default_sample_rate,
+  InputBufferReader, InputBufferWriter, TransportSnapshot, create_audio_channels,
+  create_input_ring_buffer, find_input_device_in_host, find_output_device_in_host,
+  get_host_by_preference, make_input_stream, make_stream, preferred_default_sample_rate,
 };
-use crate::commands::GraphCommand;
+use crate::commands::{GraphCommand, QueuedTrigger};
 use crate::midi::MidiInputManager;
 
 /// Information about a MIDI input port (for N-API)
@@ -32,6 +32,14 @@ use crate::midi::MidiInputManager;
 pub struct MidiInputInfo {
   pub name: String,
   pub index: u32,
+}
+
+/// Result of a patch update, including any validation errors and the assigned update ID.
+#[napi(object)]
+pub struct PatchUpdateResult {
+  pub errors: Vec<ApplyPatchError>,
+  /// Unique ID for this update (as f64 since napi(object) doesn't support u64).
+  pub update_id: f64,
 }
 
 /// Audio configuration for synthesizer initialization
@@ -61,6 +69,7 @@ pub struct Synthesizer {
   input_device_id: Option<String>,
   device_cache: AudioDeviceCache,
   fallback_warning: Option<String>,
+  next_update_id: u64,
 }
 
 /// Resolve devices from config, falling back to defaults if not found
@@ -227,18 +236,42 @@ fn build_output_stream(
   input_reader: InputBufferReader,
 ) -> Result<cpal::Stream> {
   match sample_format {
-    cpal::SampleFormat::I8 => {
-      make_stream::<i8>(device, config, command_rx, error_tx, garbage_tx, shared, input_reader)
-    }
-    cpal::SampleFormat::I16 => {
-      make_stream::<i16>(device, config, command_rx, error_tx, garbage_tx, shared, input_reader)
-    }
-    cpal::SampleFormat::I32 => {
-      make_stream::<i32>(device, config, command_rx, error_tx, garbage_tx, shared, input_reader)
-    }
-    cpal::SampleFormat::F32 => {
-      make_stream::<f32>(device, config, command_rx, error_tx, garbage_tx, shared, input_reader)
-    }
+    cpal::SampleFormat::I8 => make_stream::<i8>(
+      device,
+      config,
+      command_rx,
+      error_tx,
+      garbage_tx,
+      shared,
+      input_reader,
+    ),
+    cpal::SampleFormat::I16 => make_stream::<i16>(
+      device,
+      config,
+      command_rx,
+      error_tx,
+      garbage_tx,
+      shared,
+      input_reader,
+    ),
+    cpal::SampleFormat::I32 => make_stream::<i32>(
+      device,
+      config,
+      command_rx,
+      error_tx,
+      garbage_tx,
+      shared,
+      input_reader,
+    ),
+    cpal::SampleFormat::F32 => make_stream::<f32>(
+      device,
+      config,
+      command_rx,
+      error_tx,
+      garbage_tx,
+      shared,
+      input_reader,
+    ),
     _ => Err(napi::Error::from_reason(format!(
       "Unsupported output sample format: {:?}",
       sample_format
@@ -511,6 +544,7 @@ impl Synthesizer {
       input_device_id: setup_result.input_device_id,
       device_cache,
       fallback_warning,
+      next_update_id: 0,
     })
   }
 
@@ -545,14 +579,54 @@ impl Synthesizer {
   }
 
   #[napi]
-  pub fn update_patch(&mut self, patch: PatchGraph) -> Vec<ApplyPatchError> {
+  pub fn update_patch(
+    &mut self,
+    patch: PatchGraph,
+    trigger: Option<QueuedTrigger>,
+  ) -> PatchUpdateResult {
     // Extract MIDI device names from MIDI modules and sync connections
     self.sync_midi_devices_from_patch(&patch);
 
     // Drain deferred deallocations from the audio thread
     self.state.drain_garbage();
 
-    self.state.handle_set_patch(patch, self.sample_rate)
+    let trigger = trigger.unwrap_or(QueuedTrigger::Immediate);
+
+    // Assign a unique update ID
+    self.next_update_id += 1;
+    let update_id = self.next_update_id;
+
+    // Update transport meter with tempo/time signature from ROOT_CLOCK params
+    if let Some(root_clock) = patch.modules.iter().find(|m| m.id == *ROOT_CLOCK_ID) {
+      let bpm = root_clock
+        .params
+        .get("tempo")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(120.0);
+      let numerator = root_clock
+        .params
+        .get("numerator")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(4) as u32;
+      let denominator = root_clock
+        .params
+        .get("denominator")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(4) as u32;
+      self
+        .state
+        .transport_meter
+        .write_tempo(bpm, numerator, denominator);
+    }
+
+    let errors = self
+      .state
+      .handle_set_patch(patch, self.sample_rate, trigger, update_id);
+
+    PatchUpdateResult {
+      errors,
+      update_id: update_id as f64,
+    }
   }
 
   /// Lightweight single-module param update. Bypasses full patch rebuild —
@@ -644,6 +718,11 @@ impl Synthesizer {
   #[napi]
   pub fn get_module_states(&self) -> HashMap<String, serde_json::Value> {
     self.state.get_module_states()
+  }
+
+  #[napi]
+  pub fn get_transport_state(&self) -> TransportSnapshot {
+    self.state.get_transport_state()
   }
 
   // =========================================================================

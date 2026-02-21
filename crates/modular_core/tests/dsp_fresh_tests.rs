@@ -13,7 +13,6 @@ use std::sync::Arc;
 const SAMPLE_RATE: f32 = 48000.0;
 const DEFAULT_PORT: &str = "output";
 
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Create a named module from the constructor registry.
@@ -21,8 +20,11 @@ fn make_module(module_type: &str, id: &str) -> Arc<Box<dyn Sampleable>> {
     let constructors = get_constructors();
     constructors
         .get(module_type)
-        .unwrap_or_else(|| panic!("no constructor for '{module_type}'"))(&id.to_string(), SAMPLE_RATE)
-        .unwrap_or_else(|e| panic!("constructor for '{module_type}' failed: {e}"))
+        .unwrap_or_else(|| panic!("no constructor for '{module_type}'"))(
+        &id.to_string(),
+        SAMPLE_RATE,
+    )
+    .unwrap_or_else(|e| panic!("constructor for '{module_type}' failed: {e}"))
 }
 
 /// Set params on a module (JSON → try_update_params).
@@ -244,15 +246,9 @@ fn scale_and_shift_applies() {
     for _ in 0..500 {
         step(&**sas);
     }
-    let sample = sas
-        .get_poly_sample(DEFAULT_PORT)
-        .unwrap()
-        .get(0);
+    let sample = sas.get_poly_sample(DEFAULT_PORT).unwrap().get(0);
 
-    assert!(
-        approx_eq(sample, 3.0, 0.1),
-        "expected ~3.0, got {sample}"
-    );
+    assert!(approx_eq(sample, 3.0, 0.1), "expected ~3.0, got {sample}");
 }
 
 // ─── Constructors ────────────────────────────────────────────────────────────
@@ -335,10 +331,7 @@ fn param_validators_reject_bogus_params() {
     // Sine with an object as freq should fail
     if let Some(validate) = validators.get("$sine") {
         let result = validate(&json!({ "freq": { "nested": true } }));
-        assert!(
-            result.is_err(),
-            "invalid sine params should be rejected"
-        );
+        assert!(result.is_err(), "invalid sine params should be rejected");
     }
 }
 
@@ -573,7 +566,13 @@ fn from_graph_process_frame_advances_all_modules() {
     let (slow_mn, slow_mx) = min_max(&slow_samples);
 
     assert!(fast_mx > 4.0, "fast osc should oscillate, peak={fast_mx}");
-    assert!(fast_mn < -4.0, "fast osc should oscillate, trough={fast_mn}");
+    assert!(
+        fast_mn < -4.0,
+        "fast osc should oscillate, trough={fast_mn}"
+    );
     assert!(slow_mx > 4.0, "slow osc should oscillate, peak={slow_mx}");
-    assert!(slow_mn < -4.0, "slow osc should oscillate, trough={slow_mn}");
+    assert!(
+        slow_mn < -4.0,
+        "slow osc should oscillate, trough={slow_mn}"
+    );
 }

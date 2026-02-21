@@ -43,7 +43,7 @@ use std::time::Instant;
 
 use crate::commands::{
   AudioError, COMMAND_QUEUE_CAPACITY, ERROR_QUEUE_CAPACITY, GARBAGE_QUEUE_CAPACITY, GarbageItem,
-  GraphCommand, PatchUpdate,
+  GraphCommand, PatchUpdate, QueuedTrigger,
 };
 use crate::midi::MidiInputManager;
 
@@ -906,6 +906,8 @@ pub struct AudioState {
   module_states: Arc<Mutex<HashMap<String, serde_json::Value>>>,
   /// MIDI input manager - shared with audio thread for polling
   midi_manager: Arc<MidiInputManager>,
+  /// Transport state meter - written by audio thread, read by main thread
+  pub transport_meter: Arc<TransportMeter>,
 }
 
 #[derive(Default)]
@@ -942,6 +944,7 @@ impl AudioState {
       audio_budget_meter: Arc::new(AudioBudgetMeter::default()),
       module_states: Arc::new(Mutex::new(HashMap::new())),
       midi_manager,
+      transport_meter: Arc::new(TransportMeter::default()),
     }
   }
 
@@ -993,6 +996,11 @@ impl AudioState {
     self.stopped.load(Ordering::SeqCst)
   }
 
+  /// Read the current transport state snapshot (lock-free)
+  pub fn get_transport_state(&self) -> TransportSnapshot {
+    self.transport_meter.snapshot()
+  }
+
   /// Get shared references for audio processor creation
   pub fn get_shared_state(&self) -> AudioSharedState {
     AudioSharedState {
@@ -1002,6 +1010,7 @@ impl AudioState {
       audio_budget_meter: self.audio_budget_meter.clone(),
       module_states: self.module_states.clone(),
       midi_manager: self.midi_manager.clone(),
+      transport_meter: self.transport_meter.clone(),
     }
   }
 
@@ -1067,7 +1076,13 @@ impl AudioState {
 
   /// Build a PatchUpdate from desired graph and send to audio thread.
   /// This computes the diff using the shadow state and constructs new modules on the main thread.
-  pub fn apply_patch(&self, desired_graph: PatchGraph, sample_rate: f32) -> Result<()> {
+  pub fn apply_patch(
+    &self,
+    desired_graph: PatchGraph,
+    sample_rate: f32,
+    trigger: QueuedTrigger,
+    update_id: u64,
+  ) -> Result<()> {
     let PatchGraph {
       modules,
       module_id_remaps,
@@ -1077,6 +1092,7 @@ impl AudioState {
 
     // Build PatchUpdate with all the info needed
     let mut update = PatchUpdate::new(sample_rate);
+    update.update_id = update_id;
 
     // Add remaps
     update.remaps = module_id_remaps.unwrap_or_default();
@@ -1120,15 +1136,6 @@ impl AudioState {
     // Construct all modules that appear in desired graph on main thread
     let constructors = get_constructors();
     for (id, module_state) in &desired_modules {
-      // // Skip well-known modules
-      // if id == WellKnownModule::RootOutput.id()
-      //   || id == WellKnownModule::RootClock.id()
-      //   || id == WellKnownModule::RootInput.id()
-      //   || id == WellKnownModule::HiddenAudioIn.id()
-      // {
-      //   continue;
-      // }
-
       if let Some(constructor) = constructors.get(&module_state.module_type) {
         match constructor(id, sample_rate) {
           Ok(module) => {
@@ -1161,13 +1168,15 @@ impl AudioState {
     update.desired_ids = update.inserts.iter().map(|(id, _)| id.clone()).collect();
 
     // Send the update to audio thread
-    self.send_command(GraphCommand::PatchUpdate(update))
+    self.send_command(GraphCommand::QueuedPatchUpdate { update, trigger })
   }
 
   pub fn handle_set_patch(
     &self,
     patch_graph: PatchGraph,
     sample_rate: f32,
+    trigger: QueuedTrigger,
+    update_id: u64,
   ) -> Vec<ApplyPatchError> {
     // Validate patch
     let schemas = schema();
@@ -1186,7 +1195,7 @@ impl AudioState {
     }
 
     // Apply patch
-    if let Err(e) = self.apply_patch(patch_graph, sample_rate) {
+    if let Err(e) = self.apply_patch(patch_graph, sample_rate, trigger, update_id) {
       return vec![ApplyPatchError {
         message: format!("Failed to apply patch: {}", e),
         errors: None,
@@ -1214,6 +1223,8 @@ pub struct AudioSharedState {
   pub module_states: Arc<Mutex<HashMap<String, serde_json::Value>>>,
   /// MIDI input manager for polling MIDI messages
   pub midi_manager: Arc<MidiInputManager>,
+  /// Transport state meter - written by audio thread, read by main thread
+  pub transport_meter: Arc<TransportMeter>,
 }
 
 fn chrono_simple_timestamp() -> String {
@@ -1245,6 +1256,10 @@ struct AudioProcessor {
   module_states: Arc<Mutex<HashMap<String, serde_json::Value>>>,
   /// MIDI input manager for polling
   midi_manager: Arc<MidiInputManager>,
+  /// Queued patch update waiting for its trigger condition
+  queued_update: Option<(PatchUpdate, QueuedTrigger)>,
+  /// Transport state meter - written each frame, read by main thread
+  transport_meter: Arc<TransportMeter>,
 }
 
 impl AudioProcessor {
@@ -1263,6 +1278,8 @@ impl AudioProcessor {
       scope_collection: shared.scope_collection,
       module_states: shared.module_states,
       midi_manager: shared.midi_manager,
+      queued_update: None,
+      transport_meter: shared.transport_meter,
     }
   }
 
@@ -1282,8 +1299,23 @@ impl AudioProcessor {
     // Process commands from the main thread
     while let Ok(cmd) = self.command_rx.pop() {
       match cmd {
-        GraphCommand::PatchUpdate(update) => {
-          self.apply_patch_update(update);
+        GraphCommand::QueuedPatchUpdate { update, trigger } => {
+          // If there's already a queued update, discard it and apply the new one
+          // immediately. This is intentional: when the user triggers a second
+          // update before the first one fires (e.g. pressing Ctrl+Enter twice),
+          // we treat it as "apply now" rather than re-queuing for the next
+          // bar/beat.
+          if let Some((old_update, _)) = self.queued_update.take() {
+            if let Err(err) = self.garbage_tx.push(GarbageItem::PatchUpdate(old_update)) {
+              println!(
+                "Failed to push old patch update to garbage queue: ${:?}",
+                err
+              );
+            } // If queue is full, old update will be dropped here as fallback (not ideal but safe)
+            self.queued_update = Some((update, QueuedTrigger::Immediate));
+          } else {
+            self.queued_update = Some((update, trigger));
+          }
         }
         GraphCommand::SingleParamUpdate {
           module_id,
@@ -1314,6 +1346,15 @@ impl AudioProcessor {
           // Stop is handled via the stopped flag
         }
         GraphCommand::ClearPatch => {
+          // Discard any pending queued update
+          if let Some((old_update, _)) = self.queued_update.take() {
+            if let Err(err) = self.garbage_tx.push(GarbageItem::PatchUpdate(old_update)) {
+              println!(
+                "Failed to push old patch update to garbage queue: ${:?}",
+                err
+              );
+            } // If queue is full, old update will be dropped here as fallback (not ideal but safe)
+          }
           // Defer deallocation of all non-reserved modules to main thread
           let ids_to_remove: Vec<String> = self
             .patch
@@ -1443,12 +1484,60 @@ impl AudioProcessor {
 
   /// Process a single frame, returning multi-channel output
   fn process_frame(&mut self, num_channels: usize) -> [f32; PORT_MAX_CHANNELS] {
-    use modular_core::types::ROOT_ID;
+    use modular_core::types::{ROOT_CLOCK_ID, ROOT_ID};
     profiling::scope!("process_frame");
 
     let mut output = [0.0f32; PORT_MAX_CHANNELS];
 
-    // Update all modules
+    // 1. Update ROOT_CLOCK first so its trigger outputs are available this frame
+    if let Some(root_clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
+      root_clock.update();
+    }
+
+    // 2. Check queued update trigger against ROOT_CLOCK outputs
+    let should_apply = if let Some((_, trigger)) = self.queued_update.as_ref() {
+      match trigger {
+        QueuedTrigger::Immediate => true,
+        QueuedTrigger::NextBar => {
+          // If clock is stopped, apply immediately rather than hanging forever
+          if self.is_stopped() {
+            true
+          } else if let Some(clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
+            clock
+              .get_poly_sample("barTrigger")
+              .map(|p| p.get(0) >= 1.0)
+              .unwrap_or(true)
+          } else {
+            true // No clock module = apply immediately
+          }
+        }
+        QueuedTrigger::NextBeat => {
+          if self.is_stopped() {
+            true
+          } else if let Some(clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
+            clock
+              .get_poly_sample("beatTrigger")
+              .map(|p| p.get(0) >= 1.0)
+              .unwrap_or(true)
+          } else {
+            true
+          }
+        }
+      }
+    } else {
+      false
+    };
+
+    // 3. If triggered, apply the patch update
+    if should_apply {
+      let (update, _) = self.queued_update.take().unwrap();
+      let applied_id = update.update_id;
+      self.apply_patch_update(update);
+      self.transport_meter.write_applied_update_id(applied_id);
+    }
+
+    // 4. Update all modules (ROOT_CLOCK won't re-run due to CAS guard;
+    //    newly inserted modules participate on this same frame)
     {
       profiling::scope!("update_modules");
       for module in self.patch.sampleables.values() {
@@ -1456,7 +1545,37 @@ impl AudioProcessor {
       }
     }
 
-    // Tick all modules
+    // 4.5 Write transport state from ROOT_CLOCK outputs (CAS guard prevents re-execution)
+    {
+      let has_queued = self.queued_update.is_some();
+      if let Some(clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
+        let bar_phase = clock
+          .get_poly_sample("playhead")
+          .map(|p| p.get(0) as f64)
+          .unwrap_or(0.0);
+        let bar_count = clock
+          .get_poly_sample("playhead")
+          .map(|p| p.get(1) as u64)
+          .unwrap_or(0);
+        let beat_in_bar = clock
+          .get_poly_sample("beatInBar")
+          .map(|p| p.get(0) as u32)
+          .unwrap_or(0);
+        self.transport_meter.write_from_audio(
+          bar_phase,
+          bar_count,
+          beat_in_bar,
+          !self.is_stopped(),
+          has_queued,
+        );
+      } else {
+        self
+          .transport_meter
+          .write_from_audio(0.0, 0, 0, false, has_queued);
+      }
+    }
+
+    // 5. Tick all modules (reset processed flags)
     {
       profiling::scope!("tick_modules");
       for module in self.patch.sampleables.values() {
@@ -1894,6 +2013,134 @@ impl AudioBudgetMeter {
   }
 }
 
+// ============================================================================
+// TransportMeter - Lock-free transport state shared between threads
+// ============================================================================
+
+/// Lock-free transport state shared between audio thread and main thread.
+/// Audio thread writes each frame, main thread reads for UI display.
+#[derive(Debug)]
+pub struct TransportMeter {
+  /// Current bar phase (0..1), stored as f64 bits
+  bar_phase_bits: AtomicU64,
+  /// Completed bar count (0-indexed)
+  bar_count: AtomicU64,
+  /// Current beat within the bar (0-indexed)
+  beat_in_bar: AtomicU64,
+  /// Tempo in BPM, stored as f64 bits
+  bpm_bits: AtomicU64,
+  /// Time signature numerator (beats per bar)
+  time_sig_numerator: AtomicU64,
+  /// Time signature denominator (beat value)
+  time_sig_denominator: AtomicU64,
+  /// Whether the clock is running
+  is_playing: AtomicBool,
+  /// Whether a queued patch update is pending
+  has_queued_update: AtomicBool,
+  /// The update_id of the most recently applied patch update
+  last_applied_update_id: AtomicU64,
+}
+
+impl Default for TransportMeter {
+  fn default() -> Self {
+    Self {
+      bar_phase_bits: AtomicU64::new(0f64.to_bits()),
+      bar_count: AtomicU64::new(0),
+      beat_in_bar: AtomicU64::new(0),
+      bpm_bits: AtomicU64::new(120f64.to_bits()),
+      time_sig_numerator: AtomicU64::new(4),
+      time_sig_denominator: AtomicU64::new(4),
+      is_playing: AtomicBool::new(false),
+      has_queued_update: AtomicBool::new(false),
+      last_applied_update_id: AtomicU64::new(0),
+    }
+  }
+}
+
+impl TransportMeter {
+  /// Write transport state from the audio thread.
+  /// Called once per frame after ROOT_CLOCK update.
+  #[inline]
+  pub fn write_from_audio(
+    &self,
+    bar_phase: f64,
+    bar_count: u64,
+    beat_in_bar: u32,
+    is_playing: bool,
+    has_queued_update: bool,
+  ) {
+    self
+      .bar_phase_bits
+      .store(bar_phase.to_bits(), Ordering::Relaxed);
+    self.bar_count.store(bar_count, Ordering::Relaxed);
+    self
+      .beat_in_bar
+      .store(beat_in_bar as u64, Ordering::Relaxed);
+    self.is_playing.store(is_playing, Ordering::Relaxed);
+    self
+      .has_queued_update
+      .store(has_queued_update, Ordering::Relaxed);
+  }
+
+  /// Write tempo and time signature. Called when params change (less frequently).
+  #[inline]
+  pub fn write_tempo(&self, bpm: f64, numerator: u32, denominator: u32) {
+    self.bpm_bits.store(bpm.to_bits(), Ordering::Relaxed);
+    self
+      .time_sig_numerator
+      .store(numerator as u64, Ordering::Relaxed);
+    self
+      .time_sig_denominator
+      .store(denominator as u64, Ordering::Relaxed);
+  }
+
+  /// Record that the audio thread applied a patch update with this ID.
+  #[inline]
+  pub fn write_applied_update_id(&self, update_id: u64) {
+    self
+      .last_applied_update_id
+      .store(update_id, Ordering::Relaxed);
+  }
+
+  /// Read transport snapshot from the main thread.
+  pub fn snapshot(&self) -> TransportSnapshot {
+    TransportSnapshot {
+      bar_phase: f64::from_bits(self.bar_phase_bits.load(Ordering::Relaxed)),
+      bar: self.bar_count.load(Ordering::Relaxed) as i64,
+      beat_in_bar: self.beat_in_bar.load(Ordering::Relaxed) as u32,
+      bpm: f64::from_bits(self.bpm_bits.load(Ordering::Relaxed)),
+      time_sig_numerator: self.time_sig_numerator.load(Ordering::Relaxed) as u32,
+      time_sig_denominator: self.time_sig_denominator.load(Ordering::Relaxed) as u32,
+      is_playing: self.is_playing.load(Ordering::Relaxed),
+      has_queued_update: self.has_queued_update.load(Ordering::Relaxed),
+      last_applied_update_id: self.last_applied_update_id.load(Ordering::Relaxed) as f64,
+    }
+  }
+}
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct TransportSnapshot {
+  /// Current bar phase (0..1 over one bar)
+  pub bar_phase: f64,
+  /// Completed bar count (0-indexed; display as bar + 1)
+  pub bar: i64,
+  /// Current beat within the bar (0-indexed)
+  pub beat_in_bar: u32,
+  /// Tempo in BPM
+  pub bpm: f64,
+  /// Time signature numerator (beats per bar)
+  pub time_sig_numerator: u32,
+  /// Time signature denominator (beat value)
+  pub time_sig_denominator: u32,
+  /// Whether the clock is running
+  pub is_playing: bool,
+  /// Whether a queued patch update is pending
+  pub has_queued_update: bool,
+  /// The update_id of the most recently applied patch update (as f64 for N-API compatibility)
+  pub last_applied_update_id: f64,
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -1948,6 +2195,7 @@ mod tests {
       audio_budget_meter: Arc::new(AudioBudgetMeter::new()),
       module_states: Arc::new(Mutex::new(HashMap::new())),
       midi_manager: Arc::new(MidiInputManager::new()),
+      transport_meter: Arc::new(TransportMeter::default()),
     };
 
     let processor = AudioProcessor::new(cmd_consumer, err_producer, garbage_producer, shared);
