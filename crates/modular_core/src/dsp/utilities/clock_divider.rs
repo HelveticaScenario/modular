@@ -2,7 +2,8 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::poly::MonoSignal;
+use crate::dsp::utils::SchmittTrigger;
+use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 use crate::types::ClockMessages;
 
 #[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
@@ -11,14 +12,22 @@ struct ClockDividerParams {
     /// division factor (e.g. 2 = output fires every other tick)
     pub division: u32,
     /// clock signal to divide
-    pub input: MonoSignal,
+    pub input: PolySignal,
+    /// trigger to reset the counter to 0
+    pub reset: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct ClockDividerOutputs {
     #[output("output", "divided clock output", default)]
-    pub output: f32,
+    pub output: PolyOutput,
+}
+
+#[derive(Default, Clone, Copy)]
+struct ChannelState {
+    counter: u32,
+    reset_schmitt: SchmittTrigger,
 }
 
 /// Divides an incoming clock signal so it fires less often.
@@ -36,7 +45,7 @@ struct ClockDividerOutputs {
 pub struct ClockDivider {
     params: ClockDividerParams,
     outputs: ClockDividerOutputs,
-    counter: u32,
+    channels: [ChannelState; PORT_MAX_CHANNELS],
 }
 
 message_handlers!(impl ClockDivider {
@@ -47,8 +56,10 @@ impl ClockDivider {
     fn on_clock_message(&mut self, m: &ClockMessages) -> Result<()> {
         match m {
             ClockMessages::Start => {
-                // Reset counter on start
-                self.counter = 0;
+                // Reset all channel counters on start
+                for state in self.channels.iter_mut() {
+                    state.counter = 0;
+                }
             }
             ClockMessages::Stop => {
                 // No special handling needed on stop
@@ -58,16 +69,28 @@ impl ClockDivider {
     }
 
     fn update(&mut self, _sample_rate: f32) {
-        if self.params.input.get_value() > 0.0 {
-            self.counter += 1;
-            if self.counter >= self.params.division.max(1) {
-                self.outputs.output = 5.0; // Trigger output
-                self.counter = 0;
-            } else {
-                self.outputs.output = 0.0;
+        let num_channels = self.channel_count();
+        let division = self.params.division.max(1);
+
+        for ch in 0..num_channels {
+            let state = &mut self.channels[ch];
+
+            // Reset counter on rising edge of reset trigger
+            if state.reset_schmitt.process(self.params.reset.get_value(ch)) {
+                state.counter = 0;
             }
-        } else {
-            self.outputs.output = 0.0;
+
+            if self.params.input.get_value(ch) > 0.0 {
+                state.counter += 1;
+                if state.counter >= division {
+                    self.outputs.output.set(ch, 5.0); // Trigger output
+                    state.counter = 0;
+                } else {
+                    self.outputs.output.set(ch, 0.0);
+                }
+            } else {
+                self.outputs.output.set(ch, 0.0);
+            }
         }
     }
 }
