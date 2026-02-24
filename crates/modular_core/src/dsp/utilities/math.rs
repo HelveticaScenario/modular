@@ -53,7 +53,7 @@ impl<'de> Deserialize<'de> for MathExpressionParam {
         // Replace with module(index)
         // Store signals
 
-        let re = Regex::new(r"module\(([a-zA-Z0-9\-_]+):([a-zA-Z0-9\-_]+):(\d+)\)")
+        let re = Regex::new(r"module\(([a-zA-Z0-9\-_$]+):([a-zA-Z0-9\-_$]+):(\d+)\)")
             .map_err(serde::de::Error::custom)?;
         let mut signals = Vec::new();
 
