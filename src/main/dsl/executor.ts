@@ -14,8 +14,8 @@ import {
     DeferredModuleOutput,
     DeferredCollection,
 } from './GraphBuilder';
-import { analyzeSourceSpans } from './sourceSpanAnalyzer';
-import type { CallSiteSpanRegistry } from './sourceSpanAnalyzer';
+import { analyzeSourceSpans } from './analyzeSource';
+import type { CallSiteSpanRegistry } from './analyzeSource';
 import type { InterpolationResolutionMap } from '../../shared/dsl/spanTypes';
 import { setActiveInterpolationResolutions } from '../../shared/dsl/spanTypes';
 import type { SliderDefinition } from '../../shared/dsl/sliderTypes';

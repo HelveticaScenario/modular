@@ -1,5 +1,5 @@
 /**
- * Source Span Analyzer using ts-morph
+ * Argument Span Analyzer
  *
  * Parses DSL source code and extracts absolute character offsets for literal
  * arguments in module factory calls. The registry is keyed by call-site
@@ -14,71 +14,21 @@
  */
 
 import {
-    Project,
-    SyntaxKind,
     Node,
     CallExpression,
     VariableDeclarationKind,
     type SourceFile,
-    ts,
 } from 'ts-morph';
 import type { ModuleSchema } from '@modular/core';
-
-// Re-export shared types/state from spanTypes (which has no Node.js dependencies)
-export type {
-    SourceSpan,
-    ResolvedInterpolation,
-    InterpolationResolutionMap,
-} from '../../shared/dsl/spanTypes';
-export {
-    setActiveInterpolationResolutions,
-    getActiveInterpolationResolutions,
-} from '../../shared/dsl/spanTypes';
 
 import type {
     SourceSpan,
     InterpolationResolutionMap,
-    ResolvedInterpolation,
-} from '../../shared/dsl/spanTypes';
-
-/**
- * Registry entry for a single call expression's argument spans
- */
-export interface CallSiteSpans {
-    /** Spans for each positional argument, keyed by argument name */
-    args: Map<string, SourceSpan>;
-    /** The module type being called (e.g., "seq", "sine") */
-    moduleType: string;
-}
-
-/**
- * Call site key using line:column format (1-based line, 0-based column)
- * This matches the format produced by Error.captureStackTrace
- */
-export type CallSiteKey = `${number}:${number}`;
-
-/**
- * Registry mapping call sites to their argument spans
- */
-export type SpanRegistry = Map<CallSiteKey, CallSiteSpans>;
-
-/**
- * Full source span of a call expression, in terms of editor line numbers.
- * Used to position view zones after the closing paren of multi-line calls.
- */
-export interface CallExpressionSpan {
-    /** 1-based start line of the call expression (in user source, before wrapper offset) */
-    startLine: number;
-    /** 1-based end line of the call expression (line containing the closing paren) */
-    endLine: number;
-}
-
-/**
- * Registry mapping call site keys to their full expression spans.
- * Covers DSL methods like .scope() and $slider() whose view zones need
- * to know the end line of the entire call expression.
- */
-export type CallSiteSpanRegistry = Map<CallSiteKey, CallExpressionSpan>;
+    SpanRegistry,
+    CallSiteKey,
+    CallSiteSpans,
+} from './sourceAnalysisTypes';
+import type { ResolvedInterpolation } from '../../shared/dsl/spanTypes';
 
 /**
  * Build a set of factory function names from module schemas.
@@ -444,52 +394,31 @@ function getTrackableNode(
 }
 
 /**
- * Result of analyzing source spans, including both the span registry
- * (for Rust-side argument highlighting) and the interpolation resolution map
- * (for TS-side redirect of highlights into const declarations).
- */
-export interface AnalysisResult {
-    /** Registry mapping call sites to argument spans */
-    registry: SpanRegistry;
-    /** Map from argument span key to resolved interpolations within that span */
-    interpolationResolutions: InterpolationResolutionMap;
-    /** Registry mapping call site keys to full call expression spans (start/end lines) */
-    callSiteSpans: CallSiteSpanRegistry;
-}
-
-/**
- * Analyze DSL source code and build a span registry for argument locations.
+ * Analyze factory call argument spans in a parsed source file.
  *
- * @param source - The DSL source code to analyze
+ * Walks all call expressions, matches them against module schemas,
+ * and records character-offset spans for each trackable argument.
+ * Also resolves interpolations in template literals with const references.
+ *
+ * @param sourceFile - The ts-morph SourceFile to analyze
  * @param schemas - Module schemas to determine which calls to track
- * @param lineOffset - Line offset to add (for wrapped code in new Function)
- * @returns Analysis result with span registry and interpolation resolution map
+ * @param lineOffset - Line offset for wrapper code in new Function()
+ * @param firstLineColumnOffset - Column offset for the first line
+ * @returns Span registry and interpolation resolution map
  */
-export function analyzeSourceSpans(
-    source: string,
+export function analyzeArgumentSpans(
+    sourceFile: SourceFile,
     schemas: ModuleSchema[],
-    lineOffset: number = 0,
-    firstLineColumnOffset: number = 0,
-): AnalysisResult {
+    lineOffset: number,
+    firstLineColumnOffset: number,
+): {
+    registry: SpanRegistry;
+    interpolationResolutions: InterpolationResolutionMap;
+} {
     const registry: SpanRegistry = new Map();
     const interpolationResolutions: InterpolationResolutionMap = new Map();
-    const callSiteSpans: CallSiteSpanRegistry = new Map();
     const factoryNames = buildFactoryNames(schemas);
     const schemaMap = buildSchemaMap(schemas);
-
-    // Create an in-memory TypeScript project
-    const project = new Project({
-        useInMemoryFileSystem: true,
-        compilerOptions: {
-            target: ts.ScriptTarget.ESNext,
-            allowJs: true,
-            checkJs: false,
-            noEmit: true,
-        },
-    });
-
-    // Add source as a virtual file
-    const sourceFile = project.createSourceFile('dsl.ts', source);
 
     // Pre-build const literal map for resolving variable references
     const constMap = buildConstLiteralMap(sourceFile);
@@ -683,15 +612,13 @@ export function analyzeSourceSpans(
             callStartPos = call.getStart();
         }
 
-        // ts-morph gives 0-based line numbers, but stack traces are 1-based
-        // Add the lineOffset to account for wrapper code in new Function()
+        // Both ts-morph and V8 stack traces use 1-based lines and columns.
+        // Add the lineOffset to account for wrapper code in new Function().
         const { line, column } = sourceFile.getLineAndColumnAtPos(callStartPos);
-        // line is already 1-based from ts-morph, column is 1-based too
-        // Stack traces show "line:column" where line is 1-based and column is 0-based
-        // For line 1 of source, we need to add the firstLineColumnOffset because
-        // the function body template indents the first line with spaces
+        // For line 1 of source, add the firstLineColumnOffset because
+        // the function body template indents the first line with spaces.
         const columnOffset = line === 1 ? firstLineColumnOffset : 0;
-        const key: CallSiteKey = `${line + lineOffset}:${column - 1 + columnOffset}`;
+        const key: CallSiteKey = `${line + lineOffset}:${column + columnOffset}`;
 
         registry.set(key, {
             args: argsMap,
@@ -699,78 +626,5 @@ export function analyzeSourceSpans(
         });
     });
 
-    // --- Pass 2: Track full call expression spans for DSL methods ---
-    // These are method calls like .scope() and standalone calls like $slider()
-    // whose view zones need to know the end line of the entire call expression.
-    const DSL_METHODS_TO_TRACK = new Set(['scope']);
-    const DSL_FUNCTIONS_TO_TRACK = new Set(['$slider']);
-
-    sourceFile.forEachDescendant((node: Node) => {
-        if (!Node.isCallExpression(node)) return;
-
-        const call = node;
-        const expression = call.getExpression();
-
-        let callStartPos: number;
-
-        if (Node.isPropertyAccessExpression(expression)) {
-            // Method call like .scope() — V8 reports position of the method name
-            const methodName = expression.getName();
-            if (!DSL_METHODS_TO_TRACK.has(methodName)) return;
-            callStartPos = expression.getNameNode().getStart();
-        } else if (Node.isIdentifier(expression)) {
-            // Standalone call like $slider()
-            const funcName = expression.getText();
-            if (!DSL_FUNCTIONS_TO_TRACK.has(funcName)) return;
-            callStartPos = call.getStart();
-        } else {
-            return;
-        }
-
-        // Compute key in user-source coordinates so the renderer can look up
-        // directly from captureSourceLocation's {line, column} values.
-        // Key format: "${userLine}:${v8Column}" where:
-        //   userLine = tsMorphLine (1-based, same as captureSourceLocation().line)
-        //   v8Column = tsMorphCol + firstLineColumnOffset for line 1, else tsMorphCol
-        //              (1-based, same as captureSourceLocation().column)
-        const { line: startTsMorphLine, column: startTsMorphCol } =
-            sourceFile.getLineAndColumnAtPos(callStartPos);
-        const v8Column =
-            startTsMorphCol +
-            (startTsMorphLine === 1 ? firstLineColumnOffset : 0);
-        const key: CallSiteKey = `${startTsMorphLine}:${v8Column}`;
-
-        // Compute the end line of the full call expression (including closing paren)
-        const callEnd = call.getEnd();
-        const { line: endTsMorphLine } = sourceFile.getLineAndColumnAtPos(
-            callEnd - 1,
-        );
-
-        callSiteSpans.set(key, {
-            startLine: startTsMorphLine,
-            endLine: endTsMorphLine,
-        });
-    });
-
-    return { registry, interpolationResolutions, callSiteSpans };
-}
-
-/**
- * Create an empty span registry (for when analysis is not needed)
- */
-export function emptySpanRegistry(): SpanRegistry {
-    return new Map();
-}
-
-/**
- * Debug helper: print registry contents
- */
-export function debugPrintRegistry(registry: SpanRegistry): void {
-    console.log('=== Span Registry ===');
-    for (const [key, value] of registry) {
-        console.log(`${key} (${value.moduleType}):`);
-        for (const [argName, span] of value.args) {
-            console.log(`  ${argName}: [${span.start}, ${span.end})`);
-        }
-    }
+    return { registry, interpolationResolutions };
 }

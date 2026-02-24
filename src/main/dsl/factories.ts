@@ -7,7 +7,7 @@ import {
     CollectionWithRange,
 } from './GraphBuilder';
 import type { SourceSpan } from '../../shared/dsl/spanTypes';
-import type { SpanRegistry, CallSiteKey } from './sourceSpanAnalyzer';
+import type { SpanRegistry, CallSiteKey } from './analyzeSource';
 import {
     captureSourceLocation,
     setDSLWrapperLineOffset,
@@ -58,10 +58,9 @@ function captureArgumentSpans(
         return undefined;
     }
 
-    // Build the call site key matching what ts-morph produced
-    // ts-morph uses 1-based lines and columns, and the analyzer converts column to 0-based
-    // Stack traces also use 1-based line/column, so we need to convert column to 0-based here too
-    const key: CallSiteKey = `${sourceLocation.line + getDSLWrapperLineOffset()}:${sourceLocation.column - 1}`;
+    // Build the call site key matching what ts-morph produced.
+    // Both ts-morph and V8 stack traces use 1-based lines and columns.
+    const key: CallSiteKey = `${sourceLocation.line + getDSLWrapperLineOffset()}:${sourceLocation.column}`;
 
     const entry = activeSpanRegistry.get(key);
     if (!entry) {
