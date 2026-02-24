@@ -18,7 +18,7 @@
         "deploy": "./release.sh",
         "test": "yarn test:unit",
         "test:unit": "vitest run",
-        "test:rust": "cargo test --package modular_core --test dsp_fresh_tests",
+        "test:rust": "cargo test",
         "test:e2e": "playwright test",
         "test:e2e:update": "playwright test --update-snapshots",
         "test:all": "yarn test:unit && yarn test:rust && yarn test:e2e",
