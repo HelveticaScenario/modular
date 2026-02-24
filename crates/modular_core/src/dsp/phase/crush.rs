@@ -6,10 +6,10 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
+use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 use crate::types::Clickless;
 
-#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct CrushParams {
     /// input phase (0 to 1)

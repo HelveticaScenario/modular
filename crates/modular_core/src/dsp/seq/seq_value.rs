@@ -271,7 +271,7 @@ fn parse_module_ref(s: &str) -> Option<SeqValue> {
 /// These pointers remain valid as long as the Pattern is not dropped or reallocated.
 /// Since SeqPatternParam owns both the pattern and signals, and patterns are
 /// immutable after parsing, this is safe.
-#[derive(Default, JsonSchema, Debug)]
+#[derive(Clone, Default, JsonSchema, Debug)]
 #[serde(transparent)]
 #[schemars(transparent)]
 pub struct SeqPatternParam {

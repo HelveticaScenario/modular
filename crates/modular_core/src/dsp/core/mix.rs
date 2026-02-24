@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal},
+    poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS},
     types::Clickless,
 };
 
@@ -25,7 +25,7 @@ impl crate::types::Connect for MixMode {
     fn connect(&mut self, _patch: &crate::Patch) {}
 }
 
-#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 pub struct MixParams {
     /// Input signals to mix channel-by-channel.

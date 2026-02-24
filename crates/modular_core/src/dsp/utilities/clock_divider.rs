@@ -3,10 +3,10 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::dsp::utils::SchmittTrigger;
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
+use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 use crate::types::ClockMessages;
 
-#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct ClockDividerParams {
     /// division factor (e.g. 2 = output fires every other tick)
@@ -86,7 +86,7 @@ impl ClockDivider {
                 } else {
                     self.outputs.output.set(ch, 0.0);
                 }
-                
+
                 state.counter += 1;
                 if state.counter >= division {
                     state.counter = 0;

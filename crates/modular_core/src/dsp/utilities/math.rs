@@ -7,9 +7,26 @@ use regex::Regex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer};
 use std::collections::BTreeMap;
-use std::sync::Weak;
+use std::sync::{Arc, Weak};
 
-#[derive(Default, JsonSchema)]
+/// Compiled fasteval expression data. Wrapped in `Arc` so that
+/// `MathExpressionParam` can derive `Clone` cheaply (Arc clone)
+/// without requiring `Slab`/`Instruction` to implement `Clone`.
+struct MathCompiled {
+    slab: fasteval::Slab,
+    instruction: Instruction,
+}
+
+impl Default for MathCompiled {
+    fn default() -> Self {
+        Self {
+            slab: fasteval::Slab::new(),
+            instruction: Instruction::default(),
+        }
+    }
+}
+
+#[derive(Clone, Default, JsonSchema)]
 #[serde(transparent)]
 #[schemars(transparent)]
 struct MathExpressionParam {
@@ -22,11 +39,7 @@ struct MathExpressionParam {
 
     #[serde(skip)]
     #[schemars(skip)]
-    slab: fasteval::Slab,
-
-    #[serde(skip)]
-    #[schemars(skip)]
-    instruction: Instruction,
+    compiled: Arc<MathCompiled>,
 }
 
 impl<'de> Deserialize<'de> for MathExpressionParam {
@@ -73,8 +86,7 @@ impl<'de> Deserialize<'de> for MathExpressionParam {
         Ok(MathExpressionParam {
             source,
             signals,
-            slab,
-            instruction,
+            compiled: Arc::new(MathCompiled { slab, instruction }),
         })
     }
 }
@@ -87,7 +99,7 @@ impl Connect for MathExpressionParam {
     }
 }
 
-#[derive(Deserialize, Default, JsonSchema, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct MathParams {
     /// math expression to evaluate (e.g. "x * 2 + sin(t)")
@@ -216,11 +228,11 @@ impl Math {
         // let mut ns = fasteval::CachedCallbackNamespace::new(cb);
 
         Ok({
-            let evaler = &self.params.expression.instruction;
+            let evaler = &self.params.expression.compiled.instruction;
             if let fasteval::IConst(c) = evaler {
                 *c
             } else {
-                evaler.eval(&self.params.expression.slab, &mut cb)?
+                evaler.eval(&self.params.expression.compiled.slab, &mut cb)?
             }
         })
     }

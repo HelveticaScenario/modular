@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use crate::poly::{PolyOutput, PolySignal};
 
-#[derive(Deserialize, Default, JsonSchema, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct SignalParams {
     /// Input signal to forward.

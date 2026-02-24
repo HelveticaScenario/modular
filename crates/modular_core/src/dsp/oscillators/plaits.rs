@@ -14,9 +14,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    dsp::utils::{SchmittTrigger, voct_to_midi},
+    dsp::utils::{voct_to_midi, SchmittTrigger},
     patch::Patch as ModularPatch,
-    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal},
+    poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS},
     types::{Clickless, Connect},
 };
 
@@ -117,7 +117,7 @@ impl Connect for PlaitsEngine {
     fn connect(&mut self, _patch: &ModularPatch) {}
 }
 
-#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct PlaitsParams {
     /// Pitch input in V/Oct (0V = C4)

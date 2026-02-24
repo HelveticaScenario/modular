@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::types::{MidiControlChange, MidiControlChange14Bit};
 
-#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct MidiCcParams {
     /// MIDI device name to receive from (leave unset to receive from all devices)

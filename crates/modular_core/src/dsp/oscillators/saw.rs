@@ -3,11 +3,11 @@ use serde::Deserialize;
 
 use crate::{
     dsp::utils::voct_to_hz,
-    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal},
+    poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS},
     types::Clickless,
 };
 
-#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct SawOscillatorParams {
     /// pitch in V/Oct (0V = C4)

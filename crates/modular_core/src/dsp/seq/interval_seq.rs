@@ -16,14 +16,14 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    MonoSignal, Patch,
     dsp::{
         utilities::quantizer::ScaleParam,
-        utils::{TempGate, TempGateState, midi_to_voct_f64},
+        utils::{midi_to_voct_f64, TempGate, TempGateState},
     },
     pattern_system::{Fraction, Pattern},
-    poly::{PORT_MAX_CHANNELS, PolyOutput},
+    poly::{PolyOutput, PORT_MAX_CHANNELS},
     types::Connect,
+    MonoSignal, Patch,
 };
 
 /// Scale parameter for IntervalSeq that supports an optional octave in the root.
@@ -172,7 +172,7 @@ impl IntervalPatternSource {
 }
 
 /// Per-source metadata retained for span tracking.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct SourceMeta {
     source: String,
     all_spans: Vec<(usize, usize)>,
@@ -183,7 +183,7 @@ pub struct SourceMeta {
 /// Accepts either a single pattern string or an array of strings.
 /// Multiple strings are parsed individually then combined via `app_left`
 /// addition (left-fold), matching Strudel's `.add.in` behavior.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct IntervalPatternParam {
     /// The source value (string or array of strings) — drives the JSON schema
     #[allow(dead_code)]
@@ -375,7 +375,7 @@ fn default_channels() -> usize {
     4
 }
 
-#[derive(Deserialize, Default, ChannelCount, JsonSchema, Connect, Debug)]
+#[derive(Clone, Deserialize, Default, ChannelCount, JsonSchema, Connect, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct IntervalSeqParams {
     /// patterns to combine (left-fold with appLeft addition); accepts a single
@@ -1082,7 +1082,7 @@ mod tests {
 
         // D3 root
         seq.base_midi = 50; // D3
-        // Degree 0 = D3 = MIDI 50 = -10/12 V
+                            // Degree 0 = D3 = MIDI 50 = -10/12 V
         let v0 = seq.degree_to_voltage(0);
         assert!((v0 - (-10.0 / 12.0)).abs() < 0.001);
     }

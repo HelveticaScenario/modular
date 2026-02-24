@@ -1,18 +1,18 @@
 use crate::{
-    PORT_MAX_CHANNELS,
     poly::{PolyOutput, PolySignal},
+    PORT_MAX_CHANNELS,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct RisingEdgeDetectorParams {
     /// signal to detect rising edges in
     input: PolySignal,
 }
 
-#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct FallingEdgeDetectorParams {
     /// signal to detect falling edges in

@@ -3,12 +3,12 @@ use crate::{
         consts::{LUT_SINE, LUT_SINE_SIZE},
         utils::{interpolate, voct_to_hz},
     },
-    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal},
+    poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS},
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct SineOscillatorParams {
     /// pitch in V/Oct (0V = C4)

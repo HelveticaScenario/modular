@@ -1,9 +1,9 @@
 use crate::dsp::utils::SchmittTrigger;
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
+use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct PercussionEnvelopeParams {
     /// trigger input (rising edge triggers envelope)

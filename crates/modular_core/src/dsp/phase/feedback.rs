@@ -10,10 +10,10 @@ use serde::Deserialize;
 
 use crate::dsp::fx::enosc_tables::aa_feedback;
 use crate::dsp::utils::voct_to_hz;
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
+use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 use crate::types::Clickless;
 
-#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct FeedbackParams {
     /// input phase (0 to 1)

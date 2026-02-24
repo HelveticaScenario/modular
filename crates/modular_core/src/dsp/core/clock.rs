@@ -2,7 +2,7 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{PolyOutput, types::ClockMessages};
+use crate::{types::ClockMessages, PolyOutput};
 
 fn default_four() -> u32 {
     4
@@ -27,7 +27,7 @@ where
     Ok(v)
 }
 
-#[derive(Deserialize, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct ClockParams {
     /// Tempo in BPM. Defaults to 120.

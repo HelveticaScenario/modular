@@ -2,13 +2,13 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    PORT_MAX_CHANNELS,
     dsp::utils::{changed, voct_to_hz},
     poly::{PolyOutput, PolySignal},
     types::Clickless,
+    PORT_MAX_CHANNELS,
 };
 
-#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct HighpassFilterParams {
     /// signal input

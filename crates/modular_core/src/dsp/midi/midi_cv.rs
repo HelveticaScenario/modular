@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::dsp::utils::{GATE_HIGH_VOLTAGE, GATE_LOW_VOLTAGE};
 use crate::patch::Patch;
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput};
+use crate::poly::{PolyOutput, PORT_MAX_CHANNELS};
 use crate::types::{
     Connect, MidiChannelPressure, MidiControlChange, MidiNoteOff, MidiNoteOn, MidiPitchBend,
     MidiPolyPressure,
@@ -70,7 +70,7 @@ struct VoiceState {
     mod_wheel: u8,
 }
 
-#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct MidiCvParams {
     /// MIDI device name to receive from (leave unset to receive from all devices)

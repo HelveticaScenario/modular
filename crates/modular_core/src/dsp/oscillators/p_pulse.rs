@@ -1,12 +1,12 @@
 use crate::{
     dsp::utils::wrap,
-    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal},
+    poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS},
     types::Clickless,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
 #[serde(default, rename_all = "camelCase")]
 struct PPulseOscillatorParams {
     /// phasor input (0–1, wraps at boundaries)
