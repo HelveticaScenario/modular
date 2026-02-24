@@ -126,11 +126,15 @@ impl SchmittTrigger {
     pub fn process_with_edge(&mut self, input: f32) -> (bool, EdgeEvent) {
         match self.state {
             SchmittState::Uninitialized => {
-                // Initialize state based on input
+                // Initialize state based on input, reporting edges for definitive states
                 if input >= self.high_threshold {
                     self.state = SchmittState::High;
-                    (true, EdgeEvent::None)
+                    (true, EdgeEvent::Rising)
+                } else if input < self.low_threshold {
+                    self.state = SchmittState::Low;
+                    (false, EdgeEvent::Falling)
                 } else {
+                    // In hysteresis band — no definitive edge
                     self.state = SchmittState::Low;
                     (false, EdgeEvent::None)
                 }
