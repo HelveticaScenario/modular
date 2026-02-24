@@ -1192,6 +1192,8 @@ impl AudioState {
       let _ = self.send_command(GraphCommand::ClearPatch);
       let mut scope_collection = self.scope_collection.lock();
       scope_collection.clear();
+      // Auto-unmute on SetPatch to match prior imperative flow
+      self.set_stopped(false);
     }
 
     // Apply patch
@@ -1202,14 +1204,8 @@ impl AudioState {
       }];
     }
 
-    let responses: Vec<ApplyPatchError> = vec![];
-
-    // Auto-unmute on SetPatch to match prior imperative flow
-    if self.is_stopped() {
-      self.set_stopped(false);
-    }
-
-    responses
+    // No errors
+    vec![]
   }
 }
 
@@ -1360,7 +1356,6 @@ impl AudioProcessor {
             .patch
             .sampleables
             .keys()
-            .filter(|id| !is_reserved_module_id(id))
             .cloned()
             .collect();
           for id in ids_to_remove {
@@ -1489,6 +1484,10 @@ impl AudioProcessor {
 
     let mut output = [0.0f32; PORT_MAX_CHANNELS];
 
+    if self.is_stopped() {
+      return output; // Skip processing when stopped
+    }
+
     // 1. Update ROOT_CLOCK first so its trigger outputs are available this frame
     if let Some(root_clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
       root_clock.update();
@@ -1499,10 +1498,7 @@ impl AudioProcessor {
       match trigger {
         QueuedTrigger::Immediate => true,
         QueuedTrigger::NextBar => {
-          // If clock is stopped, apply immediately rather than hanging forever
-          if self.is_stopped() {
-            true
-          } else if let Some(clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
+          if let Some(clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
             clock
               .get_poly_sample("barTrigger")
               .map(|p| p.get(0) >= 1.0)
@@ -1512,9 +1508,7 @@ impl AudioProcessor {
           }
         }
         QueuedTrigger::NextBeat => {
-          if self.is_stopped() {
-            true
-          } else if let Some(clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
+          if let Some(clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
             clock
               .get_poly_sample("beatTrigger")
               .map(|p| p.get(0) >= 1.0)
