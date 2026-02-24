@@ -81,12 +81,15 @@ impl ClockDivider {
             }
 
             if self.params.input.get_value(ch) > 0.0 {
-                state.counter += 1;
-                if state.counter >= division {
+                if state.counter == 0 {
                     self.outputs.output.set(ch, 5.0); // Trigger output
-                    state.counter = 0;
                 } else {
                     self.outputs.output.set(ch, 0.0);
+                }
+                
+                state.counter += 1;
+                if state.counter >= division {
+                    state.counter = 0;
                 }
             } else {
                 self.outputs.output.set(ch, 0.0);
