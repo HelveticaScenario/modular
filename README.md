@@ -55,7 +55,7 @@ $sine('a3').out();
 
 ```javascript
 const mod = $sine('220hz');
-const carrier = $sine('440hz').phase(mod.gain(0.5));
+const carrier = $sine('440hz').phase(mod.amplitude(0.5));
 carrier.out();
 ```
 

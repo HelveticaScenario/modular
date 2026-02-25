@@ -124,7 +124,7 @@ const RESERVED_OUTPUT_NAMES = new Set([
     'portName',
     'channel',
     // ModuleOutput methods
-    'gain',
+    'amplitude',
     'shift',
     'scope',
     'out',
@@ -225,7 +225,7 @@ export class DSLContext {
         }
 
         // Register factories with the builder for internal use (late binding)
-        // This allows GraphBuilder methods like .gain(), .shift(), .range() to use factories
+        // This allows GraphBuilder methods like .amplitude(), .shift(), .range() to use factories
         // Note: This adds overhead from channel count derivation but ensures consistency
         const factoryMap = new Map<string, FactoryFunction>();
         for (const schema of schemas) {

@@ -457,7 +457,7 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
         "port_name",
         "channel",
         // ModuleOutput methods
-        "gain",
+        "amplitude",
         "shift",
         "scope",
         "out",

@@ -49,8 +49,8 @@ export type PolySignal = OrArray<Signal> | Iterable<ModuleOutput>;
 export interface StereoOutOptions {
     /** Base output channel (0-14, default 0). Left plays on baseChannel, right on baseChannel+1 */
     baseChannel?: number;
-    /** Output gain. If set, a scaleAndShift module is added after the stereo mix */
-    gain?: PolySignal;
+    /** Output amplitude. If set, a scaleAndShift module is added after the stereo mix */
+    amplitude?: PolySignal;
     /** Pan position (-5 = left, 0 = center, +5 = right). Default 0 */
     pan?: PolySignal;
     /** Stereo width/spread (0 = no spread, 5 = full spread). Default 0 */
@@ -61,15 +61,15 @@ export interface StereoOutOptions {
 export interface MonoOutOptions {
     /** Output channel (0-15, default 0) */
     channel?: number;
-    /** Output gain. If set, a scaleAndShift module is added after the mix */
-    gain?: PolySignal;
+    /** Output amplitude. If set, a scaleAndShift module is added after the mix */
+    amplitude?: PolySignal;
 }
 
 /** Internal storage for a stereo output group */
 export interface StereoOutGroup {
     type: 'stereo';
     outputs: ModuleOutput[];
-    gain?: PolySignal;
+    amplitude?: PolySignal;
     pan?: PolySignal;
     width?: PolySignal;
 }
@@ -78,14 +78,14 @@ export interface StereoOutGroup {
 export interface MonoOutGroup {
     type: 'mono';
     outputs: ModuleOutput[];
-    gain?: PolySignal;
+    amplitude?: PolySignal;
 }
 
 export type OutGroup = StereoOutGroup | MonoOutGroup;
 
 /**
  * BaseCollection provides iterable, indexable container for ModuleOutput arrays
- * with chainable DSP methods (gain, shift, scope, out).
+ * with chainable DSP methods (amplitude, shift, scope, out).
  */
 export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
     [index: number]: T;
@@ -109,7 +109,7 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
     /**
      * Scale all outputs by a factor
      */
-    gain(factor: PolySignal): Collection {
+    amplitude(factor: PolySignal): Collection {
         if (this.items.length === 0) return new Collection();
         const factory = this.items[0].builder.getFactory('$scaleAndShift');
         if (!factory) {
@@ -149,7 +149,7 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
     /**
      * Send all outputs to speakers as stereo
      * @param baseChannel - Base output channel (0-15, default 0)
-     * @param options.gain - Output gain (adds scaleAndShift after stereo mix)
+     * @param options.amplitude - Output amplitude (adds scaleAndShift after stereo mix)
      * @param options.pan - Pan position (-5 = left, 0 = center, +5 = right)
      * @param options.width - Stereo width/spread (0 = no spread, 5 = full spread)
      */
@@ -166,13 +166,13 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
     /**
      * Send all outputs to speakers as mono
      * @param channel - Output channel (0-15, default 0)
-     * @param gain - Output gain
+     * @param amplitude - Output amplitude
      */
-    outMono(channel: number = 0, gain?: PolySignal): this {
+    outMono(channel: number = 0, amplitude?: PolySignal): this {
         if (this.items.length > 0) {
             this.items[0].builder.addOutMono([...this.items], {
                 channel,
-                gain,
+                amplitude,
             });
         }
         return this;
@@ -203,10 +203,10 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
         const result = pipelineFunc(this);
         // Remap mix from 0-5 to 5-0 for crossfade between original and transformed signals
         return mixFactory([
-            this.gain(
+            this.amplitude(
                 clampFactory(remapFactory(mix, 0, 5, 5, 0), { min: 0, max: 5 }),
             ),
-            result.gain(
+            result.amplitude(
                 clampFactory(mix, { min: 0, max: 5 }) as Value & PolySignal,
             ),
         ]) as Collection;
@@ -337,8 +337,8 @@ export class GraphBuilder {
     private deferredOutputs: Map<string, DeferredModuleOutput> = new Map();
     /** Global tempo for ROOT_CLOCK in BPM (default: 120) */
     private tempo: number = 120;
-    /** Global output gain signal (default: 2.5) */
-    private outputGain: Signal = 2.5;
+    /** Global output amplitude signal (default: 2.5) */
+    private outputAmplitude: Signal = 2.5;
     /** Time signature numerator (beats per bar) for ROOT_CLOCK */
     private timeSignatureNumerator: number | undefined;
     /** Time signature denominator (beat value) for ROOT_CLOCK */
@@ -458,11 +458,11 @@ export class GraphBuilder {
     }
 
     /**
-     * Set the global output gain
-     * @param gain - Signal value for output gain (2.5 is default, 5.0 is unity)
+     * Set the global output amplitude
+     * @param amplitude - Signal value for output amplitude (2.5 is default, 5.0 is unity)
      */
-    setOutputGain(gain: Signal): void {
-        this.outputGain = gain;
+    setOutputAmplitude(amplitude: Signal): void {
+        this.outputAmplitude = amplitude;
     }
 
     /**
@@ -529,11 +529,11 @@ export class GraphBuilder {
                             width: group.width ?? 0,
                         }) as Collection;
 
-                        // Apply gain if specified
-                        if (group.gain !== undefined) {
+                        // Apply amplitude if specified
+                        if (group.amplitude !== undefined) {
                             const gained = scaleAndShiftFactory(
                                 [...stereoOut],
-                                group.gain,
+                                group.amplitude,
                             ) as Collection;
                             outputSignals = [...gained];
                         } else {
@@ -548,12 +548,12 @@ export class GraphBuilder {
                             }) as Collection
                         )[0];
 
-                        // Apply gain if specified
+                        // Apply amplitude if specified
                         let finalOut: ModuleOutput;
-                        if (group.gain !== undefined) {
+                        if (group.amplitude !== undefined) {
                             finalOut = scaleAndShiftFactory(
                                 mixOut,
-                                group.gain,
+                                group.amplitude,
                             ) as ModuleOutput;
                         } else {
                             finalOut = mixOut;
@@ -580,8 +580,8 @@ export class GraphBuilder {
             // Each collection contributes to corresponding output channels
             const finalMix = mixFactory(allChannelCollections) as Collection;
 
-            // Apply global output gain
-            const gainedMix = finalMix.gain(this.outputGain);
+            // Apply global output amplitude
+            const gainedMix = finalMix.amplitude(this.outputAmplitude);
 
             // Create root signal module with the final mix
             signalFactory(gainedMix, { id: 'ROOT_OUTPUT' });
@@ -675,7 +675,7 @@ export class GraphBuilder {
         this.sourceLocationMap.clear();
         this.deferredOutputs.clear();
         this.tempo = 120;
-        this.outputGain = 2.5;
+        this.outputAmplitude = 2.5;
         this.timeSignatureNumerator = undefined;
         this.timeSignatureDenominator = undefined;
     }
@@ -704,7 +704,7 @@ export class GraphBuilder {
         const group: StereoOutGroup = {
             type: 'stereo',
             outputs,
-            gain: options.gain,
+            amplitude: options.amplitude,
             pan: options.pan,
             width: options.width,
         };
@@ -730,7 +730,7 @@ export class GraphBuilder {
         const group: MonoOutGroup = {
             type: 'mono',
             outputs,
-            gain: options.gain,
+            amplitude: options.amplitude,
         };
 
         const existing = this.outGroups.get(channel) ?? [];
@@ -930,7 +930,7 @@ export class ModuleOutput {
     /**
      * Scale this output by a factor
      */
-    gain(factor: Value): ModuleOutput {
+    amplitude(factor: Value): ModuleOutput {
         const factory = this.builder.getFactory('$scaleAndShift');
         if (!factory) {
             throw new Error('Factory for util.scaleAndShift not registered');
@@ -963,7 +963,7 @@ export class ModuleOutput {
     /**
      * Send this output to speakers as stereo
      * @param baseChannel - Base output channel (0-15, default 0)
-     * @param options.gain - Output gain (adds util.scaleAndShift after stereo mix)
+     * @param options.amplitude - Output amplitude (adds util.scaleAndShift after stereo mix)
      * @param options.pan - Pan position (-5 = left, 0 = center, +5 = right)
      * @param options.width - Stereo width/spread (0 = no spread, 5 = full spread)
      */
@@ -975,10 +975,10 @@ export class ModuleOutput {
     /**
      * Send this output to speakers as mono
      * @param channel - Output channel (0-15, default 0)
-     * @param gain - Output gain
+     * @param amplitude - Output amplitude
      */
-    outMono(channel: number = 0, gain?: PolySignal): this {
-        this.builder.addOutMono(this, { channel, gain });
+    outMono(channel: number = 0, amplitude?: PolySignal): this {
+        this.builder.addOutMono(this, { channel, amplitude });
         return this;
     }
 
@@ -1053,7 +1053,7 @@ type OutputSideEffect = (output: ModuleOutput) => void;
 /**
  * DeferredModuleOutput is a placeholder for a signal that will be assigned later.
  * Useful for feedback loops and forward references in the DSL.
- * Supports the same chainable methods as ModuleOutput (gain, shift, scope, out, outMono).
+ * Supports the same chainable methods as ModuleOutput (amplitude, shift, scope, out, outMono).
  * Transforms are stored and applied when the deferred signal is resolved.
  */
 export class DeferredModuleOutput extends ModuleOutput {

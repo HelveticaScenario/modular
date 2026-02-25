@@ -55,7 +55,7 @@ struct MidiCcOutputs {
 ///
 /// // High-resolution breath controller with smoothing
 /// const breath = $midiCC({ cc: 2, highResolution: true, smoothingMs: 10 });
-/// $sine('c4').gain(breath).out();
+/// $sine('c4').amplitude(breath).out();
 /// ```
 #[module(name = "$midiCC", args())]
 #[derive(Default)]

@@ -101,24 +101,24 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         name: 'ModuleOutput',
         description:
             'A single output from a module, representing a mono signal connection. ' +
-            'ModuleOutputs are chainable - methods like gain(), shift(), and out() return the same output for fluent API usage. ' +
+            'ModuleOutputs are chainable - methods like amplitude(), shift(), and out() return the same output for fluent API usage. ' +
             'Every module factory returns either a ModuleOutput or a Collection of outputs.',
         definition:
             'interface { moduleId: string; portName: string; channel: number; ... }',
         examples: [
             'const osc = $sine("c4")',
-            'osc.gain(0.5).out()           // Chain methods',
+            'osc.amplitude(0.5).out()           // Chain methods',
             'osc.scope().out()             // Add visualization',
             "$lpf(osc, 'c3', { q: 4 })     // Use as input to another module",
         ],
         seeAlso: ['ModuleOutputWithRange', 'Collection', 'Signal'],
         methods: [
             {
-                name: 'gain',
-                signature: 'gain(factor: Poly<Signal>): ModuleOutput',
+                name: 'amplitude',
+                signature: 'amplitude(factor: Poly<Signal>): ModuleOutput',
                 description:
                     'Scale the signal by a factor. Creates a $scaleAndShift module internally.',
-                example: 'osc.gain(2.5)  // Half amplitude',
+                example: 'osc.amplitude(2.5)  // Half amplitude',
             },
             {
                 name: 'shift',
@@ -142,12 +142,12 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                     'out(baseChannel?: number, options?: StereoOutOptions): this',
                 description:
                     'Send this output to the speakers as stereo audio. Left plays on baseChannel, right on baseChannel+1.',
-                example: 'osc.out(0, { gain: 0.5, pan: -2 })',
+                example: 'osc.out(0, { amplitude: 0.5, pan: -2 })',
             },
             {
                 name: 'outMono',
                 signature:
-                    'outMono(channel?: number, gain?: Poly<Signal>): this',
+                    'outMono(channel?: number, amplitude?: Poly<Signal>): this',
                 description:
                     'Send this output to a single speaker channel as mono audio.',
                 example: 'lfo.outMono(2, 0.3)',
@@ -155,7 +155,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             {
                 name: 'pipeMix',
                 signature:
-                    'pipeMix(pipeFn: (self: this) => ModuleOutput | Collection, options?: { mode?: "sum" | "average" | "max" | "min"; gain?: Poly<Signal> }): Collection',
+                    'pipeMix(pipeFn: (self: this) => ModuleOutput | Collection, options?: { mode?: "sum" | "average" | "max" | "min"; amplitude?: Poly<Signal> }): Collection',
                 description:
                     'Pipe this output through a transform, then mix the original and transformed signals together using a $mix module. ' +
                     'The callback receives this output and returns a second signal; both are passed as inputs to $mix.',
@@ -199,7 +199,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         definition:
             'interface extends Iterable<ModuleOutput> { length: number; [index]: ModuleOutput; ... }',
         examples: [
-            '$c(osc1, osc2, osc3).gain(0.5).out()  // Apply gain to all, send to output',
+            '$c(osc1, osc2, osc3).amplitude(0.5).out()  // Apply amplitude to all, send to output',
             'const voices = $c(osc1, osc2, osc3)',
             'for (const v of voices) { ... }      // Iterate over outputs',
             '[...voices]                          // Spread to array',
@@ -208,10 +208,10 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         seeAlso: ['CollectionWithRange', 'ModuleOutput', 'Poly<Signal>'],
         methods: [
             {
-                name: 'gain',
-                signature: 'gain(factor: Poly<Signal>): Collection',
+                name: 'amplitude',
+                signature: 'amplitude(factor: Poly<Signal>): Collection',
                 description: 'Scale all signals in the collection by a factor.',
-                example: '$c(osc1, osc2).gain(0.5)',
+                example: '$c(osc1, osc2).amplitude(0.5)',
             },
             {
                 name: 'shift',
@@ -239,7 +239,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             {
                 name: 'outMono',
                 signature:
-                    'outMono(channel?: number, gain?: Poly<Signal>): this',
+                    'outMono(channel?: number, amplitude?: Poly<Signal>): this',
                 description:
                     'Send all outputs to a single speaker channel as mono, summed together.',
                 example: '$c(osc1, osc2).outMono(0, 0.3)',
@@ -255,7 +255,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             {
                 name: 'pipeMix',
                 signature:
-                    'pipeMix(pipeFn: (self: this) => ModuleOutput | Collection, options?: { mode?: "sum" | "average" | "max" | "min"; gain?: Poly<Signal> }): Collection',
+                    'pipeMix(pipeFn: (self: this) => ModuleOutput | Collection, options?: { mode?: "sum" | "average" | "max" | "min"; amplitude?: Poly<Signal> }): Collection',
                 description:
                     'Pipe this collection through a transform, then mix the original and transformed signals together using a $mix module. ' +
                     'The callback receives this collection and returns a second signal; both are passed as inputs to $mix.',
@@ -353,14 +353,14 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         name: 'StereoOutOptions',
         description:
             'Options for stereo output routing via the out() method. ' +
-            'Controls gain, panning, and stereo width.',
+            'Controls amplitude, panning, and stereo width.',
         definition:
-            'interface { gain?: Poly<Signal>; pan?: Poly<Signal>; width?: Signal }',
+            'interface { amplitude?: Poly<Signal>; pan?: Poly<Signal>; width?: Signal }',
         examples: [
-            "$sine('c').out(0, { gain: 0.5 })           // 50% gain",
+            "$sine('c').out(0, { amplitude: 0.5 })           // 50% amplitude",
             "$sine('c').out(0, { pan: -2.5 })           // Pan left",
             "$sine('c').out(0, { width: 5 })            // Full stereo spread",
-            "$sine('c').out(0, { gain: $perc($pulse('8hz')), pan: $sine('1hz') })  // Modulated",
+            "$sine('c').out(0, { amplitude: $perc($pulse('8hz')), pan: $sine('1hz') })  // Modulated",
         ],
         seeAlso: ['ModuleOutput', 'Collection', 'Poly<Signal>'],
     },

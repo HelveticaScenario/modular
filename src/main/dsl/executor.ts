@@ -79,13 +79,13 @@ export function executePatchScript(
         { id: 'ROOT_INPUT' },
     );
 
-    // Create functions to set global tempo and output gain
+    // Create functions to set global tempo and output amplitude
     const builder = context.getBuilder();
     const $setTempo = (tempo: number) => {
         builder.setTempo(tempo);
     };
-    const $setOutputGain = (gain: Signal) => {
-        builder.setOutputGain(gain);
+    const $setOutputAmplitude = (amplitude: Signal) => {
+        builder.setOutputAmplitude(amplitude);
     };
     const $setTimeSignature = (numerator: number, denominator: number) => {
         if (!Number.isInteger(numerator) || numerator < 1) {
@@ -182,7 +182,7 @@ export function executePatchScript(
         $slider,
         // Global settings
         $setTempo,
-        $setOutputGain,
+        $setOutputAmplitude,
         $setTimeSignature,
         // Built-in modules
         $clock,

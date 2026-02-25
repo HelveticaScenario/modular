@@ -69,7 +69,7 @@ impl Default for ChannelState {
 ///
 /// ```js
 /// const env = $adsr($rootClock.barTrigger, { attack: 0.01, decay: 0.2, sustain: 3, release: 0.5 })
-/// $sine('c4').gain(env).out()
+/// $sine('c4').amplitude(env).out()
 /// ```
 #[module(name = "$adsr", args(gate))]
 #[derive(Default)]

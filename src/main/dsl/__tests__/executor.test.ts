@@ -215,7 +215,7 @@ describe('polyphony', () => {
 describe('collections', () => {
     test('$c spreads collections into a new collection', () => {
         const patch = execPatch(
-            '$c(...$sine("C4"), ...$saw("E4")).gain(0.5).out()',
+            '$c(...$sine("C4"), ...$saw("E4")).amplitude(0.5).out()',
         );
         expect(findModules(patch, '$sine').length).toBe(1);
         expect(findModules(patch, '$saw').length).toBe(1);
@@ -272,8 +272,8 @@ describe('mixing', () => {
 // ─── Chaining ────────────────────────────────────────────────────────────────
 
 describe('chaining methods', () => {
-    test('.gain() creates a scaleAndShift module', () => {
-        const patch = execPatch('$sine("C4").gain(0.5).out()');
+    test('.amplitude() creates a scaleAndShift module', () => {
+        const patch = execPatch('$sine("C4").amplitude(0.5).out()');
         expect(findModules(patch, '$sine').length).toBe(1);
         expect(findModules(patch, '$scaleAndShift').length).toBeGreaterThan(0);
     });
@@ -314,7 +314,7 @@ describe('modulation routing', () => {
     test('LFO modulating oscillator pitch', () => {
         const source = `
             const lfo = $sine($hz(2))
-            $sine(lfo.gain(1).shift(0)).out()
+            $sine(lfo.amplitude(1).shift(0)).out()
         `;
         const patch = execPatch(source);
         // Two sine modules: one as LFO, one as audio oscillator
@@ -431,7 +431,7 @@ describe('deferred signals', () => {
 describe('sliders', () => {
     test('$slider creates a signal module and returns slider def', () => {
         const result = exec(
-            'const vol = $slider("Volume", 0.5, 0, 1)\n$sine("C4").gain(vol).out()',
+            'const vol = $slider("Volume", 0.5, 0, 1)\n$sine("C4").amplitude(vol).out()',
         );
         expect(result.sliders.length).toBe(1);
         expect(result.sliders[0].label).toBe('Volume');
@@ -457,8 +457,8 @@ describe('global settings', () => {
         expect(() => execPatch('$setTempo(140)')).not.toThrow();
     });
 
-    test('$setOutputGain does not throw', () => {
-        expect(() => execPatch('$setOutputGain(5.0)')).not.toThrow();
+    test('$setOutputAmplitude does not throw', () => {
+        expect(() => execPatch('$setOutputAmplitude(5.0)')).not.toThrow();
     });
 });
 

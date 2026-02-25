@@ -275,8 +275,8 @@ type Mono<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
  * @see {@link Collection.out}
  */
 interface StereoOutOptions {
-  /** Output gain. If set, a util.scaleAndShift module is added after the stereo mix */
-  gain?: Poly<Signal>;
+  /** Output amplitude. If set, a util.scaleAndShift module is added after the stereo mix */
+  amplitude?: Poly<Signal>;
   /** Pan position (-5 = left, 0 = center, +5 = right). Default 0 */
   pan?: Poly<Signal>;
   /** Stereo width/spread (0 = no spread, 5 = full spread). Default 0 */
@@ -286,12 +286,12 @@ interface StereoOutOptions {
 /**
  * A single output from a module, representing a mono signal connection.
  * 
- * ModuleOutputs are chainable - methods like gain(), shift(), and out() 
+ * ModuleOutputs are chainable - methods like amplitude(), shift(), and out() 
  * return the same output for fluent API usage.
  * 
  * @example
  * const osc = osc.sine("C4")
- * osc.gain(0.5).out()           // Chain methods
+ * osc.amplitude(0.5).out()           // Chain methods
  * osc.scope().out()             // Add visualization
  * filter.lpf(osc, { q: 4 })     // Use as input
  * 
@@ -311,9 +311,9 @@ interface ModuleOutput {
    * Scale the signal by a factor. Creates a util.scaleAndShift module internally.
    * @param factor - Scale factor as {@link Poly<Signal>}
    * @returns The scaled {@link Collection} for chaining
-   * @example osc.gain(0.5)  // Half amplitude
-   */
-  gain(factor: Poly<Signal>): Collection;
+    * @example osc.amplitude(0.5)  // Half amplitude
+    */
+   amplitude(factor: Poly<Signal>): Collection;
   
   /**
    * Add a DC offset to the signal. Creates a util.scaleAndShift module internally.
@@ -339,17 +339,17 @@ interface ModuleOutput {
    * Send this output to speakers as stereo.
    * @param baseChannel - Base output channel (0-15, default 0). Left plays on baseChannel, right on baseChannel+1
    * @param options - Stereo output options ({@link StereoOutOptions})
-   * @example osc.out(0, { gain: 0.5, pan: -2 })
+   * @example osc.out(0, { amplitude: 0.5, pan: -2 })
    */
   out(baseChannel?: number, options?: StereoOutOptions): this;
   
   /**
    * Send this output to speakers as mono.
    * @param channel - Output channel (0-15, default 0)
-   * @param gain - Output gain as {@link Poly<Signal>} (optional)
-   * @example lfo.outMono(2, 0.3)
-   */
-  outMono(channel?: number, gain?: Poly<Signal>): this;
+    * @param amplitude - Output amplitude as {@link Poly<Signal>} (optional)
+    * @example lfo.outMono(2, 0.3)
+    */
+   outMono(channel?: number, amplitude?: Poly<Signal>): this;
 
   /**
    * Pipe this output through a transform function.
@@ -362,11 +362,11 @@ interface ModuleOutput {
    *
    * @example
    * // Inline transform
-   * $sine('a').pipe(s => s.gain(0.5).shift(1))
+   * $sine('a').pipe(s => s.amplitude(0.5).shift(1))
    *
    * @example
    * // Reusable helper
-   * const tremolo = (c) => c.gain($sine('10hz').range(4, 5))
+   * const tremolo = (c) => c.amplitude($sine('10hz').range(4, 5))
    * $saw('c').pipe(tremolo).out()
    */
   pipe<T>(pipeFn: (self: this) => T): T;
@@ -393,7 +393,7 @@ interface ModuleOutput {
 /**
  * DeferredModuleOutput is a placeholder for a signal that will be assigned later.
  * Useful for feedback loops and forward references in the DSL.
- * Supports the same chainable methods as ModuleOutput (gain, shift, scope, out, outMono).
+ * Supports the same chainable methods as ModuleOutput (amplitude, shift, scope, out, outMono).
  */
 interface DeferredModuleOutput extends ModuleOutput {
   /**
@@ -445,9 +445,9 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
   /**
    * Scale all signals by a factor.
    * @param factor - Scale factor as {@link Poly<Signal>}
-   * @see {@link ModuleOutput.gain}
-   */
-  gain(factor: Poly<Signal>): Collection;
+    * @see {@link ModuleOutput.amplitude}
+    */
+   amplitude(factor: Poly<Signal>): Collection;
 
   /**
    * Add DC offset to all signals.
@@ -476,9 +476,9 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
   /**
    * Send all outputs to speakers as mono, summed together.
    * @param channel - Output channel (0-15, default 0)
-   * @param gain - Output gain as {@link Poly<Signal>} (optional)
-   */
-  outMono(channel?: number, gain?: Poly<Signal>): this;
+    * @param amplitude - Output amplitude as {@link Poly<Signal>} (optional)
+    */
+   outMono(channel?: number, amplitude?: Poly<Signal>): this;
 
 
   /**
@@ -503,11 +503,11 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
    *
    * @example
    * // Inline transform on a collection
-   * $(osc1, osc2).pipe(all => all.gain(2.5)).out()
+   * $(osc1, osc2).pipe(all => all.amplitude(2.5)).out()
    *
    * @example
    * // Reusable helper applied to a collection
-   * const tremolo = (c) => c.gain($sine('10hz').range(4, 5))
+   * const tremolo = (c) => c.amplitude($sine('10hz').range(4, 5))
    * $r($saw('220hz'), $saw('221hz')).pipe(tremolo).out()
    */
   pipe<T>(pipeFn: (self: this) => T): T;
@@ -538,7 +538,7 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
  * Methods operate on all outputs in the collection.
  * 
  * @example
- * $(osc1, osc2, osc3).gain(0.5).out()  // Apply gain to all
+ * $(osc1, osc2, osc3).amplitude(0.5).out()  // Apply amplitude to all
  * for (const v of voices) { ... }      // Iterate
  * [...voices]                          // Spread to array
  * voices[0]                            // Index access
@@ -619,7 +619,7 @@ function $note(noteName: string): number;
  * Collections support chainable DSP methods, iteration, indexing, and spreading.
  * @param args - One or more {@link ModuleOutput}s to group
  * @returns A {@link Collection} of the outputs
- * @example $c(osc1, osc2).gain(0.5).out()
+ * @example $c(osc1, osc2).amplitude(0.5).out()
  * @example $c(osc1, osc2, osc3)[0]  // Index access
  * @example [...$c(osc1, osc2)]      // Spread to array
  * @see {@link $r} - for ranged outputs
@@ -647,13 +647,13 @@ function $r(...args: (ModuleOutputWithRange | Iterable<ModuleOutputWithRange>)[]
 function $setTempo(tempo: number): void;
 
 /**
- * Set the global output gain applied to the final mix.
- * @param gain - Gain as a Mono<Signal> (2.5 is default, 5.0 is unity gain)
- * @example $setOutputGain(2.5) // 50% gain (default)
- * @example $setOutputGain(5.0) // unity gain
- * @example $setOutputGain(env.out) // modulate gain from envelope
+ * Set the global output amplitude applied to the final mix.
+ * @param amplitude - Amplitude as a Mono<Signal> (2.5 is default, 5.0 is unity)
+ * @example $setOutputAmplitude(2.5) // 50% amplitude (default)
+ * @example $setOutputAmplitude(5.0) // unity
+ * @example $setOutputAmplitude(env.out) // modulate amplitude from envelope
  */
-function $setOutputGain(gain: Mono<Signal>): void;
+function $setOutputAmplitude(amplitude: Mono<Signal>): void;
 
 /**
  * Set the time signature for the root clock.
@@ -693,7 +693,7 @@ function $deferred(channels?: number): DeferredCollection;
  *
  * @example
  * const vol = $slider("Volume", 0.5, 0, 1);
- * $sine(440).gain(vol).out();
+ * $sine(440).amplitude(vol).out();
  */
 function $slider(label: string, value: number, min: number, max: number): ModuleOutput;
 `;
@@ -918,7 +918,7 @@ const RESERVED_OUTPUT_NAMES = new Set([
     'portName',
     'channel',
     // ModuleOutput methods
-    'gain',
+    'amplitude',
     'shift',
     'scope',
     'out',
