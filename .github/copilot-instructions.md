@@ -37,6 +37,8 @@ Key areas:
     3. rebuild N-API for updated TS types
     4. adjust DSL factories in `src/dsl/factories.ts` if needed
 - Real-time safety in audio callback: avoid allocations/logging; validate on main thread.
+- **No heap allocation on the audio thread.** This applies to the audio callback and all code it calls, especially module `process` logic. Do not use `Vec::new`, `Box::new`, `String`, `HashMap`, `.clone()` of heap types, or anything that calls the allocator at runtime. Pre-allocate all buffers and state during initialization (construction time), and operate only on that pre-allocated memory during `process`.
+- **Prefer allocating in `init` or param deserialization.** Both run on the main thread, so allocations there are safe and preferred. `init` (called once when the module is first constructed, only for modules marked `has_init`) is the place for one-time setup. Param deserialization runs every time the patch is updated, so any allocation that needs to reflect current param values (e.g. resizing a buffer based on a param) belongs there, not in `init`. `process` should only operate on memory that was already set up by one of these two paths. It is fine to store initialized data (buffers, precomputed state, etc.) directly on the params struct as long as those fields are hidden from serde and schemars (e.g. `#[serde(skip)] #[schemars(skip)]`). Once deserialization is complete, treat the params object as immutable — `process` should read from it but never mutate it.
 - Voltage conventions:
     - **V/Oct pitch**: use 1V/oct (0V = C4 ~261.63Hz) for frequency
     - **Gates and triggers**: output `GATE_HIGH_VOLTAGE` (5V) when high, `GATE_LOW_VOLTAGE` (0V) when low. Use constants from `crates/modular_core/src/dsp/utils.rs`.
