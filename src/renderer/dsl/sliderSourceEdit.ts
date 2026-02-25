@@ -50,7 +50,7 @@ export function findSliderValueSpan(
         // Parse the numeric literal: optional minus, digits, optional decimal + digits
         const numMatch = source
             .slice(start)
-            .match(/^-?\d+(\.\d+)?([eE][+-]?\d+)?/);
+            .match(/^-?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?/);
         if (!numMatch) continue;
 
         return {

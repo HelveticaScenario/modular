@@ -152,7 +152,7 @@ function App() {
             if (!slider) return;
 
             // Update audio engine via lightweight param update
-            electronAPI.synthesizer.setModuleParam(slider.moduleId, 'signal', {
+            electronAPI.synthesizer.setModuleParam(slider.moduleId, '$signal', {
                 source: newValue,
             });
 
