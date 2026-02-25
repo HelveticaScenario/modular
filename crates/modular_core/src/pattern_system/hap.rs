@@ -35,6 +35,7 @@ pub struct HapContext {
     /// Primary source location (the main atom/value).
     pub source_span: Option<SourceSpan>,
     /// Spans from modifier patterns (scale, add, etc.).
+    /// DEPRECATED: We no longer have modifiers in patterns.
     pub modifier_spans: Vec<SourceSpan>,
 }
 

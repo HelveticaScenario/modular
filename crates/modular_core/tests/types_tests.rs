@@ -56,7 +56,10 @@ impl Sampleable for DummySampleable {
         &self.module_type
     }
 
-    fn try_update_params(&self, _params: serde_json::Value, _channel_count: usize) -> Result<()> {
+    fn apply_deserialized_params(
+        &self,
+        _deserialized: modular_core::params::DeserializedParams,
+    ) -> Result<()> {
         Ok(())
     }
     fn connect(&self, _patch: &Patch) {

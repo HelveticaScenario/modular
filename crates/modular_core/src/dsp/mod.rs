@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use crate::types::{ChannelCountDeriver, ModuleSchema, ParamsValidator, SampleableConstructor};
+use crate::params::ParamsDeserializer;
+use crate::types::{ModuleSchema, ParamsValidator, SampleableConstructor};
 
 pub mod consts;
 pub mod core;
@@ -46,19 +47,20 @@ pub fn get_param_validators() -> HashMap<String, ParamsValidator> {
     map
 }
 
-/// Returns a map of `module_type` -> channel count deriver function.
+/// Returns a map of `module_type` -> params deserializer function.
 ///
-/// A channel count deriver derives the output channel count from a module's params JSON.
-pub fn get_channel_count_derivers() -> HashMap<String, ChannelCountDeriver> {
+/// A params deserializer takes a JSON value (with `__argument_spans` already stripped)
+/// and returns a `CachedParams` containing the typed params and derived channel count.
+pub fn get_params_deserializers() -> HashMap<String, ParamsDeserializer> {
     let mut map = HashMap::new();
-    core::install_channel_count_derivers(&mut map);
-    fx::install_channel_count_derivers(&mut map);
-    oscillators::install_channel_count_derivers(&mut map);
-    filters::install_channel_count_derivers(&mut map);
-    phase::install_channel_count_derivers(&mut map);
-    utilities::install_channel_count_derivers(&mut map);
-    seq::install_channel_count_derivers(&mut map);
-    midi::install_channel_count_derivers(&mut map);
+    core::install_params_deserializers(&mut map);
+    fx::install_params_deserializers(&mut map);
+    oscillators::install_params_deserializers(&mut map);
+    filters::install_params_deserializers(&mut map);
+    phase::install_params_deserializers(&mut map);
+    utilities::install_params_deserializers(&mut map);
+    seq::install_params_deserializers(&mut map);
+    midi::install_params_deserializers(&mut map);
     map
 }
 

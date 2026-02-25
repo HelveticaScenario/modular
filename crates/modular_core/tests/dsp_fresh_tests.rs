@@ -4,7 +4,8 @@
 //! constructing modules via the public API, setting params as JSON, and
 //! reading samples after ticking.
 
-use modular_core::dsp::get_constructors;
+use modular_core::dsp::{get_constructors, get_params_deserializers};
+use modular_core::params::{extract_argument_spans, DeserializedParams};
 use modular_core::patch::Patch;
 use modular_core::types::{ModuleState, PatchGraph, Sampleable};
 use serde_json::json;
@@ -27,11 +28,23 @@ fn make_module(module_type: &str, id: &str) -> Arc<Box<dyn Sampleable>> {
     .unwrap_or_else(|e| panic!("constructor for '{module_type}' failed: {e}"))
 }
 
-/// Set params on a module (JSON → try_update_params).
-fn set_params(module: &dyn Sampleable, params: serde_json::Value, channels: usize) {
+/// Set params on a module (JSON → deserialize → apply_deserialized_params).
+fn set_params(module: &dyn Sampleable, params: serde_json::Value, _channels: usize) {
+    let deserializers = get_params_deserializers();
+    let module_type = module.get_module_type();
+    let deserializer = deserializers
+        .get(module_type)
+        .unwrap_or_else(|| panic!("no params deserializer for '{module_type}'"));
+    let (stripped, argument_spans) = extract_argument_spans(params);
+    let cached = deserializer(stripped).expect("params deserialization failed");
+    let deserialized = DeserializedParams {
+        params: cached.params,
+        argument_spans,
+        channel_count: cached.channel_count,
+    };
     module
-        .try_update_params(params, channels)
-        .expect("try_update_params failed");
+        .apply_deserialized_params(deserialized)
+        .expect("apply_deserialized_params failed");
 }
 
 /// Advance one sample: tick then update.

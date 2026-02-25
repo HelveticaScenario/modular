@@ -301,6 +301,13 @@ pub struct SeqPatternParam {
     pub(crate) all_spans: Vec<(usize, usize)>,
 }
 
+// SAFETY: SeqPatternParam contains `Vec<*mut Signal>` which is `!Send`, but this
+// field is always empty after deserialization (`#[serde(skip, default)]`). The raw
+// pointers are only populated during `connect()` on the audio thread. When used as
+// pre-deserialized params (boxed as `dyn CloneableParams`), the struct is freshly
+// deserialized so `signals` is guaranteed empty.
+unsafe impl Send for SeqPatternParam {}
+
 impl SeqPatternParam {
     /// Parse a pattern string and collect signals.
     fn parse(source: &str) -> Result<Self, String> {

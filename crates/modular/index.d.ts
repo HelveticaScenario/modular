@@ -149,6 +149,7 @@ export interface CurrentAudioState {
  *
  * Returns the derived channel count, or null if the module type is unknown
  * or the channel count cannot be determined from the params.
+ * This uses the cache, so it also warms the cache for subsequent apply_patch calls.
  */
 export declare function deriveChannelCount(moduleType: string, params: any): number | null
 

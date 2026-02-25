@@ -1,6 +1,7 @@
 use modular_core::dsp::get_param_validators;
+use modular_core::params::ARGUMENT_SPANS_KEY;
 use modular_core::types::{
-  ARGUMENT_SPANS_KEY, ModuleSchema, ModuleState, PatchGraph, ScopeItem, Signal, WellKnownModule,
+  ModuleSchema, ModuleState, PatchGraph, ScopeItem, Signal, WellKnownModule,
 };
 use napi_derive::napi;
 use schemars::Schema;

@@ -1098,7 +1098,7 @@ impl AudioState {
     update.remaps = module_id_remaps.unwrap_or_default();
 
     // Build maps for efficient lookup
-    let desired_modules: HashMap<String, _> = modules.iter().map(|m| (m.id.clone(), m)).collect();
+    let desired_modules: HashMap<String, _> = modules.into_iter().map(|m| (m.id.clone(), m)).collect();
 
     // Compute scopes to add/remove/update
     {
@@ -1135,9 +1135,9 @@ impl AudioState {
 
     // Construct all modules that appear in desired graph on main thread
     let constructors = get_constructors();
-    for (id, module_state) in &desired_modules {
+    for (id, module_state) in desired_modules {
       if let Some(constructor) = constructors.get(&module_state.module_type) {
-        match constructor(id, sample_rate) {
+        match constructor(&id, sample_rate) {
           Ok(module) => {
             update.inserts.push((id.clone(), module));
           }
@@ -1155,13 +1155,16 @@ impl AudioState {
         )));
       }
 
-      // Also add param update with precomputed channel count
-      let channel_count =
-        crate::lookup_or_derive_channel_count(&module_state.module_type, &module_state.params)
-          .unwrap_or(1);
-      update
-        .param_updates
-        .push((id.clone(), module_state.params.clone(), channel_count));
+      // Also add param update with pre-deserialized params (cache-aware)
+      let deserialized =
+        crate::deserialize_params(&module_state.module_type, module_state.params, true)
+          .map_err(|e| {
+            napi::Error::from_reason(format!(
+              "Failed to deserialize params for {}: {}",
+              id, e
+            ))
+          })?;
+      update.param_updates.push((id.clone(), deserialized));
     }
 
     // Pre-compute desired IDs on main thread to avoid HashSet allocation on audio thread
@@ -1316,10 +1319,9 @@ impl AudioProcessor {
         GraphCommand::SingleParamUpdate {
           module_id,
           params,
-          channel_count,
         } => {
           if let Some(module) = self.patch.sampleables.get(&module_id) {
-            if let Err(e) = module.try_update_params(params, channel_count) {
+            if let Err(e) = module.apply_deserialized_params(params) {
               let _ = self.error_tx.push(AudioError::ParamUpdateFailed {
                 module_id,
                 message: e.to_string(),
@@ -1422,10 +1424,10 @@ impl AudioProcessor {
       }
     }
 
-    // Update params for all modules (consume by value to avoid cloning serde_json::Value)
-    for (id, params, channel_count) in update.param_updates {
+    // Apply pre-deserialized params for all modules
+    for (id, deserialized) in update.param_updates {
       if let Some(module) = self.patch.sampleables.get(&id)
-        && let Err(e) = module.try_update_params(params, channel_count)
+        && let Err(e) = module.apply_deserialized_params(deserialized)
       {
         let _ = self.error_tx.push(AudioError::ParamUpdateFailed {
           module_id: id,

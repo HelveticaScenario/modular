@@ -3,6 +3,7 @@
 mod audio;
 mod commands;
 mod midi;
+mod params_cache;
 mod validation;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -638,11 +639,11 @@ impl Synthesizer {
     module_type: String,
     params: serde_json::Value,
   ) -> Result<()> {
-    let channel_count = lookup_or_derive_channel_count(&module_type, &params).unwrap_or(1);
+    // Deserialize on main thread (no cache — slider values would pollute it)
+    let deserialized = deserialize_params(&module_type, params, false)?;
     self.state.send_command(GraphCommand::SingleParamUpdate {
       module_id,
-      params,
-      channel_count,
+      params: deserialized,
     })
   }
 
@@ -1058,58 +1059,19 @@ pub fn validate_patch_graph(
   }
 }
 
-// Static registry for channel count derivers
-use modular_core::types::ChannelCountDeriver;
-use std::sync::OnceLock;
-
-static CHANNEL_COUNT_DERIVERS: OnceLock<HashMap<String, ChannelCountDeriver>> = OnceLock::new();
-
-fn get_channel_count_derivers() -> &'static HashMap<String, ChannelCountDeriver> {
-  CHANNEL_COUNT_DERIVERS.get_or_init(|| modular_core::dsp::get_channel_count_derivers())
-}
-
-// LRU cache for channel count derivation (avoids re-parsing expensive patterns)
-use lru::LruCache;
-use parking_lot::Mutex;
-use std::num::NonZeroUsize;
-
-static CHANNEL_COUNT_CACHE: OnceLock<Mutex<LruCache<(String, serde_json::Value), usize>>> =
-  OnceLock::new();
-
-fn get_channel_count_cache() -> &'static Mutex<LruCache<(String, serde_json::Value), usize>> {
-  CHANNEL_COUNT_CACHE.get_or_init(|| Mutex::new(LruCache::new(NonZeroUsize::new(500).unwrap())))
-}
-
-/// Look up the channel count for a module type + params in the LRU cache,
-/// or derive and cache it on miss.
-pub(crate) fn lookup_or_derive_channel_count(
-  module_type: &str,
-  params: &serde_json::Value,
-) -> Option<usize> {
-  let key = (module_type.to_string(), params.clone());
-  {
-    let mut cache = get_channel_count_cache().lock();
-    if let Some(&count) = cache.get(&key) {
-      return Some(count);
-    }
-  }
-  let result = get_channel_count_derivers()
-    .get(module_type)
-    .and_then(|deriver| deriver(params));
-  if let Some(count) = result {
-    let mut cache = get_channel_count_cache().lock();
-    cache.put(key, count);
-  }
-  result
-}
+// Re-export for use in audio.rs
+pub(crate) use params_cache::{deserialize_params};
 
 /// Derive the output channel count for a module from its params JSON.
 ///
 /// Returns the derived channel count, or null if the module type is unknown
 /// or the channel count cannot be determined from the params.
+/// This uses the cache, so it also warms the cache for subsequent apply_patch calls.
 #[napi]
 pub fn derive_channel_count(module_type: String, params: serde_json::Value) -> Option<u32> {
-  lookup_or_derive_channel_count(&module_type, &params).map(|n| n as u32)
+  deserialize_params(&module_type, params, true)
+    .ok()
+    .map(|d| d.channel_count as u32)
 }
 
 /// Parse a mini notation pattern and return all leaf spans.

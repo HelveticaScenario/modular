@@ -7,11 +7,11 @@ use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote, quote_spanned};
-use syn::{Attribute, LitStr, Token, punctuated::Punctuated, spanned::Spanned};
+use syn::{punctuated::Punctuated, spanned::Spanned, Attribute, LitStr, Token};
 use syn::{Data, DeriveInput, Fields, Type};
 
 /// Key used for internal metadata field storing argument source spans.
-/// Must match modular_core::types::ARGUMENT_SPANS_KEY.
+/// Must match modular_core::params::ARGUMENT_SPANS_KEY.
 const _ARGUMENT_SPANS_KEY: &str = "__argument_spans";
 
 #[proc_macro]
@@ -437,8 +437,8 @@ impl syn::parse::Parse for ModuleAttrArgs {
 /// - #[output("name", "description", range = (-1.0, 1.0))]
 /// - #[output("name", "description", default, range = (-1.0, 1.0))]
 fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
-    use syn::Result as SynResult;
     use syn::parse::{Parse, ParseStream};
+    use syn::Result as SynResult;
 
     /// Reserved output names that conflict with ModuleOutput, Collection, or CollectionWithRange
     /// methods/properties in the TypeScript DSL. These names cannot be used as output names.
@@ -617,7 +617,7 @@ pub fn module(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // Inject `_channel_count: usize` field into the struct so that
     // `self.channel_count()` can return a precomputed value set by the
-    // main thread via `try_update_params`.
+    // main thread via `apply_deserialized_params`.
     if let Data::Struct(ref mut data_struct) = ast.data {
         if let Fields::Named(ref mut fields) = data_struct.fields {
             let field: syn::Field = syn::parse_quote! {
@@ -1474,7 +1474,7 @@ fn impl_module_macro_attr(
         #channel_count_fn_impl
 
         impl #impl_generics #name #ty_generics #where_clause {
-            /// Returns the precomputed channel count injected by `try_update_params`.
+            /// Returns the precomputed channel count injected by `apply_deserialized_params`.
             #[inline]
             pub fn channel_count(&self) -> usize {
                 self._channel_count
@@ -1512,7 +1512,7 @@ fn impl_module_macro_attr(
             module: std::cell::UnsafeCell<#name #static_ty_generics>,
             processed: core::sync::atomic::AtomicBool,
             sample_rate: f32,
-            argument_spans: std::cell::UnsafeCell<std::collections::HashMap<String, crate::types::ArgumentSpan>>,
+            argument_spans: std::cell::UnsafeCell<std::collections::HashMap<String, crate::params::ArgumentSpan>>,
         }
 
         impl Default for #struct_name {
@@ -1572,32 +1572,19 @@ fn impl_module_macro_attr(
                 #module_name
             }
 
-            fn try_update_params(&self, params: serde_json::Value, channel_count: usize) -> napi::Result<()> {
+            fn apply_deserialized_params(&self, deserialized: crate::params::DeserializedParams) -> napi::Result<()> {
                 let module = unsafe { &mut *self.module.get() };
                 let argument_spans = unsafe { &mut *self.argument_spans.get() };
 
-                let params_to_deserialize = if params.is_object() {
-                    let mut obj = match params {
-                        serde_json::Value::Object(o) => o,
-                        _ => unreachable!(),
-                    };
-                    if let Some(spans_value) = obj.remove("__argument_spans") {
-                        if let serde_json::Value::Object(spans_obj) = spans_value {
-                            argument_spans.clear();
-                            for (key, value) in spans_obj {
-                                if let Ok(span) = serde_json::from_value::<crate::types::ArgumentSpan>(value) {
-                                    argument_spans.insert(key, span);
-                                }
-                            }
-                        }
-                    }
-                    serde_json::Value::Object(obj)
-                } else {
-                    params
-                };
-                module.params = serde_json::from_value(params_to_deserialize)?;
-                module._channel_count = channel_count;
-                crate::types::OutputStruct::set_all_channels(&mut module.outputs, channel_count);
+                let concrete_params = deserialized.params.into_any()
+                    .downcast::<#params_struct_name>()
+                    .map_err(|_| napi::Error::from_reason(
+                        format!("Failed to downcast params for module type {}", #module_name)
+                    ))?;
+                module.params = *concrete_params;
+                *argument_spans = deserialized.argument_spans;
+                module._channel_count = deserialized.channel_count;
+                crate::types::OutputStruct::set_all_channels(&mut module.outputs, deserialized.channel_count);
                 Ok(())
             }
 
@@ -1636,6 +1623,18 @@ fn impl_module_macro_attr(
                 map.insert(#module_name.into(), Self::validate_params_json as crate::types::ParamsValidator);
             }
 
+            fn install_params_deserializer(map: &mut std::collections::HashMap<String, crate::params::ParamsDeserializer>) {
+                fn deserializer(params: serde_json::Value) -> napi::Result<crate::params::CachedParams> {
+                    let parsed: #params_struct_name = serde_json::from_value(params)?;
+                    let channel_count = #channel_count_fn_name(&parsed);
+                    Ok(crate::params::CachedParams {
+                        params: Box::new(parsed),
+                        channel_count,
+                    })
+                }
+                map.insert(#module_name.into(), deserializer as crate::params::ParamsDeserializer);
+            }
+
             fn validate_params_json(params: &serde_json::Value) -> napi::Result<()> {
                 let params_to_validate = if params.is_object() {
                     let mut obj = params.as_object().unwrap().clone();
@@ -1646,18 +1645,6 @@ fn impl_module_macro_attr(
                 };
                 let _parsed: #params_struct_name = serde_json::from_value(params_to_validate)?;
                 Ok(())
-            }
-
-            fn derive_channel_count(params: &serde_json::Value) -> Option<usize> {
-                let params_to_parse = if params.is_object() {
-                    let mut obj = params.as_object().unwrap().clone();
-                    obj.remove("__argument_spans");
-                    serde_json::Value::Object(obj)
-                } else {
-                    params.clone()
-                };
-                let parsed: #params_struct_name = serde_json::from_value(params_to_parse).ok()?;
-                Some(#channel_count_fn_name(&parsed))
             }
 
             fn get_schema() -> crate::types::ModuleSchema {

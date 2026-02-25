@@ -155,7 +155,9 @@ pub trait Sampleable: MessageHandler + Send + Sync {
     /// Get polyphonic sample output for a port.
     fn get_poly_sample(&self, port: &str) -> Result<PolyOutput>;
     fn get_module_type(&self) -> &str;
-    fn try_update_params(&self, params: serde_json::Value, channel_count: usize) -> Result<()>;
+    /// Apply pre-deserialized params on the audio thread.
+    /// The params have already been deserialized on the main thread.
+    fn apply_deserialized_params(&self, deserialized: crate::params::DeserializedParams) -> Result<()>;
     fn connect(&self, patch: &Patch);
     /// Called after the patch is updated and all modules are connected.
     /// Modules can override this to refresh caches or perform other post-update work.
@@ -176,86 +178,24 @@ pub trait Module {
     /// `*Params` type.
     fn install_params_validator(map: &mut HashMap<String, ParamsValidator>);
 
+    /// Register this module's params deserializer in the provided map.
+    ///
+    /// The key is the module type string (e.g. "sine"). The value is a function
+    /// that deserializes a JSON params object (with `__argument_spans` already
+    /// stripped) into a `CachedParams`.
+    fn install_params_deserializer(map: &mut HashMap<String, crate::params::ParamsDeserializer>);
+
     /// Validate a JSON params object by attempting to parse it as the module's concrete
     /// params type.
     ///
     /// This is intended for server-side patch validation before applying the patch.
     fn validate_params_json(params: &serde_json::Value) -> napi::Result<()>;
-
-    /// Register this module's channel count deriver in the provided map.
-    ///
-    /// The key is the module type string (e.g. "mix"). The value is a function
-    /// that derives the output channel count from a JSON params object.
-    fn install_channel_count_deriver(map: &mut HashMap<String, ChannelCountDeriver>) {
-        // Default implementation: register the standard derive_channel_count
-        let schema = Self::get_schema();
-        map.insert(schema.name, Self::derive_channel_count);
-    }
-
-    /// Derive the output channel count from a JSON params object.
-    ///
-    /// Returns the derived channel count, or None if it cannot be determined
-    /// from the params alone. The default implementation handles:
-    /// 1. Hardcoded channels (from schema)
-    /// 2. channels_param value (from params JSON)
-    /// 3. Max of PolySignal input array lengths (inferred from JSON arrays)
-    fn derive_channel_count(params: &serde_json::Value) -> Option<usize>;
 }
 
 /// Function pointer type used to validate a module's `ModuleState.params`.
 ///
 /// The validator should return Ok if deserialization into the module's concrete params type succeeds.
 pub type ParamsValidator = fn(&serde_json::Value) -> napi::Result<()>;
-
-/// Function pointer type used to derive a module's output channel count from its params.
-///
-/// Returns the derived channel count, or None if it cannot be determined.
-pub type ChannelCountDeriver = fn(&serde_json::Value) -> Option<usize>;
-
-/// Helper function to derive channel count from JSON params by finding max array length.
-///
-/// This is used by the default `derive_channel_count` implementation to infer channel count
-/// from PolySignal inputs. PolySignal serializes as an array of Signals, so we look for
-/// arrays and return the maximum length found.
-pub fn derive_channel_count_from_json(params: &serde_json::Value) -> Option<usize> {
-    use crate::poly::PORT_MAX_CHANNELS;
-
-    fn max_array_len(value: &serde_json::Value) -> usize {
-        match value {
-            serde_json::Value::Array(arr) => {
-                // Check if this looks like a PolySignal (array of signals)
-                // A signal is either a number, string, or object with "type" field
-                let is_poly_signal = arr.iter().all(|v| {
-                    matches!(
-                        v,
-                        serde_json::Value::Number(_) | serde_json::Value::String(_)
-                    ) || (v.is_object() && v.get("type").is_some())
-                });
-
-                if is_poly_signal && !arr.is_empty() {
-                    // This array is a PolySignal - its length is the channel count
-                    arr.len()
-                } else {
-                    // This might be an array of PolySignals (like Vec<PolySignal>)
-                    // or nested structures - recurse into each element
-                    arr.iter().map(max_array_len).max().unwrap_or(0)
-                }
-            }
-            serde_json::Value::Object(obj) => {
-                // Recurse into object values
-                obj.values().map(max_array_len).max().unwrap_or(0)
-            }
-            _ => 0,
-        }
-    }
-
-    let max_len = max_array_len(params);
-    if max_len > 0 {
-        Some(max_len.clamp(1, PORT_MAX_CHANNELS))
-    } else {
-        Some(1) // Default to 1 channel if no arrays found
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
@@ -955,34 +895,6 @@ impl FromNapiValue for SchemaContainer {
                 })
             })
         }
-    }
-}
-
-/// Key used for internal metadata field storing argument source spans.
-/// This constant is shared across Rust validation, derive macros, and TypeScript.
-pub const ARGUMENT_SPANS_KEY: &str = "__argument_spans";
-
-/// Represents a character span in source code, used for argument highlighting.
-/// Start and end are absolute character offsets (0-based, end exclusive).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-#[napi(object)]
-pub struct ArgumentSpan {
-    /// Absolute start offset (0-based)
-    pub start: u32,
-    /// Absolute end offset (exclusive)
-    pub end: u32,
-}
-
-impl ArgumentSpan {
-    /// Create a new argument span
-    pub fn new(start: u32, end: u32) -> Self {
-        Self { start, end }
-    }
-
-    /// Check if this span is empty/unset
-    pub fn is_empty(&self) -> bool {
-        self.start == 0 && self.end == 0
     }
 }
 

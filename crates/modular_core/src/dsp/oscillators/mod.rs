@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
-use crate::types::{
-    ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor,
-};
+use crate::params::ParamsDeserializer;
+use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
 
 pub mod noise;
 pub mod p_pulse;
@@ -36,15 +35,15 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     plaits::Plaits::install_params_validator(map);
 }
 
-pub fn install_channel_count_derivers(map: &mut HashMap<String, ChannelCountDeriver>) {
-    sine::SineOscillator::install_channel_count_deriver(map);
-    saw::SawOscillator::install_channel_count_deriver(map);
-    pulse::PulseOscillator::install_channel_count_deriver(map);
-    p_sine::PSineOscillator::install_channel_count_deriver(map);
-    p_saw::PSawOscillator::install_channel_count_deriver(map);
-    p_pulse::PPulseOscillator::install_channel_count_deriver(map);
-    noise::Noise::install_channel_count_deriver(map);
-    plaits::Plaits::install_channel_count_deriver(map);
+pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer>) {
+    sine::SineOscillator::install_params_deserializer(map);
+    saw::SawOscillator::install_params_deserializer(map);
+    pulse::PulseOscillator::install_params_deserializer(map);
+    p_sine::PSineOscillator::install_params_deserializer(map);
+    p_saw::PSawOscillator::install_params_deserializer(map);
+    p_pulse::PPulseOscillator::install_params_deserializer(map);
+    noise::Noise::install_params_deserializer(map);
+    plaits::Plaits::install_params_deserializer(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {

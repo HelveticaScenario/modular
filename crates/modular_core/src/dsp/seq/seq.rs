@@ -362,7 +362,7 @@ impl Seq {
     fn update(&mut self, _sample_rate: f32) {
         let playhead = self.params.playhead.get_value_f64();
 
-        // Use precomputed channel count from _channel_count (set by try_update_params)
+        // Use precomputed channel count from _channel_count (set by apply_deserialized_params)
         let num_channels = self.channel_count();
         // Set output channel counts
 

@@ -5,11 +5,11 @@
 
 use std::sync::Arc;
 
+use modular_core::params::DeserializedParams;
 use modular_core::types::{Message, ModuleIdRemap, Sampleable, Scope, ScopeItem};
 use napi_derive::napi;
 
 use crate::audio::ScopeBuffer;
-use serde_json::Value;
 
 /// When a queued patch update should be applied.
 #[napi(string_enum)]
@@ -40,8 +40,8 @@ pub struct PatchUpdate {
   /// ID remappings (applied before inserts/deletes)
   pub remaps: Vec<ModuleIdRemap>,
 
-  /// Param updates for existing modules (module_id, params_json, channel_count)
-  pub param_updates: Vec<(String, Value, usize)>,
+  /// Pre-deserialized param updates for existing modules (module_id, deserialized_params)
+  pub param_updates: Vec<(String, DeserializedParams)>,
 
   /// Pre-built scope buffers to add (constructed on main thread)
   pub scope_adds: Vec<(ScopeItem, ScopeBuffer)>,
@@ -95,11 +95,10 @@ pub enum GraphCommand {
   },
 
   /// Lightweight param-only update for a single module (e.g., slider changes).
-  /// Skips insert/retain/remap/scope/connect logic — only calls try_update_params.
+  /// Skips insert/retain/remap/scope/connect logic — only calls apply_deserialized_params.
   SingleParamUpdate {
     module_id: String,
-    params: Value,
-    channel_count: usize,
+    params: DeserializedParams,
   },
 
   /// MIDI/control messages (can be sent individually)

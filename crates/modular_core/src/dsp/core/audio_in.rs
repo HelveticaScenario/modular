@@ -8,9 +8,9 @@ use napi::Result;
 use parking_lot::Mutex;
 
 use crate::{
-    Sampleable,
     poly::PolyOutput,
     types::{MessageHandler, WellKnownModule},
+    Sampleable,
 };
 
 #[derive(Default)]
@@ -35,7 +35,10 @@ impl Sampleable for AudioIn {
         WellKnownModule::HiddenAudioIn.id()
     }
 
-    fn try_update_params(&self, _params: serde_json::Value, _channel_count: usize) -> Result<()> {
+    fn apply_deserialized_params(
+        &self,
+        _deserialized: crate::params::DeserializedParams,
+    ) -> Result<()> {
         Ok(())
     }
 

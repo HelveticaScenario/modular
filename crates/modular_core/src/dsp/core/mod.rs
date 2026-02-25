@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
-use crate::types::{
-    ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor,
-};
+use crate::params::ParamsDeserializer;
+use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
 
 pub mod audio_in;
 pub mod clock;
@@ -24,11 +23,11 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     clock::Clock::install_params_validator(map);
 }
 
-pub fn install_channel_count_derivers(map: &mut HashMap<String, ChannelCountDeriver>) {
-    signal::Signal::install_channel_count_deriver(map);
-    mix::Mix::install_channel_count_deriver(map);
-    stereo_mixer::StereoMixer::install_channel_count_deriver(map);
-    clock::Clock::install_channel_count_deriver(map);
+pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer>) {
+    signal::Signal::install_params_deserializer(map);
+    mix::Mix::install_params_deserializer(map);
+    stereo_mixer::StereoMixer::install_params_deserializer(map);
+    clock::Clock::install_params_deserializer(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {

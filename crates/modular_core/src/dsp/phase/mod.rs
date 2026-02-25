@@ -5,9 +5,8 @@
 
 use std::collections::HashMap;
 
-use crate::types::{
-    ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor,
-};
+use crate::params::ParamsDeserializer;
+use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
 
 pub mod crush;
 pub mod feedback;
@@ -28,11 +27,11 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     ramp::Ramp::install_params_validator(map);
 }
 
-pub fn install_channel_count_derivers(map: &mut HashMap<String, ChannelCountDeriver>) {
-    crush::Crush::install_channel_count_deriver(map);
-    feedback::Feedback::install_channel_count_deriver(map);
-    pulsar::Pulsar::install_channel_count_deriver(map);
-    ramp::Ramp::install_channel_count_deriver(map);
+pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer>) {
+    crush::Crush::install_params_deserializer(map);
+    feedback::Feedback::install_params_deserializer(map);
+    pulsar::Pulsar::install_params_deserializer(map);
+    ramp::Ramp::install_params_deserializer(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {

@@ -17,6 +17,7 @@ extern crate serde_json;
 extern crate simple_easing;
 
 pub mod dsp;
+pub mod params;
 pub mod patch;
 pub mod pattern_system;
 pub mod poly;
@@ -27,7 +28,12 @@ pub use patch::Patch;
 
 pub use poly::{MonoSignal, PORT_MAX_CHANNELS, PolyOutput, PolySignal};
 
+pub use params::{
+    ArgumentSpan, CachedParams, CloneableParams, DeserializedParams, ParamsDeserializer,
+    ARGUMENT_SPANS_KEY, extract_argument_spans,
+};
+
 pub use types::{
-    ARGUMENT_SPANS_KEY, ArgumentSpan, Module, ModuleSchema, ModuleState, PatchGraph, ROOT_ID,
-    ROOT_OUTPUT_PORT, Sampleable, SampleableConstructor, SampleableMap, Signal, SignalParamSchema,
+    Module, ModuleSchema, ModuleState, PatchGraph, ROOT_ID, ROOT_OUTPUT_PORT, Sampleable,
+    SampleableConstructor, SampleableMap, Signal, SignalParamSchema,
 };

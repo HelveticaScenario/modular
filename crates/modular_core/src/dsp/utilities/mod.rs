@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
-use crate::types::{
-    ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor,
-};
+use crate::params::ParamsDeserializer;
+use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
 
 pub mod adsr;
 pub mod clamp;
@@ -19,7 +18,7 @@ pub mod scale_and_shift;
 
 // Re-export useful types
 pub use crate::dsp::utils::SchmittTrigger;
-pub use scale::{FixedRoot, ScaleSnapper, validate_scale_type};
+pub use scale::{validate_scale_type, FixedRoot, ScaleSnapper};
 
 pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     adsr::Adsr::install_constructor(map);
@@ -53,20 +52,20 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     scale_and_shift::ScaleAndShift::install_params_validator(map);
 }
 
-pub fn install_channel_count_derivers(map: &mut HashMap<String, ChannelCountDeriver>) {
-    adsr::Adsr::install_channel_count_deriver(map);
-    clamp::Clamp::install_channel_count_deriver(map);
-    clock_divider::ClockDivider::install_channel_count_deriver(map);
-    lag::LagProcessor::install_channel_count_deriver(map);
-    logic::RisingEdgeDetector::install_channel_count_deriver(map);
-    logic::FallingEdgeDetector::install_channel_count_deriver(map);
-    math::Math::install_channel_count_deriver(map);
-    remap::Remap::install_channel_count_deriver(map);
-    sample_and_hold::SampleAndHold::install_channel_count_deriver(map);
-    sample_and_hold::TrackAndHold::install_channel_count_deriver(map);
-    percussion_envelope::PercussionEnvelope::install_channel_count_deriver(map);
-    quantizer::Quantizer::install_channel_count_deriver(map);
-    scale_and_shift::ScaleAndShift::install_channel_count_deriver(map);
+pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer>) {
+    adsr::Adsr::install_params_deserializer(map);
+    clamp::Clamp::install_params_deserializer(map);
+    clock_divider::ClockDivider::install_params_deserializer(map);
+    lag::LagProcessor::install_params_deserializer(map);
+    logic::RisingEdgeDetector::install_params_deserializer(map);
+    logic::FallingEdgeDetector::install_params_deserializer(map);
+    math::Math::install_params_deserializer(map);
+    remap::Remap::install_params_deserializer(map);
+    sample_and_hold::SampleAndHold::install_params_deserializer(map);
+    sample_and_hold::TrackAndHold::install_params_deserializer(map);
+    percussion_envelope::PercussionEnvelope::install_params_deserializer(map);
+    quantizer::Quantizer::install_params_deserializer(map);
+    scale_and_shift::ScaleAndShift::install_params_deserializer(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {

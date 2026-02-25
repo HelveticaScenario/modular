@@ -6,9 +6,8 @@
 
 use std::collections::HashMap;
 
-use crate::types::{
-    ChannelCountDeriver, Module, ModuleSchema, ParamsValidator, SampleableConstructor,
-};
+use crate::params::ParamsDeserializer;
+use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
 
 pub mod enosc_tables;
 
@@ -28,10 +27,10 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     segment::Segment::install_params_validator(map);
 }
 
-pub fn install_channel_count_derivers(map: &mut HashMap<String, ChannelCountDeriver>) {
-    fold::Fold::install_channel_count_deriver(map);
-    cheby::Cheby::install_channel_count_deriver(map);
-    segment::Segment::install_channel_count_deriver(map);
+pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer>) {
+    fold::Fold::install_params_deserializer(map);
+    cheby::Cheby::install_params_deserializer(map);
+    segment::Segment::install_params_deserializer(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {

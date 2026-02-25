@@ -6,11 +6,11 @@
 
 use parking_lot::Mutex;
 
-use crate::PolyOutput;
 use crate::dsp::core::audio_in::AudioIn;
 use crate::types::{
-    Message, MessageTag, ROOT_ID, ROOT_OUTPUT_PORT, Sampleable, SampleableMap, WellKnownModule,
+    Message, MessageTag, Sampleable, SampleableMap, WellKnownModule, ROOT_ID, ROOT_OUTPUT_PORT,
 };
+use crate::PolyOutput;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
@@ -145,13 +145,14 @@ impl Patch {
     /// Build a Patch from a [`PatchGraph`] for testing.
     ///
     /// Replicates the logic of `AudioState::apply_patch()` without the command
-    /// queue or audio-thread indirection: instantiate modules, set params,
-    /// connect cables, and fire `on_patch_update`.
+    /// queue or audio-thread indirection: instantiate modules, deserialize params
+    /// on the calling thread, apply them, connect cables, and fire `on_patch_update`.
     pub fn from_graph(graph: &crate::types::PatchGraph, sample_rate: f32) -> Result<Self, String> {
-        use crate::dsp::{get_channel_count_derivers, get_constructors};
+        use crate::dsp::{get_constructors, get_params_deserializers};
+        use crate::params::{extract_argument_spans, DeserializedParams};
 
         let constructors = get_constructors();
-        let channel_count_derivers = get_channel_count_derivers();
+        let params_deserializers = get_params_deserializers();
         let mut patch = Patch::new();
 
         // 1. Instantiate all modules
@@ -164,16 +165,33 @@ impl Patch {
             patch.sampleables.insert(module_state.id.clone(), module);
         }
 
-        // 2. Set params on each module (derive channel count from params)
+        // 2. Pre-deserialize and apply params on each module
         for module_state in &graph.modules {
             if let Some(module) = patch.sampleables.get(&module_state.id) {
-                let channel_count = channel_count_derivers
+                let deserializer = params_deserializers
                     .get(&module_state.module_type)
-                    .and_then(|derive| derive(&module_state.params))
-                    .unwrap_or(1);
+                    .ok_or_else(|| {
+                        format!(
+                            "No params deserializer for module type: {}",
+                            module_state.module_type
+                        )
+                    })?;
+                let (stripped, argument_spans) =
+                    extract_argument_spans(module_state.params.clone());
+                let cached = deserializer(stripped).map_err(|e| {
+                    format!(
+                        "Failed to deserialize params for {}: {}",
+                        module_state.id, e
+                    )
+                })?;
+                let deserialized = DeserializedParams {
+                    params: cached.params,
+                    argument_spans,
+                    channel_count: cached.channel_count,
+                };
                 module
-                    .try_update_params(module_state.params.clone(), channel_count)
-                    .map_err(|e| format!("Failed to set params on {}: {}", module_state.id, e))?;
+                    .apply_deserialized_params(deserialized)
+                    .map_err(|e| format!("Failed to apply params on {}: {}", module_state.id, e))?;
             }
         }
 
@@ -203,11 +221,9 @@ mod tests {
     fn test_patch_new_has_hidden_audio_in() {
         let patch = Patch::new();
         // Patch::new() inserts HIDDEN_AUDIO_IN which is managed internally
-        assert!(
-            patch
-                .sampleables
-                .contains_key(WellKnownModule::HiddenAudioIn.id())
-        );
+        assert!(patch
+            .sampleables
+            .contains_key(WellKnownModule::HiddenAudioIn.id()));
         assert_eq!(patch.sampleables.len(), 1);
     }
 
@@ -242,10 +258,9 @@ mod tests {
             "dummy"
         }
 
-        fn try_update_params(
+        fn apply_deserialized_params(
             &self,
-            _params: serde_json::Value,
-            _channel_count: usize,
+            _deserialized: crate::params::DeserializedParams,
         ) -> Result<()> {
             Ok(())
         }
