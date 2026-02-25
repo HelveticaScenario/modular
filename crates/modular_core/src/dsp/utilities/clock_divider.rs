@@ -3,7 +3,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::dsp::utils::SchmittTrigger;
-use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
+use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
 use crate::types::ClockMessages;
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
@@ -27,6 +27,7 @@ struct ClockDividerOutputs {
 #[derive(Default, Clone, Copy)]
 struct ChannelState {
     counter: u32,
+    input_schmitt: SchmittTrigger,
     reset_schmitt: SchmittTrigger,
 }
 
@@ -80,7 +81,7 @@ impl ClockDivider {
                 state.counter = 0;
             }
 
-            if self.params.input.get_value(ch) > 0.0 {
+            if state.input_schmitt.process(self.params.input.get_value(ch)) {
                 if state.counter == 0 {
                     self.outputs.output.set(ch, 5.0); // Trigger output
                 } else {
