@@ -458,6 +458,7 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
         "channel",
         // ModuleOutput methods
         "amplitude",
+        "amp",
         "shift",
         "scope",
         "out",

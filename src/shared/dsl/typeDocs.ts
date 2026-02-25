@@ -121,6 +121,13 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 example: 'osc.amplitude(2.5)  // Half amplitude',
             },
             {
+                name: 'amp',
+                signature: 'amp(factor: Poly<Signal>): ModuleOutput',
+                description:
+                    'Alias for amplitude(). Scale the signal by a factor.',
+                example: 'osc.amp(2.5)  // Half amplitude',
+            },
+            {
                 name: 'shift',
                 signature: 'shift(offset: Poly<Signal>): ModuleOutput',
                 description:
@@ -212,6 +219,13 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 signature: 'amplitude(factor: Poly<Signal>): Collection',
                 description: 'Scale all signals in the collection by a factor.',
                 example: '$c(osc1, osc2).amplitude(0.5)',
+            },
+            {
+                name: 'amp',
+                signature: 'amp(factor: Poly<Signal>): Collection',
+                description:
+                    'Alias for amplitude(). Scale all signals in the collection by a factor.',
+                example: '$c(osc1, osc2).amp(0.5)',
             },
             {
                 name: 'shift',

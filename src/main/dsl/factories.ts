@@ -125,6 +125,7 @@ const RESERVED_OUTPUT_NAMES = new Set([
     'channel',
     // ModuleOutput methods
     'amplitude',
+    'amp',
     'shift',
     'scope',
     'out',

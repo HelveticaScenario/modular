@@ -118,6 +118,11 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
         return factory(this.items, factor) as Collection;
     }
 
+    /** Alias for {@link amplitude} */
+    amp(factor: PolySignal): Collection {
+        return this.amplitude(factor);
+    }
+
     /**
      * Shift all outputs by an offset
      */
@@ -936,6 +941,11 @@ export class ModuleOutput {
             throw new Error('Factory for util.scaleAndShift not registered');
         }
         return factory(this, factor) as ModuleOutput;
+    }
+
+    /** Alias for {@link amplitude} */
+    amp(factor: Value): ModuleOutput {
+        return this.amplitude(factor);
     }
 
     /**

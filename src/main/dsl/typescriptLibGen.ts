@@ -312,8 +312,11 @@ interface ModuleOutput {
    * @param factor - Scale factor as {@link Poly<Signal>}
    * @returns The scaled {@link Collection} for chaining
     * @example osc.amplitude(0.5)  // Half amplitude
-    */
+     */
    amplitude(factor: Poly<Signal>): Collection;
+
+   /** Alias for {@link amplitude} */
+   amp(factor: Poly<Signal>): Collection;
   
   /**
    * Add a DC offset to the signal. Creates a util.scaleAndShift module internally.
@@ -445,9 +448,12 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
   /**
    * Scale all signals by a factor.
    * @param factor - Scale factor as {@link Poly<Signal>}
-    * @see {@link ModuleOutput.amplitude}
-    */
+     * @see {@link ModuleOutput.amplitude}
+     */
    amplitude(factor: Poly<Signal>): Collection;
+
+   /** Alias for {@link amplitude} */
+   amp(factor: Poly<Signal>): Collection;
 
   /**
    * Add DC offset to all signals.
@@ -919,6 +925,7 @@ const RESERVED_OUTPUT_NAMES = new Set([
     'channel',
     // ModuleOutput methods
     'amplitude',
+    'amp',
     'shift',
     'scope',
     'out',
