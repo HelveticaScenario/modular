@@ -430,6 +430,11 @@ impl syn::parse::Parse for ModuleAttrArgs {
 // Legacy derive-macro helpers (kept for `Outputs`, `Connect`, `ChannelCount`)
 // ---------------------------------------------------------------------------
 
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../reserved_output_names.rs"
+));
+
 /// Parse output attribute tokens into OutputAttr
 /// Supports:
 /// - #[output("name", "description")]
@@ -439,50 +444,6 @@ impl syn::parse::Parse for ModuleAttrArgs {
 fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
     use syn::parse::{Parse, ParseStream};
     use syn::Result as SynResult;
-
-    /// Reserved output names that conflict with ModuleOutput, Collection, or CollectionWithRange
-    /// methods/properties in the TypeScript DSL. These names cannot be used as output names.
-    ///
-    /// IMPORTANT: When adding new methods to any type that a factory function could return
-    /// (ModuleOutput, ModuleOutputWithRange, BaseCollection, Collection, CollectionWithRange),
-    /// the method name MUST be added to this list. Keep in sync with:
-    /// - src/dsl/factories.ts (RESERVED_OUTPUT_NAMES)
-    /// - src/dsl/typescriptLibGen.ts (RESERVED_OUTPUT_NAMES)
-    const RESERVED_OUTPUT_NAMES: &[&str] = &[
-        // ModuleOutput properties
-        "builder",
-        "moduleId",
-        "module_id",
-        "portName",
-        "port_name",
-        "channel",
-        // ModuleOutput methods
-        "gain",
-        "shift",
-        "scope",
-        "out",
-        "outMono",
-        "out_mono",
-        "p",
-        "o",
-        "toString",
-        "to_string",
-        // ModuleOutputWithRange properties
-        "minValue",
-        "min_value",
-        "maxValue",
-        "max_value",
-        "range",
-        // Collection/CollectionWithRange properties
-        "items",
-        "length",
-        // DeferredModuleOutput/DeferredCollection methods
-        "set",
-        // JavaScript built-ins
-        "constructor",
-        "prototype",
-        "__proto__",
-    ];
 
     struct OutputAttrParser {
         name: LitStr,
@@ -497,13 +458,26 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
             let name: LitStr = input.parse()?;
             let name_value = name.value();
 
-            // Check against reserved names
-            if RESERVED_OUTPUT_NAMES.contains(&name_value.as_str()) {
+            // Build expanded reserved names including snake_case variants
+            use convert_case::{Case, Casing};
+            let reserved_with_snake: Vec<String> = RESERVED_OUTPUT_NAMES
+                .iter()
+                .flat_map(|&name| {
+                    let snake = name.to_case(Case::Snake);
+                    if snake == name {
+                        vec![name.to_string()]
+                    } else {
+                        vec![name.to_string(), snake]
+                    }
+                })
+                .collect();
+
+            if reserved_with_snake.iter().any(|r| r == &name_value) {
                 return Err(syn::Error::new(
                     name.span(),
                     format!(
                         "Output name '{}' is reserved. Reserved names are: {:?}",
-                        name_value, RESERVED_OUTPUT_NAMES
+                        name_value, reserved_with_snake
                     ),
                 ));
             }

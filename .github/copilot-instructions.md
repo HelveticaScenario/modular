@@ -46,10 +46,7 @@ Key areas:
     - Output attenuation: `AUDIO_OUTPUT_ATTENUATION` in `crates/modular/src/audio.rs`.
 - Prefer Electron APIs over web/React APIs when either could solve a task (see `src/**/*.ts`).
 - **Dependency size**: This is an Electron app with locally-served bundles. NPM package size doesn't matter (no CDN/network concerns). Heavy dependencies like `ts-morph` are acceptable for developer experience.
-- Reserved output names: when adding methods to `ModuleOutput`, `ModuleOutputWithRange`, `BaseCollection`, `Collection`, or `CollectionWithRange`, add the method name to `RESERVED_OUTPUT_NAMES` in all three locations:
-    - `crates/modular_derive/src/lib.rs` (Rust compile-time check)
-    - `src/dsl/factories.ts` (runtime sanitization)
-    - `src/dsl/typescriptLibGen.ts` (type generation)
+- Reserved output names: when adding methods to `ModuleOutput`, `ModuleOutputWithRange`, `BaseCollection`, `Collection`, or `CollectionWithRange`, add the method name to `RESERVED_OUTPUT_NAMES` in `crates/reserved_output_names.rs`. This is the single source of truth, shared by the Rust proc-macro (compile-time validation) and TypeScript DSL (runtime sanitization + type generation) via NAPI.
 
 ## File I/O + patches
 

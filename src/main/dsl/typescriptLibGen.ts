@@ -1,4 +1,4 @@
-import { ModuleSchema } from '@modular/core';
+import { ModuleSchema, getReservedOutputNames } from '@modular/core';
 import {
     JSONSchema,
     resolveRef,
@@ -902,43 +902,14 @@ function toCamelCase(str: string): string {
 }
 
 /**
- * Reserved property names that conflict with ModuleOutput, Collection, or CollectionWithRange methods/properties.
- * Output names matching these will be suffixed with an underscore.
+ * Reserved property names that conflict with ModuleOutput, Collection, or CollectionWithRange
+ * methods/properties. Output names matching these will be suffixed with an underscore.
  *
- * IMPORTANT: When adding new methods to any type that a factory function could return
- * (ModuleOutput, ModuleOutputWithRange, BaseCollection, Collection, CollectionWithRange),
- * the method name MUST be added to this list. Keep in sync with:
- * - crates/modular_derive/src/lib.rs (RESERVED_OUTPUT_NAMES)
- * - src/dsl/factories.ts (RESERVED_OUTPUT_NAMES)
+ * Single source of truth: `crates/reserved_output_names.rs`
  */
-const RESERVED_OUTPUT_NAMES = new Set([
-    // ModuleOutput properties
-    'builder',
-    'moduleId',
-    'portName',
-    'channel',
-    // ModuleOutput methods
-    'gain',
-    'shift',
-    'scope',
-    'out',
-    'outMono',
-    'p',
-    'toString',
-    // ModuleOutputWithRange properties
-    'minValue',
-    'maxValue',
-    'range',
-    // Collection/CollectionWithRange properties
-    'items',
-    'length',
-    // DeferredModuleOutput/DeferredCollection methods
-    'set',
-    // JavaScript built-ins
-    'constructor',
-    'prototype',
-    '__proto__',
-]);
+const RESERVED_OUTPUT_NAMES: ReadonlySet<string> = new Set(
+    getReservedOutputNames(),
+);
 
 /**
  * Sanitize output name to avoid conflicts with reserved properties/methods.

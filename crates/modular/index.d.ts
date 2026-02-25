@@ -175,6 +175,12 @@ export declare function getMiniLeafSpans(source: string): Array<Array<number>>
  */
 export declare function getPatternPolyphony(source: string): number
 
+/**
+ * Returns the list of reserved output names that cannot be used as module output port names.
+ * These are names that conflict with built-in properties/methods on ModuleOutput, Collection, etc.
+ */
+export declare function getReservedOutputNames(): Array<string>
+
 export declare function getSchemas(): Array<ModuleSchema>
 
 /** Per-host device info for the cache snapshot */

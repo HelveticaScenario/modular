@@ -28,6 +28,15 @@ use crate::audio::{
 use crate::commands::{GraphCommand, QueuedTrigger};
 use crate::midi::MidiInputManager;
 
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../reserved_output_names.rs"));
+
+/// Returns the list of reserved output names that cannot be used as module output port names.
+/// These are names that conflict with built-in properties/methods on ModuleOutput, Collection, etc.
+#[napi]
+pub fn get_reserved_output_names() -> Vec<String> {
+    RESERVED_OUTPUT_NAMES.iter().map(|s| s.to_string()).collect()
+}
+
 /// Information about a MIDI input port (for N-API)
 #[napi(object)]
 pub struct MidiInputInfo {
