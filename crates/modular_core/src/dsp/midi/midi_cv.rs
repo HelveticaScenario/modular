@@ -7,7 +7,9 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::dsp::utils::{GATE_HIGH_VOLTAGE, GATE_LOW_VOLTAGE};
+use crate::dsp::utils::{
+    min_gate_samples, TempGate, TempGateState, GATE_HIGH_VOLTAGE, GATE_LOW_VOLTAGE,
+};
 use crate::patch::Patch;
 use crate::poly::{PolyOutput, PORT_MAX_CHANNELS};
 use crate::types::{
@@ -199,8 +201,8 @@ pub struct MidiCv {
     /// Global aftertouch (for non-MPE mode)
     global_aftertouch: u8,
 
-    /// Retrigger pulse counters (samples remaining)
-    retrigger_counters: [u32; PORT_MAX_CHANNELS],
+    /// Retrigger pulse gates (multi-sample duration via TempGate)
+    retrigger_gates: [TempGate; PORT_MAX_CHANNELS],
 
     last_channel_count: usize,
 }
@@ -219,7 +221,7 @@ impl Default for MidiCv {
             global_pitch_wheel: 0,
             global_mod_wheel: 0,
             global_aftertouch: 0,
-            retrigger_counters: [0; PORT_MAX_CHANNELS],
+            retrigger_gates: [TempGate::default(); PORT_MAX_CHANNELS],
             last_channel_count: 0,
             _channel_count: 0,
         }
@@ -378,8 +380,11 @@ impl MidiCv {
                 voice.velocity = mono_vel;
                 voice.gate = true;
                 if should_retrigger {
-                    // 1ms retrigger pulse
-                    self.retrigger_counters[0] = (self.sample_rate * 0.001) as u32;
+                    self.retrigger_gates[0].set_state(
+                        TempGateState::High,
+                        TempGateState::Low,
+                        min_gate_samples(self.sample_rate),
+                    );
                 }
             }
         } else {
@@ -389,7 +394,11 @@ impl MidiCv {
             voice.note = note;
             voice.velocity = velocity;
             voice.gate = true;
-            self.retrigger_counters[voice_idx] = (self.sample_rate * 0.001) as u32;
+            self.retrigger_gates[voice_idx].set_state(
+                TempGateState::High,
+                TempGateState::Low,
+                min_gate_samples(self.sample_rate),
+            );
         }
 
         Ok(())
@@ -430,7 +439,11 @@ impl MidiCv {
                 if voice.note != mono_note {
                     voice.note = mono_note;
                     voice.velocity = mono_vel;
-                    self.retrigger_counters[0] = (self.sample_rate * 0.001) as u32;
+                    self.retrigger_gates[0].set_state(
+                        TempGateState::High,
+                        TempGateState::Low,
+                        min_gate_samples(self.sample_rate),
+                    );
                 }
             } else {
                 self.voices[0].gate = false;
@@ -565,7 +578,7 @@ impl MidiCv {
 
         for i in 0..PORT_MAX_CHANNELS {
             self.voices[i] = VoiceState::default();
-            self.retrigger_counters[i] = 0;
+            self.retrigger_gates[i].set_state(TempGateState::Low, TempGateState::Low, 0);
         }
 
         for i in 0..16 {
@@ -623,12 +636,9 @@ impl MidiCv {
                 .set(i, aftertouch as f32 / 127.0 * 5.0);
 
             // Retrigger pulse
-            if self.retrigger_counters[i] > 0 {
-                self.outputs.retrigger.set(i, GATE_HIGH_VOLTAGE);
-                self.retrigger_counters[i] -= 1;
-            } else {
-                self.outputs.retrigger.set(i, GATE_LOW_VOLTAGE);
-            }
+            self.outputs
+                .retrigger
+                .set(i, self.retrigger_gates[i].process());
 
             // Pitch wheel (raw, unscaled, -5V to +5V)
             let pw = if self.params.poly_mode == PolyMode::Mpe {

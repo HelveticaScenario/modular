@@ -18,7 +18,7 @@ use serde::Deserialize;
 use crate::{
     dsp::{
         utilities::quantizer::ScaleParam,
-        utils::{midi_to_voct_f64, TempGate, TempGateState},
+        utils::{midi_to_voct_f64, min_gate_samples, TempGate, TempGateState},
     },
     pattern_system::{Fraction, Pattern},
     poly::{PolyOutput, PORT_MAX_CHANNELS},
@@ -730,8 +730,9 @@ impl IntervalSeq {
 }
 
 impl IntervalSeq {
-    fn update(&mut self, _sample_rate: f32) {
+    fn update(&mut self, sample_rate: f32) {
         let playhead = self.params.playhead.get_value_f64();
+        let hold = min_gate_samples(sample_rate);
 
         let num_channels = self.channel_count();
 
@@ -813,10 +814,10 @@ impl IntervalSeq {
             voice.active = true;
             voice
                 .gate
-                .set_state(TempGateState::Low, TempGateState::High);
+                .set_state(TempGateState::Low, TempGateState::High, hold);
             voice
                 .trigger
-                .set_state(TempGateState::High, TempGateState::Low);
+                .set_state(TempGateState::High, TempGateState::Low, hold);
         }
 
         // Output all voices
@@ -868,7 +869,7 @@ impl IntervalSeq {
                     self.voices[i].cached_hap = None;
                     self.voices[i]
                         .gate
-                        .set_state(TempGateState::Low, TempGateState::Low);
+                        .set_state(TempGateState::Low, TempGateState::Low, 0);
                 }
             }
         }

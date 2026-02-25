@@ -1,4 +1,5 @@
 use crate::{
+    dsp::utils::{min_gate_samples, TempGate, TempGateState},
     poly::{PolyOutput, PolySignal},
     PORT_MAX_CHANNELS,
 };
@@ -33,6 +34,7 @@ struct EdgeDetectorOutputs {
 #[derive(Default, Clone, Copy)]
 struct EdgeChannelState {
     last_input: f32,
+    trigger_gate: TempGate,
 }
 
 /// Detects rising edges in a signal and emits a short pulse.
@@ -54,17 +56,22 @@ pub struct RisingEdgeDetector {
 }
 
 impl RisingEdgeDetector {
-    pub fn update(&mut self, _sample_rate: f32) {
+    pub fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
+        let hold = min_gate_samples(sample_rate);
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
             let input = self.params.input.get_value_or(ch, 0.0);
 
-            let output = if input > state.last_input { 5.0 } else { 0.0 };
+            if input > state.last_input {
+                state
+                    .trigger_gate
+                    .set_state(TempGateState::High, TempGateState::Low, hold);
+            }
 
             state.last_input = input;
-            self.outputs.output.set(ch, output);
+            self.outputs.output.set(ch, state.trigger_gate.process());
         }
     }
 }
@@ -90,17 +97,22 @@ pub struct FallingEdgeDetector {
 }
 
 impl FallingEdgeDetector {
-    pub fn update(&mut self, _sample_rate: f32) {
+    pub fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
+        let hold = min_gate_samples(sample_rate);
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
             let input = self.params.input.get_value_or(ch, 0.0);
 
-            let output = if input < state.last_input { 5.0 } else { 0.0 };
+            if input < state.last_input {
+                state
+                    .trigger_gate
+                    .set_state(TempGateState::High, TempGateState::Low, hold);
+            }
 
             state.last_input = input;
-            self.outputs.output.set(ch, output);
+            self.outputs.output.set(ch, state.trigger_gate.process());
         }
     }
 }

@@ -17,7 +17,7 @@ use serde::Deserialize;
 
 use crate::{
     MonoSignal, PolySignal,
-    dsp::utils::{TempGate, TempGateState},
+    dsp::utils::{TempGate, TempGateState, min_gate_samples},
     pattern_system::{DspHap, Fraction},
     poly::{PORT_MAX_CHANNELS, PolyOutput},
 };
@@ -359,8 +359,9 @@ impl Seq {
         }
     }
 
-    fn update(&mut self, _sample_rate: f32) {
+    fn update(&mut self, sample_rate: f32) {
         let playhead = self.params.playhead.get_value_f64();
+        let hold = min_gate_samples(sample_rate);
 
         // Use precomputed channel count from _channel_count (set by apply_deserialized_params)
         let num_channels = self.channel_count();
@@ -451,10 +452,10 @@ impl Seq {
             voice.active = true;
             voice
                 .gate
-                .set_state(TempGateState::Low, TempGateState::High);
+                .set_state(TempGateState::Low, TempGateState::High, hold);
             voice
                 .trigger
-                .set_state(TempGateState::High, TempGateState::Low);
+                .set_state(TempGateState::High, TempGateState::Low, hold);
         }
 
         // Process all voices and update outputs
@@ -483,7 +484,7 @@ impl Seq {
                 // Gate goes low
                 self.voices[i]
                     .gate
-                    .set_state(TempGateState::Low, TempGateState::Low);
+                    .set_state(TempGateState::Low, TempGateState::Low, 0);
             }
         }
     }

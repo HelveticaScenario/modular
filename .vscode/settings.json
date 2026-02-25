@@ -22,6 +22,7 @@
         "phasor",
         "playhead",
         "Playmode",
+        "Quantizer",
         "repr",
         "Sampleable",
         "sampleables",

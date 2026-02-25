@@ -2,8 +2,8 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::dsp::utils::SchmittTrigger;
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
+use crate::dsp::utils::{min_gate_samples, SchmittTrigger, TempGate, TempGateState};
+use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 use crate::types::ClockMessages;
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
@@ -29,6 +29,7 @@ struct ChannelState {
     counter: u32,
     input_schmitt: SchmittTrigger,
     reset_schmitt: SchmittTrigger,
+    trigger_gate: TempGate,
 }
 
 /// Divides an incoming clock signal so it fires less often.
@@ -69,9 +70,10 @@ impl ClockDivider {
         Ok(())
     }
 
-    fn update(&mut self, _sample_rate: f32) {
+    fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
         let division = self.params.division.max(1);
+        let hold = min_gate_samples(sample_rate);
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
@@ -83,18 +85,18 @@ impl ClockDivider {
 
             if state.input_schmitt.process(self.params.input.get_value(ch)) {
                 if state.counter == 0 {
-                    self.outputs.output.set(ch, 5.0); // Trigger output
-                } else {
-                    self.outputs.output.set(ch, 0.0);
+                    state
+                        .trigger_gate
+                        .set_state(TempGateState::High, TempGateState::Low, hold);
                 }
 
                 state.counter += 1;
                 if state.counter >= division {
                     state.counter = 0;
                 }
-            } else {
-                self.outputs.output.set(ch, 0.0);
             }
+
+            self.outputs.output.set(ch, state.trigger_gate.process());
         }
     }
 }

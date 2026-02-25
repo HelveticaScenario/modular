@@ -2,7 +2,9 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::{types::ClockMessages, PolyOutput};
+use crate::dsp::utils::{min_gate_samples, SchmittTrigger, TempGate, TempGateState};
+use crate::types::ClockMessages;
+use crate::PolyOutput;
 
 fn default_four() -> u32 {
     4
@@ -64,9 +66,18 @@ pub struct Clock {
     phase: f64,
     ppq_phase: f64,
     beat_phase: f64,
-    last_bar_trigger: bool,
-    last_ppq_trigger: bool,
-    last_beat_trigger: bool,
+    /// Detects bar-boundary zero-crossings on (phase_increment − phase).
+    bar_schmitt: SchmittTrigger,
+    /// Detects PPQ-boundary zero-crossings.
+    ppq_schmitt: SchmittTrigger,
+    /// Detects beat-boundary zero-crossings.
+    beat_schmitt: SchmittTrigger,
+    /// Multi-sample bar trigger pulse.
+    bar_gate: TempGate,
+    /// Multi-sample PPQ trigger pulse.
+    ppq_gate: TempGate,
+    /// Multi-sample beat trigger pulse.
+    beat_gate: TempGate,
     running: bool,
     params: ClockParams,
     loop_index: u64,
@@ -100,9 +111,12 @@ impl Default for Clock {
             phase: 0.0,
             ppq_phase: 0.0,
             beat_phase: 0.0,
-            last_bar_trigger: false,
-            last_ppq_trigger: false,
-            last_beat_trigger: false,
+            bar_schmitt: SchmittTrigger::new(0.0, 0.0),
+            ppq_schmitt: SchmittTrigger::new(0.0, 0.0),
+            beat_schmitt: SchmittTrigger::new(0.0, 0.0),
+            bar_gate: TempGate::new_gate(TempGateState::Low),
+            ppq_gate: TempGate::new_gate(TempGateState::Low),
+            beat_gate: TempGate::new_gate(TempGateState::Low),
             running: true,
             params: ClockParams::default(),
             loop_index: 0,
@@ -170,34 +184,46 @@ impl Clock {
         // Generate ramp output (0 to 5V over one bar)
         self.outputs.ramp = self.phase as f32 * 5.0;
 
-        // Generate bar trigger (trigger at start of bar)
-        // Use <= so the trigger fires on the very first sample after start/reset
-        // (phase == phase_increment after the first increment from 0).
-        let should_bar_trigger = self.phase <= phase_increment;
-        if should_bar_trigger && !self.last_bar_trigger {
-            self.outputs.bar_trigger = 5.0;
-        } else {
-            self.outputs.bar_trigger = 0.0;
-        }
-        self.last_bar_trigger = should_bar_trigger;
+        let hold = min_gate_samples(sample_rate);
 
-        // Generate beat trigger (trigger at start of each beat)
-        let should_beat_trigger = self.beat_phase <= phase_increment;
-        if should_beat_trigger && !self.last_beat_trigger {
-            self.outputs.beat_trigger = 5.0;
-        } else {
-            self.outputs.beat_trigger = 0.0;
-        }
-        self.last_beat_trigger = should_beat_trigger;
+        // --- Trigger generation via SchmittTrigger + TempGate ---
+        //
+        // For each phase (bar, beat, ppq) the signal `phase_increment − phase`
+        // is negative for most of the cycle and goes positive at the wrap
+        // point (when phase resets near zero). A SchmittTrigger with both
+        // thresholds at 0.0 detects this rising edge, and a TempGate
+        // stretches the single-sample event into a multi-sample 5V pulse
+        // of duration `hold` (≈16 samples at 48 kHz).
 
-        // Generate PPQ trigger
-        let should_ppq_trigger = self.ppq_phase <= phase_increment;
-        if should_ppq_trigger && !self.last_ppq_trigger {
-            self.outputs.ppq_trigger = 5.0;
-        } else {
-            self.outputs.ppq_trigger = 0.0;
+        // Bar trigger
+        if self
+            .bar_schmitt
+            .process((phase_increment - self.phase) as f32)
+        {
+            self.bar_gate
+                .set_state(TempGateState::High, TempGateState::Low, hold);
         }
-        self.last_ppq_trigger = should_ppq_trigger;
+        self.outputs.bar_trigger = self.bar_gate.process();
+
+        // Beat trigger
+        if self
+            .beat_schmitt
+            .process((phase_increment - self.beat_phase) as f32)
+        {
+            self.beat_gate
+                .set_state(TempGateState::High, TempGateState::Low, hold);
+        }
+        self.outputs.beat_trigger = self.beat_gate.process();
+
+        // PPQ trigger
+        if self
+            .ppq_schmitt
+            .process((phase_increment - self.ppq_phase) as f32)
+        {
+            self.ppq_gate
+                .set_state(TempGateState::High, TempGateState::Low, hold);
+        }
+        self.outputs.ppq_trigger = self.ppq_gate.process();
     }
 
     fn on_clock_message(&mut self, m: &ClockMessages) -> Result<()> {
@@ -212,9 +238,15 @@ impl Clock {
                 self.outputs.playhead.set(1, 0.0);
                 self.loop_index = 0;
                 self.outputs.beat_in_bar = 0.0;
-                self.last_bar_trigger = false;
-                self.last_ppq_trigger = false;
-                self.last_beat_trigger = false;
+                self.bar_schmitt.reset();
+                self.ppq_schmitt.reset();
+                self.beat_schmitt.reset();
+                self.bar_gate
+                    .set_state(TempGateState::Low, TempGateState::Low, 0);
+                self.ppq_gate
+                    .set_state(TempGateState::Low, TempGateState::Low, 0);
+                self.beat_gate
+                    .set_state(TempGateState::Low, TempGateState::Low, 0);
             }
             ClockMessages::Stop => {
                 self.running = false;
@@ -258,26 +290,32 @@ mod tests {
         assert!(c.phase > 0.0);
     }
 
-    /// Helper: count how many times beat_trigger fires 5V over a given number of samples
+    /// Helper: count how many trigger events (rising edges) beat_trigger has over a given number of samples
     fn count_beat_triggers(c: &mut Clock, sr: f32, samples: usize) -> usize {
         let mut count = 0;
+        let mut was_high = false;
         for _ in 0..samples {
             c.update(sr);
-            if c.outputs.beat_trigger == 5.0 {
+            let is_high = c.outputs.beat_trigger == 5.0;
+            if is_high && !was_high {
                 count += 1;
             }
+            was_high = is_high;
         }
         count
     }
 
-    /// Helper: count how many times bar_trigger fires 5V over a given number of samples
+    /// Helper: count how many trigger events (rising edges) bar_trigger has over a given number of samples
     fn count_bar_triggers(c: &mut Clock, sr: f32, samples: usize) -> usize {
         let mut count = 0;
+        let mut was_high = false;
         for _ in 0..samples {
             c.update(sr);
-            if c.outputs.bar_trigger == 5.0 {
+            let is_high = c.outputs.bar_trigger == 5.0;
+            if is_high && !was_high {
                 count += 1;
             }
+            was_high = is_high;
         }
         count
     }
@@ -405,10 +443,6 @@ mod tests {
         assert!(
             (c.beat_phase - 0.0).abs() < 1e-9,
             "beat_phase should be reset on Start"
-        );
-        assert!(
-            !c.last_beat_trigger,
-            "last_beat_trigger should be reset on Start"
         );
     }
 

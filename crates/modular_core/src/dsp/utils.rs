@@ -12,6 +12,16 @@ pub const GATE_LOW_VOLTAGE: f32 = 0.0;
 pub const GATE_DETECTION_HIGH_THRESHOLD: f32 = 1.0;
 pub const GATE_DETECTION_LOW_THRESHOLD: f32 = 0.1;
 
+/// Minimum duration for trigger pulses and gate retrigger gaps, in seconds.
+/// Controls how long triggers stay high and how long gate retrigger gaps last.
+/// At 48 kHz sample rate this equals approximately 16 samples.
+pub const MIN_GATE_DURATION_SECS: f32 = 1.0 / 3000.0; // ~0.333 ms
+
+/// Convert [`MIN_GATE_DURATION_SECS`] to a sample count for the given sample rate.
+pub fn min_gate_samples(sample_rate: f32) -> u32 {
+    (sample_rate * MIN_GATE_DURATION_SECS).round() as u32
+}
+
 #[inline]
 pub fn changed(a: f32, b: f32) -> bool {
     (a - b).abs() > 1e-6
@@ -150,7 +160,7 @@ impl SchmittTrigger {
             }
             SchmittState::Low => {
                 // Currently low - check if we should go high
-                if input > self.high_threshold {
+                if input >= self.high_threshold {
                     self.state = SchmittState::High;
                     (true, EdgeEvent::Rising)
                 } else {
@@ -190,12 +200,31 @@ pub enum TempGateState {
     High,
 }
 
+/// Temporary gate/trigger generator with configurable hold duration.
+///
+/// Outputs a voltage corresponding to its current state (`low_val` or
+/// `high_val`) and holds that state for a configurable number of samples
+/// before transitioning to a target state.
+///
+/// # Typical usage
+///
+/// | Intent             | Call                         | Effect                            |
+/// |--------------------|------------------------------|-----------------------------------|
+/// | Trigger pulse      | `set_state(High, Low, hold)` | High for `hold` samples, then Low |
+/// | Gate retrigger gap | `set_state(Low, High, hold)` | Low for `hold` samples, then High |
+/// | Gate off           | `set_state(Low, Low, 0)`     | Immediately Low                   |
+///
+/// The `hold_samples` parameter controls how many calls to [`process`](TempGate::process)
+/// will output the initial `state` before transitioning to `target`.
+/// Use [`min_gate_samples`] to derive this from the current sample rate.
 #[derive(Clone, Copy, Default, PartialEq)]
 pub struct TempGate {
     target: TempGateState,
     state: TempGateState,
     low_val: f32,
     high_val: f32,
+    /// Samples remaining before transitioning from `state` to `target`.
+    counter: u32,
 }
 
 impl TempGate {
@@ -205,6 +234,7 @@ impl TempGate {
             state,
             low_val,
             high_val,
+            counter: 0,
         }
     }
 
@@ -213,20 +243,33 @@ impl TempGate {
         Self::new(state, GATE_LOW_VOLTAGE, GATE_HIGH_VOLTAGE)
     }
 
-    pub fn set_state(&mut self, state: TempGateState, target: TempGateState) {
+    /// Set the current state and the target state to transition to after
+    /// `hold_samples` calls to [`process`](TempGate::process).
+    ///
+    /// When `state == target` (e.g. gate-off), pass `hold_samples = 0`.
+    pub fn set_state(&mut self, state: TempGateState, target: TempGateState, hold_samples: u32) {
         self.state = state;
         self.target = target;
+        self.counter = hold_samples;
     }
 
+    /// Output the current state voltage and advance the hold counter.
+    ///
+    /// Returns `high_val` while in [`TempGateState::High`] and `low_val`
+    /// while in [`TempGateState::Low`]. After `hold_samples` calls the
+    /// state transitions to `target`.
     pub fn process(&mut self) -> f32 {
-        let state = self.state;
-        if self.state != self.target {
-            self.state = self.target;
-        }
-        match state {
+        let output = match self.state {
             TempGateState::Low => self.low_val,
             TempGateState::High => self.high_val,
+        };
+        if self.state != self.target {
+            self.counter = self.counter.saturating_sub(1);
+            if self.counter == 0 {
+                self.state = self.target;
+            }
         }
+        output
     }
 }
 
@@ -590,5 +633,475 @@ mod tests {
             let midi_roundtrip = voct_to_midi(expected_voct);
             assert!((midi_roundtrip - midi).abs() < 1e-5);
         }
+    }
+
+    // ============ SchmittTrigger Tests ============
+
+    #[test]
+    fn schmitt_default_thresholds() {
+        let st = SchmittTrigger::default();
+        assert_eq!(st.state(), SchmittState::Uninitialized);
+        assert_eq!(st.low_threshold, GATE_DETECTION_LOW_THRESHOLD);
+        assert_eq!(st.high_threshold, GATE_DETECTION_HIGH_THRESHOLD);
+    }
+
+    #[test]
+    fn schmitt_custom_thresholds() {
+        let st = SchmittTrigger::new(0.2, 0.8);
+        assert_eq!(st.state(), SchmittState::Uninitialized);
+        assert_eq!(st.low_threshold, 0.2);
+        assert_eq!(st.high_threshold, 0.8);
+    }
+
+    #[test]
+    fn schmitt_uninitialized_goes_high_at_threshold() {
+        // >= high_threshold should transition to High
+        let mut st = SchmittTrigger::new(0.1, 1.0);
+        let (is_high, edge) = st.process_with_edge(1.0);
+        assert!(is_high);
+        assert_eq!(edge, EdgeEvent::Rising);
+        assert_eq!(st.state(), SchmittState::High);
+    }
+
+    #[test]
+    fn schmitt_uninitialized_goes_low_below_low_threshold() {
+        let mut st = SchmittTrigger::new(0.1, 1.0);
+        let (is_high, edge) = st.process_with_edge(0.05);
+        assert!(!is_high);
+        assert_eq!(edge, EdgeEvent::Falling);
+        assert_eq!(st.state(), SchmittState::Low);
+    }
+
+    #[test]
+    fn schmitt_uninitialized_in_hysteresis_band_no_edge() {
+        // Value between low and high threshold — goes Low with no edge
+        let mut st = SchmittTrigger::new(0.1, 1.0);
+        let (is_high, edge) = st.process_with_edge(0.5);
+        assert!(!is_high);
+        assert_eq!(edge, EdgeEvent::None);
+        assert_eq!(st.state(), SchmittState::Low);
+    }
+
+    #[test]
+    fn schmitt_low_to_high_at_exact_threshold() {
+        // Verify >= semantics: input exactly at high_threshold triggers
+        let mut st = SchmittTrigger::new(0.1, 1.0);
+        st.state = SchmittState::Low;
+        let (is_high, edge) = st.process_with_edge(1.0);
+        assert!(is_high);
+        assert_eq!(edge, EdgeEvent::Rising);
+    }
+
+    #[test]
+    fn schmitt_low_to_high_above_threshold() {
+        let mut st = SchmittTrigger::new(0.1, 1.0);
+        st.state = SchmittState::Low;
+        let (is_high, edge) = st.process_with_edge(5.0);
+        assert!(is_high);
+        assert_eq!(edge, EdgeEvent::Rising);
+    }
+
+    #[test]
+    fn schmitt_low_stays_low_just_below_threshold() {
+        let mut st = SchmittTrigger::new(0.1, 1.0);
+        st.state = SchmittState::Low;
+        let (is_high, edge) = st.process_with_edge(0.999);
+        assert!(!is_high);
+        assert_eq!(edge, EdgeEvent::None);
+    }
+
+    #[test]
+    fn schmitt_high_to_low_below_low_threshold() {
+        let mut st = SchmittTrigger::new(0.1, 1.0);
+        st.state = SchmittState::High;
+        let (is_high, edge) = st.process_with_edge(0.05);
+        assert!(!is_high);
+        assert_eq!(edge, EdgeEvent::Falling);
+    }
+
+    #[test]
+    fn schmitt_high_stays_high_at_low_threshold() {
+        // < low_threshold is required to go low; exactly at it stays high
+        let mut st = SchmittTrigger::new(0.1, 1.0);
+        st.state = SchmittState::High;
+        let (is_high, edge) = st.process_with_edge(0.1);
+        assert!(is_high);
+        assert_eq!(edge, EdgeEvent::None);
+    }
+
+    #[test]
+    fn schmitt_high_stays_high_in_hysteresis_band() {
+        let mut st = SchmittTrigger::new(0.1, 1.0);
+        st.state = SchmittState::High;
+        let (is_high, edge) = st.process_with_edge(0.5);
+        assert!(is_high);
+        assert_eq!(edge, EdgeEvent::None);
+    }
+
+    #[test]
+    fn schmitt_full_cycle_low_high_low() {
+        let mut st = SchmittTrigger::default(); // 0.1, 1.0
+                                                // Start from uninitialized with low input
+        let (_, e) = st.process_with_edge(0.0);
+        assert_eq!(e, EdgeEvent::Falling);
+        assert_eq!(st.state(), SchmittState::Low);
+
+        // Stay low in hysteresis band
+        let (_, e) = st.process_with_edge(0.5);
+        assert_eq!(e, EdgeEvent::None);
+        assert_eq!(st.state(), SchmittState::Low);
+
+        // Rise above high threshold → Rising
+        let (_, e) = st.process_with_edge(5.0);
+        assert_eq!(e, EdgeEvent::Rising);
+        assert_eq!(st.state(), SchmittState::High);
+
+        // Stay high above low threshold
+        let (_, e) = st.process_with_edge(0.5);
+        assert_eq!(e, EdgeEvent::None);
+        assert_eq!(st.state(), SchmittState::High);
+
+        // Drop below low threshold → Falling
+        let (_, e) = st.process_with_edge(0.0);
+        assert_eq!(e, EdgeEvent::Falling);
+        assert_eq!(st.state(), SchmittState::Low);
+    }
+
+    #[test]
+    fn schmitt_process_returns_true_only_on_rising() {
+        let mut st = SchmittTrigger::default();
+        assert!(!st.process(0.0)); // Uninitialized → Low (Falling, not Rising)
+        assert!(!st.process(0.5)); // Low → Low (None)
+        assert!(st.process(5.0)); // Low → High (Rising)
+        assert!(!st.process(5.0)); // High → High (None)
+        assert!(!st.process(0.0)); // High → Low (Falling)
+        assert!(st.process(5.0)); // Low → High (Rising)
+    }
+
+    #[test]
+    fn schmitt_zero_thresholds_trigger_at_zero() {
+        // This is the clock module pattern: SchmittTrigger::new(0.0, 0.0)
+        let mut st = SchmittTrigger::new(0.0, 0.0);
+
+        // Negative input: Uninitialized → Low (Falling)
+        let (is_high, edge) = st.process_with_edge(-1.0);
+        assert!(!is_high);
+        assert_eq!(edge, EdgeEvent::Falling);
+
+        // Still negative: stays Low
+        let (is_high, edge) = st.process_with_edge(-0.5);
+        assert!(!is_high);
+        assert_eq!(edge, EdgeEvent::None);
+
+        // Exactly 0.0: >= 0.0 is true → Rising
+        let (is_high, edge) = st.process_with_edge(0.0);
+        assert!(is_high);
+        assert_eq!(edge, EdgeEvent::Rising);
+
+        // Positive: stays High
+        let (is_high, edge) = st.process_with_edge(1.0);
+        assert!(is_high);
+        assert_eq!(edge, EdgeEvent::None);
+
+        // Exactly 0.0 again: < 0.0 is false, stays High
+        let (is_high, edge) = st.process_with_edge(0.0);
+        assert!(is_high);
+        assert_eq!(edge, EdgeEvent::None);
+
+        // Negative: < 0.0 → Falling
+        let (is_high, edge) = st.process_with_edge(-0.001);
+        assert!(!is_high);
+        assert_eq!(edge, EdgeEvent::Falling);
+    }
+
+    #[test]
+    fn schmitt_zero_thresholds_no_oscillation_at_zero() {
+        // With (0.0, 0.0) thresholds, a sustained 0.0 input should not
+        // oscillate: High→Low requires < 0.0, which 0.0 does not satisfy.
+        let mut st = SchmittTrigger::new(0.0, 0.0);
+        // Force to Low first
+        st.process_with_edge(-1.0);
+        assert_eq!(st.state(), SchmittState::Low);
+
+        // First 0.0 → Rising
+        let (_, edge) = st.process_with_edge(0.0);
+        assert_eq!(edge, EdgeEvent::Rising);
+
+        // Subsequent 0.0 → stays High, no edge
+        for _ in 0..100 {
+            let (is_high, edge) = st.process_with_edge(0.0);
+            assert!(is_high);
+            assert_eq!(edge, EdgeEvent::None);
+        }
+    }
+
+    #[test]
+    fn schmitt_reset_returns_to_uninitialized() {
+        let mut st = SchmittTrigger::default();
+        st.process(5.0); // Go to High
+        assert_eq!(st.state(), SchmittState::High);
+
+        st.reset();
+        assert_eq!(st.state(), SchmittState::Uninitialized);
+
+        // Next process from Uninitialized should report a rising edge
+        let (is_high, edge) = st.process_with_edge(5.0);
+        assert!(is_high);
+        assert_eq!(edge, EdgeEvent::Rising);
+    }
+
+    #[test]
+    fn schmitt_set_thresholds_updates_values() {
+        let mut st = SchmittTrigger::default();
+        st.process_with_edge(0.0); // Establish Low state
+        assert_eq!(st.state(), SchmittState::Low);
+
+        // Change to narrow thresholds
+        st.set_thresholds(0.4, 0.6);
+
+        // 0.5 is below new high threshold (0.6) → stays Low
+        let (is_high, _) = st.process_with_edge(0.5);
+        assert!(!is_high);
+
+        // 0.6 is at new high threshold → Rising
+        let (is_high, edge) = st.process_with_edge(0.6);
+        assert!(is_high);
+        assert_eq!(edge, EdgeEvent::Rising);
+    }
+
+    #[test]
+    fn schmitt_equal_thresholds_used_by_scope() {
+        // ScopeBuffer sets both thresholds equal via set_thresholds(thresh, thresh)
+        let mut st = SchmittTrigger::new(0.5, 0.5);
+
+        // Below threshold
+        st.process_with_edge(-1.0);
+        assert_eq!(st.state(), SchmittState::Low);
+
+        // At threshold: >= 0.5 → Rising
+        let (_, edge) = st.process_with_edge(0.5);
+        assert_eq!(edge, EdgeEvent::Rising);
+
+        // Below threshold: < 0.5 → Falling
+        let (_, edge) = st.process_with_edge(0.49);
+        assert_eq!(edge, EdgeEvent::Falling);
+    }
+
+    #[test]
+    fn schmitt_rapid_transitions_only_report_edges() {
+        let mut st = SchmittTrigger::default();
+        st.process_with_edge(0.0); // Low
+
+        let mut rising_count = 0;
+        let mut falling_count = 0;
+
+        // Simulate 10 rapid on/off cycles
+        for _ in 0..10 {
+            let (_, edge) = st.process_with_edge(5.0);
+            if edge.is_rising() {
+                rising_count += 1;
+            }
+            let (_, edge) = st.process_with_edge(0.0);
+            if edge.is_falling() {
+                falling_count += 1;
+            }
+        }
+
+        assert_eq!(rising_count, 10);
+        assert_eq!(falling_count, 10);
+    }
+
+    // ============ EdgeEvent Tests ============
+
+    #[test]
+    fn edge_event_is_rising() {
+        assert!(EdgeEvent::Rising.is_rising());
+        assert!(!EdgeEvent::Falling.is_rising());
+        assert!(!EdgeEvent::None.is_rising());
+    }
+
+    #[test]
+    fn edge_event_is_falling() {
+        assert!(EdgeEvent::Falling.is_falling());
+        assert!(!EdgeEvent::Rising.is_falling());
+        assert!(!EdgeEvent::None.is_falling());
+    }
+
+    #[test]
+    fn edge_event_default_is_none() {
+        assert_eq!(EdgeEvent::default(), EdgeEvent::None);
+    }
+
+    // ============ TempGate Tests ============
+
+    #[test]
+    fn temp_gate_default_is_low_zero_volts() {
+        let mut tg = TempGate::default();
+        assert_eq!(tg.state, TempGateState::Low);
+        assert_eq!(tg.process(), 0.0);
+    }
+
+    #[test]
+    fn temp_gate_new_gate_uses_standard_voltages() {
+        let mut tg = TempGate::new_gate(TempGateState::High);
+        assert_eq!(tg.process(), GATE_HIGH_VOLTAGE);
+
+        let mut tg = TempGate::new_gate(TempGateState::Low);
+        assert_eq!(tg.process(), GATE_LOW_VOLTAGE);
+    }
+
+    #[test]
+    fn temp_gate_new_sets_initial_state() {
+        let tg = TempGate::new(TempGateState::High, 0.0, 5.0);
+        assert_eq!(tg.state, TempGateState::High);
+        assert_eq!(tg.target, TempGateState::High);
+        assert_eq!(tg.counter, 0);
+    }
+
+    #[test]
+    fn temp_gate_trigger_pulse_holds_then_transitions() {
+        // Trigger pulse: High for N samples, then Low
+        let mut tg = TempGate::new_gate(TempGateState::Low);
+        tg.set_state(TempGateState::High, TempGateState::Low, 4);
+
+        // Should output High for 4 samples
+        assert_eq!(tg.process(), GATE_HIGH_VOLTAGE);
+        assert_eq!(tg.process(), GATE_HIGH_VOLTAGE);
+        assert_eq!(tg.process(), GATE_HIGH_VOLTAGE);
+        assert_eq!(tg.process(), GATE_HIGH_VOLTAGE);
+
+        // 5th sample: transitioned to Low
+        assert_eq!(tg.process(), GATE_LOW_VOLTAGE);
+        // Stays Low
+        assert_eq!(tg.process(), GATE_LOW_VOLTAGE);
+    }
+
+    #[test]
+    fn temp_gate_retrigger_gap_holds_then_transitions() {
+        // Gate retrigger gap: Low for N samples, then High
+        let mut tg = TempGate::new_gate(TempGateState::High);
+        tg.set_state(TempGateState::Low, TempGateState::High, 3);
+
+        // Should output Low for 3 samples
+        assert_eq!(tg.process(), GATE_LOW_VOLTAGE);
+        assert_eq!(tg.process(), GATE_LOW_VOLTAGE);
+        assert_eq!(tg.process(), GATE_LOW_VOLTAGE);
+
+        // 4th sample: transitioned to High
+        assert_eq!(tg.process(), GATE_HIGH_VOLTAGE);
+        assert_eq!(tg.process(), GATE_HIGH_VOLTAGE);
+    }
+
+    #[test]
+    fn temp_gate_gate_off_immediate() {
+        // Gate off: set_state(Low, Low, 0) — immediate Low
+        let mut tg = TempGate::new_gate(TempGateState::High);
+        tg.set_state(TempGateState::Low, TempGateState::Low, 0);
+        assert_eq!(tg.process(), GATE_LOW_VOLTAGE);
+        assert_eq!(tg.process(), GATE_LOW_VOLTAGE);
+    }
+
+    #[test]
+    fn temp_gate_same_state_no_countdown() {
+        // When state == target, counter should not matter
+        let mut tg = TempGate::new_gate(TempGateState::Low);
+        tg.set_state(TempGateState::High, TempGateState::High, 0);
+
+        // Stays High indefinitely
+        for _ in 0..100 {
+            assert_eq!(tg.process(), GATE_HIGH_VOLTAGE);
+        }
+    }
+
+    #[test]
+    fn temp_gate_hold_samples_1_produces_one_sample() {
+        let mut tg = TempGate::new_gate(TempGateState::Low);
+        tg.set_state(TempGateState::High, TempGateState::Low, 1);
+
+        // Exactly 1 High sample
+        assert_eq!(tg.process(), GATE_HIGH_VOLTAGE);
+        // Then Low
+        assert_eq!(tg.process(), GATE_LOW_VOLTAGE);
+    }
+
+    #[test]
+    fn temp_gate_set_state_resets_counter() {
+        // Trigger pulse mid-hold should restart
+        let mut tg = TempGate::new_gate(TempGateState::Low);
+        tg.set_state(TempGateState::High, TempGateState::Low, 4);
+
+        // Consume 2 of 4 hold samples
+        tg.process();
+        tg.process();
+
+        // Re-trigger with fresh hold
+        tg.set_state(TempGateState::High, TempGateState::Low, 3);
+
+        // Should get 3 more High samples
+        assert_eq!(tg.process(), GATE_HIGH_VOLTAGE);
+        assert_eq!(tg.process(), GATE_HIGH_VOLTAGE);
+        assert_eq!(tg.process(), GATE_HIGH_VOLTAGE);
+        assert_eq!(tg.process(), GATE_LOW_VOLTAGE);
+    }
+
+    #[test]
+    fn temp_gate_custom_voltages() {
+        let mut tg = TempGate::new(TempGateState::Low, -1.0, 1.0);
+        tg.set_state(TempGateState::High, TempGateState::Low, 2);
+
+        assert_eq!(tg.process(), 1.0);
+        assert_eq!(tg.process(), 1.0);
+        assert_eq!(tg.process(), -1.0);
+    }
+
+    #[test]
+    fn temp_gate_counter_saturates_at_zero() {
+        // Even with state == target (no countdown happening), counter stays 0
+        let mut tg = TempGate::new_gate(TempGateState::Low);
+        for _ in 0..100 {
+            tg.process();
+        }
+        assert_eq!(tg.counter, 0);
+        assert_eq!(tg.state, TempGateState::Low);
+    }
+
+    #[test]
+    fn temp_gate_trigger_then_retrigger_gap_sequence() {
+        // Simulate: trigger pulse, settle, then retrigger gap
+        let mut tg = TempGate::new_gate(TempGateState::Low);
+
+        // Fire trigger pulse
+        tg.set_state(TempGateState::High, TempGateState::Low, 2);
+        assert_eq!(tg.process(), GATE_HIGH_VOLTAGE);
+        assert_eq!(tg.process(), GATE_HIGH_VOLTAGE);
+        assert_eq!(tg.process(), GATE_LOW_VOLTAGE); // settled
+
+        // Now retrigger gap (gate was on, dip low briefly)
+        tg.set_state(TempGateState::Low, TempGateState::High, 2);
+        assert_eq!(tg.process(), GATE_LOW_VOLTAGE);
+        assert_eq!(tg.process(), GATE_LOW_VOLTAGE);
+        assert_eq!(tg.process(), GATE_HIGH_VOLTAGE); // back to High
+        assert_eq!(tg.process(), GATE_HIGH_VOLTAGE); // stays
+    }
+
+    // ============ min_gate_samples Tests ============
+
+    #[test]
+    fn min_gate_samples_48khz() {
+        let samples = min_gate_samples(48000.0);
+        assert_eq!(samples, 16);
+    }
+
+    #[test]
+    fn min_gate_samples_44100() {
+        let samples = min_gate_samples(44100.0);
+        // 44100 * (1/3000) = 14.7 → rounds to 15
+        assert_eq!(samples, 15);
+    }
+
+    #[test]
+    fn min_gate_samples_96khz() {
+        let samples = min_gate_samples(96000.0);
+        assert_eq!(samples, 32);
     }
 }

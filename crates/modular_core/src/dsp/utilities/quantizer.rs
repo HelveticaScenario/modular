@@ -9,7 +9,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::{
-    dsp::utils::{TempGate, TempGateState, GATE_HIGH_VOLTAGE, GATE_LOW_VOLTAGE},
+    dsp::utils::{min_gate_samples, TempGate, TempGateState},
     poly::{PolyOutput, PORT_MAX_CHANNELS},
     types::Connect,
     Patch, PolySignal,
@@ -257,8 +257,9 @@ impl Default for Quantizer {
 }
 
 impl Quantizer {
-    pub fn update(&mut self, _sample_rate: f32) {
+    pub fn update(&mut self, sample_rate: f32) {
         let num_channels = self.params.input.channels();
+        let hold = min_gate_samples(sample_rate);
 
         for ch in 0..num_channels {
             let input = self.params.input.get(ch).get_value() as f64;
@@ -311,7 +312,7 @@ impl Quantizer {
             if note_changed {
                 state
                     .trigger
-                    .set_state(TempGateState::High, TempGateState::Low);
+                    .set_state(TempGateState::High, TempGateState::Low, hold);
             }
 
             self.outputs.output.set(ch, quantized as f32);
@@ -324,6 +325,8 @@ message_handlers!(impl Quantizer {});
 
 #[cfg(test)]
 mod tests {
+    use crate::dsp::utils::{GATE_HIGH_VOLTAGE, GATE_LOW_VOLTAGE};
+
     use super::*;
 
     #[test]
@@ -425,14 +428,14 @@ mod tests {
 
     #[test]
     fn test_temp_gate_trigger_behavior() {
-        // Test that TempGate produces correct single-sample pulse
+        // Test that TempGate produces correct multi-sample pulse
         let mut trigger = TempGate::new_gate(TempGateState::Low);
 
         // Initially low
         assert_eq!(trigger.process(), GATE_LOW_VOLTAGE);
 
-        // Trigger a pulse (High then Low)
-        trigger.set_state(TempGateState::High, TempGateState::Low);
+        // Trigger a pulse (High then Low) with hold of 1 sample
+        trigger.set_state(TempGateState::High, TempGateState::Low, 1);
         assert_eq!(
             trigger.process(),
             GATE_HIGH_VOLTAGE,
@@ -444,6 +447,17 @@ mod tests {
             "should return to low on second process"
         );
         assert_eq!(trigger.process(), GATE_LOW_VOLTAGE, "should stay low");
+
+        // Trigger with hold of 3 samples
+        trigger.set_state(TempGateState::High, TempGateState::Low, 3);
+        assert_eq!(trigger.process(), GATE_HIGH_VOLTAGE, "hold sample 1");
+        assert_eq!(trigger.process(), GATE_HIGH_VOLTAGE, "hold sample 2");
+        assert_eq!(trigger.process(), GATE_HIGH_VOLTAGE, "hold sample 3");
+        assert_eq!(
+            trigger.process(),
+            GATE_LOW_VOLTAGE,
+            "should be low after hold expires"
+        );
     }
 
     #[test]
