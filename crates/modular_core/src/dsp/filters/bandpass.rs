@@ -107,7 +107,7 @@ impl BandpassFilter {
         // Update coefficients with smoothed params to prevent clicks
         if self.params.center.is_monophonic() && self.params.resonance.is_monophonic() {
             self.smooth_center_mono
-                .update(self.params.center.get_value_or(0, 4.0));
+                .update(self.params.center.get_value_or(0, 0.0));
             self.smooth_resonance_mono
                 .update(self.params.resonance.get_value_or(0, 1.0));
             let c = *self.smooth_center_mono;
@@ -122,7 +122,7 @@ impl BandpassFilter {
             for i in 0..num_channels {
                 self.channels[i]
                     .smooth_center
-                    .update(self.params.center.get_value_or(i, 4.0));
+                    .update(self.params.center.get_value_or(i, 0.0));
                 self.channels[i]
                     .smooth_resonance
                     .update(self.params.resonance.get_value_or(i, 1.0));

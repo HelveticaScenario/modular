@@ -107,7 +107,7 @@ impl HighpassFilter {
         // Update coefficients with smoothed params to prevent clicks
         if self.params.cutoff.is_monophonic() && self.params.resonance.is_monophonic() {
             self.smooth_cutoff_mono
-                .update(self.params.cutoff.get_value_or(0, 4.0));
+                .update(self.params.cutoff.get_value_or(0, 0.0));
             self.smooth_resonance_mono
                 .update(self.params.resonance.get_value_or(0, 0.0));
             let c = *self.smooth_cutoff_mono;
@@ -122,7 +122,7 @@ impl HighpassFilter {
             for i in 0..num_channels {
                 self.channels[i]
                     .smooth_cutoff
-                    .update(self.params.cutoff.get_value_or(i, 4.0));
+                    .update(self.params.cutoff.get_value_or(i, 0.0));
                 self.channels[i]
                     .smooth_resonance
                     .update(self.params.resonance.get_value_or(i, 0.0));
