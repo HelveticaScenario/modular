@@ -155,29 +155,31 @@ impl<T: Clone> Hap<T> {
         self.whole.as_ref().unwrap_or(&self.part)
     }
 
-    /// Apply a function to transform the value.
-    pub fn with_value<U, F>(&self, f: F) -> Hap<U>
+    /// Apply a function to transform the value, consuming this hap.
+    pub fn with_value<U, F>(self, f: F) -> Hap<U>
     where
         F: FnOnce(&T) -> U,
     {
         Hap {
-            whole: self.whole.clone(),
-            part: self.part.clone(),
+            whole: self.whole,
+            part: self.part,
             value: f(&self.value),
-            context: self.context.clone(),
+            context: self.context,
         }
     }
 
-    /// Apply a function to transform both whole and part spans.
-    pub fn with_span_transform<F>(&self, f: F) -> Hap<T>
+    /// Apply a function to transform both whole and part spans, consuming this hap.
+    pub fn with_span_transform<F>(self, f: F) -> Hap<T>
     where
         F: Fn(&TimeSpan) -> TimeSpan,
     {
+        let whole = self.whole.as_ref().map(&f);
+        let part = f(&self.part);
         Hap {
-            whole: self.whole.as_ref().map(&f),
-            part: f(&self.part),
-            value: self.value.clone(),
-            context: self.context.clone(),
+            whole,
+            part,
+            value: self.value,
+            context: self.context,
         }
     }
 

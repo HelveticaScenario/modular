@@ -11,19 +11,20 @@
 //! - Trig: Short pulse at note onset
 
 use std::cmp::Ordering;
+use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
+    MonoSignal, Patch,
     dsp::{
         utilities::quantizer::ScaleParam,
-        utils::{midi_to_voct_f64, min_gate_samples, TempGate, TempGateState},
+        utils::{TempGate, TempGateState, midi_to_voct_f64, min_gate_samples},
     },
-    pattern_system::{Fraction, Pattern},
-    poly::{PolyOutput, PORT_MAX_CHANNELS},
+    pattern_system::Pattern,
+    poly::{PORT_MAX_CHANNELS, PolyOutput},
     types::Connect,
-    MonoSignal, Patch,
 };
 
 /// Scale parameter for IntervalSeq that supports an optional octave in the root.
@@ -197,6 +198,10 @@ pub struct IntervalPatternParam {
 
     /// Number of source strings that contributed to the combined pattern
     num_sources: usize,
+
+    /// Pre-computed combined haps for cycles 0..999, populated at parse time.
+    /// Each element is an Arc-wrapped Vec of all CombinedHaps intersecting that cycle.
+    cached_haps: Vec<Arc<Vec<CombinedHap>>>,
 }
 
 impl Default for IntervalPatternParam {
@@ -206,6 +211,7 @@ impl Default for IntervalPatternParam {
             combined_pattern: None,
             per_source: Vec::new(),
             num_sources: 0,
+            cached_haps: Vec::new(),
         }
     }
 }
@@ -239,6 +245,7 @@ impl IntervalPatternParam {
                 num_sources: sources.len(),
                 source,
                 combined_pattern: None,
+                cached_haps: Vec::new(),
             });
         }
 
@@ -272,11 +279,36 @@ impl IntervalPatternParam {
         }
 
         let num_sources = sources.len();
+
+        // Pre-compute and cache combined haps for cycles 0..999
+        let cached_haps: Vec<Arc<Vec<CombinedHap>>> = (0..1000)
+            .map(|cycle| {
+                let haps = combined.query_cycle_all(cycle);
+                let combined_haps: Vec<CombinedHap> = haps
+                    .iter()
+                    .map(|hap| {
+                        let pattern_spans = extract_pattern_spans(&hap.context, num_sources);
+                        CombinedHap {
+                            whole_begin: hap.whole_begin,
+                            whole_end: hap.whole_end,
+                            part_begin: hap.part_begin,
+                            part_end: hap.part_end,
+                            degree: hap.value.degree(),
+                            has_onset: hap.has_onset(),
+                            pattern_spans,
+                        }
+                    })
+                    .collect();
+                Arc::new(combined_haps)
+            })
+            .collect();
+
         Ok(Self {
             source,
             combined_pattern: Some(combined),
             per_source,
             num_sources,
+            cached_haps,
         })
     }
 
@@ -293,6 +325,11 @@ impl IntervalPatternParam {
     /// Per-source metadata for span tracking.
     pub fn per_source(&self) -> &[SourceMeta] {
         &self.per_source
+    }
+
+    /// Get the pre-computed cached combined haps for cycles 0..999.
+    pub(crate) fn cached_haps(&self) -> &[Arc<Vec<CombinedHap>>] {
+        &self.cached_haps
     }
 }
 
@@ -322,27 +359,32 @@ impl Connect for IntervalPatternParam {
 }
 
 /// Cached hap info for voice assignment.
+/// Holds an Arc reference to the cycle's combined hap vector plus an index,
+/// avoiding clone allocations on the audio thread.
 #[derive(Clone, Debug)]
 struct CachedIntervalHap {
-    /// Index in the combined hap list for unique identification
+    /// Arc reference to the full cycle's combined hap vector.
+    cycle_haps: Arc<Vec<CombinedHap>>,
+    /// Index of this hap within the cycle_haps vector.
     hap_index: usize,
-    /// The cycle this hap was cached for
+    /// The cycle this hap was cached for.
     cached_cycle: i64,
-    /// Hap timing
-    whole_begin: f64,
-    whole_end: f64,
-    /// Source spans per input pattern (index 0 = first pattern, etc.)
-    pattern_spans: Vec<Vec<(usize, usize)>>,
 }
 
 impl CachedIntervalHap {
+    /// Get a reference to the underlying CombinedHap.
+    #[inline]
+    fn hap(&self) -> &CombinedHap {
+        &self.cycle_haps[self.hap_index]
+    }
+
     fn contains(&self, playhead: f64) -> bool {
-        playhead >= self.whole_begin && playhead < self.whole_end
+        let hap = self.hap();
+        playhead >= hap.whole_begin && playhead < hap.whole_end
     }
 }
 
 /// Per-voice state for polyphonic interval sequencer.
-#[derive(Clone)]
 struct IntervalVoiceState {
     /// Cached hap info for this voice
     cached_hap: Option<CachedIntervalHap>,
@@ -407,26 +449,23 @@ pub fn interval_seq_derive_channel_count(params: &IntervalSeqParams) -> usize {
 /// Derive polyphony from a single `IntervalPatternParam` whose combined
 /// pattern is already built at parse time.
 fn derive_combined_polyphony(param: &IntervalPatternParam) -> usize {
-    const NUM_CYCLES: i64 = 90;
     const MAX_POLYPHONY: usize = 16;
 
-    let combined = match param.pattern() {
-        Some(p) => p,
-        None => return 1,
-    };
+    let cached = param.cached_haps();
+    if cached.is_empty() {
+        return 1;
+    }
 
-    let haps = combined.query_arc(
-        Fraction::from_integer(0),
-        Fraction::from_integer(NUM_CYCLES),
-    );
+    // Sweep line algorithm using f64 coordinates from cached combined haps
+    let mut events: Vec<(f64, i32)> = Vec::new();
 
-    // Collect part spans for non-rest haps
-    let mut events: Vec<(Fraction, i32)> = Vec::new();
-
-    for hap in &haps {
-        if !hap.value.is_rest() {
-            events.push((hap.part.begin.clone(), 1));
-            events.push((hap.part.end.clone(), -1));
+    for cycle_haps in cached {
+        for hap in cycle_haps.iter() {
+            if hap.degree.is_none() {
+                continue; // Skip rests
+            }
+            events.push((hap.part_begin, 1));
+            events.push((hap.part_end, -1));
         }
     }
 
@@ -434,11 +473,12 @@ fn derive_combined_polyphony(param: &IntervalPatternParam) -> usize {
         return 1;
     }
 
-    // Sweep line algorithm
-    events.sort_by(|a, b| match a.0.cmp(&b.0) {
-        Ordering::Equal => a.1.cmp(&b.1), // ends before starts at same time
-        other => other,
-    });
+    events.sort_by(
+        |a, b| match a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal) {
+            Ordering::Equal => a.1.cmp(&b.1),
+            other => other,
+        },
+    );
 
     let mut current: usize = 0;
     let mut max_simultaneous: usize = 0;
@@ -604,10 +644,12 @@ pub struct IntervalSeq {
     voices: [IntervalVoiceState; PORT_MAX_CHANNELS],
     /// Round-robin voice index for allocation
     next_voice: usize,
-    /// Cached cycle number
-    cached_cycle: Option<i64>,
-    /// Cached combined haps for the current cycle
-    cached_combined_haps: Vec<CombinedHap>,
+    /// Current cycle number
+    current_cycle: Option<i64>,
+    /// Arc-wrapped combined haps for the current cycle, updated on cycle boundaries
+    current_cycle_haps: Option<Arc<Vec<CombinedHap>>>,
+    /// Module-level cache for cycles >= 1000 (element 0 = cycle 1000)
+    module_cache: Vec<Option<Arc<Vec<CombinedHap>>>>,
     /// Cached scale intervals for degree-to-semitone conversion
     scale_intervals: Vec<i8>,
     /// Base MIDI note for degree 0 (includes root pitch class + octave)
@@ -616,7 +658,7 @@ pub struct IntervalSeq {
 
 /// A combined hap from the folded pattern, ready for voice allocation.
 #[derive(Clone, Debug)]
-struct CombinedHap {
+pub(crate) struct CombinedHap {
     whole_begin: f64,
     whole_end: f64,
     part_begin: f64,
@@ -635,8 +677,9 @@ impl Default for IntervalSeq {
             params: IntervalSeqParams::default(),
             voices: std::array::from_fn(|_| IntervalVoiceState::default()),
             next_voice: 0,
-            cached_cycle: None,
-            cached_combined_haps: Vec::new(),
+            current_cycle: None,
+            current_cycle_haps: None,
+            module_cache: Vec::new(),
             scale_intervals: vec![0, 2, 4, 5, 7, 9, 11], // Default major scale
             base_midi: 60,                               // C4
             _channel_count: 0,
@@ -647,40 +690,61 @@ impl Default for IntervalSeq {
 impl IntervalSeq {
     /// Invalidate the cycle cache.
     fn invalidate_cache(&mut self) {
-        self.cached_cycle = None;
-        self.cached_combined_haps.clear();
+        self.current_cycle = None;
+        self.current_cycle_haps = None;
+        self.module_cache.clear();
+        // Do NOT clear voices — they hold their own Arc
     }
 
-    /// Refresh the cycle cache by querying the combined pattern.
-    fn refresh_cache(&mut self, cycle: i64) {
-        self.cached_combined_haps.clear();
-
-        let combined = match self.params.patterns.pattern() {
-            Some(p) => p,
-            None => {
-                self.cached_cycle = Some(cycle);
-                return;
-            }
-        };
-
-        let haps = combined.query_cycle_all(cycle);
-        let num_patterns = self.params.patterns.num_sources();
-
-        for hap in &haps {
-            let pattern_spans = extract_pattern_spans(&hap.context, num_patterns);
-
-            self.cached_combined_haps.push(CombinedHap {
-                whole_begin: hap.whole_begin,
-                whole_end: hap.whole_end,
-                part_begin: hap.part_begin,
-                part_end: hap.part_end,
-                degree: hap.value.degree(),
-                has_onset: hap.has_onset(),
-                pattern_spans,
-            });
+    /// Ensure that the given cycle's haps are available in either param cache or module cache.
+    fn ensure_cycle_cached(&mut self, cycle: i64) {
+        if cycle < 1000 {
+            return; // Already in param cache
         }
 
-        self.cached_cycle = Some(cycle);
+        let module_idx = (cycle - 1000) as usize;
+
+        if module_idx >= self.module_cache.len() {
+            self.module_cache.resize(module_idx + 1, None);
+        }
+
+        if self.module_cache[module_idx].is_some() {
+            return;
+        }
+
+        // Query pattern, convert to CombinedHaps, store in module cache
+        if let Some(pattern) = self.params.patterns.pattern() {
+            let haps = pattern.query_cycle_all(cycle);
+            let num_patterns = self.params.patterns.num_sources();
+            let combined_haps: Vec<CombinedHap> = haps
+                .iter()
+                .map(|hap| {
+                    let pattern_spans = extract_pattern_spans(&hap.context, num_patterns);
+                    CombinedHap {
+                        whole_begin: hap.whole_begin,
+                        whole_end: hap.whole_end,
+                        part_begin: hap.part_begin,
+                        part_end: hap.part_end,
+                        degree: hap.value.degree(),
+                        has_onset: hap.has_onset(),
+                        pattern_spans,
+                    }
+                })
+                .collect();
+            self.module_cache[module_idx] = Some(Arc::new(combined_haps));
+        }
+    }
+
+    /// Get a reference to the Arc-wrapped haps for the given cycle.
+    fn get_cycle_haps(&self, cycle: i64) -> Option<&Arc<Vec<CombinedHap>>> {
+        if cycle < 1000 {
+            self.params.patterns.cached_haps().get(cycle as usize)
+        } else {
+            let module_idx = (cycle - 1000) as usize;
+            self.module_cache
+                .get(module_idx)
+                .and_then(|opt| opt.as_ref())
+        }
     }
 
     /// Convert a scale degree to V/Oct voltage.
@@ -733,7 +797,6 @@ impl IntervalSeq {
     fn update(&mut self, sample_rate: f32) {
         let playhead = self.params.playhead.get_value_f64();
         let hold = min_gate_samples(sample_rate);
-
         let num_channels = self.channel_count();
 
         // Release voices whose haps have ended
@@ -749,75 +812,74 @@ impl IntervalSeq {
             return;
         }
 
-        // Refresh cache if needed
+        // Check if we crossed a cycle boundary
         let current_cycle = playhead.floor() as i64;
-        if self.cached_cycle != Some(current_cycle) {
-            self.refresh_cache(current_cycle);
+        if self.current_cycle != Some(current_cycle) {
+            self.ensure_cycle_cached(current_cycle);
+            self.current_cycle_haps = self.get_cycle_haps(current_cycle).cloned();
+            self.current_cycle = Some(current_cycle);
         }
 
-        // Collect events to process (avoids borrow conflicts in the loop)
-        let events_to_process: Vec<(usize, i32, f64, f64, Vec<Vec<(usize, usize)>>)> = self
-            .cached_combined_haps
-            .iter()
-            .enumerate()
-            .filter_map(|(hap_index, combined)| {
-                if !combined.has_onset {
-                    return None;
-                }
-
-                if playhead < combined.part_begin || playhead >= combined.part_end {
-                    return None;
-                }
-
-                let degree = combined.degree?;
-
-                // Check if already assigned
-                let already_assigned = (0..num_channels).any(|i| {
-                    if let Some(ref existing) = self.voices[i].cached_hap {
-                        existing.hap_index == hap_index && existing.cached_cycle == current_cycle
-                    } else {
-                        false
+        // Collect events to process (avoids borrow conflicts)
+        // Store (hap_index, degree) tuples — we'll create CachedIntervalHap from the Arc later
+        let cycle_haps_arc = self.current_cycle_haps.clone();
+        let events_to_process: Vec<(usize, i32)> = if let Some(ref cycle_haps) = cycle_haps_arc {
+            cycle_haps
+                .iter()
+                .enumerate()
+                .filter_map(|(hap_index, combined)| {
+                    if !combined.has_onset {
+                        return None;
                     }
-                });
 
-                if already_assigned {
-                    return None;
-                }
+                    if playhead < combined.part_begin || playhead >= combined.part_end {
+                        return None;
+                    }
 
-                Some((
-                    hap_index,
-                    degree,
-                    combined.whole_begin,
-                    combined.whole_end,
-                    combined.pattern_spans.clone(),
-                ))
-            })
-            .collect();
+                    let degree = combined.degree?;
+
+                    // Check if already assigned
+                    let already_assigned = (0..num_channels).any(|i| {
+                        if let Some(ref existing) = self.voices[i].cached_hap {
+                            existing.hap_index == hap_index
+                                && existing.cached_cycle == current_cycle
+                        } else {
+                            false
+                        }
+                    });
+
+                    if already_assigned {
+                        return None;
+                    }
+
+                    Some((hap_index, degree))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // Process collected events
-        for (hap_index, degree, whole_begin, whole_end, pattern_spans) in events_to_process {
-            // Allocate voice
-            let voice_idx = self.allocate_voice(playhead, num_channels);
+        if let Some(cycle_haps) = cycle_haps_arc {
+            for (hap_index, degree) in events_to_process {
+                let voice_idx = self.allocate_voice(playhead, num_channels);
+                let voltage = self.degree_to_voltage(degree);
 
-            // Cache the quantized voltage at allocation time
-            let voltage = self.degree_to_voltage(degree);
-
-            let voice = &mut self.voices[voice_idx];
-            voice.cached_hap = Some(CachedIntervalHap {
-                hap_index,
-                cached_cycle: current_cycle,
-                whole_begin,
-                whole_end,
-                pattern_spans,
-            });
-            voice.cached_voltage = voltage;
-            voice.active = true;
-            voice
-                .gate
-                .set_state(TempGateState::Low, TempGateState::High, hold);
-            voice
-                .trigger
-                .set_state(TempGateState::High, TempGateState::Low, hold);
+                let voice = &mut self.voices[voice_idx];
+                voice.cached_hap = Some(CachedIntervalHap {
+                    cycle_haps: cycle_haps.clone(),
+                    hap_index,
+                    cached_cycle: current_cycle,
+                });
+                voice.cached_voltage = voltage;
+                voice.active = true;
+                voice
+                    .gate
+                    .set_state(TempGateState::Low, TempGateState::High, hold);
+                voice
+                    .trigger
+                    .set_state(TempGateState::High, TempGateState::Low, hold);
+            }
         }
 
         // Output all voices
@@ -890,7 +952,7 @@ impl crate::types::StatefulModule for IntervalSeq {
             if voice.active {
                 if let Some(ref cached) = voice.cached_hap {
                     any_active = true;
-                    for (i, spans) in cached.pattern_spans.iter().enumerate() {
+                    for (i, spans) in cached.hap().pattern_spans.iter().enumerate() {
                         if i < num_sources {
                             per_pattern_spans[i].extend(spans.iter().cloned());
                         }
@@ -1083,7 +1145,7 @@ mod tests {
 
         // D3 root
         seq.base_midi = 50; // D3
-                            // Degree 0 = D3 = MIDI 50 = -10/12 V
+        // Degree 0 = D3 = MIDI 50 = -10/12 V
         let v0 = seq.degree_to_voltage(0);
         assert!((v0 - (-10.0 / 12.0)).abs() < 0.001);
     }
@@ -1160,4 +1222,5 @@ mod tests {
         assert!(params.patterns.pattern().is_some());
         assert_eq!(params.patterns.num_sources(), 2);
     }
+
 }

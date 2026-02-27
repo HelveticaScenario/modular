@@ -5,6 +5,8 @@
 //! - Signals from other modules (with optional sample-and-hold)
 //! - Rests
 
+use std::sync::Arc;
+
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -12,7 +14,7 @@ use crate::{
     Patch,
     dsp::utils::midi_to_voct_f64,
     pattern_system::{
-        Pattern,
+        DspHap, Pattern,
         mini::{
             FromMiniAtom,
             ast::AtomValue,
@@ -299,6 +301,12 @@ pub struct SeqPatternParam {
     #[serde(skip, default)]
     #[schemars(skip)]
     pub(crate) all_spans: Vec<(usize, usize)>,
+
+    /// Pre-computed haps for cycles 0..999, populated at parse time.
+    /// Each element is an Arc-wrapped Vec of all haps intersecting that cycle.
+    #[serde(skip, default)]
+    #[schemars(skip)]
+    pub(crate) cached_haps: Vec<Arc<Vec<DspHap<SeqValue>>>>,
 }
 
 // SAFETY: SeqPatternParam contains `Vec<*mut Signal>` which is `!Send`, but this
@@ -321,6 +329,11 @@ impl SeqPatternParam {
         let pattern =
             crate::pattern_system::mini::convert::<SeqValue>(&ast).map_err(|e| e.to_string())?;
 
+        // Pre-compute and cache haps for cycles 0..999
+        let cached_haps: Vec<Arc<Vec<DspHap<SeqValue>>>> = (0..1000)
+            .map(|cycle| Arc::new(pattern.query_cycle_all(cycle)))
+            .collect();
+
         // TODO: Collect signals from pattern - this requires walking the pattern
         // For now, signals will be connected via the Connect trait on individual values
 
@@ -329,6 +342,7 @@ impl SeqPatternParam {
             pattern: Some(pattern),
             signals: Vec::new(),
             all_spans,
+            cached_haps,
         })
     }
 
@@ -345,6 +359,11 @@ impl SeqPatternParam {
     /// Get all leaf spans in the pattern (for frontend tracked decorations).
     pub fn all_spans(&self) -> &[(usize, usize)] {
         &self.all_spans
+    }
+
+    /// Get the pre-computed cached haps for cycles 0..999.
+    pub fn cached_haps(&self) -> &[Arc<Vec<DspHap<SeqValue>>>] {
+        &self.cached_haps
     }
 }
 

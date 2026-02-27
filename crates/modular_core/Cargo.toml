@@ -27,7 +27,6 @@ pest_derive = "2.8.0"
 regex = "1.12.2"
 fasteval = "0.2.4"
 rust-music-theory = "0.3.0"
-num = "0.4.3"
 paste = "1.0"
 profiling = { workspace = true }
 

@@ -1,5 +1,3 @@
-use num::Float;
-
 use crate::dsp::consts::{LUT_PITCH_RATIO_HIGH, LUT_PITCH_RATIO_LOW};
 
 // ============ Gate/Trigger Voltage Standards ============
@@ -295,7 +293,7 @@ pub fn voct_to_midi_f64(voct: f64) -> f64 {
 
 /// Convert V/Oct to frequency in Hz
 pub fn voct_to_hz_f64(voct: f64) -> f64 {
-    C4_HZ_F64 * 2.0.powf(voct)
+    C4_HZ_F64 * 2.0_f64.powf(voct)
 }
 
 pub fn hz_to_voct(frequency_hz: f32) -> f32 {
@@ -314,7 +312,7 @@ pub fn voct_to_midi(voct: f32) -> f32 {
 
 /// Convert V/Oct to frequency in Hz
 pub fn voct_to_hz(voct: f32) -> f32 {
-    C4_HZ_F32 * 2.0.powf(voct)
+    C4_HZ_F32 * 2.0_f32.powf(voct)
 }
 
 #[cfg(test)]
