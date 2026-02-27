@@ -11,14 +11,15 @@
 //! - Trig: Short pulse at note onset
 
 use std::cmp::Ordering;
+use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    MonoSignal, PolySignal,
+    MonoSignal,
     dsp::utils::{TempGate, TempGateState, min_gate_samples},
-    pattern_system::{DspHap, Fraction},
+    pattern_system::DspHap,
     poly::{PORT_MAX_CHANNELS, PolyOutput},
 };
 
@@ -26,16 +27,16 @@ use super::seq_value::{SeqPatternParam, SeqValue};
 
 /// Cached hap with pre-sampled values.
 ///
-/// This caches the current hap being played, including:
-/// - The DspHap from the pattern query
-/// - Pre-sampled voltage value for S&H signals
+/// Instead of cloning the DspHap (which allocates due to String fields in Signal::Cable),
+/// this holds an Arc reference to the cycle's hap vector plus an index into it.
+/// This means cache hits only do an atomic refcount bump (Arc::clone), zero heap allocations.
 #[derive(Clone, Debug)]
 struct CachedHap {
-    /// The underlying hap with timing and value.
-    hap: DspHap<SeqValue>,
+    /// Arc reference to the full cycle's hap vector.
+    /// The actual hap is at `cycle_haps[hap_index]`.
+    cycle_haps: Arc<Vec<DspHap<SeqValue>>>,
 
-    /// Index of this hap in the cached_haps vector.
-    /// Used to uniquely identify hap instances for voice assignment.
+    /// Index of this hap within the cycle_haps vector.
     hap_index: usize,
 
     /// Pre-sampled voltage for sample-and-hold signals.
@@ -47,10 +48,10 @@ struct CachedHap {
 }
 
 impl CachedHap {
-    /// Create a new cached hap from a DspHap.
-    fn new(hap: DspHap<SeqValue>, hap_index: usize, cached_cycle: i64) -> Self {
+    /// Create a new cached hap from a cycle's Arc hap vector.
+    fn new(cycle_haps: Arc<Vec<DspHap<SeqValue>>>, hap_index: usize, cached_cycle: i64) -> Self {
         // Sample S&H signals at creation time
-        let sampled_voltage = match &hap.value {
+        let sampled_voltage = match &cycle_haps[hap_index].value {
             SeqValue::Signal {
                 signal,
                 sample_and_hold: true,
@@ -62,32 +63,36 @@ impl CachedHap {
         };
 
         Self {
-            hap,
+            cycle_haps,
             hap_index,
             sampled_voltage,
             cached_cycle,
         }
     }
 
+    /// Get a reference to the underlying DspHap.
+    #[inline]
+    fn hap(&self) -> &DspHap<SeqValue> {
+        &self.cycle_haps[self.hap_index]
+    }
+
     /// Check if the playhead is within this hap's bounds.
     fn contains(&self, playhead: f64) -> bool {
-        playhead >= self.hap.whole_begin && playhead < self.hap.whole_end
+        let hap = self.hap();
+        playhead >= hap.whole_begin && playhead < hap.whole_end
     }
 
     /// Get the CV output for this hap.
-    /// Returns voltage directly (no MIDI conversion needed).
     fn get_cv(&self) -> Option<f64> {
-        match &self.hap.value {
+        match &self.hap().value {
             SeqValue::Voltage(v) => Some(*v),
             SeqValue::Signal {
                 signal,
                 sample_and_hold,
             } => {
                 if *sample_and_hold {
-                    // Use pre-sampled voltage
                     self.sampled_voltage
                 } else {
-                    // Read signal voltage continuously
                     Some(signal.get_value() as f64)
                 }
             }
@@ -97,7 +102,7 @@ impl CachedHap {
 
     /// Check if this is a rest hap.
     fn is_rest(&self) -> bool {
-        self.hap.value.is_rest()
+        self.hap().value.is_rest()
     }
 }
 
@@ -162,34 +167,30 @@ pub fn seq_derive_channel_count(params: &SeqParams) -> usize {
         return channels.clamp(1, PORT_MAX_CHANNELS);
     }
 
-    // Otherwise, analyze pattern polyphony
-    let Some(pattern) = params.pattern.pattern() else {
+    // Otherwise, analyze pattern polyphony using cached haps
+    let cached = params.pattern.cached_haps();
+    if cached.is_empty() {
         return default_channels();
-    };
+    }
 
-    const NUM_CYCLES: i64 = 90;
     const MAX_POLYPHONY: usize = 16;
 
-    // Query all cycles at once
-    let haps = pattern.query_arc(
-        Fraction::from_integer(0),
-        Fraction::from_integer(NUM_CYCLES),
-    );
+    // Sweep line algorithm using f64 coordinates from cached haps
+    let mut events: Vec<(f64, i32)> = Vec::new();
 
-    // Sweep line algorithm: create +1 events at start, -1 events at end
-    let mut events: Vec<(Fraction, i32)> = Vec::with_capacity(haps.len() * 2);
-
-    for hap in &haps {
-        if hap.value.is_rest() {
-            continue;
+    for cycle_haps in cached {
+        for hap in cycle_haps.iter() {
+            if hap.value.is_rest() {
+                continue;
+            }
+            events.push((hap.part_begin, 1));  // +1 at start
+            events.push((hap.part_end, -1));   // -1 at end
         }
-        events.push((hap.part.begin.clone(), 1)); // +1 at start
-        events.push((hap.part.end.clone(), -1)); // -1 at end
     }
 
     // Sort by time, with ends (-1) before starts (+1) at same time
     events.sort_by(|a, b| {
-        match a.0.cmp(&b.0) {
+        match a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal) {
             Ordering::Equal => a.1.cmp(&b.1), // -1 comes before +1
             other => other,
         }
@@ -203,7 +204,6 @@ pub fn seq_derive_channel_count(params: &SeqParams) -> usize {
         if delta > 0 {
             current += 1;
             max_simultaneous = max_simultaneous.max(current);
-            // Early exit if we hit the cap
             if max_simultaneous >= MAX_POLYPHONY {
                 return MAX_POLYPHONY;
             }
@@ -211,7 +211,7 @@ pub fn seq_derive_channel_count(params: &SeqParams) -> usize {
             current = current.saturating_sub(1);
         }
     }
-    max_simultaneous.max(1) // At least 1 channel
+    max_simultaneous.max(1)
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -335,37 +335,66 @@ pub struct Seq {
     voices: [VoiceState; PORT_MAX_CHANNELS],
     /// Round-robin voice index for allocation
     next_voice: usize,
-    /// Cached cycle number (integer part of playhead)
-    cached_cycle: Option<i64>,
-    /// Cached haps for the current cycle (all haps intersecting the cycle)
-    cached_haps: Vec<DspHap<SeqValue>>,
+    /// Current cycle number (integer part of playhead)
+    current_cycle: Option<i64>,
+    /// Arc-wrapped haps for the current cycle, updated on cycle boundaries
+    current_cycle_haps: Option<Arc<Vec<DspHap<SeqValue>>>>,
+    /// Module-level cache for cycles >= 1000 (element 0 = cycle 1000).
+    /// Only accumulates, never clears except on patch update.
+    module_cache: Vec<Option<Arc<Vec<DspHap<SeqValue>>>>>,
 }
 
 impl Seq {
     /// Invalidate the cycle cache, forcing a refresh on next update.
     fn invalidate_cache(&mut self) {
-        self.cached_cycle = None;
-        self.cached_haps.clear();
+        self.current_cycle = None;
+        self.current_cycle_haps = None;
+        self.module_cache.clear();
+        // Do NOT clear voices — they hold their own Arc, keeping old data alive
     }
 
-    /// Refresh the cycle cache for the given cycle.
-    fn refresh_cache(&mut self, cycle: i64) {
+    /// Ensure that the given cycle's haps are available in either param cache or module cache.
+    /// For cycles 0..999, the param cache already has them.
+    /// For cycles >= 1000, query the pattern and store in module_cache.
+    fn ensure_cycle_cached(&mut self, cycle: i64) {
+        if cycle < 1000 {
+            return; // Already in param cache
+        }
+
+        let module_idx = (cycle - 1000) as usize;
+
+        // Grow module cache if needed, filling gaps with None
+        if module_idx >= self.module_cache.len() {
+            self.module_cache.resize(module_idx + 1, None);
+        }
+
+        // If already cached, nothing to do
+        if self.module_cache[module_idx].is_some() {
+            return;
+        }
+
+        // Query the pattern and store
         if let Some(pattern) = self.params.pattern.pattern() {
-            self.cached_haps = pattern.query_cycle_all(cycle);
-            self.cached_cycle = Some(cycle);
+            self.module_cache[module_idx] = Some(Arc::new(pattern.query_cycle_all(cycle)));
+        }
+    }
+
+    /// Get a reference to the Arc-wrapped haps for the given cycle.
+    /// The cycle must have been previously ensured via ensure_cycle_cached.
+    fn get_cycle_haps(&self, cycle: i64) -> Option<&Arc<Vec<DspHap<SeqValue>>>> {
+        if cycle < 1000 {
+            let cached = self.params.pattern.cached_haps();
+            cached.get(cycle as usize)
         } else {
-            self.cached_haps.clear();
-            self.cached_cycle = None;
+            let module_idx = (cycle - 1000) as usize;
+            self.module_cache.get(module_idx).and_then(|opt| opt.as_ref())
         }
     }
 
     fn update(&mut self, sample_rate: f32) {
         let playhead = self.params.playhead.get_value_f64();
         let hold = min_gate_samples(sample_rate);
-
-        // Use precomputed channel count from _channel_count (set by apply_deserialized_params)
         let num_channels = self.channel_count();
-        // Set output channel counts
 
         // Release voices whose haps have ended
         self.release_ended_voices(playhead, num_channels);
@@ -380,82 +409,80 @@ impl Seq {
             return;
         }
 
-        // Check if we need to refresh the cache (cycle boundary crossed or cache invalid)
+        // Check if we crossed a cycle boundary
         let current_cycle = playhead.floor() as i64;
-        if self.cached_cycle != Some(current_cycle) {
-            self.refresh_cache(current_cycle);
+        if self.current_cycle != Some(current_cycle) {
+            self.ensure_cycle_cached(current_cycle);
+            self.current_cycle_haps = self.get_cycle_haps(current_cycle).cloned();
+            self.current_cycle = Some(current_cycle);
         }
 
-        // Process new onsets
-        for (hap_index, hap) in self.cached_haps.iter().enumerate() {
-            if !hap.has_onset() || !hap.part_contains(playhead) {
-                continue;
-            }
-
-            // Convert DspHap to CachedHap for voice assignment
-            let cached = CachedHap::new(hap.clone(), hap_index, current_cycle);
-
-            if cached.is_rest() {
-                continue; // Don't allocate voices for rests
-            }
-
-            // Check if this exact hap instance is already assigned to a voice
-            // Use hap_index + cycle to uniquely identify each hap instance
-            // This allows identical notes in chords (e.g., 'g,g,g') to each get their own voice
-            let already_assigned = (0..num_channels).any(|i| {
-                if let Some(ref existing) = self.voices[i].cached_hap {
-                    existing.hap_index == cached.hap_index
-                        && existing.cached_cycle == cached.cached_cycle
-                } else {
-                    false
+        // Process new onsets using the current cycle haps
+        if let Some(cycle_haps) = self.current_cycle_haps.clone() {
+            for (hap_index, hap) in cycle_haps.iter().enumerate() {
+                if !hap.has_onset() || !hap.part_contains(playhead) {
+                    continue;
                 }
-            });
 
-            if already_assigned {
-                continue;
-            }
+                if hap.value.is_rest() {
+                    continue;
+                }
 
-            let mut allocate_voice = || {
-                // First pass: look for inactive voices starting from next_voice
-                for i in 0..num_channels {
-                    let voice_idx = (self.next_voice + i) % num_channels;
-                    if !self.voices[voice_idx].active {
-                        self.next_voice = (voice_idx + 1) % num_channels;
-                        self.voices[voice_idx].last_assigned = playhead;
-                        return voice_idx;
+                // Check if this exact hap instance is already assigned to a voice
+                let already_assigned = (0..num_channels).any(|i| {
+                    if let Some(ref existing) = self.voices[i].cached_hap {
+                        existing.hap_index == hap_index
+                            && existing.cached_cycle == current_cycle
+                    } else {
+                        false
                     }
+                });
+
+                if already_assigned {
+                    continue;
                 }
 
-                // All voices active - steal the oldest (LRU)
-                let mut oldest_idx = 0;
-                let mut oldest_time = f64::MAX;
-                for i in 0..num_channels {
-                    if self.voices[i].last_assigned < oldest_time {
-                        oldest_time = self.voices[i].last_assigned;
-                        oldest_idx = i;
+                // Create CachedHap with Arc reference (no hap clone!)
+                let cached = CachedHap::new(cycle_haps.clone(), hap_index, current_cycle);
+
+                // Allocate voice
+                let voice_idx = {
+                    // First pass: look for inactive voices starting from next_voice
+                    let mut found = None;
+                    for i in 0..num_channels {
+                        let idx = (self.next_voice + i) % num_channels;
+                        if !self.voices[idx].active {
+                            self.next_voice = (idx + 1) % num_channels;
+                            self.voices[idx].last_assigned = playhead;
+                            found = Some(idx);
+                            break;
+                        }
                     }
-                }
 
-                // Reset the stolen voice
-                self.voices[oldest_idx].active = false;
-                self.voices[oldest_idx].cached_hap = None;
-                self.voices[oldest_idx].last_assigned = playhead;
-                self.next_voice = (oldest_idx + 1) % num_channels;
+                    found.unwrap_or_else(|| {
+                        // All voices active - steal the oldest (LRU)
+                        let mut oldest_idx = 0;
+                        let mut oldest_time = f64::MAX;
+                        for i in 0..num_channels {
+                            if self.voices[i].last_assigned < oldest_time {
+                                oldest_time = self.voices[i].last_assigned;
+                                oldest_idx = i;
+                            }
+                        }
+                        self.voices[oldest_idx].active = false;
+                        self.voices[oldest_idx].cached_hap = None;
+                        self.voices[oldest_idx].last_assigned = playhead;
+                        self.next_voice = (oldest_idx + 1) % num_channels;
+                        oldest_idx
+                    })
+                };
 
-                oldest_idx
-            };
-
-            // Find the next available voice using round-robin with LRU voice stealing.
-            let voice_idx = allocate_voice();
-            let voice = &mut self.voices[voice_idx];
-            voice.cached_hap = Some(cached);
-            voice.active = true;
-            voice
-                .gate
-                .set_state(TempGateState::Low, TempGateState::High, hold);
-            voice
-                .trigger
-                .set_state(TempGateState::High, TempGateState::Low, hold);
+                let voice = &mut self.voices[voice_idx];
+                voice.cached_hap = Some(cached);
+                voice.active = true;
+                voice.gate.set_state(TempGateState::Low, TempGateState::High, hold);
+                voice.trigger.set_state(TempGateState::High, TempGateState::Low, hold);
+            }
         }
 
         // Process all voices and update outputs
@@ -502,7 +529,7 @@ impl crate::types::StatefulModule for Seq {
                 && !cached.is_rest()
             {
                 any_non_rest = true;
-                active_spans.extend(cached.hap.get_active_spans());
+                active_spans.extend(cached.hap().get_active_spans());
             }
         }
 
