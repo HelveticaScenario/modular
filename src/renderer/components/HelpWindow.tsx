@@ -208,6 +208,8 @@ export const HelpWindow: React.FC = () => {
             .then((schemaList) => {
                 const schemaMap: Record<string, ModuleSchema> = {};
                 for (const s of schemaList) {
+                    // _clock is internal-only (used for ROOT_CLOCK); hide from user-facing docs
+                    if (s.name === '_clock') continue;
                     schemaMap[s.name] = s;
                 }
                 setSchemas(schemaMap);
