@@ -862,7 +862,9 @@ impl IntervalSeq {
         // Process collected events
         if let Some(cycle_haps) = cycle_haps_arc {
             for (hap_index, degree) in events_to_process {
-                let voice_idx = self.allocate_voice(playhead, num_channels);
+                let Some(voice_idx) = self.allocate_voice(playhead, num_channels) else {
+                    continue; // No free voice — skip this event
+                };
                 let voltage = self.degree_to_voltage(degree);
 
                 let voice = &mut self.voices[voice_idx];
@@ -895,32 +897,18 @@ impl IntervalSeq {
         }
     }
 
-    fn allocate_voice(&mut self, playhead: f64, num_channels: usize) -> usize {
+    fn allocate_voice(&mut self, playhead: f64, num_channels: usize) -> Option<usize> {
         for i in 0..num_channels {
             let voice_idx = (self.next_voice + i) % num_channels;
             if !self.voices[voice_idx].active {
                 self.next_voice = (voice_idx + 1) % num_channels;
                 self.voices[voice_idx].last_assigned = playhead;
-                return voice_idx;
+                return Some(voice_idx);
             }
         }
 
-        // Steal oldest
-        let mut oldest_idx = 0;
-        let mut oldest_time = f64::MAX;
-        for i in 0..num_channels {
-            if self.voices[i].last_assigned < oldest_time {
-                oldest_time = self.voices[i].last_assigned;
-                oldest_idx = i;
-            }
-        }
-
-        self.voices[oldest_idx].active = false;
-        self.voices[oldest_idx].cached_hap = None;
-        self.voices[oldest_idx].last_assigned = playhead;
-        self.next_voice = (oldest_idx + 1) % num_channels;
-
-        oldest_idx
+        // All voices occupied — skip this event rather than stealing
+        None
     }
 
     fn release_ended_voices(&mut self, playhead: f64, num_channels: usize) {

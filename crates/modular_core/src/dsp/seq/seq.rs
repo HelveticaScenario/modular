@@ -447,7 +447,7 @@ impl Seq {
 
                 // Allocate voice
                 let voice_idx = {
-                    // First pass: look for inactive voices starting from next_voice
+                    // Look for inactive voices starting from next_voice
                     let mut found = None;
                     for i in 0..num_channels {
                         let idx = (self.next_voice + i) % num_channels;
@@ -459,22 +459,11 @@ impl Seq {
                         }
                     }
 
-                    found.unwrap_or_else(|| {
-                        // All voices active - steal the oldest (LRU)
-                        let mut oldest_idx = 0;
-                        let mut oldest_time = f64::MAX;
-                        for i in 0..num_channels {
-                            if self.voices[i].last_assigned < oldest_time {
-                                oldest_time = self.voices[i].last_assigned;
-                                oldest_idx = i;
-                            }
-                        }
-                        self.voices[oldest_idx].active = false;
-                        self.voices[oldest_idx].cached_hap = None;
-                        self.voices[oldest_idx].last_assigned = playhead;
-                        self.next_voice = (oldest_idx + 1) % num_channels;
-                        oldest_idx
-                    })
+                    // All voices occupied — skip this event rather than stealing
+                    match found {
+                        Some(idx) => idx,
+                        None => continue,
+                    }
                 };
 
                 let voice = &mut self.voices[voice_idx];
