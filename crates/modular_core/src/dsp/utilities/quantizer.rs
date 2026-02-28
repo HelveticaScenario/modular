@@ -187,7 +187,7 @@ fn default_scale() -> ScaleParam {
     ScaleParam::parse("chromatic").unwrap()
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct QuantizerParams {
     /// Input V/Oct signal to quantize

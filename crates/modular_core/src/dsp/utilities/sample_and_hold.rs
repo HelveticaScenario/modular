@@ -6,7 +6,7 @@ use crate::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct SampleAndHoldParams {
     /// signal to sample
@@ -77,7 +77,7 @@ impl SampleAndHold {
 
 message_handlers!(impl SampleAndHold {});
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct TrackAndHoldParams {
     /// signal to track

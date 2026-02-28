@@ -117,7 +117,7 @@ impl Connect for PlaitsEngine {
     fn connect(&mut self, _patch: &ModularPatch) {}
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct PlaitsParams {
     /// Pitch input in V/Oct (0V = C4)

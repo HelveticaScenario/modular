@@ -425,7 +425,7 @@ fn default_channels() -> usize {
     4
 }
 
-#[derive(Clone, Deserialize, Default, ChannelCount, JsonSchema, Connect, Debug)]
+#[derive(Clone, Deserialize, Default, ChannelCount, JsonSchema, Connect, Debug, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 pub struct IntervalSeqParams {
     /// patterns to combine (left-fold with appLeft addition); accepts a single

@@ -29,7 +29,7 @@ where
     Ok(v)
 }
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct ClockParams {
     /// Tempo in BPM. Defaults to 120.

@@ -3,7 +3,7 @@ use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct PercussionEnvelopeParams {
     /// trigger input (rising edge triggers envelope)

@@ -99,7 +99,7 @@ impl Connect for MathExpressionParam {
     }
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct MathParams {
     /// math expression to evaluate (e.g. "x * 2 + sin(t)")

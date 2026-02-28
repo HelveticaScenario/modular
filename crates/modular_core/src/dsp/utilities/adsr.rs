@@ -3,7 +3,7 @@ use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct AdsrParams {
     /// gate input — rising edge starts the envelope, falling edge triggers release

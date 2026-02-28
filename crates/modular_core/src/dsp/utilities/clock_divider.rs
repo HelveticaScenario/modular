@@ -6,7 +6,7 @@ use crate::dsp::utils::{min_gate_samples, SchmittTrigger, TempGate, TempGateStat
 use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 use crate::types::ClockMessages;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct ClockDividerParams {
     /// division factor (e.g. 2 = output fires every other tick)

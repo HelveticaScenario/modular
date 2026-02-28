@@ -11,7 +11,7 @@ use crate::dsp::utils::voct_to_hz;
 use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 use crate::types::Clickless;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct SegmentParams {
     /// input signal to shape (bipolar, typically -5 to 5)

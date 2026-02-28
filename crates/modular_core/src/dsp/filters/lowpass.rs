@@ -8,14 +8,16 @@ use crate::{
     PORT_MAX_CHANNELS,
 };
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct LowpassFilterParams {
     /// signal input
     input: PolySignal,
     /// cutoff frequency in V/Oct (0V = C4)
+    #[signal(type = pitch, default = 0.0, range = (-5.0, 5.0))]
     cutoff: PolySignal,
     /// filter resonance (0-5)
+    #[signal(type = control, default = 0.0, range = (0.0, 5.0))]
     resonance: PolySignal,
 }
 

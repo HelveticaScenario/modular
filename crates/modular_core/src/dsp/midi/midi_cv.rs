@@ -72,7 +72,7 @@ struct VoiceState {
     mod_wheel: u8,
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct MidiCvParams {
     /// MIDI device name to receive from (leave unset to receive from all devices)

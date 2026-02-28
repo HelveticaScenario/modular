@@ -8,7 +8,7 @@ use crate::{
     PORT_MAX_CHANNELS,
 };
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct Jup6fParams {
     /// signal input

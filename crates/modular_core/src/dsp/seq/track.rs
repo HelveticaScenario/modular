@@ -6,7 +6,7 @@ use crate::poly::PolySignal;
 use crate::types::InterpolationType;
 use crate::{MonoSignal, PolyOutput};
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct TrackParams {
     /// playhead position (wraps from 0 to 1)

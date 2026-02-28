@@ -9,7 +9,7 @@ use serde::Deserialize;
 use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 use crate::types::Clickless;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct CrushParams {
     /// input phase (0 to 1)
