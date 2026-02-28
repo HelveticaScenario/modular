@@ -47,12 +47,18 @@ export type ParamKind =
     | 'boolean'
     | 'unknown';
 
+export type SignalType = 'pitch' | 'gate' | 'trig' | 'control';
+
 export type ParamDescriptor = {
     name: string;
     kind: ParamKind;
     description?: string;
     optional: boolean;
     enumValues?: string[];
+    signalType?: SignalType;
+    defaultValue?: number;
+    minValue?: number;
+    maxValue?: number;
 };
 
 export type ProcessedModuleSchema = ModuleSchema & {
@@ -363,17 +369,37 @@ export function processModuleSchema(
     const properties = obj?.properties ?? {};
     const required = new Set(obj?.required ?? []);
 
+    // Build signal param lookup from schema.signalParams
+    const signalParamsByName = new Map<
+        string,
+        ModuleSchema['signalParams'][number]
+    >();
+    if (schema.signalParams) {
+        for (const sp of schema.signalParams) {
+            signalParamsByName.set(sp.name, sp);
+        }
+    }
+
     const params: ParamDescriptor[] = Object.entries(properties).map(
         ([name, s]) => {
             const resolved = resolveAndMerge(root, s);
             const enumValues = extractStringEnum(resolved);
             const inferedKind = inferKind(root, s);
+
+            const signalMeta = signalParamsByName.get(name);
+
             return {
                 name,
                 kind: inferedKind,
                 description: resolved.description,
                 optional: !required.has(name),
                 enumValues,
+                ...(signalMeta && {
+                    signalType: signalMeta.signalType as SignalType,
+                    defaultValue: signalMeta.defaultValue,
+                    minValue: signalMeta.minValue,
+                    maxValue: signalMeta.maxValue,
+                }),
             };
         },
     );
