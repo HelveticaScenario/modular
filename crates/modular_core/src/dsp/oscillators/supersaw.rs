@@ -140,27 +140,34 @@ impl Supersaw {
         // Gain: 5V range, compensated for input channel count
         let gain = 5.0 / (input_channels as f32).sqrt();
 
-        // Read detune once (mono value, constant across voices)
-        let detune = self.params.detune.get_value_or(0, 0.18);
+        // Voice interpolation factor (precompute per voice)
+        let voice_t: [f32; PORT_MAX_CHANNELS] = {
+            let mut t = [0.0f32; PORT_MAX_CHANNELS];
+            for v in 0..voices {
+                t[v] = if voices > 1 {
+                    v as f32 / (voices - 1) as f32
+                } else {
+                    0.5 // centered, offset will be 0
+                };
+            }
+            t
+        };
 
         for voice in 0..voices {
-            // Compute detune offset for this voice in semitones
-            let offset_semitones = if voices > 1 {
-                let t = voice as f32 / (voices - 1) as f32;
-                // lerp from -detune/2 to +detune/2
-                -detune / 2.0 + t * detune
-            } else {
-                0.0
-            };
-
-            // Precompute detune ratio (only varies per voice, not per input channel)
-            let detune_ratio = (2.0f32).powf(offset_semitones / 12.0);
-
             let mut accum = 0.0f32;
 
             for input_ch in 0..input_channels {
+                // Detune channel-matches input pitch (per-note detune)
+                let detune = self.params.detune.get_value_or(input_ch, 0.18);
+                let offset_semitones = if voices > 1 {
+                    // lerp from -detune/2 to +detune/2
+                    -detune / 2.0 + voice_t[voice] * detune
+                } else {
+                    0.0
+                };
+
                 let pitch = self.params.freq.get_value_or(input_ch, 0.0);
-                let freq = voct_to_hz(pitch) * detune_ratio;
+                let freq = voct_to_hz(pitch) * (2.0f32).powf(offset_semitones / 12.0);
                 let dt = freq * inv_sample_rate;
 
                 let state_idx = input_ch * PORT_MAX_CHANNELS + voice;
