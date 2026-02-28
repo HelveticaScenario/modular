@@ -6,7 +6,7 @@ use crate::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct StereoMixerParams {
     /// Input signal to place in the stereo field.
@@ -15,6 +15,7 @@ struct StereoMixerParams {
     pan: PolySignal,
     /// Stereo spread across channels (0 = no spread, 5 = widest spread).
     /// Width offsets each channel around its base pan position.
+    #[signal(range = (0.0, 5.0))]
     width: MonoSignal,
 }
 

@@ -6,12 +6,14 @@ use crate::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct PPulseOscillatorParams {
     /// phasor input (0–1, wraps at boundaries)
+    #[signal(range = (0.0, 1.0))]
     phase: PolySignal,
     /// pulse width (0-5, 2.5 is square)
+    #[signal(default = 2.5, range = (0.0, 5.0))]
     width: PolySignal,
     /// pulse width modulation CV — added to the width parameter
     pwm: PolySignal,

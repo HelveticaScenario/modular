@@ -8,12 +8,14 @@ use crate::{
     PORT_MAX_CHANNELS,
 };
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct PulseOscillatorParams {
     /// pitch in V/Oct (0V = C4)
+    #[signal(type = pitch)]
     freq: PolySignal,
     /// pulse width (0-5, 2.5 is square)
+    #[signal(default = 2.5, range = (0.0, 5.0))]
     width: PolySignal,
     /// pulse width modulation CV — added to the width parameter
     pwm: PolySignal,

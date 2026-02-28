@@ -137,13 +137,14 @@ fn default_channels() -> usize {
     4
 }
 
-#[derive(Clone, Deserialize, Default, ChannelCount, JsonSchema, Connect, Debug)]
+#[derive(Clone, Deserialize, Default, ChannelCount, JsonSchema, Connect, Debug, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 pub struct SeqParams {
     /// pattern string in mini-notation
     pattern: SeqPatternParam,
     /// playhead position (driven by the global clock)
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
+    #[signal(range = (0.0, 1.0))]
     playhead: MonoSignal,
     /// Number of polyphonic voices (1-16)
     pub channels: Option<usize>,

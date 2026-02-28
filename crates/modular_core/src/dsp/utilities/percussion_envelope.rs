@@ -3,12 +3,14 @@ use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct PercussionEnvelopeParams {
     /// trigger input (rising edge triggers envelope)
+    #[signal(type = trig, range = (0.0, 5.0))]
     trigger: PolySignal,
     /// decay time in seconds
+    #[signal(default = 0.1, range = (0.0, 10.0))]
     decay: PolySignal,
 }
 

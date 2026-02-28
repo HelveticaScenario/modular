@@ -11,14 +11,17 @@ use crate::dsp::utils::voct_to_hz;
 use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 use crate::types::Clickless;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct PulsarParams {
     /// input phase (0 to 1)
+    #[signal(range = (0.0, 1.0))]
     input: PolySignal,
     /// compression amount (0-5, where 0 = no compression, 5 = maximum compression)
+    #[signal(range = (0.0, 5.0))]
     amount: PolySignal,
     /// pitch in V/Oct (optional, reduces aliasing at high frequencies)
+    #[signal(type = pitch)]
     freq: PolySignal,
 }
 

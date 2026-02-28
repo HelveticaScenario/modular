@@ -281,6 +281,7 @@ export interface ModuleSchema {
   documentation: string
   paramsSchema: Record<string, unknown>
   outputs: Array<OutputSchema>
+  signalParams: Array<SignalParamSchema>
   positionalArgs: Array<PositionalArg>
   /** If set, this module always produces exactly this many channels (no inference needed) */
   channels?: number
@@ -341,4 +342,13 @@ export interface ScopeStats {
   max: number
   peakToPeak: number
   readOffset: Array<number>
+}
+
+export interface SignalParamSchema {
+  name: string
+  description: string
+  signalType: string
+  defaultValue: number
+  minValue: number
+  maxValue: number
 }

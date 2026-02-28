@@ -8,14 +8,16 @@ use crate::{
     PORT_MAX_CHANNELS,
 };
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct Jup6fParams {
     /// signal input
     input: PolySignal,
     /// cutoff frequency in V/Oct (0V = C4)
+    #[signal(type = pitch)]
     cutoff: PolySignal,
     /// filter resonance (0-5). High values produce self-oscillation.
+    #[signal(range = (0.0, 5.0))]
     resonance: PolySignal,
 }
 

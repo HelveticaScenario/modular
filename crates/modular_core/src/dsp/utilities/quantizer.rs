@@ -187,13 +187,15 @@ fn default_scale() -> ScaleParam {
     ScaleParam::parse("chromatic").unwrap()
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct QuantizerParams {
     /// Input V/Oct signal to quantize
+    #[signal(type = pitch)]
     input: PolySignal,
     /// Offset added to input before quantization (in V/Oct)
     #[serde(default)]
+    #[signal(type = pitch)]
     offset: PolySignal,
     /// Scale specification: "chromatic", "C(major)", "D(0 2 4 5 7 9 11)"
     #[serde(default = "default_scale")]

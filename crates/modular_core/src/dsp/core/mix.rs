@@ -25,7 +25,7 @@ impl crate::types::Connect for MixMode {
     fn connect(&mut self, _patch: &crate::Patch) {}
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 pub struct MixParams {
     /// Input signals to mix channel-by-channel.

@@ -8,10 +8,11 @@ use serde::Deserialize;
 use crate::dsp::utils::voct_to_hz;
 use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct RampParams {
     /// pitch in V/Oct (0V = C4)
+    #[signal(type = pitch)]
     freq: PolySignal,
 }
 

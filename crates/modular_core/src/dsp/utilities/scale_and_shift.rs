@@ -3,12 +3,13 @@ use serde::Deserialize;
 
 use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct ScaleAndShiftParams {
     /// signal to scale and shift
     input: PolySignal,
     /// scale factor (0–10V range; 5V = unity gain, 0V = silence, -5V = inverted, 10V = 2x)
+    #[signal(default = 5.0, range = (0.0, 10.0))]
     scale: PolySignal,
     /// DC offset added to the scaled signal (in volts)
     shift: PolySignal,

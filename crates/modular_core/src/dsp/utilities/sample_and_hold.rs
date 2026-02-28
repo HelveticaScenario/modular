@@ -6,12 +6,13 @@ use crate::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct SampleAndHoldParams {
     /// signal to sample
     input: PolySignal,
     /// rising edge captures the current input value
+    #[signal(type = trig, range = (0.0, 5.0))]
     trigger: PolySignal,
 }
 
@@ -77,12 +78,13 @@ impl SampleAndHold {
 
 message_handlers!(impl SampleAndHold {});
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct TrackAndHoldParams {
     /// signal to track
     input: PolySignal,
     /// while gate is low the output follows the input; when gate goes high the last value is held
+    #[signal(type = gate, range = (0.0, 5.0))]
     gate: PolySignal,
 }
 

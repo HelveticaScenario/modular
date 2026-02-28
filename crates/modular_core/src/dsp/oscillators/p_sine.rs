@@ -8,10 +8,11 @@ use crate::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct PSineOscillatorParams {
     /// phasor input (0–1, wraps at boundaries)
+    #[signal(range = (0.0, 1.0))]
     phase: PolySignal,
 }
 

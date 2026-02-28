@@ -425,7 +425,7 @@ fn default_channels() -> usize {
     4
 }
 
-#[derive(Clone, Deserialize, Default, ChannelCount, JsonSchema, Connect, Debug)]
+#[derive(Clone, Deserialize, Default, ChannelCount, JsonSchema, Connect, Debug, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 pub struct IntervalSeqParams {
     /// patterns to combine (left-fold with appLeft addition); accepts a single
@@ -435,6 +435,7 @@ pub struct IntervalSeqParams {
     scale: IntervalScaleParam,
     /// playhead position
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
+    #[signal(range = (0.0, 1.0))]
     playhead: MonoSignal,
     /// number of polyphonic voices (1–16)
     #[serde(default = "default_channels")]

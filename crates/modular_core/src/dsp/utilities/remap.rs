@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct RemapParams {
     /// signal input to remap

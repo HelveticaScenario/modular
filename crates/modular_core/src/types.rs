@@ -432,6 +432,17 @@ pub trait PolySignalFields {
     }
 }
 
+/// Trait for params structs to expose signal parameter metadata.
+/// Auto-derived by the `SignalParams` derive macro.
+pub trait SignalParamMeta {
+    fn signal_param_schemas() -> Vec<SignalParamSchema>
+    where
+        Self: Sized,
+    {
+        vec![]
+    }
+}
+
 struct ParsedNote {
     pitch: Pitch,
     octave: i32,
@@ -822,11 +833,16 @@ pub enum Seq {
     Slow,
 }
 
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[napi(object)]
 pub struct SignalParamSchema {
     pub name: String,
     pub description: String,
+    pub signal_type: String,
+    pub default_value: f64,
+    pub min_value: f64,
+    pub max_value: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -916,6 +932,7 @@ pub struct ModuleSchema {
     #[napi(ts_type = "Record<string, unknown>")]
     pub params_schema: SchemaContainer,
     pub outputs: Vec<OutputSchema>,
+    pub signal_params: Vec<SignalParamSchema>,
     pub positional_args: Vec<PositionalArg>,
     /// If set, this module always produces exactly this many channels (no inference needed)
     #[serde(default, skip_serializing_if = "Option::is_none")]

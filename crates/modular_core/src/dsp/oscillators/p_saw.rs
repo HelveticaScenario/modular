@@ -6,12 +6,14 @@ use crate::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct PSawOscillatorParams {
     /// phasor input (0–1, wraps at boundaries)
+    #[signal(range = (0.0, 1.0))]
     phase: PolySignal,
     /// waveform shape: 0=saw, 2.5=triangle, 5=ramp
+    #[signal(range = (0.0, 5.0))]
     shape: PolySignal,
 }
 

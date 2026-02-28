@@ -117,10 +117,11 @@ impl Connect for PlaitsEngine {
     fn connect(&mut self, _patch: &ModularPatch) {}
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount)]
+#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(default, rename_all = "camelCase")]
 struct PlaitsParams {
     /// Pitch input in V/Oct (0V = C4)
+    #[signal(type = pitch)]
     freq: PolySignal,
 
     /// Synthesis engine selection
@@ -148,15 +149,19 @@ struct PlaitsParams {
     morph_amt: PolySignal,
 
     /// Trigger input - gates/triggers the internal envelope
+    #[signal(type = trig, range = (0.0, 5.0))]
     trigger: PolySignal,
 
     /// Level/dynamics input (0-5V) - controls VCA/LPG
+    #[signal(default = 2.5, range = (0.0, 5.0))]
     level: PolySignal,
 
     /// LPG color (0-5V) - lowpass gate filter response (low = mellow, high = bright)
+    #[signal(default = 2.5, range = (0.0, 5.0))]
     lpg_color: PolySignal,
 
     /// LPG decay (0-5V) - lowpass gate envelope decay time
+    #[signal(default = 2.5, range = (0.0, 5.0))]
     lpg_decay: PolySignal,
 }
 
