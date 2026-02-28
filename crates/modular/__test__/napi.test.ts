@@ -69,6 +69,41 @@ describe('getSchemas', () => {
             b.map((s) => s.name).sort(),
         );
     });
+
+    test('schemas include signalParams for modules with signal inputs', () => {
+        const schemas = getSchemas();
+        const lpf = schemas.find((s) => s.name === '$lpf');
+        expect(lpf).toBeDefined();
+        expect(lpf!.signalParams).toBeDefined();
+        expect(lpf!.signalParams.length).toBeGreaterThan(0);
+
+        // Check that cutoff has pitch type with correct range and description
+        const cutoff = lpf!.signalParams.find((p: any) => p.name === 'cutoff');
+        expect(cutoff).toBeDefined();
+        expect(cutoff!.signalType).toBe('pitch');
+        expect(cutoff!.defaultValue).toBe(0.0);
+        expect(cutoff!.minValue).toBe(-5.0);
+        expect(cutoff!.maxValue).toBe(5.0);
+        expect(cutoff!.description).toContain('cutoff');
+
+        // Check that resonance has control type
+        const resonance = lpf!.signalParams.find(
+            (p: any) => p.name === 'resonance',
+        );
+        expect(resonance).toBeDefined();
+        expect(resonance!.signalType).toBe('control');
+        expect(resonance!.defaultValue).toBe(0.0);
+        expect(resonance!.minValue).toBe(0.0);
+        expect(resonance!.maxValue).toBe(5.0);
+
+        // Check that unannotated signal params get defaults
+        const input = lpf!.signalParams.find((p: any) => p.name === 'input');
+        expect(input).toBeDefined();
+        expect(input!.signalType).toBe('control');
+        expect(input!.defaultValue).toBe(0.0);
+        expect(input!.minValue).toBe(-5.0);
+        expect(input!.maxValue).toBe(5.0);
+    });
 });
 
 // ─── validatePatchGraph ──────────────────────────────────────────────────────
