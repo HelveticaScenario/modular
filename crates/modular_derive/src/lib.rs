@@ -1153,7 +1153,7 @@ fn impl_signal_params_macro(ast: &DeriveInput) -> TokenStream {
                     // Extract doc comments for description
                     let description = extract_doc_comments(&field.attrs).unwrap_or_default();
 
-                    let field_name = field_ident.to_string();
+                    let field_name = field_ident.to_string().to_case(Case::Camel);
                     let signal_type = &attr.signal_type;
                     let default_value = attr.default_value;
                     let min_value = attr.min_value;
@@ -1250,6 +1250,24 @@ impl Default for SignalAttr {
     }
 }
 
+/// Parse a numeric literal (float or int) from a parse stream, handling an
+/// optional leading `-` sign.  Returns the value as `f64`.
+fn parse_number_literal(input: syn::parse::ParseStream) -> syn::Result<f64> {
+    let negative = input.peek(Token![-]);
+    if negative {
+        input.parse::<Token![-]>()?;
+    }
+    let lit: syn::Lit = input.parse()?;
+    let value = match &lit {
+        syn::Lit::Float(f) => f.base10_parse::<f64>()?,
+        syn::Lit::Int(i) => i.base10_parse::<i64>()? as f64,
+        _ => {
+            return Err(syn::Error::new(lit.span(), "expected a number literal"));
+        }
+    };
+    Ok(if negative { -value } else { value })
+}
+
 fn parse_signal_attr(attr: &Attribute) -> syn::Result<SignalAttr> {
     let mut result = SignalAttr::default();
 
@@ -1270,18 +1288,18 @@ fn parse_signal_attr(attr: &Attribute) -> syn::Result<SignalAttr> {
             }
             Ok(())
         } else if meta.path.is_ident("default") {
-            let value: syn::LitFloat = meta.value()?.parse()?;
-            result.default_value = value.base10_parse()?;
+            let stream = meta.value()?;
+            result.default_value = parse_number_literal(stream)?;
             Ok(())
         } else if meta.path.is_ident("range") {
             meta.value()?;
             let content;
             syn::parenthesized!(content in meta.input);
-            let min: syn::LitFloat = content.parse()?;
+            let min_val = parse_number_literal(&content)?;
             content.parse::<Token![,]>()?;
-            let max: syn::LitFloat = content.parse()?;
-            result.min_value = min.base10_parse()?;
-            result.max_value = max.base10_parse()?;
+            let max_val = parse_number_literal(&content)?;
+            result.min_value = min_val;
+            result.max_value = max_val;
             Ok(())
         } else {
             Err(meta.error("expected `type`, `default`, or `range`"))
