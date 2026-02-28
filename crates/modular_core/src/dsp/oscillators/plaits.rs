@@ -126,13 +126,13 @@ struct PlaitsParams {
     /// Synthesis engine selection
     engine: PlaitsEngine,
 
-    /// Harmonics parameter (0-5V) - function varies per engine
+    /// Harmonics parameter (-5V to +5V, bipolar, default 0V) - function varies per engine
     harmonics: PolySignal,
 
-    /// Timbre parameter (0-5V) - function varies per engine
+    /// Timbre parameter (-5V to +5V, bipolar, default 0V) - function varies per engine
     timbre: PolySignal,
 
-    /// Morph parameter (0-5V) - function varies per engine
+    /// Morph parameter (-5V to +5V, bipolar, default 0V) - function varies per engine
     morph: PolySignal,
 
     /// FM input (-5V to +5V) - frequency modulation
@@ -320,13 +320,13 @@ impl Plaits {
             // Update smoothed parameters
             state
                 .harmonics
-                .update(self.params.harmonics.get_value_or(ch, 2.5).clamp(0.0, 5.0));
+                .update(self.params.harmonics.get_value_or(ch, 0.0).clamp(-5.0, 5.0));
             state
                 .timbre
-                .update(self.params.timbre.get_value_or(ch, 2.5).clamp(0.0, 5.0));
+                .update(self.params.timbre.get_value_or(ch, 0.0).clamp(-5.0, 5.0));
             state
                 .morph
-                .update(self.params.morph.get_value_or(ch, 2.5).clamp(0.0, 5.0));
+                .update(self.params.morph.get_value_or(ch, 0.0).clamp(-5.0, 5.0));
             state
                 .lpg_color
                 .update(self.params.lpg_color.get_value_or(ch, 2.5).clamp(0.0, 5.0));
@@ -339,9 +339,9 @@ impl Plaits {
 
             let patch = Patch {
                 note: voct_to_midi(self.params.freq.get_value_or(ch, 0.0)),
-                harmonics: (*state.harmonics / 5.0).clamp(0.0, 1.0),
-                timbre: (*state.timbre / 5.0).clamp(0.0, 1.0),
-                morph: (*state.morph / 5.0).clamp(0.0, 1.0),
+                harmonics: ((*state.harmonics + 5.0) / 10.0).clamp(0.0, 1.0),
+                timbre: ((*state.timbre + 5.0) / 10.0).clamp(0.0, 1.0),
+                morph: ((*state.morph + 5.0) / 10.0).clamp(0.0, 1.0),
                 engine: engine_index,
                 decay: (*state.lpg_decay / 5.0).clamp(0.0, 1.0),
                 lpg_colour: (*state.lpg_color / 5.0).clamp(0.0, 1.0),
@@ -359,28 +359,28 @@ impl Plaits {
             let fm_val = self.params.fm.get_value_or(ch, 0.0);
             let fm_mod = fm_val / 5.0 * 6.0;
 
-            // Harmonics: 0-5V scaled to 0-1
+            // Harmonics: -5V to +5V bipolar, scaled to modulation range
             let harmonics_cv = self.params.harmonics.get_value_or(ch, 0.0);
             let harmonics_mod = if self.params.harmonics.is_disconnected() {
                 0.0
             } else {
-                (harmonics_cv / 5.0) - (*state.harmonics / 5.0)
+                (harmonics_cv - *state.harmonics) / 10.0
             };
 
-            // Timbre: ±5V range (centered around current value)
+            // Timbre: -5V to +5V bipolar
             let timbre_cv = self.params.timbre.get_value_or(ch, 0.0);
             let timbre_mod = if self.params.timbre.is_disconnected() {
                 0.0
             } else {
-                (timbre_cv - *state.timbre) / 8.0 // VCV uses /8 for ±5V
+                (timbre_cv - *state.timbre) / 10.0
             };
 
-            // Morph: ±5V range
+            // Morph: -5V to +5V bipolar
             let morph_cv = self.params.morph.get_value_or(ch, 0.0);
             let morph_mod = if self.params.morph.is_disconnected() {
                 0.0
             } else {
-                (morph_cv - *state.morph) / 8.0
+                (morph_cv - *state.morph) / 10.0
             };
 
             // Use latched trigger value to ensure short triggers aren't missed
