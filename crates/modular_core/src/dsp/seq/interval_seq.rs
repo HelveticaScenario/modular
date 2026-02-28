@@ -17,14 +17,14 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    MonoSignal, Patch,
     dsp::{
         utilities::quantizer::ScaleParam,
-        utils::{TempGate, TempGateState, midi_to_voct_f64, min_gate_samples},
+        utils::{midi_to_voct_f64, min_gate_samples, TempGate, TempGateState},
     },
     pattern_system::Pattern,
-    poly::{PORT_MAX_CHANNELS, PolyOutput},
+    poly::{PolyOutput, PORT_MAX_CHANNELS},
     types::Connect,
+    MonoSignal, Patch,
 };
 
 /// Scale parameter for IntervalSeq that supports an optional octave in the root.
@@ -320,6 +320,14 @@ impl IntervalPatternParam {
     /// Number of source patterns that were combined.
     pub fn num_sources(&self) -> usize {
         self.num_sources
+    }
+
+    /// Whether the source was an array (Multiple variant).
+    /// Used to determine param_spans key format: array sources always
+    /// use indexed keys ("patterns.0") even with a single element,
+    /// while a plain string source uses the bare key ("patterns").
+    pub fn is_array_source(&self) -> bool {
+        matches!(self.source, IntervalPatternSource::Multiple(_))
     }
 
     /// Per-source metadata for span tracking.
@@ -959,9 +967,13 @@ impl crate::types::StatefulModule for IntervalSeq {
             }
 
             // Build param_spans map keyed by "patterns.0", "patterns.1", etc.
+            // When the source is an array (Multiple), always use indexed keys
+            // even for a single element, to match the argument span analyzer
+            // which registers array elements as "patterns.0", "patterns.1", etc.
+            let is_array = self.params.patterns.is_array_source();
             let mut param_spans = serde_json::Map::new();
             for (i, meta) in per_source.iter().enumerate() {
-                let key = if num_sources == 1 {
+                let key = if !is_array && num_sources == 1 {
                     "patterns".to_string()
                 } else {
                     format!("patterns.{}", i)
@@ -1133,7 +1145,7 @@ mod tests {
 
         // D3 root
         seq.base_midi = 50; // D3
-        // Degree 0 = D3 = MIDI 50 = -10/12 V
+                            // Degree 0 = D3 = MIDI 50 = -10/12 V
         let v0 = seq.degree_to_voltage(0);
         assert!((v0 - (-10.0 / 12.0)).abs() < 0.001);
     }
@@ -1210,5 +1222,4 @@ mod tests {
         assert!(params.patterns.pattern().is_some());
         assert_eq!(params.patterns.num_sources(), 2);
     }
-
 }
