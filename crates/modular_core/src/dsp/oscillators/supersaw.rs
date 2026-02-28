@@ -45,7 +45,7 @@ pub fn supersaw_derive_channel_count(params: &SupersawParams) -> usize {
 /// - **voices** — number of detuned saw voices (1–16, default 5)
 /// - **detune** — detune spread in semitones (default 0.18)
 ///
-/// Output range is **±5V** with gain compensation for voice count.
+/// Output range is **±5V** with gain compensation for input channel count.
 ///
 /// ## Example
 ///
@@ -122,9 +122,12 @@ impl Supersaw {
         // Initialize phases with random values on first update
         if !self.phases_initialized {
             // Seed from pointer to self for uniqueness across instances
-            self.rng_state = (self as *const Self as usize as u32).wrapping_add(0xDEAD_BEEF);
+            // (conditional allows tests to preset a seed)
             if self.rng_state == 0 {
-                self.rng_state = 0xDEAD_BEEF;
+                self.rng_state = (self as *const Self as usize as u32).wrapping_add(0xDEAD_BEEF);
+                if self.rng_state == 0 {
+                    self.rng_state = 0xDEAD_BEEF;
+                }
             }
             for i in 0..self.osc_states.len() {
                 self.osc_states[i] = rand_phase(&mut self.rng_state);
@@ -137,9 +140,11 @@ impl Supersaw {
         // Gain: 5V range, compensated for input channel count
         let gain = 5.0 / (input_channels as f32).sqrt();
 
+        // Read detune once (mono value, constant across voices)
+        let detune = self.params.detune.get_value_or(0, 0.18);
+
         for voice in 0..voices {
             // Compute detune offset for this voice in semitones
-            let detune = self.params.detune.get_value_or(0, 0.18);
             let offset_semitones = if voices > 1 {
                 let t = voice as f32 / (voices - 1) as f32;
                 // lerp from -detune/2 to +detune/2
@@ -148,11 +153,14 @@ impl Supersaw {
                 0.0
             };
 
+            // Precompute detune ratio (only varies per voice, not per input channel)
+            let detune_ratio = (2.0f32).powf(offset_semitones / 12.0);
+
             let mut accum = 0.0f32;
 
             for input_ch in 0..input_channels {
                 let pitch = self.params.freq.get_value_or(input_ch, 0.0);
-                let freq = voct_to_hz(pitch) * (2.0f32).powf(offset_semitones / 12.0);
+                let freq = voct_to_hz(pitch) * detune_ratio;
                 let dt = freq * inv_sample_rate;
 
                 let state_idx = input_ch * PORT_MAX_CHANNELS + voice;
@@ -160,7 +168,7 @@ impl Supersaw {
 
                 // Advance phase
                 *phase += dt;
-                if *phase >= 1.0 {
+                while *phase >= 1.0 {
                     *phase -= 1.0;
                 }
 
