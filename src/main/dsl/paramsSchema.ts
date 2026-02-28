@@ -49,6 +49,12 @@ export type ParamKind =
 
 export type SignalType = 'pitch' | 'gate' | 'trig' | 'control';
 
+const SIGNAL_TYPES = new Set<string>(['pitch', 'gate', 'trig', 'control']);
+
+function isSignalType(s: string): s is SignalType {
+    return SIGNAL_TYPES.has(s);
+}
+
 export type ParamDescriptor = {
     name: string;
     kind: ParamKind;
@@ -395,7 +401,9 @@ export function processModuleSchema(
                 optional: !required.has(name),
                 enumValues,
                 ...(signalMeta && {
-                    signalType: signalMeta.signalType as SignalType,
+                    signalType: isSignalType(signalMeta.signalType)
+                        ? signalMeta.signalType
+                        : 'control',
                     defaultValue: signalMeta.defaultValue,
                     minValue: signalMeta.minValue,
                     maxValue: signalMeta.maxValue,
