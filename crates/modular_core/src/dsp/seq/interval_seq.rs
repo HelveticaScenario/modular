@@ -435,6 +435,7 @@ pub struct IntervalSeqParams {
     scale: IntervalScaleParam,
     /// playhead position
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
+    #[signal(range = (0.0, 1.0))]
     playhead: MonoSignal,
     /// number of polyphonic voices (1–16)
     #[serde(default = "default_channels")]

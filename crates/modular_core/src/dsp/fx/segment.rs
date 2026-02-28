@@ -17,8 +17,10 @@ struct SegmentParams {
     /// input signal to shape (bipolar, typically -5 to 5)
     input: PolySignal,
     /// segment shape amount (0-5, morphs between 8 shapes)
+    #[signal(range = (0.0, 5.0))]
     amount: PolySignal,
     /// pitch of the source signal in V/Oct (optional, reduces aliasing at high frequencies)
+    #[signal(type = pitch)]
     freq: PolySignal,
 }
 

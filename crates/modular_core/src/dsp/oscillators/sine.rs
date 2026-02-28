@@ -12,6 +12,7 @@ use serde::Deserialize;
 #[serde(default, rename_all = "camelCase")]
 struct SineOscillatorParams {
     /// pitch in V/Oct (0V = C4)
+    #[signal(type = pitch)]
     freq: PolySignal,
 }
 

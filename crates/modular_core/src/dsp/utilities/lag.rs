@@ -11,8 +11,10 @@ struct LagProcessorParams {
     /// signal input
     input: PolySignal,
     /// rise rate — seconds to slew 1 volt upward (default 0.01)
+    #[signal(default = 0.01, range = (0.0, 10.0))]
     rise: PolySignal,
     /// fall rate — seconds to slew 1 volt downward (default 0.01)
+    #[signal(default = 0.01, range = (0.0, 10.0))]
     fall: PolySignal,
 }
 

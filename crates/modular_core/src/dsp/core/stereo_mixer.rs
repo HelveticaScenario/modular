@@ -15,6 +15,7 @@ struct StereoMixerParams {
     pan: PolySignal,
     /// Stereo spread across channels (0 = no spread, 5 = widest spread).
     /// Width offsets each channel around its base pan position.
+    #[signal(range = (0.0, 5.0))]
     width: MonoSignal,
 }
 

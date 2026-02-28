@@ -13,8 +13,10 @@ use crate::types::Clickless;
 #[serde(default, rename_all = "camelCase")]
 struct CrushParams {
     /// input phase (0 to 1)
+    #[signal(range = (0.0, 1.0))]
     input: PolySignal,
     /// crush amount (0-5, where 0 = clean, 5 = maximum distortion)
+    #[signal(range = (0.0, 5.0))]
     amount: PolySignal,
 }
 

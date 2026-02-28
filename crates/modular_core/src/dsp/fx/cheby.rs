@@ -17,8 +17,10 @@ struct ChebyParams {
     /// input signal to shape (bipolar, typically -5 to 5)
     input: PolySignal,
     /// harmonic richness (0–5). At 0 the signal is clean; at 5 the highest harmonic content dominates
+    #[signal(range = (0.0, 5.0))]
     amount: PolySignal,
     /// pitch of the source signal in V/Oct (optional, reduces aliasing at high frequencies)
+    #[signal(type = pitch)]
     freq: PolySignal,
 }
 

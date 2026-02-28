@@ -12,6 +12,7 @@ use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 #[serde(default, rename_all = "camelCase")]
 struct RampParams {
     /// pitch in V/Oct (0V = C4)
+    #[signal(type = pitch)]
     freq: PolySignal,
 }
 

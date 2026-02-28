@@ -14,8 +14,10 @@ struct Jup6fParams {
     /// signal input
     input: PolySignal,
     /// cutoff frequency in V/Oct (0V = C4)
+    #[signal(type = pitch)]
     cutoff: PolySignal,
     /// filter resonance (0-5). High values produce self-oscillation.
+    #[signal(range = (0.0, 5.0))]
     resonance: PolySignal,
 }
 

@@ -12,6 +12,7 @@ use serde::Deserialize;
 #[serde(default, rename_all = "camelCase")]
 struct PSineOscillatorParams {
     /// phasor input (0–1, wraps at boundaries)
+    #[signal(range = (0.0, 1.0))]
     phase: PolySignal,
 }
 

@@ -144,6 +144,7 @@ pub struct SeqParams {
     pattern: SeqPatternParam,
     /// playhead position (driven by the global clock)
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
+    #[signal(range = (0.0, 1.0))]
     playhead: MonoSignal,
     /// Number of polyphonic voices (1-16)
     pub channels: Option<usize>,

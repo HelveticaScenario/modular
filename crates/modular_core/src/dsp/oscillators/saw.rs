@@ -11,8 +11,10 @@ use crate::{
 #[serde(default, rename_all = "camelCase")]
 struct SawOscillatorParams {
     /// pitch in V/Oct (0V = C4)
+    #[signal(type = pitch)]
     freq: PolySignal,
     /// waveform shape: 0=saw, 2.5=triangle, 5=ramp
+    #[signal(range = (0.0, 5.0))]
     shape: PolySignal,
 }
 

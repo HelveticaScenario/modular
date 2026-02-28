@@ -12,8 +12,10 @@ struct ClockDividerParams {
     /// division factor (e.g. 2 = output fires every other tick)
     pub division: u32,
     /// clock signal to divide
+    #[signal(type = trig, range = (0.0, 5.0))]
     pub input: PolySignal,
     /// trigger to reset the counter to 0
+    #[signal(type = trig, range = (0.0, 5.0))]
     pub reset: PolySignal,
 }
 

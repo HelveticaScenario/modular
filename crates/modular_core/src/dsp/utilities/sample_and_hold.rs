@@ -12,6 +12,7 @@ struct SampleAndHoldParams {
     /// signal to sample
     input: PolySignal,
     /// rising edge captures the current input value
+    #[signal(type = trig, range = (0.0, 5.0))]
     trigger: PolySignal,
 }
 
@@ -83,6 +84,7 @@ struct TrackAndHoldParams {
     /// signal to track
     input: PolySignal,
     /// while gate is low the output follows the input; when gate goes high the last value is held
+    #[signal(type = gate, range = (0.0, 5.0))]
     gate: PolySignal,
 }
 

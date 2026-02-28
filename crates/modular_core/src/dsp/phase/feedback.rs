@@ -17,10 +17,13 @@ use crate::types::Clickless;
 #[serde(default, rename_all = "camelCase")]
 struct FeedbackParams {
     /// input phase (0 to 1)
+    #[signal(range = (0.0, 1.0))]
     input: PolySignal,
     /// feedback amount (0-5, where 0 = no feedback, 5 = maximum feedback FM)
+    #[signal(range = (0.0, 5.0))]
     amount: PolySignal,
     /// pitch in V/Oct (optional, reduces aliasing at high frequencies)
+    #[signal(type = pitch)]
     freq: PolySignal,
 }
 
