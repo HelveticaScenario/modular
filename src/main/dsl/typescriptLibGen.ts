@@ -132,6 +132,24 @@ interface Console {
 }
 
 var console: Console;
+
+interface Array<T> {
+  /**
+   * Pipe this array through a transform function.
+   *
+   * Passes \`this\` to \`pipeFn\` and returns the result, enabling inline
+   * functional transforms and method chaining on any array.
+   *
+   * @param pipeFn - A function that receives this array and returns a transformed value
+   * @returns The return value of \`pipeFn\`
+   *
+   * @example
+   * // Pipe an array of outputs
+   * [osc1, osc2, osc3].pipe(all => $mix(all)).out()
+   */
+  pipe<U>(this: this, pipeFn: (self: this) => U): U;
+}
+
 type NoteNames = "a" | "A" | "b" | "B" | "c" | "C" | "d" | "D" | "e" | "E" | "f" | "F" | "g" | "G"
 type Accidental = "" | "#" | "b"
 type Note = \`\${NoteNames}\${Accidental}\${number | ''}\`

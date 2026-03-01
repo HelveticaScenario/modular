@@ -20,6 +20,13 @@ import type { InterpolationResolutionMap } from '../../shared/dsl/spanTypes';
 import { setActiveInterpolationResolutions } from '../../shared/dsl/spanTypes';
 import type { SliderDefinition } from '../../shared/dsl/sliderTypes';
 
+// Augment Array.prototype with pipe() for TypeScript
+declare global {
+    interface Array<T> {
+        pipe<U>(this: this, pipelineFunc: (self: this) => U): U;
+    }
+}
+
 /**
  * Result of executing a DSL script.
  */
@@ -34,6 +41,22 @@ export interface DSLExecutionResult {
     sliders: SliderDefinition[];
     /** Full call expression spans for DSL methods (.scope(), $slider(), etc.) */
     callSiteSpans: CallSiteSpanRegistry;
+}
+
+// Install pipe() on Array.prototype so arrays in the DSL can use it.
+// Non-enumerable to avoid polluting for-in loops.
+if (typeof Array.prototype.pipe !== 'function') {
+    Object.defineProperty(Array.prototype, 'pipe', {
+        value: function pipe<T>(
+            this: unknown,
+            pipelineFunc: (self: typeof this) => T,
+        ): T {
+            return pipelineFunc(this);
+        },
+        writable: true,
+        configurable: true,
+        enumerable: false,
+    });
 }
 
 /**
