@@ -15,6 +15,7 @@ pub mod remap;
 pub mod sample_and_hold;
 pub mod scale;
 pub mod scale_and_shift;
+pub mod spread;
 
 // Re-export useful types
 pub use crate::dsp::utils::SchmittTrigger;
@@ -34,6 +35,7 @@ pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     percussion_envelope::PercussionEnvelope::install_constructor(map);
     quantizer::Quantizer::install_constructor(map);
     scale_and_shift::ScaleAndShift::install_constructor(map);
+    spread::Spread::install_constructor(map);
 }
 
 pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
@@ -50,6 +52,7 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     percussion_envelope::PercussionEnvelope::install_params_validator(map);
     quantizer::Quantizer::install_params_validator(map);
     scale_and_shift::ScaleAndShift::install_params_validator(map);
+    spread::Spread::install_params_validator(map);
 }
 
 pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer>) {
@@ -66,6 +69,7 @@ pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer
     percussion_envelope::PercussionEnvelope::install_params_deserializer(map);
     quantizer::Quantizer::install_params_deserializer(map);
     scale_and_shift::ScaleAndShift::install_params_deserializer(map);
+    spread::Spread::install_params_deserializer(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {
@@ -83,5 +87,6 @@ pub fn schemas() -> Vec<ModuleSchema> {
         percussion_envelope::PercussionEnvelope::get_schema(),
         quantizer::Quantizer::get_schema(),
         scale_and_shift::ScaleAndShift::get_schema(),
+        spread::Spread::get_schema(),
     ]
 }
