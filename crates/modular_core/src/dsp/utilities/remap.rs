@@ -9,12 +9,16 @@ struct RemapParams {
     /// signal input to remap
     input: PolySignal,
     /// minimum of input range
+    #[signal(default = -1.0)]
     in_min: PolySignal,
     /// maximum of input range
+    #[signal(default = 1.0)]
     in_max: PolySignal,
     /// minimum of output range
+    #[signal(default = -5.0)]
     out_min: PolySignal,
     /// maximum of output range
+    #[signal(default = 5.0)]
     out_max: PolySignal,
 }
 

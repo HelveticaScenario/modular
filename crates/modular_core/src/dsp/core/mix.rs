@@ -35,6 +35,7 @@ pub struct MixParams {
     /// How inputs are combined.
     mode: MixMode,
     /// Final output level.
+    #[signal(default = 5.0, range = (0.0, 10.0))]
     pub amplitude: PolySignal,
 }
 
