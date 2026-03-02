@@ -168,6 +168,14 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                     'The callback receives this output and returns a second signal; both are passed as inputs to $mix.',
                 example: "$saw('c4').pipeMix(s => $lpf(s, '1000hz')).out()",
             },
+            {
+                name: 'range',
+                signature:
+                    'range(outMin: Poly<Signal>, outMax: Poly<Signal>, inMin: Poly<Signal>, inMax: Poly<Signal>): ModuleOutput',
+                description:
+                    'Remap this output from an explicit input range to a new output range. Creates a $remap module internally.',
+                example: "$sine('c4').range(0, 1, -5, 5)",
+            },
         ],
     },
 
@@ -261,10 +269,10 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             {
                 name: 'range',
                 signature:
-                    'range(inMin: Poly<Signal>, inMax: Poly<Signal>, outMin: Poly<Signal>, outMax: Poly<Signal>): Collection',
+                    'range(outMin: Poly<Signal>, outMax: Poly<Signal>, inMin: Poly<Signal>, inMax: Poly<Signal>): Collection',
                 description:
                     'Remap all outputs from input range to output range. Requires explicit input min/max.',
-                example: '$c(lfo1, lfo2).range(-5, 5, 0, 1)',
+                example: '$c(lfo1, lfo2).range(0, 1, -5, 5)',
             },
             {
                 name: 'pipeMix',

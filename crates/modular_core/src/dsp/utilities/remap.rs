@@ -10,10 +10,10 @@ struct RemapParams {
     /// signal input to remap
     input: PolySignal,
     /// minimum of input range
-    #[signal(default = -1.0)]
+    #[signal(default = -5.0)]
     in_min: PolySignal,
     /// maximum of input range
-    #[signal(default = 1.0)]
+    #[signal(default = 5.0)]
     in_max: PolySignal,
     /// minimum of output range
     #[signal(default = -5.0)]
@@ -46,10 +46,12 @@ struct RemapOutputs {
 ///
 /// ```js
 /// // convert a 0–5 V envelope to a -5–5 V bipolar signal
-/// $remap(env, 0, 5, -5, 5)
+/// $remap(env, -5, 5, 0, 5)
 ///
+/// // convert a -5–5 V signal to 0–1 V
+/// $remap(signal, 0, 1, -5, 5)
 /// ```
-#[module(name = "$remap", args(input, inMin?, inMax?, outMin?, outMax?))]
+#[module(name = "$remap", args(input, outMin, outMax, inMin, inMax))]
 #[derive(Default)]
 pub struct Remap {
     outputs: RemapOutputs,
@@ -68,8 +70,8 @@ impl Remap {
             // Smooth range parameters to avoid clicks
             state
                 .in_min
-                .update(self.params.in_min.get_value_or(i, -1.0));
-            state.in_max.update(self.params.in_max.get_value_or(i, 1.0));
+                .update(self.params.in_min.get_value_or(i, -5.0));
+            state.in_max.update(self.params.in_max.get_value_or(i, 5.0));
             state
                 .out_min
                 .update(self.params.out_min.get_value_or(i, -5.0));

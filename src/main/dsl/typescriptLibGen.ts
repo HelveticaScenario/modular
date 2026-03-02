@@ -409,6 +409,18 @@ interface ModuleOutput {
    * $saw('c4').pipeMix(s => $lpf(s, '1000hz'), 1.0).out()
    */
   pipeMix(pipeFn: (self: this) => ModuleOutput | Collection, mix?: Poly<Signal> ): Collection;
+
+  /**
+   * Remap this output from an explicit input range to a new output range.
+   * Creates a $remap module internally.
+   * @param outMin - New minimum as {@link Poly<Signal>}
+   * @param outMax - New maximum as {@link Poly<Signal>}
+   * @param inMin - Input minimum as {@link Poly<Signal>}
+   * @param inMax - Input maximum as {@link Poly<Signal>}
+   * @returns A {@link ModuleOutput} with the remapped signal
+   * @example $sine('c4').range(0, 1, -5, 5)
+   */
+  range(outMin: Poly<Signal>, outMax: Poly<Signal>, inMin: Poly<Signal>, inMax: Poly<Signal>): ModuleOutput;
 }
 
 /**
@@ -514,7 +526,7 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
    * @param outMax - Output maximum as {@link Poly<Signal>}
    * @see {@link CollectionWithRange.range} - for automatic input range
    */
-  range(inMin: Poly<Signal>, inMax: Poly<Signal>, outMin: Poly<Signal>, outMax: Poly<Signal>): Collection;
+  range(outMin: Poly<Signal>, outMax: Poly<Signal>, inMin: Poly<Signal>, inMax: Poly<Signal>): Collection;
 
   /**
    * Pipe this collection through a transform function.

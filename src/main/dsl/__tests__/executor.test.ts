@@ -362,7 +362,7 @@ describe('sequencing', () => {
 
 describe('utilities', () => {
     test('$remap', () => {
-        const patch = execPatch('$remap($sine("C4"), -5, 5, 0, 1).out()');
+        const patch = execPatch('$remap($sine("C4"), 0, 1, -5, 5).out()');
         expect(findModules(patch, '$remap').length).toBe(1);
     });
 

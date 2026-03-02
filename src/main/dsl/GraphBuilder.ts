@@ -209,7 +209,7 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
         // Remap mix from 0-5 to 5-0 for crossfade between original and transformed signals
         return mixFactory([
             this.amplitude(
-                clampFactory(remapFactory(mix, 0, 5, 5, 0), { min: 0, max: 5 }),
+                clampFactory(remapFactory(mix, 5, 0, 0, 5), { min: 0, max: 5 }),
             ),
             result.amplitude(
                 clampFactory(mix, { min: 0, max: 5 }) as Value & PolySignal,
@@ -224,7 +224,7 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
 
 /**
  * Collection of ModuleOutput instances.
- * Use .range(inMin, inMax, outMin, outMax) to remap with explicit input range.
+ * Use .range(outMin, outMax, inMin, inMax) to remap with explicit input range.
  */
 export class Collection extends BaseCollection<ModuleOutput> {
     constructor(...args: ModuleOutput[]) {
@@ -235,17 +235,17 @@ export class Collection extends BaseCollection<ModuleOutput> {
      * Remap outputs from explicit input range to output range
      */
     range(
-        inMin: PolySignal,
-        inMax: PolySignal,
         outMin: PolySignal,
         outMax: PolySignal,
+        inMin: PolySignal,
+        inMax: PolySignal,
     ): Collection {
         if (this.items.length === 0) return new Collection();
         const factory = this.items[0].builder.getFactory('$remap');
         if (!factory) {
             throw new Error('Factory for util.remap not registered');
         }
-        return factory(this.items, inMin, inMax, outMin, outMax) as Collection;
+        return factory(this.items, outMin, outMax, inMin, inMax) as Collection;
     }
 }
 
@@ -269,10 +269,10 @@ export class CollectionWithRange extends BaseCollection<ModuleOutputWithRange> {
         }
         return factory(
             this.items,
-            this.items.map((o) => o.minValue),
-            this.items.map((o) => o.maxValue),
             outMin,
             outMax,
+            this.items.map((o) => o.minValue),
+            this.items.map((o) => o.maxValue),
         ) as Collection;
     }
 }
@@ -935,28 +935,28 @@ export class ModuleOutput {
     /**
      * Scale this output by a factor
      */
-    amplitude(factor: Value): ModuleOutput {
+    amplitude(factor: Value): Collection {
         const factory = this.builder.getFactory('$scaleAndShift');
         if (!factory) {
             throw new Error('Factory for util.scaleAndShift not registered');
         }
-        return factory(this, factor) as ModuleOutput;
+        return factory(this, factor) as Collection;
     }
 
     /** Alias for {@link amplitude} */
-    amp(factor: Value): ModuleOutput {
+    amp(factor: Value): Collection {
         return this.amplitude(factor);
     }
 
     /**
      * Shift this output by an offset
      */
-    shift(offset: Value): ModuleOutput {
+    shift(offset: Value): Collection {
         const factory = this.builder.getFactory('$scaleAndShift');
         if (!factory) {
             throw new Error('Factory for util.scaleAndShift not registered');
         }
-        return factory(this, undefined, offset) as ModuleOutput;
+        return factory(this, undefined, offset) as Collection;
     }
 
     scope(config?: {
@@ -1010,6 +1010,22 @@ export class ModuleOutput {
         return mixFactory([this, result], options) as Collection;
     }
 
+    /**
+     * Remap this output from explicit input range to output range
+     */
+    range(
+        outMin: PolySignal,
+        outMax: PolySignal,
+        inMin: PolySignal,
+        inMax: PolySignal,
+    ): Collection {
+        const factory = this.builder.getFactory('$remap');
+        if (!factory) {
+            throw new Error('Factory for $remap not registered');
+        }
+        return factory(this, outMin, outMax, inMin, inMax) as Collection;
+    }
+
     toString(): string {
         return `module(${this.moduleId}:${this.portName}:${this.channel})`;
     }
@@ -1040,18 +1056,18 @@ export class ModuleOutputWithRange extends ModuleOutput {
      * Remap this output from its known range to a new range.
      * Creates a remap module internally.
      */
-    range(outMin: Value, outMax: Value): ModuleOutput {
+    range(outMin: PolySignal, outMax: PolySignal): Collection {
         const factory = this.builder.getFactory('$remap');
         if (!factory) {
             throw new Error('Factory for remap not registered');
         }
         return factory(
             this,
-            this.minValue,
-            this.maxValue,
             outMin,
             outMax,
-        ) as ModuleOutput;
+            this.minValue,
+            this.maxValue,
+        ) as Collection;
     }
 }
 
