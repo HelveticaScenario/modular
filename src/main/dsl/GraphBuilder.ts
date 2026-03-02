@@ -52,8 +52,8 @@ export type PolySignal = OrArray<Signal> | Iterable<ModuleOutput>;
 export interface StereoOutOptions {
     /** Base output channel (0-14, default 0). Left plays on baseChannel, right on baseChannel+1 */
     baseChannel?: number;
-    /** Output amplitude. If set, a scaleAndShift module is added after the stereo mix */
-    amplitude?: PolySignal;
+    /** Output gain. If set, a scaleAndShift module is added after the stereo mix */
+    gain?: PolySignal;
     /** Pan position (-5 = left, 0 = center, +5 = right). Default 0 */
     pan?: PolySignal;
     /** Stereo width/spread (0 = no spread, 5 = full spread). Default 0 */
@@ -64,15 +64,15 @@ export interface StereoOutOptions {
 export interface MonoOutOptions {
     /** Output channel (0-15, default 0) */
     channel?: number;
-    /** Output amplitude. If set, a scaleAndShift module is added after the mix */
-    amplitude?: PolySignal;
+    /** Output gain. If set, a scaleAndShift module is added after the mix */
+    gain?: PolySignal;
 }
 
 /** Internal storage for a stereo output group */
 export interface StereoOutGroup {
     type: 'stereo';
     outputs: ModuleOutput[];
-    amplitude?: PolySignal;
+    gain?: PolySignal;
     pan?: PolySignal;
     width?: PolySignal;
 }
@@ -81,7 +81,7 @@ export interface StereoOutGroup {
 export interface MonoOutGroup {
     type: 'mono';
     outputs: ModuleOutput[];
-    amplitude?: PolySignal;
+    gain?: PolySignal;
 }
 
 export type OutGroup = StereoOutGroup | MonoOutGroup;
@@ -186,7 +186,7 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
     /**
      * Send all outputs to speakers as stereo
      * @param baseChannel - Base output channel (0-15, default 0)
-     * @param options.amplitude - Output amplitude (adds scaleAndShift after stereo mix)
+     * @param options.gain - Output gain
      * @param options.pan - Pan position (-5 = left, 0 = center, +5 = right)
      * @param options.width - Stereo width/spread (0 = no spread, 5 = full spread)
      */
@@ -203,13 +203,13 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
     /**
      * Send all outputs to speakers as mono
      * @param channel - Output channel (0-15, default 0)
-     * @param amplitude - Output amplitude
+     * @param gain - Output gain
      */
-    outMono(channel: number = 0, amplitude?: PolySignal): this {
+    outMono(channel: number = 0, gain?: PolySignal): this {
         if (this.items.length > 0) {
             this.items[0].builder.addOutMono([...this.items], {
                 channel,
-                amplitude,
+                gain,
             });
         }
         return this;
@@ -374,8 +374,8 @@ export class GraphBuilder {
     private deferredOutputs: Map<string, DeferredModuleOutput> = new Map();
     /** Global tempo for ROOT_CLOCK in BPM (default: 120) */
     private tempo: number = 120;
-    /** Global output amplitude signal (default: 2.5) */
-    private outputAmplitude: Signal = 2.5;
+    /** Global output gain signal (default: 2.5) */
+    private outputGain: Signal = 2.5;
     /** Time signature numerator (beats per bar) for ROOT_CLOCK */
     private timeSignatureNumerator: number | undefined;
     /** Time signature denominator (beat value) for ROOT_CLOCK */
@@ -495,11 +495,11 @@ export class GraphBuilder {
     }
 
     /**
-     * Set the global output amplitude
-     * @param amplitude - Signal value for output amplitude (2.5 is default, 5.0 is unity)
+     * Set the global output gain
+     * @param gain - Signal value for output gain (2.5 is default, 5.0 is unity)
      */
-    setOutputAmplitude(amplitude: Signal): void {
-        this.outputAmplitude = amplitude;
+    setOutputGain(gain: Signal): void {
+        this.outputGain = gain;
     }
 
     /**
@@ -568,10 +568,10 @@ export class GraphBuilder {
                             width: group.width ?? 0,
                         }) as Collection;
 
-                        // Apply amplitude if specified
-                        if (group.amplitude !== undefined) {
+                        // Apply gain if specified
+                        if (group.gain !== undefined) {
                             const curvedAmp = curveFactory(
-                                group.amplitude,
+                                group.gain,
                                 GAIN_CURVE_EXP,
                             );
                             const gained = scaleAndShiftFactory(
@@ -591,11 +591,11 @@ export class GraphBuilder {
                             }) as Collection
                         )[0];
 
-                        // Apply amplitude if specified
+                        // Apply gain if specified
                         let finalOut: ModuleOutput;
-                        if (group.amplitude !== undefined) {
+                        if (group.gain !== undefined) {
                             const curvedAmp = curveFactory(
-                                group.amplitude,
+                                group.gain,
                                 GAIN_CURVE_EXP,
                             );
                             finalOut = scaleAndShiftFactory(
@@ -627,8 +627,8 @@ export class GraphBuilder {
             // Each collection contributes to corresponding output channels
             const finalMix = mixFactory(allChannelCollections) as Collection;
 
-            // Apply global output amplitude
-            const gainedMix = finalMix.gain(this.outputAmplitude);
+            // Apply global output gain
+            const gainedMix = finalMix.gain(this.outputGain);
 
             // Create root signal module with the final mix
             signalFactory(gainedMix, { id: 'ROOT_OUTPUT' });
@@ -722,7 +722,7 @@ export class GraphBuilder {
         this.sourceLocationMap.clear();
         this.deferredOutputs.clear();
         this.tempo = 120;
-        this.outputAmplitude = 2.5;
+        this.outputGain = 2.5;
         this.timeSignatureNumerator = undefined;
         this.timeSignatureDenominator = undefined;
     }
@@ -751,7 +751,7 @@ export class GraphBuilder {
         const group: StereoOutGroup = {
             type: 'stereo',
             outputs,
-            amplitude: options.amplitude,
+            gain: options.gain,
             pan: options.pan,
             width: options.width,
         };
@@ -777,7 +777,7 @@ export class GraphBuilder {
         const group: MonoOutGroup = {
             type: 'mono',
             outputs,
-            amplitude: options.amplitude,
+            gain: options.gain,
         };
 
         const existing = this.outGroups.get(channel) ?? [];
@@ -1042,7 +1042,7 @@ export class ModuleOutput {
     /**
      * Send this output to speakers as stereo
      * @param baseChannel - Base output channel (0-15, default 0)
-     * @param options.amplitude - Output amplitude (adds util.scaleAndShift after stereo mix)
+     * @param options.gain - Output gain (adds util.scaleAndShift after stereo mix)
      * @param options.pan - Pan position (-5 = left, 0 = center, +5 = right)
      * @param options.width - Stereo width/spread (0 = no spread, 5 = full spread)
      */
@@ -1054,10 +1054,10 @@ export class ModuleOutput {
     /**
      * Send this output to speakers as mono
      * @param channel - Output channel (0-15, default 0)
-     * @param amplitude - Output amplitude
+     * @param gain - Output gain
      */
-    outMono(channel: number = 0, amplitude?: PolySignal): this {
-        this.builder.addOutMono(this, { channel, amplitude });
+    outMono(channel: number = 0, gain?: PolySignal): this {
+        this.builder.addOutMono(this, { channel, gain });
         return this;
     }
 

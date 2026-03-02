@@ -293,8 +293,8 @@ type Mono<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
  * @see {@link Collection.out}
  */
 interface StereoOutOptions {
-  /** Output amplitude. If set, a util.scaleAndShift module is added after the stereo mix */
-  amplitude?: Poly<Signal>;
+  /** Output gain. If set, a util.scaleAndShift module is added after the stereo mix */
+  gain?: Poly<Signal>;
   /** Pan position (-5 = left, 0 = center, +5 = right). Default 0 */
   pan?: Poly<Signal>;
   /** Stereo width/spread (0 = no spread, 5 = full spread). Default 0 */
@@ -377,17 +377,17 @@ interface ModuleOutput {
    * Send this output to speakers as stereo.
    * @param baseChannel - Base output channel (0-15, default 0). Left plays on baseChannel, right on baseChannel+1
    * @param options - Stereo output options ({@link StereoOutOptions})
-   * @example osc.out(0, { amplitude: 0.5, pan: -2 })
+   * @example osc.out(0, { gain: 2.5, pan: -2 })
    */
   out(baseChannel?: number, options?: StereoOutOptions): this;
   
   /**
    * Send this output to speakers as mono.
    * @param channel - Output channel (0-15, default 0)
-    * @param amplitude - Output amplitude as {@link Poly<Signal>} (optional)
+    * @param gain - Output gain as {@link Poly<Signal>} (optional)
     * @example lfo.outMono(2, 0.3)
     */
-   outMono(channel?: number, amplitude?: Poly<Signal>): this;
+   outMono(channel?: number, gain?: Poly<Signal>): this;
 
   /**
    * Pipe this output through a transform function.
@@ -543,9 +543,9 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
   /**
    * Send all outputs to speakers as mono, summed together.
    * @param channel - Output channel (0-15, default 0)
-    * @param amplitude - Output amplitude as {@link Poly<Signal>} (optional)
+    * @param gain - Output gain as {@link Poly<Signal>} (optional)
     */
-   outMono(channel?: number, amplitude?: Poly<Signal>): this;
+   outMono(channel?: number, gain?: Poly<Signal>): this;
 
 
   /**
@@ -714,13 +714,13 @@ function $r(...args: (ModuleOutputWithRange | Iterable<ModuleOutputWithRange>)[]
 function $setTempo(tempo: number): void;
 
 /**
- * Set the global output amplitude applied to the final mix.
- * @param amplitude - Amplitude as a Mono<Signal> (2.5 is default, 5.0 is unity)
- * @example $setOutputAmplitude(2.5) // 50% amplitude (default)
- * @example $setOutputAmplitude(5.0) // unity
- * @example $setOutputAmplitude(env.out) // modulate amplitude from envelope
+ * Set the global output gain applied to the final mix.
+ * @param gain - Gain as a Mono<Signal> (2.5 is default, 5.0 is unity)
+ * @example $setOutputGain(2.5) // 50% gain (default)
+ * @example $setOutputGain(5.0) // unity
+ * @example $setOutputGain(env.out) // modulate gain from envelope
  */
-function $setOutputAmplitude(amplitude: Mono<Signal>): void;
+function $setOutputGain(gain: Mono<Signal>): void;
 
 /**
  * Set the time signature for the root clock.

@@ -481,8 +481,8 @@ describe('global settings', () => {
         expect(() => execPatch('$setTempo(140)')).not.toThrow();
     });
 
-    test('$setOutputAmplitude does not throw', () => {
-        expect(() => execPatch('$setOutputAmplitude(5.0)')).not.toThrow();
+    test('$setOutputGain does not throw', () => {
+        expect(() => execPatch('$setOutputGain(5.0)')).not.toThrow();
     });
 });
 
