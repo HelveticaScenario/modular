@@ -127,11 +127,18 @@ impl Supersaw {
         let gain = 5.0 / (input_channels as f32).sqrt();
 
         // Voice interpolation factor (precompute per voice)
+        // Interleaved ordering: first half of voices gets even detune positions,
+        // second half gets odd positions. This ensures each half contains a
+        // balanced spread across the full detune range, so splitting voices
+        // into two groups (e.g. for stereo panning) gives symmetric detuning
+        // on each side — matching Strudel's alternating L/R distribution.
         let voice_t: [f32; PORT_MAX_CHANNELS] = {
             let mut t = [0.0f32; PORT_MAX_CHANNELS];
+            let half = (voices + 1) / 2;
             for v in 0..voices {
+                let linear_pos = if v < half { v * 2 } else { (v - half) * 2 + 1 };
                 t[v] = if voices > 1 {
-                    v as f32 / (voices - 1) as f32
+                    linear_pos as f32 / (voices - 1) as f32
                 } else {
                     0.5 // centered, offset will be 0
                 };
