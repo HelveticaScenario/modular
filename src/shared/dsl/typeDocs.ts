@@ -135,6 +135,20 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 example: 'lfo.shift(2.5)  // Shift LFO to 0-5V range',
             },
             {
+                name: 'gain',
+                signature: 'gain(level: Poly<Signal>): ModuleOutput',
+                description:
+                    'Scale the signal with a perceptual (audio taper) curve. Chains $curve and $scaleAndShift internally with exponent 3.',
+                example: 'osc.gain(2.5)  // Perceptual half volume',
+            },
+            {
+                name: 'exp',
+                signature: 'exp(factor?: Poly<Signal>): ModuleOutput',
+                description:
+                    'Apply a power curve to the signal. Creates a $curve module internally. Default exponent is 3.',
+                example: 'lfo.exp(2)  // Quadratic curve',
+            },
+            {
                 name: 'scope',
                 signature:
                     'scope(config?: { msPerFrame?: number; triggerThreshold?: number; range?: [number, number] }): this',
@@ -241,6 +255,20 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 description:
                     'Add a DC offset to all signals in the collection.',
                 example: '$c(lfo1, lfo2).shift(2.5)',
+            },
+            {
+                name: 'gain',
+                signature: 'gain(level: Poly<Signal>): Collection',
+                description:
+                    'Scale all signals with a perceptual (audio taper) curve.',
+                example: '$c(osc1, osc2).gain(2.5)',
+            },
+            {
+                name: 'exp',
+                signature: 'exp(factor?: Poly<Signal>): Collection',
+                description:
+                    'Apply a power curve to all signals in the collection. Default exponent is 3.',
+                example: '$c(lfo1, lfo2).exp(2)',
             },
             {
                 name: 'scope',

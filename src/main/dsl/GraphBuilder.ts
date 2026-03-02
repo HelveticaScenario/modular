@@ -13,6 +13,9 @@ import z from 'zod';
 
 export const PORT_MAX_CHANNELS = 16;
 
+/** Exponent used by .gain() for perceptual amplitude curve */
+const GAIN_CURVE_EXP = 3;
+
 /**
  * Scope with an optional source location captured at call time.
  * The base Scope type comes from Rust (napi); the extra field is
@@ -133,6 +136,35 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
             throw new Error('Factory for util.scaleAndShift not registered');
         }
         return factory(this.items, undefined, offset) as Collection;
+    }
+
+    /**
+     * Scale all outputs by a factor with a perceptual (audio taper) curve.
+     * Chains $curve → $scaleAndShift with exponent 3.
+     */
+    gain(level: PolySignal): Collection {
+        if (this.items.length === 0) return new Collection();
+        const curveFactory = this.items[0].builder.getFactory('$curve');
+        const scaleFactory = this.items[0].builder.getFactory('$scaleAndShift');
+        if (!curveFactory || !scaleFactory) {
+            throw new Error(
+                'Factory for $curve or $scaleAndShift not registered',
+            );
+        }
+        const curvedLevel = curveFactory(level, GAIN_CURVE_EXP);
+        return scaleFactory(this.items, curvedLevel) as Collection;
+    }
+
+    /**
+     * Apply a power curve to all outputs. Creates a $curve module internally.
+     */
+    exp(factor: PolySignal = GAIN_CURVE_EXP): Collection {
+        if (this.items.length === 0) return new Collection();
+        const factory = this.items[0].builder.getFactory('$curve');
+        if (!factory) {
+            throw new Error('Factory for $curve not registered');
+        }
+        return factory(this.items, factor) as Collection;
     }
 
     /**
@@ -499,15 +531,17 @@ export class GraphBuilder {
         const mixFactory = this.getFactory('$mix');
         const stereoMixerFactory = this.getFactory('$stereoMix');
         const scaleAndShiftFactory = this.getFactory('$scaleAndShift');
+        const curveFactory = this.getFactory('$curve');
 
         if (
             !signalFactory ||
             !mixFactory ||
             !stereoMixerFactory ||
-            !scaleAndShiftFactory
+            !scaleAndShiftFactory ||
+            !curveFactory
         ) {
             throw new Error(
-                'Required factories (signal, mix, stereoMixer, util.scaleAndShift) not registered',
+                'Required factories (signal, mix, stereoMixer, util.scaleAndShift, curve) not registered',
             );
         }
 
@@ -536,9 +570,13 @@ export class GraphBuilder {
 
                         // Apply amplitude if specified
                         if (group.amplitude !== undefined) {
+                            const curvedAmp = curveFactory(
+                                group.amplitude,
+                                GAIN_CURVE_EXP,
+                            );
                             const gained = scaleAndShiftFactory(
                                 [...stereoOut],
-                                group.amplitude,
+                                curvedAmp,
                             ) as Collection;
                             outputSignals = [...gained];
                         } else {
@@ -556,9 +594,13 @@ export class GraphBuilder {
                         // Apply amplitude if specified
                         let finalOut: ModuleOutput;
                         if (group.amplitude !== undefined) {
+                            const curvedAmp = curveFactory(
+                                group.amplitude,
+                                GAIN_CURVE_EXP,
+                            );
                             finalOut = scaleAndShiftFactory(
                                 mixOut,
-                                group.amplitude,
+                                curvedAmp,
                             ) as ModuleOutput;
                         } else {
                             finalOut = mixOut;
@@ -586,7 +628,7 @@ export class GraphBuilder {
             const finalMix = mixFactory(allChannelCollections) as Collection;
 
             // Apply global output amplitude
-            const gainedMix = finalMix.amplitude(this.outputAmplitude);
+            const gainedMix = finalMix.gain(this.outputAmplitude);
 
             // Create root signal module with the final mix
             signalFactory(gainedMix, { id: 'ROOT_OUTPUT' });
@@ -957,6 +999,33 @@ export class ModuleOutput {
             throw new Error('Factory for util.scaleAndShift not registered');
         }
         return factory(this, undefined, offset) as Collection;
+    }
+
+    /**
+     * Scale this output by a factor with a perceptual (audio taper) curve.
+     * Chains $curve → $scaleAndShift with exponent 3.
+     */
+    gain(level: Value): Collection {
+        const curveFactory = this.builder.getFactory('$curve');
+        const scaleFactory = this.builder.getFactory('$scaleAndShift');
+        if (!curveFactory || !scaleFactory) {
+            throw new Error(
+                'Factory for $curve or $scaleAndShift not registered',
+            );
+        }
+        const curvedLevel = curveFactory(level, GAIN_CURVE_EXP);
+        return scaleFactory(this, curvedLevel) as Collection;
+    }
+
+    /**
+     * Apply a power curve to this output. Creates a $curve module internally.
+     */
+    exp(factor: Value = GAIN_CURVE_EXP): Collection {
+        const factory = this.builder.getFactory('$curve');
+        if (!factory) {
+            throw new Error('Factory for $curve not registered');
+        }
+        return factory(this, factor) as Collection;
     }
 
     scope(config?: {

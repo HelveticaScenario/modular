@@ -589,3 +589,96 @@ fn from_graph_process_frame_advances_all_modules() {
         "slow osc should oscillate, trough={slow_mn}"
     );
 }
+
+// ─── Curve ───────────────────────────────────────────────────────────────────
+
+#[test]
+fn curve_linear_passthrough() {
+    // exp=1 should be linear: output ≈ input
+    let m = make_module("$curve", "curve-1");
+    set_params(&**m, json!({ "input": 3.0, "exp": 1.0 }), 1);
+    for _ in 0..500 {
+        step(&**m);
+    }
+    let sample = m.get_poly_sample(DEFAULT_PORT).unwrap().get(0);
+    assert!(
+        approx_eq(sample, 3.0, 0.1),
+        "exp=1 should pass through, got {sample}"
+    );
+}
+
+#[test]
+fn curve_unity_at_5v() {
+    // At 5V input, output should be 5V regardless of exponent
+    let m = make_module("$curve", "curve-2");
+    set_params(&**m, json!({ "input": 5.0, "exp": 3.0 }), 1);
+    for _ in 0..500 {
+        step(&**m);
+    }
+    let sample = m.get_poly_sample(DEFAULT_PORT).unwrap().get(0);
+    assert!(
+        approx_eq(sample, 5.0, 0.1),
+        "5V should stay 5V, got {sample}"
+    );
+}
+
+#[test]
+fn curve_cubic_midpoint() {
+    // exp=3, input=2.5: output = 5 * (2.5/5)^3 = 5 * 0.125 = 0.625
+    let m = make_module("$curve", "curve-3");
+    set_params(&**m, json!({ "input": 2.5, "exp": 3.0 }), 1);
+    for _ in 0..500 {
+        step(&**m);
+    }
+    let sample = m.get_poly_sample(DEFAULT_PORT).unwrap().get(0);
+    assert!(
+        approx_eq(sample, 0.625, 0.1),
+        "expected ~0.625, got {sample}"
+    );
+}
+
+#[test]
+fn curve_preserves_sign() {
+    // Negative input should produce negative output
+    let m = make_module("$curve", "curve-4");
+    set_params(&**m, json!({ "input": -2.5, "exp": 2.0 }), 1);
+    for _ in 0..500 {
+        step(&**m);
+    }
+    let sample = m.get_poly_sample(DEFAULT_PORT).unwrap().get(0);
+    // sign(-2.5) * 5 * (2.5/5)^2 = -1 * 5 * 0.25 = -1.25
+    assert!(
+        approx_eq(sample, -1.25, 0.1),
+        "expected ~-1.25, got {sample}"
+    );
+}
+
+#[test]
+fn curve_zero_input() {
+    // Zero input should produce zero output
+    let m = make_module("$curve", "curve-5");
+    set_params(&**m, json!({ "input": 0.0, "exp": 3.0 }), 1);
+    for _ in 0..500 {
+        step(&**m);
+    }
+    let sample = m.get_poly_sample(DEFAULT_PORT).unwrap().get(0);
+    assert!(
+        approx_eq(sample, 0.0, 0.01),
+        "0V input should produce 0V, got {sample}"
+    );
+}
+
+#[test]
+fn curve_exp_zero_step_function() {
+    // exp=0: any nonzero input → ±5V
+    let m = make_module("$curve", "curve-6");
+    set_params(&**m, json!({ "input": 1.0, "exp": 0.0 }), 1);
+    for _ in 0..500 {
+        step(&**m);
+    }
+    let sample = m.get_poly_sample(DEFAULT_PORT).unwrap().get(0);
+    assert!(
+        approx_eq(sample, 5.0, 0.1),
+        "exp=0 nonzero input should → 5V, got {sample}"
+    );
+}

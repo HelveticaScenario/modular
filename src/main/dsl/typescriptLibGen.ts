@@ -343,6 +343,23 @@ interface ModuleOutput {
    * @example lfo.shift(2.5)  // Shift to 0-5V range
    */
   shift(offset: Poly<Signal>): Collection;
+
+  /**
+   * Scale the signal by a factor with a perceptual (audio taper) curve.
+   * Chains \\$curve → \\$scaleAndShift with exponent 3.
+   * @param level - Amplitude level as {@link Poly<Signal>}
+   * @returns The scaled {@link Collection} for chaining
+   * @example osc.gain(2.5)  // Perceptual half volume
+   */
+  gain(level: Poly<Signal>): Collection;
+
+  /**
+   * Apply a power curve to this signal. Creates a \\$curve module internally.
+   * @param factor - Exponent for the curve (default 3)
+   * @returns The curved {@link Collection} for chaining
+   * @example lfo.exp(2)  // Quadratic curve
+   */
+  exp(factor?: Poly<Signal>): Collection;
   
   /**
    * Add scope visualization for this output.
@@ -491,6 +508,20 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
    * @see {@link ModuleOutput.shift}
    */
   shift(offset: Poly<Signal>): Collection;
+
+  /**
+   * Scale all signals by a factor with a perceptual (audio taper) curve.
+   * @param level - Amplitude level as {@link Poly<Signal>}
+   * @see {@link ModuleOutput.gain}
+   */
+  gain(level: Poly<Signal>): Collection;
+
+  /**
+   * Apply a power curve to all signals. Creates a \\$curve module internally.
+   * @param factor - Exponent for the curve (default 3)
+   * @see {@link ModuleOutput.exp}
+   */
+  exp(factor?: Poly<Signal>): Collection;
 
   /**
    * Add scope visualization for the first output in the collection.

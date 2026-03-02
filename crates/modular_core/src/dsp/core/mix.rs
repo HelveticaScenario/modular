@@ -34,7 +34,7 @@ pub struct MixParams {
     pub inputs: Vec<PolySignal>,
     /// How inputs are combined.
     mode: MixMode,
-    /// Final output level.
+    /// Final output level (perceptual curve, exponent 3).
     #[signal(default = 5.0, range = (0.0, 10.0))]
     pub amplitude: PolySignal,
 }
@@ -164,7 +164,10 @@ impl Mix {
         for i in 0..output_channels {
             let pre_amplitude_index = i % max_input_channels;
             let pre_amplitude_value = pre_amplitude_values[pre_amplitude_index];
-            self.amplitude_buffer[i].update(amplitude.get_value_or(i, 5.0) / 5.0);
+            let amp_val = amplitude.get_value_or(i, 5.0);
+            let normalized = (amp_val.abs() / 5.0).max(0.0);
+            let curved = amp_val.signum() * normalized.powf(3.0);
+            self.amplitude_buffer[i].update(curved);
             let amplitude_value = *self.amplitude_buffer[i];
             self.outputs
                 .sample
@@ -273,12 +276,12 @@ mod tests {
         mixer.update(48000.0);
         // Output channels = max(2 input channels, 3 amplitude channels) = 3
         assert_eq!(mixer.outputs.sample.channels(), 3);
-        // Channel 0: (5 + 10) * 1 (normalized from 5) = 15
+        // Channel 0: (5 + 10) * (5/5)^3 = 15 * 1.0 = 15
         assert_eq!(mixer.outputs.sample.get(0), 15.0);
-        // Channel 1: (0 + 20) * 2 (normalized from 10) = 40
-        assert_eq!(mixer.outputs.sample.get(1), 40.0);
-        // Channel 2: pre_amplitude cycles from channel 0 (15 pre-amplitude), amplitude[2] = 0.5 (normalized from 2.5) -> 15 * 0.5 = 7.5
-        assert_eq!(mixer.outputs.sample.get(2), 7.5);
+        // Channel 1: (0 + 20) * (10/5)^3 = 20 * 8.0 = 160
+        assert_eq!(mixer.outputs.sample.get(1), 160.0);
+        // Channel 2: pre_amplitude cycles from channel 0 (15 pre-amplitude), amplitude[2] = (2.5/5)^3 = 0.125 -> 15 * 0.125 = 1.875
+        assert_eq!(mixer.outputs.sample.get(2), 1.875);
     }
 
     #[test]

@@ -6,6 +6,7 @@ use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor}
 pub mod adsr;
 pub mod clamp;
 pub mod clock_divider;
+pub mod curve;
 pub mod lag;
 pub mod logic;
 pub mod math;
@@ -26,6 +27,7 @@ pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     adsr::Adsr::install_constructor(map);
     clamp::Clamp::install_constructor(map);
     clock_divider::ClockDivider::install_constructor(map);
+    curve::Curve::install_constructor(map);
     lag::LagProcessor::install_constructor(map);
     logic::RisingEdgeDetector::install_constructor(map);
     logic::FallingEdgeDetector::install_constructor(map);
@@ -44,6 +46,7 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     adsr::Adsr::install_params_validator(map);
     clamp::Clamp::install_params_validator(map);
     clock_divider::ClockDivider::install_params_validator(map);
+    curve::Curve::install_params_validator(map);
     lag::LagProcessor::install_params_validator(map);
     logic::RisingEdgeDetector::install_params_validator(map);
     logic::FallingEdgeDetector::install_params_validator(map);
@@ -62,6 +65,7 @@ pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer
     adsr::Adsr::install_params_deserializer(map);
     clamp::Clamp::install_params_deserializer(map);
     clock_divider::ClockDivider::install_params_deserializer(map);
+    curve::Curve::install_params_deserializer(map);
     lag::LagProcessor::install_params_deserializer(map);
     logic::RisingEdgeDetector::install_params_deserializer(map);
     logic::FallingEdgeDetector::install_params_deserializer(map);
@@ -81,6 +85,7 @@ pub fn schemas() -> Vec<ModuleSchema> {
         adsr::Adsr::get_schema(),
         clamp::Clamp::get_schema(),
         clock_divider::ClockDivider::get_schema(),
+        curve::Curve::get_schema(),
         lag::LagProcessor::get_schema(),
         logic::RisingEdgeDetector::get_schema(),
         logic::FallingEdgeDetector::get_schema(),

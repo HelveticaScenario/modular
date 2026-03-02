@@ -284,6 +284,25 @@ describe('chaining methods', () => {
         expect(findModules(patch, '$scaleAndShift').length).toBeGreaterThan(0);
     });
 
+    test('.gain() creates curve and scaleAndShift modules', () => {
+        const patch = execPatch('$sine("C4").gain(2.5).out()');
+        expect(findModules(patch, '$sine').length).toBe(1);
+        expect(findModules(patch, '$curve').length).toBeGreaterThan(0);
+        expect(findModules(patch, '$scaleAndShift').length).toBeGreaterThan(0);
+    });
+
+    test('.exp() creates a curve module', () => {
+        const patch = execPatch('$sine("C4").exp(2).out()');
+        expect(findModules(patch, '$sine').length).toBe(1);
+        expect(findModules(patch, '$curve').length).toBeGreaterThan(0);
+    });
+
+    test('.exp() with default factor creates a curve module', () => {
+        const patch = execPatch('$sine("C4").exp().out()');
+        expect(findModules(patch, '$sine').length).toBe(1);
+        expect(findModules(patch, '$curve').length).toBeGreaterThan(0);
+    });
+
     test('.scope() adds a scope entry', () => {
         const patch = execPatch('$sine("C4").scope().out()');
         expect(findModules(patch, '$sine').length).toBe(1);
@@ -369,6 +388,11 @@ describe('utilities', () => {
     test('$scaleAndShift', () => {
         const patch = execPatch('$scaleAndShift($sine("C4"), 0.5, 2.5).out()');
         expect(findModules(patch, '$scaleAndShift').length).toBeGreaterThan(0);
+    });
+
+    test('$curve', () => {
+        const patch = execPatch('$curve($sine("C4"), 2).out()');
+        expect(findModules(patch, '$curve').length).toBeGreaterThan(0);
     });
 
     test('$sah (sample and hold)', () => {

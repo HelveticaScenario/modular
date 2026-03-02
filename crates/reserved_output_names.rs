@@ -18,6 +18,8 @@ const RESERVED_OUTPUT_NAMES: &[&str] = &[
     // ModuleOutput methods
     "amplitude",
     "amp",
+    "exp",
+    "gain",
     "shift",
     "scope",
     "out",
