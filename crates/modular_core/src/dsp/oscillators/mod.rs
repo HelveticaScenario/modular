@@ -11,6 +11,7 @@ pub mod plaits;
 pub mod pulse;
 pub mod saw;
 pub mod sine;
+pub mod supersaw;
 
 pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     sine::SineOscillator::install_constructor(map);
@@ -21,6 +22,7 @@ pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     p_pulse::PPulseOscillator::install_constructor(map);
     noise::Noise::install_constructor(map);
     plaits::Plaits::install_constructor(map);
+    supersaw::Supersaw::install_constructor(map);
 }
 
 pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
@@ -33,6 +35,7 @@ pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
     noise::Noise::install_params_validator(map);
 
     plaits::Plaits::install_params_validator(map);
+    supersaw::Supersaw::install_params_validator(map);
 }
 
 pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer>) {
@@ -44,6 +47,7 @@ pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer
     p_pulse::PPulseOscillator::install_params_deserializer(map);
     noise::Noise::install_params_deserializer(map);
     plaits::Plaits::install_params_deserializer(map);
+    supersaw::Supersaw::install_params_deserializer(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {
@@ -56,5 +60,6 @@ pub fn schemas() -> Vec<ModuleSchema> {
         p_pulse::PPulseOscillator::get_schema(),
         noise::Noise::get_schema(),
         plaits::Plaits::get_schema(),
+        supersaw::Supersaw::get_schema(),
     ]
 }
