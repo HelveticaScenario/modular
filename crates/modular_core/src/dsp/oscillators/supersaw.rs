@@ -19,6 +19,7 @@ struct SupersawParams {
     #[serde(default = "default_voices")]
     voices: usize,
     /// detune spread in semitones (default 0.18)
+    #[signal(type = control, default = 0.18, range = (0, 12))]
     detune: PolySignal,
 }
 
@@ -53,13 +54,12 @@ pub fn supersaw_derive_channel_count(params: &SupersawParams) -> usize {
 /// $supersaw('c3').out()
 /// $supersaw('c3', { voices: 7, detune: 0.3 }).out()
 /// ```
-#[module(name = "$supersaw", channels_derive = supersaw_derive_channel_count, args(freq))]
+#[module(name = "$supersaw", channels_derive = supersaw_derive_channel_count, has_init, args(freq))]
 pub struct Supersaw {
     outputs: SupersawOutputs,
     params: SupersawParams,
     /// Phase state for matrix mixing: indexed as [input_ch * PORT_MAX_CHANNELS + voice]
     osc_states: [f32; PORT_MAX_CHANNELS * PORT_MAX_CHANNELS],
-    phases_initialized: bool,
     rng_state: u32,
 }
 
@@ -69,7 +69,6 @@ impl Default for Supersaw {
             outputs: SupersawOutputs::default(),
             params: SupersawParams::default(),
             osc_states: [0.0; PORT_MAX_CHANNELS * PORT_MAX_CHANNELS],
-            phases_initialized: false,
             rng_state: 0,
             _channel_count: 0,
         }
@@ -111,6 +110,13 @@ fn rand_phase(state: &mut u32) -> f32 {
 }
 
 impl Supersaw {
+    fn init(&mut self, _sample_rate: f32) {
+        self.rng_state = self as *const Self as usize as u32;
+        for i in 0..self.osc_states.len() {
+            self.osc_states[i] = rand_phase(&mut self.rng_state);
+        }
+    }
+
     fn update(&mut self, sample_rate: f32) {
         let voices = self.params.voices.clamp(1, PORT_MAX_CHANNELS);
         let input_channels = if self.params.freq.is_disconnected() {
@@ -118,22 +124,6 @@ impl Supersaw {
         } else {
             self.params.freq.channels().max(1)
         };
-
-        // Initialize phases with random values on first update
-        if !self.phases_initialized {
-            // Seed from pointer to self for uniqueness across instances
-            // (conditional allows tests to preset a seed)
-            if self.rng_state == 0 {
-                self.rng_state = (self as *const Self as usize as u32).wrapping_add(0xDEAD_BEEF);
-                if self.rng_state == 0 {
-                    self.rng_state = 0xDEAD_BEEF;
-                }
-            }
-            for i in 0..self.osc_states.len() {
-                self.osc_states[i] = rand_phase(&mut self.rng_state);
-            }
-            self.phases_initialized = true;
-        }
 
         let inv_sample_rate = 1.0 / sample_rate;
 
@@ -209,7 +199,6 @@ mod tests {
             params,
             outputs,
             osc_states: [0.0; PORT_MAX_CHANNELS * PORT_MAX_CHANNELS],
-            phases_initialized: false,
             rng_state: 0,
             _channel_count: channels,
         }
@@ -285,8 +274,7 @@ mod tests {
             voices: 3,
             detune: PolySignal::mono(Signal::Volts(0.0)),
         });
-        // Force known phases
-        s_no_detune.phases_initialized = true;
+        // Force known phases (overwrite whatever init set)
         for i in 0..PORT_MAX_CHANNELS * PORT_MAX_CHANNELS {
             s_no_detune.osc_states[i] = 0.25;
         }
@@ -296,7 +284,6 @@ mod tests {
             voices: 3,
             detune: PolySignal::mono(Signal::Volts(2.0)),
         });
-        s_detune.phases_initialized = true;
         for i in 0..PORT_MAX_CHANNELS * PORT_MAX_CHANNELS {
             s_detune.osc_states[i] = 0.25;
         }
@@ -331,8 +318,8 @@ mod tests {
             voices: 4,
             detune: PolySignal::mono(Signal::Volts(0.0)),
         });
-        // Trigger phase initialization
-        s.update(48000.0);
+        // Trigger phase initialization via init()
+        s.init(48000.0);
 
         // Check that at least some initial phases differ
         // (statistically extremely unlikely all 4 are identical)
@@ -350,7 +337,6 @@ mod tests {
             detune: PolySignal::mono(Signal::Volts(0.0)),
         });
         // Force known phases, zero detune -> all voices should produce identical output
-        s.phases_initialized = true;
         for i in 0..PORT_MAX_CHANNELS * PORT_MAX_CHANNELS {
             s.osc_states[i] = 0.5;
         }
@@ -380,7 +366,6 @@ mod tests {
             voices: 1,
             detune: PolySignal::mono(Signal::Volts(0.0)),
         });
-        s1.phases_initialized = true;
         // Set phase to 0.75 -> naive saw = 2*0.75 - 1 = 0.5
         s1.osc_states[0] = 0.75;
         s1.update(48000.0);
@@ -397,7 +382,6 @@ mod tests {
             voices: 1,
             detune: PolySignal::mono(Signal::Volts(0.0)),
         });
-        s4.phases_initialized = true;
         // Set all 4 input channel phases identically
         for input_ch in 0..4 {
             s4.osc_states[input_ch * PORT_MAX_CHANNELS] = 0.75;
