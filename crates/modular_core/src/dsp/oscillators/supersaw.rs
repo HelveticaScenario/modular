@@ -51,9 +51,9 @@ pub fn supersaw_derive_channel_count(params: &SupersawParams) -> usize {
 ///
 /// ```js
 /// $supersaw('c3').out()
-/// $supersaw('c3', 7, 0.3).out()
+/// $supersaw('c3', { voices: 7, detune: 0.3 }).out()
 /// ```
-#[module(name = "$supersaw", channels_derive = supersaw_derive_channel_count, args(freq, voices?, detune?))]
+#[module(name = "$supersaw", channels_derive = supersaw_derive_channel_count, args(freq))]
 pub struct Supersaw {
     outputs: SupersawOutputs,
     params: SupersawParams,
