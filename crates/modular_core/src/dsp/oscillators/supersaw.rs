@@ -119,11 +119,7 @@ impl Supersaw {
 
     fn update(&mut self, sample_rate: f32) {
         let voices = self.params.voices.clamp(1, PORT_MAX_CHANNELS);
-        let input_channels = if self.params.freq.is_disconnected() {
-            1
-        } else {
-            self.params.freq.channels().max(1)
-        };
+        let input_channels = self.params.freq.channels().max(1);
 
         let inv_sample_rate = 1.0 / sample_rate;
 
