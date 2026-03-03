@@ -577,27 +577,45 @@ registerIPCHandler(
     (source, sourceId, trigger): DSLExecuteResult => {
         try {
             const schemas = getSchemas();
+
+            // Get or cache the DSL lib source for TypeScript compilation
+            if (!cachedLibSource) {
+                cachedLibSource = buildLibSource(schemas);
+            }
+
             const {
                 patch,
                 sourceLocationMap,
                 interpolationResolutions,
                 sliders,
                 callSiteSpans,
-            } = executePatchScript(source, schemas);
-            patch.moduleIdRemaps = [];
+                typeErrors,
+            } = executePatchScript(source, schemas, cachedLibSource);
+
+            // If type errors, return early — execution was blocked
+            if (typeErrors) {
+                return {
+                    success: false,
+                    typeErrors,
+                };
+            }
+
+            // After the type-error guard above, these are guaranteed to be defined.
+            // TypeScript can't narrow destructured variables, so use non-null assertions.
+            patch!.moduleIdRemaps = [];
 
             // Convert Map to Record for IPC serialization
             const sourceLocationRecord: Record<
                 string,
                 { line: number; column: number; idIsExplicit: boolean }
             > = {};
-            for (const [moduleId, loc] of sourceLocationMap) {
+            for (const [moduleId, loc] of sourceLocationMap!) {
                 sourceLocationRecord[moduleId] = loc;
             }
 
             // Convert interpolation resolutions Map to Record for IPC serialization
             const interpolationResolutionsRecord: Record<string, any[]> = {};
-            for (const [key, resolutions] of interpolationResolutions) {
+            for (const [key, resolutions] of interpolationResolutions!) {
                 interpolationResolutionsRecord[key] = resolutions;
             }
 
@@ -606,7 +624,7 @@ registerIPCHandler(
                 string,
                 { startLine: number; endLine: number }
             > = {};
-            for (const [key, span] of callSiteSpans) {
+            for (const [key, span] of callSiteSpans!) {
                 callSiteSpansRecord[key] = span;
             }
 
@@ -631,7 +649,7 @@ registerIPCHandler(
             }
 
             const { moduleIdRemap } = reconcilePatchBySimilarity(
-                patch,
+                patch!,
                 shouldReconcile ? lastAppliedPatchGraph : null,
                 {
                     matchThreshold: PATCH_REMAP_THRESHOLD,
@@ -658,17 +676,17 @@ registerIPCHandler(
             }
 
             // Send remap hints along with the desired patch
-            patch.moduleIdRemaps = Object.entries(moduleIdRemap).map(
+            patch!.moduleIdRemaps = Object.entries(moduleIdRemap).map(
                 ([from, to]) => ({
                     from,
                     to,
                 }),
             );
 
-            const { errors, updateId } = synth.updatePatch(patch, trigger);
+            const { errors, updateId } = synth.updatePatch(patch!, trigger);
 
             if (errors.length === 0) {
-                lastAppliedPatchGraph = patch;
+                lastAppliedPatchGraph = patch!;
                 lastAppliedSourceId = sourceId ?? null;
             }
 
