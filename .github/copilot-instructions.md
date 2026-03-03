@@ -1,7 +1,5 @@
 # Copilot instructions (modular)
 
-NEVER STAGE OR COMMIT FILES
-
 - **NEVER** call Sampleable trait methods from the main thread
 - **NEVER** clone module Arcs and send them across threads
 - **NEVER** access Patch::sampleables from outside AudioProcessor
