@@ -85,6 +85,7 @@ export function typecheckAndCompile(
             sourceMap: true,
             declaration: false,
             noEmit: false,
+            skipLibCheck: true,
             lib: ['lib.esnext.d.ts'],
         },
     });
@@ -115,8 +116,17 @@ export function typecheckAndCompile(
                 column = pos.column;
             }
 
+            const rawMsg = d.getMessageText();
+            const message =
+                typeof rawMsg === 'string'
+                    ? rawMsg
+                    : ts.flattenDiagnosticMessageText(
+                          rawMsg.compilerObject,
+                          '\n',
+                      );
+
             return {
-                message: d.getMessageText().toString(),
+                message,
                 line,
                 column,
                 code: d.getCode(),
