@@ -31,10 +31,19 @@ struct EdgeDetectorOutputs {
     output: PolyOutput,
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Clone, Copy)]
 struct EdgeChannelState {
     last_input: f32,
     trigger_gate: TempGate,
+}
+
+impl Default for EdgeChannelState {
+    fn default() -> Self {
+        Self {
+            last_input: 0.0,
+            trigger_gate: TempGate::new_gate(TempGateState::Low),
+        }
+    }
 }
 
 /// Detects rising edges in a signal and emits a short pulse.
