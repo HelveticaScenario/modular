@@ -7,12 +7,8 @@ use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote, quote_spanned};
-use syn::{punctuated::Punctuated, spanned::Spanned, Attribute, LitStr, Token};
+use syn::{Attribute, LitStr, Token, punctuated::Punctuated, spanned::Spanned};
 use syn::{Data, DeriveInput, Fields, Type};
-
-/// Key used for internal metadata field storing argument source spans.
-/// Must match modular_core::params::ARGUMENT_SPANS_KEY.
-const _ARGUMENT_SPANS_KEY: &str = "__argument_spans";
 
 #[proc_macro]
 pub fn message_handlers(input: TokenStream) -> TokenStream {
@@ -151,17 +147,23 @@ struct OutputAttr {
 
 #[proc_macro_derive(Outputs, attributes(output))]
 pub fn outputs_macro_derive(input: TokenStream) -> TokenStream {
-    let ast: DeriveInput = syn::parse(input).unwrap();
+    let ast: DeriveInput = match syn::parse(input) {
+        Ok(v) => v,
+        Err(e) => return e.to_compile_error().into(),
+    };
     impl_outputs_macro(&ast)
 }
 
 #[proc_macro_derive(EnumTag, attributes(enum_tag))]
 pub fn enum_tag_macro_derive(input: TokenStream) -> TokenStream {
-    let ast: DeriveInput = syn::parse(input).unwrap();
+    let ast: DeriveInput = match syn::parse(input) {
+        Ok(v) => v,
+        Err(e) => return e.to_compile_error().into(),
+    };
     impl_enum_tag_macro(&ast)
 }
 
-fn parse_enum_tag_name(attrs: &Vec<Attribute>, default_ident: Ident) -> syn::Result<Ident> {
+fn parse_enum_tag_name(attrs: &[Attribute], default_ident: Ident) -> syn::Result<Ident> {
     let mut found: Option<Ident> = None;
 
     for attr in attrs.iter().filter(|a| a.path().is_ident("enum_tag")) {
@@ -279,7 +281,7 @@ fn extract_doc_comments(attrs: &[Attribute]) -> Option<String> {
     }
 }
 
-fn unwrap_attr(attrs: &Vec<Attribute>, ident: &str) -> Option<TokenStream2> {
+fn unwrap_attr(attrs: &[Attribute], ident: &str) -> Option<TokenStream2> {
     attrs
         .iter()
         .find(|attr| attr.path().is_ident(ident))
@@ -353,7 +355,16 @@ impl syn::parse::Parse for ModuleAttrArgs {
                 "channels" => {
                     input.parse::<Token![=]>()?;
                     let lit: syn::LitInt = input.parse()?;
-                    channels = Some(lit.base10_parse()?);
+                    let n: u8 = lit.base10_parse()?;
+                    // Must match modular_core::poly::PORT_MAX_CHANNELS
+                    const MAX: u8 = 16;
+                    if n < 1 || n > MAX {
+                        return Err(syn::Error::new(
+                            lit.span(),
+                            format!("channels must be between 1 and {MAX}, got {n}"),
+                        ));
+                    }
+                    channels = Some(n);
                 }
                 "channels_param" => {
                     input.parse::<Token![=]>()?;
@@ -441,9 +452,9 @@ include!(concat!(
 /// - #[output("name", "description", default)]
 /// - #[output("name", "description", range = (-1.0, 1.0))]
 /// - #[output("name", "description", default, range = (-1.0, 1.0))]
-fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
-    use syn::parse::{Parse, ParseStream};
+fn parse_output_attr(tokens: TokenStream2) -> syn::Result<OutputAttr> {
     use syn::Result as SynResult;
+    use syn::parse::{Parse, ParseStream};
 
     struct OutputAttrParser {
         name: LitStr,
@@ -531,14 +542,14 @@ fn parse_output_attr(tokens: TokenStream2) -> OutputAttr {
         }
     }
 
-    let parsed = syn::parse2::<OutputAttrParser>(tokens).expect("Failed to parse output attribute");
+    let parsed = syn::parse2::<OutputAttrParser>(tokens)?;
 
-    OutputAttr {
+    Ok(OutputAttr {
         name: parsed.name,
         description: parsed.description,
         is_default: parsed.is_default,
         range: parsed.range,
-    }
+    })
 }
 
 /// Attribute-style proc macro for declaring audio modules.
@@ -681,7 +692,10 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
                         }
                     };
 
-                    let output_attr = parse_output_attr(output_attr_tokens);
+                    let output_attr = match parse_output_attr(output_attr_tokens) {
+                        Ok(v) => v,
+                        Err(e) => return e.to_compile_error().into(),
+                    };
                     let output_name = output_attr.name;
                     let description = output_attr
                         .description
@@ -716,6 +730,26 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
         }
     };
 
+    // Check for duplicate output names
+    {
+        let mut seen: std::collections::HashMap<String, &LitStr> = std::collections::HashMap::new();
+        for output in &outputs {
+            let name_value = output.output_name.value();
+            if let Some(first) = seen.get(&name_value) {
+                let mut err = syn::Error::new(
+                    output.output_name.span(),
+                    format!("Duplicate output name '{}'", name_value),
+                );
+                err.combine(syn::Error::new(
+                    first.span(),
+                    format!("'{}' first defined here", name_value),
+                ));
+                return err.to_compile_error().into();
+            }
+            seen.insert(name_value, &output.output_name);
+        }
+    }
+
     // Validate that exactly one output is marked as default
     let default_outputs: Vec<_> = outputs.iter().filter(|o| o.is_default).collect();
     if default_outputs.is_empty() {
@@ -747,8 +781,6 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
         .to_compile_error()
         .into();
     }
-
-    let _field_idents: Vec<_> = outputs.iter().map(|o| &o.field_name).collect();
 
     // Generate default value expressions for each field type
     let field_defaults: Vec<_> = outputs
@@ -868,7 +900,10 @@ fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
 
 #[proc_macro_derive(Connect, attributes(default_connection))]
 pub fn connect_macro_derive(input: TokenStream) -> TokenStream {
-    let ast: DeriveInput = syn::parse(input).unwrap();
+    let ast: DeriveInput = match syn::parse(input) {
+        Ok(v) => v,
+        Err(e) => return e.to_compile_error().into(),
+    };
     impl_connect_macro(&ast)
 }
 
@@ -1067,13 +1102,19 @@ fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
 
 #[proc_macro_derive(ChannelCount)]
 pub fn channel_count_macro_derive(input: TokenStream) -> TokenStream {
-    let ast: DeriveInput = syn::parse(input).unwrap();
+    let ast: DeriveInput = match syn::parse(input) {
+        Ok(v) => v,
+        Err(e) => return e.to_compile_error().into(),
+    };
     impl_channel_count_macro(&ast)
 }
 
 #[proc_macro_derive(SignalParams, attributes(signal))]
 pub fn signal_params_macro_derive(input: TokenStream) -> TokenStream {
-    let ast: DeriveInput = syn::parse(input).unwrap();
+    let ast: DeriveInput = match syn::parse(input) {
+        Ok(v) => v,
+        Err(e) => return e.to_compile_error().into(),
+    };
     impl_signal_params_macro(&ast)
 }
 
@@ -1087,7 +1128,7 @@ fn impl_channel_count_macro(ast: &DeriveInput) -> TokenStream {
                 .iter()
                 .filter_map(|field| {
                     let field_ident = field.ident.as_ref()?;
-                    if is_poly_signal(&field.ty) {
+                    if is_poly_signal_type(&field.ty) {
                         Some(quote! { &self.#field_ident })
                     } else {
                         None
@@ -1217,20 +1258,6 @@ impl syn::parse::Parse for ArgAttr {
     }
 }
 
-/// Check if a type is exactly PolySignal (not nested in Option, Vec, etc.)
-fn is_poly_signal(ty: &Type) -> bool {
-    match ty {
-        Type::Path(tp) => {
-            let last = match tp.path.segments.last() {
-                Some(seg) => seg,
-                None => return false,
-            };
-            last.ident == "PolySignal"
-        }
-        _ => false,
-    }
-}
-
 /// Parsed `#[signal(...)]` attribute data for signal param metadata.
 struct SignalAttr {
     signal_type: String,
@@ -1317,12 +1344,12 @@ fn impl_module_macro_attr(
     let module_name = &attr_args.module.name;
 
     // Extract /// doc comments from the module struct for documentation (required)
-    let module_documentation = extract_doc_comments(&ast.attrs).unwrap_or_else(|| {
-        panic!(
-            "Module struct `{}` must have `///` doc comments for documentation",
-            name
+    let module_documentation = extract_doc_comments(&ast.attrs).ok_or_else(|| {
+        syn::Error::new(
+            name.span(),
+            format!("Module struct `{}` must have `///` doc comments for documentation", name),
         )
-    });
+    })?;
     let module_documentation_token = quote! { #module_documentation.to_string() };
 
     // Store channels info for channel_count generation
@@ -1669,11 +1696,11 @@ fn impl_module_macro_attr(
         unsafe impl Sync for #struct_name {}
 
         impl crate::types::Sampleable for #struct_name {
-            fn tick(&self) -> () {
+            fn tick(&self) {
                 self.processed.store(false, core::sync::atomic::Ordering::Release);
             }
 
-            fn update(&self) -> () {
+            fn update(&self) {
                 if let Ok(_) = self.processed.compare_exchange(
                     false,
                     true,
@@ -1786,31 +1813,12 @@ fn impl_module_macro_attr(
             fn get_schema() -> crate::types::ModuleSchema {
                 let params_schema = schemars::schema_for!(#params_struct_name);
 
-                let mut param_names: std::collections::HashSet<String> = std::collections::HashSet::new();
-                if let Some(obj) = params_schema.as_object() {
-                    let props = obj
-                        .get("properties")
-                        .and_then(|v| v.as_object())
-                        .or_else(|| {
-                            obj.get("schema")
-                                .and_then(|s| s.as_object())
-                                .and_then(|s| s.get("properties"))
-                                .and_then(|v| v.as_object())
-                        });
-                    if let Some(props) = props {
-                        for key in props.keys() {
-                            if key == "o" || key == "out" {
-                                panic!("Parameter name '{}' is reserved and cannot be used", key);
-                            }
-                            param_names.insert(key.clone());
-                        }
-                    }
-                }
-
-                let output_schemas = <#outputs_ty as crate::types::OutputStruct>::schemas();
-                if output_schemas.iter().any(|o| param_names.contains(&o.name)) {
-                    panic!("Parameters and outputs must have unique names");
-                }
+                let param_names: std::collections::HashSet<String> = params_schema
+                    .pointer("/properties")
+                    .or_else(|| params_schema.pointer("/schema/properties"))
+                    .and_then(serde_json::Value::as_object)
+                    .map(|props| props.keys().cloned().collect())
+                    .unwrap_or_default();
 
                 crate::types::ModuleSchema {
                     name: #module_name.to_string(),
@@ -1818,7 +1826,7 @@ fn impl_module_macro_attr(
                     params_schema: crate::types::SchemaContainer {
                         schema: params_schema,
                     },
-                    outputs: output_schemas,
+                    outputs: <#outputs_ty as crate::types::OutputStruct>::schemas(),
                     signal_params: <#params_struct_name as crate::types::SignalParamMeta>::signal_param_schemas(),
                     positional_args: vec![
                         #(#positional_args_exprs),*
