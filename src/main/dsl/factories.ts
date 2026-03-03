@@ -14,12 +14,16 @@ import type { SourceSpan } from '../../shared/dsl/spanTypes';
 import type { SpanRegistry, CallSiteKey } from './analyzeSource';
 import {
     captureSourceLocation,
-    setDSLWrapperLineOffset,
-    getDSLWrapperLineOffset,
+    setActiveSourceMapConsumer,
+    clearActiveSourceMapConsumer,
 } from './captureSourceLocation';
 
 // Re-export so existing call sites (e.g. executor.ts) keep working.
-export { captureSourceLocation, setDSLWrapperLineOffset };
+export {
+    captureSourceLocation,
+    setActiveSourceMapConsumer,
+    clearActiveSourceMapConsumer,
+};
 
 /**
  * Key used for internal metadata field storing argument source spans.
@@ -64,7 +68,8 @@ function captureArgumentSpans(
 
     // Build the call site key matching what ts-morph produced.
     // Both ts-morph and V8 stack traces use 1-based lines and columns.
-    const key: CallSiteKey = `${sourceLocation.line + getDSLWrapperLineOffset()}:${sourceLocation.column}`;
+    // Source map resolution (if active) maps V8 positions back to original source.
+    const key: CallSiteKey = `${sourceLocation.line}:${sourceLocation.column}`;
 
     const entry = activeSpanRegistry.get(key);
     if (!entry) {
