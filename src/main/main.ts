@@ -562,19 +562,19 @@ registerIPCHandler('GET_SCHEMAS', () => {
     return getSchemas();
 });
 
-// DSL lib source for Monaco autocomplete - cached since schemas don't change at runtime
-// Uses the full Signal type with template literal note validation.
-let cachedEditorLibSource: string | null = null;
-registerIPCHandler('GET_DSL_LIB_SOURCE', () => {
-    if (!cachedEditorLibSource) {
-        cachedEditorLibSource = buildLibSource(getSchemas());
+// DSL lib source — cached since schemas don't change at runtime.
+// Used by both Monaco autocomplete and execution-time typechecking.
+let cachedLibSource: string | null = null;
+function getLibSource(): string {
+    if (!cachedLibSource) {
+        cachedLibSource = buildLibSource(getSchemas());
     }
-    return cachedEditorLibSource;
-});
+    return cachedLibSource;
+}
 
-// Fast DSL lib source for execution-time typechecking — uses simplified
-// Signal = number | string | ModuleOutput to avoid template-literal overhead.
-let cachedFastLibSource: string | null = null;
+registerIPCHandler('GET_DSL_LIB_SOURCE', () => {
+    return getLibSource();
+});
 
 // DSL execution in main process with direct N-API access
 registerIPCHandler(
@@ -583,16 +583,7 @@ registerIPCHandler(
         try {
             const schemas = getSchemas();
 
-            // Get or cache the fast DSL lib source for TypeScript compilation
-            if (!cachedFastLibSource) {
-                cachedFastLibSource = buildLibSource(schemas, true);
-            }
-
-            const result = executePatchScript(
-                source,
-                schemas,
-                cachedFastLibSource,
-            );
+            const result = executePatchScript(source, schemas, getLibSource());
 
             // If type errors, return early — execution was blocked
             if ('typeErrors' in result) {

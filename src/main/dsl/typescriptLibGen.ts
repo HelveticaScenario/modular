@@ -6,122 +6,6 @@ import {
     getEnumVariants,
 } from '../../shared/dsl/schemaTypeResolver';
 
-const FULL_SIGNAL_TYPE = `
-type NoteNames = "a" | "A" | "b" | "B" | "c" | "C" | "d" | "D" | "e" | "E" | "f" | "F" | "g" | "G"
-type Accidental = "" | "#" | "b"
-type Note = \`\${NoteNames}\${Accidental}\${number | ''}\`
-
-type HZ = \`\${number}hz\` | \`\${number}Hz\`
-
-type MidiNote = \`\${number}m\`
-
-type CaseVariants<T extends string> = 
-  | Lowercase<T>
-  | Uppercase<T>
-  | Capitalize<T>;
-
-type ModeString =
-  // Ionian (Major)
-  | \`M \${string}\`
-  | "M"
-  | \`\${string}\${CaseVariants<"maj">}\${string}\`
-  | \`\${string}\${CaseVariants<"major">}\${string}\`
-  | \`\${string}\${CaseVariants<"ionian">}\${string}\`
-  
-  // Harmonic Minor
-  | \`\${string}\${CaseVariants<"har">} \${CaseVariants<"minor">}\${string}\`
-  | \`\${string}\${CaseVariants<"harmonic">}\${CaseVariants<"minor">}\${string}\`
-  | \`\${string}\${CaseVariants<"harmonic">} \${CaseVariants<"minor">}\${string}\`
-  
-  // Melodic Minor
-  | \`\${string}\${CaseVariants<"mel">} \${CaseVariants<"minor">}\${string}\`
-  | \`\${string}\${CaseVariants<"melodic">}\${CaseVariants<"minor">}\${string}\`
-  | \`\${string}\${CaseVariants<"melodic">} \${CaseVariants<"minor">}\${string}\`
-  
-  // Pentatonic Major
-  | \`\${string}\${CaseVariants<"pentatonic">} \${CaseVariants<"major">}\${string}\`
-  | \`\${string}\${CaseVariants<"pentatonic">} \${CaseVariants<"maj">}\${string}\`
-  | \`\${string}\${CaseVariants<"pent">} \${CaseVariants<"maj">}\${string}\`
-  | \`\${string}\${CaseVariants<"pent">} \${CaseVariants<"major">}\${string}\`
-  
-  // Pentatonic Minor
-  | \`\${string}\${CaseVariants<"pentatonic">} \${CaseVariants<"minor">}\${string}\`
-  | \`\${string}\${CaseVariants<"pentatonic">} \${CaseVariants<"min">}\${string}\`
-  | \`\${string}\${CaseVariants<"pent">} \${CaseVariants<"min">}\${string}\`
-  | \`\${string}\${CaseVariants<"pent">} \${CaseVariants<"minor">}\${string}\`
-  
-  // Blues
-  | \`\${string}\${CaseVariants<"blues">}\${string}\`
-  
-  // Chromatic
-  | \`\${string}\${CaseVariants<"chromatic">}\${string}\`
-  
-  // Whole Tone
-  | \`\${string}\${CaseVariants<"whole">} \${CaseVariants<"tone">}\${string}\`
-  | \`\${string}\${CaseVariants<"whole">}\${CaseVariants<"tone">}\${string}\`
-  
-  // Aeolian (Minor)
-  | \`m \${string}\`
-  | "m"
-  | \`\${string}\${CaseVariants<"min">}\${string}\`
-  | \`\${string}\${CaseVariants<"minor">}\${string}\`
-  | \`\${string}\${CaseVariants<"aeolian">}\${string}\`
-  
-  // Dorian (start of string)
-  | \`\${CaseVariants<"dorian">}\${string}\`
-  
-  // Locrian (start of string)
-  | \`\${CaseVariants<"locrian">}\${string}\`
-  
-  // Mixolydian (start of string)
-  | \`\${CaseVariants<"mixolydian">}\${string}\`
-  
-  // Phrygian (start of string)
-  | \`\${CaseVariants<"phrygian">}\${string}\`
-  
-  // Lydian (start of string)
-  | \`\${CaseVariants<"lydian">}\${string}\`;
-
-/**
- * A scale pattern string for generating multiple pitches.
- * Format: "{count}s({root}:{mode})"
- * @example "4s(C:major)" - 4 notes of C major scale
- * @example "8s(A:minor)" - 8 notes of A minor scale
- * @see {@link Signal}
- * @see {@link Note}
- */
-type Scale = \`\${number}s(\${Note}:\${ModeString})\`
-
-type OrArray<T> = T | T[];
-
-/**
- * A single-channel audio signal value. The fundamental type for all audio connections.
- * 
- * Signals follow the 1V/octave convention where 0V = C4 (~261.63 Hz).
- * 
- * Can be one of:
- * - A **number** (constant voltage)
- * - A **{@link Note}** string like \`"C4"\` or \`"A#3"\`
- * - A **{@link HZ}** string like \`"440hz"\`
- * - A **{@link MidiNote}** string like \`"60m"\`
- * - A **{@link Scale}** pattern like \`"4s(C:major)"\`
- * - A **{@link ModuleOutput}** from another module
- * 
- * @example sine("C4")        // Note string
- * @example sine(440)         // Number
- * @example sine("440hz")     // Hz string
- * @example sine(lfo.out)     // ModuleOutput
- * @see {@link Poly<Signal>} - for multi-channel signals
- * @see {@link ModuleOutput} - for module connections
- */
-type Signal = number | Note | HZ | MidiNote | Scale | ModuleOutput;
-`;
-
-const FAST_SIGNAL_TYPE = `
-type OrArray<T> = T | T[];
-type Signal = number | string | ModuleOutput;
-`;
-
 const BASE_LIB_SOURCE = `
 /** The **\`console\`** object provides access to the debugging console (e.g., the Web console in Firefox). */
 /**
@@ -249,6 +133,8 @@ interface Console {
 
 var console: Console;
 
+type OrArray<T> = T | T[];
+
 interface Array<T> {
   /**
    * Pipe this array through a transform function.
@@ -265,7 +151,29 @@ interface Array<T> {
    */
   pipe<U>(this: this, pipeFn: (self: this) => U): U;
 }
-// %%SIGNAL_TYPE%%
+
+/**
+ * A single-channel audio signal value. The fundamental type for all audio connections.
+ * 
+ * Signals follow the 1V/octave convention where 0V = C4 (~261.63 Hz).
+ * 
+ * Can be one of:
+ * - A **number** (constant voltage)
+ * - A **{@link Note}** string like \`"C4"\` or \`"A#3"\`
+ * - A **{@link HZ}** string like \`"440hz"\`
+ * - A **{@link MidiNote}** string like \`"60m"\`
+ * - A **{@link Scale}** pattern like \`"4s(C:major)"\`
+ * - A **{@link ModuleOutput}** from another module
+ * 
+ * @example sine("C4")             // Note string
+ * @example sine(440)              // Number
+ * @example sine("440hz")          // Hz string
+ * @example sine($sine("1hz"))     // ModuleOutput
+ * @see {@link Poly<Signal>} - for multi-channel signals
+ * @see {@link ModuleOutput} - for module connections
+ */
+type Signal = number | string | ModuleOutput;
+
 /**
  * A potentially multi-channel signal for polyphonic patches.
  * 
@@ -772,14 +680,9 @@ function $deferred(channels?: number): DeferredCollection;
 function $slider(label: string, value: number, min: number, max: number): ModuleOutput;
 `;
 
-export function buildLibSource(
-    schemas: ModuleSchema[],
-    fastSignalType: boolean = false,
-): string {
+export function buildLibSource(schemas: ModuleSchema[]): string {
     const schemaLib = generateDSL(schemas);
-    const signalType = fastSignalType ? FAST_SIGNAL_TYPE : FULL_SIGNAL_TYPE;
-    const baseLib = BASE_LIB_SOURCE.replace('// %%SIGNAL_TYPE%%', signalType);
-    return `declare global {\n${baseLib}\n\n${schemaLib} \n}\n\n export {};\n`;
+    return `declare global {\n${BASE_LIB_SOURCE}\n\n${schemaLib} \n}\n\n export {};\n`;
 }
 
 type ClassSpec = {
