@@ -98,6 +98,7 @@
         "react-dom": "^19.2.3",
         "react-markdown": "^10.1.0",
         "react-use-websocket": "^4.13.0",
+        "source-map-js": "^1.2.1",
         "ts-morph": "^27.0.2",
         "typescript": "~5.9.3",
         "typescript-eslint": "^8.46.4",

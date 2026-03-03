@@ -1797,6 +1797,7 @@ __metadata:
     react-dom: "npm:^19.2.3"
     react-markdown: "npm:^10.1.0"
     react-use-websocket: "npm:^4.13.0"
+    source-map-js: "npm:^1.2.1"
     ts-morph: "npm:^27.0.2"
     tsx: "npm:^4.21.0"
     typescript: "npm:~5.9.3"

@@ -115,7 +115,7 @@ export function registerDslDefinitionProvider(
     };
 
     const disposable = monaco.languages.registerDefinitionProvider(
-        'javascript',
+        'typescript',
         provider,
     );
     return { dispose: () => disposable.dispose() };

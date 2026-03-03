@@ -2,7 +2,7 @@
  * Integration tests for the DSL executor pipeline.
  *
  * These tests exercise the full DSL → PatchGraph pipeline:
- *   getSchemas() → executePatchScript(source, schemas) → PatchGraph
+ *   getSchemas() → executePatchScript(source, schemas, dslLibSource) → PatchGraph
  *
  * No Electron, no audio hardware needed — runs in plain Node.js via Vitest.
  */
@@ -10,21 +10,30 @@
 import { describe, test, expect, beforeAll } from 'vitest';
 import { getSchemas, type ModuleSchema, type PatchGraph } from '@modular/core';
 import { executePatchScript, type DSLExecutionResult } from '../executor';
+import { buildLibSource } from '../typescriptLibGen';
 
 let schemas: ModuleSchema[];
+let dslLibSource: string;
 
 beforeAll(() => {
     schemas = getSchemas();
+    dslLibSource = buildLibSource(schemas, true);
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function exec(source: string): DSLExecutionResult {
-    return executePatchScript(source, schemas);
+    return executePatchScript(source, schemas, dslLibSource);
 }
 
 function execPatch(source: string): PatchGraph {
-    return exec(source).patch;
+    const result = exec(source);
+    if ('typeErrors' in result) {
+        throw new Error(
+            `TypeScript errors:\n${result.typeErrors.map((e) => e.message).join('\n')}`,
+        );
+    }
+    return result.patch;
 }
 
 /** Find a module by type in the patch (excluding built-in ROOT_CLOCK, ROOT_INPUT) */
@@ -184,13 +193,15 @@ describe('filters', () => {
 describe('envelopes', () => {
     test('$adsr with gate input and config', () => {
         const patch = execPatch(
-            '$adsr($clock.gate, { attack: 0.1, decay: 0.2, sustain: 3, release: 0.5 }).out()',
+            '$adsr($clock.beatTrigger, { attack: 0.1, decay: 0.2, sustain: 3, release: 0.5 }).out()',
         );
         expect(findModules(patch, '$adsr').length).toBe(1);
     });
 
     test('$perc with trigger', () => {
-        const patch = execPatch('$perc($clock.gate, { decay: 0.3 }).out()');
+        const patch = execPatch(
+            '$perc($clock.beatTrigger, { decay: 0.3 }).out()',
+        );
         expect(findModules(patch, '$perc').length).toBe(1);
     });
 });
@@ -343,7 +354,7 @@ describe('modulation routing', () => {
     test('subtractive synth voice (osc → env → filter)', () => {
         const source = `
             const osc = $saw("C3")
-            const env = $adsr($clock.gate, { attack: 0.01, decay: 0.3, sustain: 2, release: 0.5 })
+            const env = $adsr($clock.beatTrigger, { attack: 0.01, decay: 0.3, sustain: 2, release: 0.5 })
             $lpf(osc, env.range("C3", "C6")).out()
         `;
         const patch = execPatch(source);
@@ -396,24 +407,26 @@ describe('utilities', () => {
     });
 
     test('$sah (sample and hold)', () => {
-        const patch = execPatch('$sah($noise("white"), $clock.gate).out()');
+        const patch = execPatch(
+            '$sah($noise("white"), $clock.beatTrigger).out()',
+        );
         expect(findModules(patch, '$sah').length).toBe(1);
     });
 
     test('$slew', () => {
         const patch = execPatch(
-            '$slew($clock.gate, { rise: 0.01, fall: 0.01 }).out()',
+            '$slew($clock.beatTrigger, { rise: 0.01, fall: 0.01 }).out()',
         );
         expect(findModules(patch, '$slew').length).toBe(1);
     });
 
     test('$quantizer', () => {
-        const patch = execPatch('$quantizer($sine("C4"), 0, "major").out()');
+        const patch = execPatch('$quantizer($sine("C4"), "C(major)").out()');
         expect(findModules(patch, '$quantizer').length).toBe(1);
     });
 
     test('$clockDivider', () => {
-        const patch = execPatch('$clockDivider($clock.trigger, 4).out()');
+        const patch = execPatch('$clockDivider($clock.barTrigger, 4).out()');
         expect(findModules(patch, '$clockDivider').length).toBe(1);
     });
 
@@ -457,6 +470,8 @@ describe('sliders', () => {
         const result = exec(
             'const vol = $slider("Volume", 0.5, 0, 1)\n$sine("C4").amplitude(vol).out()',
         );
+        expect('typeErrors' in result).toBe(false);
+        if ('typeErrors' in result) return;
         expect(result.sliders.length).toBe(1);
         expect(result.sliders[0].label).toBe('Volume');
         expect(result.sliders[0].value).toBe(0.5);
@@ -492,14 +507,14 @@ describe('built-in modules', () => {
     test('$clock is available and has outputs', () => {
         // Use $clock outputs as gate input to an envelope
         const patch = execPatch(
-            '$adsr($clock.gate, { attack: 0.01, decay: 0.1, sustain: 3, release: 0.2 }).out()',
+            '$adsr($clock.beatTrigger, { attack: 0.01, decay: 0.1, sustain: 3, release: 0.2 }).out()',
         );
         expect(patch.modules.find((m) => m.id === 'ROOT_CLOCK')).toBeDefined();
     });
 
-    test('$clock.gate can modulate another module', () => {
+    test('$clock.beatTrigger can modulate another module', () => {
         const patch = execPatch(
-            '$adsr($clock.gate, { attack: 0.01, decay: 0.1, sustain: 3, release: 0.2 }).out()',
+            '$adsr($clock.beatTrigger, { attack: 0.01, decay: 0.1, sustain: 3, release: 0.2 }).out()',
         );
         expect(patch.modules.find((m) => m.id === 'ROOT_CLOCK')).toBeDefined();
         expect(findModules(patch, '$adsr').length).toBe(1);
@@ -549,7 +564,7 @@ describe('complex patches', () => {
         const source = `
             const seq = $cycle("C3 E3 G3 B3")
             const osc = $saw(seq)
-            const env = $adsr($clock.gate, { attack: 0.01, decay: 0.2, sustain: 2, release: 0.3 })
+            const env = $adsr($clock.beatTrigger, { attack: 0.01, decay: 0.2, sustain: 2, release: 0.3 })
             $lpf(osc, env.range("C3", "C6")).out()
         `;
         const patch = execPatch(source);
@@ -569,15 +584,34 @@ describe('error handling', () => {
         expect(patch.modules.length).toBeGreaterThan(0);
     });
 
-    test('syntax error in DSL throws', () => {
-        expect(() => execPatch('$sine((')).toThrow();
+    test('syntax error is caught as type error', () => {
+        const result = exec('$sine((');
+        expect('typeErrors' in result).toBe(true);
+        if (!('typeErrors' in result)) return;
+        expect(result.typeErrors.length).toBeGreaterThan(0);
     });
 
-    test('undefined function throws', () => {
-        expect(() => execPatch('$unknownModule("C4").out()')).toThrow();
+    test('undefined function is caught as type error', () => {
+        const result = exec('$unknownModule("C4").out()');
+        expect('typeErrors' in result).toBe(true);
+        if (!('typeErrors' in result)) return;
+        expect(result.typeErrors.length).toBeGreaterThan(0);
     });
 
-    test('runtime error throws with DSL prefix', () => {
-        expect(() => execPatch('null.out()')).toThrow();
+    test('type error on null property access', () => {
+        const result = exec('null.out()');
+        expect('typeErrors' in result).toBe(true);
+        if (!('typeErrors' in result)) return;
+        expect(result.typeErrors.length).toBeGreaterThan(0);
+    });
+
+    test('type errors include line and column info', () => {
+        const result = exec('$unknownModule("C4").out()');
+        expect('typeErrors' in result).toBe(true);
+        if (!('typeErrors' in result)) return;
+        const err = result.typeErrors[0];
+        expect(err.line).toBeGreaterThanOrEqual(1);
+        expect(err.column).toBeGreaterThanOrEqual(1);
+        expect(err.category).toBe('error');
     });
 });

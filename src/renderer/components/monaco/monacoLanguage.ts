@@ -12,32 +12,31 @@ export interface MonacoSetupOptions {
     schemas?: ModuleSchema[];
 }
 
-export function setupMonacoJavascript(
+export function setupMonacoTypeScript(
     monaco: Monaco,
     libSource: string,
     options: MonacoSetupOptions = {},
 ) {
     const ts = monaco.typescript;
-    console.log('Monaco TS version:', ts);
-    const jsDefaults = ts.javascriptDefaults;
+    const tsDefaults = ts.typescriptDefaults;
 
-    jsDefaults.setCompilerOptions({
-        allowJs: true,
-        checkJs: true,
-        lib: ['esnext'],
-        allowNonTsExtensions: true,
+    tsDefaults.setCompilerOptions({
         target: ts.ScriptTarget.ES2020,
         module: ts.ModuleKind.ESNext,
         moduleResolution: ts.ModuleResolutionKind.NodeJs,
+        strict: false,
+        noImplicitAny: false,
+        allowNonTsExtensions: true,
+        lib: ['esnext'],
         noEmit: true,
     });
 
-    jsDefaults.setDiagnosticsOptions({
+    tsDefaults.setDiagnosticsOptions({
         noSemanticValidation: false,
         noSyntaxValidation: false,
     });
 
-    jsDefaults.setEagerModelSync(true);
+    tsDefaults.setEagerModelSync(true);
 
     const { extraLib, extraLibModel } = applyDslLibToMonaco(monaco, libSource);
 

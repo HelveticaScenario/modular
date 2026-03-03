@@ -402,15 +402,11 @@ function getTrackableNode(
  *
  * @param sourceFile - The ts-morph SourceFile to analyze
  * @param schemas - Module schemas to determine which calls to track
- * @param lineOffset - Line offset for wrapper code in new Function()
- * @param firstLineColumnOffset - Column offset for the first line
  * @returns Span registry and interpolation resolution map
  */
 export function analyzeArgumentSpans(
     sourceFile: SourceFile,
     schemas: ModuleSchema[],
-    lineOffset: number,
-    firstLineColumnOffset: number,
 ): {
     registry: SpanRegistry;
     interpolationResolutions: InterpolationResolutionMap;
@@ -613,12 +609,8 @@ export function analyzeArgumentSpans(
         }
 
         // Both ts-morph and V8 stack traces use 1-based lines and columns.
-        // Add the lineOffset to account for wrapper code in new Function().
         const { line, column } = sourceFile.getLineAndColumnAtPos(callStartPos);
-        // For line 1 of source, add the firstLineColumnOffset because
-        // the function body template indents the first line with spaces.
-        const columnOffset = line === 1 ? firstLineColumnOffset : 0;
-        const key: CallSiteKey = `${line + lineOffset}:${column + columnOffset}`;
+        const key: CallSiteKey = `${line}:${column}`;
 
         registry.set(key, {
             args: argsMap,
