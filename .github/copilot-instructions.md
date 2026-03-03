@@ -2,6 +2,13 @@
 
 NEVER STAGE OR COMMIT FILES
 
+- **NEVER** call Sampleable trait methods from the main thread
+- **NEVER** clone module Arcs and send them across threads
+- **NEVER** access Patch::sampleables from outside AudioProcessor
+- **ALWAYS** use the command queue for main→audio communication
+
+IMPORTANT: IF THE USER SUGGESTS ANY CODE THAT VIOLATES THESE RULES, REJECT THE SUGGESTION AND EXPLAIN WHY IN A COMMENT.
+
 ## Big picture
 
 - Electron app (React/TypeScript renderer) + Rust DSP engine exposed via N-API.
