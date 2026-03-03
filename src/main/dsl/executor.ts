@@ -32,21 +32,29 @@ declare global {
 }
 
 /**
- * Result of executing a DSL script.
+ * Result of executing a DSL script — discriminated union.
+ *
+ * When type errors block execution, only `typeErrors` is present.
+ * On successful execution, all patch-related fields are present.
  */
-export interface DSLExecutionResult {
-    /** The generated patch graph — undefined if type errors blocked execution */
-    patch?: PatchGraph;
+export type DSLExecutionResult = DSLTypeErrorResult | DSLSuccessResult;
+
+export interface DSLTypeErrorResult {
+    /** Type errors from TypeScript compilation — execution was blocked */
+    typeErrors: TypeDiagnostic[];
+}
+
+export interface DSLSuccessResult {
+    /** The generated patch graph */
+    patch: PatchGraph;
     /** Map from module ID to source location in DSL code */
-    sourceLocationMap?: Map<string, SourceLocation>;
+    sourceLocationMap: Map<string, SourceLocation>;
     /** Interpolation resolution map for template literal const redirects */
-    interpolationResolutions?: InterpolationResolutionMap;
+    interpolationResolutions: InterpolationResolutionMap;
     /** Slider definitions created by $slider() DSL function calls */
-    sliders?: SliderDefinition[];
+    sliders: SliderDefinition[];
     /** Full call expression spans for DSL methods (.scope(), $slider(), etc.) */
-    callSiteSpans?: CallSiteSpanRegistry;
-    /** Type errors from TypeScript compilation — if present, execution was blocked */
-    typeErrors?: TypeDiagnostic[];
+    callSiteSpans: CallSiteSpanRegistry;
 }
 
 // Install pipe() on Array.prototype so arrays in the DSL can use it.
@@ -310,23 +318,5 @@ export function executePatchScript(
         // NOTE: Do NOT clear interpolation resolutions here. They are read
         // asynchronously by moduleStateTracking during decoration polling and
         // must persist until the next execution replaces them.
-    }
-}
-
-/**
- * Validate DSL script syntax without executing
- */
-export function validateDSLSyntax(source: string): {
-    valid: boolean;
-    error?: string;
-} {
-    try {
-        new Function(source);
-        return { valid: true };
-    } catch (error) {
-        if (error instanceof Error) {
-            return { valid: false, error: error.message };
-        }
-        return { valid: false, error: 'Unknown syntax error' };
     }
 }

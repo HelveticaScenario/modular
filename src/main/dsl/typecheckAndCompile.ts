@@ -10,21 +10,14 @@
  */
 
 import { Project, type SourceFile, ts } from 'ts-morph';
+import type { TypeDiagnostic } from '../../shared/ipcTypes';
+
+// Re-export so existing consumers of this module don't need to change their import paths.
+export type { TypeDiagnostic } from '../../shared/ipcTypes';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-export interface TypeDiagnostic {
-    message: string;
-    /** 1-based line in the user's TS source */
-    line: number;
-    /** 1-based column in the user's TS source */
-    column: number;
-    /** TS error code (e.g. 2304) */
-    code: number;
-    category: 'error' | 'warning' | 'suggestion';
-}
 
 export interface TypecheckFailure {
     diagnostics: TypeDiagnostic[];

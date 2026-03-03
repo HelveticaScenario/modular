@@ -28,12 +28,12 @@ function exec(source: string): DSLExecutionResult {
 
 function execPatch(source: string): PatchGraph {
     const result = exec(source);
-    if (result.typeErrors && result.typeErrors.length > 0) {
+    if ('typeErrors' in result) {
         throw new Error(
             `TypeScript errors:\n${result.typeErrors.map((e) => e.message).join('\n')}`,
         );
     }
-    return result.patch!;
+    return result.patch;
 }
 
 /** Find a module by type in the patch (excluding built-in ROOT_CLOCK, ROOT_INPUT) */
@@ -470,11 +470,13 @@ describe('sliders', () => {
         const result = exec(
             'const vol = $slider("Volume", 0.5, 0, 1)\n$sine("C4").amplitude(vol).out()',
         );
-        expect(result.sliders!.length).toBe(1);
-        expect(result.sliders![0].label).toBe('Volume');
-        expect(result.sliders![0].value).toBe(0.5);
-        expect(result.sliders![0].min).toBe(0);
-        expect(result.sliders![0].max).toBe(1);
+        expect('typeErrors' in result).toBe(false);
+        if ('typeErrors' in result) return;
+        expect(result.sliders.length).toBe(1);
+        expect(result.sliders[0].label).toBe('Volume');
+        expect(result.sliders[0].value).toBe(0.5);
+        expect(result.sliders[0].min).toBe(0);
+        expect(result.sliders[0].max).toBe(1);
     });
 
     test('$slider duplicate label throws', () => {
@@ -584,29 +586,30 @@ describe('error handling', () => {
 
     test('syntax error is caught as type error', () => {
         const result = exec('$sine((');
-        expect(result.typeErrors).toBeDefined();
-        expect(result.typeErrors!.length).toBeGreaterThan(0);
-        expect(result.patch).toBeUndefined();
+        expect('typeErrors' in result).toBe(true);
+        if (!('typeErrors' in result)) return;
+        expect(result.typeErrors.length).toBeGreaterThan(0);
     });
 
     test('undefined function is caught as type error', () => {
         const result = exec('$unknownModule("C4").out()');
-        expect(result.typeErrors).toBeDefined();
-        expect(result.typeErrors!.length).toBeGreaterThan(0);
-        expect(result.patch).toBeUndefined();
+        expect('typeErrors' in result).toBe(true);
+        if (!('typeErrors' in result)) return;
+        expect(result.typeErrors.length).toBeGreaterThan(0);
     });
 
     test('type error on null property access', () => {
         const result = exec('null.out()');
-        expect(result.typeErrors).toBeDefined();
-        expect(result.typeErrors!.length).toBeGreaterThan(0);
-        expect(result.patch).toBeUndefined();
+        expect('typeErrors' in result).toBe(true);
+        if (!('typeErrors' in result)) return;
+        expect(result.typeErrors.length).toBeGreaterThan(0);
     });
 
     test('type errors include line and column info', () => {
         const result = exec('$unknownModule("C4").out()');
-        expect(result.typeErrors).toBeDefined();
-        const err = result.typeErrors![0];
+        expect('typeErrors' in result).toBe(true);
+        if (!('typeErrors' in result)) return;
+        const err = result.typeErrors[0];
         expect(err.line).toBeGreaterThanOrEqual(1);
         expect(err.column).toBeGreaterThanOrEqual(1);
         expect(err.category).toBe('error');

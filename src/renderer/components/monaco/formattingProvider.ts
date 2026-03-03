@@ -1,5 +1,6 @@
 import * as prettier from 'prettier/standalone';
-import * as prettierBabel from 'prettier/plugins/babel';
+import type { Plugin } from 'prettier';
+import * as prettierTypescript from 'prettier/plugins/typescript';
 import * as prettierEstree from 'prettier/plugins/estree';
 import type { Monaco } from '../../hooks/useCustomMonaco';
 import type { PrettierConfig } from '../../../shared/ipcTypes';
@@ -17,15 +18,15 @@ export function registerDslFormattingProvider(
     userConfig: PrettierConfig = {},
 ) {
     return monaco.languages.registerDocumentFormattingEditProvider(
-        'javascript',
+        'typescript',
         {
             async provideDocumentFormattingEdits(model) {
                 const formatted = await prettier.format(model.getValue(), {
                     ...DEFAULT_PRETTIER_OPTIONS,
                     ...userConfig,
                     // parser and plugins must not be overridden
-                    parser: 'babel',
-                    plugins: [prettierBabel, prettierEstree],
+                    parser: 'typescript',
+                    plugins: [prettierTypescript, prettierEstree as Plugin],
                 });
 
                 return [

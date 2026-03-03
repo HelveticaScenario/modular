@@ -7,7 +7,7 @@ import { useCustomMonaco } from '../hooks/useCustomMonaco';
 import { configSchema } from '../configSchema';
 import { formatPath } from './monaco/monacoHelpers';
 import type { ScopeView } from '../types/editor';
-import { setupMonacoJavascript } from './monaco/monacoLanguage';
+import { setupMonacoTypeScript } from './monaco/monacoLanguage';
 import {
     buildSymbolSets,
     resolveDslSymbolAtPosition,
@@ -170,7 +170,7 @@ export function MonacoPatchEditor({
 
     useEffect(() => {
         if (!monaco || !libSource) return;
-        return setupMonacoJavascript(monaco, libSource, {
+        return setupMonacoTypeScript(monaco, libSource, {
             schemas,
         });
     }, [monaco, libSource, schemas]);
@@ -253,9 +253,9 @@ export function MonacoPatchEditor({
 
     // Determine language based on file extension
     const editorLanguage = useMemo(() => {
-        if (!currentFile) return 'javascript';
+        if (!currentFile) return 'typescript';
         if (currentFile.endsWith('.json')) return 'json';
-        return 'javascript';
+        return 'typescript';
     }, [currentFile]);
 
     return (
