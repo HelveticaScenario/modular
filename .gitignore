@@ -111,3 +111,5 @@ generated/
 /dist
 playwright-report
 test-results
+# Worktrees
+.worktrees/
