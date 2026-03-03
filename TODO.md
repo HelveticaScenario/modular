@@ -13,7 +13,7 @@
 - [ ] live recording into buffer
 - [x] arbitrary param types (like enum) (not modulatable)
 - [x] polyphony?
-- [ ] some sort of "make module" composition system
+- [x] some sort of "make module" composition system (done? this is just functions)
 - [x] midi in (notes would pretend to be seq, cc would be signal)
 - [x] midi out (no idea how to do this. some sort of sample and hold?)
 - [x] signal in
