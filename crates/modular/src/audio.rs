@@ -891,6 +891,7 @@ pub struct AudioState {
   /// Stopped flag - shared with audio thread for quick reads
   stopped: Arc<AtomicBool>,
   /// Scope collection - shared with audio thread for UI reads
+  /// TODO: consider reading and writing through channels instead of shared mutex for better performance and to avoid contention
   scope_collection: Arc<Mutex<HashMap<ScopeItem, ScopeBuffer>>>,
   /// Recording writer - shared with audio thread
   recording_writer: Arc<Mutex<Option<WavWriter<BufWriter<File>>>>>,
