@@ -135,6 +135,14 @@ var console: Console;
 
 type OrArray<T> = T | T[];
 
+/**
+ * Maps each array type in a tuple to its element type.
+ * Used to type the extra arguments in the Cartesian product overload of \`pipe\`.
+ */
+type ElementsOf<T extends unknown[][]> = {
+  [K in keyof T]: T[K] extends (infer E)[] ? E : never;
+};
+
 interface Array<T> {
   /**
    * Pipe this array through a transform function.
@@ -323,6 +331,26 @@ interface ModuleOutput {
    * $saw('c').pipe(tremolo).out()
    */
   pipe<T>(pipeFn: (self: this) => T): T;
+  /**
+   * Pipe this output through a transform for each combination of arguments
+   * (Cartesian product). Returns a {@link Collection} containing one output per combination.
+   *
+   * @param pipeFn - A function that receives this output plus one set of Cartesian arguments
+   * @param arrays - One or more arrays whose elements are spread into \`pipeFn\`
+   * @returns A {@link Collection} with one item per combination
+   *
+   * @example
+   * // 3 notes × 2 detunes = 6 outputs
+   * $sine('C4').pipe(
+   *   (s, note, detune) => $sine(note, { detune }),
+   *   ['C4', 'E4', 'G4'],
+   *   [0, 5],
+   * ).out()
+   */
+  pipe<T extends ModuleOutput | Iterable<ModuleOutput>, A extends unknown[][]>(
+    pipeFn: (self: this, ...args: ElementsOf<A>) => T,
+    ...arrays: A
+  ): Collection;
 
   /**
    * Pipe this output through a transform, then mix the original and transformed
@@ -493,6 +521,25 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
    * $r($saw('220hz'), $saw('221hz')).pipe(tremolo).out()
    */
   pipe<T>(pipeFn: (self: this) => T): T;
+  /**
+   * Pipe this collection through a transform for each combination of arguments
+   * (Cartesian product). Returns a {@link Collection} containing one output per combination.
+   *
+   * @param pipeFn - A function that receives this collection plus one set of Cartesian arguments
+   * @param arrays - One or more arrays whose elements are spread into \`pipeFn\`
+   * @returns A {@link Collection} with one item per combination
+   *
+   * @example
+   * // Apply each filter cutoff to the whole collection
+   * $c(osc1, osc2).pipe(
+   *   (col, cutoff) => $lpf(col, cutoff),
+   *   ['200hz', '800hz', '3200hz'],
+   * ).out()
+   */
+  pipe<T extends ModuleOutput | Iterable<ModuleOutput>, A extends unknown[][]>(
+    pipeFn: (self: this, ...args: ElementsOf<A>) => T,
+    ...arrays: A
+  ): Collection;
 
   /**
    * Pipe this collection through a transform, then mix the original and transformed

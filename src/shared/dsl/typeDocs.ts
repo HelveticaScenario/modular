@@ -174,6 +174,26 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 example: 'lfo.outMono(2, 0.3)',
             },
             {
+                name: 'pipe',
+                signature: 'pipe<T>(pipeFn: (self: this) => T): T',
+                description:
+                    'Pass this output through a transform function and return the result. ' +
+                    'Enables inline transforms and reusable signal-processing helpers.',
+                example: "$saw('c4').pipe(s => s.amplitude(0.5)).out()",
+            },
+            {
+                name: 'pipe',
+                signature:
+                    'pipe<T>(pipeFn: (self: this, ...args: ElementsOf<A>) => T, ...arrays: A): Collection',
+                description:
+                    'Call pipeFn once for every combination of values across the provided arrays (Cartesian product), ' +
+                    'collecting all results into a Collection. ' +
+                    'Useful for generating families of voices that vary across multiple dimensions.',
+                example:
+                    '// Create 2 groups of 3 voices with different detune values\n' +
+                    "$sine('C4').pipe((s, det) => $sine(['C4', 'E4', 'G4'], { detune: det }), [0, 5]).out()",
+            },
+            {
                 name: 'pipeMix',
                 signature:
                     'pipeMix(pipeFn: (self: this) => ModuleOutput | Collection, options?: { mode?: "sum" | "average" | "max" | "min"; gain?: Poly<Signal> }): Collection',
@@ -301,6 +321,24 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 description:
                     'Remap all outputs from input range to output range. Requires explicit input min/max.',
                 example: '$c(lfo1, lfo2).range(0, 1, -5, 5)',
+            },
+            {
+                name: 'pipe',
+                signature: 'pipe<T>(pipeFn: (self: this) => T): T',
+                description:
+                    'Pass this collection through a transform function and return the result. ' +
+                    'Enables inline transforms and reusable signal-processing helpers.',
+                example: '$c(osc1, osc2).pipe(all => all.amplitude(0.5)).out()',
+            },
+            {
+                name: 'pipe',
+                signature:
+                    'pipe<T>(pipeFn: (self: this, ...args: ElementsOf<A>) => T, ...arrays: A): Collection',
+                description:
+                    'Call pipeFn once for every combination of values across the provided arrays (Cartesian product), ' +
+                    'collecting all results into a Collection.',
+                example:
+                    "$c(osc1, osc2).pipe((col, cutoff) => $lpf(col, cutoff), ['200hz', '800hz', '3200hz']).out()",
             },
             {
                 name: 'pipeMix',

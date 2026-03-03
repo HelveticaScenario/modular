@@ -48,6 +48,34 @@ export type OrArray<T> = T | T[];
 export type Signal = number | string | ModuleOutput;
 export type PolySignal = OrArray<Signal> | Iterable<ModuleOutput>;
 
+// ─── Cartesian product helpers ────────────────────────────────────────────────
+
+export type ElementsOf<T extends unknown[][]> = {
+    [K in keyof T]: T[K] extends (infer E)[] ? E : never;
+};
+
+/**
+ * Compute the Cartesian product of the given arrays.
+ *
+ * Returns every possible combination of one element from each array.
+ * Useful with the multi-argument overload of {@link ModuleOutput.pipe} and
+ * {@link BaseCollection.pipe} to fan out a signal across multiple parameter combinations.
+ *
+ * @param arrays - Zero or more arrays to combine
+ * @returns Array of tuples, one per combination
+ *
+ * @example cartesian([1, 2], ['a', 'b'])
+ * // → [[1,'a'], [1,'b'], [2,'a'], [2,'b']]
+ */
+export function cartesian<A extends unknown[][]>(
+    ...arrays: A
+): ElementsOf<A>[] {
+    return arrays.reduce<unknown[][]>(
+        (acc, arr) => acc.flatMap((combo) => arr.map((val) => [...combo, val])),
+        [[]],
+    ) as ElementsOf<A>[];
+}
+
 /** Options for stereo output routing */
 export interface StereoOutOptions {
     /** Base output channel (0-14, default 0). Left plays on baseChannel, right on baseChannel+1 */
@@ -215,8 +243,27 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
         return this;
     }
 
-    pipe<T>(pipelineFunc: (self: this) => T): T {
-        return pipelineFunc(this);
+    pipe<T>(pipelineFunc: (self: this) => T): T;
+    pipe<
+        T extends ModuleOutput | Iterable<ModuleOutput>,
+        A extends unknown[][],
+    >(
+        pipelineFunc: (self: this, ...args: ElementsOf<A>) => T,
+        ...arrays: A
+    ): Collection;
+    pipe<T>(
+        pipelineFunc: (self: this, ...args: unknown[]) => T,
+        ...arrays: unknown[][]
+    ): T | Collection {
+        if (arrays.length === 0) return pipelineFunc(this);
+        return $c(
+            ...cartesian(...arrays).map(
+                (combo) =>
+                    pipelineFunc(this, ...combo) as
+                        | ModuleOutput
+                        | Iterable<ModuleOutput>,
+            ),
+        );
     }
 
     pipeMix(
@@ -1061,8 +1108,27 @@ export class ModuleOutput {
         return this;
     }
 
-    pipe<T>(pipelineFunc: (self: this) => T): T {
-        return pipelineFunc(this);
+    pipe<T>(pipelineFunc: (self: this) => T): T;
+    pipe<
+        T extends ModuleOutput | Iterable<ModuleOutput>,
+        A extends unknown[][],
+    >(
+        pipelineFunc: (self: this, ...args: ElementsOf<A>) => T,
+        ...arrays: A
+    ): Collection;
+    pipe<T>(
+        pipelineFunc: (self: this, ...args: unknown[]) => T,
+        ...arrays: unknown[][]
+    ): T | Collection {
+        if (arrays.length === 0) return pipelineFunc(this);
+        return $c(
+            ...cartesian(...arrays).map(
+                (combo) =>
+                    pipelineFunc(this, ...combo) as
+                        | ModuleOutput
+                        | Iterable<ModuleOutput>,
+            ),
+        );
     }
 
     pipeMix(
