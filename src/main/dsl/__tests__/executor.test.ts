@@ -17,7 +17,7 @@ let dslLibSource: string;
 
 beforeAll(() => {
     schemas = getSchemas();
-    dslLibSource = buildLibSource(schemas);
+    dslLibSource = buildLibSource(schemas, true);
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
