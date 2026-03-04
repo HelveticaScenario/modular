@@ -9,6 +9,7 @@ import {
 import {
     $c,
     $r,
+    $cartesian,
     Signal,
     SourceLocation,
     DeferredModuleOutput,
@@ -199,6 +200,7 @@ export function executePatchScript(
         // Collection helpers
         $c,
         $r,
+        $cartesian,
         // Deferred signal helper
         $deferred,
         // Slider control

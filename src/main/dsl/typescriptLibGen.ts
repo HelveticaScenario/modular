@@ -133,14 +133,6 @@ interface Console {
 
 var console: Console;
 
-/**
- * Maps each array type in a tuple to its element type.
- * Used to type the extra arguments in the Cartesian product overload of \`pipe\`.
- */
-type ElementsOf<T extends unknown[][]> = {
-  [K in keyof T]: T[K] extends (infer E)[] ? E : never;
-};
-
 interface Array<T> {
   /**
    * Pipe this array through a transform function.
@@ -244,6 +236,14 @@ type ModeString =
 type Scale = \`\${number}s(\${Note}:\${ModeString})\`
 
 type OrArray<T> = T | T[];
+
+/**
+ * Extracts the element types from a tuple of arrays.
+ * Used as the return type of {@link $cartesian} to enable typed destructuring.
+ * @example
+ * type T = ElementsOf<[number[], string[]]>; // [number, string]
+ */
+type ElementsOf<T extends unknown[][]> = { [K in keyof T]: T[K] extends (infer E)[] ? E : never };
 
 /**
  * A single-channel audio signal value. The fundamental type for all audio connections.
@@ -417,24 +417,23 @@ interface ModuleOutput {
    */
   pipe<T>(pipeFn: (self: this) => T): T;
   /**
-   * Pipe this output through a transform for each combination of arguments
-   * (Cartesian product). Returns a {@link Collection} containing one output per combination.
+   * Pipe this output through a transform for each element of an array.
+   * Returns a {@link Collection} containing one output per element.
    *
-   * @param pipeFn - A function that receives this output plus one set of Cartesian arguments
-   * @param arrays - One or more arrays whose elements are spread into \`pipeFn\`
-   * @returns A {@link Collection} with one item per combination
+   * @param pipeFn - A function that receives this output and one element from the array
+   * @param array - An array whose elements are passed to \`pipeFn\` one by one
+   * @returns A {@link Collection} with one item per element
    *
    * @example
-   * // 3 notes × 2 detunes = 6 outputs
-   * $sine('C4').pipe(
-   *   (s, note, detune) => $sine(note, { detune }),
-   *   ['C4', 'E4', 'G4'],
-   *   [0, 5],
+   * // 6 outputs
+   * $sine(['C4', 'E4', 'G4']).pipe(
+   *   (s, cut) => $lph(s, cut),
+   *   ['440hz', '880hz'],
    * ).out()
    */
-  pipe<T extends ModuleOutput | Iterable<ModuleOutput>, A extends unknown[][]>(
-    pipeFn: (self: this, ...args: ElementsOf<A>) => T,
-    ...arrays: A
+  pipe<T extends ModuleOutput | Iterable<ModuleOutput>, E>(
+    pipeFn: (self: this, item: E) => T,
+    array: E[]
   ): Collection;
 
   /**
@@ -607,12 +606,12 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
    */
   pipe<T>(pipeFn: (self: this) => T): T;
   /**
-   * Pipe this collection through a transform for each combination of arguments
-   * (Cartesian product). Returns a {@link Collection} containing one output per combination.
+   * Pipe this collection through a transform for each element of an array.
+   * Returns a {@link Collection} containing one output per element.
    *
-   * @param pipeFn - A function that receives this collection plus one set of Cartesian arguments
-   * @param arrays - One or more arrays whose elements are spread into \`pipeFn\`
-   * @returns A {@link Collection} with one item per combination
+   * @param pipeFn - A function that receives this collection and one element from the array
+   * @param array - An array whose elements are passed to \`pipeFn\` one by one
+   * @returns A {@link Collection} with one item per element
    *
    * @example
    * // Apply each filter cutoff to the whole collection
@@ -621,9 +620,9 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
    *   ['200hz', '800hz', '3200hz'],
    * ).out()
    */
-  pipe<T extends ModuleOutput | Iterable<ModuleOutput>, A extends unknown[][]>(
-    pipeFn: (self: this, ...args: ElementsOf<A>) => T,
-    ...arrays: A
+  pipe<T extends ModuleOutput | Iterable<ModuleOutput>, E>(
+    pipeFn: (self: this, item: E) => T,
+    array: E[]
   ): Collection;
 
   /**
@@ -810,6 +809,27 @@ function $deferred(channels?: number): DeferredCollection;
  * $sine(440).amplitude(vol).out();
  */
 function $slider(label: string, value: number, min: number, max: number): ModuleOutput;
+
+/**
+ * Compute the Cartesian product of the given arrays.
+ *
+ * Returns every possible combination of one element from each array,
+ * as a typed tuple array. Pairs well with the array overload of \`.pipe()\`
+ * to fan a signal across multiple parameter dimensions.
+ *
+ * @param arrays - Zero or more arrays to combine
+ * @returns Array of typed tuples, one per combination
+ *
+ * @example
+ * // Fan an oscillator across every combination of frequency and waveform
+ * $cartesian([220, 440, 880], ['sine', 'saw']).pipe(
+ *   (osc, [freq, shape]) => $oscillator({ freq, shape }).out(),
+ * ).out();
+ *
+ * @example $cartesian([1, 2], ['a', 'b'])
+ * // → [[1,'a'], [1,'b'], [2,'a'], [2,'b']]
+ */
+function $cartesian<A extends unknown[][]>(...arrays: A): ElementsOf<A>[];
 `;
 
 export function buildLibSource(schemas: ModuleSchema[]): string {

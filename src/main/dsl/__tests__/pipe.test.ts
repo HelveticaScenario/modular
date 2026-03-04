@@ -1,6 +1,5 @@
 /**
- * Tests for the Cartesian product overload on ModuleOutput.pipe and BaseCollection.pipe,
- * and for the cartesian() utility function.
+ * Tests for the array overload on ModuleOutput.pipe and BaseCollection.pipe.
  */
 
 import { describe, test, expect, beforeAll } from 'vitest';
@@ -10,8 +9,6 @@ import {
     BaseCollection,
     Collection,
     ModuleOutput,
-    $c,
-    cartesian,
 } from '../GraphBuilder';
 
 let schemas: ModuleSchema[];
@@ -22,32 +19,6 @@ beforeAll(() => {
     builder = new GraphBuilder(schemas);
 });
 
-// ─── cartesian() utility ──────────────────────────────────────────────────────
-
-describe('cartesian()', () => {
-    test('with no arrays returns [[]]', () => {
-        expect(cartesian()).toEqual([[]]);
-    });
-
-    test('with one array wraps each element', () => {
-        expect(cartesian([1, 2, 3])).toEqual([[1], [2], [3]]);
-    });
-
-    test('with two arrays returns full cartesian product', () => {
-        const result = cartesian([1, 2], ['a', 'b', 'c']);
-        expect(result).toEqual([
-            [1, 'a'],
-            [1, 'b'],
-            [1, 'c'],
-            [2, 'a'],
-            [2, 'b'],
-            [2, 'c'],
-        ]);
-    });
-});
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function makeOutput(id: string = 'test-1'): ModuleOutput {
     return new ModuleOutput(builder, id, 'out', 0);
 }
@@ -55,7 +26,7 @@ function makeOutput(id: string = 'test-1'): ModuleOutput {
 // ─── BaseCollection.pipe ─────────────────────────────────────────────────────
 
 describe('BaseCollection.pipe', () => {
-    test('with no arrays returns non-Collection value (old behavior)', () => {
+    test('with no arrays returns non-Collection value (simple overload)', () => {
         const col = new BaseCollection<ModuleOutput>(makeOutput());
         const result = col.pipe(() => 42);
         expect(result).toBe(42);
@@ -74,18 +45,6 @@ describe('BaseCollection.pipe', () => {
         expect(result.items.length).toBe(3);
     });
 
-    test('with two arrays returns Collection with item count equal to product length', () => {
-        const col = new BaseCollection<ModuleOutput>(makeOutput());
-        const result = col.pipe(
-            (_self, _a, _b) => makeOutput(),
-            [1, 2],
-            ['x', 'y', 'z'],
-        );
-        expect(result).toBeInstanceOf(Collection);
-        // 2 * 3 = 6 combinations
-        expect(result.items.length).toBe(6);
-    });
-
     test('passes self as first argument to pipelineFunc', () => {
         const col = new BaseCollection<ModuleOutput>(makeOutput());
         let captured: unknown;
@@ -98,12 +57,25 @@ describe('BaseCollection.pipe', () => {
         );
         expect(captured).toBe(col);
     });
+
+    test('passes each array element as second argument to pipelineFunc', () => {
+        const col = new BaseCollection<ModuleOutput>(makeOutput());
+        const captured: unknown[] = [];
+        col.pipe(
+            (_s, item) => {
+                captured.push(item);
+                return makeOutput();
+            },
+            ['a', 'b', 'c'],
+        );
+        expect(captured).toEqual(['a', 'b', 'c']);
+    });
 });
 
 // ─── ModuleOutput.pipe ───────────────────────────────────────────────────────
 
 describe('ModuleOutput.pipe', () => {
-    test('with no arrays returns non-Collection value (old behavior)', () => {
+    test('with no arrays returns non-Collection value (simple overload)', () => {
         const output = makeOutput();
         const result = output.pipe(() => 99);
         expect(result).toBe(99);
@@ -116,15 +88,16 @@ describe('ModuleOutput.pipe', () => {
         expect(result.items.length).toBe(2);
     });
 
-    test('with two arrays returns Collection with correct size', () => {
+    test('passes each array element as second argument to pipelineFunc', () => {
         const output = makeOutput();
-        const result = output.pipe(
-            (_self, _a, _b) => makeOutput(),
+        const captured: unknown[] = [];
+        output.pipe(
+            (_s, item) => {
+                captured.push(item);
+                return makeOutput();
+            },
             [1, 2, 3],
-            ['x', 'y'],
         );
-        expect(result).toBeInstanceOf(Collection);
-        // 3 * 2 = 6 combinations
-        expect(result.items.length).toBe(6);
+        expect(captured).toEqual([1, 2, 3]);
     });
 });

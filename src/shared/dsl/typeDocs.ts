@@ -184,14 +184,14 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             {
                 name: 'pipe',
                 signature:
-                    'pipe<T>(pipeFn: (self: this, ...args: ElementsOf<A>) => T, ...arrays: A): Collection',
+                    'pipe<T>(pipeFn: (self: this, item: E) => T, array: E[]): Collection',
                 description:
-                    'Call pipeFn once for every combination of values across the provided arrays (Cartesian product), ' +
+                    'Call pipeFn once for every element in the provided array, ' +
                     'collecting all results into a Collection. ' +
-                    'Useful for generating families of voices that vary across multiple dimensions.',
+                    'Useful for generating a family of voices that each vary by one parameter.',
                 example:
-                    '// Create 2 groups of 3 voices with different detune values\n' +
-                    "$sine('C4').pipe((s, det) => $sine(['C4', 'E4', 'G4'], { detune: det }), [0, 5]).out()",
+                    '// Create 2 groups of 3 voices with different cutoff values\n' +
+                    "$sine(['C4', 'E4', 'G4']).pipe((s, cut) => $lfp(s, cut), ['440hz', '880hz']).out()",
             },
             {
                 name: 'pipeMix',
@@ -333,9 +333,9 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             {
                 name: 'pipe',
                 signature:
-                    'pipe<T>(pipeFn: (self: this, ...args: ElementsOf<A>) => T, ...arrays: A): Collection',
+                    'pipe<T>(pipeFn: (self: this, item: E) => T, array: E[]): Collection',
                 description:
-                    'Call pipeFn once for every combination of values across the provided arrays (Cartesian product), ' +
+                    'Call pipeFn once for every element in the provided array, ' +
                     'collecting all results into a Collection.',
                 example:
                     "$c(osc1, osc2).pipe((col, cutoff) => $lpf(col, cutoff), ['200hz', '800hz', '3200hz']).out()",
