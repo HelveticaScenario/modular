@@ -12,6 +12,7 @@ tracy = ["profiling/profile-with-tracy", "modular_derive/tracy"]
 
 [dependencies]
 serde_json = "1.0.147"
+arrayvec = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 lazy_static = "1.5"
 uuid = { version = "1.11", features = ["v4", "serde"] }
@@ -26,7 +27,7 @@ pest = "2.8.0"
 pest_derive = "2.8.0"
 regex = "1.12.2"
 fasteval = "0.2.4"
-rust-music-theory = "0.3.0"
+rust-music-theory = { version = "*", path = "../rust-music-theory" }
 paste = "1.0"
 profiling = { workspace = true }
 
