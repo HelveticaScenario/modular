@@ -7,8 +7,8 @@ export function applyDslLibToMonaco(monaco: Monaco, libSource: string) {
     if (!monaco || !libSource) return {};
 
     const ts = monaco.typescript;
-    const tsDefaults = ts.typescriptDefaults;
-    const extraLib = tsDefaults.addExtraLib(
+    const jsDefaults = ts.javascriptDefaults;
+    const extraLib = jsDefaults.addExtraLib(
         libSource,
         'file:///modular/dsl-lib.d.ts',
     );
@@ -27,8 +27,8 @@ export function formatPath(currentFile: string) {
     if (!currentFile.startsWith('/')) {
         currentFile = '/' + currentFile;
     }
-    if (!currentFile.endsWith('.ts') && !currentFile.endsWith('.tsx')) {
-        currentFile = currentFile + '.ts';
+    if (!currentFile.endsWith('.js') && !currentFile.endsWith('.mjs')) {
+        currentFile = currentFile + '.mjs';
     }
     return `file://${currentFile}`;
 }

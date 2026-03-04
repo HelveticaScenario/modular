@@ -28,10 +28,12 @@ const DSL_FUNCTIONS_TO_TRACK = new Set(['$slider']);
  * captureSourceLocation's {line, column} values.
  *
  * @param sourceFile - The ts-morph SourceFile to analyze
+ * @param firstLineColumnOffset - Column offset for the first line
  * @returns Registry mapping call site keys to expression spans
  */
 export function analyzeCallSiteSpans(
     sourceFile: SourceFile,
+    firstLineColumnOffset: number,
 ): CallSiteSpanRegistry {
     const callSiteSpans: CallSiteSpanRegistry = new Map();
 
@@ -59,10 +61,16 @@ export function analyzeCallSiteSpans(
 
         // Compute key in user-source coordinates so the renderer can look up
         // directly from captureSourceLocation's {line, column} values.
-        // Key format: "${line}:${column}" — both 1-based from ts-morph.
+        // Key format: "${userLine}:${v8Column}" where:
+        //   userLine = tsMorphLine (1-based, same as captureSourceLocation().line)
+        //   v8Column = tsMorphCol + firstLineColumnOffset for line 1, else tsMorphCol
+        //              (1-based, same as captureSourceLocation().column)
         const { line: startTsMorphLine, column: startTsMorphCol } =
             sourceFile.getLineAndColumnAtPos(callStartPos);
-        const key: CallSiteKey = `${startTsMorphLine}:${startTsMorphCol}`;
+        const v8Column =
+            startTsMorphCol +
+            (startTsMorphLine === 1 ? firstLineColumnOffset : 0);
+        const key: CallSiteKey = `${startTsMorphLine}:${v8Column}`;
 
         // Compute the end line of the full call expression (including closing paren)
         const callEnd = call.getEnd();

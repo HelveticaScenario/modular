@@ -135,7 +135,7 @@ export function registerMidiCompletionProvider(
     };
 
     const disposable = monaco.languages.registerCompletionItemProvider(
-        'typescript',
+        'javascript',
         provider,
     );
 

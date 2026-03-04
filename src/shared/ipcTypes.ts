@@ -154,18 +154,6 @@ export interface SerializedResolvedInterpolation {
     nestedResolutions?: SerializedResolvedInterpolation[];
 }
 
-/** TypeScript compilation diagnostic */
-export interface TypeDiagnostic {
-    message: string;
-    /** 1-based line in the user's TS source */
-    line: number;
-    /** 1-based column in the user's TS source */
-    column: number;
-    /** TS error code (e.g. 2304) */
-    code: number;
-    category: 'error' | 'warning' | 'suggestion';
-}
-
 export interface DSLExecuteResult {
     success: boolean;
     errors?: ApplyPatchError[];
@@ -185,8 +173,6 @@ export interface DSLExecuteResult {
     updateId?: number;
     /** Full call expression spans for DSL methods, keyed by "line:column" */
     callSiteSpans?: Record<string, { startLine: number; endLine: number }>;
-    /** Type errors from TypeScript compilation — if present, execution was blocked */
-    typeErrors?: TypeDiagnostic[];
 }
 
 /**

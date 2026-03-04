@@ -1,15 +1,15 @@
 /**
  * Source Analysis Orchestration
  *
- * Thin entry point that accepts a pre-parsed ts-morph SourceFile and
+ * Thin entry point that creates a ts-morph Project/SourceFile once and
  * delegates to the argument span analyzer and call site span analyzer.
  * Returns a combined AnalysisResult.
  */
 
-import type { SourceFile } from 'ts-morph';
+import { Project, ts } from 'ts-morph';
 import type { ModuleSchema } from '@modular/core';
 
-import type { AnalysisResult } from './sourceAnalysisTypes';
+import type { AnalysisResult, SpanRegistry } from './sourceAnalysisTypes';
 import { analyzeArgumentSpans } from './argumentSpanAnalyzer';
 import { analyzeCallSiteSpans } from './callSiteSpanAnalyzer';
 
@@ -34,23 +34,46 @@ export {
  * Analyze DSL source code and build registries for argument locations
  * and call expression spans.
  *
- * @param sourceFile - A pre-parsed ts-morph SourceFile to analyze
+ * @param source - The DSL source code to analyze
  * @param schemas - Module schemas to determine which calls to track
+ * @param lineOffset - Line offset to add (for wrapped code in new Function)
+ * @param firstLineColumnOffset - Column offset for the first line
  * @returns Analysis result with span registry, interpolation resolution map,
  *          and call site span registry
  */
 export function analyzeSourceSpans(
-    sourceFile: SourceFile,
+    source: string,
     schemas: ModuleSchema[],
+    lineOffset: number = 0,
+    firstLineColumnOffset: number = 0,
 ): AnalysisResult {
+    // Create an in-memory TypeScript project
+    const project = new Project({
+        useInMemoryFileSystem: true,
+        compilerOptions: {
+            target: ts.ScriptTarget.ESNext,
+            allowJs: true,
+            checkJs: false,
+            noEmit: true,
+        },
+    });
+
+    // Add source as a virtual file
+    const sourceFile = project.createSourceFile('dsl.ts', source);
+
     // Pass 1: Argument spans for factory calls
     const { registry, interpolationResolutions } = analyzeArgumentSpans(
         sourceFile,
         schemas,
+        lineOffset,
+        firstLineColumnOffset,
     );
 
     // Pass 2: Full call expression spans for DSL methods
-    const callSiteSpans = analyzeCallSiteSpans(sourceFile);
+    const callSiteSpans = analyzeCallSiteSpans(
+        sourceFile,
+        firstLineColumnOffset,
+    );
 
     return { registry, interpolationResolutions, callSiteSpans };
 }

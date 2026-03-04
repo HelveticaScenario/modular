@@ -6,7 +6,7 @@ import { ErrorDisplay } from './components/ErrorDisplay';
 import { Settings } from './components/Settings';
 import './App.css';
 // import type { editor } from 'monaco-editor';
-import { editor, MarkerSeverity } from 'monaco-editor';
+import { editor } from 'monaco-editor';
 import { getErrorMessage } from './utils/errorUtils';
 import { FileExplorer } from './components/FileExplorer';
 import { Sidebar } from './components/Sidebar';
@@ -18,7 +18,6 @@ import type {
     FileTreeEntry,
     SourceLocationInfo,
     TransportSnapshot,
-    TypeDiagnostic,
 } from '../shared/ipcTypes';
 import type { SliderDefinition } from '../shared/dsl/sliderTypes';
 import { findSliderValueSpan } from './dsl/sliderSourceEdit';
@@ -74,58 +73,6 @@ function transformErrorsWithSourceLocations(
 
         return err;
     });
-}
-
-/** Owner string for type error markers set on the Monaco model. */
-const TYPE_ERROR_MARKER_OWNER = 'typescript-dsl';
-
-/**
- * Map TypeDiagnostic category to Monaco MarkerSeverity.
- */
-function diagnosticSeverity(
-    category: TypeDiagnostic['category'],
-): MarkerSeverity {
-    switch (category) {
-        case 'error':
-            return MarkerSeverity.Error;
-        case 'warning':
-            return MarkerSeverity.Warning;
-        case 'suggestion':
-            return MarkerSeverity.Info;
-    }
-}
-
-/**
- * Set Monaco model markers from TypeScript compilation diagnostics.
- */
-function setTypeErrorMarkers(
-    editorInstance: editor.IStandaloneCodeEditor | null,
-    diagnostics: TypeDiagnostic[],
-) {
-    const model = editorInstance?.getModel();
-    if (!model) return;
-
-    const markers: editor.IMarkerData[] = diagnostics.map((d) => ({
-        severity: diagnosticSeverity(d.category),
-        message: `TS${d.code}: ${d.message}`,
-        startLineNumber: d.line,
-        startColumn: d.column,
-        endLineNumber: d.line,
-        endColumn: d.column,
-    }));
-
-    editor.setModelMarkers(model, TYPE_ERROR_MARKER_OWNER, markers);
-}
-
-/**
- * Clear all type error markers from the Monaco model.
- */
-function clearTypeErrorMarkers(
-    editorInstance: editor.IStandaloneCodeEditor | null,
-) {
-    const model = editorInstance?.getModel();
-    if (!model) return;
-    editor.setModelMarkers(model, TYPE_ERROR_MARKER_OWNER, []);
 }
 
 function App() {
@@ -499,20 +446,6 @@ function App() {
                 lastPatchResultRef.current = result;
 
                 if (!result.success) {
-                    // Type errors — show inline Monaco markers + banner
-                    if (result.typeErrors && result.typeErrors.length > 0) {
-                        setTypeErrorMarkers(
-                            editorRef.current,
-                            result.typeErrors,
-                        );
-                        const count = result.typeErrors.length;
-                        setError(
-                            `TypeScript: ${count} type error${count > 1 ? 's' : ''}`,
-                        );
-                        setValidationErrors(null);
-                        return;
-                    }
-
                     // Still set interpolation resolutions even on validation errors
                     // (the analysis succeeded, only the patch application failed)
                     if (result.interpolationResolutions) {
@@ -543,8 +476,6 @@ function App() {
                     return;
                 }
 
-                // Execution succeeded — clear any stale type error markers
-                clearTypeErrorMarkers(editorRef.current);
                 setIsClockRunning(true);
                 setRunningBufferId(activeBufferId);
                 setError(null);
@@ -680,7 +611,6 @@ function App() {
     const dismissError = useCallback(() => {
         setError(null);
         setValidationErrors(null);
-        clearTypeErrorMarkers(editorRef.current);
     }, []);
 
     useEffect(() => {

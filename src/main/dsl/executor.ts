@@ -3,9 +3,8 @@ import {
     DSLContext,
     hz,
     note,
+    setDSLWrapperLineOffset,
     setActiveSpanRegistry,
-    setActiveSourceMapConsumer,
-    clearActiveSourceMapConsumer,
 } from './factories';
 import {
     $c,
@@ -20,9 +19,6 @@ import type { CallSiteSpanRegistry } from './analyzeSource';
 import type { InterpolationResolutionMap } from '../../shared/dsl/spanTypes';
 import { setActiveInterpolationResolutions } from '../../shared/dsl/spanTypes';
 import type { SliderDefinition } from '../../shared/dsl/sliderTypes';
-import { typecheckAndCompile } from './typecheckAndCompile';
-import type { TypeDiagnostic } from './typecheckAndCompile';
-import { SourceMapConsumer } from 'source-map-js';
 
 // Augment Array.prototype with pipe() for TypeScript
 declare global {
@@ -32,19 +28,9 @@ declare global {
 }
 
 /**
- * Result of executing a DSL script — discriminated union.
- *
- * When type errors block execution, only `typeErrors` is present.
- * On successful execution, all patch-related fields are present.
+ * Result of executing a DSL script.
  */
-export type DSLExecutionResult = DSLTypeErrorResult | DSLSuccessResult;
-
-export interface DSLTypeErrorResult {
-    /** Type errors from TypeScript compilation — execution was blocked */
-    typeErrors: TypeDiagnostic[];
-}
-
-export interface DSLSuccessResult {
+export interface DSLExecutionResult {
     /** The generated patch graph */
     patch: PatchGraph;
     /** Map from module ID to source location in DSL code */
@@ -79,47 +65,7 @@ if (typeof Array.prototype.pipe !== 'function') {
 export function executePatchScript(
     source: string,
     schemas: ModuleSchema[],
-    dslLibSource: string,
 ): DSLExecutionResult {
-    // -----------------------------------------------------------------------
-    // Typecheck and compile the TypeScript source
-    // -----------------------------------------------------------------------
-    const typecheckResult = typecheckAndCompile(source, dslLibSource);
-
-    // If type errors, return early — do not execute
-    if ('diagnostics' in typecheckResult) {
-        return { typeErrors: typecheckResult.diagnostics };
-    }
-
-    const {
-        compiledJs: rawCompiledJs,
-        sourceMapJson,
-        sourceFile,
-    } = typecheckResult;
-
-    // Strip the //# sourceMappingURL=... comment from compiled JS.
-    // V8 doesn't need it when we execute via new Function(), and it would be noise.
-    const compiledJs = rawCompiledJs.replace(
-        /\n?\/\/# sourceMappingURL=.*$/m,
-        '',
-    );
-
-    // -----------------------------------------------------------------------
-    // Build source map consumer with ";;" prepend for new Function() header
-    // -----------------------------------------------------------------------
-    // `new Function('a', 'b', body)` synthesizes:
-    //   Line 1: function anonymous(a,b
-    //   Line 2: ) {
-    //   Line 3+: body...
-    // The TS compiler's source map maps body positions starting at line 1,
-    // but V8 reports them starting at line 3. Prepending ";;" to the source
-    // map's `mappings` field shifts all mappings down by 2 lines (each ";"
-    // in VLQ mappings represents an empty line), absorbing the 2-line
-    // `new Function` header.
-    const rawSourceMap = JSON.parse(sourceMapJson);
-    rawSourceMap.mappings = ';;' + rawSourceMap.mappings;
-    const consumer = new SourceMapConsumer(rawSourceMap);
-
     // Create DSL context
     // console.log('Executing DSL script with schemas:', schemas);
     const context = new DSLContext(schemas);
@@ -268,28 +214,44 @@ export function executePatchScript(
 
     // console.log(dslGlobals);
 
-    // Analyze source code to extract argument spans before execution.
-    // Pass the ts-morph SourceFile directly (already parsed during compilation).
+    // Build the function body - count wrapper lines for source mapping
+    // When new Function() executes code, line numbers in stack traces are relative
+    // to the function body string. The template literal structure plus new Function's
+    // own wrapper results in user code starting at line 5 in stack traces.
+    const wrapperLineCount = 4;
+    setDSLWrapperLineOffset(wrapperLineCount);
+
+    // The function body template indents the first line of source with 4 spaces
+    // This affects the column reported by V8 for the first line only
+    const firstLineColumnOffset = 4;
+
+    // Analyze source code to extract argument spans before execution
+    // The registry maps call-site keys (line:column) to argument span info
     const {
         registry: spanRegistry,
         interpolationResolutions,
         callSiteSpans,
-    } = analyzeSourceSpans(sourceFile, schemas);
+    } = analyzeSourceSpans(
+        source,
+        schemas,
+        wrapperLineCount,
+        firstLineColumnOffset,
+    );
     setActiveSpanRegistry(spanRegistry);
     setActiveInterpolationResolutions(interpolationResolutions);
 
-    // Set active source map consumer so captureSourceLocation can map
-    // V8 stack positions back to original TS source positions.
-    setActiveSourceMapConsumer(consumer);
+    const functionBody = `
+    'use strict';
+    ${source}
+  `;
 
-    // Create parameter names and values — no wrapper template needed.
-    // The TS compiler with `alwaysStrict: true` emits "use strict"; already.
+    // Create parameter names and values
     const paramNames = Object.keys(dslGlobals);
     const paramValues = Object.values(dslGlobals);
 
     try {
-        // Execute the compiled JS directly
-        const fn = new Function(...paramNames, compiledJs);
+        // Execute the script
+        const fn = new Function(...paramNames, functionBody);
         fn(...paramValues);
 
         // Build and return the patch with source locations
@@ -313,10 +275,26 @@ export function executePatchScript(
         // Clear the span registry after execution — spans are already baked into
         // module state via ARGUMENT_SPANS_KEY so the registry isn't needed anymore.
         setActiveSpanRegistry(null);
-        // Clear source map consumer — no longer needed after execution
-        clearActiveSourceMapConsumer();
         // NOTE: Do NOT clear interpolation resolutions here. They are read
         // asynchronously by moduleStateTracking during decoration polling and
         // must persist until the next execution replaces them.
+    }
+}
+
+/**
+ * Validate DSL script syntax without executing
+ */
+export function validateDSLSyntax(source: string): {
+    valid: boolean;
+    error?: string;
+} {
+    try {
+        new Function(source);
+        return { valid: true };
+    } catch (error) {
+        if (error instanceof Error) {
+            return { valid: false, error: error.message };
+        }
+        return { valid: false, error: 'Unknown syntax error' };
     }
 }

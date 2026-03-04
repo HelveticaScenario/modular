@@ -1,29 +1,23 @@
-import type { SourceMapConsumer } from 'source-map-js';
-
 /**
- * Active source map consumer for mapping V8 stack positions back to
- * original DSL source positions. Set by the executor before running
- * user code, cleared afterwards.
+ * Line offset for DSL code wrapper.
+ * The executePatchScript creates a function body with 'use strict' which adds
+ * lines before user code.  This offset is configured by executor.ts at
+ * runtime via `setDSLWrapperLineOffset`.
  */
-let activeSourceMapConsumer: SourceMapConsumer | null = null;
+let dslWrapperLineOffset = 4;
 
-export function setActiveSourceMapConsumer(
-    consumer: SourceMapConsumer | null,
-): void {
-    activeSourceMapConsumer = consumer;
+export function setDSLWrapperLineOffset(offset: number): void {
+    dslWrapperLineOffset = offset;
 }
 
-export function clearActiveSourceMapConsumer(): void {
-    activeSourceMapConsumer = null;
+export function getDSLWrapperLineOffset(): number {
+    return dslWrapperLineOffset;
 }
 
 /**
  * Capture source location from the current stack trace.
  * Looks for the `<anonymous>` frame which corresponds to DSL code executed
  * inside `new Function(...)` by `executePatchScript`.
- *
- * If an active source map consumer is set, maps the raw V8 position back
- * to the original DSL source position. Otherwise returns the raw position.
  *
  * Returns `undefined` if the source location cannot be determined.
  */
@@ -47,30 +41,11 @@ export function captureSourceLocation():
         const anonymousMatch = line.match(/<anonymous>:(\d+):(\d+)/);
         if (anonymousMatch) {
             const rawLine = parseInt(anonymousMatch[1], 10);
-            const rawCol = parseInt(anonymousMatch[2], 10);
-
-            if (activeSourceMapConsumer) {
-                // source-map-js uses 0-based columns; V8 uses 1-based
-                const originalPosition =
-                    activeSourceMapConsumer.originalPositionFor({
-                        line: rawLine,
-                        column: rawCol - 1,
-                    });
-
-                if (
-                    originalPosition.line != null &&
-                    originalPosition.column != null
-                ) {
-                    // Convert back to 1-based columns for our system
-                    return {
-                        line: originalPosition.line,
-                        column: originalPosition.column + 1,
-                    };
-                }
+            const column = parseInt(anonymousMatch[2], 10);
+            const adjustedLine = rawLine - dslWrapperLineOffset;
+            if (adjustedLine > 0) {
+                return { line: adjustedLine, column };
             }
-
-            // No source map or mapping failed — return raw position
-            return { line: rawLine, column: rawCol };
         }
     }
 
