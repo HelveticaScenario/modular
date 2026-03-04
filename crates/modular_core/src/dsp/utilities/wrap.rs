@@ -35,11 +35,8 @@ struct WrapOutputs {
 /// ```js
 /// // wrap a ramp into 0–5 V
 /// $wrap(ramp, 0, 5)
-///
-/// // wrap with default 0–5 V range
-/// $wrap(signal)
 /// ```
-#[module(name = "$wrap", args(input, min?, max?))]
+#[module(name = "$wrap", args(input, min, max))]
 #[derive(Default)]
 pub struct Wrap {
     outputs: WrapOutputs,
