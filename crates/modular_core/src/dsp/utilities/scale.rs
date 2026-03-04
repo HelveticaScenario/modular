@@ -4,6 +4,9 @@
 //! - `ScaleSnapper`: A lookup table for snapping MIDI notes to a scale
 //! - Scale type validation and known scale types
 
+use std::fmt::Write as FmtWrite;
+
+use arrayvec::{ArrayString, ArrayVec};
 use rust_music_theory::note::{Note, Notes, Pitch};
 use rust_music_theory::scale::Scale;
 
@@ -28,19 +31,20 @@ impl FixedRoot {
     /// Parse from a string like "c", "c#", "bb", "c3", "c#4", "db3".
     /// The optional octave number follows the note letter and accidental.
     pub fn parse(s: &str) -> Option<Self> {
-        let chars: Vec<char> = s.chars().collect();
-        if chars.is_empty() {
+        // Note names are always ASCII; index by byte position directly.
+        let bytes = s.as_bytes();
+        if bytes.is_empty() {
             return None;
         }
 
-        let letter = chars[0].to_ascii_lowercase();
+        let letter = (bytes[0] as char).to_ascii_lowercase();
         if !('a'..='g').contains(&letter) {
             return None;
         }
 
         let mut idx = 1;
-        let accidental = if idx < chars.len() {
-            match chars[idx] {
+        let accidental = if idx < bytes.len() {
+            match bytes[idx] as char {
                 '#' | 's' => {
                     idx += 1;
                     Some('#')
@@ -55,9 +59,9 @@ impl FixedRoot {
             None
         };
 
-        let octave = if idx < chars.len() {
-            let rest: String = chars[idx..].iter().collect();
-            Some(rest.parse::<i8>().ok()?)
+        let octave = if idx < bytes.len() {
+            // idx has only advanced past single-byte ASCII chars, so s[idx..] is valid UTF-8.
+            Some(s[idx..].parse::<i8>().ok()?)
         } else {
             None
         };
@@ -105,12 +109,32 @@ impl FixedRoot {
 
     /// Convert to rust_music_theory Pitch.
     pub fn to_pitch(&self) -> Option<Pitch> {
-        let pitch_str = match self.accidental {
-            Some(acc) => format!("{}{}", self.letter.to_ascii_uppercase(), acc),
-            None => self.letter.to_ascii_uppercase().to_string(),
-        };
-        Pitch::from_str(&pitch_str)
+        // At most 2 chars: letter + optional accidental.
+        let mut pitch_str = ArrayString::<2>::new();
+        pitch_str.push(self.letter.to_ascii_uppercase());
+        if let Some(acc) = self.accidental {
+            pitch_str.push(acc);
+        }
+        Pitch::from_str(pitch_str.as_str())
     }
+}
+
+/// Remove consecutive duplicates from a sorted `ArrayVec<i8, 12>` in-place.
+///
+/// Equivalent to `[T]::dedup()` but works around the auto-deref resolution
+/// issue with unsized `[T]` receivers in the 2024 edition.
+fn dedup_sorted(v: &mut ArrayVec<i8, 12>) {
+    if v.len() <= 1 {
+        return;
+    }
+    let mut write = 1usize;
+    for read in 1..v.len() {
+        if v[read] != v[write - 1] {
+            v[write] = v[read];
+            write += 1;
+        }
+    }
+    v.truncate(write);
 }
 
 /// A scale snapper with precomputed lookup table for fast MIDI→scale snapping.
@@ -132,10 +156,10 @@ pub struct ScaleSnapper {
     root_offset: i8,
 
     /// The scale type name (for reference).
-    scale_name: String,
+    scale_name: ArrayString<64>,
 
     /// Scale intervals (semitones from root for each scale degree).
-    scale_intervals: Vec<i8>,
+    scale_intervals: ArrayVec<i8, 12>,
 }
 
 impl ScaleSnapper {
@@ -150,52 +174,60 @@ impl ScaleSnapper {
     pub fn new(root: &FixedRoot, scale_name: &str) -> Option<Self> {
         // Handle "chromatic" specially - it passes through all notes
         if scale_name.to_lowercase() == "chromatic" {
+            let mut name = ArrayString::<64>::new();
+            name.push_str("chromatic");
+            let mut intervals = ArrayVec::<i8, 12>::new();
+            for i in 0i8..12 {
+                intervals.push(i);
+            }
             return Some(Self {
                 snap_table: [0; 13],
                 root_offset: root.pitch_class(),
-                scale_name: "chromatic".to_string(),
-                scale_intervals: (0..12).collect(),
+                scale_name: name,
+                scale_intervals: intervals,
             });
         }
 
         let pitch = root.to_pitch()?;
         let root_note = Note::new(pitch, 4); // Octave doesn't matter for interval calculation
 
-        // Build scale definition string
-        let scale_def = format!("{} {}", root_note.pitch, scale_name);
-        let scale = Scale::from_regex(&scale_def).ok()?;
+        // Build scale definition string — at most ~20 chars (pitch 1-2, space, name ≤15).
+        let mut scale_def = ArrayString::<64>::new();
+        write!(scale_def, "{} {}", root_note.pitch, scale_name).ok()?;
+        let scale = Scale::from_regex(scale_def.as_str()).ok()?;
 
         let notes = scale.notes();
         if notes.is_empty() {
             return None;
         }
 
-        // Build set of scale degrees (pitch classes relative to root)
+        // Build set of scale degrees (pitch classes relative to root).
+        // A scale has at most 12 distinct degrees.
         let root_pc = root.pitch_class();
-        let mut scale_degrees: Vec<i8> = notes
-            .iter()
-            .map(|n| {
-                let pc = n.pitch.into_u8() as i8;
-                ((pc - root_pc) % 12 + 12) % 12
-            })
-            .collect();
+        let mut scale_degrees = ArrayVec::<i8, 12>::new();
+        for n in notes.iter().take(12) {
+            let pc = n.pitch.into_u8() as i8;
+            scale_degrees.push(((pc - root_pc) % 12 + 12) % 12);
+        }
 
-        // Remove duplicates and sort
+        // Remove duplicates and sort.
         scale_degrees.sort();
-        scale_degrees.dedup();
+        dedup_sorted(&mut scale_degrees);
 
-        // Include octave (12) for boundary handling
-        let mut degrees_with_octave = scale_degrees.clone();
+        // degrees_with_octave = scale_degrees + boundary 12.
+        let mut degrees_with_octave = ArrayVec::<i8, 13>::new();
+        degrees_with_octave.extend(scale_degrees.iter().copied());
         degrees_with_octave.push(12);
 
-        // Also include -12 (previous octave) for downward snapping
-        let mut degrees_extended: Vec<i8> = degrees_with_octave.clone();
+        // degrees_extended = degrees_with_octave + (scale_degrees shifted down an octave).
+        let mut degrees_extended = ArrayVec::<i8, 25>::new();
+        degrees_extended.extend(degrees_with_octave.iter().copied());
         for &d in &scale_degrees {
             degrees_extended.push(d - 12);
         }
         degrees_extended.sort();
 
-        // Build snap table: for each chromatic pitch (0-12), find nearest scale degree
+        // Build snap table: for each chromatic pitch (0-12), find nearest scale degree.
         let mut snap_table = [0i8; 13];
         for chromatic in 0..=12 {
             let mut best_offset = 0i8;
@@ -214,13 +246,14 @@ impl ScaleSnapper {
             snap_table[chromatic as usize] = best_offset;
         }
 
-        // Root offset: semitones from C to root
         let root_offset = root.pitch_class();
+        let mut name = ArrayString::<64>::new();
+        name.push_str(scale_name);
 
         Some(Self {
             snap_table,
             root_offset,
-            scale_name: scale_name.to_string(),
+            scale_name: name,
             scale_intervals: scale_degrees,
         })
     }
@@ -236,28 +269,33 @@ impl ScaleSnapper {
     pub fn from_intervals(root: &FixedRoot, intervals: &[i8]) -> Self {
         let root_pc = root.pitch_class();
 
-        // Normalize intervals to 0-11 range and deduplicate
-        let mut scale_degrees: Vec<i8> = intervals.iter().map(|&i| ((i % 12) + 12) % 12).collect();
+        // Normalize intervals to 0-11 range, take at most 12, then deduplicate.
+        let mut scale_degrees = ArrayVec::<i8, 12>::new();
+        for &i in intervals.iter().take(12) {
+            scale_degrees.push(((i % 12) + 12) % 12);
+        }
         scale_degrees.sort();
-        scale_degrees.dedup();
+        dedup_sorted(&mut scale_degrees);
 
-        // Ensure root is included
+        // Ensure root is included.
         if !scale_degrees.contains(&0) {
             scale_degrees.insert(0, 0);
         }
 
-        // Include octave (12) for boundary handling
-        let mut degrees_with_octave = scale_degrees.clone();
+        // degrees_with_octave = scale_degrees + boundary 12.
+        let mut degrees_with_octave = ArrayVec::<i8, 13>::new();
+        degrees_with_octave.extend(scale_degrees.iter().copied());
         degrees_with_octave.push(12);
 
-        // Also include -12 (previous octave) for downward snapping
-        let mut degrees_extended: Vec<i8> = degrees_with_octave.clone();
+        // degrees_extended = degrees_with_octave + (scale_degrees shifted down an octave).
+        let mut degrees_extended = ArrayVec::<i8, 25>::new();
+        degrees_extended.extend(degrees_with_octave.iter().copied());
         for &d in &scale_degrees {
             degrees_extended.push(d - 12);
         }
         degrees_extended.sort();
 
-        // Build snap table
+        // Build snap table.
         let mut snap_table = [0i8; 13];
         for chromatic in 0..=12 {
             let mut best_offset = 0i8;
@@ -276,10 +314,13 @@ impl ScaleSnapper {
             snap_table[chromatic as usize] = best_offset;
         }
 
+        let mut name = ArrayString::<64>::new();
+        name.push_str("custom");
+
         Self {
             snap_table,
             root_offset: root_pc,
-            scale_name: "custom".to_string(),
+            scale_name: name,
             scale_intervals: scale_degrees,
         }
     }
@@ -335,11 +376,11 @@ impl ScaleSnapper {
 
     /// Get the scale type name.
     pub fn scale_name(&self) -> &str {
-        &self.scale_name
+        self.scale_name.as_str()
     }
 
     /// Get the scale intervals (semitone offsets from root for each degree).
-    pub fn scale_intervals(&self) -> &[i8] {
+    pub fn scale_intervals(&self) -> &ArrayVec<i8, 12> {
         &self.scale_intervals
     }
 

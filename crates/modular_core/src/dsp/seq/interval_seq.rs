@@ -13,18 +13,19 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
 
+use arrayvec::ArrayVec;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
+    MonoSignal, Patch,
     dsp::{
         utilities::quantizer::ScaleParam,
-        utils::{midi_to_voct_f64, min_gate_samples, TempGate, TempGateState},
+        utils::{TempGate, TempGateState, midi_to_voct_f64, min_gate_samples},
     },
     pattern_system::Pattern,
-    poly::{PolyOutput, PORT_MAX_CHANNELS},
+    poly::{PORT_MAX_CHANNELS, PolyOutput},
     types::Connect,
-    MonoSignal, Patch,
 };
 
 /// Scale parameter for IntervalSeq that supports an optional octave in the root.
@@ -560,6 +561,8 @@ struct IntervalSeqOutputs {
     trig: PolyOutput,
 }
 
+const CAP: usize = 12;
+
 /// Scale-degree sequencer using a compact text syntax ported
 /// from TidalCycles/Strudel.
 ///
@@ -646,6 +649,7 @@ struct IntervalSeqOutputs {
     stateful,
     patch_update,
 )]
+
 pub struct IntervalSeq {
     outputs: IntervalSeqOutputs,
     params: IntervalSeqParams,
@@ -659,8 +663,8 @@ pub struct IntervalSeq {
     current_cycle_haps: Option<Arc<Vec<CombinedHap>>>,
     /// Module-level cache for cycles >= 1000 (element 0 = cycle 1000)
     module_cache: Vec<Option<Arc<Vec<CombinedHap>>>>,
-    /// Cached scale intervals for degree-to-semitone conversion
-    scale_intervals: Vec<i8>,
+    /// Cached scale intervals for degree-to-semitone conversion (no audio-thread allocs)
+    scale_intervals: ArrayVec<i8, CAP>,
     /// Base MIDI note for degree 0 (includes root pitch class + octave)
     base_midi: i32,
 }
@@ -689,8 +693,8 @@ impl Default for IntervalSeq {
             current_cycle: None,
             current_cycle_haps: None,
             module_cache: Vec::new(),
-            scale_intervals: vec![0, 2, 4, 5, 7, 9, 11], // Default major scale
-            base_midi: 60,                               // C4
+            scale_intervals: [0, 2, 4, 5, 7, 9, 11].into_iter().collect(), // Default major scale
+            base_midi: 60,                                                 // C4
             _channel_count: 0,
         }
     }
@@ -713,7 +717,7 @@ impl IntervalSeq {
 
         let module_idx = (cycle - 1000) as usize;
 
-        if module_idx >= self.module_cache.len() {
+        if module_idx >= self.module_cache.capacity() {
             self.module_cache.resize(module_idx + 1, None);
         }
 
@@ -794,10 +798,10 @@ impl IntervalSeq {
         let scale: &ScaleParam = &self.params.scale;
         self.base_midi = scale.base_midi();
         if let Some(snapper) = scale.snapper() {
-            self.scale_intervals = snapper.scale_intervals().to_vec();
+            self.scale_intervals = snapper.scale_intervals().clone();
         } else {
             // Chromatic - all 12 semitones
-            self.scale_intervals = (0..12).map(|i| i as i8).collect();
+            self.scale_intervals = (0i8..CAP as i8).into_iter().collect();
         }
     }
 }
@@ -1110,7 +1114,7 @@ mod tests {
     #[test]
     fn test_degree_to_voltage_major() {
         let mut seq = IntervalSeq::default();
-        seq.scale_intervals = vec![0, 2, 4, 5, 7, 9, 11]; // C major
+        seq.scale_intervals = [0, 2, 4, 5, 7, 9, 11].iter().copied().collect(); // C major
         seq.base_midi = 60; // C4
 
         // Degree 0 = C4 = MIDI 60 = 0V
@@ -1133,7 +1137,7 @@ mod tests {
     #[test]
     fn test_degree_to_voltage_with_octave() {
         let mut seq = IntervalSeq::default();
-        seq.scale_intervals = vec![0, 2, 4, 5, 7, 9, 11]; // C major
+        seq.scale_intervals = [0, 2, 4, 5, 7, 9, 11].iter().copied().collect(); // C major
         seq.base_midi = 48; // C3
 
         // Degree 0 = C3 = MIDI 48 = -1V
@@ -1146,7 +1150,7 @@ mod tests {
 
         // D3 root
         seq.base_midi = 50; // D3
-                            // Degree 0 = D3 = MIDI 50 = -10/12 V
+        // Degree 0 = D3 = MIDI 50 = -10/12 V
         let v0 = seq.degree_to_voltage(0);
         assert!((v0 - (-10.0 / 12.0)).abs() < 0.001);
     }
