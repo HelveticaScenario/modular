@@ -5,6 +5,7 @@ use crate::types::{ModuleSchema, ParamsValidator, SampleableConstructor};
 
 pub mod consts;
 pub mod core;
+pub mod dynamics;
 pub mod filters;
 pub mod fx;
 pub mod midi;
@@ -20,6 +21,7 @@ mod test_overlap;
 pub fn get_constructors() -> HashMap<String, SampleableConstructor> {
     let mut map = HashMap::new();
     core::install_constructors(&mut map);
+    dynamics::install_constructors(&mut map);
     fx::install_constructors(&mut map);
     oscillators::install_constructors(&mut map);
     filters::install_constructors(&mut map);
@@ -37,6 +39,7 @@ pub fn get_constructors() -> HashMap<String, SampleableConstructor> {
 pub fn get_param_validators() -> HashMap<String, ParamsValidator> {
     let mut map = HashMap::new();
     core::install_param_validators(&mut map);
+    dynamics::install_param_validators(&mut map);
     fx::install_param_validators(&mut map);
     oscillators::install_param_validators(&mut map);
     filters::install_param_validators(&mut map);
@@ -54,6 +57,7 @@ pub fn get_param_validators() -> HashMap<String, ParamsValidator> {
 pub fn get_params_deserializers() -> HashMap<String, ParamsDeserializer> {
     let mut map = HashMap::new();
     core::install_params_deserializers(&mut map);
+    dynamics::install_params_deserializers(&mut map);
     fx::install_params_deserializers(&mut map);
     oscillators::install_params_deserializers(&mut map);
     filters::install_params_deserializers(&mut map);
@@ -67,6 +71,7 @@ pub fn get_params_deserializers() -> HashMap<String, ParamsDeserializer> {
 pub fn schema() -> Vec<ModuleSchema> {
     [
         core::schemas(),
+        dynamics::schemas(),
         fx::schemas(),
         oscillators::schemas(),
         filters::schemas(),
