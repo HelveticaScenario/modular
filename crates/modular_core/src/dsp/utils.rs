@@ -56,22 +56,19 @@ pub fn interpolate(table: &'static [f32], mut index: f32, size: usize) -> f32 {
     a + (b - a) * index_fractional
 }
 
-pub fn wrap<T>(range: std::ops::Range<T>, mut val: T) -> T
+pub fn wrap<T>(range: std::ops::Range<T>, val: T) -> T
 where
     T: std::ops::Sub<Output = T>
-        + std::ops::AddAssign
+        + std::ops::Add<Output = T>
+        + std::ops::Rem<Output = T>
         + std::cmp::PartialOrd
-        + std::ops::SubAssign
         + Copy,
 {
     let span = range.end - range.start;
-    while val > range.end {
-        val -= span;
-    }
-    while val < range.start {
-        val += span;
-    }
-    val
+    let offset = (val - range.start) % span;
+    let zero = span - span;
+    let offset = if offset < zero { offset + span } else { offset };
+    range.start + offset
 }
 
 /// Result of edge detection

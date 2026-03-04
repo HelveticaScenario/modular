@@ -49,18 +49,26 @@ impl Clamp {
         for i in 0..channels as usize {
             let mut val = self.params.input.get_value(i);
 
-            if has_min {
-                let min_val = self.params.min.get_value(i);
-                if val < min_val {
-                    val = min_val;
+            match (has_min, has_max) {
+                (true, true) => {
+                    let a = self.params.min.get_value(i);
+                    let b = self.params.max.get_value(i);
+                    let (lo, hi) = if b < a { (b, a) } else { (a, b) };
+                    val = val.clamp(lo, hi);
                 }
-            }
-
-            if has_max {
-                let max_val = self.params.max.get_value(i);
-                if val > max_val {
-                    val = max_val;
+                (true, false) => {
+                    let min_val = self.params.min.get_value(i);
+                    if val < min_val {
+                        val = min_val;
+                    }
                 }
+                (false, true) => {
+                    let max_val = self.params.max.get_value(i);
+                    if val > max_val {
+                        val = max_val;
+                    }
+                }
+                (false, false) => {}
             }
 
             self.outputs.sample.set(i, val);
