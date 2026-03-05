@@ -4,6 +4,10 @@ import { AudioControls } from './components/AudioControls';
 import { TransportDisplay } from './components/TransportDisplay';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { Settings } from './components/Settings';
+import {
+    UpdateNotification,
+    type UpdateNotificationState,
+} from './components/UpdateNotification';
 import './App.css';
 // import type { editor } from 'monaco-editor';
 import { editor } from 'monaco-editor';
@@ -18,6 +22,7 @@ import type {
     FileTreeEntry,
     SourceLocationInfo,
     TransportSnapshot,
+    UpdateAvailableInfo,
 } from '../shared/ipcTypes';
 import type { SliderDefinition } from '../shared/dsl/sliderTypes';
 import { findSliderValueSpan } from './dsl/sliderSourceEdit';
@@ -123,6 +128,12 @@ function App() {
     const [sliderDefs, setSliderDefs] = useState<SliderDefinition[]>([]);
     const [transportState, setTransportState] =
         useState<TransportSnapshot | null>(null);
+
+    const [updateState, setUpdateState] = useState<UpdateNotificationState>({
+        status: 'idle',
+    });
+    // Store the version currently being offered so we can reference it later
+    const pendingUpdateVersion = useRef<string>('');
 
     const editorRef = useRef<editor.IStandaloneCodeEditor>(null);
     const scopeCanvasMapRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
@@ -324,6 +335,60 @@ function App() {
             }
         });
     }, [saveFile, renameFile, deleteFile]);
+
+    // Subscribe to update events from main process
+    useEffect(() => {
+        const unsubAvailable = electronAPI.update.onAvailable(
+            (info: UpdateAvailableInfo) => {
+                pendingUpdateVersion.current = info.version;
+                setUpdateState({
+                    status: 'available',
+                    version: info.version,
+                    releaseUrl: info.releaseUrl,
+                });
+            },
+        );
+        const unsubDownloading = electronAPI.update.onDownloading(() => {
+            setUpdateState({
+                status: 'downloading',
+                version: pendingUpdateVersion.current,
+            });
+        });
+        const unsubDownloaded = electronAPI.update.onDownloaded(() => {
+            setUpdateState({ status: 'ready' });
+        });
+        const unsubError = electronAPI.update.onError((message: string) => {
+            setUpdateState({ status: 'error', message });
+        });
+
+        return () => {
+            unsubAvailable();
+            unsubDownloading();
+            unsubDownloaded();
+            unsubError();
+        };
+    }, []);
+
+    const handleUpdateDownload = useCallback(() => {
+        void electronAPI.update.download();
+    }, []);
+
+    const handleUpdateInstall = useCallback(() => {
+        void electronAPI.update.install();
+    }, []);
+
+    const handleUpdateSkip = useCallback(() => {
+        if (pendingUpdateVersion.current) {
+            void electronAPI.config.write({
+                skippedUpdateVersion: pendingUpdateVersion.current,
+            });
+        }
+        setUpdateState({ status: 'idle' });
+    }, []);
+
+    const handleUpdateDismiss = useCallback(() => {
+        setUpdateState({ status: 'idle' });
+    }, []);
 
     const registerScopeCanvas = useCallback(
         (key: string, canvas: HTMLCanvasElement) => {
@@ -762,6 +827,13 @@ function App() {
                     </>
                 )}
             </main>
+            <UpdateNotification
+                state={updateState}
+                onDownload={handleUpdateDownload}
+                onInstall={handleUpdateInstall}
+                onSkip={handleUpdateSkip}
+                onDismiss={handleUpdateDismiss}
+            />
         </div>
     );
 }
