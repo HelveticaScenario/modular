@@ -11,7 +11,7 @@ use crate::dsp::utils::voct_to_hz;
 use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 use crate::types::Clickless;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct FoldParams {
     /// input signal to fold (bipolar, typically -5 to 5)

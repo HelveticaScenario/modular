@@ -65,7 +65,7 @@ struct ChannelState {
     envelope: f32,
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct CompressorParams {
     /// audio input signal

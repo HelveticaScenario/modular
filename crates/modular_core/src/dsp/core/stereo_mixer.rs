@@ -6,7 +6,7 @@ use crate::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct StereoMixerParams {
     /// Input signal to place in the stereo field.

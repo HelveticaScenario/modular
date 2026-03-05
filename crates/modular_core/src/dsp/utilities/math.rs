@@ -99,7 +99,7 @@ impl Connect for MathExpressionParam {
     }
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, JsonSchema, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct MathParams {
     /// math expression to evaluate (e.g. "x * 2 + sin(t)")
@@ -174,7 +174,7 @@ impl Default for Math {
     fn default() -> Self {
         Self {
             outputs: MathOutputs::default(),
-            params: MathParams::default(),
+            params: serde_json::from_value(serde_json::json!({})).unwrap(),
             phase: 0.0,
             loop_index: 0,
             running: true,

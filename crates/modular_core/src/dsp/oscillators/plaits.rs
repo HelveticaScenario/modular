@@ -117,7 +117,7 @@ impl Connect for PlaitsEngine {
     fn connect(&mut self, _patch: &ModularPatch) {}
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct PlaitsParams {
     /// Pitch input in V/Oct (0V = C4)
@@ -269,7 +269,7 @@ impl Default for Plaits {
             outputs: PlaitsOutputs::default(),
             channels: Vec::new(),   // Will be initialized in init()
             buffer_pos: BLOCK_SIZE, // Start exhausted to trigger initial render
-            params: PlaitsParams::default(),
+            params: serde_json::from_value(serde_json::json!({})).unwrap(),
             sample_rate: 0.0,
             _channel_count: 0,
         }

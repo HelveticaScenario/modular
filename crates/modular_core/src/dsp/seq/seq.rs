@@ -137,7 +137,7 @@ fn default_channels() -> usize {
     4
 }
 
-#[derive(Clone, Deserialize, Default, ChannelCount, JsonSchema, Connect, Debug, SignalParams)]
+#[derive(Clone, Deserialize, ChannelCount, JsonSchema, Connect, Debug, SignalParams)]
 #[serde(rename_all = "camelCase")]
 pub struct SeqParams {
     /// pattern string in mini-notation

@@ -8,7 +8,7 @@ fn default_count() -> usize {
     1
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct UnisonParams {
     /// input signal to expand (typically V/Oct pitch)

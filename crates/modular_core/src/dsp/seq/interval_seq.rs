@@ -426,7 +426,7 @@ fn default_channels() -> usize {
     4
 }
 
-#[derive(Clone, Deserialize, Default, ChannelCount, JsonSchema, Connect, Debug, SignalParams)]
+#[derive(Clone, Deserialize, ChannelCount, JsonSchema, Connect, Debug, SignalParams)]
 #[serde(rename_all = "camelCase")]
 pub struct IntervalSeqParams {
     /// patterns to combine (left-fold with appLeft addition); accepts a single
@@ -690,7 +690,7 @@ impl Default for IntervalSeq {
     fn default() -> Self {
         Self {
             outputs: IntervalSeqOutputs::default(),
-            params: IntervalSeqParams::default(),
+            params: serde_json::from_value(serde_json::json!({})).unwrap(),
             voices: std::array::from_fn(|_| IntervalVoiceState::default()),
             next_voice: 0,
             current_cycle: None,

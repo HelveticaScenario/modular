@@ -25,7 +25,7 @@ impl crate::types::Connect for MixMode {
     fn connect(&mut self, _patch: &crate::Patch) {}
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 pub struct MixParams {
     /// Input signals to mix channel-by-channel.
@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn test_mix_empty_inputs_no_gain() {
-        let mut mixer = make_mix(MixParams::default());
+        let mut mixer = make_mix(serde_json::from_value(serde_json::json!({})).unwrap());
         mixer.update(48000.0);
         // Empty inputs with no gain -> 1 channel of silence
         assert_eq!(mixer.outputs.sample.channels(), 1);

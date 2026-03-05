@@ -49,16 +49,6 @@ struct ClockParams {
     denominator: u32,
 }
 
-impl Default for ClockParams {
-    fn default() -> Self {
-        Self {
-            tempo: 120.0,
-            numerator: 4,
-            denominator: 4,
-        }
-    }
-}
-
 /// Tempo-synced transport clock for driving sequencers, envelopes, and synced modulation.
 #[module(name = "_clock", channels = 2, args(tempo))]
 pub struct Clock {
@@ -118,7 +108,7 @@ impl Default for Clock {
             ppq_gate: TempGate::new_gate(TempGateState::Low),
             beat_gate: TempGate::new_gate(TempGateState::Low),
             running: true,
-            params: ClockParams::default(),
+            params: serde_json::from_value(serde_json::json!({})).unwrap(),
             loop_index: 0,
             _channel_count: 0,
         }

@@ -7,7 +7,7 @@ fn default_count() -> usize {
     2
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct SpreadParams {
     /// lower bound of the spread range

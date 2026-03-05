@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use crate::poly::{PolyOutput, PolySignal, PolySignalExt};
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct ClampParams {
     /// signal to clamp

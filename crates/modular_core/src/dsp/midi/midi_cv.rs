@@ -72,7 +72,7 @@ struct VoiceState {
     mod_wheel: u8,
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct MidiCvParams {
     /// MIDI device name to receive from (leave unset to receive from all devices)
@@ -211,7 +211,7 @@ impl Default for MidiCv {
     fn default() -> Self {
         Self {
             outputs: MidiCvOutputs::default(),
-            params: MidiCvParams::default(),
+            params: serde_json::from_value(serde_json::json!({})).unwrap(),
             sample_rate: 48000.0,
             voices: [VoiceState::default(); PORT_MAX_CHANNELS],
             held_notes: Vec::with_capacity(128),

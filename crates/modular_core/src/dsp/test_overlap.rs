@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 use crate::poly::MonoSignal;
 
-#[derive(Clone, Default, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct TestOverlapParams {
     /// this conflicts with the output name

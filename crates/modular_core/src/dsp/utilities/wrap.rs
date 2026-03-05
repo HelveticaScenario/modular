@@ -6,7 +6,7 @@ use crate::{
     poly::{PolyOutput, PolySignal, PolySignalExt},
 };
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct WrapParams {
     /// signal to wrap
@@ -76,7 +76,7 @@ mod tests {
     fn run_wrap(input: f32, min: f32, max: f32) -> f32 {
         let mut module = Wrap {
             outputs: WrapOutputs::default(),
-            params: WrapParams::default(),
+            params: serde_json::from_value(serde_json::json!({})).unwrap(),
             _channel_count: 0,
         };
         module.params.input = Some(PolySignal::mono(Signal::Volts(input)));

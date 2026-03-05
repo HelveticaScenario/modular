@@ -187,7 +187,7 @@ fn default_scale() -> ScaleParam {
     ScaleParam::parse("chromatic").unwrap()
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct QuantizerParams {
     /// Input V/Oct signal to quantize
@@ -249,7 +249,7 @@ impl Default for Quantizer {
     fn default() -> Self {
         Self {
             outputs: QuantizerOutputs::default(),
-            params: QuantizerParams::default(),
+            params: serde_json::from_value(serde_json::json!({})).unwrap(),
             channels: std::array::from_fn(|_| ChannelState {
                 prev_quantized: None,
                 trigger: TempGate::new_gate(TempGateState::Low),

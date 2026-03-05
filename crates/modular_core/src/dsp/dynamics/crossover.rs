@@ -22,7 +22,7 @@ const BUTTERWORTH_Q: f32 = 0.707_107; // 1/sqrt(2)
 
 // ── Params & Outputs ─────────────────────────────────────────────────────────
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct CrossoverParams {
     /// audio input signal

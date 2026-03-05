@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct NoiseParams {
     /// color of the noise: white, pink, brown
@@ -106,7 +106,7 @@ impl Default for Noise {
     fn default() -> Self {
         Self {
             outputs: NoiseOutputs::default(),
-            params: NoiseParams::default(),
+            params: serde_json::from_value(serde_json::json!({})).unwrap(),
             generator: LcgRng {
                 state: 0x1234_5678_9abc_def0,
             },

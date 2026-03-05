@@ -10,7 +10,7 @@ fn default_voices() -> usize {
     5
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct SupersawParams {
     /// pitch in V/Oct (0V = C4)

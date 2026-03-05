@@ -6,7 +6,7 @@ use crate::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct RisingEdgeDetectorParams {
     /// signal to detect rising edges in
@@ -14,7 +14,7 @@ struct RisingEdgeDetectorParams {
     input: Option<PolySignal>,
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct FallingEdgeDetectorParams {
     /// signal to detect falling edges in
