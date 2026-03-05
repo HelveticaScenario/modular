@@ -126,24 +126,17 @@ pub fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
                                                     ])));
                                                 }
                                             });
-                                        } else if is_poly {
-                                            // Bare PolySignal — kept for backward compat during migration
-                                            default_stmts.extend(quote_spanned! {field.span()=>
-                                                if self.#field_ident.is_disconnected() {
-                                                    self.#field_ident = crate::poly::PolySignal::poly(&[
-                                                        #(#cable_exprs),*
-                                                    ]);
-                                                }
-                                            });
                                         } else {
-                                            // Bare MonoSignal — kept for backward compat during migration
-                                            default_stmts.extend(quote_spanned! {field.span()=>
-                                                if self.#field_ident.is_disconnected() {
-                                                    self.#field_ident = crate::poly::MonoSignal::from_poly(crate::poly::PolySignal::poly(&[
-                                                        #(#cable_exprs),*
-                                                    ]));
-                                                }
-                                            });
+                                            // Bare PolySignal/MonoSignal fields are required — they
+                                            // should not have #[default_connection] since the user
+                                            // must always provide them.
+                                            return syn::Error::new(
+                                                field.span(),
+                                                "#[default_connection] is not supported on bare (required) signal fields. \
+                                                 Use Option<PolySignal> or Option<MonoSignal> instead.",
+                                            )
+                                            .to_compile_error()
+                                            .into();
                                         }
                                     } else if is_option_signal {
                                         // Option<Signal> default (single channel)
@@ -154,13 +147,15 @@ pub fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
                                             }
                                         });
                                     } else {
-                                        // Bare Signal default (single channel) — kept for backward compat
-                                        let ch = dc.channels.first().copied().unwrap_or(0);
-                                        default_stmts.extend(quote_spanned! {field.span()=>
-                                            if self.#field_ident.is_disconnected() {
-                                                self.#field_ident = crate::types::WellKnownModule::#module.to_cable(#ch, #port);
-                                            }
-                                        });
+                                        // Bare Signal fields are required — they should not have
+                                        // #[default_connection].
+                                        return syn::Error::new(
+                                            field.span(),
+                                            "#[default_connection] is not supported on bare (required) signal fields. \
+                                             Use Option<Signal> instead.",
+                                        )
+                                        .to_compile_error()
+                                        .into();
                                     }
                                 }
                                 Err(e) => return e.to_compile_error().into(),
