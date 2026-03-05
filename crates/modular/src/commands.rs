@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use modular_core::params::DeserializedParams;
-use modular_core::types::{Message, ModuleIdRemap, Sampleable, Scope, ScopeItem};
+use modular_core::types::{Message, ModuleIdRemap, Sampleable, ScopeBufferKey};
 use napi_derive::napi;
 
 use crate::audio::ScopeBuffer;
@@ -44,13 +44,10 @@ pub struct PatchUpdate {
   pub param_updates: Vec<(String, DeserializedParams)>,
 
   /// Pre-built scope buffers to add (constructed on main thread)
-  pub scope_adds: Vec<(ScopeItem, ScopeBuffer)>,
+  pub scope_adds: Vec<(ScopeBufferKey, ScopeBuffer)>,
 
   /// Scopes to remove
-  pub scope_removes: Vec<ScopeItem>,
-
-  /// Scopes to update (existing scopes with new parameters)
-  pub scope_updates: Vec<Scope>,
+  pub scope_removes: Vec<ScopeBufferKey>,
 
   /// Sample rate for new modules
   pub sample_rate: f32,
@@ -67,7 +64,6 @@ impl PatchUpdate {
       param_updates: Vec::new(),
       scope_adds: Vec::new(),
       scope_removes: Vec::new(),
-      scope_updates: Vec::new(),
       sample_rate,
     }
   }
@@ -80,7 +76,6 @@ impl PatchUpdate {
       && self.param_updates.is_empty()
       && self.scope_adds.is_empty()
       && self.scope_removes.is_empty()
-      && self.scope_updates.is_empty()
   }
 }
 
