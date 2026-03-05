@@ -1,0 +1,60 @@
+.update-notification {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 16px;
+    background: var(--bg-tertiary, #161616);
+    border-top: 1px solid var(--border-default, #2a2a2a);
+    font-size: calc(var(--font-size, 18px) * 0.72);
+    color: var(--text-primary, #cccccc);
+}
+
+.update-notification__message {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.update-notification__actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.update-notification__btn {
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: calc(var(--font-size, 18px) * 0.67);
+    font-family: var(--font-mono, monospace);
+    cursor: pointer;
+    border: 1px solid transparent;
+    background: transparent;
+    color: inherit;
+}
+
+.update-notification__btn--primary {
+    background: var(--accent-primary, #4ec9b0);
+    color: var(--bg-primary, #0a0a0a);
+    border-color: var(--accent-primary, #4ec9b0);
+}
+
+.update-notification__btn--primary:hover {
+    opacity: 0.85;
+}
+
+.update-notification__btn--secondary {
+    color: var(--text-secondary, #888888);
+    border-color: var(--border-default, #2a2a2a);
+}
+
+.update-notification__btn--secondary:hover {
+    background: var(--bg-hover, #1a1a1a);
+}
