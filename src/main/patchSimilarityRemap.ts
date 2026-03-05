@@ -499,9 +499,9 @@ function remapGraph(
     }
 
     for (const scope of applied.scopes) {
-        if (scope.item.type === 'ModuleOutput') {
-            const nextId = idMap.get(scope.item.moduleId);
-            if (nextId) scope.item.moduleId = nextId;
+        for (const channel of scope.channels) {
+            const nextId = idMap.get(channel.moduleId);
+            if (nextId) channel.moduleId = nextId;
         }
     }
 
