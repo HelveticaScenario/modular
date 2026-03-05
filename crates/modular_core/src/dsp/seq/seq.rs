@@ -149,7 +149,6 @@ pub struct SeqParams {
     #[signal(range = (0.0, 1.0))]
     playhead: Option<MonoSignal>,
     /// Number of polyphonic voices (1-16)
-    #[serde(default)]
     pub channels: Option<usize>,
     /// The pattern string (used for serialization)
     #[serde(skip)]

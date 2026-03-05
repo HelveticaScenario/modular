@@ -76,7 +76,6 @@ struct VoiceState {
 #[serde(rename_all = "camelCase")]
 struct MidiCvParams {
     /// MIDI device name to receive from (leave unset to receive from all devices)
-    #[serde(default)]
     device: Option<String>,
 
     /// Number of polyphonic voices (1-16)
@@ -84,7 +83,6 @@ struct MidiCvParams {
     channels: usize,
 
     /// MIDI channel to listen on (1–16, leave unset for omni/all channels)
-    #[serde(default)]
     channel: Option<u8>,
 
     /// Polyphonic voice allocation mode
