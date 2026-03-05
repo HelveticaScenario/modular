@@ -8,7 +8,9 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 8px 16px;
+    height: 36px;
+    box-sizing: border-box;
+    padding: 0 16px;
     background: var(--bg-tertiary, #161616);
     border-top: 1px solid var(--border-default, #2a2a2a);
     font-size: calc(var(--font-size, 18px) * 0.72);
