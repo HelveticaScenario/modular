@@ -957,20 +957,26 @@ pub struct ModuleState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(
-    tag = "type",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
-#[napi]
-pub enum ScopeItem {
-    ModuleOutput {
-        module_id: String,
-        port_name: String,
-    },
+#[serde(rename_all = "camelCase")]
+#[napi(object)]
+pub struct ScopeChannel {
+    pub module_id: String,
+    pub port_name: String,
+    pub channel: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "camelCase")]
+#[napi(object)]
+pub struct ScopeBufferKey {
+    pub module_id: String,
+    pub port_name: String,
+    pub channel: u32,
+    pub ms_per_frame: u32,
+    pub trigger_threshold: Option<(i32, ScopeMode)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[napi(string_enum)]
 pub enum ScopeMode {
     Wait,
@@ -984,13 +990,13 @@ pub struct ScopeStats {
     pub min: f64,
     pub max: f64,
     pub peak_to_peak: f64,
-    pub read_offset: Vec<u32>,
+    pub read_offset: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[napi(object)]
 pub struct Scope {
-    pub item: ScopeItem,
+    pub channels: Vec<ScopeChannel>,
     pub ms_per_frame: u32,
     pub trigger_threshold: Option<(i32, ScopeMode)>,
     /// Voltage range for display (default [-5.0, 5.0]). The scope displays from range[0] to range[1].
