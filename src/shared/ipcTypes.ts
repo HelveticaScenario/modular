@@ -105,6 +105,7 @@ export interface AppConfig {
     prettier?: PrettierConfig;
     lastOpenedFolder?: string;
     audioConfig?: AudioConfig;
+    skippedUpdateVersion?: string;
 }
 
 /**
@@ -119,6 +120,13 @@ export interface MainLogEntry {
     level: MainLogLevel;
     timestamp: number;
     args: unknown[];
+}
+
+export interface UpdateAvailableInfo {
+    /** Semver string, e.g. "0.0.25" */
+    version: string;
+    /** URL to the GitHub release page */
+    releaseUrl: string;
 }
 
 export interface UpdatePatchResult {
@@ -293,6 +301,15 @@ export const IPC_CHANNELS = {
 
     // Main process logging
     MAIN_LOG: 'modular:main:log',
+
+    // Update operations
+    UPDATE_CHECK: 'modular:update:check',
+    UPDATE_DOWNLOAD: 'modular:update:download',
+    UPDATE_INSTALL: 'modular:update:install',
+    UPDATE_AVAILABLE: 'modular:update:available',
+    UPDATE_DOWNLOADING: 'modular:update:downloading',
+    UPDATE_DOWNLOADED: 'modular:update:downloaded',
+    UPDATE_ERROR: 'modular:update:error',
 } as const;
 
 export const MENU_CHANNELS = {
@@ -431,6 +448,16 @@ export interface IPCHandlers {
 
     // Main process logging
     [IPC_CHANNELS.MAIN_LOG]: (entry: MainLogEntry) => void;
+
+    // Update operations (invokable)
+    [IPC_CHANNELS.UPDATE_CHECK]: () => void;
+    [IPC_CHANNELS.UPDATE_DOWNLOAD]: () => void;
+    [IPC_CHANNELS.UPDATE_INSTALL]: () => void;
+    // Update operations (push from main to renderer)
+    [IPC_CHANNELS.UPDATE_AVAILABLE]: (info: UpdateAvailableInfo) => void;
+    [IPC_CHANNELS.UPDATE_DOWNLOADING]: () => void;
+    [IPC_CHANNELS.UPDATE_DOWNLOADED]: () => void;
+    [IPC_CHANNELS.UPDATE_ERROR]: (message: string) => void;
 }
 
 /**
