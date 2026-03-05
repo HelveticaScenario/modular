@@ -2,7 +2,7 @@ use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
-use syn::{Data, DeriveInput, Fields, LitStr, Token, Type, punctuated::Punctuated};
+use syn::{punctuated::Punctuated, Data, DeriveInput, Fields, LitStr, Token, Type};
 
 use crate::utils::{extract_doc_comments, unwrap_attr};
 
@@ -19,19 +19,12 @@ struct ModuleAttr {
 
 struct ArgAttr {
     name: Ident,
-    optional: bool,
 }
 
 impl syn::parse::Parse for ArgAttr {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let name: Ident = input.parse()?;
-        let optional = if input.peek(Token![?]) {
-            input.parse::<Token![?]>()?;
-            true
-        } else {
-            false
-        };
-        Ok(ArgAttr { name, optional })
+        Ok(ArgAttr { name })
     }
 }
 
@@ -46,7 +39,7 @@ impl syn::parse::Parse for ArgAttr {
 /// #[module(
 ///     name = "$sine",
 ///     channels = 2,
-///     args(freq, engine?),
+///     args(freq, engine),
 ///     stateful,
 ///     patch_update,
 ///     has_init,
@@ -182,7 +175,7 @@ impl syn::parse::Parse for ModuleAttrArgs {
 ///     // channels_derive = my_derive_fn,        // custom function
 ///     //
 ///     // Positional DSL arguments (optional):
-///     // args(freq, engine?),
+///     // args(freq, engine),
 ///     //
 ///     // Flags (optional):
 ///     // stateful,      // implements StatefulModule
@@ -247,7 +240,10 @@ fn impl_module_macro_attr(
     let module_documentation = extract_doc_comments(&ast.attrs).ok_or_else(|| {
         syn::Error::new(
             name.span(),
-            format!("Module struct `{}` must have `///` doc comments for documentation", name),
+            format!(
+                "Module struct `{}` must have `///` doc comments for documentation",
+                name
+            ),
         )
     })?;
     let module_documentation_token = quote! { #module_documentation.to_string() };
@@ -277,11 +273,9 @@ fn impl_module_macro_attr(
         .iter()
         .map(|arg| {
             let arg_name = arg.name.to_string();
-            let optional = arg.optional;
             quote! {
                 crate::types::PositionalArg {
                     name: #arg_name.to_string(),
-                    optional: #optional,
                 }
             }
         })

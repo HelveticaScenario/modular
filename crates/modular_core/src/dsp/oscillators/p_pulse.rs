@@ -1,22 +1,25 @@
 use crate::{
     dsp::utils::wrap,
-    poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS},
+    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
     types::Clickless,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct PPulseOscillatorParams {
     /// phasor input (0–1, wraps at boundaries)
+    #[serde(default)]
     #[signal(range = (0.0, 1.0))]
-    phase: PolySignal,
+    phase: Option<PolySignal>,
     /// pulse width (0-5, 2.5 is square)
+    #[serde(default)]
     #[signal(default = 2.5, range = (0.0, 5.0))]
-    width: PolySignal,
+    width: Option<PolySignal>,
     /// pulse width modulation CV — added to the width parameter
-    pwm: PolySignal,
+    #[serde(default)]
+    pwm: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -59,11 +62,11 @@ impl PPulseOscillator {
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
 
-            let base_width = self.params.width.get_value_or(ch, 2.5);
-            let pwm = self.params.pwm.get_value_or(ch, 0.0);
+            let base_width = self.params.width.value_or(ch, 2.5);
+            let pwm = self.params.pwm.value_or(ch, 0.0);
             state.width.update((base_width + pwm).clamp(0.0, 5.0));
 
-            let phase = wrap(0.0..1.0, self.params.phase.get_value(ch));
+            let phase = wrap(0.0..1.0, self.params.phase.value_or_zero(ch));
 
             // Derive phase increment from external phasor
             let mut phase_increment = phase - state.prev_phase;

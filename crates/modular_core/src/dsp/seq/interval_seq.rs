@@ -18,14 +18,14 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    MonoSignal, Patch,
     dsp::{
         utilities::quantizer::ScaleParam,
-        utils::{TempGate, TempGateState, midi_to_voct_f64, min_gate_samples},
+        utils::{midi_to_voct_f64, min_gate_samples, TempGate, TempGateState},
     },
     pattern_system::Pattern,
-    poly::{PORT_MAX_CHANNELS, PolyOutput},
+    poly::{MonoSignalExt, PolyOutput, PORT_MAX_CHANNELS},
     types::Connect,
+    MonoSignal, Patch,
 };
 
 /// Scale parameter for IntervalSeq that supports an optional octave in the root.
@@ -427,17 +427,20 @@ fn default_channels() -> usize {
 }
 
 #[derive(Clone, Deserialize, Default, ChannelCount, JsonSchema, Connect, Debug, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 pub struct IntervalSeqParams {
     /// patterns to combine (left-fold with appLeft addition); accepts a single
     /// pattern string or an array of pattern strings
+    #[serde(default)]
     patterns: IntervalPatternParam,
     /// scale for quantizing degrees to pitches (supports optional octave, e.g. "c3(major)")
+    #[serde(default)]
     scale: IntervalScaleParam,
     /// playhead position
+    #[serde(default)]
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
     #[signal(range = (0.0, 1.0))]
-    playhead: MonoSignal,
+    playhead: Option<MonoSignal>,
     /// number of polyphonic voices (1–16)
     #[serde(default = "default_channels")]
     pub channels: usize,
@@ -808,7 +811,7 @@ impl IntervalSeq {
 
 impl IntervalSeq {
     fn update(&mut self, sample_rate: f32) {
-        let playhead = self.params.playhead.get_value_f64();
+        let playhead = self.params.playhead.value_or_zero() as f64;
         let hold = min_gate_samples(sample_rate);
         let num_channels = self.channel_count();
 
@@ -1150,7 +1153,7 @@ mod tests {
 
         // D3 root
         seq.base_midi = 50; // D3
-        // Degree 0 = D3 = MIDI 50 = -10/12 V
+                            // Degree 0 = D3 = MIDI 50 = -10/12 V
         let v0 = seq.degree_to_voltage(0);
         assert!((v0 - (-10.0 / 12.0)).abs() < 0.001);
     }

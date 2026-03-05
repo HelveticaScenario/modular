@@ -1,23 +1,25 @@
 use crate::{
     dsp::utils::{min_gate_samples, TempGate, TempGateState},
-    poly::{PolyOutput, PolySignal},
+    poly::{PolyOutput, PolySignal, PolySignalExt},
     PORT_MAX_CHANNELS,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct RisingEdgeDetectorParams {
     /// signal to detect rising edges in
-    input: PolySignal,
+    #[serde(default)]
+    input: Option<PolySignal>,
 }
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct FallingEdgeDetectorParams {
     /// signal to detect falling edges in
-    input: PolySignal,
+    #[serde(default)]
+    input: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -71,7 +73,7 @@ impl RisingEdgeDetector {
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
-            let input = self.params.input.get_value_or(ch, 0.0);
+            let input = self.params.input.value_or(ch, 0.0);
 
             if input > state.last_input {
                 state
@@ -112,7 +114,7 @@ impl FallingEdgeDetector {
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
-            let input = self.params.input.get_value_or(ch, 0.0);
+            let input = self.params.input.value_or(ch, 0.0);
 
             if input < state.last_input {
                 state

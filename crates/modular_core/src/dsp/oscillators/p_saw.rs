@@ -1,20 +1,22 @@
 use crate::{
     dsp::utils::wrap,
-    poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS},
+    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
     types::Clickless,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct PSawOscillatorParams {
     /// phasor input (0–1, wraps at boundaries)
+    #[serde(default)]
     #[signal(range = (0.0, 1.0))]
-    phase: PolySignal,
+    phase: Option<PolySignal>,
     /// waveform shape: 0=saw, 2.5=triangle, 5=ramp
+    #[serde(default)]
     #[signal(range = (0.0, 5.0))]
-    shape: PolySignal,
+    shape: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -60,10 +62,10 @@ impl PSawOscillator {
             let state = &mut self.channels[ch];
 
             // Update shape with smoothing - clamp to valid range
-            let shape_val = self.params.shape.get_value_or(ch, 0.0).clamp(0.0, 5.0);
+            let shape_val = self.params.shape.value_or(ch, 0.0).clamp(0.0, 5.0);
             state.shape.update(shape_val);
 
-            let phase = wrap(0.0..1.0, self.params.phase.get_value(ch));
+            let phase = wrap(0.0..1.0, self.params.phase.value_or_zero(ch));
 
             // Calculate phase increment from phase difference
             // Handle phase wrapping correctly

@@ -481,17 +481,8 @@ export class GraphBuilder {
             });
         }
 
-        // Initialize module params: default all signal params to disconnected.
-        // Other params are left unset unless the DSL sets them explicitly.
+        // Module params start empty; only user-provided values are set.
         const params: Record<string, unknown> = {};
-        for (const param of schema.params) {
-            if (param.kind === 'signal' || param.kind === 'polySignal') {
-                params[param.name] = { type: 'disconnected' };
-            } else if (param.kind === 'signalArray') {
-                // Required arrays (e.g. sum.signals) should be valid by default.
-                params[param.name] = [];
-            }
-        }
 
         const moduleState: ModuleState = {
             id,
@@ -655,9 +646,9 @@ export class GraphBuilder {
                     // Build channel collection with baseChannel silent channels prepended
                     const channelCollection: (ModuleOutput | undefined)[] = [];
 
-                    // Add silent/disconnected channels for baseChannel offset
+                    // Add silent channels for baseChannel offset
                     for (let i = 0; i < baseChannel; i++) {
-                        // Create a signal module with disconnected input (outputs silence)
+                        // Push 0 (Signal::Volts(0.0)) to represent silence
                         channelCollection.push(undefined);
                     }
 
@@ -1421,7 +1412,8 @@ function valueToSignal(value: unknown): unknown {
             channel: value.channel,
         };
     } else if (value === null || value === undefined) {
-        return { type: 'disconnected' };
+        // Silence: 0 becomes Signal::Volts(0.0) in Rust
+        return 0;
     }
     // It's a number
     return value;

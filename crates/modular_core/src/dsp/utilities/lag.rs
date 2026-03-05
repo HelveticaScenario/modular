@@ -1,21 +1,24 @@
 use crate::{
-    poly::{PolyOutput, PolySignal},
+    poly::{PolyOutput, PolySignal, PolySignalExt},
     PORT_MAX_CHANNELS,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct LagProcessorParams {
     /// signal input
-    input: PolySignal,
+    #[serde(default)]
+    input: Option<PolySignal>,
     /// rise rate — seconds to slew 1 volt upward (default 0.01)
+    #[serde(default)]
     #[signal(default = 0.01, range = (0.0, 10.0))]
-    rise: PolySignal,
+    rise: Option<PolySignal>,
     /// fall rate — seconds to slew 1 volt downward (default 0.01)
+    #[serde(default)]
     #[signal(default = 0.01, range = (0.0, 10.0))]
-    fall: PolySignal,
+    fall: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -60,17 +63,17 @@ impl LagProcessor {
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
-            let input = self.params.input.get_value_or(ch, 0.0);
+            let input = self.params.input.value_or(ch, 0.0);
             if !state.initialized {
                 state.current_value = input;
                 state.initialized = true;
             }
 
-            let fall_time = self.params.fall.get_value_or(ch, 0.01).max(0.001);
+            let fall_time = self.params.fall.value_or(ch, 0.01).max(0.001);
             let rise_time = if self.params.rise.is_disconnected() {
                 fall_time
             } else {
-                self.params.rise.get_value_or(ch, 0.01).max(0.001)
+                self.params.rise.value_or(ch, 0.01).max(0.001)
             };
 
             // Calculate max change per sample

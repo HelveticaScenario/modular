@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::{
     dsp::utils::{changed, voct_to_hz},
-    poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS},
+    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
     types::Clickless,
 };
 
@@ -23,14 +23,17 @@ const BUTTERWORTH_Q: f32 = 0.707_107; // 1/sqrt(2)
 // ── Params & Outputs ─────────────────────────────────────────────────────────
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct CrossoverParams {
     /// audio input signal
-    input: PolySignal,
+    #[serde(default)]
+    input: Option<PolySignal>,
     /// crossover frequency between low and mid bands (V/Oct, 0V = C4)
-    low_mid_freq: PolySignal,
+    #[serde(default)]
+    low_mid_freq: Option<PolySignal>,
     /// crossover frequency between mid and high bands (V/Oct, 0V = C4)
-    mid_high_freq: PolySignal,
+    #[serde(default)]
+    mid_high_freq: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -168,7 +171,7 @@ struct ChannelState {
 // ── Module ───────────────────────────────────────────────────────────────────
 
 /// EXPERIMENTAL
-/// 
+///
 /// Three-band crossover / band splitter using Linkwitz-Riley 4th-order filters.
 ///
 /// Splits an input signal into three frequency bands (low, mid, high) with
@@ -203,17 +206,17 @@ impl Crossover {
         for ch in 0..channels {
             let state = &mut self.channels[ch];
 
-            let input = self.params.input.get_value_or(ch, 0.0);
+            let input = self.params.input.value_or(ch, 0.0);
 
             // ── Read and smooth crossover frequencies ────────────────────
             let low_mid_voct = self
                 .params
                 .low_mid_freq
-                .get_value_or(ch, DEFAULT_LOW_MID_FREQ_VOCT);
+                .value_or(ch, DEFAULT_LOW_MID_FREQ_VOCT);
             let mid_high_voct = self
                 .params
                 .mid_high_freq
-                .get_value_or(ch, DEFAULT_MID_HIGH_FREQ_VOCT);
+                .value_or(ch, DEFAULT_MID_HIGH_FREQ_VOCT);
 
             state.smooth_low_mid.update(low_mid_voct);
             state.smooth_mid_high.update(mid_high_voct);

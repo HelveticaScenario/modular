@@ -3,22 +3,25 @@ use serde::Deserialize;
 
 use crate::{
     dsp::utils::{changed, voct_to_hz},
-    poly::{PolyOutput, PolySignal},
+    poly::{PolyOutput, PolySignal, PolySignalExt},
     types::Clickless,
     PORT_MAX_CHANNELS,
 };
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct BandpassFilterParams {
     /// signal input
-    input: PolySignal,
+    #[serde(default)]
+    input: Option<PolySignal>,
     /// center frequency in V/Oct (0V = C4)
+    #[serde(default)]
     #[signal(type = pitch)]
-    center: PolySignal,
+    center: Option<PolySignal>,
     /// filter resonance — controls bandwidth (0–5)
+    #[serde(default)]
     #[signal(default = 1.0, range = (0.0, 5.0))]
-    resonance: PolySignal,
+    resonance: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -88,7 +91,7 @@ fn compute_bpf_biquad(center: f32, resonance: f32, sample_rate: f32) -> BiquadCo
 /// // resonant bandpass sweep on noise
 /// $bpf($noise("white"), $sine('0.5hz').range('440hz', '1200hz'), 3)
 /// ```
-#[module(name = "$bpf", args(input, center, resonance?))]
+#[module(name = "$bpf", args(input, center, resonance))]
 #[derive(Default)]
 pub struct BandpassFilter {
     outputs: BandpassFilterOutputs,
@@ -106,12 +109,23 @@ impl BandpassFilter {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
 
+        let center_mono = self
+            .params
+            .center
+            .as_ref()
+            .is_some_and(|s| s.is_monophonic());
+        let resonance_mono = self
+            .params
+            .resonance
+            .as_ref()
+            .is_some_and(|s| s.is_monophonic());
+
         // Update coefficients with smoothed params to prevent clicks
-        if self.params.center.is_monophonic() && self.params.resonance.is_monophonic() {
+        if center_mono && resonance_mono {
             self.smooth_center_mono
-                .update(self.params.center.get_value_or(0, 0.0));
+                .update(self.params.center.value_or(0, 0.0));
             self.smooth_resonance_mono
-                .update(self.params.resonance.get_value_or(0, 1.0));
+                .update(self.params.resonance.value_or(0, 1.0));
             let c = *self.smooth_center_mono;
             let r = *self.smooth_resonance_mono;
 
@@ -124,10 +138,10 @@ impl BandpassFilter {
             for i in 0..num_channels {
                 self.channels[i]
                     .smooth_center
-                    .update(self.params.center.get_value_or(i, 0.0));
+                    .update(self.params.center.value_or(i, 0.0));
                 self.channels[i]
                     .smooth_resonance
-                    .update(self.params.resonance.get_value_or(i, 1.0));
+                    .update(self.params.resonance.value_or(i, 1.0));
                 let c = *self.channels[i].smooth_center;
                 let r = *self.channels[i].smooth_resonance;
 
@@ -140,9 +154,9 @@ impl BandpassFilter {
         }
 
         for i in 0..num_channels {
-            let input = self.params.input.get_value_or(i, 0.0);
+            let input = self.params.input.value_or(i, 0.0);
 
-            let c = if self.params.center.is_monophonic() && self.params.resonance.is_monophonic() {
+            let c = if center_mono && resonance_mono {
                 self.coeffs_mono
             } else {
                 self.channels[i].coeffs

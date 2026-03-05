@@ -3,20 +3,23 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::dsp::utils::{min_gate_samples, SchmittTrigger, TempGate, TempGateState};
-use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 use crate::types::ClockMessages;
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct ClockDividerParams {
     /// division factor (e.g. 2 = output fires every other tick)
+    #[serde(default)]
     pub division: u32,
     /// clock signal to divide
+    #[serde(default)]
     #[signal(type = trig, range = (0.0, 5.0))]
-    pub input: PolySignal,
+    pub input: Option<PolySignal>,
     /// trigger to reset the counter to 0
+    #[serde(default)]
     #[signal(type = trig, range = (0.0, 5.0))]
-    pub reset: PolySignal,
+    pub reset: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -81,11 +84,17 @@ impl ClockDivider {
             let state = &mut self.channels[ch];
 
             // Reset counter on rising edge of reset trigger
-            if state.reset_schmitt.process(self.params.reset.get_value(ch)) {
+            if state
+                .reset_schmitt
+                .process(self.params.reset.value_or_zero(ch))
+            {
                 state.counter = 0;
             }
 
-            if state.input_schmitt.process(self.params.input.get_value(ch)) {
+            if state
+                .input_schmitt
+                .process(self.params.input.value_or_zero(ch))
+            {
                 if state.counter == 0 {
                     state
                         .trigger_gate

@@ -16,7 +16,7 @@ use serde::Deserialize;
 use crate::{
     dsp::utils::{voct_to_midi, SchmittTrigger},
     patch::Patch as ModularPatch,
-    poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS},
+    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
     types::{Clickless, Connect},
 };
 
@@ -118,51 +118,64 @@ impl Connect for PlaitsEngine {
 }
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct PlaitsParams {
     /// Pitch input in V/Oct (0V = C4)
+    #[serde(default)]
     #[signal(type = pitch)]
-    freq: PolySignal,
+    freq: Option<PolySignal>,
 
     /// Synthesis engine selection
+    #[serde(default)]
     engine: PlaitsEngine,
 
     /// Harmonics parameter (-5V to +5V, bipolar, default 0V) - function varies per engine
-    harmonics: PolySignal,
+    #[serde(default)]
+    harmonics: Option<PolySignal>,
 
     /// Timbre parameter (-5V to +5V, bipolar, default 0V) - function varies per engine
-    timbre: PolySignal,
+    #[serde(default)]
+    timbre: Option<PolySignal>,
 
     /// Morph parameter (-5V to +5V, bipolar, default 0V) - function varies per engine
-    morph: PolySignal,
+    #[serde(default)]
+    morph: Option<PolySignal>,
 
     /// FM input (-5V to +5V) - frequency modulation
-    fm: PolySignal,
+    #[serde(default)]
+    fm: Option<PolySignal>,
 
     /// Timbre CV attenuverter (-5 to 5) - scales timbre modulation
-    timbre_amt: PolySignal,
+    #[serde(default)]
+    timbre_amt: Option<PolySignal>,
 
     /// FM CV attenuverter (-5 to 5) - scales frequency modulation
-    fm_amt: PolySignal,
+    #[serde(default)]
+    fm_amt: Option<PolySignal>,
 
     /// Morph CV attenuverter (-5 to 5) - scales morph modulation
-    morph_amt: PolySignal,
+    #[serde(default)]
+    morph_amt: Option<PolySignal>,
 
     /// Trigger input - gates/triggers the internal envelope
+    #[serde(default)]
     #[signal(type = trig, range = (0.0, 5.0))]
-    trigger: PolySignal,
+    trigger: Option<PolySignal>,
 
     /// Level/dynamics input (0-5V) - controls VCA/LPG
+    #[serde(default)]
     #[signal(range = (0.0, 5.0))]
-    level: PolySignal,
+    level: Option<PolySignal>,
 
     /// LPG color (0-5V) - lowpass gate filter response (low = mellow, high = bright)
+    #[serde(default)]
     #[signal(default = 2.5, range = (0.0, 5.0))]
-    lpg_color: PolySignal,
+    lpg_color: Option<PolySignal>,
 
     /// LPG decay (0-5V) - lowpass gate envelope decay time
+    #[serde(default)]
     #[signal(default = 2.5, range = (0.0, 5.0))]
-    lpg_decay: PolySignal,
+    lpg_decay: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -289,7 +302,7 @@ impl Plaits {
         // and latch them until the next block render.
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
-            let trigger_val = self.params.trigger.get_value_or(ch, 0.0);
+            let trigger_val = self.params.trigger.value_or(ch, 0.0);
 
             // Detect rising edge using Schmitt trigger for noise immunity
             if state.trigger_schmitt.process(trigger_val) {
@@ -325,25 +338,25 @@ impl Plaits {
             // Update smoothed parameters
             state
                 .harmonics
-                .update(self.params.harmonics.get_value_or(ch, 0.0).clamp(-5.0, 5.0));
+                .update(self.params.harmonics.value_or(ch, 0.0).clamp(-5.0, 5.0));
             state
                 .timbre
-                .update(self.params.timbre.get_value_or(ch, 0.0).clamp(-5.0, 5.0));
+                .update(self.params.timbre.value_or(ch, 0.0).clamp(-5.0, 5.0));
             state
                 .morph
-                .update(self.params.morph.get_value_or(ch, 0.0).clamp(-5.0, 5.0));
+                .update(self.params.morph.value_or(ch, 0.0).clamp(-5.0, 5.0));
             state
                 .lpg_color
-                .update(self.params.lpg_color.get_value_or(ch, 2.5).clamp(0.0, 5.0));
+                .update(self.params.lpg_color.value_or(ch, 2.5).clamp(0.0, 5.0));
             state
                 .lpg_decay
-                .update(self.params.lpg_decay.get_value_or(ch, 2.5).clamp(0.0, 5.0));
+                .update(self.params.lpg_decay.value_or(ch, 2.5).clamp(0.0, 5.0));
 
             // Get engine index from enum
             let engine_index = self.params.engine.to_index();
 
             let patch = Patch {
-                note: voct_to_midi(self.params.freq.get_value_or(ch, 0.0)),
+                note: voct_to_midi(self.params.freq.value_or(ch, 0.0)),
                 harmonics: ((*state.harmonics + 5.0) / 10.0).clamp(0.0, 1.0),
                 timbre: ((*state.timbre + 5.0) / 10.0).clamp(0.0, 1.0),
                 morph: ((*state.morph + 5.0) / 10.0).clamp(0.0, 1.0),
@@ -351,21 +364,21 @@ impl Plaits {
                 decay: (*state.lpg_decay / 5.0).clamp(0.0, 1.0),
                 lpg_colour: (*state.lpg_color / 5.0).clamp(0.0, 1.0),
                 // Modulation amounts (attenuverters)
-                frequency_modulation_amount: (self.params.fm_amt.get_value_or(ch, 0.0) / 5.0)
+                frequency_modulation_amount: (self.params.fm_amt.value_or(ch, 0.0) / 5.0)
                     .clamp(-1.0, 1.0),
-                timbre_modulation_amount: (self.params.timbre_amt.get_value_or(ch, 0.0) / 5.0)
+                timbre_modulation_amount: (self.params.timbre_amt.value_or(ch, 0.0) / 5.0)
                     .clamp(-1.0, 1.0),
-                morph_modulation_amount: (self.params.morph_amt.get_value_or(ch, 0.0) / 5.0)
+                morph_modulation_amount: (self.params.morph_amt.value_or(ch, 0.0) / 5.0)
                     .clamp(-1.0, 1.0),
             };
 
             // Build the Modulations struct
             // FM: ±5V range, scaled to ±1.0 then multiplied by ~6 (VCV convention)
-            let fm_val = self.params.fm.get_value_or(ch, 0.0);
+            let fm_val = self.params.fm.value_or(ch, 0.0);
             let fm_mod = fm_val / 5.0 * 6.0;
 
             // Harmonics: -5V to +5V bipolar, scaled to modulation range
-            let harmonics_cv = self.params.harmonics.get_value_or(ch, 0.0);
+            let harmonics_cv = self.params.harmonics.value_or(ch, 0.0);
             let harmonics_mod = if self.params.harmonics.is_disconnected() {
                 0.0
             } else {
@@ -373,7 +386,7 @@ impl Plaits {
             };
 
             // Timbre: -5V to +5V bipolar
-            let timbre_cv = self.params.timbre.get_value_or(ch, 0.0);
+            let timbre_cv = self.params.timbre.value_or(ch, 0.0);
             let timbre_mod = if self.params.timbre.is_disconnected() {
                 0.0
             } else {
@@ -381,7 +394,7 @@ impl Plaits {
             };
 
             // Morph: -5V to +5V bipolar
-            let morph_cv = self.params.morph.get_value_or(ch, 0.0);
+            let morph_cv = self.params.morph.value_or(ch, 0.0);
             let morph_mod = if self.params.morph.is_disconnected() {
                 0.0
             } else {
@@ -393,7 +406,7 @@ impl Plaits {
             let trigger_mod = if state.trigger_latch { 1.0 } else { 0.0 };
 
             // Level: 0-5V scaled to 0-1
-            let level_val = self.params.level.get_value_or(ch, 0.0);
+            let level_val = self.params.level.value_or(ch, 0.0);
             let level_mod = (level_val / 8.0).clamp(0.0, 1.0);
 
             let modulations = Modulations {

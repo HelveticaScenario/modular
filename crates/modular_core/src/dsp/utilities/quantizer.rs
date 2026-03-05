@@ -10,9 +10,9 @@ use std::sync::Arc;
 
 use crate::{
     dsp::utils::{min_gate_samples, TempGate, TempGateState},
-    poly::{PolyOutput, PORT_MAX_CHANNELS},
+    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
     types::Connect,
-    Patch, PolySignal,
+    Patch,
 };
 
 use super::scale::{validate_scale_type, FixedRoot, ScaleSnapper};
@@ -188,15 +188,16 @@ fn default_scale() -> ScaleParam {
 }
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct QuantizerParams {
     /// Input V/Oct signal to quantize
+    #[serde(default)]
     #[signal(type = pitch)]
-    input: PolySignal,
+    input: Option<PolySignal>,
     /// Offset added to input before quantization (in V/Oct)
     #[serde(default)]
     #[signal(type = pitch)]
-    offset: PolySignal,
+    offset: Option<PolySignal>,
     /// Scale specification: "chromatic", "C(major)", "D(0 2 4 5 7 9 11)"
     #[serde(default = "default_scale")]
     scale: ScaleParam,
@@ -236,7 +237,7 @@ struct ChannelState {
 /// // quantize a random signal to C major
 /// $sine($quantizer($sine(".1hz").range(0,3), "C(major)"))
 /// ```
-#[module(name = "$quantizer", args(input, scale?))]
+#[module(name = "$quantizer", args(input, scale))]
 pub struct Quantizer {
     outputs: QuantizerOutputs,
     params: QuantizerParams,
@@ -260,12 +261,12 @@ impl Default for Quantizer {
 
 impl Quantizer {
     pub fn update(&mut self, sample_rate: f32) {
-        let num_channels = self.params.input.channels();
+        let num_channels = self.params.input.channel_count();
         let hold = min_gate_samples(sample_rate);
 
         for ch in 0..num_channels {
-            let input = self.params.input.get(ch).get_value() as f64;
-            let offset = self.params.offset.get(ch).get_value() as f64;
+            let input = self.params.input.value_or_zero(ch) as f64;
+            let offset = self.params.offset.value_or_zero(ch) as f64;
 
             let combined = input + offset;
 

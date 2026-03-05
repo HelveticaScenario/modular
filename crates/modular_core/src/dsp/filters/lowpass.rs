@@ -3,22 +3,25 @@ use serde::Deserialize;
 
 use crate::{
     dsp::utils::{changed, voct_to_hz},
-    poly::{PolyOutput, PolySignal},
+    poly::{PolyOutput, PolySignal, PolySignalExt},
     types::Clickless,
     PORT_MAX_CHANNELS,
 };
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct LowpassFilterParams {
     /// signal input
-    input: PolySignal,
+    #[serde(default)]
+    input: Option<PolySignal>,
     /// cutoff frequency in V/Oct (0V = C4)
+    #[serde(default)]
     #[signal(type = pitch, default = 0.0, range = (-5.0, 5.0))]
-    cutoff: PolySignal,
+    cutoff: Option<PolySignal>,
     /// filter resonance (0-5)
+    #[serde(default)]
     #[signal(type = control, default = 0.0, range = (0.0, 5.0))]
-    resonance: PolySignal,
+    resonance: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -43,7 +46,7 @@ struct LowpassFilterOutputs {
 /// let env = $adsr($rootClock.barTrigger, { attack: 0.01, decay: 0.3, sustain: 1, release: 0.4 })
 /// $lpf($saw('c2'), env.range('200hz', '2000hz'))
 /// ```
-#[module(name = "$lpf", args(input, cutoff, resonance?))]
+#[module(name = "$lpf", args(input, cutoff, resonance))]
 #[derive(Default)]
 pub struct LowpassFilter {
     outputs: LowpassFilterOutputs,
@@ -111,12 +114,23 @@ impl LowpassFilter {
     fn update(&mut self, sample_rate: f32) {
         let channels = self.channel_count();
 
+        let cutoff_mono = self
+            .params
+            .cutoff
+            .as_ref()
+            .is_some_and(|s| s.is_monophonic());
+        let resonance_mono = self
+            .params
+            .resonance
+            .as_ref()
+            .is_some_and(|s| s.is_monophonic());
+
         // Update coefficients with smoothed params to prevent clicks
-        if self.params.cutoff.is_monophonic() && self.params.resonance.is_monophonic() {
+        if cutoff_mono && resonance_mono {
             self.smooth_cutoff_mono
-                .update(self.params.cutoff.get_value_or(0, 0.0));
+                .update(self.params.cutoff.value_or(0, 0.0));
             self.smooth_resonance_mono
-                .update(self.params.resonance.get_value_or(0, 0.0));
+                .update(self.params.resonance.value_or(0, 0.0));
             let c = *self.smooth_cutoff_mono;
             let r = *self.smooth_resonance_mono;
 
@@ -127,8 +141,8 @@ impl LowpassFilter {
             }
         } else {
             for i in 0..channels as usize {
-                self.smooth_cutoff[i].update(self.params.cutoff.get_value_or(i, 0.0));
-                self.smooth_resonance[i].update(self.params.resonance.get_value_or(i, 0.0));
+                self.smooth_cutoff[i].update(self.params.cutoff.value_or(i, 0.0));
+                self.smooth_resonance[i].update(self.params.resonance.value_or(i, 0.0));
                 let c = *self.smooth_cutoff[i];
                 let r = *self.smooth_resonance[i];
 
@@ -141,9 +155,9 @@ impl LowpassFilter {
         }
 
         for i in 0..channels as usize {
-            let input = self.params.input.get_value_or(i, 0.0);
+            let input = self.params.input.value_or(i, 0.0);
 
-            let c = if self.params.cutoff.is_monophonic() && self.params.resonance.is_monophonic() {
+            let c = if cutoff_mono && resonance_mono {
                 self.coeffs_mono
             } else {
                 self.coeffs[i]

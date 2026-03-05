@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 use crate::types::PolySignalFields;
 
 fn default_count() -> usize {
@@ -9,15 +9,17 @@ fn default_count() -> usize {
 }
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct UnisonParams {
     /// input signal to expand (typically V/Oct pitch)
-    input: PolySignal,
+    #[serde(default)]
+    input: Option<PolySignal>,
     /// number of unison voices per input channel (1–16)
     #[serde(default = "default_count")]
     count: usize,
     /// detune spread amount (0–10V, exponential: 0V = none, 10V = 1 octave)
-    spread: PolySignal,
+    #[serde(default)]
+    spread: Option<PolySignal>,
 }
 
 /// Custom channel count: max(all PolySignal channels) * count, clamped to 16.
@@ -57,7 +59,7 @@ struct UnisonOutputs {
 /// // With modulated spread
 /// $saw($unison($midiCV().pitch, 5, $sine('0.2hz'))).out()
 /// ```
-#[module(name = "$unison", channels_derive = unison_derive_channel_count, args(input, count?, spread?))]
+#[module(name = "$unison", channels_derive = unison_derive_channel_count, args(input, count, spread))]
 #[derive(Default)]
 pub struct Unison {
     outputs: UnisonOutputs,
@@ -74,15 +76,15 @@ impl Unison {
         let input_channels = if input.is_disconnected() {
             1
         } else {
-            input.channels()
+            input.channel_count()
         };
 
         let output_channels = self.channel_count();
 
         for input_ch in 0..input_channels {
-            let input_val = input.get_value_or(input_ch, 0.0);
+            let input_val = input.value_or(input_ch, 0.0);
             // Spread cycles across input channels
-            let spread_v = spread.get_value_or(input_ch, 0.0).clamp(0.0, 10.0);
+            let spread_v = spread.value_or(input_ch, 0.0).clamp(0.0, 10.0);
             // Exponential mapping: (spread_v / 10)^2 gives 0–1 V/Oct (0–1 octave)
             let normalized = spread_v / 10.0;
             let max_detune_voct = normalized * normalized;
@@ -128,9 +130,9 @@ mod tests {
     #[test]
     fn test_passthrough_count_1() {
         let mut u = make_unison(UnisonParams {
-            input: PolySignal::mono(Signal::Volts(1.0)),
+            input: Some(PolySignal::mono(Signal::Volts(1.0))),
             count: 1,
-            spread: PolySignal::mono(Signal::Volts(5.0)),
+            spread: Some(PolySignal::mono(Signal::Volts(5.0))),
         });
         u.update(48000.0);
         assert_eq!(u.outputs.sample.channels(), 1);
@@ -141,9 +143,9 @@ mod tests {
     fn test_no_spread_duplicates() {
         // count=3, spread=0 -> 3 identical copies
         let mut u = make_unison(UnisonParams {
-            input: PolySignal::mono(Signal::Volts(2.0)),
+            input: Some(PolySignal::mono(Signal::Volts(2.0))),
             count: 3,
-            spread: PolySignal::default(),
+            spread: None,
         });
         u.update(48000.0);
         assert_eq!(u.outputs.sample.channels(), 3);
@@ -157,9 +159,9 @@ mod tests {
         // count=3, spread=10V -> max_detune = 1.0 V/Oct
         // voice 0: -1.0, voice 1: 0.0, voice 2: +1.0
         let mut u = make_unison(UnisonParams {
-            input: PolySignal::mono(Signal::Volts(0.0)),
+            input: Some(PolySignal::mono(Signal::Volts(0.0))),
             count: 3,
-            spread: PolySignal::mono(Signal::Volts(10.0)),
+            spread: Some(PolySignal::mono(Signal::Volts(10.0))),
         });
         u.update(48000.0);
         assert_eq!(u.outputs.sample.channels(), 3);
@@ -172,9 +174,9 @@ mod tests {
     fn test_exponential_curve() {
         // spread=5V -> (5/10)^2 = 0.25 V/Oct
         let mut u = make_unison(UnisonParams {
-            input: PolySignal::mono(Signal::Volts(0.0)),
+            input: Some(PolySignal::mono(Signal::Volts(0.0))),
             count: 3,
-            spread: PolySignal::mono(Signal::Volts(5.0)),
+            spread: Some(PolySignal::mono(Signal::Volts(5.0))),
         });
         u.update(48000.0);
         assert!((u.outputs.sample.get(0) - (-0.25)).abs() < 1e-6);
@@ -186,9 +188,9 @@ mod tests {
     fn test_poly_input_expansion() {
         // 2-channel input, count=3 -> 6 output channels
         let mut u = make_unison(UnisonParams {
-            input: PolySignal::poly(&[Signal::Volts(0.0), Signal::Volts(1.0)]),
+            input: Some(PolySignal::poly(&[Signal::Volts(0.0), Signal::Volts(1.0)])),
             count: 3,
-            spread: PolySignal::mono(Signal::Volts(10.0)),
+            spread: Some(PolySignal::mono(Signal::Volts(10.0))),
         });
         u.update(48000.0);
         assert_eq!(u.outputs.sample.channels(), 6);
@@ -206,14 +208,14 @@ mod tests {
     fn test_clamp_to_16_channels() {
         // 4-channel input, count=5 -> 20 desired, clamped to 16
         let mut u = make_unison(UnisonParams {
-            input: PolySignal::poly(&[
+            input: Some(PolySignal::poly(&[
                 Signal::Volts(0.0),
                 Signal::Volts(1.0),
                 Signal::Volts(2.0),
                 Signal::Volts(3.0),
-            ]),
+            ])),
             count: 5,
-            spread: PolySignal::default(),
+            spread: None,
         });
         u.update(48000.0);
         assert_eq!(u.outputs.sample.channels(), 16);
@@ -223,25 +225,33 @@ mod tests {
     fn test_channel_count_derivation() {
         // 1 channel * 7 = 7
         let params = UnisonParams {
-            input: PolySignal::mono(Signal::Volts(0.0)),
+            input: Some(PolySignal::mono(Signal::Volts(0.0))),
             count: 7,
-            spread: PolySignal::default(),
+            spread: None,
         };
         assert_eq!(unison_derive_channel_count(&params), 7);
 
         // 3 channels * 5 = 15
         let params = UnisonParams {
-            input: PolySignal::poly(&[Signal::Volts(0.0), Signal::Volts(0.0), Signal::Volts(0.0)]),
+            input: Some(PolySignal::poly(&[
+                Signal::Volts(0.0),
+                Signal::Volts(0.0),
+                Signal::Volts(0.0),
+            ])),
             count: 5,
-            spread: PolySignal::default(),
+            spread: None,
         };
         assert_eq!(unison_derive_channel_count(&params), 15);
 
         // 3 channels * 6 = 18, clamped to 16
         let params = UnisonParams {
-            input: PolySignal::poly(&[Signal::Volts(0.0), Signal::Volts(0.0), Signal::Volts(0.0)]),
+            input: Some(PolySignal::poly(&[
+                Signal::Volts(0.0),
+                Signal::Volts(0.0),
+                Signal::Volts(0.0),
+            ])),
             count: 6,
-            spread: PolySignal::default(),
+            spread: None,
         };
         assert_eq!(unison_derive_channel_count(&params), 16);
     }
@@ -250,12 +260,12 @@ mod tests {
     fn test_spread_cycles_across_input_channels() {
         // 2-channel input, 2-channel spread with different values
         let mut u = make_unison(UnisonParams {
-            input: PolySignal::poly(&[Signal::Volts(0.0), Signal::Volts(0.0)]),
+            input: Some(PolySignal::poly(&[Signal::Volts(0.0), Signal::Volts(0.0)])),
             count: 2,
-            spread: PolySignal::poly(&[
+            spread: Some(PolySignal::poly(&[
                 Signal::Volts(10.0), // ch 0: 1.0 V/Oct detune
                 Signal::Volts(0.0),  // ch 1: 0.0 V/Oct detune
-            ]),
+            ])),
         });
         u.update(48000.0);
         assert_eq!(u.outputs.sample.channels(), 4);

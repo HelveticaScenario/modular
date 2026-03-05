@@ -2,9 +2,10 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct NoiseParams {
     /// color of the noise: white, pink, brown
+    #[serde(default)]
     color: NoiseKind,
 }
 
@@ -74,7 +75,7 @@ impl LcgRng {
 ///
 /// Generates random noise in one of three spectral colors:
 /// - **White**: equal energy across all frequencies (bright, hissy)
-/// - **Pink**: equal energy per octave (warm, balanced — good for “ocean” textures)
+/// - **Pink**: equal energy per octave (warm, balanced — good for "ocean" textures)
 /// - **Brown**: steep low-frequency emphasis (deep, rumbling)
 ///
 /// Output range is **±5V**.
@@ -132,7 +133,6 @@ impl Noise {
     }
 
     fn update(&mut self, _sample_rate: f32) {
-        // self.params
         self.refresh_kind();
         let white = self.generator.next();
         let colored = match self.params.color {

@@ -20,7 +20,7 @@ use crate::{
     MonoSignal,
     dsp::utils::{TempGate, TempGateState, min_gate_samples},
     pattern_system::DspHap,
-    poly::{PORT_MAX_CHANNELS, PolyOutput},
+    poly::{MonoSignalExt, PORT_MAX_CHANNELS, PolyOutput},
 };
 
 use super::seq_value::{SeqPatternParam, SeqValue};
@@ -138,15 +138,18 @@ fn default_channels() -> usize {
 }
 
 #[derive(Clone, Deserialize, Default, ChannelCount, JsonSchema, Connect, Debug, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 pub struct SeqParams {
     /// pattern string in mini-notation
+    #[serde(default)]
     pattern: SeqPatternParam,
     /// playhead position (driven by the global clock)
+    #[serde(default)]
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
     #[signal(range = (0.0, 1.0))]
-    playhead: MonoSignal,
+    playhead: Option<MonoSignal>,
     /// Number of polyphonic voices (1-16)
+    #[serde(default)]
     pub channels: Option<usize>,
     /// The pattern string (used for serialization)
     #[serde(skip)]
@@ -393,7 +396,7 @@ impl Seq {
     }
 
     fn update(&mut self, sample_rate: f32) {
-        let playhead = self.params.playhead.get_value_f64();
+        let playhead = self.params.playhead.value_or_zero() as f64;
         let hold = min_gate_samples(sample_rate);
         let num_channels = self.channel_count();
 

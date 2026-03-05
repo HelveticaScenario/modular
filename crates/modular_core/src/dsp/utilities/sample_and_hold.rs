@@ -1,19 +1,21 @@
 use crate::dsp::utils::{SchmittState, SchmittTrigger};
 use crate::{
-    poly::{PolyOutput, PolySignal},
+    poly::{PolyOutput, PolySignal, PolySignalExt},
     PORT_MAX_CHANNELS,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct SampleAndHoldParams {
     /// signal to sample
-    input: PolySignal,
+    #[serde(default)]
+    input: Option<PolySignal>,
     /// rising edge captures the current input value
+    #[serde(default)]
     #[signal(type = trig, range = (0.0, 5.0))]
-    trigger: PolySignal,
+    trigger: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -59,8 +61,8 @@ impl SampleAndHold {
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
-            let input = self.params.input.get_value(ch);
-            let trigger = self.params.trigger.get_value(ch);
+            let input = self.params.input.value_or_zero(ch);
+            let trigger = self.params.trigger.value_or_zero(ch);
 
             if state.trigger.state == SchmittState::Uninitialized {
                 state.held_value = input;
@@ -79,13 +81,15 @@ impl SampleAndHold {
 message_handlers!(impl SampleAndHold {});
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct TrackAndHoldParams {
     /// signal to track
-    input: PolySignal,
+    #[serde(default)]
+    input: Option<PolySignal>,
     /// while gate is low the output follows the input; when gate goes high the last value is held
+    #[serde(default)]
     #[signal(type = gate, range = (0.0, 5.0))]
-    gate: PolySignal,
+    gate: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -124,8 +128,8 @@ impl TrackAndHold {
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
-            let input = self.params.input.get_value(ch);
-            let gate = self.params.gate.get_value(ch);
+            let input = self.params.input.value_or_zero(ch);
+            let gate = self.params.gate.value_or_zero(ch);
 
             // Track while gate is low or on rising edge
             state.gate.process(gate);

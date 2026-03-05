@@ -1,18 +1,21 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct ScaleAndShiftParams {
     /// signal to scale and shift
-    input: PolySignal,
+    #[serde(default)]
+    input: Option<PolySignal>,
     /// scale factor (0–10V range; 5V = unity gain, 0V = silence, -5V = inverted, 10V = 2x)
+    #[serde(default)]
     #[signal(default = 5.0, range = (0.0, 10.0))]
-    scale: PolySignal,
+    scale: Option<PolySignal>,
     /// DC offset added to the scaled signal (in volts)
-    shift: PolySignal,
+    #[serde(default)]
+    shift: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -32,7 +35,7 @@ struct ScaleAndShiftOutputs {
 /// // invert a slow sine and shift it into 0–5 V range
 /// $scaleAndShift($sine('1hz'), -5, 2.5)
 /// ```
-#[module(name = "$scaleAndShift", args(input, scale?, shift?))]
+#[module(name = "$scaleAndShift", args(input, scale, shift))]
 #[derive(Default)]
 pub struct ScaleAndShift {
     outputs: ScaleAndShiftOutputs,
@@ -46,9 +49,9 @@ impl ScaleAndShift {
         let channels = self.channel_count();
 
         for i in 0..channels as usize {
-            let input_val = self.params.input.get_value(i);
-            let scale_val = self.params.scale.get_value_or(i, 5.0);
-            let shift_val = self.params.shift.get_value_or(i, 0.0);
+            let input_val = self.params.input.value_or_zero(i);
+            let scale_val = self.params.scale.value_or(i, 5.0);
+            let shift_val = self.params.shift.value_or(i, 0.0);
 
             self.scale[i] = scale_val;
             self.shift[i] = shift_val;

@@ -3,17 +3,18 @@ use crate::{
         consts::{LUT_SINE, LUT_SINE_SIZE},
         utils::{interpolate, voct_to_hz},
     },
-    poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS},
+    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct SineOscillatorParams {
     /// pitch in V/Oct (0V = C4)
+    #[serde(default)]
     #[signal(type = pitch)]
-    freq: PolySignal,
+    freq: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -51,7 +52,7 @@ impl SineOscillator {
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
 
-            let frequency = voct_to_hz(self.params.freq.get_value_or(ch, 0.0)) / sample_rate;
+            let frequency = voct_to_hz(self.params.freq.value_or(ch, 0.0)) / sample_rate;
             state.phase += frequency;
             while state.phase >= 1.0 {
                 state.phase -= 1.0;

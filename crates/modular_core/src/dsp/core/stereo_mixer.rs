@@ -1,5 +1,5 @@
 use crate::{
-    poly::{MonoSignal, PolyOutput, PolySignal},
+    poly::{MonoSignal, MonoSignalExt, PolyOutput, PolySignal, PolySignalExt},
     types::Clickless,
     PORT_MAX_CHANNELS,
 };
@@ -7,16 +7,19 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct StereoMixerParams {
     /// Input signal to place in the stereo field.
-    input: PolySignal,
+    #[serde(default)]
+    input: Option<PolySignal>,
     /// Pan position per channel (-5 = left, 0 = center, +5 = right).
-    pan: PolySignal,
+    #[serde(default)]
+    pan: Option<PolySignal>,
     /// Stereo spread across channels (0 = no spread, 5 = widest spread).
     /// Width offsets each channel around its base pan position.
+    #[serde(default)]
     #[signal(range = (0.0, 5.0))]
-    width: MonoSignal,
+    width: Option<MonoSignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -44,20 +47,20 @@ pub struct StereoMixer {
 
 impl StereoMixer {
     pub fn update(&mut self, _sample_rate: f32) {
-        let input_channels = self.params.input.channels() as usize;
+        let input_channels = self.params.input.channel_count();
 
         // Width: 0 = no spread, 5 = full ±5V spread across voices
         self.width_buffer
-            .update(self.params.width.get_value_or(0.0).clamp(0.0, 5.0));
+            .update(self.params.width.value_or(0.0).clamp(0.0, 5.0));
 
         let mut left_sum = 0.0f32;
         let mut right_sum = 0.0f32;
 
         for ch in 0..input_channels {
-            let input = self.params.input.get_value(ch);
+            let input = self.params.input.value_or_zero(ch);
 
             // Base pan from cycling PolySignal (-5 to +5 range, 0 = center)
-            let base_pan = self.params.pan.get_value(ch).clamp(-5.0, 5.0);
+            let base_pan = self.params.pan.value_or_zero(ch).clamp(-5.0, 5.0);
 
             // Calculate width spread offset:
             // Voices spread from -width to +width relative to base pan

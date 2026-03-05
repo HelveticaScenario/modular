@@ -1,26 +1,31 @@
 use crate::dsp::utils::SchmittTrigger;
-use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct AdsrParams {
     /// gate input — rising edge starts the envelope, falling edge triggers release
+    #[serde(default)]
     #[signal(type = gate, range = (0.0, 5.0))]
-    gate: PolySignal,
+    gate: Option<PolySignal>,
     /// attack time in seconds
+    #[serde(default)]
     #[signal(default = 0.01, range = (0.0, 10.0))]
-    attack: PolySignal,
+    attack: Option<PolySignal>,
     /// decay time in seconds
+    #[serde(default)]
     #[signal(default = 0.1, range = (0.0, 10.0))]
-    decay: PolySignal,
+    decay: Option<PolySignal>,
     /// sustain level in volts (0-5)
+    #[serde(default)]
     #[signal(default = 5.0, range = (0.0, 5.0))]
-    sustain: PolySignal,
+    sustain: Option<PolySignal>,
     /// release time in seconds
+    #[serde(default)]
     #[signal(default = 0.1, range = (0.0, 10.0))]
-    release: PolySignal,
+    release: Option<PolySignal>,
 }
 
 #[derive(Clone, Copy, PartialEq, Default)]
@@ -99,16 +104,16 @@ impl Adsr {
             let state = &mut self.channels[ch];
 
             // Smooth parameter targets to avoid clicks when values change (times in seconds)
-            state.attack = self.params.attack.get_value_or(ch, 0.01).max(0.001);
-            state.decay = self.params.decay.get_value_or(ch, 0.1).max(0.001);
-            state.release = self.params.release.get_value_or(ch, 0.1).max(0.001);
-            state.sustain = self.params.sustain.get_value_or(ch, 5.).max(0.0);
+            state.attack = self.params.attack.value_or(ch, 0.01).max(0.001);
+            state.decay = self.params.decay.value_or(ch, 0.1).max(0.001);
+            state.release = self.params.release.value_or(ch, 0.1).max(0.001);
+            state.sustain = self.params.sustain.value_or(ch, 5.).max(0.0);
 
             let attack = state.attack;
             let decay = state.decay;
             let release_var = state.release;
 
-            let gate_val = self.params.gate.get_value(ch);
+            let gate_val = self.params.gate.value_or_zero(ch);
             let (gate_on, edge) = state.gate_schmitt.process_with_edge(gate_val);
 
             if edge.is_rising() {

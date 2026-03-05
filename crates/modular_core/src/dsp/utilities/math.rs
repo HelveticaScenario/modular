@@ -1,5 +1,5 @@
 use crate::dsp::utils::{hz_to_voct_f64, voct_to_hz_f64};
-use crate::poly::MonoSignal;
+use crate::poly::{MonoSignal, MonoSignalExt};
 use crate::types::{ClockMessages, Connect, Signal};
 use fasteval::{Compiler, Evaler, Instruction};
 use napi::Result;
@@ -100,24 +100,34 @@ impl Connect for MathExpressionParam {
 }
 
 #[derive(Clone, Deserialize, Default, JsonSchema, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct MathParams {
     /// math expression to evaluate (e.g. "x * 2 + sin(t)")
+    #[serde(default)]
     expression: MathExpressionParam,
     /// first input variable, referenced as `x` in the expression
-    x: MonoSignal,
+    #[serde(default)]
+    x: Option<MonoSignal>,
     /// second input variable, referenced as `y` in the expression
-    y: MonoSignal,
+    #[serde(default)]
+    y: Option<MonoSignal>,
     /// third input variable, referenced as `z` in the expression
-    z: MonoSignal,
+    #[serde(default)]
+    z: Option<MonoSignal>,
 }
 
 impl Connect for MathParams {
     fn connect(&mut self, patch: &crate::Patch) {
         Connect::connect(&mut self.expression, patch);
-        Connect::connect(&mut self.x, patch);
-        Connect::connect(&mut self.y, patch);
-        Connect::connect(&mut self.z, patch);
+        if let Some(ref mut x) = self.x {
+            Connect::connect(x, patch);
+        }
+        if let Some(ref mut y) = self.y {
+            Connect::connect(y, patch);
+        }
+        if let Some(ref mut z) = self.z {
+            Connect::connect(z, patch);
+        }
     }
 }
 
@@ -192,16 +202,16 @@ impl Math {
     }
 
     fn eval(&mut self) -> std::result::Result<f64, fasteval::Error> {
-        let x = self.params.x.get_value_or(0.0) as f64;
-        let y = self.params.y.get_value_or(0.0) as f64;
-        let z = self.params.z.get_value_or(0.0) as f64;
+        let x = self.params.x.value_or(0.0) as f64;
+        let y = self.params.y.value_or(0.0) as f64;
+        let z = self.params.z.value_or(0.0) as f64;
         let t = self.phase as f64 + self.loop_index as f64;
         let signals = self
             .params
             .expression
             .signals
             .iter()
-            .map(|s| s.get_value_or(0.0) as f64)
+            .map(|s| s.get_value() as f64)
             .collect::<Vec<_>>();
 
         let mut btree = BTreeMap::new();

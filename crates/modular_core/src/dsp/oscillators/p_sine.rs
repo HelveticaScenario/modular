@@ -3,17 +3,18 @@ use crate::{
         consts::{LUT_SINE, LUT_SINE_SIZE},
         utils::{interpolate, wrap},
     },
-    poly::{PolyOutput, PolySignal},
+    poly::{PolyOutput, PolySignal, PolySignalExt},
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct PSineOscillatorParams {
     /// phasor input (0–1, wraps at boundaries)
+    #[serde(default)]
     #[signal(range = (0.0, 1.0))]
-    phase: PolySignal,
+    phase: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -42,7 +43,7 @@ impl PSineOscillator {
         let num_channels = self.channel_count();
 
         for ch in 0..num_channels {
-            let phase = wrap(0.0..1.0, self.params.phase.get_value(ch));
+            let phase = wrap(0.0..1.0, self.params.phase.value_or_zero(ch));
             let sine = interpolate(LUT_SINE, phase, LUT_SINE_SIZE);
             self.outputs.sample.set(ch, sine * 5.0);
         }

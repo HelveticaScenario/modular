@@ -10,21 +10,24 @@ use serde::Deserialize;
 
 use crate::dsp::fx::enosc_tables::aa_feedback;
 use crate::dsp::utils::voct_to_hz;
-use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 use crate::types::Clickless;
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct FeedbackParams {
     /// input phase (0 to 1)
+    #[serde(default)]
     #[signal(range = (0.0, 1.0))]
-    input: PolySignal,
+    input: Option<PolySignal>,
     /// feedback amount (0-5, where 0 = no feedback, 5 = maximum feedback FM)
+    #[serde(default)]
     #[signal(range = (0.0, 5.0))]
-    amount: PolySignal,
+    amount: Option<PolySignal>,
     /// pitch in V/Oct (optional, reduces aliasing at high frequencies)
+    #[serde(default)]
     #[signal(type = pitch)]
-    freq: PolySignal,
+    freq: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -54,10 +57,7 @@ struct ChannelState {
 /// // Apply feedback distortion to a ramp phase and convert to audio
 /// $pSine($feedback($ramp('c3'), 3)).out()
 /// ```
-#[module(
-    name = "$feedback",
-    args(input, amount?)
-)]
+#[module(name = "$feedback", args(input, amount))]
 #[derive(Default)]
 pub struct Feedback {
     outputs: FeedbackOutputs,
@@ -73,8 +73,8 @@ impl Feedback {
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
 
-            let input = self.params.input.get_value(ch);
-            let amount_raw = self.params.amount.get_value_or(ch, 0.0);
+            let input = self.params.input.value_or_zero(ch);
+            let amount_raw = self.params.amount.value_or(ch, 0.0);
 
             // Smooth amount parameter to avoid clicks
             state.amount.update(amount_raw);
@@ -89,7 +89,7 @@ impl Feedback {
 
             // Apply anti-aliasing when freq is connected
             let amount_norm = if freq_connected {
-                let freq_hz = voct_to_hz(self.params.freq.get_value(ch));
+                let freq_hz = voct_to_hz(self.params.freq.value_or_zero(ch));
                 aa_feedback(freq_hz / sample_rate, amount_norm)
             } else {
                 amount_norm

@@ -1,17 +1,20 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::poly::{PolyOutput, PolySignal};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt};
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct ClampParams {
     /// signal to clamp
-    input: PolySignal,
+    #[serde(default)]
+    input: Option<PolySignal>,
     /// lower bound — if omitted the signal is unclamped below
-    min: PolySignal,
+    #[serde(default)]
+    min: Option<PolySignal>,
     /// upper bound — if omitted the signal is unclamped above
-    max: PolySignal,
+    #[serde(default)]
+    max: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -47,23 +50,23 @@ impl Clamp {
         let has_max = !self.params.max.is_disconnected();
 
         for i in 0..channels as usize {
-            let mut val = self.params.input.get_value(i);
+            let mut val = self.params.input.value_or_zero(i);
 
             match (has_min, has_max) {
                 (true, true) => {
-                    let a = self.params.min.get_value(i);
-                    let b = self.params.max.get_value(i);
+                    let a = self.params.min.value_or_zero(i);
+                    let b = self.params.max.value_or_zero(i);
                     let (lo, hi) = if b < a { (b, a) } else { (a, b) };
                     val = val.clamp(lo, hi);
                 }
                 (true, false) => {
-                    let min_val = self.params.min.get_value(i);
+                    let min_val = self.params.min.value_or_zero(i);
                     if val < min_val {
                         val = min_val;
                     }
                 }
                 (false, true) => {
-                    let max_val = self.params.max.get_value(i);
+                    let max_val = self.params.max.value_or_zero(i);
                     if val > max_val {
                         val = max_val;
                     }

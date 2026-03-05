@@ -319,7 +319,6 @@ export interface PatchGraph {
 
 export interface PositionalArg {
   name: string
-  optional: boolean
 }
 
 export interface Scope {

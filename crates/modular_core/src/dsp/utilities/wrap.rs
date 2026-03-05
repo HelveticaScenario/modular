@@ -3,20 +3,23 @@ use serde::Deserialize;
 
 use crate::{
     dsp::utils::wrap,
-    poly::{PolyOutput, PolySignal},
+    poly::{PolyOutput, PolySignal, PolySignalExt},
 };
 
 #[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct WrapParams {
     /// signal to wrap
-    input: PolySignal,
+    #[serde(default)]
+    input: Option<PolySignal>,
     /// lower bound of the wrap range
+    #[serde(default)]
     #[signal(default = 0.0)]
-    min: PolySignal,
+    min: Option<PolySignal>,
     /// upper bound of the wrap range
+    #[serde(default)]
     #[signal(default = 5.0)]
-    max: PolySignal,
+    max: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -48,9 +51,9 @@ impl Wrap {
         let channels = self.channel_count();
 
         for i in 0..channels as usize {
-            let val = self.params.input.get_value(i);
-            let a = self.params.min.get_value_or(i, 0.0);
-            let b = self.params.max.get_value_or(i, 5.0);
+            let val = self.params.input.value_or_zero(i);
+            let a = self.params.min.value_or(i, 0.0);
+            let b = self.params.max.value_or(i, 5.0);
             let (min, max) = if b < a { (b, a) } else { (a, b) };
 
             let output = if (max - min).abs() < f32::EPSILON {
@@ -73,9 +76,9 @@ mod tests {
 
     fn run_wrap(input: f32, min: f32, max: f32) -> f32 {
         let mut module = Wrap::default();
-        module.params.input = PolySignal::mono(Signal::Volts(input));
-        module.params.min = PolySignal::mono(Signal::Volts(min));
-        module.params.max = PolySignal::mono(Signal::Volts(max));
+        module.params.input = Some(PolySignal::mono(Signal::Volts(input)));
+        module.params.min = Some(PolySignal::mono(Signal::Volts(min)));
+        module.params.max = Some(PolySignal::mono(Signal::Volts(max)));
         module._channel_count = 1;
         module.outputs.sample.set_channels(1);
         module.update(44100.0);

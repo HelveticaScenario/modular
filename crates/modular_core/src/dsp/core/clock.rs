@@ -30,7 +30,7 @@ where
 }
 
 #[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 struct ClockParams {
     /// Tempo in BPM. Defaults to 120.
     #[serde(default = "default_tempo")]
@@ -60,7 +60,7 @@ impl Default for ClockParams {
 }
 
 /// Tempo-synced transport clock for driving sequencers, envelopes, and synced modulation.
-#[module(name = "_clock", channels = 2, args(tempo?))]
+#[module(name = "_clock", channels = 2, args(tempo))]
 pub struct Clock {
     outputs: ClockOutputs,
     phase: f64,
