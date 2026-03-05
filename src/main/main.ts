@@ -267,6 +267,7 @@ async function checkForUpdateAvailability(): Promise<void> {
         const info: UpdateAvailableInfo = {
             version: latestVersion,
             releaseUrl: parsed.data.html_url,
+            supportsInAppUpdate: supportsAutoUpdater,
         };
         sendUpdateEvent(IPC_CHANNELS.UPDATE_AVAILABLE, info);
     } catch (err) {

@@ -127,6 +127,12 @@ export interface UpdateAvailableInfo {
     version: string;
     /** URL to the GitHub release page */
     releaseUrl: string;
+    /**
+     * True on platforms where the app can download and install the update
+     * automatically (macOS, Windows). False on Linux, where clicking the
+     * primary action opens the release page in the browser instead.
+     */
+    supportsInAppUpdate: boolean;
 }
 
 export interface UpdatePatchResult {

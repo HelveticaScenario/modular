@@ -345,6 +345,7 @@ function App() {
                     status: 'available',
                     version: info.version,
                     releaseUrl: info.releaseUrl,
+                    supportsInAppUpdate: info.supportsInAppUpdate,
                 });
             },
         );

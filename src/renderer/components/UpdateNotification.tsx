@@ -2,7 +2,12 @@ import './UpdateNotification.css';
 
 export type UpdateNotificationState =
     | { status: 'idle' }
-    | { status: 'available'; version: string; releaseUrl: string }
+    | {
+          status: 'available';
+          version: string;
+          releaseUrl: string;
+          supportsInAppUpdate: boolean;
+      }
     | { status: 'downloading'; version: string }
     | { status: 'ready' }
     | { status: 'error'; message: string };
@@ -32,7 +37,9 @@ export function UpdateNotification({
         case 'available':
             message = `Version ${state.version} is available.`;
             primaryAction = {
-                label: 'Download & Install',
+                label: state.supportsInAppUpdate
+                    ? 'Download & Install'
+                    : 'View Release',
                 onClick: onDownload,
             };
             secondaryActions = [
