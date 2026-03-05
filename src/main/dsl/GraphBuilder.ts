@@ -196,7 +196,7 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
     }
 
     /**
-     * Add scope visualization for the first output in the collection
+     * Add scope visualization for all outputs in the collection
      */
     scope(config?: {
         msPerFrame?: number;
@@ -206,7 +206,7 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
     }): this {
         if (this.items.length > 0) {
             const loc = captureSourceLocation();
-            this.items[0].builder.addScope(this.items[0], config, loc);
+            this.items[0].builder.addScope(this.items, config, loc);
         }
         return this;
     }
@@ -724,26 +724,31 @@ export class GraphBuilder {
             }),
             scopes: this.scopes
                 .map((scope) => {
-                    const deferredOutput = this.deferredOutputs.get(
-                        scope.item.moduleId,
-                    );
-                    if (deferredOutput) {
-                        const resolved = deferredOutput.resolve();
-                        if (resolved) {
-                            const newScope: ScopeWithLocation = {
-                                ...scope,
-                                item: {
-                                    type: 'ModuleOutput',
+                    const resolvedChannels = scope.channels.map((ch) => {
+                        const deferredOutput = this.deferredOutputs.get(
+                            ch.moduleId,
+                        );
+                        if (deferredOutput) {
+                            const resolved = deferredOutput.resolve();
+                            if (resolved) {
+                                return {
                                     moduleId: resolved.moduleId,
                                     portName: resolved.portName,
-                                },
-                            };
-                            return newScope;
-                        } else {
+                                    channel: ch.channel,
+                                };
+                            }
                             return null;
                         }
+                        return ch;
+                    });
+                    // If any channel couldn't be resolved, skip the scope
+                    if (resolvedChannels.some((ch) => ch === null)) {
+                        return null;
                     }
-                    return scope;
+                    return {
+                        ...scope,
+                        channels: resolvedChannels,
+                    } as ScopeWithLocation;
                 })
                 .filter(
                     (s: ScopeWithLocation | null): s is ScopeWithLocation =>
@@ -848,16 +853,10 @@ export class GraphBuilder {
         sourceLocation?: { line: number; column: number },
     ) {
         const { msPerFrame = 500, triggerThreshold, range = [-5, 5] } = config;
-        let realTriggerThreshold: number | undefined =
+        const realTriggerThreshold: number | undefined =
             triggerThreshold !== undefined
                 ? triggerThreshold * 1000
                 : undefined;
-        let output: ModuleOutput;
-        if (Array.isArray(value)) {
-            output = value[0];
-        } else {
-            output = value;
-        }
         const triggerWaitToRender = config.triggerWaitToRender ?? true;
         let thresh: [number, ScopeMode] | undefined = undefined;
         if (realTriggerThreshold !== undefined) {
@@ -866,12 +865,16 @@ export class GraphBuilder {
                 triggerWaitToRender ? 'Wait' : 'Roll',
             ];
         }
+
+        const outputs = Array.isArray(value) ? value : [value];
+        const channels = outputs.map((o) => ({
+            moduleId: o.moduleId,
+            portName: o.portName,
+            channel: o.channel,
+        }));
+
         this.scopes.push({
-            item: {
-                type: 'ModuleOutput',
-                moduleId: output.moduleId,
-                portName: output.portName,
-            },
+            channels,
             msPerFrame,
             triggerThreshold: thresh,
             range,
