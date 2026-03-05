@@ -32,4 +32,5 @@ export type ScopeView = {
     key: string;
     file: string;
     range: [number, number];
+    channelKeys: string[];
 };

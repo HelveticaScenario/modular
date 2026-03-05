@@ -7,7 +7,6 @@
 
 import type {
     ModuleSchema,
-    ScopeItem,
     PatchGraph,
     ApplyPatchError,
     AudioThreadHealthSnapshot,

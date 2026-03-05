@@ -112,6 +112,7 @@ export function createScopeViewZones({
         canvas.dataset.scopeKey = view.key;
         canvas.dataset.scopeRangeMin = String(view.range[0]);
         canvas.dataset.scopeRangeMax = String(view.range[1]);
+        canvas.dataset.scopeChannelKeys = JSON.stringify(view.channelKeys);
 
         const pixelWidth = Math.max(
             1,

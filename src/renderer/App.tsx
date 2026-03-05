@@ -29,7 +29,11 @@ import { findSliderValueSpan } from './dsl/sliderSourceEdit';
 import type { EditorBuffer, ScopeView } from './types/editor';
 import { getBufferId } from './app/buffers';
 import { setActiveInterpolationResolutions } from '../shared/dsl/spanTypes';
-import { drawOscilloscope, scopeKeyFromSubscription } from './app/oscilloscope';
+import {
+    drawOscilloscope,
+    scopeBufferKeyToString,
+    scopeBufferKeyFromChannel,
+} from './app/oscilloscope';
 import { useEditorBuffers } from './app/hooks/useEditorBuffers';
 
 /**
@@ -419,25 +423,73 @@ function App() {
                     electronAPI.synthesizer.getScopes(),
                     electronAPI.synthesizer.getTransportState(),
                 ])
-                    .then(([scopes, transport]) => {
-                        for (const [scopeItem, channels, stats] of scopes) {
-                            const scopeKey =
-                                scopeKeyFromSubscription(scopeItem);
-                            const scopedCanvas =
-                                scopeCanvasMapRef.current.get(scopeKey);
-                            if (scopedCanvas) {
-                                const rangeMin = parseFloat(
-                                    scopedCanvas.dataset.scopeRangeMin || '-5',
-                                );
-                                const rangeMax = parseFloat(
-                                    scopedCanvas.dataset.scopeRangeMax || '5',
-                                );
-                                drawOscilloscope(channels, scopedCanvas, {
+                    .then(([scopeData, transport]) => {
+                        // Build a map of buffer key → (Float32Array, ScopeStats)
+                        const bufferMap = new Map<
+                            string,
+                            {
+                                data: Float32Array;
+                                stats: {
+                                    min: number;
+                                    max: number;
+                                    peakToPeak: number;
+                                    readOffset: number;
+                                };
+                            }
+                        >();
+                        for (const [bufferKey, data, stats] of scopeData) {
+                            const key = scopeBufferKeyToString(bufferKey);
+                            bufferMap.set(key, { data, stats });
+                        }
+
+                        // For each scope canvas, collect its channels' data and draw
+                        for (const [
+                            ,
+                            canvas,
+                        ] of scopeCanvasMapRef.current.entries()) {
+                            const rangeMin = parseFloat(
+                                canvas.dataset.scopeRangeMin || '-5',
+                            );
+                            const rangeMax = parseFloat(
+                                canvas.dataset.scopeRangeMax || '5',
+                            );
+                            const channelKeysStr =
+                                canvas.dataset.scopeChannelKeys;
+                            if (!channelKeysStr) continue;
+
+                            const channelKeys = JSON.parse(
+                                channelKeysStr,
+                            ) as string[];
+                            const channels: Float32Array[] = [];
+                            const readOffsets: number[] = [];
+                            let globalMin = Infinity;
+                            let globalMax = -Infinity;
+
+                            for (const chKey of channelKeys) {
+                                const entry = bufferMap.get(chKey);
+                                if (entry) {
+                                    channels.push(entry.data);
+                                    readOffsets.push(entry.stats.readOffset);
+                                    if (entry.stats.min < globalMin)
+                                        globalMin = entry.stats.min;
+                                    if (entry.stats.max > globalMax)
+                                        globalMax = entry.stats.max;
+                                }
+                            }
+
+                            if (channels.length > 0) {
+                                drawOscilloscope(channels, canvas, {
                                     range: [rangeMin, rangeMax],
-                                    stats,
+                                    stats: {
+                                        min: globalMin,
+                                        max: globalMax,
+                                        peakToPeak: globalMax - globalMin,
+                                        readOffset: readOffsets,
+                                    },
                                 });
                             }
                         }
+
                         setTransportState(transport);
 
                         // Check if a pending UI state should be committed
@@ -562,21 +614,34 @@ function App() {
 
                 for (let i = 0; i < scopes.length; i++) {
                     const scope = scopes[i];
-                    const { moduleId, portName } = scope.item;
+
+                    // Derive buffer keys for each channel in this scope
+                    const channelKeys = scope.channels.map((ch: any) =>
+                        scopeBufferKeyFromChannel(
+                            ch,
+                            scope.msPerFrame,
+                            scope.triggerThreshold,
+                        ),
+                    );
+
+                    // Use first channel's key as the scope's identity
+                    const scopeKey =
+                        channelKeys.length > 0
+                            ? `scope:${i}:${channelKeys.join('+')}`
+                            : `scope:${i}:empty`;
 
                     const loc = (scope as any).sourceLocation as
                         | { line: number; column: number }
                         | undefined;
 
                     views.push({
-                        key: `:module:${moduleId}:${portName}`,
+                        key: scopeKey,
                         file: activeBufferId,
                         range: scope.range ?? [-5, 5],
+                        channelKeys,
                     });
 
                     if (model && loc) {
-                        // Look up the full call expression span for this scope call.
-                        // The key matches captureSourceLocation's {line, column} format.
                         const spanKey = `${loc.line}:${loc.column}`;
                         const callSpan = callSiteSpans?.[spanKey];
                         const endLine = callSpan?.endLine ?? loc.line;

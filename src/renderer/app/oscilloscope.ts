@@ -1,13 +1,36 @@
-import type { ScopeItem, ScopeStats } from '@modular/core';
+import type {
+    ScopeBufferKey,
+    ScopeChannel,
+    ScopeMode,
+    ScopeStats,
+} from '@modular/core';
 
-export const scopeKeyFromSubscription = (subscription: ScopeItem) => {
-    const { moduleId, portName } = subscription;
-    return `:module:${moduleId}:${portName}`;
+export const scopeBufferKeyToString = (key: ScopeBufferKey): string => {
+    const trigger = key.triggerThreshold
+        ? `${key.triggerThreshold[0]}:${key.triggerThreshold[1]}`
+        : 'none';
+    return `:module:${key.moduleId}:${key.portName}:${key.channel}:${key.msPerFrame}:${trigger}`;
+};
+
+export const scopeBufferKeyFromChannel = (
+    channel: ScopeChannel,
+    msPerFrame: number,
+    triggerThreshold?: [number, ScopeMode],
+): string => {
+    const trigger = triggerThreshold
+        ? `${triggerThreshold[0]}:${triggerThreshold[1]}`
+        : 'none';
+    return `:module:${channel.moduleId}:${channel.portName}:${channel.channel}:${msPerFrame}:${trigger}`;
 };
 
 export interface ScopeDrawOptions {
     range: [number, number];
-    stats: ScopeStats;
+    stats: {
+        min: number;
+        max: number;
+        peakToPeak: number;
+        readOffset: number[];
+    };
 }
 
 export const drawOscilloscope = (
