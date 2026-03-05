@@ -32,7 +32,6 @@ struct PSineOscillatorOutputs {
 ///
 /// Output range is **±5V**.
 #[module(name = "$pSine", args(phase))]
-#[derive(Default)]
 pub struct PSineOscillator {
     outputs: PSineOscillatorOutputs,
     params: PSineOscillatorParams,

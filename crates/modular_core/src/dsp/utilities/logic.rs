@@ -59,7 +59,6 @@ impl Default for EdgeChannelState {
 /// $perc($rising($sine('4hz')))
 /// ```
 #[module(name = "$rising", args(input))]
-#[derive(Default)]
 pub struct RisingEdgeDetector {
     outputs: EdgeDetectorOutputs,
     params: RisingEdgeDetectorParams,
@@ -100,7 +99,6 @@ message_handlers!(impl RisingEdgeDetector {});
 /// $perc($falling(gate))
 /// ```
 #[module(name = "$falling", args(input))]
-#[derive(Default)]
 pub struct FallingEdgeDetector {
     outputs: EdgeDetectorOutputs,
     params: FallingEdgeDetectorParams,

@@ -50,7 +50,6 @@ struct SlewChannelState {
 /// $sine($slew(sequencer.pitch, { rise: 0.1, fall: 0.1 }))
 /// ```
 #[module(name = "$slew", args(input))]
-#[derive(Default)]
 pub struct LagProcessor {
     outputs: LagProcessorOutputs,
     params: LagProcessorParams,

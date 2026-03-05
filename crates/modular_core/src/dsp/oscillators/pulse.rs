@@ -53,7 +53,6 @@ struct PulseChannelState {
 /// $pulse('c3', { width: 2.5 }).out()
 /// ```
 #[module(name = "$pulse", args(freq))]
-#[derive(Default)]
 pub struct PulseOscillator {
     outputs: PulseOscillatorOutputs,
     channels: [PulseChannelState; PORT_MAX_CHANNELS],

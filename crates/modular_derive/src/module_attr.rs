@@ -189,11 +189,10 @@ impl syn::parse::Parse for ModuleAttrArgs {
 /// and a field named `params` whose type derives `Deserialize`, `JsonSchema`,
 /// `Connect`, and `ChannelCount`.
 ///
-/// **Important**: If the struct derives `Default`, the `#[derive(Default)]`
-/// attribute must come *after* `#[module(...)]`, not before it. This is because
-/// `#[module]` injects a `_channel_count` field, and if `#[derive(Default)]`
-/// precedes `#[module]`, the derive expands on the original struct (without
-/// the injected field) and produces a broken `Default` impl.
+/// Module structs do **not** need to derive `Default`. The proc macro generates
+/// per-field initialization in the constructor: `params` comes from deserialization,
+/// `_channel_count` from the computed channel count, and all other fields use
+/// `Default::default()` on their individual types.
 pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attr_args = syn::parse_macro_input!(attr as ModuleAttrArgs);
     let mut ast: DeriveInput = syn::parse_macro_input!(item as DeriveInput);
@@ -282,7 +281,8 @@ fn impl_module_macro_attr(
         .collect();
 
     // The module struct must contain a field named `outputs`.
-    let outputs_ty: Type = match ast.data {
+    // Also collect all fields for per-field initialization in the constructor.
+    let (outputs_ty, module_field_inits): (Type, Vec<TokenStream2>) = match ast.data {
         Data::Struct(ref data) => match data.fields {
             Fields::Named(ref fields) => {
                 // Disallow legacy per-field #[output] annotations on the module struct.
@@ -302,7 +302,7 @@ fn impl_module_macro_attr(
                     .iter()
                     .find(|f| f.ident.as_ref().map(|i| i == "outputs").unwrap_or(false));
 
-                match outputs_field {
+                let outputs_ty = match outputs_field {
                     Some(f) => f.ty.clone(),
                     None => {
                         return Err(syn::Error::new(
@@ -310,7 +310,29 @@ fn impl_module_macro_attr(
                             "#[module] requires a field named `outputs` whose type derives Outputs",
                         ));
                     }
-                }
+                };
+
+                // Generate per-field initialization for the inner module struct.
+                // - `params` → use deserialized params
+                // - `_channel_count` → use deserialized channel count
+                // - all other fields → use Default::default()
+                let field_inits: Vec<TokenStream2> = fields
+                    .named
+                    .iter()
+                    .map(|f| {
+                        let field_name = f.ident.as_ref().unwrap();
+                        let field_name_str = field_name.to_string();
+                        match field_name_str.as_str() {
+                            "params" => quote! { params: *concrete_params },
+                            "_channel_count" => {
+                                quote! { _channel_count: deserialized.channel_count }
+                            }
+                            _ => quote! { #field_name: Default::default() },
+                        }
+                    })
+                    .collect();
+
+                (outputs_ty, field_inits)
             }
             Fields::Unnamed(_) | Fields::Unit => {
                 return Err(syn::Error::new(
@@ -572,19 +594,6 @@ fn impl_module_macro_attr(
             argument_spans: std::cell::UnsafeCell<std::collections::HashMap<String, crate::params::ArgumentSpan>>,
         }
 
-        impl Default for #struct_name {
-            fn default() -> Self {
-                Self {
-                    id: String::new(),
-                    outputs: std::cell::UnsafeCell::new(Default::default()),
-                    module: std::cell::UnsafeCell::new(Default::default()),
-                    processed: core::sync::atomic::AtomicBool::new(false),
-                    sample_rate: 0.0,
-                    argument_spans: std::cell::UnsafeCell::new(std::collections::HashMap::new()),
-                }
-            }
-        }
-
         // SAFETY: This type is only accessed from the audio thread after construction.
         unsafe impl Send for #struct_name {}
         unsafe impl Sync for #struct_name {}
@@ -668,22 +677,22 @@ fn impl_module_macro_attr(
                     format!("Failed to downcast params for module type {}", #module_name)
                 ))?;
 
+            // Construct inner module with per-field initialization.
+            // `params` comes from deserialization, `_channel_count` from computed channel count,
+            // all other fields use Default::default().
+            let mut inner = #name #static_ty_generics {
+                #(#module_field_inits),*
+            };
+            crate::types::OutputStruct::set_all_channels(&mut inner.outputs, deserialized.channel_count);
+
             let sampleable = #struct_name {
                 id: id.clone(),
                 sample_rate,
-                ..#struct_name::default()
+                outputs: std::cell::UnsafeCell::new(Default::default()),
+                module: std::cell::UnsafeCell::new(inner),
+                processed: core::sync::atomic::AtomicBool::new(false),
+                argument_spans: std::cell::UnsafeCell::new(deserialized.argument_spans),
             };
-
-            // Apply typed params immediately (before init).
-            // SAFETY: We just created sampleable, no one else has access yet.
-            unsafe {
-                let module = &mut *sampleable.module.get();
-                module.params = *concrete_params;
-                module._channel_count = deserialized.channel_count;
-                crate::types::OutputStruct::set_all_channels(&mut module.outputs, deserialized.channel_count);
-                let argument_spans = &mut *sampleable.argument_spans.get();
-                *argument_spans = deserialized.argument_spans;
-            }
 
             #has_init_call
             Ok(std::sync::Arc::new(Box::new(sampleable)))

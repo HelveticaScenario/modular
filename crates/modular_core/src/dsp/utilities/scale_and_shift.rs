@@ -36,7 +36,6 @@ struct ScaleAndShiftOutputs {
 /// $scaleAndShift($sine('1hz'), -5, 2.5)
 /// ```
 #[module(name = "$scaleAndShift", args(input, scale, shift))]
-#[derive(Default)]
 pub struct ScaleAndShift {
     outputs: ScaleAndShiftOutputs,
     scale: [f32; PORT_MAX_CHANNELS],

@@ -58,7 +58,6 @@ struct MidiCcOutputs {
 /// $sine('c4').amplitude(breath).out();
 /// ```
 #[module(name = "$midiCC", args())]
-#[derive(Default)]
 pub struct MidiCc {
     outputs: MidiCcOutputs,
     params: MidiCcParams,

@@ -48,7 +48,6 @@ struct SampleAndHoldChannelState {
 /// )
 /// ```
 #[module(name = "$sah", args(input, trigger))]
-#[derive(Default)]
 pub struct SampleAndHold {
     outputs: SampleAndHoldOutputs,
     params: SampleAndHoldParams,
@@ -115,7 +114,6 @@ struct TrackAndHoldChannelState {
 /// $tah($sine('2hz'), gate)
 /// ```
 #[module(name = "$tah", args(input, gate))]
-#[derive(Default)]
 pub struct TrackAndHold {
     outputs: TrackAndHoldOutputs,
     params: TrackAndHoldParams,

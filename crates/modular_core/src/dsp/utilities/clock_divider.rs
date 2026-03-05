@@ -48,7 +48,6 @@ struct ChannelState {
 /// $clockDivider($rootClock.barTrigger, 2)
 /// ```
 #[module(name = "$clockDivider", args(input, division))]
-#[derive(Default)]
 pub struct ClockDivider {
     params: ClockDividerParams,
     outputs: ClockDividerOutputs,

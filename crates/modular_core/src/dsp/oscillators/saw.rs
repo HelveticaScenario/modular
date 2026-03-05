@@ -51,7 +51,6 @@ struct ChannelState {
 /// $saw('a3', { shape: 2.5 }).out() // triangle wave
 /// ```
 #[module(name = "$saw", args(freq))]
-#[derive(Default)]
 pub struct SawOscillator {
     outputs: SawOscillatorOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

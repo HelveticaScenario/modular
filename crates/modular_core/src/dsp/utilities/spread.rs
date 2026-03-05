@@ -54,7 +54,6 @@ struct SpreadOutputs {
 /// $spread(0, 5, 8, { bias: -3 })
 /// ```
 #[module(name = "$spread", channels_param = "count", args(min, max, count))]
-#[derive(Default)]
 pub struct Spread {
     outputs: SpreadOutputs,
     params: SpreadParams,

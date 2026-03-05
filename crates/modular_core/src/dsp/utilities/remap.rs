@@ -57,7 +57,6 @@ struct RemapOutputs {
 /// $remap(signal, 0, 1, -5, 5)
 /// ```
 #[module(name = "$remap", args(input, outMin, outMax, inMin, inMax))]
-#[derive(Default)]
 pub struct Remap {
     outputs: RemapOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

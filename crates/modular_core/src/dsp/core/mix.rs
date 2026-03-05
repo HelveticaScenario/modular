@@ -86,7 +86,6 @@ pub fn mix_derive_channel_count(params: &MixParams) -> usize {
 /// It mixes channel `n` across all inputs into output channel `n`, rather than
 /// folding all channels into a single mono channel.
 #[module(name = "$mix", channels_derive = mix_derive_channel_count, args(inputs))]
-#[derive(Default)]
 pub struct Mix {
     outputs: MixOutputs,
     params: MixParams,
@@ -192,7 +191,7 @@ mod tests {
             params,
             outputs,
             _channel_count: channels,
-            ..Default::default()
+            gain_buffer: Default::default(),
         }
     }
 

@@ -192,7 +192,6 @@ struct ChannelState {
 /// $mix(low, mid, high).out()
 /// ```
 #[module(name = "$xover", args(input))]
-#[derive(Default)]
 pub struct Crossover {
     outputs: CrossoverOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

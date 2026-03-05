@@ -53,7 +53,6 @@ struct TrackOutputs {
 /// $lpf(osc, $track([['c2', 0], ['c5', 0.5], ['c3', 1]]))
 /// ```
 #[module(name = "$track", args(keyframes), channels_derive = derive_track_channel_count)]
-#[derive(Default)]
 pub struct Track {
     outputs: TrackOutputs,
     params: TrackParams,

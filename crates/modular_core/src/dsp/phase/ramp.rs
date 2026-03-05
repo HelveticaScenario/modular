@@ -37,7 +37,6 @@ struct ChannelState {
 /// feed its output into phase-distortion modules (crush, feedback, pulsar)
 /// and then into a waveshaper (e.g. `$pSine`) to produce audio.
 #[module(name = "$ramp", args(freq))]
-#[derive(Default)]
 pub struct Ramp {
     outputs: RampOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

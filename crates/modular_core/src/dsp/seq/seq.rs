@@ -331,7 +331,6 @@ struct SeqOutputs {
     stateful,
     patch_update,
 )]
-#[derive(Default)]
 pub struct Seq {
     outputs: SeqOutputs,
     params: SeqParams,

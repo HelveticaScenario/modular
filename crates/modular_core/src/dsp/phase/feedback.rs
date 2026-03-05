@@ -58,7 +58,6 @@ struct ChannelState {
 /// $pSine($feedback($ramp('c3'), 3)).out()
 /// ```
 #[module(name = "$feedback", args(input, amount))]
-#[derive(Default)]
 pub struct Feedback {
     outputs: FeedbackOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

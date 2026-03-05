@@ -56,7 +56,6 @@ struct ChannelState {
 /// $pSine($pulsar($ramp('c3'), 3)).out()
 /// ```
 #[module(name = "$pulsar", args(input, amount))]
-#[derive(Default)]
 pub struct Pulsar {
     outputs: PulsarOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

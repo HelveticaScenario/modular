@@ -60,7 +60,6 @@ struct UnisonOutputs {
 /// $saw($unison($midiCV().pitch, 5, $sine('0.2hz'))).out()
 /// ```
 #[module(name = "$unison", channels_derive = unison_derive_channel_count, args(input, count, spread))]
-#[derive(Default)]
 pub struct Unison {
     outputs: UnisonOutputs,
     params: UnisonParams,

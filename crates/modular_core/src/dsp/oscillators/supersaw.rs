@@ -38,6 +38,30 @@ pub fn supersaw_derive_channel_count(params: &SupersawParams) -> usize {
     params.voices.clamp(1, PORT_MAX_CHANNELS)
 }
 
+/// Phase state array for supersaw oscillator voices.
+/// Wraps `[f32; PORT_MAX_CHANNELS * PORT_MAX_CHANNELS]` to provide a `Default` impl
+/// (since Rust stable doesn't impl Default for arrays > 32 elements).
+struct OscStates([f32; PORT_MAX_CHANNELS * PORT_MAX_CHANNELS]);
+
+impl Default for OscStates {
+    fn default() -> Self {
+        Self([0.0; PORT_MAX_CHANNELS * PORT_MAX_CHANNELS])
+    }
+}
+
+impl std::ops::Deref for OscStates {
+    type Target = [f32; PORT_MAX_CHANNELS * PORT_MAX_CHANNELS];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for OscStates {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 /// Supersaw oscillator with multiple detuned sawtooth voices and PolyBLEP anti-aliasing.
 ///
 /// Generates a classic supersaw sound by stacking multiple sawtooth oscillators
@@ -61,20 +85,8 @@ pub struct Supersaw {
     outputs: SupersawOutputs,
     params: SupersawParams,
     /// Phase state for matrix mixing: indexed as [input_ch * PORT_MAX_CHANNELS + voice]
-    osc_states: [f32; PORT_MAX_CHANNELS * PORT_MAX_CHANNELS],
+    osc_states: OscStates,
     rng_state: u32,
-}
-
-impl Default for Supersaw {
-    fn default() -> Self {
-        Self {
-            outputs: SupersawOutputs::default(),
-            params: SupersawParams::default(),
-            osc_states: [0.0; PORT_MAX_CHANNELS * PORT_MAX_CHANNELS],
-            rng_state: 0,
-            _channel_count: 0,
-        }
-    }
 }
 
 /// PolyBLEP correction for sawtooth wave discontinuity at phase wrap.
@@ -203,7 +215,7 @@ mod tests {
         Supersaw {
             params,
             outputs,
-            osc_states: [0.0; PORT_MAX_CHANNELS * PORT_MAX_CHANNELS],
+            osc_states: OscStates::default(),
             rng_state: 0,
             _channel_count: channels,
         }

@@ -44,7 +44,6 @@ struct ChannelState {
 /// $noise("white").mul($perc($rootClock.gate, { decay: 0.1 }))
 /// ```
 #[module(name = "$perc", args(trigger))]
-#[derive(Default)]
 pub struct PercussionEnvelope {
     outputs: PercussionEnvelopeOutputs,
     params: PercussionEnvelopeParams,

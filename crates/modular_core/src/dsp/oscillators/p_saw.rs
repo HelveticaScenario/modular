@@ -47,7 +47,6 @@ struct ChannelState {
 ///
 /// Output range is **±5V**.
 #[module(name = "$pSaw", args(phase))]
-#[derive(Default)]
 pub struct PSawOscillator {
     outputs: PSawOscillatorOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

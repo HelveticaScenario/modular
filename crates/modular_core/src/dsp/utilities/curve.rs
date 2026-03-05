@@ -36,7 +36,6 @@ struct CurveOutputs {
 /// $curve(signal, 3)    // cubic curve (audio taper)
 /// ```
 #[module(name = "$curve", args(input, exp))]
-#[derive(Default)]
 pub struct Curve {
     outputs: CurveOutputs,
     params: CurveParams,

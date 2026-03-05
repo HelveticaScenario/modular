@@ -38,7 +38,6 @@ struct ChannelState {
 /// $sine('c4').out()
 /// ```
 #[module(name = "$sine", args(freq))]
-#[derive(Default)]
 pub struct SineOscillator {
     outputs: SineOscillatorOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

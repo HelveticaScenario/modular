@@ -92,7 +92,6 @@ fn compute_hpf_biquad(cutoff: f32, resonance: f32, sample_rate: f32) -> BiquadCo
 /// $hpf($noise("white"), 'a3', 1)
 /// ```
 #[module(name = "$hpf", args(input, cutoff, resonance))]
-#[derive(Default)]
 pub struct HighpassFilter {
     outputs: HighpassFilterOutputs,
     channels: [HpfChannelState; PORT_MAX_CHANNELS],

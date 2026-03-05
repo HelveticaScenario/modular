@@ -77,7 +77,6 @@ struct LadderState {
 /// $jup6f($saw('c2'), env.range('200hz', '4000hz'), 2.5)
 /// ```
 #[module(name = "$jup6f", args(input, cutoff, resonance))]
-#[derive(Default)]
 pub struct Jup6f {
     outputs: Jup6fOutputs,
     channels: [LadderState; PORT_MAX_CHANNELS],

@@ -48,7 +48,6 @@ struct ChannelState {
 ///
 /// Output range is **±5V**.
 #[module(name = "$pPulse", args(phase))]
-#[derive(Default)]
 pub struct PPulseOscillator {
     outputs: PPulseOscillatorOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

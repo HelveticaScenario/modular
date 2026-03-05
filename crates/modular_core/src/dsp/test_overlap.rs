@@ -16,7 +16,6 @@ struct TestOverlapParams {
 
 /// Test module with overlapping names.
 #[module(name = "$test-overlap")]
-#[derive(Default)]
 pub struct TestOverlap {
     outputs: TestOverlapOutputs,
     params: TestOverlapParams,

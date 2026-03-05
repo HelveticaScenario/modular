@@ -37,7 +37,6 @@ struct ClampOutputs {
 /// $clamp(signal, { min: 0 })
 /// ```
 #[module(name = "$clamp", args(input))]
-#[derive(Default)]
 pub struct Clamp {
     outputs: ClampOutputs,
     params: ClampParams,

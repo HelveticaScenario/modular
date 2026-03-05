@@ -92,7 +92,6 @@ fn compute_bpf_biquad(center: f32, resonance: f32, sample_rate: f32) -> BiquadCo
 /// $bpf($noise("white"), $sine('0.5hz').range('440hz', '1200hz'), 3)
 /// ```
 #[module(name = "$bpf", args(input, center, resonance))]
-#[derive(Default)]
 pub struct BandpassFilter {
     outputs: BandpassFilterOutputs,
     channels: [BpfChannelState; PORT_MAX_CHANNELS],

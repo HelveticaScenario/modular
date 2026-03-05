@@ -43,7 +43,6 @@ struct ChannelState {
 /// producing dense, harmonically rich tones. Higher amounts create more
 /// complex, metallic timbres.
 #[module(name = "$fold", args(input, amount))]
-#[derive(Default)]
 pub struct Fold {
     outputs: FoldOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

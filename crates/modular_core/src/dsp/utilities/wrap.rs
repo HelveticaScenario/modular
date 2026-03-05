@@ -40,7 +40,6 @@ struct WrapOutputs {
 /// $wrap(ramp, 0, 5)
 /// ```
 #[module(name = "$wrap", args(input, min, max))]
-#[derive(Default)]
 pub struct Wrap {
     outputs: WrapOutputs,
     params: WrapParams,
@@ -75,7 +74,11 @@ mod tests {
     use crate::{poly::PolySignal, types::Signal};
 
     fn run_wrap(input: f32, min: f32, max: f32) -> f32 {
-        let mut module = Wrap::default();
+        let mut module = Wrap {
+            outputs: WrapOutputs::default(),
+            params: WrapParams::default(),
+            _channel_count: 0,
+        };
         module.params.input = Some(PolySignal::mono(Signal::Volts(input)));
         module.params.min = Some(PolySignal::mono(Signal::Volts(min)));
         module.params.max = Some(PolySignal::mono(Signal::Volts(max)));

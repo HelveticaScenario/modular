@@ -49,7 +49,6 @@ struct ChannelState {
 /// $pSine($crush($ramp('c3'), 2)).out()
 /// ```
 #[module(name = "$crush", args(input, amount))]
-#[derive(Default)]
 pub struct Crush {
     outputs: CrushOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

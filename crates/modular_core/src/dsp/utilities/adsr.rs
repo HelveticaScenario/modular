@@ -82,7 +82,6 @@ impl Default for ChannelState {
 /// $sine('c4').amplitude(env).out()
 /// ```
 #[module(name = "$adsr", args(gate))]
-#[derive(Default)]
 pub struct Adsr {
     outputs: AdsrOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

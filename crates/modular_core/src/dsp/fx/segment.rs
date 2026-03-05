@@ -44,7 +44,6 @@ struct ChannelState {
 /// and square it off; high settings introduce stepped, ripple-like overtone
 /// patterns. Works best on simple waveforms like sines or triangles.
 #[module(name = "$segment", args(input, amount))]
-#[derive(Default)]
 pub struct Segment {
     outputs: SegmentOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

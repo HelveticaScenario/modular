@@ -141,7 +141,6 @@ struct CompressorOutputs {
 /// $mix(low, mid, high).out()
 /// ```
 #[module(name = "$comp", args(input))]
-#[derive(Default)]
 pub struct Compressor {
     outputs: CompressorOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

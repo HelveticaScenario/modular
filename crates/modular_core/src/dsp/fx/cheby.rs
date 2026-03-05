@@ -45,7 +45,6 @@ struct ChannelState {
 /// progressively emphasizes higher harmonics (2nd, 3rd, … up to 16th),
 /// thickening and brightening the tone.
 #[module(name = "$cheby", args(input, amount))]
-#[derive(Default)]
 pub struct Cheby {
     outputs: ChebyOutputs,
     channels: [ChannelState; PORT_MAX_CHANNELS],

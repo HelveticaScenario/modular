@@ -47,7 +47,6 @@ struct LowpassFilterOutputs {
 /// $lpf($saw('c2'), env.range('200hz', '2000hz'))
 /// ```
 #[module(name = "$lpf", args(input, cutoff, resonance))]
-#[derive(Default)]
 pub struct LowpassFilter {
     outputs: LowpassFilterOutputs,
     // Per-channel state (audio-rate)
