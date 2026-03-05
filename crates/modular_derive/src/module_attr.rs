@@ -661,12 +661,30 @@ fn impl_module_macro_attr(
             }
         }
 
-        fn #constructor_name(id: &String, sample_rate: f32) -> napi::Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
+        fn #constructor_name(id: &String, sample_rate: f32, deserialized: crate::params::DeserializedParams) -> napi::Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
+            let concrete_params = deserialized.params.into_any()
+                .downcast::<#params_struct_name>()
+                .map_err(|_| napi::Error::from_reason(
+                    format!("Failed to downcast params for module type {}", #module_name)
+                ))?;
+
             let sampleable = #struct_name {
                 id: id.clone(),
                 sample_rate,
                 ..#struct_name::default()
             };
+
+            // Apply typed params immediately (before init).
+            // SAFETY: We just created sampleable, no one else has access yet.
+            unsafe {
+                let module = &mut *sampleable.module.get();
+                module.params = *concrete_params;
+                module._channel_count = deserialized.channel_count;
+                crate::types::OutputStruct::set_all_channels(&mut module.outputs, deserialized.channel_count);
+                let argument_spans = &mut *sampleable.argument_spans.get();
+                *argument_spans = deserialized.argument_spans;
+            }
+
             #has_init_call
             Ok(std::sync::Arc::new(Box::new(sampleable)))
         }

@@ -1033,7 +1033,8 @@ pub struct ModuleIdRemap {
     pub to: String,
 }
 
-pub type SampleableConstructor = Box<dyn Fn(&String, f32) -> Result<Arc<Box<dyn Sampleable>>>>;
+pub type SampleableConstructor =
+    Box<dyn Fn(&String, f32, crate::params::DeserializedParams) -> Result<Arc<Box<dyn Sampleable>>>>;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
