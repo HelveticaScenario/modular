@@ -283,13 +283,24 @@ export class DSLContext {
             // Derive channel count from params using Rust-side derivation (backed by LRU cache)
             // This handles modules with custom derivation logic (like mix, seq)
             // as well as standard inference from PolySignal inputs
-            const derivedChannels = deriveChannelCount(
+            const deriveResult = deriveChannelCount(
                 schema.name,
                 node.getParamsSnapshot(),
             );
 
-            if (derivedChannels !== null) {
-                node._setDerivedChannelCount(derivedChannels);
+            // deriveResult.errors is non-null when serde deserialization fails.
+            // This is expected for signal params provided as cable references
+            // (e.g., { type: 'cable', module: '...', port: '...' }) which serde
+            // can't parse as PolySignal. In these cases we simply skip channel
+            // count derivation, matching the previous Option<u32> behavior.
+            // The structured error data is preserved in deriveResult for future
+            // use (e.g., smarter param validation in the editor).
+
+            if (
+                deriveResult.channelCount !== null &&
+                deriveResult.channelCount !== undefined
+            ) {
+                node._setDerivedChannelCount(deriveResult.channelCount);
             }
 
             // Return based on output configuration
