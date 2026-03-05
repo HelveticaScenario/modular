@@ -7,8 +7,7 @@ use crate::poly::{PolyOutput, PolySignal, PolySignalExt};
 #[serde(rename_all = "camelCase")]
 struct ClampParams {
     /// signal to clamp
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
     /// lower bound — if omitted the signal is unclamped below
     #[serde(default)]
     min: Option<PolySignal>,
@@ -49,7 +48,7 @@ impl Clamp {
         let has_max = !self.params.max.is_disconnected();
 
         for i in 0..channels as usize {
-            let mut val = self.params.input.value_or_zero(i);
+            let mut val = self.params.input.get_value(i);
 
             match (has_min, has_max) {
                 (true, true) => {

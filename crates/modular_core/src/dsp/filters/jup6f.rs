@@ -12,8 +12,7 @@ use crate::{
 #[serde(rename_all = "camelCase")]
 struct Jup6fParams {
     /// signal input
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
     /// cutoff frequency in V/Oct (0V = C4)
     #[serde(default)]
     #[signal(type = pitch)]
@@ -229,7 +228,7 @@ impl Jup6f {
         }
 
         for i in 0..num_channels {
-            let input = self.params.input.value_or(i, 0.0) * 0.2; // ±5V → ±1V
+            let input = self.params.input.get_value(i) * 0.2; // ±5V → ±1V
 
             let (g, k) = if is_mono {
                 (self.mono_g, self.mono_k)

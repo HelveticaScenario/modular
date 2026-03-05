@@ -7,9 +7,8 @@ use serde::Deserialize;
 #[serde(rename_all = "camelCase")]
 struct AdsrParams {
     /// gate input — rising edge starts the envelope, falling edge triggers release
-    #[serde(default)]
     #[signal(type = gate, range = (0.0, 5.0))]
-    gate: Option<PolySignal>,
+    gate: PolySignal,
     /// attack time in seconds
     #[serde(default)]
     #[signal(default = 0.01, range = (0.0, 10.0))]
@@ -112,7 +111,7 @@ impl Adsr {
             let decay = state.decay;
             let release_var = state.release;
 
-            let gate_val = self.params.gate.value_or_zero(ch);
+            let gate_val = self.params.gate.get_value(ch);
             let (gate_on, edge) = state.gate_schmitt.process_with_edge(gate_val);
 
             if edge.is_rising() {

@@ -10,16 +10,14 @@ use serde::Deserialize;
 #[serde(rename_all = "camelCase")]
 struct RisingEdgeDetectorParams {
     /// signal to detect rising edges in
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
 }
 
 #[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct FallingEdgeDetectorParams {
     /// signal to detect falling edges in
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -72,7 +70,7 @@ impl RisingEdgeDetector {
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
-            let input = self.params.input.value_or(ch, 0.0);
+            let input = self.params.input.get_value(ch);
 
             if input > state.last_input {
                 state
@@ -112,7 +110,7 @@ impl FallingEdgeDetector {
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
-            let input = self.params.input.value_or(ch, 0.0);
+            let input = self.params.input.get_value(ch);
 
             if input < state.last_input {
                 state

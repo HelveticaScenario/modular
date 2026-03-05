@@ -12,9 +12,8 @@ use serde::Deserialize;
 #[serde(rename_all = "camelCase")]
 struct PSineOscillatorParams {
     /// phasor input (0–1, wraps at boundaries)
-    #[serde(default)]
     #[signal(range = (0.0, 1.0))]
-    phase: Option<PolySignal>,
+    phase: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -42,7 +41,7 @@ impl PSineOscillator {
         let num_channels = self.channel_count();
 
         for ch in 0..num_channels {
-            let phase = wrap(0.0..1.0, self.params.phase.value_or_zero(ch));
+            let phase = wrap(0.0..1.0, self.params.phase.get_value(ch));
             let sine = interpolate(LUT_SINE, phase, LUT_SINE_SIZE);
             self.outputs.sample.set(ch, sine * 5.0);
         }

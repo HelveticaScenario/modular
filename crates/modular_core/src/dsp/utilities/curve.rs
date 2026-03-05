@@ -7,8 +7,7 @@ use crate::poly::{PolyOutput, PolySignal, PolySignalExt};
 #[serde(rename_all = "camelCase")]
 struct CurveParams {
     /// signal to apply curve to
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
     /// exponent for the power curve (0 = step, 1 = linear, >1 = audio taper)
     #[serde(default)]
     #[signal(range = (0.0, 10.0))]
@@ -46,7 +45,7 @@ impl Curve {
         let channels = self.channel_count();
 
         for i in 0..channels as usize {
-            let x = self.params.input.value_or_zero(i);
+            let x = self.params.input.get_value(i);
             let exp = self.params.exp.value_or_zero(i).max(0.0);
 
             let normalized = (x.abs() / 5.0).max(0.0);

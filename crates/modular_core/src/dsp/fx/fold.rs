@@ -15,8 +15,7 @@ use crate::types::Clickless;
 #[serde(rename_all = "camelCase")]
 struct FoldParams {
     /// input signal to fold (bipolar, typically -5 to 5)
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
     /// fold amount (0-5, where 0 = bypass, 5 = maximum folding)
     #[serde(default)]
     #[signal(default = 0.0, range = (0.0, 5.0))]
@@ -57,7 +56,7 @@ impl Fold {
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
 
-            let input = self.params.input.value_or_zero(ch);
+            let input = self.params.input.get_value(ch);
             let amount_raw = self.params.amount.value_or(ch, 0.0);
 
             // Smooth amount parameter to avoid clicks

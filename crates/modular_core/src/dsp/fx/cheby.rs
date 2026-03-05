@@ -15,8 +15,7 @@ use crate::types::Clickless;
 #[serde(rename_all = "camelCase")]
 struct ChebyParams {
     /// input signal to shape (bipolar, typically -5 to 5)
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
     /// harmonic richness (0–5). At 0 the signal is clean; at 5 the highest harmonic content dominates
     #[serde(default)]
     #[signal(range = (0.0, 5.0))]
@@ -59,7 +58,7 @@ impl Cheby {
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
 
-            let input = self.params.input.value_or_zero(ch);
+            let input = self.params.input.get_value(ch);
             let amount_raw = self.params.amount.value_or(ch, 0.0);
 
             // Smooth amount parameter to avoid clicks

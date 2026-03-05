@@ -7,8 +7,7 @@ use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 #[serde(rename_all = "camelCase")]
 struct ScaleAndShiftParams {
     /// signal to scale and shift
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
     /// scale factor (0–10V range; 5V = unity gain, 0V = silence, -5V = inverted, 10V = 2x)
     #[serde(default)]
     #[signal(default = 5.0, range = (0.0, 10.0))]
@@ -48,7 +47,7 @@ impl ScaleAndShift {
         let channels = self.channel_count();
 
         for i in 0..channels as usize {
-            let input_val = self.params.input.value_or_zero(i);
+            let input_val = self.params.input.get_value(i);
             let scale_val = self.params.scale.value_or(i, 5.0);
             let shift_val = self.params.shift.value_or(i, 0.0);
 

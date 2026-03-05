@@ -15,8 +15,7 @@ use crate::types::Clickless;
 #[serde(rename_all = "camelCase")]
 struct SegmentParams {
     /// input signal to shape (bipolar, typically -5 to 5)
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
     /// segment shape amount (0-5, morphs between 8 shapes)
     #[serde(default)]
     #[signal(range = (0.0, 5.0))]
@@ -58,7 +57,7 @@ impl Segment {
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
 
-            let input = self.params.input.value_or_zero(ch);
+            let input = self.params.input.get_value(ch);
             let amount_raw = self.params.amount.value_or(ch, 0.0);
 
             // Smooth amount parameter to avoid clicks

@@ -10,9 +10,8 @@ use serde::Deserialize;
 #[serde(rename_all = "camelCase")]
 struct PPulseOscillatorParams {
     /// phasor input (0–1, wraps at boundaries)
-    #[serde(default)]
     #[signal(range = (0.0, 1.0))]
-    phase: Option<PolySignal>,
+    phase: PolySignal,
     /// pulse width (0-5, 2.5 is square)
     #[serde(default)]
     #[signal(default = 2.5, range = (0.0, 5.0))]
@@ -65,7 +64,7 @@ impl PPulseOscillator {
             let pwm = self.params.pwm.value_or(ch, 0.0);
             state.width.update((base_width + pwm).clamp(0.0, 5.0));
 
-            let phase = wrap(0.0..1.0, self.params.phase.value_or_zero(ch));
+            let phase = wrap(0.0..1.0, self.params.phase.get_value(ch));
 
             // Derive phase increment from external phasor
             let mut phase_increment = phase - state.prev_phase;

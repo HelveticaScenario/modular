@@ -12,8 +12,7 @@ use crate::{
 #[serde(rename_all = "camelCase")]
 struct BandpassFilterParams {
     /// signal input
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
     /// center frequency in V/Oct (0V = C4)
     #[serde(default)]
     #[signal(type = pitch)]
@@ -153,7 +152,7 @@ impl BandpassFilter {
         }
 
         for i in 0..num_channels {
-            let input = self.params.input.value_or(i, 0.0);
+            let input = self.params.input.get_value(i);
 
             let c = if center_mono && resonance_mono {
                 self.coeffs_mono

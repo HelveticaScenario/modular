@@ -9,8 +9,7 @@ use serde::Deserialize;
 #[serde(rename_all = "camelCase")]
 struct LagProcessorParams {
     /// signal input
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
     /// rise rate — seconds to slew 1 volt upward (default 0.01)
     #[serde(default)]
     #[signal(default = 0.01, range = (0.0, 10.0))]
@@ -62,7 +61,7 @@ impl LagProcessor {
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
-            let input = self.params.input.value_or(ch, 0.0);
+            let input = self.params.input.get_value(ch);
             if !state.initialized {
                 state.current_value = input;
                 state.initialized = true;

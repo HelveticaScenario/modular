@@ -191,9 +191,8 @@ fn default_scale() -> ScaleParam {
 #[serde(rename_all = "camelCase")]
 struct QuantizerParams {
     /// Input V/Oct signal to quantize
-    #[serde(default)]
     #[signal(type = pitch)]
-    input: Option<PolySignal>,
+    input: PolySignal,
     /// Offset added to input before quantization (in V/Oct)
     #[serde(default)]
     #[signal(type = pitch)]
@@ -261,11 +260,11 @@ impl Default for Quantizer {
 
 impl Quantizer {
     pub fn update(&mut self, sample_rate: f32) {
-        let num_channels = self.params.input.channel_count();
+        let num_channels = self.params.input.channels();
         let hold = min_gate_samples(sample_rate);
 
         for ch in 0..num_channels {
-            let input = self.params.input.value_or_zero(ch) as f64;
+            let input = self.params.input.get_value(ch) as f64;
             let offset = self.params.offset.value_or_zero(ch) as f64;
 
             let combined = input + offset;

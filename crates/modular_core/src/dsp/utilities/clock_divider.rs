@@ -13,9 +13,8 @@ struct ClockDividerParams {
     #[serde(default)]
     pub division: u32,
     /// clock signal to divide
-    #[serde(default)]
     #[signal(type = trig, range = (0.0, 5.0))]
-    pub input: Option<PolySignal>,
+    pub input: PolySignal,
     /// trigger to reset the counter to 0
     #[serde(default)]
     #[signal(type = trig, range = (0.0, 5.0))]
@@ -90,10 +89,7 @@ impl ClockDivider {
                 state.counter = 0;
             }
 
-            if state
-                .input_schmitt
-                .process(self.params.input.value_or_zero(ch))
-            {
+            if state.input_schmitt.process(self.params.input.get_value(ch)) {
                 if state.counter == 0 {
                     state
                         .trigger_gate

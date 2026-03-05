@@ -12,8 +12,7 @@ use crate::{
 #[serde(rename_all = "camelCase")]
 struct LowpassFilterParams {
     /// signal input
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
     /// cutoff frequency in V/Oct (0V = C4)
     #[serde(default)]
     #[signal(type = pitch, default = 0.0, range = (-5.0, 5.0))]
@@ -154,7 +153,7 @@ impl LowpassFilter {
         }
 
         for i in 0..channels as usize {
-            let input = self.params.input.value_or(i, 0.0);
+            let input = self.params.input.get_value(i);
 
             let c = if cutoff_mono && resonance_mono {
                 self.coeffs_mono

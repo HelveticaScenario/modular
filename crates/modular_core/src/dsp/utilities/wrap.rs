@@ -10,8 +10,7 @@ use crate::{
 #[serde(rename_all = "camelCase")]
 struct WrapParams {
     /// signal to wrap
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
     /// lower bound of the wrap range
     #[serde(default)]
     #[signal(default = 0.0)]
@@ -50,7 +49,7 @@ impl Wrap {
         let channels = self.channel_count();
 
         for i in 0..channels as usize {
-            let val = self.params.input.value_or_zero(i);
+            let val = self.params.input.get_value(i);
             let a = self.params.min.value_or(i, 0.0);
             let b = self.params.max.value_or(i, 5.0);
             let (min, max) = if b < a { (b, a) } else { (a, b) };
@@ -76,13 +75,13 @@ mod tests {
     fn run_wrap(input: f32, min: f32, max: f32) -> f32 {
         let mut module = Wrap {
             outputs: WrapOutputs::default(),
-            params: serde_json::from_value(serde_json::json!({})).unwrap(),
-            _channel_count: 0,
+            params: WrapParams {
+                input: PolySignal::mono(Signal::Volts(input)),
+                min: Some(PolySignal::mono(Signal::Volts(min))),
+                max: Some(PolySignal::mono(Signal::Volts(max))),
+            },
+            _channel_count: 1,
         };
-        module.params.input = Some(PolySignal::mono(Signal::Volts(input)));
-        module.params.min = Some(PolySignal::mono(Signal::Volts(min)));
-        module.params.max = Some(PolySignal::mono(Signal::Volts(max)));
-        module._channel_count = 1;
         module.outputs.sample.set_channels(1);
         module.update(44100.0);
         module.outputs.sample.get(0)

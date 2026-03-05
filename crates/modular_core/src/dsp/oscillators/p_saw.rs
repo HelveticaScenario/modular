@@ -10,9 +10,8 @@ use serde::Deserialize;
 #[serde(rename_all = "camelCase")]
 struct PSawOscillatorParams {
     /// phasor input (0–1, wraps at boundaries)
-    #[serde(default)]
     #[signal(range = (0.0, 1.0))]
-    phase: Option<PolySignal>,
+    phase: PolySignal,
     /// waveform shape: 0=saw, 2.5=triangle, 5=ramp
     #[serde(default)]
     #[signal(range = (0.0, 5.0))]
@@ -64,7 +63,7 @@ impl PSawOscillator {
             let shape_val = self.params.shape.value_or(ch, 0.0).clamp(0.0, 5.0);
             state.shape.update(shape_val);
 
-            let phase = wrap(0.0..1.0, self.params.phase.value_or_zero(ch));
+            let phase = wrap(0.0..1.0, self.params.phase.get_value(ch));
 
             // Calculate phase increment from phase difference
             // Handle phase wrapping correctly

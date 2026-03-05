@@ -10,12 +10,10 @@ use serde::Deserialize;
 #[serde(rename_all = "camelCase")]
 struct SampleAndHoldParams {
     /// signal to sample
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
     /// rising edge captures the current input value
-    #[serde(default)]
     #[signal(type = trig, range = (0.0, 5.0))]
-    trigger: Option<PolySignal>,
+    trigger: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -60,8 +58,8 @@ impl SampleAndHold {
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
-            let input = self.params.input.value_or_zero(ch);
-            let trigger = self.params.trigger.value_or_zero(ch);
+            let input = self.params.input.get_value(ch);
+            let trigger = self.params.trigger.get_value(ch);
 
             if state.trigger.state == SchmittState::Uninitialized {
                 state.held_value = input;
@@ -83,12 +81,10 @@ message_handlers!(impl SampleAndHold {});
 #[serde(rename_all = "camelCase")]
 struct TrackAndHoldParams {
     /// signal to track
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
     /// while gate is low the output follows the input; when gate goes high the last value is held
-    #[serde(default)]
     #[signal(type = gate, range = (0.0, 5.0))]
-    gate: Option<PolySignal>,
+    gate: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -126,8 +122,8 @@ impl TrackAndHold {
 
         for ch in 0..num_channels {
             let state = &mut self.channels[ch];
-            let input = self.params.input.value_or_zero(ch);
-            let gate = self.params.gate.value_or_zero(ch);
+            let input = self.params.input.get_value(ch);
+            let gate = self.params.gate.get_value(ch);
 
             // Track while gate is low or on rising edge
             state.gate.process(gate);

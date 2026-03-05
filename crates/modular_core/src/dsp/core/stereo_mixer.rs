@@ -10,8 +10,7 @@ use serde::Deserialize;
 #[serde(rename_all = "camelCase")]
 struct StereoMixerParams {
     /// Input signal to place in the stereo field.
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
     /// Pan position per channel (-5 = left, 0 = center, +5 = right).
     #[serde(default)]
     pan: Option<PolySignal>,
@@ -46,7 +45,7 @@ pub struct StereoMixer {
 
 impl StereoMixer {
     pub fn update(&mut self, _sample_rate: f32) {
-        let input_channels = self.params.input.channel_count();
+        let input_channels = self.params.input.channels();
 
         // Width: 0 = no spread, 5 = full ±5V spread across voices
         self.width_buffer
@@ -56,7 +55,7 @@ impl StereoMixer {
         let mut right_sum = 0.0f32;
 
         for ch in 0..input_channels {
-            let input = self.params.input.value_or_zero(ch);
+            let input = self.params.input.get_value(ch);
 
             // Base pan from cycling PolySignal (-5 to +5 range, 0 = center)
             let base_pan = self.params.pan.value_or_zero(ch).clamp(-5.0, 5.0);

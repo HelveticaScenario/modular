@@ -8,8 +8,7 @@ use crate::types::Clickless;
 #[serde(rename_all = "camelCase")]
 struct RemapParams {
     /// signal input to remap
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
     /// minimum of input range
     #[serde(default)]
     #[signal(default = -5.0)]
@@ -68,7 +67,7 @@ impl Remap {
         let channels = self.channel_count();
 
         for i in 0..channels as usize {
-            let input_val = self.params.input.value_or_zero(i);
+            let input_val = self.params.input.get_value(i);
             let state = &mut self.channels[i];
 
             // Smooth range parameters to avoid clicks

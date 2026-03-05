@@ -69,8 +69,7 @@ struct ChannelState {
 #[serde(rename_all = "camelCase")]
 struct CompressorParams {
     /// audio input signal
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
     /// compression threshold (0-5V, default 2.5)
     #[serde(default)]
     threshold: Option<PolySignal>,
@@ -154,7 +153,7 @@ impl Compressor {
         for ch in 0..channels {
             let state = &mut self.channels[ch];
 
-            let input = self.params.input.value_or(ch, 0.0);
+            let input = self.params.input.get_value(ch);
 
             // Apply input gain
             let input_gain_voltage = self.params.input_gain.value_or(ch, 0.0);

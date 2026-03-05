@@ -7,9 +7,8 @@ use serde::Deserialize;
 #[serde(rename_all = "camelCase")]
 struct PercussionEnvelopeParams {
     /// trigger input (rising edge triggers envelope)
-    #[serde(default)]
     #[signal(type = trig, range = (0.0, 5.0))]
-    trigger: Option<PolySignal>,
+    trigger: PolySignal,
     /// decay time in seconds
     #[serde(default)]
     #[signal(default = 0.1, range = (0.0, 10.0))]
@@ -60,7 +59,7 @@ impl PercussionEnvelope {
             let decay_time = self.params.decay.value_or(ch, 0.1).max(0.001);
 
             // Detect rising edge of trigger using Schmitt trigger for noise immunity
-            let trigger = self.params.trigger.value_or_zero(ch);
+            let trigger = self.params.trigger.get_value(ch);
             if state.trigger_schmitt.process(trigger) {
                 // Trigger detected - start attack phase (continue from current level for smooth re-trigger)
                 state.in_attack = true;

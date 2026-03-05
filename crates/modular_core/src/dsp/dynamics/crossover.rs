@@ -26,8 +26,7 @@ const BUTTERWORTH_Q: f32 = 0.707_107; // 1/sqrt(2)
 #[serde(rename_all = "camelCase")]
 struct CrossoverParams {
     /// audio input signal
-    #[serde(default)]
-    input: Option<PolySignal>,
+    input: PolySignal,
     /// crossover frequency between low and mid bands (V/Oct, 0V = C4)
     #[serde(default)]
     low_mid_freq: Option<PolySignal>,
@@ -205,7 +204,7 @@ impl Crossover {
         for ch in 0..channels {
             let state = &mut self.channels[ch];
 
-            let input = self.params.input.value_or(ch, 0.0);
+            let input = self.params.input.get_value(ch);
 
             // ── Read and smooth crossover frequencies ────────────────────
             let low_mid_voct = self
