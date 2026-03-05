@@ -13,6 +13,7 @@ import {
     AppConfig,
     DSLExecuteResult,
     MainLogEntry,
+    UpdateAvailableInfo,
 } from '../shared/ipcTypes';
 import type { QueuedTrigger } from '../shared/ipcTypes';
 
@@ -206,6 +207,19 @@ export interface ElectronAPI {
 
     // Main process log forwarding
     onMainLog: (callback: (entry: MainLogEntry) => void) => () => void;
+
+    // Update operations
+    update: {
+        check: () => Promise<void>;
+        download: () => Promise<void>;
+        install: () => Promise<void>;
+        onAvailable: (
+            callback: (info: UpdateAvailableInfo) => void,
+        ) => () => void;
+        onDownloading: (callback: () => void) => () => void;
+        onDownloaded: (callback: () => void) => () => void;
+        onError: (callback: (message: string) => void) => () => void;
+    };
 }
 
 const electronAPI: ElectronAPI = {
@@ -397,6 +411,19 @@ const electronAPI: ElectronAPI = {
 
     // Main process log forwarding
     onMainLog: menuEventHandler(IPC_CHANNELS.MAIN_LOG),
+
+    // Update operations
+    update: {
+        check: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CHECK),
+        download: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_DOWNLOAD),
+        install: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_INSTALL),
+        onAvailable: menuEventHandler<[UpdateAvailableInfo]>(
+            IPC_CHANNELS.UPDATE_AVAILABLE,
+        ),
+        onDownloading: menuEventHandler(IPC_CHANNELS.UPDATE_DOWNLOADING),
+        onDownloaded: menuEventHandler(IPC_CHANNELS.UPDATE_DOWNLOADED),
+        onError: menuEventHandler<[string]>(IPC_CHANNELS.UPDATE_ERROR),
+    },
 };
 
 // Expose the API to the renderer process
