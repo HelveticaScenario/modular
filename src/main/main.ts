@@ -207,6 +207,12 @@ const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_REPO}/releases/lat
 const supportsAutoUpdater =
     process.platform === 'darwin' || process.platform === 'win32';
 
+/**
+ * Latest release URL from the GitHub API check, stored so the Linux
+ * fallback in UPDATE_DOWNLOAD can open it in the browser.
+ */
+let latestReleaseUrl: string | null = null;
+
 function sendUpdateEvent(channel: string, ...args: unknown[]) {
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send(channel, ...args);
@@ -256,6 +262,8 @@ async function checkForUpdateAvailability(): Promise<void> {
         const config = loadConfig();
         if (config.skippedUpdateVersion === latestVersion) return;
 
+        latestReleaseUrl = parsed.data.html_url;
+
         const info: UpdateAvailableInfo = {
             version: latestVersion,
             releaseUrl: parsed.data.html_url,
@@ -273,8 +281,14 @@ async function checkForUpdateAvailability(): Promise<void> {
 function initAutoUpdater(): void {
     if (!supportsAutoUpdater) return;
 
+    // update.electronjs.org maps plain "darwin" to "darwin-x64", so we must
+    // include the arch explicitly so it serves the arm64 asset on Apple Silicon.
+    const feedPlatform =
+        process.platform === 'darwin'
+            ? `darwin-${process.arch}` // e.g. "darwin-arm64" or "darwin-x64"
+            : process.platform;
     autoUpdater.setFeedURL({
-        url: `${UPDATE_FEED_URL}/${process.platform}/${app.getVersion()}`,
+        url: `${UPDATE_FEED_URL}/${feedPlatform}/${app.getVersion()}`,
     });
 
     autoUpdater.on('update-downloaded', () => {
@@ -1419,7 +1433,10 @@ ipcMain.handle(IPC_CHANNELS.UPDATE_CHECK, async () => {
 });
 
 ipcMain.handle(IPC_CHANNELS.UPDATE_DOWNLOAD, () => {
-    if (!supportsAutoUpdater) return;
+    if (!supportsAutoUpdater) {
+        if (latestReleaseUrl) shell.openExternal(latestReleaseUrl);
+        return;
+    }
     sendUpdateEvent(IPC_CHANNELS.UPDATE_DOWNLOADING);
     autoUpdater.checkForUpdates();
 });
