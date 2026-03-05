@@ -307,6 +307,9 @@ describe('chaining methods', () => {
         const patch = execPatch('$sine("C4").scope().out()');
         expect(findModules(patch, '$sine').length).toBe(1);
         expect(patch.scopes.length).toBeGreaterThan(0);
+        expect(patch.scopes[0].channels).toBeDefined();
+        expect(patch.scopes[0].channels.length).toBe(1);
+        expect(patch.scopes[0].channels[0].channel).toBe(0);
     });
 
     test('.scope() with config', () => {
@@ -317,6 +320,22 @@ describe('chaining methods', () => {
         const scope = patch.scopes[0];
         expect(scope.msPerFrame).toBe(100);
         expect(scope.range).toEqual([-10, 10]);
+        expect(scope.channels.length).toBe(1);
+    });
+
+    test('.scope() on collection captures all channels', () => {
+        const patch = execPatch('$sine(["C4", "E4"]).scope().out()');
+        expect(patch.scopes.length).toBe(1);
+        expect(patch.scopes[0].channels.length).toBe(2);
+        expect(patch.scopes[0].channels[0].channel).toBe(0);
+        expect(patch.scopes[0].channels[1].channel).toBe(1);
+    });
+
+    test('.scope() on indexed output captures single channel', () => {
+        const patch = execPatch('$sine(["C4", "E4"])[1].scope().out()');
+        expect(patch.scopes.length).toBe(1);
+        expect(patch.scopes[0].channels.length).toBe(1);
+        expect(patch.scopes[0].channels[0].channel).toBe(1);
     });
 
     test('ModuleOutputWithRange.range() remaps', () => {

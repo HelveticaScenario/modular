@@ -1,9 +1,4 @@
-import type {
-    ScopeBufferKey,
-    ScopeChannel,
-    ScopeMode,
-    ScopeStats,
-} from '@modular/core';
+import type { ScopeBufferKey, ScopeChannel, ScopeMode } from '@modular/core';
 
 export const scopeBufferKeyToString = (key: ScopeBufferKey): string => {
     const trigger = key.triggerThreshold

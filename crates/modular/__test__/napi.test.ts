@@ -185,11 +185,13 @@ describe('validatePatchGraph', () => {
             modules: [],
             scopes: [
                 {
-                    item: {
-                        type: 'ModuleOutput',
-                        moduleId: 'ghost-module',
-                        portName: 'output',
-                    },
+                    channels: [
+                        {
+                            moduleId: 'ghost-module',
+                            portName: 'output',
+                            channel: 0,
+                        },
+                    ],
                     msPerFrame: 50,
                     range: [-5, 5] as [number, number],
                 },
