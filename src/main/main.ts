@@ -227,17 +227,24 @@ async function checkForUpdateAvailability(): Promise<void> {
             console.warn('[update] GitHub API returned', response.status);
             return;
         }
-        const data = (await response.json()) as {
-            tag_name: string;
-            html_url: string;
-        };
-        const latestVersion = data.tag_name.replace(/^v/, '');
+        const ReleaseSchema = z.object({
+            tag_name: z.string(),
+            html_url: z.string(),
+        });
+        const parsed = ReleaseSchema.safeParse(await response.json());
+        if (!parsed.success) {
+            console.warn('[update] Unexpected GitHub API response shape');
+            return;
+        }
+        const latestVersion = parsed.data.tag_name.replace(/^v/, '');
         const currentVersion = app.getVersion();
         if (latestVersion === currentVersion) return;
 
         // Compare semver — only notify if latest is strictly newer
         const [lMaj, lMin, lPat] = latestVersion.split('.').map(Number);
         const [cMaj, cMin, cPat] = currentVersion.split('.').map(Number);
+        // NaN from non-numeric components (e.g. pre-release tags like "1.0.0-beta.1")
+        // causes all comparisons to be false — pre-releases are silently ignored.
         const isNewer =
             lMaj > cMaj ||
             (lMaj === cMaj && lMin > cMin) ||
@@ -251,7 +258,7 @@ async function checkForUpdateAvailability(): Promise<void> {
 
         const info: UpdateAvailableInfo = {
             version: latestVersion,
-            releaseUrl: data.html_url,
+            releaseUrl: parsed.data.html_url,
         };
         sendUpdateEvent(IPC_CHANNELS.UPDATE_AVAILABLE, info);
     } catch (err) {
@@ -272,6 +279,13 @@ function initAutoUpdater(): void {
 
     autoUpdater.on('update-downloaded', () => {
         sendUpdateEvent(IPC_CHANNELS.UPDATE_DOWNLOADED);
+    });
+
+    autoUpdater.on('update-not-available', () => {
+        sendUpdateEvent(
+            IPC_CHANNELS.UPDATE_ERROR,
+            'Update no longer available',
+        );
     });
 
     autoUpdater.on('error', (err: Error) => {
