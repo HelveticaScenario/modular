@@ -1,4 +1,4 @@
-# Modular Synthesizer
+# Operator
 
 A real-time modular synthesizer desktop app with a JavaScript DSL for live-coding audio patches, built with Electron and a Rust DSP engine.
 

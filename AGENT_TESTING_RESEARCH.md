@@ -1,8 +1,8 @@
-# Agent Testing Research: Improving Test Coverage for Modular Synthesizer
+# Agent Testing Research: Improving Test Coverage for Operator
 
 ## Executive Summary
 
-This document outlines strategies to enable AI agents to effectively test the Modular Synthesizer Electron application, which currently relies heavily on manual user testing for UI/UX and audio verification. The goal is to provide automated, programmatic testing that aligns with how users actually interact with the application.
+This document outlines strategies to enable AI agents to effectively test the Operator Electron application, which currently relies heavily on manual user testing for UI/UX and audio verification. The goal is to provide automated, programmatic testing that aligns with how users actually interact with the application.
 
 ## Current State Analysis
 

@@ -1,4 +1,4 @@
-# Copilot instructions (modular)
+# Copilot instructions (operator)
 
 - **NEVER** call Sampleable trait methods from the main thread
 - **NEVER** clone module Arcs and send them across threads

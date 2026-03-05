@@ -2,11 +2,11 @@
     "name": "@modular/app",
     "productName": "Operator",
     "version": "0.0.24",
-    "description": "My Electron application description",
+    "description": "Operator - a real-time modular synthesizer desktop app with a JavaScript DSL for live-coding audio patches",
     "main": ".vite/build/main.js",
     "repository": {
         "type": "git",
-        "url": "https://github.com/HelveticaScenario/modular"
+        "url": "https://github.com/HelveticaScenario/operator"
     },
     "scripts": {
         "start": "yarn build-native && concurrently --handle-input --default-input-target app -n app,rust -c blue,yellow 'node scripts/start-dev.mjs' 'yarn watch-native'",

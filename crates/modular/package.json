@@ -1,11 +1,11 @@
 {
     "name": "@modular/core",
     "version": "0.0.1-0",
-    "description": "Template project for writing node package with napi-rs",
+    "description": "Native Rust DSP engine for Operator",
     "main": "index.js",
     "repository": {
         "type": "git",
-        "url": "git+ssh://git@github.com/napi-rs/package-template.git"
+        "url": "https://github.com/HelveticaScenario/operator.git"
     },
     "license": "AGPL",
     "browser": "browser.js",
@@ -24,7 +24,7 @@
         "browser.js"
     ],
     "napi": {
-        "binaryName": "modular",
+        "binaryName": "operator",
         "targets": [
             "x86_64-pc-windows-msvc",
             "x86_64-apple-darwin",

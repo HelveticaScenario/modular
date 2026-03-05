@@ -149,7 +149,7 @@ impl MidiInputManager {
   /// Internal connection logic
   fn connect_internal(&self, port_name: &str) -> Result<(), String> {
     let midi_in =
-      MidiInput::new("modular").map_err(|e| format!("Failed to create MIDI input: {}", e))?;
+      MidiInput::new("operator").map_err(|e| format!("Failed to create MIDI input: {}", e))?;
 
     // Find port by name
     let port = midi_in

@@ -33,8 +33,8 @@ const audioConfigSchema = {
 
 export const configSchema = {
     $schema: 'http://json-schema.org/draft-07/schema#',
-    title: 'Modular Configuration',
-    description: 'Configuration file for the Modular synthesizer application',
+    title: 'Operator Configuration',
+    description: 'Configuration file for the Operator synthesizer application',
     type: 'object',
     properties: {
         theme: {

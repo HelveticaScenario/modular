@@ -111,7 +111,7 @@ const config: ForgeConfig = {
         new PublisherGithub({
             repository: {
                 owner: 'HelveticaScenario',
-                name: 'modular',
+                name: 'operator',
             },
             prerelease: false,
             draft: false,

@@ -36,7 +36,7 @@ import { updateElectronApp } from 'update-electron-app';
 
 if (app.isPackaged) {
     updateElectronApp({
-        repo: 'HelveticaScenario/modular',
+        repo: 'HelveticaScenario/operator',
     });
 }
 
@@ -1252,7 +1252,7 @@ const createHelpWindow = () => {
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
         },
-        title: 'Modular Help',
+        title: 'Operator Help',
     });
 
     // Load the index.html of the app with #help hash
