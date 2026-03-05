@@ -13,7 +13,7 @@ use std::{collections::HashMap, sync::Arc};
 use modular_core::{
   PatchGraph,
   dsp::schema,
-  types::{ROOT_CLOCK_ID, ScopeItem, ScopeStats},
+  types::{ROOT_CLOCK_ID, ScopeBufferKey, ScopeStats},
 };
 use napi::Result;
 use napi_derive::napi;
@@ -584,7 +584,7 @@ impl Synthesizer {
   }
 
   #[napi]
-  pub fn get_scopes(&self) -> Vec<(ScopeItem, Vec<Float32Array>, ScopeStats)> {
+  pub fn get_scopes(&self) -> Vec<(ScopeBufferKey, Float32Array, ScopeStats)> {
     self.state.get_audio_buffers()
   }
 

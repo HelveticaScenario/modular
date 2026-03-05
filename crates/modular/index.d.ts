@@ -12,7 +12,7 @@ export declare class Synthesizer {
   sampleRate(): number
   channels(): number
   inputChannels(): number
-  getScopes(): Array<[ScopeItem, Array<Float32Array>, ScopeStats]>
+  getScopes(): Array<[ScopeBufferKey, Float32Array, ScopeStats]>
   updatePatch(patch: PatchGraph, trigger?: QueuedTrigger | undefined | null): PatchUpdateResult
   /**
    * Lightweight single-module param update. Bypasses full patch rebuild —
@@ -323,15 +323,26 @@ export interface PositionalArg {
 }
 
 export interface Scope {
-  item: ScopeItem
+  channels: Array<ScopeChannel>
   msPerFrame: number
   triggerThreshold?: [number, ScopeMode]
   /** Voltage range for display (default [-5.0, 5.0]). The scope displays from range[0] to range[1]. */
   range: [number, number]
 }
 
-export type ScopeItem =
-  | { type: 'ModuleOutput', moduleId: string, portName: string }
+export interface ScopeBufferKey {
+  moduleId: string
+  portName: string
+  channel: number
+  msPerFrame: number
+  triggerThreshold?: [number, ScopeMode]
+}
+
+export interface ScopeChannel {
+  moduleId: string
+  portName: string
+  channel: number
+}
 
 export type ScopeMode =  'Wait'|
 'Roll';
@@ -341,7 +352,7 @@ export interface ScopeStats {
   min: number
   max: number
   peakToPeak: number
-  readOffset: Array<number>
+  readOffset: number
 }
 
 export interface SignalParamSchema {
