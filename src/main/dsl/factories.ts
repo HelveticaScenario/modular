@@ -288,13 +288,20 @@ export class DSLContext {
                 node.getParamsSnapshot(),
             );
 
-            // deriveResult.errors is non-null when serde deserialization fails.
-            // This is expected for signal params provided as cable references
-            // (e.g., { type: 'cable', module: '...', port: '...' }) which serde
-            // can't parse as PolySignal. In these cases we simply skip channel
-            // count derivation, matching the previous Option<u32> behavior.
-            // The structured error data is preserved in deriveResult for future
-            // use (e.g., smarter param validation in the editor).
+            // Check for missing required params
+            if (deriveResult.errors) {
+                const missingParams = deriveResult.errors.flatMap(
+                    (e) => e.params,
+                );
+                if (missingParams.length > 0) {
+                    const paramList = missingParams
+                        .map((p) => `"${p}"`)
+                        .join(', ');
+                    throw new Error(
+                        `${schema.name}: missing required parameter ${paramList}`,
+                    );
+                }
+            }
 
             if (
                 deriveResult.channelCount !== null &&

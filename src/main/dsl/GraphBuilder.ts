@@ -668,8 +668,8 @@ export class GraphBuilder {
             // Create root signal module with the final mix
             signalFactory(gainedMix, { id: 'ROOT_OUTPUT' });
         } else {
-            // No outputs registered - create empty root signal
-            signalFactory(undefined, { id: 'ROOT_OUTPUT' });
+            // No outputs registered - create silent root signal (0V)
+            signalFactory(0, { id: 'ROOT_OUTPUT' });
         }
 
         // Update ROOT_CLOCK tempo with the current tempo setting
