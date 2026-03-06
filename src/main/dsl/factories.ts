@@ -297,8 +297,11 @@ export class DSLContext {
                     const paramList = missingParams
                         .map((p) => `"${p}"`)
                         .join(', ');
+                    const loc = sourceLocation
+                        ? ` (line ${sourceLocation.line})`
+                        : '';
                     throw new Error(
-                        `${schema.name}: missing required parameter ${paramList}`,
+                        `${schema.name}${loc}: missing required parameter ${paramList}`,
                     );
                 }
             }

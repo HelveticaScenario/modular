@@ -604,9 +604,9 @@ describe('error handling', () => {
         expect(() => execPatch('null.out()')).toThrow();
     });
 
-    test('missing required param throws with module and param name', () => {
+    test('missing required param throws with module name, line, and param name', () => {
         expect(() => execPatch('$lpf()')).toThrow(
-            '$lpf: missing required parameter "input"',
+            '$lpf (line 1): missing required parameter "input"',
         );
     });
 
