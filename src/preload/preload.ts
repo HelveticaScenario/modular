@@ -34,6 +34,9 @@ function invokeIPC<T extends keyof typeof IPC_CHANNELS>(
  */
 
 export interface ElectronAPI {
+    // Platform info (synchronous, available immediately)
+    platform: NodeJS.Platform;
+
     // Schema operations
     getSchemas: Promisify<IPCHandlers[typeof IPC_CHANNELS.GET_SCHEMAS]>;
     getMiniLeafSpans: Promisify<
@@ -223,6 +226,9 @@ export interface ElectronAPI {
 }
 
 const electronAPI: ElectronAPI = {
+    // Platform info
+    platform: process.platform,
+
     // Schema operations
     getSchemas: (...args) => invokeIPC('GET_SCHEMAS', ...args),
     getMiniLeafSpans: (...args) => invokeIPC('GET_MINI_LEAF_SPANS', ...args),
