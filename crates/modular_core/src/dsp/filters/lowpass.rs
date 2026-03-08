@@ -40,7 +40,7 @@ struct LowpassFilterOutputs {
 ///
 /// ```js
 /// // subtractive bass: saw through a lowpass with envelope on cutoff
-/// let env = $adsr($rootClock.barTrigger, { attack: 0.01, decay: 0.3, sustain: 1, release: 0.4 })
+/// let env = $adsr($clock.barTrigger, { attack: 0.01, decay: 0.3, sustain: 1, release: 0.4 })
 /// $lpf($saw('c2'), env.range('200hz', '2000hz'))
 /// ```
 #[module(name = "$lpf", args(input, cutoff, resonance?))]
