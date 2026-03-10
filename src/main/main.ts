@@ -1585,6 +1585,21 @@ const createMenu = (): void => {
                     },
                 },
                 { type: 'separator' as const },
+                ...(isMac
+                    ? []
+                    : [
+                          {
+                              label: 'Settings...',
+                              accelerator: 'Ctrl+,',
+                              click: () => {
+                                  if (mainWindow && !mainWindow.isDestroyed()) {
+                                      mainWindow.webContents.send(
+                                          MENU_CHANNELS.OPEN_SETTINGS,
+                                      );
+                                  }
+                              },
+                          },
+                      ]),
                 isMac ? { role: 'close' as const } : { role: 'quit' as const },
             ],
         },
