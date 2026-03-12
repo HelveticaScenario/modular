@@ -1,7 +1,7 @@
 use crate::{
-    dsp::utils::{min_gate_samples, TempGate, TempGateState},
-    poly::{PolyOutput, PolySignal},
     PORT_MAX_CHANNELS,
+    dsp::utils::{TempGate, TempGateState, min_gate_samples},
+    poly::{PolyOutput, PolySignal},
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -31,19 +31,10 @@ struct EdgeDetectorOutputs {
     output: PolyOutput,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Default, Copy)]
 struct EdgeChannelState {
     last_input: f32,
     trigger_gate: TempGate,
-}
-
-impl Default for EdgeChannelState {
-    fn default() -> Self {
-        Self {
-            last_input: 0.0,
-            trigger_gate: TempGate::new_gate(TempGateState::Low),
-        }
-    }
 }
 
 /// Detects rising edges in a signal and emits a short pulse.
