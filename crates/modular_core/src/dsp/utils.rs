@@ -95,10 +95,11 @@ impl EdgeEvent {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum SchmittState {
     Low,
     High,
+    #[default]
     Uninitialized,
 }
 
@@ -212,7 +213,7 @@ pub enum TempGateState {
 /// The `hold_samples` parameter controls how many calls to [`process`](TempGate::process)
 /// will output the initial `state` before transitioning to `target`.
 /// Use [`min_gate_samples`] to derive this from the current sample rate.
-#[derive(Clone, Copy, Default, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct TempGate {
     target: TempGateState,
     state: TempGateState,
@@ -220,6 +221,12 @@ pub struct TempGate {
     high_val: f32,
     /// Samples remaining before transitioning from `state` to `target`.
     counter: u32,
+}
+
+impl Default for TempGate {
+    fn default() -> Self {
+        Self::new_gate(TempGateState::Low)
+    }
 }
 
 impl TempGate {
@@ -736,7 +743,7 @@ mod tests {
     #[test]
     fn schmitt_full_cycle_low_high_low() {
         let mut st = SchmittTrigger::default(); // 0.1, 1.0
-                                                // Start from uninitialized with low input
+        // Start from uninitialized with low input
         let (_, e) = st.process_with_edge(0.0);
         assert_eq!(e, EdgeEvent::Falling);
         assert_eq!(st.state(), SchmittState::Low);
