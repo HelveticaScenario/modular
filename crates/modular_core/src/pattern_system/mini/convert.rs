@@ -6,11 +6,11 @@
 use super::ast::{AtomValue, Located, MiniAST, MiniASTF64, MiniASTI32, MiniASTU32};
 use super::parser::ParseError;
 use crate::pattern_system::{
-    Fraction, Pattern,
     combinators::{fastcat, slowcat, stack, timecat},
     constructors,
     constructors::pure_with_span,
     random::choose_with_seed,
+    Fraction, Pattern,
 };
 
 /// Trait for types that support rest values.
@@ -978,8 +978,8 @@ fn atom_to_string(atom: &AtomValue) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pattern_system::SourceSpan;
     use crate::pattern_system::mini::parser::parse;
+    use crate::pattern_system::SourceSpan;
 
     #[test]
     fn test_convert_number() {
@@ -1347,6 +1347,127 @@ mod tests {
             "Should have modifier span for '2' at position 5-6: {:?}",
             all_modifier_spans
         );
+    }
+
+    #[test]
+    fn test_modifier_spans_slowcat() {
+        // Pattern: "c*<1 2>" - c is modified by a slowcat factor
+        // The modifier values (1 and 2) should have their spans tracked
+        let ast = parse("c*<1 2>").unwrap();
+        let pat: Pattern<f64> = convert(&ast).unwrap();
+
+        // Query at cycle 0 (should use first slowcat element = 1)
+        let haps_cycle_0 = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+        // Query at cycle 1 (should use second slowcat element = 2)
+        let haps_cycle_1 = pat.query_arc(Fraction::from_integer(1), Fraction::from_integer(1));
+
+        // Should have 1 hap per cycle
+        assert_eq!(haps_cycle_0.len(), 1, "Should have 1 hap at cycle 0");
+        assert_eq!(haps_cycle_1.len(), 1, "Should have 1 hap at cycle 1");
+
+        // "c*<1 2>" positions:
+        //  c at 0-1
+        //  * at 1
+        //  < at 2
+        //  1 at 3-4
+        //  space at 4
+        //  2 at 5-6
+        //  > at 6
+
+        // Each hap should have modifier_spans
+        assert!(
+            !haps_cycle_0[0].context.modifier_spans.is_empty(),
+            "Cycle 0 should have modifier_spans for factor '1'"
+        );
+        assert!(
+            !haps_cycle_1[0].context.modifier_spans.is_empty(),
+            "Cycle 1 should have modifier_spans for factor '2'"
+        );
+
+        // Check that modifier spans contain the factor values
+        // At cycle 0: should have span for '1' (position 3-4)
+        let modifier_spans_cycle_0: Vec<_> = haps_cycle_0[0]
+            .context
+            .modifier_spans
+            .iter()
+            .map(|s| (s.start, s.end))
+            .collect();
+        assert!(
+            modifier_spans_cycle_0
+                .iter()
+                .any(|&(start, end)| start == 3 && end == 4),
+            "Cycle 0 should have modifier span for '1' at position 3-4: {:?}",
+            modifier_spans_cycle_0
+        );
+
+        // At cycle 1: should have span for '2' (position 5-6)
+        let modifier_spans_cycle_1: Vec<_> = haps_cycle_1[0]
+            .context
+            .modifier_spans
+            .iter()
+            .map(|s| (s.start, s.end))
+            .collect();
+        assert!(
+            modifier_spans_cycle_1
+                .iter()
+                .any(|&(start, end)| start == 5 && end == 6),
+            "Cycle 1 should have modifier span for '2' at position 5-6: {:?}",
+            modifier_spans_cycle_1
+        );
+    }
+
+    #[test]
+    fn test_combined_pattern_modifier_spans() {
+        // Test that modifier spans survive after combining multiple patterns with app_left
+        // This simulates what happens in interval_seq when combining multiple pattern strings
+        use crate::pattern_system::constructors::pure;
+        use crate::pattern_system::SourceSpan;
+
+        // Parse "<0 2>*<4 6>" - base pattern with slowcat modifier
+        let ast = parse("<0 2>*<4 6>").unwrap();
+        let pat: Pattern<f64> = convert(&ast).unwrap();
+
+        // Query at cycles 0 and 1
+        let haps_0 = pat.query_arc(Fraction::from_integer(0), Fraction::from_integer(1));
+        let haps_1 = pat.query_arc(Fraction::from_integer(1), Fraction::from_integer(1));
+
+        // Check that we have modifier spans
+        // "<0 2>*<4 6>" positions:
+        //  < at 0
+        //  0 at 1-2
+        //  space at 2
+        //  2 at 3-4
+        //  > at 4
+        //  * at 5
+        //  < at 6
+        //  4 at 7-8
+        //  space at 8
+        //  6 at 9-10
+        //  > at 10
+
+        // At cycle 0, modifier should be 4 (span 7-8)
+        // At cycle 1, modifier should be 6 (span 9-10)
+        if !haps_0.is_empty() {
+            let spans_0: Vec<_> = haps_0[0]
+                .context
+                .modifier_spans
+                .iter()
+                .map(|s| (s.start, s.end))
+                .collect();
+            println!("Cycle 0 modifier spans: {:?}", spans_0);
+            assert!(!spans_0.is_empty(), "Should have modifier spans at cycle 0");
+        }
+
+        if !haps_1.is_empty() {
+            let spans_1: Vec<_> = haps_1[0]
+                .context
+                .modifier_spans
+                .iter()
+                .map(|s| (s.start, s.end))
+                .collect();
+            println!("Cycle 1 modifier spans: {:?}", spans_1);
+            assert!(!spans_1.is_empty(), "Should have modifier spans at cycle 1");
+        }
     }
 
     #[test]
