@@ -143,6 +143,38 @@ function App() {
     const scopeCanvasMapRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
     const lastPatchResultRef = useRef<any>(null);
 
+    // Global Cmd+A / Ctrl+A handler: when editor doesn't have focus,
+    // focus it and select all text instead of selecting app content
+    useEffect(() => {
+        const handleGlobalSelectAll = (e: KeyboardEvent) => {
+            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+            const isSelectAll = isMac ? e.metaKey : e.ctrlKey;
+            if (!isSelectAll || e.key !== 'a') return;
+
+            const editorEl = document.querySelector('.patch-editor');
+            if (!editorEl) return;
+
+            const isEditorFocused = editorEl.contains(document.activeElement);
+            if (isEditorFocused) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            const editorInstance = editorRef.current;
+            if (editorInstance) {
+                editorInstance.focus();
+                const model = editorInstance.getModel();
+                if (model) {
+                    editorInstance.setSelection(model.getFullModelRange());
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleGlobalSelectAll);
+        return () =>
+            window.removeEventListener('keydown', handleGlobalSelectAll);
+    }, []);
+
     /** Long-lived invisible tracked decorations spanning each scope() call.
      *  Monaco automatically adjusts these ranges as the document is edited,
      *  so we can always read the current position of a scope call from them. */
