@@ -125,6 +125,10 @@ pre {
     color: #fff;
     border: 1px solid #444;
     border-radius: 4px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-clip: padding-box;
 }
 
 .search-input:focus {
