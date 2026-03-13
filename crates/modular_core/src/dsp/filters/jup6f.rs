@@ -70,7 +70,7 @@ struct LadderState {
 ///
 /// ```js
 /// // classic Jupiter pad: saw through the ladder with slow envelope
-/// let env = $adsr($clock.barTrigger, { attack: 0.4, decay: 0.6, sustain: 0.3, release: 1.0 })
+/// let env = $adsr($pPulse($clock[0]), { attack: 0.4, decay: 0.6, sustain: 0.3, release: 1.0 })
 /// $jup6f($saw('c2'), env.range('200hz', '4000hz'), 2.5)
 /// ```
 #[module(name = "$jup6f", args(input, cutoff, resonance?))]

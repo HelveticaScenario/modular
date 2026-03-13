@@ -39,7 +39,7 @@ struct ChannelState {
 ///
 /// ```js
 /// // short percussive hit
-/// $noise("white").mul($perc($rootClock.gate, { decay: 0.1 }))
+/// $noise("white").mul($perc($clock.gate, { decay: 0.1 }))
 /// ```
 #[module(name = "$perc", args(trigger))]
 #[derive(Default)]
