@@ -138,6 +138,23 @@ struct MathOutputs {
     output: f32,
 }
 
+/// State for the Math module.
+pub struct MathState {
+    phase: f32,
+    loop_index: usize,
+    running: bool,
+}
+
+impl Default for MathState {
+    fn default() -> Self {
+        Self {
+            phase: 0.0,
+            loop_index: 0,
+            running: true,
+        }
+    }
+}
+
 /// Evaluates a math expression every sample, giving you arbitrary control
 /// voltage transformations.
 ///
@@ -163,24 +180,7 @@ struct MathOutputs {
 pub struct Math {
     outputs: MathOutputs,
     params: MathParams,
-
-    // State
-    phase: f32,
-    loop_index: usize,
-    running: bool,
-}
-
-impl Default for Math {
-    fn default() -> Self {
-        Self {
-            outputs: MathOutputs::default(),
-            params: serde_json::from_value(serde_json::json!({})).unwrap(),
-            phase: 0.0,
-            loop_index: 0,
-            running: true,
-            _channel_count: 0,
-        }
-    }
+    state: MathState,
 }
 
 message_handlers!(impl Math {
@@ -190,11 +190,11 @@ message_handlers!(impl Math {
 impl Math {
     fn update(&mut self, sample_rate: f32) {
         // Update time
-        if self.running {
-            self.phase += 1.0 / sample_rate;
-            if self.phase >= 1.0 {
-                self.phase -= 1.0;
-                self.loop_index += 1;
+        if self.state.running {
+            self.state.phase += 1.0 / sample_rate;
+            if self.state.phase >= 1.0 {
+                self.state.phase -= 1.0;
+                self.state.loop_index += 1;
             }
         }
 
@@ -205,7 +205,7 @@ impl Math {
         let x = self.params.x.value_or(0.0) as f64;
         let y = self.params.y.value_or(0.0) as f64;
         let z = self.params.z.value_or(0.0) as f64;
-        let t = self.phase as f64 + self.loop_index as f64;
+        let t = self.state.phase as f64 + self.state.loop_index as f64;
         let signals = self
             .params
             .expression
@@ -250,12 +250,12 @@ impl Math {
     fn on_clock_message(&mut self, m: &ClockMessages) -> Result<()> {
         match m {
             ClockMessages::Start => {
-                self.running = true;
-                self.phase = 0.0;
-                self.loop_index = 0;
+                self.state.running = true;
+                self.state.phase = 0.0;
+                self.state.loop_index = 0;
             }
             ClockMessages::Stop => {
-                self.running = false;
+                self.state.running = false;
             }
         }
         Ok(())

@@ -257,21 +257,23 @@ impl Default for PlaitsChannelState {
 #[module(name = "$macro", args(freq, engine), has_init)]
 pub struct Plaits {
     outputs: PlaitsOutputs,
+    params: PlaitsParams,
+    state: PlaitsState,
+}
+
+/// State for the Plaits module.
+pub struct PlaitsState {
     channels: Vec<PlaitsChannelState>,
     buffer_pos: usize,
-    params: PlaitsParams,
     sample_rate: f32,
 }
 
-impl Default for Plaits {
+impl Default for PlaitsState {
     fn default() -> Self {
         Self {
-            outputs: PlaitsOutputs::default(),
             channels: Vec::new(),   // Will be initialized in init()
             buffer_pos: BLOCK_SIZE, // Start exhausted to trigger initial render
-            params: serde_json::from_value(serde_json::json!({})).unwrap(),
             sample_rate: 0.0,
-            _channel_count: 0,
         }
     }
 }
@@ -280,12 +282,12 @@ impl Plaits {
     /// Initialize the module with the given sample rate.
     /// Called once at construction time by the macro-generated constructor.
     fn init(&mut self, sample_rate: f32) {
-        self.sample_rate = sample_rate;
-        self.channels = Vec::with_capacity(PORT_MAX_CHANNELS);
+        self.state.sample_rate = sample_rate;
+        self.state.channels = Vec::with_capacity(PORT_MAX_CHANNELS);
         for _ in 0..PORT_MAX_CHANNELS {
             let mut voice = Voice::new(BLOCK_SIZE, sample_rate);
             voice.init();
-            self.channels.push(PlaitsChannelState {
+            self.state.channels.push(PlaitsChannelState {
                 voice,
                 ..PlaitsChannelState::default()
             });
@@ -301,7 +303,7 @@ impl Plaits {
         // Triggers can be as short as 1 sample, so we need to detect rising edges
         // and latch them until the next block render.
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
             let trigger_val = self.params.trigger.value_or(ch, 0.0);
 
             // Detect rising edge using Schmitt trigger for noise immunity
@@ -312,28 +314,28 @@ impl Plaits {
         }
 
         // Render when buffer is exhausted
-        if self.buffer_pos >= BLOCK_SIZE {
+        if self.state.buffer_pos >= BLOCK_SIZE {
             self.render_block(num_channels);
-            self.buffer_pos = 0;
+            self.state.buffer_pos = 0;
         }
 
         for ch in 0..num_channels {
-            let state = &self.channels[ch];
+            let state = &self.state.channels[ch];
             // Output scaling: Plaits outputs ±1.0, scale to ±5V (inverted to match hardware)
             self.outputs
                 .out
-                .set(ch, -state.out_buffer[self.buffer_pos] * 5.0);
+                .set(ch, -state.out_buffer[self.state.buffer_pos] * 5.0);
             self.outputs
                 .aux
-                .set(ch, -state.aux_buffer[self.buffer_pos] * 5.0);
+                .set(ch, -state.aux_buffer[self.state.buffer_pos] * 5.0);
         }
 
-        self.buffer_pos += 1;
+        self.state.buffer_pos += 1;
     }
 
     fn render_block(&mut self, num_channels: usize) {
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
 
             // Update smoothed parameters
             state
