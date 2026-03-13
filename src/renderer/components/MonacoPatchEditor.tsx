@@ -170,14 +170,6 @@ export function MonacoPatchEditor({
         ed.addCommand(ctrl | monaco.KeyCode.KeyW, () => {
             window.electronAPI.triggerMenuAction('CLOSE_BUFFER');
         });
-
-        // Ctrl+A -> Select All (when editor has focus)
-        ed.addCommand(ctrl | monaco.KeyCode.KeyA, () => {
-            ed.setSelection(
-                ed.getModel()?.getFullModelRange() ??
-                    new monaco.Range(1, 1, 1, 1),
-            );
-        });
     };
 
     useEffect(() => {
