@@ -102,6 +102,9 @@ interface TypeCardProps {
     isExpanded: boolean;
     onToggle: () => void;
     onTypeClick: (typeName: DslTypeName) => void;
+    playingExampleId: string | null;
+    onPlayExample: (exampleCode: string, exampleId: string) => void;
+    onStopExample: () => void;
 }
 
 /**
@@ -112,6 +115,9 @@ const TypeCard: React.FC<TypeCardProps> = ({
     isExpanded,
     onToggle,
     onTypeClick,
+    playingExampleId,
+    onPlayExample,
+    onStopExample,
 }) => (
     <div className={`type-card ${isExpanded ? 'expanded' : ''}`}>
         <div className="type-card-header" onClick={onToggle}>
@@ -138,7 +144,33 @@ const TypeCard: React.FC<TypeCardProps> = ({
                 {typeDoc.examples.length > 0 && (
                     <div className="type-examples">
                         <h4>Examples</h4>
-                        <pre>{typeDoc.examples.join('\n')}</pre>
+                        {typeDoc.examples.map((example, index) => {
+                            const exampleId = `${typeDoc.name}-example-${index}`;
+                            const isPlaying = playingExampleId === exampleId;
+                            return (
+                                <div key={index} className="example-block">
+                                    <button
+                                        className={`example-play-btn ${isPlaying ? 'playing' : ''}`}
+                                        onClick={() =>
+                                            isPlaying
+                                                ? onStopExample()
+                                                : onPlayExample(
+                                                      example,
+                                                      exampleId,
+                                                  )
+                                        }
+                                        title={
+                                            isPlaying
+                                                ? 'Stop example'
+                                                : 'Play example'
+                                        }
+                                    >
+                                        {isPlaying ? '⏹' : '▶'}
+                                    </button>
+                                    <pre>{example}</pre>
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
 
@@ -200,6 +232,38 @@ export const HelpWindow: React.FC = () => {
     const [expandedTypes, setExpandedTypes] = useState<Set<DslTypeName>>(
         new Set(),
     );
+    const [playingExampleId, setPlayingExampleId] = useState<string | null>(
+        null,
+    );
+
+    // Execute example code
+    const handlePlayExample = useCallback(
+        async (exampleCode: string, exampleId: string) => {
+            try {
+                const result = await electronAPI.executeDSL(
+                    exampleCode,
+                    `example-${exampleId}`,
+                    undefined,
+                );
+                if (result.success) {
+                    setPlayingExampleId(exampleId);
+                } else if (result.errorMessage) {
+                    console.error(
+                        'Example execution error:',
+                        result.errorMessage,
+                    );
+                }
+            } catch (err) {
+                console.error('Failed to execute example:', err);
+            }
+        },
+        [],
+    );
+
+    // Stop playing example (by clearing the playing state - user can ctrl+. to stop audio)
+    const handleStopExample = useCallback(() => {
+        setPlayingExampleId(null);
+    }, []);
 
     // Fetch schemas once at mount
     useEffect(() => {
@@ -389,6 +453,9 @@ export const HelpWindow: React.FC = () => {
                                                 toggleTypeExpanded(typeName)
                                             }
                                             onTypeClick={handleTypeClick}
+                                            playingExampleId={playingExampleId}
+                                            onPlayExample={handlePlayExample}
+                                            onStopExample={handleStopExample}
                                         />
                                     </div>
                                 );
