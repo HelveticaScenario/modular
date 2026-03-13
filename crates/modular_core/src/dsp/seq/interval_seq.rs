@@ -18,14 +18,14 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    MonoSignal, Patch,
     dsp::{
         utilities::quantizer::ScaleParam,
-        utils::{TempGate, TempGateState, midi_to_voct_f64, min_gate_samples},
+        utils::{midi_to_voct_f64, min_gate_samples, TempGate, TempGateState},
     },
     pattern_system::Pattern,
-    poly::{PORT_MAX_CHANNELS, PolyOutput},
+    poly::{PolyOutput, PORT_MAX_CHANNELS},
     types::Connect,
+    MonoSignal, Patch,
 };
 
 /// Scale parameter for IntervalSeq that supports an optional octave in the root.
@@ -271,12 +271,13 @@ impl IntervalPatternParam {
         }
 
         // Left-fold the parsed patterns with app_left + add_interval_values.
-        // strip_modifier_spans() ensures that internal modifier spans from
-        // sub-expressions (e.g. euclidean notation) don't leak into the
-        // positional index that extract_pattern_spans relies on.
-        let mut combined = parsed[0].strip_modifier_spans();
+        // Note: We no longer strip modifier spans here because they represent
+        // top-level modifiers (e.g., *<4 6> in "<2 3 4>*<4 6>") that should be
+        // tracked for highlighting. Internal modifier spans from sub-expressions
+        // are handled naturally through the merge process in app_left.
+        let mut combined = parsed[0].clone();
         for p in &parsed[1..] {
-            combined = combined.app_left(&p.strip_modifier_spans(), add_interval_values);
+            combined = combined.app_left(p, add_interval_values);
         }
 
         let num_sources = sources.len();
@@ -409,8 +410,6 @@ struct IntervalVoiceState {
     /// Timestamp when this voice was last assigned (for LRU stealing)
     last_assigned: f64,
 }
-
-
 
 fn default_channels() -> usize {
     4
@@ -1140,7 +1139,7 @@ mod tests {
 
         // D3 root
         seq.base_midi = 50; // D3
-        // Degree 0 = D3 = MIDI 50 = -10/12 V
+                            // Degree 0 = D3 = MIDI 50 = -10/12 V
         let v0 = seq.degree_to_voltage(0);
         assert!((v0 - (-10.0 / 12.0)).abs() < 0.001);
     }
