@@ -10,7 +10,6 @@ use crate::poly::MonoSignal;
 #[serde(rename_all = "camelCase")]
 struct TestOverlapParams {
     /// this conflicts with the output name
-    #[serde(default)]
     output: Option<MonoSignal>,
 }
 

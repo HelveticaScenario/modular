@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use crate::{
     dsp::utils::voct_to_hz,
-    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
+    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
     types::Clickless,
 };
 
@@ -11,11 +11,9 @@ use crate::{
 #[serde(rename_all = "camelCase")]
 struct SawOscillatorParams {
     /// pitch in V/Oct (0V = C4)
-    #[serde(default)]
     #[signal(type = pitch)]
     freq: Option<PolySignal>,
     /// waveform shape: 0=saw, 2.5=triangle, 5=ramp
-    #[serde(default)]
     #[signal(range = (0.0, 5.0))]
     shape: Option<PolySignal>,
 }

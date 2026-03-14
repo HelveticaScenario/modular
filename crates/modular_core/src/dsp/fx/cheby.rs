@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::dsp::fx::enosc_tables::{aa_cheby, interpolate_cheby};
 use crate::dsp::utils::voct_to_hz;
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 use crate::types::Clickless;
 
 #[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
@@ -17,11 +17,9 @@ struct ChebyParams {
     /// input signal to shape (bipolar, typically -5 to 5)
     input: PolySignal,
     /// harmonic richness (0–5). At 0 the signal is clean; at 5 the highest harmonic content dominates
-    #[serde(default)]
     #[signal(range = (0.0, 5.0))]
     amount: Option<PolySignal>,
     /// pitch of the source signal in V/Oct (optional, reduces aliasing at high frequencies)
-    #[serde(default)]
     #[signal(type = pitch)]
     freq: Option<PolySignal>,
 }

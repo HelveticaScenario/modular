@@ -9,11 +9,9 @@ struct ScaleAndShiftParams {
     /// signal to scale and shift
     input: PolySignal,
     /// scale factor (0–10V range; 5V = unity gain, 0V = silence, -5V = inverted, 10V = 2x)
-    #[serde(default)]
     #[signal(default = 5.0, range = (0.0, 10.0))]
     scale: Option<PolySignal>,
     /// DC offset added to the scaled signal (in volts)
-    #[serde(default)]
     shift: Option<PolySignal>,
 }
 

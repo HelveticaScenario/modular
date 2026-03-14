@@ -9,7 +9,6 @@ struct CurveParams {
     /// signal to apply curve to
     input: PolySignal,
     /// exponent for the power curve (0 = step, 1 = linear, >1 = audio taper)
-    #[serde(default)]
     #[signal(range = (0.0, 10.0))]
     exp: Option<PolySignal>,
 }

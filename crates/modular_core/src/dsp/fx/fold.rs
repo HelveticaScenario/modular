@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::dsp::fx::enosc_tables::{aa_fold, lookup_fold};
 use crate::dsp::utils::voct_to_hz;
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 use crate::types::Clickless;
 
 #[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
@@ -17,11 +17,9 @@ struct FoldParams {
     /// input signal to fold (bipolar, typically -5 to 5)
     input: PolySignal,
     /// fold amount (0-5, where 0 = bypass, 5 = maximum folding)
-    #[serde(default)]
     #[signal(default = 0.0, range = (0.0, 5.0))]
     amount: Option<PolySignal>,
     /// pitch of the source signal in V/Oct (optional, reduces aliasing at high frequencies)
-    #[serde(default)]
     #[signal(type = pitch)]
     freq: Option<PolySignal>,
 }

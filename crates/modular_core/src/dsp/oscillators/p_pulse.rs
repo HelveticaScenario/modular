@@ -1,6 +1,6 @@
 use crate::{
     dsp::utils::wrap,
-    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
+    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
     types::Clickless,
 };
 use schemars::JsonSchema;
@@ -13,11 +13,9 @@ struct PPulseOscillatorParams {
     #[signal(range = (0.0, 1.0))]
     phase: PolySignal,
     /// pulse width (0-5, 2.5 is square)
-    #[serde(default)]
     #[signal(default = 2.5, range = (0.0, 5.0))]
     width: Option<PolySignal>,
     /// pulse width modulation CV — added to the width parameter
-    #[serde(default)]
     pwm: Option<PolySignal>,
 }
 

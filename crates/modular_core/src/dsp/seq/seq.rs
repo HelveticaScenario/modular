@@ -144,7 +144,6 @@ pub struct SeqParams {
     #[serde(default)]
     pattern: SeqPatternParam,
     /// playhead position (driven by the global clock)
-    #[serde(default)]
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
     #[signal(range = (0.0, 1.0))]
     playhead: Option<MonoSignal>,

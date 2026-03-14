@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use crate::dsp::fx::enosc_tables::aa_feedback;
 use crate::dsp::utils::voct_to_hz;
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 use crate::types::Clickless;
 
 #[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
@@ -20,11 +20,9 @@ struct FeedbackParams {
     #[signal(range = (0.0, 1.0))]
     input: PolySignal,
     /// feedback amount (0-5, where 0 = no feedback, 5 = maximum feedback FM)
-    #[serde(default)]
     #[signal(range = (0.0, 5.0))]
     amount: Option<PolySignal>,
     /// pitch in V/Oct (optional, reduces aliasing at high frequencies)
-    #[serde(default)]
     #[signal(type = pitch)]
     freq: Option<PolySignal>,
 }

@@ -11,16 +11,13 @@ fn default_count() -> usize {
 #[serde(rename_all = "camelCase")]
 struct SpreadParams {
     /// lower bound of the spread range
-    #[serde(default)]
     min: Option<MonoSignal>,
     /// upper bound of the spread range
-    #[serde(default)]
     max: Option<MonoSignal>,
     /// number of output channels (1–16)
     #[serde(default = "default_count")]
     count: usize,
     /// distribution bias (-5 to 5): positive biases toward max, negative toward min
-    #[serde(default)]
     #[signal(default = 0.0, range = (-5.0, 5.0))]
     bias: Option<MonoSignal>,
 }

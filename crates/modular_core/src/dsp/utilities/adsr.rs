@@ -1,5 +1,5 @@
 use crate::dsp::utils::SchmittTrigger;
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -10,19 +10,15 @@ struct AdsrParams {
     #[signal(type = gate, range = (0.0, 5.0))]
     gate: PolySignal,
     /// attack time in seconds
-    #[serde(default)]
     #[signal(default = 0.01, range = (0.0, 10.0))]
     attack: Option<PolySignal>,
     /// decay time in seconds
-    #[serde(default)]
     #[signal(default = 0.1, range = (0.0, 10.0))]
     decay: Option<PolySignal>,
     /// sustain level in volts (0-5)
-    #[serde(default)]
     #[signal(default = 5.0, range = (0.0, 5.0))]
     sustain: Option<PolySignal>,
     /// release time in seconds
-    #[serde(default)]
     #[signal(default = 0.1, range = (0.0, 10.0))]
     release: Option<PolySignal>,
 }

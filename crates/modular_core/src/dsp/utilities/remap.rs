@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 use crate::types::Clickless;
 
 #[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
@@ -10,19 +10,15 @@ struct RemapParams {
     /// signal input to remap
     input: PolySignal,
     /// minimum of input range
-    #[serde(default)]
     #[signal(default = -5.0)]
     in_min: Option<PolySignal>,
     /// maximum of input range
-    #[serde(default)]
     #[signal(default = 5.0)]
     in_max: Option<PolySignal>,
     /// minimum of output range
-    #[serde(default)]
     #[signal(default = -5.0)]
     out_min: Option<PolySignal>,
     /// maximum of output range
-    #[serde(default)]
     #[signal(default = 5.0)]
     out_max: Option<PolySignal>,
 }

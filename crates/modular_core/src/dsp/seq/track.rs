@@ -12,7 +12,6 @@ struct TrackParams {
     /// playhead position (wraps from 0 to 1)
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
     #[signal(range = (0.0, 1.0))]
-    #[serde(default)]
     playhead: Option<MonoSignal>,
     /// keyframe values and their positions (0–1)
     #[serde(default)]

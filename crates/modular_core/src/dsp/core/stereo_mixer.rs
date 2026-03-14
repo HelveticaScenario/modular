@@ -1,7 +1,7 @@
 use crate::{
+    PORT_MAX_CHANNELS,
     poly::{MonoSignal, MonoSignalExt, PolyOutput, PolySignal, PolySignalExt},
     types::Clickless,
-    PORT_MAX_CHANNELS,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -12,11 +12,9 @@ struct StereoMixerParams {
     /// Input signal to place in the stereo field.
     input: PolySignal,
     /// Pan position per channel (-5 = left, 0 = center, +5 = right).
-    #[serde(default)]
     pan: Option<PolySignal>,
     /// Stereo spread across channels (0 = no spread, 5 = widest spread).
     /// Width offsets each channel around its base pan position.
-    #[serde(default)]
     #[signal(range = (0.0, 5.0))]
     width: Option<MonoSignal>,
 }
@@ -43,11 +41,11 @@ pub struct StereoMixer {
 }
 
 /// State for the StereoMixer module.
-pub struct StereoMixerState {
+struct StereoMixerState {
     /// Per-channel pan state
-    pub channel_state: [ChannelState; PORT_MAX_CHANNELS],
+    channel_state: [ChannelState; PORT_MAX_CHANNELS],
     /// Width buffer for stereo spread
-    pub width_buffer: Clickless,
+    width_buffer: Clickless,
 }
 
 impl Default for StereoMixerState {

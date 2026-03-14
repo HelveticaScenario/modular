@@ -31,13 +31,11 @@ pub struct MixParams {
     /// Input signals to mix channel-by-channel.
     ///
     /// Channel `n` from every input is mixed into output channel `n`.
-    #[serde(default)]
     pub inputs: Vec<PolySignal>,
     /// How inputs are combined.
     #[serde(default)]
     mode: MixMode,
     /// Final output level (perceptual curve, exponent 3).
-    #[serde(default)]
     #[signal(default = 5.0, range = (0.0, 10.0))]
     pub gain: Option<PolySignal>,
 }

@@ -106,13 +106,10 @@ struct MathParams {
     #[serde(default)]
     expression: MathExpressionParam,
     /// first input variable, referenced as `x` in the expression
-    #[serde(default)]
     x: Option<MonoSignal>,
     /// second input variable, referenced as `y` in the expression
-    #[serde(default)]
     y: Option<MonoSignal>,
     /// third input variable, referenced as `z` in the expression
-    #[serde(default)]
     z: Option<MonoSignal>,
 }
 

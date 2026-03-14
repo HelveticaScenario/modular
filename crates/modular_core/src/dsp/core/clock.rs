@@ -2,9 +2,9 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::dsp::utils::{min_gate_samples, SchmittTrigger, TempGate, TempGateState};
-use crate::types::ClockMessages;
 use crate::PolyOutput;
+use crate::dsp::utils::{SchmittTrigger, TempGate, TempGateState, min_gate_samples};
+use crate::types::ClockMessages;
 
 fn default_four() -> u32 {
     4
@@ -32,20 +32,13 @@ where
 #[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct ClockParams {
-    /// Tempo in BPM. Defaults to 120.
-    #[serde(default = "default_tempo")]
+    /// Tempo in BPM.
     tempo: f64,
-    /// Time signature numerator (beats per bar). Must be a positive integer. Defaults to 4.
-    #[serde(
-        default = "default_four",
-        deserialize_with = "deserialize_positive_u32"
-    )]
+    /// Time signature numerator (beats per bar). Must be a positive integer.
+    #[serde(deserialize_with = "deserialize_positive_u32")]
     numerator: u32,
-    /// Time signature denominator (beat value). Must be a positive integer. Defaults to 4.
-    #[serde(
-        default = "default_four",
-        deserialize_with = "deserialize_positive_u32"
-    )]
+    /// Time signature denominator (beat value). Must be a positive integer.
+    #[serde(deserialize_with = "deserialize_positive_u32")]
     denominator: u32,
 }
 

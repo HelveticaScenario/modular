@@ -3,7 +3,7 @@ use crate::{
         consts::{LUT_SINE, LUT_SINE_SIZE},
         utils::{interpolate, voct_to_hz},
     },
-    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
+    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -12,7 +12,6 @@ use serde::Deserialize;
 #[serde(rename_all = "camelCase")]
 struct SineOscillatorParams {
     /// pitch in V/Oct (0V = C4)
-    #[serde(default)]
     #[signal(type = pitch)]
     freq: Option<PolySignal>,
 }

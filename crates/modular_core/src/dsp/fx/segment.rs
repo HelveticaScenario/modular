@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::dsp::fx::enosc_tables::{aa_segment, interpolate_segment};
 use crate::dsp::utils::voct_to_hz;
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 use crate::types::Clickless;
 
 #[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
@@ -17,11 +17,9 @@ struct SegmentParams {
     /// input signal to shape (bipolar, typically -5 to 5)
     input: PolySignal,
     /// segment shape amount (0-5, morphs between 8 shapes)
-    #[serde(default)]
     #[signal(range = (0.0, 5.0))]
     amount: Option<PolySignal>,
     /// pitch of the source signal in V/Oct (optional, reduces aliasing at high frequencies)
-    #[serde(default)]
     #[signal(type = pitch)]
     freq: Option<PolySignal>,
 }

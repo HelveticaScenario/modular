@@ -1,6 +1,6 @@
 use crate::{
-    PORT_MAX_CHANNELS,
     poly::{PolyOutput, PolySignal, PolySignalExt},
+    PORT_MAX_CHANNELS,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -11,11 +11,9 @@ struct LagProcessorParams {
     /// signal input
     input: PolySignal,
     /// rise rate — seconds to slew 1 volt upward (default 0.01)
-    #[serde(default)]
     #[signal(default = 0.01, range = (0.0, 10.0))]
     rise: Option<PolySignal>,
     /// fall rate — seconds to slew 1 volt downward (default 0.01)
-    #[serde(default)]
     #[signal(default = 0.01, range = (0.0, 10.0))]
     fall: Option<PolySignal>,
 }

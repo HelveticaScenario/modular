@@ -1,6 +1,6 @@
 use crate::{
     dsp::utils::wrap,
-    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
+    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
     types::Clickless,
 };
 use schemars::JsonSchema;
@@ -13,7 +13,6 @@ struct PSawOscillatorParams {
     #[signal(range = (0.0, 1.0))]
     phase: PolySignal,
     /// waveform shape: 0=saw, 2.5=triangle, 5=ramp
-    #[serde(default)]
     #[signal(range = (0.0, 5.0))]
     shape: Option<PolySignal>,
 }

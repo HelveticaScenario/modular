@@ -121,59 +121,46 @@ impl Connect for PlaitsEngine {
 #[serde(rename_all = "camelCase")]
 struct PlaitsParams {
     /// Pitch input in V/Oct (0V = C4)
-    #[serde(default)]
     #[signal(type = pitch)]
     freq: Option<PolySignal>,
 
     /// Synthesis engine selection
-    #[serde(default)]
     engine: PlaitsEngine,
 
     /// Harmonics parameter (-5V to +5V, bipolar, default 0V) - function varies per engine
-    #[serde(default)]
     harmonics: Option<PolySignal>,
 
     /// Timbre parameter (-5V to +5V, bipolar, default 0V) - function varies per engine
-    #[serde(default)]
     timbre: Option<PolySignal>,
 
     /// Morph parameter (-5V to +5V, bipolar, default 0V) - function varies per engine
-    #[serde(default)]
     morph: Option<PolySignal>,
 
     /// FM input (-5V to +5V) - frequency modulation
-    #[serde(default)]
     fm: Option<PolySignal>,
 
     /// Timbre CV attenuverter (-5 to 5) - scales timbre modulation
-    #[serde(default)]
     timbre_amt: Option<PolySignal>,
 
     /// FM CV attenuverter (-5 to 5) - scales frequency modulation
-    #[serde(default)]
     fm_amt: Option<PolySignal>,
 
     /// Morph CV attenuverter (-5 to 5) - scales morph modulation
-    #[serde(default)]
     morph_amt: Option<PolySignal>,
 
     /// Trigger input - gates/triggers the internal envelope
-    #[serde(default)]
     #[signal(type = trig, range = (0.0, 5.0))]
     trigger: Option<PolySignal>,
 
     /// Level/dynamics input (0-5V) - controls VCA/LPG
-    #[serde(default)]
     #[signal(range = (0.0, 5.0))]
     level: Option<PolySignal>,
 
     /// LPG color (0-5V) - lowpass gate filter response (low = mellow, high = bright)
-    #[serde(default)]
     #[signal(default = 2.5, range = (0.0, 5.0))]
     lpg_color: Option<PolySignal>,
 
     /// LPG decay (0-5V) - lowpass gate envelope decay time
-    #[serde(default)]
     #[signal(default = 2.5, range = (0.0, 5.0))]
     lpg_decay: Option<PolySignal>,
 }

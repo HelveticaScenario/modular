@@ -9,10 +9,8 @@ struct ClampParams {
     /// signal to clamp
     input: PolySignal,
     /// lower bound — if omitted the signal is unclamped below
-    #[serde(default)]
     min: Option<PolySignal>,
     /// upper bound — if omitted the signal is unclamped above
-    #[serde(default)]
     max: Option<PolySignal>,
 }
 

@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use crate::{
     dsp::utils::voct_to_hz,
-    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
+    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
 };
 
 fn default_voices() -> usize {
@@ -14,13 +14,11 @@ fn default_voices() -> usize {
 #[serde(rename_all = "camelCase")]
 struct SupersawParams {
     /// pitch in V/Oct (0V = C4)
-    #[serde(default)]
     freq: Option<PolySignal>,
     /// number of supersaw voices (1–16)
     #[serde(default = "default_voices")]
     voices: usize,
     /// detune spread in semitones (default 0.18)
-    #[serde(default)]
     #[signal(type = control, default = 0.18, range = (0, 12))]
     detune: Option<PolySignal>,
 }

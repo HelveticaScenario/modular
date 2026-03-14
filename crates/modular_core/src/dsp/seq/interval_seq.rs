@@ -410,8 +410,6 @@ struct IntervalVoiceState {
     last_assigned: f64,
 }
 
-
-
 fn default_channels() -> usize {
     4
 }
@@ -427,7 +425,6 @@ pub struct IntervalSeqParams {
     #[serde(default)]
     scale: IntervalScaleParam,
     /// playhead position
-    #[serde(default)]
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
     #[signal(range = (0.0, 1.0))]
     playhead: Option<MonoSignal>,

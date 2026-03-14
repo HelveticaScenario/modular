@@ -2,8 +2,8 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::dsp::utils::{SchmittTrigger, TempGate, TempGateState, min_gate_samples};
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
+use crate::dsp::utils::{min_gate_samples, SchmittTrigger, TempGate, TempGateState};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 use crate::types::ClockMessages;
 
 fn default_division() -> u32 {
@@ -14,13 +14,11 @@ fn default_division() -> u32 {
 #[serde(rename_all = "camelCase")]
 struct ClockDividerParams {
     /// division factor (e.g. 2 = output fires every other tick)
-    #[serde(default = "default_division")]
     pub division: u32,
     /// clock signal to divide
     #[signal(type = trig, range = (0.0, 5.0))]
     pub input: PolySignal,
     /// trigger to reset the counter to 0
-    #[serde(default)]
     #[signal(type = trig, range = (0.0, 5.0))]
     pub reset: Option<PolySignal>,
 }

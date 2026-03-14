@@ -6,7 +6,7 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 use crate::types::Clickless;
 
 #[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
@@ -16,7 +16,6 @@ struct CrushParams {
     #[signal(range = (0.0, 1.0))]
     input: PolySignal,
     /// crush amount (0-5, where 0 = clean, 5 = maximum distortion)
-    #[serde(default)]
     #[signal(range = (0.0, 5.0))]
     amount: Option<PolySignal>,
 }

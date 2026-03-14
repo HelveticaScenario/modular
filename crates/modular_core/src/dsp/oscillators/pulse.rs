@@ -2,25 +2,22 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    PORT_MAX_CHANNELS,
     dsp::utils::voct_to_hz,
     poly::{PolyOutput, PolySignal, PolySignalExt},
     types::Clickless,
+    PORT_MAX_CHANNELS,
 };
 
 #[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 struct PulseOscillatorParams {
     /// pitch in V/Oct (0V = C4)
-    #[serde(default)]
     #[signal(type = pitch)]
     freq: Option<PolySignal>,
     /// pulse width (0-5, 2.5 is square)
-    #[serde(default)]
     #[signal(default = 2.5, range = (0.0, 5.0))]
     width: Option<PolySignal>,
     /// pulse width modulation CV — added to the width parameter
-    #[serde(default)]
     pwm: Option<PolySignal>,
 }
 
