@@ -1,5 +1,5 @@
 use crate::dsp::utils::SchmittTrigger;
-use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
+use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -99,10 +99,10 @@ impl Adsr {
             let state = &mut self.channels[ch];
 
             // Smooth parameter targets to avoid clicks when values change (times in seconds)
-            state.attack = self.params.attack.get_value_or(ch, 0.01).max(0.001);
-            state.decay = self.params.decay.get_value_or(ch, 0.1).max(0.001);
-            state.release = self.params.release.get_value_or(ch, 0.1).max(0.001);
-            state.sustain = self.params.sustain.get_value_or(ch, 5.).max(0.0);
+            state.attack = self.params.attack.get_value_or(ch, 0.0).max(0.0);
+            state.decay = self.params.decay.get_value_or(ch, 0.0).max(0.0);
+            state.release = self.params.release.get_value_or(ch, 0.0).max(0.0);
+            state.sustain = self.params.sustain.get_value_or(ch, 5.0).max(0.0);
 
             let attack = state.attack;
             let decay = state.decay;
