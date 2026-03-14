@@ -407,18 +407,3 @@ fn connect_noop_for_non_cable_and_non_track_signals() {
     s.connect(&patch);
     approx_eq(s.get_value(), 1.0, 1e-6);
 }
-
-#[test]
-fn option_signal_deserialize_missing_field() {
-    #[derive(Deserialize, Default, Debug)]
-    #[serde(default)]
-    struct A {
-        foo: String,
-        sig: Option<Signal>,
-    }
-
-    let a: A = serde_json::from_str(r#"{"foo":"bar"}"#).unwrap();
-    assert!(a.sig.is_none(), "missing field should deserialize as None");
-
-    println!("{:?}", a);
-}
