@@ -1076,7 +1076,7 @@ impl AudioState {
           })?;
 
       if let Some(constructor) = constructors.get(&module_state.module_type) {
-        match constructor(&id, sample_rate, deserialized) {
+        match constructor(&id, sample_rate, deserialized.clone()) {
           Ok(module) => {
             update.inserts.push((id.clone(), module));
           }
@@ -1093,6 +1093,8 @@ impl AudioState {
           module_state.module_type
         )));
       }
+
+       update.param_updates.push((id.clone(), deserialized));
     }
 
     // Pre-compute desired IDs on main thread to avoid HashSet allocation on audio thread
