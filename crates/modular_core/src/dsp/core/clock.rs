@@ -6,14 +6,6 @@ use crate::PolyOutput;
 use crate::dsp::utils::{SchmittTrigger, TempGate, TempGateState, min_gate_samples};
 use crate::types::ClockMessages;
 
-fn default_four() -> u32 {
-    4
-}
-
-fn default_tempo() -> f64 {
-    120.0
-}
-
 /// Deserialize a u32 that must be >= 1 (positive integer).
 /// Rejects 0 with a descriptive error so any clock instance gets validated.
 fn deserialize_positive_u32<'de, D>(deserializer: D) -> std::result::Result<u32, D::Error>
@@ -81,7 +73,7 @@ impl Default for ClockState {
 }
 
 /// Tempo-synced transport clock for driving sequencers, envelopes, and synced modulation.
-#[module(name = "_clock", channels = 2, args(tempo))]
+#[module(name = "_clock", channels = 2, args(tempo, numerator, denominator))]
 pub struct Clock {
     outputs: ClockOutputs,
     state: ClockState,

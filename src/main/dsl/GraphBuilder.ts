@@ -421,9 +421,9 @@ export class GraphBuilder {
     /** Global output gain signal (default: 2.5) */
     private outputGain: Signal = 2.5;
     /** Time signature numerator (beats per bar) for ROOT_CLOCK */
-    private timeSignatureNumerator: number | undefined;
+    private timeSignatureNumerator: number = 4;
     /** Time signature denominator (beat value) for ROOT_CLOCK */
-    private timeSignatureDenominator: number | undefined;
+    private timeSignatureDenominator: number = 4;
 
     constructor(schemas: ModuleSchema[]) {
         this.schemas = processSchemas(schemas);
@@ -763,8 +763,8 @@ export class GraphBuilder {
         this.deferredOutputs.clear();
         this.tempo = 120;
         this.outputGain = 2.5;
-        this.timeSignatureNumerator = undefined;
-        this.timeSignatureDenominator = undefined;
+        this.timeSignatureNumerator = 4;
+        this.timeSignatureDenominator = 4;
     }
 
     /**
