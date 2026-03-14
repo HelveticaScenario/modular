@@ -54,6 +54,22 @@ pub fn unwrap_attr(attrs: &[Attribute], ident: &str) -> Option<TokenStream2> {
         })
 }
 
+pub fn is_type(ty: &Type, is_type_fn: fn(&Type) -> bool) -> bool {
+    if let Type::Path(type_path) = ty {
+        let segments = &type_path.path.segments;
+        if let Some(last) = segments.last() {
+            if last.ident == "Option" {
+                if let syn::PathArguments::AngleBracketed(args) = &last.arguments {
+                    if let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first() {
+                        return is_type_fn(inner_ty);
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
 /// Check if a type is exactly PolySignal (for default_connection code generation)
 pub fn is_poly_signal_type(ty: &Type) -> bool {
     match ty {
@@ -93,22 +109,6 @@ pub fn is_option_mono_signal_type(ty: &Type) -> bool {
 /// Check if a type is Option<Signal>
 pub fn is_option_signal_type(ty: &Type) -> bool {
     is_type(ty, is_signal_type)
-}
-
-pub fn is_type(ty: &Type, is_type_fn: fn(&Type) -> bool) -> bool {
-    if let Type::Path(type_path) = ty {
-        let segments = &type_path.path.segments;
-        if let Some(last) = segments.last() {
-            if last.ident == "Option" {
-                if let syn::PathArguments::AngleBracketed(args) = &last.arguments {
-                    if let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first() {
-                        return is_type_fn(inner_ty);
-                    }
-                }
-            }
-        }
-    }
-    false
 }
 
 /// Check if a type is exactly Signal
