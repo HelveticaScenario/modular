@@ -298,7 +298,7 @@ mod tests {
         });
         // Force known phases (overwrite whatever init set)
         for i in 0..PORT_MAX_CHANNELS * PORT_MAX_CHANNELS {
-            s_no_detune.osc_states[i] = 0.25;
+            s_no_detune.state.osc_states[i] = 0.25;
         }
 
         let mut s_detune = make_supersaw(SupersawParams {

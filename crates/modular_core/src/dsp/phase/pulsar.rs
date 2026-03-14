@@ -70,7 +70,7 @@ pub struct Pulsar {
 impl Pulsar {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
-        let freq_connected = !self.params.freq.is_disconnected();
+        let freq_connected = self.params.freq.is_some();
 
         for ch in 0..num_channels {
             let state = &mut self.state.channels[ch];

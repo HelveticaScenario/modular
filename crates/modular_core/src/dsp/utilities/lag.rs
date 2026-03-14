@@ -74,11 +74,7 @@ impl LagProcessor {
             }
 
             let fall_time = self.params.fall.value_or(ch, 0.01).max(0.001);
-            let rise_time = if self.params.rise.is_disconnected() {
-                fall_time
-            } else {
-                self.params.rise.value_or(ch, 0.01).max(0.001)
-            };
+            let rise_time = self.params.rise.value_or(ch, fall_time).max(0.001);
 
             // Calculate max change per sample
             // time is seconds for 1.0v change (full scale)

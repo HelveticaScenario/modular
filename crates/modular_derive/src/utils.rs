@@ -69,19 +69,7 @@ pub fn is_poly_signal_type(ty: &Type) -> bool {
 
 /// Check if a type is Option<PolySignal>
 pub fn is_option_poly_signal_type(ty: &Type) -> bool {
-    if let Type::Path(type_path) = ty {
-        let segments = &type_path.path.segments;
-        if let Some(last) = segments.last() {
-            if last.ident == "Option" {
-                if let syn::PathArguments::AngleBracketed(args) = &last.arguments {
-                    if let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first() {
-                        return is_poly_signal_type(inner_ty);
-                    }
-                }
-            }
-        }
-    }
-    false
+    is_type(ty, is_poly_signal_type)
 }
 
 /// Check if a type is exactly MonoSignal (for default_connection code generation)
@@ -99,30 +87,22 @@ pub fn is_mono_signal_type(ty: &Type) -> bool {
 
 /// Check if a type is Option<MonoSignal>
 pub fn is_option_mono_signal_type(ty: &Type) -> bool {
-    if let Type::Path(type_path) = ty {
-        let segments = &type_path.path.segments;
-        if let Some(last) = segments.last() {
-            if last.ident == "Option" {
-                if let syn::PathArguments::AngleBracketed(args) = &last.arguments {
-                    if let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first() {
-                        return is_mono_signal_type(inner_ty);
-                    }
-                }
-            }
-        }
-    }
-    false
+    is_type(ty, is_mono_signal_type)
 }
 
 /// Check if a type is Option<Signal>
 pub fn is_option_signal_type(ty: &Type) -> bool {
+    is_type(ty, is_signal_type)
+}
+
+pub fn is_type(ty: &Type, is_type_fn: fn(&Type) -> bool) -> bool {
     if let Type::Path(type_path) = ty {
         let segments = &type_path.path.segments;
         if let Some(last) = segments.last() {
             if last.ident == "Option" {
                 if let syn::PathArguments::AngleBracketed(args) = &last.arguments {
                     if let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first() {
-                        return is_signal_type(inner_ty);
+                        return is_type_fn(inner_ty);
                     }
                 }
             }
