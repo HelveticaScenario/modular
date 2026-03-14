@@ -1,7 +1,7 @@
 use crate::{
     PORT_MAX_CHANNELS,
     dsp::utils::{TempGate, TempGateState, min_gate_samples},
-    poly::{PolyOutput, PolySignal, PolySignalExt},
+    poly::{PolyOutput, PolySignal},
 };
 use schemars::JsonSchema;
 use serde::Deserialize;

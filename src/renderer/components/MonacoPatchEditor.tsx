@@ -137,33 +137,37 @@ export function MonacoPatchEditor({
             model.updateOptions({ tabSize: 2, insertSpaces: true });
         }
 
+        // On Windows/Linux, use Ctrl; on macOS, use WinCtrl (physical Ctrl)
+        // This ensures all shortcuts use the Control key on all platforms.
+        const ctrl =
+            electronAPI.platform === 'darwin'
+                ? monaco.KeyMod.WinCtrl
+                : monaco.KeyMod.CtrlCmd;
+
         // On Windows, Monaco swallows global accelerators, so we need to
         // register them as Monaco keybindings that trigger the Electron menu actions.
         // Ctrl+Enter -> Update Patch (next bar; if already queued, Rust discards old + applies new immediately)
-        ed.addCommand(monaco.KeyMod.WinCtrl | monaco.KeyCode.Enter, () => {
+        ed.addCommand(ctrl | monaco.KeyCode.Enter, () => {
             window.electronAPI.triggerMenuAction('UPDATE_PATCH');
         });
 
         // Ctrl+Shift+Enter -> Update Patch (next beat)
-        ed.addCommand(
-            monaco.KeyMod.WinCtrl | monaco.KeyMod.Shift | monaco.KeyCode.Enter,
-            () => {
-                window.electronAPI.triggerMenuAction('UPDATE_PATCH_NEXT_BEAT');
-            },
-        );
+        ed.addCommand(ctrl | monaco.KeyMod.Shift | monaco.KeyCode.Enter, () => {
+            window.electronAPI.triggerMenuAction('UPDATE_PATCH_NEXT_BEAT');
+        });
 
         // Ctrl+. -> Stop Sound
-        ed.addCommand(monaco.KeyMod.WinCtrl | monaco.KeyCode.Period, () => {
+        ed.addCommand(ctrl | monaco.KeyCode.Period, () => {
             window.electronAPI.triggerMenuAction('STOP');
         });
 
         // Ctrl+N -> New File
-        ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyN, () => {
+        ed.addCommand(ctrl | monaco.KeyCode.KeyN, () => {
             window.electronAPI.triggerMenuAction('NEW_FILE');
         });
 
         // Ctrl+W -> Close Buffer
-        ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyW, () => {
+        ed.addCommand(ctrl | monaco.KeyCode.KeyW, () => {
             window.electronAPI.triggerMenuAction('CLOSE_BUFFER');
         });
     };

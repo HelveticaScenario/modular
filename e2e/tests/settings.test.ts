@@ -10,8 +10,8 @@ test.describe('settings panel', () => {
     }) => {
         await window.waitForTimeout(2000);
 
-        // Try keyboard shortcut first (Cmd+, on macOS)
-        await window.keyboard.press('Meta+,');
+        const shortcut = process.platform === 'darwin' ? 'Meta+,' : 'Control+,';
+        await window.keyboard.press(shortcut);
         await window.waitForTimeout(500);
 
         // Check if settings panel is visible
@@ -52,8 +52,8 @@ test.describe('settings panel', () => {
         await window.waitForTimeout(2000);
 
         // Open settings
-        await window.keyboard.press('Meta+,');
-        await window.waitForTimeout(1000);
+        const shortcut = process.platform === 'darwin' ? 'Meta+,' : 'Control+,';
+        await window.keyboard.press(shortcut);
 
         // Look for audio-related content
         const audioSection = window
@@ -73,7 +73,8 @@ test.describe('settings panel', () => {
         await window.waitForTimeout(2000);
 
         // Open settings
-        await window.keyboard.press('Meta+,');
+        const shortcut = process.platform === 'darwin' ? 'Meta+,' : 'Control+,';
+        await window.keyboard.press(shortcut);
         await window.waitForTimeout(500);
 
         const settingsPanel = window

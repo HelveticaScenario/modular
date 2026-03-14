@@ -394,6 +394,7 @@ impl CachedIntervalHap {
 }
 
 /// Per-voice state for polyphonic interval sequencer.
+#[derive(Clone, Debug, Default)]
 struct IntervalVoiceState {
     /// Cached hap info for this voice
     cached_hap: Option<CachedIntervalHap>,
@@ -409,18 +410,7 @@ struct IntervalVoiceState {
     last_assigned: f64,
 }
 
-impl Default for IntervalVoiceState {
-    fn default() -> Self {
-        Self {
-            cached_hap: None,
-            cached_voltage: 0.0,
-            gate: TempGate::new_gate(TempGateState::Low),
-            trigger: TempGate::new_gate(TempGateState::Low),
-            active: false,
-            last_assigned: 0.0,
-        }
-    }
-}
+
 
 fn default_channels() -> usize {
     4

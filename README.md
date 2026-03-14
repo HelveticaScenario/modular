@@ -21,6 +21,21 @@ A real-time modular synthesizer desktop app with a JavaScript DSL for live-codin
 
 > **Note:** This project uses [Volta](https://volta.sh/) to manage the Node.js version. If you have Volta installed, it will automatically use the correct version pinned in `package.json`.
 
+### Acquiring submodules
+
+Ensure that you've fetched the git submodules:
+
+```bash
+git submodule update --init --recursive
+```
+
+> **Note:** Failure to do so will produce an error along the lines of:
+
+```
+error: failed to load manifest for workspace member `/projects/operator/crates/modular_core`
+referenced by workspace at `/projects/operator/Cargo.toml`
+```
+
 ### Running the App
 
 ```bash

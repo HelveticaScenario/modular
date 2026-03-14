@@ -54,7 +54,7 @@ struct ClockDividerState {
 ///
 /// ```js
 /// // Pulses every other bar of the root clock:
-/// $clockDivider($rootClock.barTrigger, 2)
+/// $clockDivider($clock.barTrigger, 2)
 /// ```
 #[module(name = "$clockDivider", args(input, division))]
 pub struct ClockDivider {
