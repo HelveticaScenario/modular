@@ -1617,12 +1617,36 @@ const createMenu = (): void => {
                     ? [
                           { role: 'pasteAndMatchStyle' as const },
                           { role: 'delete' as const },
-                          { role: 'selectAll' as const },
+                          {
+                              label: 'Select All',
+                              accelerator: 'CmdOrCtrl+A',
+                              click: (_item, focusedWindow) => {
+                                  if (focusedWindow) {
+                                      BrowserWindow.fromId(
+                                          focusedWindow.id,
+                                      )?.webContents.send(
+                                          MENU_CHANNELS.SELECT_ALL,
+                                      );
+                                  }
+                              },
+                          },
                       ]
                     : [
                           { role: 'delete' as const },
                           { type: 'separator' as const },
-                          { role: 'selectAll' as const },
+                          {
+                              label: 'Select All',
+                              accelerator: 'CmdOrCtrl+A',
+                              click: (_item, focusedWindow) => {
+                                  if (focusedWindow) {
+                                      BrowserWindow.fromId(
+                                          focusedWindow.id,
+                                      )?.webContents.send(
+                                          MENU_CHANNELS.SELECT_ALL,
+                                      );
+                                  }
+                              },
+                          },
                       ]),
             ],
         },

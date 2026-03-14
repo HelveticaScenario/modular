@@ -18,11 +18,12 @@ import { ControlPanel } from './components/ControlPanel';
 import electronAPI from './electronAPI';
 import { ValidationError } from '@modular/core';
 import type { QueuedTrigger } from '@modular/core';
-import type {
-    FileTreeEntry,
-    SourceLocationInfo,
-    TransportSnapshot,
-    UpdateAvailableInfo,
+import {
+    type FileTreeEntry,
+    type SourceLocationInfo,
+    type TransportSnapshot,
+    type UpdateAvailableInfo,
+    MENU_CHANNELS,
 } from '../shared/ipcTypes';
 import type { SliderDefinition } from '../shared/dsl/sliderTypes';
 import { findSliderValueSpan } from './dsl/sliderSourceEdit';
@@ -143,23 +144,8 @@ function App() {
     const scopeCanvasMapRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
     const lastPatchResultRef = useRef<any>(null);
 
-    // Global Cmd+A / Ctrl+A handler: when editor doesn't have focus,
-    // focus it and select all text instead of selecting app content
     useEffect(() => {
-        const handleGlobalSelectAll = (e: KeyboardEvent) => {
-            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-            const isSelectAll = isMac ? e.metaKey : e.ctrlKey;
-            if (!isSelectAll || e.key !== 'a') return;
-
-            const editorEl = document.querySelector('.patch-editor');
-            if (!editorEl) return;
-
-            const isEditorFocused = editorEl.contains(document.activeElement);
-            if (isEditorFocused) return;
-
-            e.preventDefault();
-            e.stopPropagation();
-
+        const handleSelectAll = () => {
             const editorInstance = editorRef.current;
             if (editorInstance) {
                 editorInstance.focus();
@@ -170,9 +156,11 @@ function App() {
             }
         };
 
-        window.addEventListener('keydown', handleGlobalSelectAll);
-        return () =>
-            window.removeEventListener('keydown', handleGlobalSelectAll);
+        const channel = MENU_CHANNELS.SELECT_ALL;
+        electronAPI.on(channel, handleSelectAll);
+        return () => {
+            electronAPI.removeListener(channel, handleSelectAll);
+        };
     }, []);
 
     /** Long-lived invisible tracked decorations spanning each scope() call.
