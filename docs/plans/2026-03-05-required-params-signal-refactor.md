@@ -14,6 +14,28 @@
 
 ---
 
+## Key Decisions Record
+
+| Decision                     | Choice                                          | Rationale                                                                                   |
+| ---------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------- |
+| Signal::Disconnected         | Remove entirely                                 | Option<Signal> is more precise; Disconnected conflated param-level and value-level concepts |
+| PolySignal storage           | ArrayVec<Signal, 16>                            | Stack-allocated, no heap dealloc on audio thread, variable length                           |
+| PolySignal min channels      | At least 1                                      | Optionality lives at Option<PolySignal> level                                               |
+| MonoSignal behavior          | Still wraps PolySignal, sums channels           | Preserves poly-to-mono downmix capability                                                   |
+| Normalling API               | Extension trait on Option<Signal>               | `.value_or(default)` pattern, zero-cost, ergonomic                                          |
+| Optionality source of truth  | serde (via Option<T> and #[serde(default)])     | Single source, flows through schemars → JSON schema → TypeScript                            |
+| TS required detection        | schemars `required` array in JSON schema        | Built-in behavior, no custom metadata needed                                                |
+| has-default fields in TS     | Optional (not required)                         | User shouldn't be forced to provide params with sensible defaults                           |
+| Positional arg ordering      | Not enforced at compile time                    | TS lib generator handles it: trailing optionals get `?`, non-trailing get `                 | undefined` |
+| Constructor signature        | new(id, sample_rate, params)                    | Params available before init(); no Default needed                                           |
+| Param updates                | Swap params, send old to garbage_tx, no re-init | Same as today but old params are garbage-collected off audio thread                         |
+| Validation + deserialization | Merged into one step                            | Deserialization IS validation; errors returned as structured data from Rust                 |
+| Error format                 | Batch all missing params in one error           | "$module is missing required params: ['a', 'b']"                                            |
+| Migration                    | Big bang, all at once                           | No compat layer, clean break                                                                |
+| Backward compat for patches  | None                                            | Breaking change accepted                                                                    |
+
+---
+
 ## Phase 1: Signal Type Changes
 
 ### Task 1.1: Remove Signal::Disconnected variant

@@ -1,7 +1,7 @@
 use crate::{
-    dsp::utils::{min_gate_samples, TempGate, TempGateState},
-    poly::{PolyOutput, PolySignal, PolySignalExt},
     PORT_MAX_CHANNELS,
+    dsp::utils::{TempGate, TempGateState, min_gate_samples},
+    poly::{PolyOutput, PolySignal, PolySignalExt},
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -46,6 +46,12 @@ impl Default for EdgeChannelState {
     }
 }
 
+/// State for the RisingEdgeDetector module.
+#[derive(Default)]
+struct RisingEdgeDetectorState {
+    channels: [EdgeChannelState; PORT_MAX_CHANNELS],
+}
+
 /// Detects rising edges in a signal and emits a short pulse.
 ///
 /// Outputs 5 V for a single sample whenever the input increases.
@@ -60,7 +66,7 @@ impl Default for EdgeChannelState {
 pub struct RisingEdgeDetector {
     outputs: EdgeDetectorOutputs,
     params: RisingEdgeDetectorParams,
-    channels: [EdgeChannelState; PORT_MAX_CHANNELS],
+    state: RisingEdgeDetectorState,
 }
 
 impl RisingEdgeDetector {
@@ -69,7 +75,7 @@ impl RisingEdgeDetector {
         let hold = min_gate_samples(sample_rate);
 
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
             let input = self.params.input.get_value(ch);
 
             if input > state.last_input {
@@ -86,6 +92,12 @@ impl RisingEdgeDetector {
 
 message_handlers!(impl RisingEdgeDetector {});
 
+/// State for the FallingEdgeDetector module.
+#[derive(Default)]
+struct FallingEdgeDetectorState {
+    channels: [EdgeChannelState; PORT_MAX_CHANNELS],
+}
+
 /// Detects falling edges in a signal and emits a short pulse.
 ///
 /// Outputs 5 V for a single sample whenever the input decreases.
@@ -100,7 +112,7 @@ message_handlers!(impl RisingEdgeDetector {});
 pub struct FallingEdgeDetector {
     outputs: EdgeDetectorOutputs,
     params: FallingEdgeDetectorParams,
-    channels: [EdgeChannelState; PORT_MAX_CHANNELS],
+    state: FallingEdgeDetectorState,
 }
 
 impl FallingEdgeDetector {
@@ -109,7 +121,7 @@ impl FallingEdgeDetector {
         let hold = min_gate_samples(sample_rate);
 
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
             let input = self.params.input.get_value(ch);
 
             if input < state.last_input {

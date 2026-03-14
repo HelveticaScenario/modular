@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
+    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
     types::Clickless,
 };
 
@@ -89,6 +89,12 @@ pub fn mix_derive_channel_count(params: &MixParams) -> usize {
 pub struct Mix {
     outputs: MixOutputs,
     params: MixParams,
+    state: MixState,
+}
+
+/// State for the Mix module.
+#[derive(Default)]
+struct MixState {
     gain_buffer: [Clickless; PORT_MAX_CHANNELS],
 }
 
@@ -169,8 +175,8 @@ impl Mix {
             let amp_val = gain.value_or(i, 5.0);
             let normalized = (amp_val.abs() / 5.0).max(0.0);
             let curved = amp_val.signum() * normalized.powf(3.0);
-            self.gain_buffer[i].update(curved);
-            let gain_value = *self.gain_buffer[i];
+            self.state.gain_buffer[i].update(curved);
+            let gain_value = *self.state.gain_buffer[i];
             self.outputs.sample.set(i, pre_gain_value * gain_value);
         }
     }
@@ -191,7 +197,7 @@ mod tests {
             params,
             outputs,
             _channel_count: channels,
-            gain_buffer: Default::default(),
+            state: MixState::default(),
         }
     }
 

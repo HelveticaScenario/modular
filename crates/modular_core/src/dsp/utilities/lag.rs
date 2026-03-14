@@ -1,6 +1,6 @@
 use crate::{
-    poly::{PolyOutput, PolySignal, PolySignalExt},
     PORT_MAX_CHANNELS,
+    poly::{PolyOutput, PolySignal, PolySignalExt},
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -33,6 +33,12 @@ struct SlewChannelState {
     initialized: bool,
 }
 
+/// State for the LagProcessor module.
+#[derive(Default)]
+struct LagProcessorState {
+    channels: [SlewChannelState; PORT_MAX_CHANNELS],
+}
+
 /// Slew limiter that smooths abrupt voltage changes.
 ///
 /// Separate **rise** and **fall** times control how quickly the output can
@@ -52,7 +58,7 @@ struct SlewChannelState {
 pub struct LagProcessor {
     outputs: LagProcessorOutputs,
     params: LagProcessorParams,
-    channels: [SlewChannelState; PORT_MAX_CHANNELS],
+    state: LagProcessorState,
 }
 
 impl LagProcessor {
@@ -60,7 +66,7 @@ impl LagProcessor {
         let num_channels = self.channel_count();
 
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
             let input = self.params.input.get_value(ch);
             if !state.initialized {
                 state.current_value = input;

@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
+use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
 use crate::types::Clickless;
 
 #[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
@@ -35,6 +35,12 @@ struct ChannelState {
     out_max: Clickless,
 }
 
+/// State for the Remap module.
+#[derive(Default)]
+struct RemapState {
+    channels: [ChannelState; PORT_MAX_CHANNELS],
+}
+
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct RemapOutputs {
@@ -58,7 +64,7 @@ struct RemapOutputs {
 #[module(name = "$remap", args(input, outMin, outMax, inMin, inMax))]
 pub struct Remap {
     outputs: RemapOutputs,
-    channels: [ChannelState; PORT_MAX_CHANNELS],
+    state: RemapState,
     params: RemapParams,
 }
 
@@ -68,7 +74,7 @@ impl Remap {
 
         for i in 0..channels as usize {
             let input_val = self.params.input.get_value(i);
-            let state = &mut self.channels[i];
+            let state = &mut self.state.channels[i];
 
             // Smooth range parameters to avoid clicks
             state.in_min.update(self.params.in_min.value_or(i, -5.0));

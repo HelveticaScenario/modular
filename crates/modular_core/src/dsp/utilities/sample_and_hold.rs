@@ -1,7 +1,7 @@
 use crate::dsp::utils::{SchmittState, SchmittTrigger};
 use crate::{
-    poly::{PolyOutput, PolySignal, PolySignalExt},
     PORT_MAX_CHANNELS,
+    poly::{PolyOutput, PolySignal},
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -29,6 +29,12 @@ struct SampleAndHoldChannelState {
     held_value: f32,
 }
 
+/// State for the SampleAndHold module.
+#[derive(Default)]
+struct SampleAndHoldState {
+    channels: [SampleAndHoldChannelState; PORT_MAX_CHANNELS],
+}
+
 /// Captures and holds a voltage on each trigger.
 ///
 /// When **trigger** receives a rising edge, the current value of **input**
@@ -49,7 +55,7 @@ struct SampleAndHoldChannelState {
 pub struct SampleAndHold {
     outputs: SampleAndHoldOutputs,
     params: SampleAndHoldParams,
-    channels: [SampleAndHoldChannelState; PORT_MAX_CHANNELS],
+    state: SampleAndHoldState,
 }
 
 impl SampleAndHold {
@@ -57,7 +63,7 @@ impl SampleAndHold {
         let num_channels = self.channel_count();
 
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
             let input = self.params.input.get_value(ch);
             let trigger = self.params.trigger.get_value(ch);
 
@@ -99,6 +105,12 @@ struct TrackAndHoldChannelState {
     gate: SchmittTrigger,
 }
 
+/// State for the TrackAndHold module.
+#[derive(Default)]
+struct TrackAndHoldState {
+    channels: [TrackAndHoldChannelState; PORT_MAX_CHANNELS],
+}
+
 /// Follows the input while the gate is low, and holds the value when the
 /// gate goes high.
 ///
@@ -113,7 +125,7 @@ struct TrackAndHoldChannelState {
 pub struct TrackAndHold {
     outputs: TrackAndHoldOutputs,
     params: TrackAndHoldParams,
-    channels: [TrackAndHoldChannelState; PORT_MAX_CHANNELS],
+    state: TrackAndHoldState,
 }
 
 impl TrackAndHold {
@@ -121,7 +133,7 @@ impl TrackAndHold {
         let num_channels = self.channel_count();
 
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
             let input = self.params.input.get_value(ch);
             let gate = self.params.gate.get_value(ch);
 

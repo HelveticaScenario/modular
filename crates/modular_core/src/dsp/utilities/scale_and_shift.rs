@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt};
 
 #[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
@@ -37,8 +37,6 @@ struct ScaleAndShiftOutputs {
 #[module(name = "$scaleAndShift", args(input, scale, shift))]
 pub struct ScaleAndShift {
     outputs: ScaleAndShiftOutputs,
-    scale: [f32; PORT_MAX_CHANNELS],
-    shift: [f32; PORT_MAX_CHANNELS],
     params: ScaleAndShiftParams,
 }
 
@@ -51,12 +49,9 @@ impl ScaleAndShift {
             let scale_val = self.params.scale.value_or(i, 5.0);
             let shift_val = self.params.shift.value_or(i, 0.0);
 
-            self.scale[i] = scale_val;
-            self.shift[i] = shift_val;
-
             self.outputs
                 .sample
-                .set(i, input_val * (self.scale[i] / 5.0) + self.shift[i]);
+                .set(i, input_val * (scale_val / 5.0) + shift_val);
         }
     }
 }

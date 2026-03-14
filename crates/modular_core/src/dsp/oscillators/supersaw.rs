@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use crate::{
     dsp::utils::voct_to_hz,
-    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
+    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
 };
 
 fn default_voices() -> usize {
@@ -84,6 +84,12 @@ impl std::ops::DerefMut for OscStates {
 pub struct Supersaw {
     outputs: SupersawOutputs,
     params: SupersawParams,
+    state: SupersawState,
+}
+
+/// State for the Supersaw module.
+#[derive(Default)]
+struct SupersawState {
     /// Phase state for matrix mixing: indexed as [input_ch * PORT_MAX_CHANNELS + voice]
     osc_states: OscStates,
     rng_state: u32,
@@ -125,9 +131,9 @@ fn rand_phase(state: &mut u32) -> f32 {
 
 impl Supersaw {
     fn init(&mut self, _sample_rate: f32) {
-        self.rng_state = self as *const Self as usize as u32;
-        for i in 0..self.osc_states.len() {
-            self.osc_states[i] = rand_phase(&mut self.rng_state);
+        self.state.rng_state = self as *const Self as usize as u32;
+        for i in 0..self.state.osc_states.len() {
+            self.state.osc_states[i] = rand_phase(&mut self.state.rng_state);
         }
     }
 
@@ -178,7 +184,7 @@ impl Supersaw {
                 let dt = freq * inv_sample_rate;
 
                 let state_idx = input_ch * PORT_MAX_CHANNELS + voice;
-                let phase = &mut self.osc_states[state_idx];
+                let phase = &mut self.state.osc_states[state_idx];
 
                 // Advance phase
                 *phase += dt;
@@ -215,9 +221,8 @@ mod tests {
         Supersaw {
             params,
             outputs,
-            osc_states: OscStates::default(),
-            rng_state: 0,
             _channel_count: channels,
+            state: SupersawState::default(),
         }
     }
 

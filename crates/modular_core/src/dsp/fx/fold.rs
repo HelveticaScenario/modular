@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::dsp::fx::enosc_tables::{aa_fold, lookup_fold};
 use crate::dsp::utils::voct_to_hz;
-use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
+use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
 use crate::types::Clickless;
 
 #[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
@@ -38,13 +38,19 @@ struct ChannelState {
     amount: Clickless,
 }
 
+/// State for the Fold module.
+#[derive(Default)]
+struct FoldState {
+    channels: [ChannelState; PORT_MAX_CHANNELS],
+}
+
 /// Wavefolder that reflects the signal back when it exceeds a threshold,
 /// producing dense, harmonically rich tones. Higher amounts create more
 /// complex, metallic timbres.
 #[module(name = "$fold", args(input, amount))]
 pub struct Fold {
     outputs: FoldOutputs,
-    channels: [ChannelState; PORT_MAX_CHANNELS],
+    state: FoldState,
     params: FoldParams,
 }
 
@@ -54,7 +60,7 @@ impl Fold {
         let freq_connected = !self.params.freq.is_disconnected();
 
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
 
             let input = self.params.input.get_value(ch);
             let amount_raw = self.params.amount.value_or(ch, 0.0);

@@ -315,7 +315,8 @@ fn impl_module_macro_attr(
                 // Generate per-field initialization for the inner module struct.
                 // - `params` → use deserialized params
                 // - `_channel_count` → use deserialized channel count
-                // - all other fields → use Default::default()
+                // - `outputs` and `state` → use Default::default()
+                // - other fields → error
                 let field_inits: Vec<TokenStream2> = fields
                     .named
                     .iter()
@@ -323,13 +324,22 @@ fn impl_module_macro_attr(
                         let field_name = f.ident.as_ref().unwrap();
                         let field_name_str = field_name.to_string();
                         match field_name_str.as_str() {
-                            "params" => quote! { params: *concrete_params },
+                            "params" => Ok(quote! { params: *concrete_params }),
                             "_channel_count" => {
-                                quote! { _channel_count: deserialized.channel_count }
+                                Ok(quote! { _channel_count: deserialized.channel_count })
                             }
-                            _ => quote! { #field_name: Default::default() },
+                            "outputs" | "state" => Ok(quote! { #field_name: Default::default() }),
+                            other => Err(syn::Error::new(
+                                field_name.span(),
+                                format!(
+                                    "Module struct field `{other}` is not allowed. \
+                                     Only `state`, `outputs`, and `params` fields are permitted.",
+                                ),
+                            )),
                         }
                     })
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
                     .collect();
 
                 (outputs_ty, field_inits)

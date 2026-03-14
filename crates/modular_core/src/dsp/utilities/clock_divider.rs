@@ -2,8 +2,8 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::dsp::utils::{min_gate_samples, SchmittTrigger, TempGate, TempGateState};
-use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
+use crate::dsp::utils::{SchmittTrigger, TempGate, TempGateState, min_gate_samples};
+use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
 use crate::types::ClockMessages;
 
 fn default_division() -> u32 {
@@ -40,6 +40,12 @@ struct ChannelState {
     trigger_gate: TempGate,
 }
 
+/// State for the ClockDivider module.
+#[derive(Default)]
+struct ClockDividerState {
+    channels: [ChannelState; PORT_MAX_CHANNELS],
+}
+
 /// Divides an incoming clock signal so it fires less often.
 ///
 /// Feed it a clock and set **division** to an integer — the output will
@@ -54,7 +60,7 @@ struct ChannelState {
 pub struct ClockDivider {
     params: ClockDividerParams,
     outputs: ClockDividerOutputs,
-    channels: [ChannelState; PORT_MAX_CHANNELS],
+    state: ClockDividerState,
 }
 
 message_handlers!(impl ClockDivider {
@@ -66,7 +72,7 @@ impl ClockDivider {
         match m {
             ClockMessages::Start => {
                 // Reset all channel counters on start
-                for state in self.channels.iter_mut() {
+                for state in self.state.channels.iter_mut() {
                     state.counter = 0;
                 }
             }
@@ -83,7 +89,7 @@ impl ClockDivider {
         let hold = min_gate_samples(sample_rate);
 
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
 
             // Reset counter on rising edge of reset trigger
             if state

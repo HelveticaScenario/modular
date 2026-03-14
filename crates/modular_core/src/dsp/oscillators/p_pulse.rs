@@ -1,6 +1,6 @@
 use crate::{
     dsp::utils::wrap,
-    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
+    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
     types::Clickless,
 };
 use schemars::JsonSchema;
@@ -35,6 +35,12 @@ struct ChannelState {
     prev_phase: f32,
 }
 
+/// State for the PPulseOscillator module.
+#[derive(Default)]
+struct PPulseOscillatorState {
+    channels: [ChannelState; PORT_MAX_CHANNELS],
+}
+
 /// Phase-driven pulse/square oscillator with pulse width modulation.
 ///
 /// Instead of a frequency input, this oscillator is driven by an external
@@ -49,7 +55,7 @@ struct ChannelState {
 #[module(name = "$pPulse", args(phase))]
 pub struct PPulseOscillator {
     outputs: PPulseOscillatorOutputs,
-    channels: [ChannelState; PORT_MAX_CHANNELS],
+    state: PPulseOscillatorState,
     params: PPulseOscillatorParams,
 }
 
@@ -58,7 +64,7 @@ impl PPulseOscillator {
         let num_channels = self.channel_count();
 
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
 
             let base_width = self.params.width.value_or(ch, 2.5);
             let pwm = self.params.pwm.value_or(ch, 0.0);

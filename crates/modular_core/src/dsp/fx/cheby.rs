@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::dsp::fx::enosc_tables::{aa_cheby, interpolate_cheby};
 use crate::dsp::utils::voct_to_hz;
-use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
+use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
 use crate::types::Clickless;
 
 #[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
@@ -38,6 +38,12 @@ struct ChannelState {
     amount: Clickless,
 }
 
+/// State for the Cheby module.
+#[derive(Default)]
+struct ChebyState {
+    channels: [ChannelState; PORT_MAX_CHANNELS],
+}
+
 /// Harmonic waveshaping effect that adds controlled overtone content.
 ///
 /// At low amounts the signal passes through cleanly; turning it up
@@ -46,7 +52,7 @@ struct ChannelState {
 #[module(name = "$cheby", args(input, amount))]
 pub struct Cheby {
     outputs: ChebyOutputs,
-    channels: [ChannelState; PORT_MAX_CHANNELS],
+    state: ChebyState,
     params: ChebyParams,
 }
 
@@ -56,7 +62,7 @@ impl Cheby {
         let freq_connected = !self.params.freq.is_disconnected();
 
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
 
             let input = self.params.input.get_value(ch);
             let amount_raw = self.params.amount.value_or(ch, 0.0);

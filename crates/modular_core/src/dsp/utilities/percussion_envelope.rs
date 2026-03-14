@@ -1,5 +1,5 @@
 use crate::dsp::utils::SchmittTrigger;
-use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
+use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -30,6 +30,12 @@ struct ChannelState {
     in_attack: bool,
 }
 
+/// State for the PercussionEnvelope module.
+#[derive(Default)]
+struct PercussionEnvelopeState {
+    channels: [ChannelState; PORT_MAX_CHANNELS],
+}
+
 /// Simple envelope for percussive sounds.
 ///
 /// A rising edge on **trigger** starts the envelope at 5 V, which then
@@ -46,7 +52,7 @@ struct ChannelState {
 pub struct PercussionEnvelope {
     outputs: PercussionEnvelopeOutputs,
     params: PercussionEnvelopeParams,
-    channels: [ChannelState; PORT_MAX_CHANNELS],
+    state: PercussionEnvelopeState,
 }
 
 impl PercussionEnvelope {
@@ -54,7 +60,7 @@ impl PercussionEnvelope {
         let num_channels = self.channel_count();
 
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
 
             let decay_time = self.params.decay.value_or(ch, 0.1).max(0.001);
 

@@ -3,7 +3,7 @@ use crate::{
         consts::{LUT_SINE, LUT_SINE_SIZE},
         utils::{interpolate, voct_to_hz},
     },
-    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
+    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -30,6 +30,12 @@ struct ChannelState {
     phase: f32,
 }
 
+/// State for the SineOscillator module.
+#[derive(Default)]
+struct SineOscillatorState {
+    channels: [ChannelState; PORT_MAX_CHANNELS],
+}
+
 /// A sine wave oscillator.
 ///
 /// ## Example
@@ -40,7 +46,7 @@ struct ChannelState {
 #[module(name = "$sine", args(freq))]
 pub struct SineOscillator {
     outputs: SineOscillatorOutputs,
-    channels: [ChannelState; PORT_MAX_CHANNELS],
+    state: SineOscillatorState,
     params: SineOscillatorParams,
 }
 
@@ -49,7 +55,7 @@ impl SineOscillator {
         let num_channels = self.channel_count();
 
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
 
             let frequency = voct_to_hz(self.params.freq.value_or(ch, 0.0)) / sample_rate;
             state.phase += frequency;

@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::{
     dsp::utils::{changed, voct_to_hz},
-    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
+    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
     types::Clickless,
 };
 
@@ -167,6 +167,12 @@ struct ChannelState {
     smooth_mid_high: Clickless,
 }
 
+/// State for the Crossover module.
+#[derive(Default)]
+struct CrossoverState {
+    channels: [ChannelState; PORT_MAX_CHANNELS],
+}
+
 // ── Module ───────────────────────────────────────────────────────────────────
 
 /// EXPERIMENTAL
@@ -193,7 +199,7 @@ struct ChannelState {
 #[module(name = "$xover", args(input))]
 pub struct Crossover {
     outputs: CrossoverOutputs,
-    channels: [ChannelState; PORT_MAX_CHANNELS],
+    state: CrossoverState,
     params: CrossoverParams,
 }
 
@@ -202,7 +208,7 @@ impl Crossover {
         let channels = self.channel_count();
 
         for ch in 0..channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
 
             let input = self.params.input.get_value(ch);
 
