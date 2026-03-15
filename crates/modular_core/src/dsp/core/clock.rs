@@ -114,9 +114,15 @@ impl Clock {
         let bpm = self.params.tempo.max(1.0);
         let frequency_hz = bpm / 60.0;
 
+        // Time signature: numerator = beats per bar, denominator = beat value
+        // Clamp to valid values (minimum 1) to avoid division by zero
         let numerator = self.params.numerator.max(1) as f64;
         let denominator = self.params.denominator.max(1) as f64;
 
+        // Calculate phase increment per sample
+        // BPM tempo is in quarter notes per minute, so frequency_hz = quarter notes per second.
+        // quarter_notes_per_bar tells us how many quarter notes fit in one bar given the time sig.
+        // e.g. 4/4 = 4 quarter notes, 3/4 = 3, 6/8 = 3, 7/8 = 3.5
         let quarter_notes_per_bar = numerator * 4.0 / denominator;
         let bar_frequency = frequency_hz / quarter_notes_per_bar;
         let phase_increment = bar_frequency / sample_rate as f64;
@@ -125,30 +131,46 @@ impl Clock {
         self.state.ppq_phase += phase_increment;
         self.state.beat_phase += phase_increment;
 
+        // Wrap phase at 1.0
         if self.state.phase >= 1.0 {
             self.state.phase -= 1.0;
             self.state.loop_index += 1;
         }
 
+        // PPQ phase wraps at 12 PPQ per quarter note (= 12 * quarter_notes_per_bar per bar)
         let ppq_period = 1.0 / (12.0 * quarter_notes_per_bar);
         if self.state.ppq_phase >= ppq_period {
             self.state.ppq_phase -= ppq_period;
         }
 
+        // Beat phase wraps once per beat (numerator beats per bar)
         let beat_period = 1.0 / numerator;
         if self.state.beat_phase >= beat_period {
             self.state.beat_phase -= beat_period;
         }
 
+        // Derive beat_in_bar from the bar phase
+        // phase goes from 0..1 over one bar, each beat occupies 1/numerator of the bar
         self.outputs.beat_in_bar = (self.state.phase * numerator).floor() as f32;
 
         self.outputs.playhead.set(0, self.state.phase as f32);
         self.outputs.playhead.set(1, self.state.loop_index as f32);
 
+        // Generate ramp output (0 to 5V over one bar)
         self.outputs.ramp = self.state.phase as f32 * 5.0;
 
         let hold = min_gate_samples(sample_rate);
 
+        // --- Trigger generation via SchmittTrigger + TempGate ---
+        //
+        // For each phase (bar, beat, ppq) the signal `phase_increment − phase`
+        // is negative for most of the cycle and goes positive at the wrap
+        // point (when phase resets near zero). A SchmittTrigger with both
+        // thresholds at 0.0 detects this rising edge, and a TempGate
+        // stretches the single-sample event into a multi-sample 5V pulse
+        // of duration `hold` (≈16 samples at 48 kHz).
+
+        // Bar trigger
         if self
             .state
             .bar_schmitt
@@ -160,6 +182,7 @@ impl Clock {
         }
         self.outputs.bar_trigger = self.state.bar_gate.process();
 
+        // Beat trigger
         if self
             .state
             .beat_schmitt
@@ -171,6 +194,7 @@ impl Clock {
         }
         self.outputs.beat_trigger = self.state.beat_gate.process();
 
+        // PPQ trigger
         if self
             .state
             .ppq_schmitt
@@ -187,6 +211,7 @@ impl Clock {
         match m {
             ClockMessages::Start => {
                 self.state.running = true;
+                // Start implies a transport reset.
                 self.state.phase = 0.0;
                 self.state.ppq_phase = 0.0;
                 self.state.beat_phase = 0.0;
@@ -209,7 +234,7 @@ impl Clock {
             }
             ClockMessages::Stop => {
                 self.state.running = false;
-                println!("Clock stopped");
+                // Ensure triggers are low while stopped.
                 self.outputs.bar_trigger = 0.0;
                 self.outputs.beat_trigger = 0.0;
                 self.outputs.ppq_trigger = 0.0;
@@ -239,6 +264,7 @@ mod tests {
         }
         assert!((c.state.phase - phase_before).abs() < 1e-9);
 
+        // Start should reset and run.
         let _ = c.on_clock_message(&ClockMessages::Start);
         assert!((c.state.phase - 0.0).abs() < 1e-9);
 
@@ -389,10 +415,12 @@ mod tests {
         let mut c = Clock::default();
         let sr = 48_000.0;
 
+        // Advance partway through a bar
         for _ in 0..24_000 {
             c.update(sr);
         }
 
+        // Start should reset beat phase
         let _ = c.on_clock_message(&ClockMessages::Start);
         assert!(
             (c.state.beat_phase - 0.0).abs() < 1e-9,
