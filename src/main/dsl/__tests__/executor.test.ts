@@ -388,12 +388,12 @@ describe('sequencing', () => {
     });
 
     test('$iCycle with interval pattern (array)', () => {
-        const patch = execPatch('$iCycle(["0 2 4 5 7"], "major").out()');
+        const patch = execPatch('$iCycle(["0 2 4 5 7"], "C(major)").out()');
         expect(findModules(patch, '$iCycle').length).toBe(1);
     });
 
     test('$iCycle with interval pattern (string)', () => {
-        const patch = execPatch('$iCycle("0 2 4 5 7", "major").out()');
+        const patch = execPatch('$iCycle("0 2 4 5 7", "C(major)").out()');
         expect(findModules(patch, '$iCycle').length).toBe(1);
     });
 });
@@ -431,7 +431,7 @@ describe('utilities', () => {
     });
 
     test('$quantizer', () => {
-        const patch = execPatch('$quantizer($sine("C4"), 0, "major").out()');
+        const patch = execPatch('$quantizer($sine("C4"), "C(major)").out()');
         expect(findModules(patch, '$quantizer').length).toBe(1);
     });
 
@@ -606,7 +606,7 @@ describe('error handling', () => {
 
     test('missing required param throws with module name, line, and param name', () => {
         expect(() => execPatch('$lpf()')).toThrow(
-            '$lpf (line 1): missing required parameter "input"',
+            '$lpf at line 1: missing required parameter "input"',
         );
     });
 

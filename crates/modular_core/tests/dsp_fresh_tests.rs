@@ -357,32 +357,6 @@ fn schemas_have_non_empty_documentation() {
     }
 }
 
-// ─── Param validation ────────────────────────────────────────────────────────
-
-#[test]
-fn param_validators_accept_valid_params() {
-    use modular_core::dsp::get_param_validators;
-    let validators = get_param_validators();
-
-    // Sine with a numeric freq should pass
-    if let Some(validate) = validators.get("$sine") {
-        let result = validate(&json!({ "freq": 0.0 }));
-        assert!(result.is_ok(), "valid sine params rejected: {:?}", result);
-    }
-}
-
-#[test]
-fn param_validators_reject_bogus_params() {
-    use modular_core::dsp::get_param_validators;
-    let validators = get_param_validators();
-
-    // Sine with an object as freq should fail
-    if let Some(validate) = validators.get("$sine") {
-        let result = validate(&json!({ "freq": { "nested": true } }));
-        assert!(result.is_err(), "invalid sine params should be rejected");
-    }
-}
-
 // ─── Patch-level helpers ─────────────────────────────────────────────────────
 
 /// Process one frame of the entire patch (update all, then tick all).

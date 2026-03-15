@@ -117,7 +117,7 @@ lazy_static! {
     pub static ref ROOT_ID: String = WellKnownModule::RootOutput.id().into();
     pub static ref ROOT_OUTPUT_PORT: &'static str = WellKnownModule::RootOutput.default_port();
     pub static ref ROOT_CLOCK_ID: String = WellKnownModule::RootClock.id().into();
-    static ref RE_HZ: Regex = Regex::new(r"^(-?\d*\.?\d+)hz$").unwrap();
+    static ref RE_HZ: Regex = Regex::new(r"(?i)^(-?\d*\.?\d+)hz$").unwrap();
     static ref RE_MIDI: Regex = Regex::new(r"^(-?\d*\.?\d+)m$").unwrap();
     static ref RE_SCALE: Regex = Regex::new(r"^(-?\d*\.?\d+)s\(([^:]+):([^)]+)\)$").unwrap();
     static ref RE_NOTE: Regex = Regex::new(r"^([A-Ga-g])([#b]?)(-?\d+)?$").unwrap();
@@ -171,31 +171,13 @@ pub trait Module {
     fn install_constructor(map: &mut HashMap<String, SampleableConstructor>);
     fn get_schema() -> ModuleSchema;
 
-    /// Register this module's parameter validator in the provided map.
-    ///
-    /// The key is the module type string (e.g. "noise"). The value is a function
-    /// that attempts to deserialize a JSON params object into the module's concrete
-    /// `*Params` type.
-    fn install_params_validator(map: &mut HashMap<String, ParamsValidator>);
-
     /// Register this module's params deserializer in the provided map.
     ///
     /// The key is the module type string (e.g. "sine"). The value is a function
     /// that deserializes a JSON params object (with `__argument_spans` already
     /// stripped) into a `CachedParams`.
     fn install_params_deserializer(map: &mut HashMap<String, crate::params::ParamsDeserializer>);
-
-    /// Validate a JSON params object by attempting to parse it as the module's concrete
-    /// params type.
-    ///
-    /// This is intended for server-side patch validation before applying the patch.
-    fn validate_params_json(params: &serde_json::Value) -> napi::Result<()>;
 }
-
-/// Function pointer type used to validate a module's `ModuleState.params`.
-///
-/// The validator should return Ok if deserialization into the module's concrete params type succeeds.
-pub type ParamsValidator = fn(&serde_json::Value) -> napi::Result<()>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {

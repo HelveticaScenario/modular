@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::params::ParamsDeserializer;
-use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
+use crate::types::{Module, ModuleSchema, SampleableConstructor};
 
 pub mod adsr;
 pub mod clamp;
@@ -42,26 +42,6 @@ pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     spread::Spread::install_constructor(map);
     unison::Unison::install_constructor(map);
     wrap::Wrap::install_constructor(map);
-}
-
-pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
-    adsr::Adsr::install_params_validator(map);
-    clamp::Clamp::install_params_validator(map);
-    clock_divider::ClockDivider::install_params_validator(map);
-    curve::Curve::install_params_validator(map);
-    lag::LagProcessor::install_params_validator(map);
-    logic::RisingEdgeDetector::install_params_validator(map);
-    logic::FallingEdgeDetector::install_params_validator(map);
-    math::Math::install_params_validator(map);
-    remap::Remap::install_params_validator(map);
-    sample_and_hold::SampleAndHold::install_params_validator(map);
-    sample_and_hold::TrackAndHold::install_params_validator(map);
-    percussion_envelope::PercussionEnvelope::install_params_validator(map);
-    quantizer::Quantizer::install_params_validator(map);
-    scale_and_shift::ScaleAndShift::install_params_validator(map);
-    spread::Spread::install_params_validator(map);
-    unison::Unison::install_params_validator(map);
-    wrap::Wrap::install_params_validator(map);
 }
 
 pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer>) {

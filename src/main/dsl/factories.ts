@@ -281,7 +281,7 @@ export class DSLContext {
                 node.getParamsSnapshot(),
             );
 
-            // Check for missing required params
+            // Check for errors from param deserialization
             if (deriveResult.errors) {
                 const missingParams = deriveResult.errors.flatMap(
                     (e) => e.params,
@@ -291,10 +291,23 @@ export class DSLContext {
                         .map((p) => `"${p}"`)
                         .join(', ');
                     const loc = sourceLocation
-                        ? ` (line ${sourceLocation.line})`
+                        ? ` at line ${sourceLocation.line}`
                         : '';
                     throw new Error(
                         `${schema.name}${loc}: missing required parameter ${paramList}`,
+                    );
+                }
+
+                // Non-missing-field errors (type mismatches, invalid values, etc.)
+                const otherErrors = deriveResult.errors.filter(
+                    (e) => e.params.length === 0,
+                );
+                if (otherErrors.length > 0) {
+                    const loc = sourceLocation
+                        ? ` at line ${sourceLocation.line}`
+                        : '';
+                    throw new Error(
+                        `${schema.name}${loc}: ${otherErrors[0].message}`,
                     );
                 }
             }
