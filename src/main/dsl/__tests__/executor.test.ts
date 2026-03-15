@@ -2,20 +2,15 @@
  * Integration tests for the DSL executor pipeline.
  *
  * These tests exercise the full DSL → PatchGraph pipeline:
- *   getSchemas() → executePatchScript(source, schemas) → PatchGraph
+ *   schemas.json → executePatchScript(source, schemas) → PatchGraph
  *
  * No Electron, no audio hardware needed — runs in plain Node.js via Vitest.
  */
 
-import { describe, test, expect, beforeAll } from 'vitest';
-import { getSchemas, type ModuleSchema, type PatchGraph } from '@modular/core';
+import { describe, test, expect } from 'vitest';
+import type { PatchGraph } from '@modular/core';
+import schemas from '@modular/core/schemas.json';
 import { executePatchScript, type DSLExecutionResult } from '../executor';
-
-let schemas: ModuleSchema[];
-
-beforeAll(() => {
-    schemas = getSchemas();
-});
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -41,7 +36,7 @@ function userModules(patch: PatchGraph) {
 // ─── Schema loading ──────────────────────────────────────────────────────────
 
 describe('schema loading', () => {
-    test('getSchemas returns non-empty array', () => {
+    test('schemas.json contains non-empty array', () => {
         expect(schemas.length).toBeGreaterThan(0);
     });
 

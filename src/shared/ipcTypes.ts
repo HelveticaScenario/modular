@@ -20,10 +20,10 @@ import type {
     AudioConfigOptions,
     TransportSnapshot,
     QueuedTrigger,
-    getSchemas,
     getMiniLeafSpans,
     Synthesizer,
 } from '@modular/core';
+import type schemas from '@modular/core/schemas.json';
 import type { SliderDefinition } from './dsl/sliderTypes';
 
 export type {
@@ -334,7 +334,7 @@ export const MENU_CHANNELS = {
  */
 export interface IPCHandlers {
     // Schema operations
-    [IPC_CHANNELS.GET_SCHEMAS]: typeof getSchemas;
+    [IPC_CHANNELS.GET_SCHEMAS]: () => typeof schemas;
 
     // DSL operations
     [IPC_CHANNELS.DSL_EXECUTE]: (

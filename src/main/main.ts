@@ -10,12 +10,12 @@ import {
     autoUpdater,
 } from 'electron';
 import {
-    getSchemas,
     getMiniLeafSpans,
     PatchGraph,
     Synthesizer,
     AudioConfigOptions,
 } from '@modular/core';
+import schemas from '@modular/core/schemas.json';
 import {
     IPC_CHANNELS,
     IPCHandlers,
@@ -668,15 +668,17 @@ function registerIPCHandler<T extends keyof typeof IPC_CHANNELS>(
 }
 
 // Register all IPC handlers
+// Note: do this instead of importing schemas in renderer to avoid hot-reloading schema changes before 
+// main process has restarted with the updated native module.
 registerIPCHandler('GET_SCHEMAS', () => {
-    return getSchemas();
+    return schemas;
 });
 
 // DSL lib source for Monaco autocomplete - cached since schemas don't change at runtime
 let cachedLibSource: string | null = null;
 registerIPCHandler('GET_DSL_LIB_SOURCE', () => {
     if (!cachedLibSource) {
-        cachedLibSource = buildLibSource(getSchemas());
+        cachedLibSource = buildLibSource(schemas);
     }
     return cachedLibSource;
 });
@@ -686,7 +688,6 @@ registerIPCHandler(
     'DSL_EXECUTE',
     (source, sourceId, trigger): DSLExecuteResult => {
         try {
-            const schemas = getSchemas();
             const {
                 patch,
                 sourceLocationMap,

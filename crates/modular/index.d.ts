@@ -191,8 +191,6 @@ export declare function getPatternPolyphony(source: string): number
  */
 export declare function getReservedOutputNames(): Array<string>
 
-export declare function getSchemas(): Array<ModuleSchema>
-
 /** Per-host device info for the cache snapshot */
 export interface HostDeviceInfo {
   hostId: string

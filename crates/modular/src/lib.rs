@@ -1048,11 +1048,6 @@ impl Synthesizer {
   }
 }
 
-#[napi]
-pub fn get_schemas() -> Result<Vec<modular_core::types::ModuleSchema>> {
-  Ok(schema())
-}
-
 /// Validate a PatchGraph against the module schemas.
 ///
 /// Returns an array of validation errors (empty = valid).

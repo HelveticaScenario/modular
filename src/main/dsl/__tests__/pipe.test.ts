@@ -3,7 +3,7 @@
  */
 
 import { describe, test, expect, beforeAll } from 'vitest';
-import { getSchemas, type ModuleSchema } from '@modular/core';
+import schemas from '@modular/core/schemas.json';
 import {
     GraphBuilder,
     BaseCollection,
@@ -11,11 +11,9 @@ import {
     ModuleOutput,
 } from '../GraphBuilder';
 
-let schemas: ModuleSchema[];
 let builder: GraphBuilder;
 
 beforeAll(() => {
-    schemas = getSchemas();
     builder = new GraphBuilder(schemas);
 });
 
