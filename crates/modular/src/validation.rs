@@ -341,7 +341,7 @@ fn validate_signal_reference(
         });
       }
     }
-    Signal::Volts(..) | Signal::Disconnected => {}
+    Signal::Volts(..) => {}
   }
 }
 
@@ -357,7 +357,7 @@ fn validate_signals_in_json_value(
   // This avoids false positives and reduces cloning.
   if let Some(obj) = value.as_object()
     && let Some(tag) = obj.get("type").and_then(|v| v.as_str())
-    && matches!(tag, "cable" | "track" | "volts" | "disconnected")
+    && matches!(tag, "cable" | "volts")
     && let Ok(signal) = serde_json::from_value::<Signal>(value.clone())
   {
     validate_signal_reference(&signal, field, location, module_by_id, schema_map, errors);
@@ -386,7 +386,7 @@ fn validate_signals_in_json_value(
 /// Validates:
 /// - All module types exist in the schema
 /// - Params in `ModuleState.params` are known for the module type
-/// - Signal params with Cable/Track references point to existing modules/ports
+/// - Signal params with Cable references point to existing modules/ports
 /// - Scopes reference existing module outputs
 pub fn validate_patch(
   patch: &PatchGraph,
@@ -397,15 +397,14 @@ pub fn validate_patch(
   // accumulates *all* issues it can find, returning them together.
   //
   // High-level flow:
-  // 1) Build fast lookup tables (schemas by name, modules by id, track ids).
+  // 1) Build fast lookup tables (schemas by name, modules by id).
   // 2) Validate each module:
   //    - module type exists
   //    - module params only use known param names
-  //    - for params whose schema indicates a `Signal`, validate any Cable/Track references
+  //    - for params whose schema indicates a `Signal`, validate any Cable references
   // 3) Validate scopes:
   //    - referenced module exists
   //    - referenced output port exists on the module type
-  //    - referenced track exists
   let mut errors = Vec::new();
 
   // === Indexing ===
@@ -490,7 +489,7 @@ pub fn validate_patch(
     //
     // Notes:
     // - The generated typed validators (step 3b) ensure params have the correct shape/type.
-    // - Here we *only* validate that any referenced targets (Cable/Track) actually exist.
+    // - Here we *only* validate that any referenced cables actually exist.
     // - Params may contain Signals nested inside arbitrary serializable structures.
     for (param_name, param_value) in param_obj {
       // Skip internal metadata fields used for editor features (argument spans tracking).
