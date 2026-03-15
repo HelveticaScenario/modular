@@ -2,9 +2,9 @@ use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::PolyOutput;
-use crate::dsp::utils::{SchmittTrigger, TempGate, TempGateState, min_gate_samples};
+use crate::dsp::utils::{min_gate_samples, SchmittTrigger, TempGate, TempGateState};
 use crate::types::ClockMessages;
+use crate::PolyOutput;
 
 /// Deserialize a u32 that must be >= 1 (positive integer).
 /// Rejects 0 with a descriptive error so any clock instance gets validated.
@@ -108,9 +108,10 @@ message_handlers!(impl Clock {
 impl Clock {
     fn update(&mut self, sample_rate: f32) {
         if !self.state.running {
-            return;
+            return; // If not running, skip the rest of the update to keep outputs where they are until clock starts
         }
 
+        // Tempo is a plain BPM value
         let bpm = self.params.tempo.max(1.0);
         let frequency_hz = bpm / 60.0;
 
