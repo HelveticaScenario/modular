@@ -1083,9 +1083,12 @@ pub struct DeriveChannelCountError {
   pub params: Vec<String>,
 }
 
-/// Parse a serde deserialization error to extract missing field names.
+/// Parse a serde deserialization error to extract missing field names and
+/// translate the raw message into a user-friendly form.
+///
+/// Returns `(translated_message, missing_field_names)`.
 /// serde_json produces errors like: "missing field `input` at line 1 column 42"
-fn parse_deserialization_error(error: &str) -> (String, Vec<String>) {
+fn parse_deserialization_error(error: &str, module_type: &str) -> (String, Vec<String>) {
   let mut missing_fields = Vec::new();
 
   // serde_json only reports the FIRST missing field per deserialization attempt.
@@ -1097,7 +1100,79 @@ fn parse_deserialization_error(error: &str) -> (String, Vec<String>) {
     }
   }
 
-  (error.to_string(), missing_fields)
+  let translated = translate_serde_error(error, module_type);
+  (translated, missing_fields)
+}
+
+/// Translate serde deserialization errors into user-friendly messages.
+///
+/// Maps cryptic Rust/serde error messages to DSL-oriented explanations.
+fn translate_serde_error(raw: &str, module_type: &str) -> String {
+  // Pattern: "data did not match any variant of untagged enum PolySignalDe"
+  if raw.contains("untagged enum PolySignalDe") || raw.contains("untagged enum SignalDe") {
+    return format!(
+      "invalid input for '{}' parameter\nExpected: a signal: number, string (e.g. '440hz', 'c4'), or module output",
+      module_type
+    );
+  }
+
+  // Pattern: "invalid type: map, expected a sequence"
+  if raw.contains("invalid type: map, expected a sequence") {
+    return "expected an array of signals, got a single object\nExpected: an array like [signal1, signal2, ...]".to_string();
+  }
+
+  // Pattern: "invalid type: sequence, expected a map"
+  if raw.contains("invalid type: sequence, expected a map") {
+    return "expected a single signal, got an array\nExpected: a single signal (number, string, or module output)".to_string();
+  }
+
+  // Pattern: "invalid type: X, expected Y"
+  if let Some(start) = raw.find("invalid type: ") {
+    let rest = &raw[start + "invalid type: ".len()..];
+    if let Some(comma_pos) = rest.find(", expected ") {
+      let actual = rest[..comma_pos].trim();
+      let expected = rest[comma_pos + ", expected ".len()..].trim();
+      return format!("expected {}, got {}", expected, actual);
+    }
+  }
+
+  // Pattern: "missing field `fieldName`"
+  if raw.contains("missing field `") {
+    if let Some(start) = raw.find("missing field `") {
+      let rest = &raw[start + "missing field `".len()..];
+      if let Some(end) = rest.find('`') {
+        return format!("missing required parameter: {}", &rest[..end]);
+      }
+    }
+  }
+
+  // Pattern: "unknown field `fieldName`"
+  if raw.contains("unknown field `") {
+    if let Some(start) = raw.find("unknown field `") {
+      let rest = &raw[start + "unknown field `".len()..];
+      if let Some(end) = rest.find('`') {
+        return format!("unknown parameter: {}", &rest[..end]);
+      }
+    }
+  }
+
+  // Pattern: "invalid value: X, expected Y"
+  if let Some(start) = raw.find("invalid value: ") {
+    let rest = &raw[start + "invalid value: ".len()..];
+    if let Some(comma_pos) = rest.find(", expected ") {
+      let actual = rest[..comma_pos].trim();
+      let expected = rest[comma_pos + ", expected ".len()..].trim();
+      return format!("invalid value: {}, expected {}", actual, expected);
+    }
+  }
+
+  // Pattern: "expected X at line Y column Z" — strip position info
+  if raw.contains("expected") && (raw.contains("at line") || raw.contains("at column")) {
+    return raw.split(" at line").next().unwrap_or(raw).to_string();
+  }
+
+  // Fallback: return original message
+  raw.to_string()
 }
 
 /// Derive the output channel count for a module from its params JSON.
@@ -1117,7 +1192,7 @@ pub fn derive_channel_count(
     },
     Err(e) => {
       let error_message = e.to_string();
-      let (message, missing_params) = parse_deserialization_error(&error_message);
+      let (message, missing_params) = parse_deserialization_error(&error_message, &module_type);
       DeriveChannelCountResult {
         channel_count: None,
         errors: Some(vec![DeriveChannelCountError {

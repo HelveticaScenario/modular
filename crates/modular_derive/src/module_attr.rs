@@ -713,10 +713,6 @@ fn impl_module_macro_attr(
                 map.insert(#module_name.into(), Box::new(#constructor_name));
             }
 
-            fn install_params_validator(map: &mut std::collections::HashMap<String, crate::types::ParamsValidator>) {
-                map.insert(#module_name.into(), Self::validate_params_json as crate::types::ParamsValidator);
-            }
-
             fn install_params_deserializer(map: &mut std::collections::HashMap<String, crate::params::ParamsDeserializer>) {
                 fn deserializer(params: serde_json::Value) -> napi::Result<crate::params::CachedParams> {
                     let parsed: #params_struct_name = serde_json::from_value(params)?;
@@ -727,18 +723,6 @@ fn impl_module_macro_attr(
                     })
                 }
                 map.insert(#module_name.into(), deserializer as crate::params::ParamsDeserializer);
-            }
-
-            fn validate_params_json(params: &serde_json::Value) -> napi::Result<()> {
-                let params_to_validate = if params.is_object() {
-                    let mut obj = params.as_object().unwrap().clone();
-                    obj.remove("__argument_spans");
-                    serde_json::Value::Object(obj)
-                } else {
-                    params.clone()
-                };
-                let _parsed: #params_struct_name = serde_json::from_value(params_to_validate)?;
-                Ok(())
             }
 
             fn get_schema() -> crate::types::ModuleSchema {

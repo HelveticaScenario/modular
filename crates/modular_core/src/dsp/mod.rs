@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::params::ParamsDeserializer;
-use crate::types::{ModuleSchema, ParamsValidator, SampleableConstructor};
+use crate::types::{ModuleSchema, SampleableConstructor};
 
 pub mod consts;
 pub mod core;
@@ -29,24 +29,6 @@ pub fn get_constructors() -> HashMap<String, SampleableConstructor> {
     utilities::install_constructors(&mut map);
     seq::install_constructors(&mut map);
     midi::install_constructors(&mut map);
-    map
-}
-
-/// Returns a map of `module_type` -> typed params validator.
-///
-/// A typed params validator attempts to deserialize a module's `ModuleState.params` JSON
-/// into that module's concrete `*Params` struct.
-pub fn get_param_validators() -> HashMap<String, ParamsValidator> {
-    let mut map = HashMap::new();
-    core::install_param_validators(&mut map);
-    dynamics::install_param_validators(&mut map);
-    fx::install_param_validators(&mut map);
-    oscillators::install_param_validators(&mut map);
-    filters::install_param_validators(&mut map);
-    phase::install_param_validators(&mut map);
-    utilities::install_param_validators(&mut map);
-    seq::install_param_validators(&mut map);
-    midi::install_param_validators(&mut map);
     map
 }
 

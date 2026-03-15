@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::params::ParamsDeserializer;
-use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
+use crate::types::{Module, ModuleSchema, SampleableConstructor};
 
 pub mod audio_in;
 pub mod clock;
@@ -14,13 +14,6 @@ pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     mix::Mix::install_constructor(map);
     stereo_mixer::StereoMixer::install_constructor(map);
     clock::Clock::install_constructor(map);
-}
-
-pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
-    signal::Signal::install_params_validator(map);
-    mix::Mix::install_params_validator(map);
-    stereo_mixer::StereoMixer::install_params_validator(map);
-    clock::Clock::install_params_validator(map);
 }
 
 pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer>) {

@@ -1,4 +1,3 @@
-use modular_core::dsp::get_param_validators;
 use modular_core::params::ARGUMENT_SPANS_KEY;
 use modular_core::types::{
   ModuleSchema, ModuleState, PatchGraph, Signal, WellKnownModule,
@@ -19,128 +18,6 @@ pub struct ValidationError {
   pub expected_type: Option<String>,
   /// JSON snippet of the actual value that failed
   pub actual_value: Option<String>,
-}
-
-/// Translate serde deserialization errors into user-friendly messages.
-///
-/// Maps cryptic Rust/serde error messages to DSL-oriented explanations.
-fn translate_serde_error(raw: &str, module_type: &str) -> (String, Option<String>) {
-  // Pattern: "data did not match any variant of untagged enum PolySignalDe"
-  if raw.contains("untagged enum PolySignalDe") {
-    return (
-      format!("invalid input for '{}' parameter", module_type),
-      Some("a signal: number, string (e.g. '440hz', 'c4'), or module output".to_string()),
-    );
-  }
-
-  // Pattern: "data did not match any variant of untagged enum SignalDe"
-  if raw.contains("untagged enum SignalDe") {
-    return (
-      format!("invalid input for '{}' parameter", module_type),
-      Some("a signal: number, string (e.g. '440hz', 'c4'), or module output".to_string()),
-    );
-  }
-
-  // Pattern: "invalid type: map, expected a sequence"
-  if raw.contains("invalid type: map, expected a sequence") {
-    return (
-      "expected an array of signals, got a single object".to_string(),
-      Some("an array like [signal1, signal2, ...]".to_string()),
-    );
-  }
-
-  // Pattern: "invalid type: sequence, expected a map"
-  if raw.contains("invalid type: sequence, expected a map") {
-    return (
-      "expected a single signal, got an array".to_string(),
-      Some("a single signal (number, string, or module output)".to_string()),
-    );
-  }
-
-  // Pattern: "invalid type: X, expected Y"
-  if let Some(caps) = extract_type_mismatch(raw) {
-    return (
-      format!("expected {}, got {}", caps.1, caps.0),
-      Some(caps.1.to_string()),
-    );
-  }
-
-  // Pattern: "missing field `fieldName`"
-  if raw.contains("missing field")
-    && let Some(field) = extract_field_name(raw, "missing field")
-  {
-    return (format!("missing required parameter: {}", field), None);
-  }
-
-  // Pattern: "unknown field `fieldName`"
-  if raw.contains("unknown field")
-    && let Some(field) = extract_field_name(raw, "unknown field")
-  {
-    return (format!("unknown parameter: {}", field), None);
-  }
-
-  // Pattern: "invalid value: X, expected Y"
-  if raw.contains("invalid value:")
-    && let Some(caps) = extract_invalid_value(raw)
-  {
-    return (
-      format!("invalid value: {}, expected {}", caps.0, caps.1),
-      Some(caps.1),
-    );
-  }
-
-  // Pattern: "expected X at line Y column Z" (JSON path errors)
-  if raw.contains("expected") && (raw.contains("at line") || raw.contains("at column")) {
-    // Strip the position info which isn't useful to DSL users
-    let cleaned = raw.split(" at line").next().unwrap_or(raw).to_string();
-    return (cleaned, None);
-  }
-
-  // Fallback: return original message cleaned up
-  (raw.to_string(), None)
-}
-
-/// Extract "invalid type: X, expected Y" components
-fn extract_type_mismatch(raw: &str) -> Option<(String, String)> {
-  let prefix = "invalid type: ";
-  if let Some(start) = raw.find(prefix) {
-    let rest = &raw[start + prefix.len()..];
-    if let Some(comma_pos) = rest.find(", expected ") {
-      let actual = rest[..comma_pos].trim().to_string();
-      let expected = rest[comma_pos + ", expected ".len()..].trim().to_string();
-      return Some((actual, expected));
-    }
-  }
-  None
-}
-
-/// Extract "invalid value: X, expected Y" components  
-fn extract_invalid_value(raw: &str) -> Option<(String, String)> {
-  let prefix = "invalid value: ";
-  if let Some(start) = raw.find(prefix) {
-    let rest = &raw[start + prefix.len()..];
-    if let Some(comma_pos) = rest.find(", expected ") {
-      let actual = rest[..comma_pos].trim().to_string();
-      let expected = rest[comma_pos + ", expected ".len()..].trim().to_string();
-      return Some((actual, expected));
-    }
-  }
-  None
-}
-
-/// Extract field name from "missing field `X`" or "unknown field `X`"
-fn extract_field_name(raw: &str, prefix: &str) -> Option<String> {
-  if let Some(start) = raw.find(prefix) {
-    let rest = &raw[start + prefix.len()..];
-    // Look for backtick-quoted field name
-    if let Some(tick_start) = rest.find('`') {
-      let after_tick = &rest[tick_start + 1..];
-      if let Some(tick_end) = after_tick.find('`') {
-        return Some(after_tick[..tick_end].to_string());
-      }
-    }
-  }
-  None
 }
 
 /// Format module location for error messages.
@@ -412,13 +289,6 @@ pub fn validate_patch(
   let schema_map: HashMap<&str, &ModuleSchema> =
     schemas.iter().map(|s| (s.name.as_str(), s)).collect();
 
-  // Build a map from module type name -> typed params validator.
-  //
-  // This map is generated from the Rust module param structs via `#[module]`.
-  // If a module type isn't present here (e.g. schemas were provided from a custom source),
-  // we simply skip the typed-parse validation step for that module.
-  let param_validators = get_param_validators();
-
   // Build a map from module id -> module instance (state) from the patch.
   let module_by_id: HashMap<&str, &ModuleState> =
     patch.modules.iter().map(|m| (m.id.as_str(), m)).collect();
@@ -465,31 +335,10 @@ pub fn validate_patch(
       continue;
     };
 
-    // 3b) If available, validate that `module.params` can be deserialized into the
-    // module's concrete `*Params` Rust type.
-    //
-    // Important: we only attempt this once we know params is an object. We explicitly
-    // tolerate `null` elsewhere, and we don't want a redundant parse failure in that case.
-    if let Some(validate) = param_validators.get(module.module_type.as_str())
-      && let Err(err) = validate(&module.params)
-    {
-      let raw_error = err.to_string();
-      let (translated_message, expected_type) =
-        translate_serde_error(&raw_error, &module.module_type);
-      errors.push(ValidationError {
-        field: "params".to_string(),
-        message: translated_message,
-        location: Some(location_str.clone()),
-        expected_type,
-        actual_value: Some(truncate_json(&module.params)),
-      });
-    }
-
     // 4) Validate each param key/value pair.
     //
     // Notes:
-    // - The generated typed validators (step 3b) ensure params have the correct shape/type.
-    // - Here we *only* validate that any referenced cables actually exist.
+    // - Here we validate that any referenced cables actually exist.
     // - Params may contain Signals nested inside arbitrary serializable structures.
     for (param_name, param_value) in param_obj {
       // Skip internal metadata fields used for editor features (argument spans tracking).
@@ -863,42 +712,9 @@ mod tests {
   }
 
   #[test]
-  fn test_typed_params_validation_catches_missing_required_fields() {
-    // Use the real schemas (and real typed validators) from modular_core.
-    let schemas = modular_core::dsp::schema();
-
-    // Ensure typed params validation fails by providing an invalid enum variant.
-    // `color` expects one of white/pink/brown (lowercase).
-    let patch = PatchGraph {
-      modules: vec![ModuleState {
-        id: "noise-1".to_string(),
-        module_type: "$noise".to_string(),
-        id_is_explicit: None,
-        params: json!({
-            "color": "invalid_color"
-        }),
-      }],
-      module_id_remaps: None,
-
-      scopes: vec![],
-    };
-
-    let result = validate_patch(&patch, &schemas);
-    assert!(result.is_err());
-    let errors = result.unwrap_err();
-
-    // Location is formatted as "$noise(...)" for auto-generated IDs
-    assert!(errors.iter().any(|e| {
-      e.field == "params"
-        && e.location.as_deref() == Some("$noise(...)")
-        && e.message.contains("unknown variant")
-    }));
-  }
-
-  #[test]
-  fn test_null_params_is_tolerated_even_with_typed_validation() {
-    // validate_patch treats `params: null` as "no params" and does not require
-    // it to be deserializable into the module's concrete params type.
+  fn test_null_params_is_tolerated() {
+    // validate_patch treats `params: null` as "no params" — it skips
+    // further param validation for that module.
     let schemas = modular_core::dsp::schema();
 
     let patch = PatchGraph {
