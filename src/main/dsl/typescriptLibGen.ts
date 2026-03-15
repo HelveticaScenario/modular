@@ -1,9 +1,10 @@
-import { ModuleSchema, getReservedOutputNames } from '@modular/core';
+import { getReservedOutputNames } from '@modular/core';
 import {
-    JSONSchema,
-    resolveRef,
     schemaToTypeExpr,
     getEnumVariants,
+    Schemas,
+    Schema,
+    JSONSchema,
 } from '../../shared/dsl/schemaTypeResolver';
 
 const BASE_LIB_SOURCE = `
@@ -832,26 +833,15 @@ function $slider(label: string, value: number, min: number, max: number): Module
 function $cartesian<A extends unknown[][]>(...arrays: A): ElementsOf<A>[];
 `;
 
-export function buildLibSource(schemas: ModuleSchema[]): string {
+export function buildLibSource(schemas: Schemas): string {
     // console.log('buildLibSource schemas:', schemas);
     const schemaLib = generateDSL(schemas);
     return `declare global {\n${BASE_LIB_SOURCE}\n\n${schemaLib} \n}\n\n export {};\n`;
 }
 
-type ClassSpec = {
-    outputs: Array<{ name: string; description?: string }>;
-    properties: Array<{
-        name: string;
-        schema: JSONSchema;
-        description?: string;
-    }>;
-    rootSchema: JSONSchema;
-    moduleSchema: ModuleSchema;
-};
-
 type NamespaceNode = {
     namespaces: Map<string, NamespaceNode>;
-    classes: Map<string, ClassSpec>;
+    classes: Map<string, Schema>;
     order: Array<{ kind: 'namespace' | 'class'; name: string }>;
 };
 
@@ -863,68 +853,7 @@ function makeNamespaceNode(): NamespaceNode {
     };
 }
 
-function isValidIdentifier(name: string): boolean {
-    return /^[$A-Z_][0-9A-Z_$]*$/i.test(name);
-}
-
-function renderPropertyKey(name: string): string {
-    return isValidIdentifier(name) ? name : JSON.stringify(name);
-}
-
-function renderReadonlyPropertyKey(name: string): string {
-    return isValidIdentifier(name) ? name : `[${JSON.stringify(name)}]`;
-}
-
-function renderDocComment(description?: string, indent: string = ''): string[] {
-    if (!description) return [];
-    const lines = description.split(/\r?\n/);
-    return [
-        `${indent}/**`,
-        ...lines.map((l) => `${indent} * ${l}`),
-        `${indent} */`,
-    ];
-}
-
-function extractParamNamesFromDoc(description?: string): string[] {
-    if (!description) return [];
-    const names: string[] = [];
-    const re = /@param\s+([^\s]+)/g;
-    for (const match of description.matchAll(re)) {
-        names.push(match[1]);
-    }
-    return names;
-}
-
-function getMethodArgsForProperty(
-    propertySchema: JSONSchema,
-    rootSchema: JSONSchema,
-    propertyDescription?: string,
-): Array<{ name: string; type: string }> {
-    const paramNames = extractParamNamesFromDoc(propertyDescription);
-
-    // Top-level tuple expansion into multiple arguments.
-    if (
-        propertySchema &&
-        typeof propertySchema === 'object' &&
-        propertySchema.type === 'array' &&
-        Array.isArray(propertySchema.prefixItems)
-    ) {
-        const items: JSONSchema[] = propertySchema.prefixItems;
-        return items.map((itemSchema, index) => {
-            const name =
-                paramNames.length > 0
-                    ? (paramNames[index] ?? `arg${index + 1}`)
-                    : `arg${index + 1}`;
-            return { name, type: schemaToTypeExpr(itemSchema, rootSchema) };
-        });
-    }
-
-    // Single-argument method.
-    const name = paramNames.length > 0 ? (paramNames[0] ?? 'arg1') : 'arg';
-    return [{ name, type: schemaToTypeExpr(propertySchema, rootSchema) }];
-}
-
-function buildTreeFromSchemas(schemas: ModuleSchema[]): NamespaceNode {
+function buildTreeFromSchemas(schemas: Schemas): NamespaceNode {
     const root = makeNamespaceNode();
 
     for (const moduleSchema of schemas) {
@@ -960,46 +889,12 @@ function buildTreeFromSchemas(schemas: ModuleSchema[]): NamespaceNode {
         if (node.classes.has(className)) {
             throw new Error(`Duplicate class name detected: ${fullName}`);
         }
-        if ('properties' in paramsSchema === false) {
-            throw new Error(
-                `ModuleSchema ${fullName} paramsSchema is missing properties`,
-            );
-        }
-        const propsObj = paramsSchema.properties;
-        const propsEntries =
-            propsObj && typeof propsObj === 'object'
-                ? Object.entries(propsObj as Record<string, JSONSchema>)
-                : [];
 
-        const properties = propsEntries.map(([name, propSchema]) => ({
-            name,
-            schema: propSchema,
-            description: propSchema?.description,
-        }));
-
-        const outputs = (
-            Array.isArray(moduleSchema.outputs) ? moduleSchema.outputs : []
-        )
-            .map((o) => ({
-                name: String(o?.name ?? '').trim(),
-                description: o?.description,
-            }))
-            .filter((o) => o.name.length > 0);
-
-        node.classes.set(className, {
-            outputs,
-            properties,
-            rootSchema: paramsSchema,
-            moduleSchema,
-        });
+        node.classes.set(className, moduleSchema);
         node.order.push({ kind: 'class', name: className });
     }
 
     return root;
-}
-
-function renderNodeInterfaceName(baseName: string): string {
-    return baseName.endsWith('Node') ? baseName : `${baseName}Node`;
 }
 
 function capitalizeName(name: string): string {
@@ -1054,7 +949,7 @@ function getOutputType(output: {
 /**
  * Generate interface name for multi-output modules
  */
-function getMultiOutputInterfaceName(moduleSchema: ModuleSchema): string {
+function getMultiOutputInterfaceName(moduleSchema: Schema): string {
     const parts = moduleSchema.name
         .split('.')
         .filter((p: string) => p.length > 0);
@@ -1070,20 +965,15 @@ function getMultiOutputInterfaceName(moduleSchema: ModuleSchema): string {
  * The interface extends from the default output's type and includes properties for other outputs.
  */
 function generateMultiOutputInterface(
-    moduleSchema: ModuleSchema,
+    moduleSchema: Schema,
     indent: string,
 ): string[] {
     const outputs = moduleSchema.outputs || [];
     if (outputs.length <= 1) return [];
 
     // Find the default output
-    const defaultOutput = outputs.find((o: any) => o.default) || outputs[0];
-    const defaultOutputMeta = defaultOutput as {
-        polyphonic?: boolean;
-        minValue?: number;
-        maxValue?: number;
-    };
-    const baseType = getOutputType(defaultOutputMeta);
+    const defaultOutput = outputs.find((o) => o.default) || outputs[0];
+    const baseType = getOutputType(defaultOutput);
 
     const interfaceName = getMultiOutputInterfaceName(moduleSchema);
 
@@ -1102,13 +992,7 @@ function generateMultiOutputInterface(
     for (const output of outputs) {
         if (output.name === defaultOutput.name) continue;
 
-        const outputMeta = output as {
-            polyphonic?: boolean;
-            minValue?: number;
-            maxValue?: number;
-            description?: string;
-        };
-        const outputType = getOutputType(outputMeta);
+        const outputType = getOutputType(output);
         const safeName = sanitizeOutputName(output.name);
 
         if (output.description) {
@@ -1124,18 +1008,13 @@ function generateMultiOutputInterface(
 /**
  * Get the return type for a module factory based on its outputs
  */
-function getFactoryReturnType(moduleSchema: ModuleSchema): string {
+function getFactoryReturnType(moduleSchema: Schema): string {
     const outputs = moduleSchema.outputs || [];
 
     if (outputs.length === 0) {
         return 'void';
     } else if (outputs.length === 1) {
-        const output = outputs[0] as {
-            polyphonic?: boolean;
-            minValue?: number;
-            maxValue?: number;
-        };
-        return getOutputType(output);
+        return getOutputType(outputs[0]);
     } else {
         // Multiple outputs - return the generated interface name
         return getMultiOutputInterfaceName(moduleSchema);
@@ -1143,35 +1022,31 @@ function getFactoryReturnType(moduleSchema: ModuleSchema): string {
 }
 
 function renderFactoryFunction(
-    moduleSchema: ModuleSchema,
+    moduleSchema: Schema,
     _interfaceName: string,
     indent: string,
 ): string[] {
     const functionName = moduleSchema.name.split('.').pop()!;
+    const paramsSchema: JSONSchema = moduleSchema.paramsSchema;
 
     let args: string[] = [];
-    // @ts-ignore
     const positionalArgs = moduleSchema.positionalArgs || [];
-    const schemaRequired: string[] =
-        (moduleSchema.paramsSchema as any).required || [];
-
+    const schemaRequired: readonly string[] = paramsSchema.required || [];
     // Build docstring lines
     const docLines: string[] = [];
     if (moduleSchema.documentation) {
         docLines.push(...moduleSchema.documentation.split(/\r?\n/));
     }
 
-    const positionalRequiredness = positionalArgs.map((a: any) =>
+    const positionalRequiredness = positionalArgs.map((a) =>
         schemaRequired.includes(a.name),
     );
 
     for (let i = 0; i < positionalArgs.length; i++) {
         const arg = positionalArgs[i];
-        // @ts-ignore
-        const propSchema = moduleSchema.paramsSchema.properties?.[arg.name];
-        // @ts-ignore
+        const propSchema = paramsSchema.properties?.[arg.name];
         const type = propSchema
-            ? schemaToTypeExpr(propSchema, moduleSchema.paramsSchema)
+            ? schemaToTypeExpr(propSchema, paramsSchema)
             : 'any';
 
         const isRequired = positionalRequiredness[i];
@@ -1201,10 +1076,7 @@ function renderFactoryFunction(
 
         // Append enum variant descriptions as sub-bullets
         if (propSchema) {
-            const variants = getEnumVariants(
-                propSchema,
-                moduleSchema.paramsSchema,
-            );
+            const variants = getEnumVariants(propSchema, paramsSchema);
             if (variants && variants.some((v) => v.description)) {
                 for (const v of variants) {
                     const desc = v.description ? ` — ${v.description}` : '';
@@ -1214,25 +1086,17 @@ function renderFactoryFunction(
         }
     }
 
-    // @ts-ignore
-    const allParamKeys = Object.keys(
-        moduleSchema.paramsSchema.properties || {},
-    );
-    // @ts-ignore
-    const positionalKeys = new Set(positionalArgs.map((a: any) => a.name));
+    const allParamKeys = Object.keys(paramsSchema.properties || {});
+    const positionalKeys = new Set(positionalArgs.map((a) => a.name));
 
     const configProps: string[] = [];
     const configParamDocs: string[] = [];
 
     for (const key of allParamKeys) {
         if (!positionalKeys.has(key)) {
-            // @ts-ignore
-            const propSchema = moduleSchema.paramsSchema.properties[key];
-            // @ts-ignore
-            const type = schemaToTypeExpr(
-                propSchema,
-                moduleSchema.paramsSchema,
-            );
+            const propSchema = paramsSchema.properties?.[key];
+            if (!propSchema) continue;
+            const type = schemaToTypeExpr(propSchema, paramsSchema);
             const optionalMark = schemaRequired.includes(key) ? '' : '?';
             configProps.push(`${key}${optionalMark}: ${type}`);
 
@@ -1244,10 +1108,7 @@ function renderFactoryFunction(
             }
 
             // Append enum variant descriptions as sub-bullets
-            const variants = getEnumVariants(
-                propSchema,
-                moduleSchema.paramsSchema,
-            );
+            const variants = getEnumVariants(propSchema, paramsSchema);
             if (variants && variants.some((v) => v.description)) {
                 for (const v of variants) {
                     const desc = v.description ? ` — ${v.description}` : '';
@@ -1297,29 +1158,12 @@ function renderFactoryFunction(
     return lines;
 }
 
-function getQualifiedNodeInterfaceType(moduleName: string): string {
-    const parts = moduleName.split('.').filter((p) => p.length > 0);
-    if (parts.length === 0) {
-        throw new Error(`Invalid ModuleSchema name: ${moduleName}`);
-    }
-    const base = parts[parts.length - 1];
-    const interfaceName = renderNodeInterfaceName(capitalizeName(base));
-    const namespaces = parts.slice(0, -1);
-    return namespaces.length > 0
-        ? `${namespaces.join('.')}.${interfaceName}`
-        : interfaceName;
-}
-
-function renderInterface(
-    baseName: string,
-    classSpec: ClassSpec,
-    indent: string,
-): string[] {
+function renderInterface(classSpec: Schema, indent: string): string[] {
     const lines: string[] = [];
 
     // Generate multi-output interface if needed
     const multiOutputInterface = generateMultiOutputInterface(
-        classSpec.moduleSchema,
+        classSpec,
         indent,
     );
     if (multiOutputInterface.length > 0) {
@@ -1328,7 +1172,7 @@ function renderInterface(
     }
 
     // Render the factory function
-    lines.push(...renderFactoryFunction(classSpec.moduleSchema, '', indent));
+    lines.push(...renderFactoryFunction(classSpec, '', indent));
     return lines;
 }
 
@@ -1340,7 +1184,7 @@ function renderTree(node: NamespaceNode, indentLevel: number = 0): string[] {
         if (item.kind === 'class') {
             const classSpec = node.classes.get(item.name);
             if (!classSpec) continue;
-            lines.push(...renderInterface(item.name, classSpec, indent));
+            lines.push(...renderInterface(classSpec, indent));
             lines.push('');
             continue;
         }
@@ -1360,10 +1204,7 @@ function renderTree(node: NamespaceNode, indentLevel: number = 0): string[] {
     return lines;
 }
 
-export function generateDSL(schemas: ModuleSchema[]): string {
-    if (!Array.isArray(schemas)) {
-        throw new Error('generateDSL expects an array of ModuleSchema');
-    }
+export function generateDSL(schemas: Schemas): string {
     // Filter out _clock from user-facing type declarations (it's internal only)
     const userFacingSchemas = schemas.filter((s) => s.name !== '_clock');
     const tree = buildTreeFromSchemas(userFacingSchemas);
