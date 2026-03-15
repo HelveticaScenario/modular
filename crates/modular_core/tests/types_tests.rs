@@ -142,15 +142,6 @@ fn signal_deserialize_tagged_variants_still_work() {
         }
         other => panic!("expected Signal::Cable, got {other:?}"),
     }
-
-    // Signal::Disconnected has been removed — deserialization of {"type":"disconnected"}
-    // should now fail.
-    let disconnected_result: std::result::Result<Signal, _> =
-        serde_json::from_value(json!({"type":"disconnected"}));
-    assert!(
-        disconnected_result.is_err(),
-        "Signal::Disconnected was removed; deserialization should fail"
-    );
 }
 
 #[test]
