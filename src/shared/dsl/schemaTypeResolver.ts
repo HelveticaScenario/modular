@@ -119,7 +119,7 @@ export function getEnumVariants(
 
     // oneOf / anyOf with all-const variants (schemars output for documented enums)
     const variants = schema.oneOf || schema.anyOf;
-    if (Array.isArray(variants)) {
+    if (variants !== undefined) {
         const isEnum = variants.every((v: JSONSchema) => v.const !== undefined);
         if (isEnum) {
             return variants.map((v) => ({
@@ -132,8 +132,8 @@ export function getEnumVariants(
     }
 
     // Bare enum array (schemars output for undocumented enums)
-    if (Array.isArray(schema.enum) && schema.enum.length > 0) {
-        return schema.enum.map((v: unknown) => ({
+    if (schema.enum !== undefined && schema.enum.length > 0) {
+        return schema.enum.map((v) => ({
             value: JSON.stringify(v),
             rawValue: v,
             description: undefined,
@@ -157,7 +157,7 @@ export function schemaToTypeExpr(
     // Handle oneOf/anyOf - check if all variants resolve to Signal
     if (schema.oneOf || schema.anyOf) {
         const variants = schema.oneOf || schema.anyOf;
-        if (Array.isArray(variants)) {
+        if (variants !== undefined) {
             // Filter out null variants (from Rust Option<T>); optionality is
             // handled at the param level with `?:` in TypeScript.
             const nonNullVariants = variants.filter(
@@ -204,7 +204,7 @@ export function schemaToTypeExpr(
     if (schema.allOf) {
         return 'any';
     }
-    if (Array.isArray(schema.type)) {
+    if (schema.type !== undefined && typeof schema.type !== 'string') {
         // Handle union type arrays like ["integer", "null"] or ["string", "null"]
         const nonNullTypes = schema.type.filter((t) => t !== 'null');
         if (nonNullTypes.length === 1) {
@@ -234,7 +234,7 @@ export function schemaToTypeExpr(
     }
 
     if (schema.enum) {
-        if (!Array.isArray(schema.enum) || schema.enum.length === 0) {
+        if (schema.enum.length === 0) {
             throw new Error('Unsupported enum schema');
         }
         return schema.enum.map((v) => JSON.stringify(v)).join(' | ');
@@ -253,9 +253,7 @@ export function schemaToTypeExpr(
         const props = schema.properties;
         if (!props || typeof props !== 'object') return '{}';
 
-        const requiredSet = new Set<string>(
-            Array.isArray(schema.required) ? [...schema.required] : [],
-        );
+        const requiredSet = new Set<string>(schema.required);
         const entries = Object.entries(props);
         if (entries.length === 0) return '{}';
 
@@ -271,7 +269,7 @@ export function schemaToTypeExpr(
     }
 
     if (type === 'array') {
-        if (Array.isArray(schema.prefixItems)) {
+        if (schema.prefixItems !== undefined) {
             const tuple = schema.prefixItems
                 .map((s) => schemaToTypeExpr(s, rootSchema))
                 .join(', ');
