@@ -140,23 +140,36 @@ export function schemaToTypeExpr(
     if (schema.oneOf || schema.anyOf) {
         const variants = schema.oneOf || schema.anyOf;
         if (Array.isArray(variants)) {
+            // Filter out null variants (from Rust Option<T>); optionality is
+            // handled at the param level with `?:` in TypeScript.
+            const nonNullVariants = variants.filter(
+                (v: JSONSchema) =>
+                    !(v && typeof v === 'object' && v.type === 'null'),
+            );
+
+            // If all non-null variants were filtered out, treat as unknown
+            if (nonNullVariants.length === 0) {
+                return 'unknown';
+            }
+
+            // If only one non-null variant remains, resolve it directly
+            if (nonNullVariants.length === 1) {
+                return schemaToTypeExpr(nonNullVariants[0], rootSchema);
+            }
+
             // Check if this is an enum (all variants have 'const')
-            const isEnum = variants.every(
+            const isEnum = nonNullVariants.every(
                 (v: JSONSchema) => v.const !== undefined,
             );
             if (isEnum) {
-                return variants
+                return nonNullVariants
                     .map((v: JSONSchema) => JSON.stringify(v.const))
                     .join(' | ');
             }
 
-            const types = variants.map((v: JSONSchema) => {
-                try {
-                    return schemaToTypeExpr(v, rootSchema);
-                } catch {
-                    return 'any';
-                }
-            });
+            const types = nonNullVariants.map((v: JSONSchema) =>
+                schemaToTypeExpr(v, rootSchema),
+            );
             // If all variants are Signal, return Signal
             if (types.every((t) => t === 'Signal')) {
                 return 'Poly<Signal>';
@@ -167,9 +180,8 @@ export function schemaToTypeExpr(
             }
 
             // Otherwise, return the union of all variant types
-            return types.length > 0 ? types.join(' | ') : 'any';
+            return types.join(' | ');
         }
-        return 'any';
     }
     if (schema.allOf) {
         return 'any';
