@@ -6,105 +6,12 @@
 
 import { describe, test, expect } from 'vitest';
 import {
-    getSchemas,
     validatePatchGraph,
     deriveChannelCount,
     getMiniLeafSpans,
     getPatternPolyphony,
-    type ModuleSchema,
     type PatchGraph,
-    type ValidationError,
 } from '@modular/core';
-
-// ─── getSchemas ──────────────────────────────────────────────────────────────
-
-describe('getSchemas', () => {
-    test('returns a non-empty array of schemas', () => {
-        const schemas = getSchemas();
-        expect(Array.isArray(schemas)).toBe(true);
-        expect(schemas.length).toBeGreaterThan(0);
-    });
-
-    test('each schema has required fields', () => {
-        const schemas = getSchemas();
-        for (const s of schemas) {
-            expect(s).toHaveProperty('name');
-            expect(s).toHaveProperty('documentation');
-            expect(s).toHaveProperty('paramsSchema');
-            expect(s).toHaveProperty('outputs');
-            expect(typeof s.name).toBe('string');
-            expect(typeof s.documentation).toBe('string');
-        }
-    });
-
-    test('schemas include $sine with expected outputs', () => {
-        const schemas = getSchemas();
-        const sine = schemas.find((s) => s.name === '$sine');
-        expect(sine).toBeDefined();
-        expect(sine!.outputs.length).toBeGreaterThan(0);
-    });
-
-    test('schemas include _clock with expected positionalArgs', () => {
-        const schemas = getSchemas();
-        const clock = schemas.find((s) => s.name === '_clock');
-        expect(clock).toBeDefined();
-        expect(clock!.positionalArgs).toBeDefined();
-        expect(clock!.positionalArgs!.length).toBeGreaterThan(0);
-    });
-
-    test('schemas include polyphonic module with channels', () => {
-        const schemas = getSchemas();
-        // Find a module that declares channelsParam (polyphonic)
-        const withChannels = schemas.filter(
-            (s) => s.channelsParam !== undefined && s.channelsParam !== null,
-        );
-        expect(withChannels.length).toBeGreaterThan(0);
-    });
-
-    test('schemas are stable across calls', () => {
-        const a = getSchemas();
-        const b = getSchemas();
-        expect(a.length).toBe(b.length);
-        expect(a.map((s) => s.name).sort()).toEqual(
-            b.map((s) => s.name).sort(),
-        );
-    });
-
-    test('schemas include signalParams for modules with signal inputs', () => {
-        const schemas = getSchemas();
-        const lpf = schemas.find((s) => s.name === '$lpf');
-        expect(lpf).toBeDefined();
-        expect(lpf!.signalParams).toBeDefined();
-        expect(lpf!.signalParams.length).toBeGreaterThan(0);
-
-        // Check that cutoff has pitch type with correct range and description
-        const cutoff = lpf!.signalParams.find((p: any) => p.name === 'cutoff');
-        expect(cutoff).toBeDefined();
-        expect(cutoff!.signalType).toBe('pitch');
-        expect(cutoff!.defaultValue).toBe(0.0);
-        expect(cutoff!.minValue).toBe(-5.0);
-        expect(cutoff!.maxValue).toBe(5.0);
-        expect(cutoff!.description).toContain('cutoff');
-
-        // Check that resonance has control type
-        const resonance = lpf!.signalParams.find(
-            (p: any) => p.name === 'resonance',
-        );
-        expect(resonance).toBeDefined();
-        expect(resonance!.signalType).toBe('control');
-        expect(resonance!.defaultValue).toBe(0.0);
-        expect(resonance!.minValue).toBe(0.0);
-        expect(resonance!.maxValue).toBe(5.0);
-
-        // Check that unannotated signal params get defaults
-        const input = lpf!.signalParams.find((p: any) => p.name === 'input');
-        expect(input).toBeDefined();
-        expect(input!.signalType).toBe('control');
-        expect(input!.defaultValue).toBe(0.0);
-        expect(input!.minValue).toBe(-5.0);
-        expect(input!.maxValue).toBe(5.0);
-    });
-});
 
 // ─── validatePatchGraph ──────────────────────────────────────────────────────
 

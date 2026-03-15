@@ -860,10 +860,10 @@ pub struct OutputSchema {
     pub name: String,
     pub description: String,
     /// Whether this output is polyphonic (PolyOutput) or monophonic (f32/f64)
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default)]
     pub polyphonic: bool,
     /// Whether this is the default output for the module
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default)]
     pub default: bool,
     /// The minimum value of the raw output range (before any remapping)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -885,6 +885,7 @@ pub trait OutputStruct: Default + Send + Sync + 'static {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct SchemaContainer {
     pub schema: schemars::Schema,
 }
