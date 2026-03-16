@@ -355,15 +355,15 @@ interface ModuleOutput {
    */
   shift(offset: Poly<Signal>): Collection;
 
-   /**
-    * Scale the signal by a factor with a perceptual (audio taper) curve.
-    * Chains \\$curve → \\$scaleAndShift with exponent 3.
-    *
-    * For linear amplitude scaling, use {@link amplitude} instead.
-    * @param level - Amplitude level as {@link Poly<Signal>}
-    * @returns The scaled {@link Collection} for chaining
-    * @example osc.gain(2.5)  // Perceptual half volume
-    */
+    /**
+     * Scale the signal by a factor with a perceptual (audio taper) curve
+     * (5 = unity, 0 = silence). Chains \\$curve → \\$scaleAndShift with exponent 3.
+     *
+     * For linear amplitude scaling, use {@link amplitude} instead.
+     * @param level - Amplitude level as {@link Poly<Signal>}
+     * @returns The scaled {@link Collection} for chaining
+     * @example osc.gain(2.5)
+     */
    gain(level: Poly<Signal>): Collection;
 
   /**
@@ -543,13 +543,14 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
    */
   shift(offset: Poly<Signal>): Collection;
 
-   /**
-    * Scale all signals by a factor with a perceptual (audio taper) curve.
-    *
-    * For linear amplitude scaling, use {@link amplitude} instead.
-    * @param level - Amplitude level as {@link Poly<Signal>}
-    * @see {@link ModuleOutput.gain}
-    */
+    /**
+     * Scale all signals by a factor with a perceptual (audio taper) curve
+     * (5 = unity, 0 = silence).
+     *
+     * For linear amplitude scaling, use {@link amplitude} instead.
+     * @param level - Amplitude level as {@link Poly<Signal>}
+     * @see {@link ModuleOutput.gain}
+     */
   gain(level: Poly<Signal>): Collection;
 
   /**

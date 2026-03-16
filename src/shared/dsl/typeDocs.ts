@@ -138,8 +138,8 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 name: 'gain',
                 signature: 'gain(level: Poly<Signal>): ModuleOutput',
                 description:
-                    'Scale the signal with a perceptual (audio taper) curve. Chains $curve and $scaleAndShift internally with exponent 3. For linear amplitude scaling, use amplitude() instead.',
-                example: 'osc.gain(2.5)  // Perceptual half volume',
+                    'Scale the signal with a perceptual (audio taper) curve (5 = unity, 0 = silence). Chains $curve and $scaleAndShift internally with exponent 3. For linear amplitude scaling, use amplitude() instead.',
+                example: 'osc.gain(2.5)',
             },
             {
                 name: 'exp',
@@ -281,7 +281,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 name: 'gain',
                 signature: 'gain(level: Poly<Signal>): Collection',
                 description:
-                    'Scale all signals with a perceptual (audio taper) curve. For linear amplitude scaling, use amplitude() instead.',
+                    'Scale all signals with a perceptual (audio taper) curve (5 = unity, 0 = silence). For linear amplitude scaling, use amplitude() instead.',
                 example: '$c(osc1, osc2).gain(2.5)',
             },
             {

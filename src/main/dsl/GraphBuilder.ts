@@ -169,8 +169,8 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
     }
 
     /**
-     * Scale all outputs by a factor with a perceptual (audio taper) curve.
-     * Chains $curve → $scaleAndShift with exponent 3.
+     * Scale all outputs by a factor with a perceptual (audio taper) curve
+     * (5 = unity, 0 = silence). Chains $curve → $scaleAndShift with exponent 3.
      *
      * For linear amplitude scaling, use {@link amplitude} instead.
      */
@@ -1055,8 +1055,8 @@ export class ModuleOutput {
     }
 
     /**
-     * Scale this output by a factor with a perceptual (audio taper) curve.
-     * Chains $curve → $scaleAndShift with exponent 3.
+     * Scale this output by a factor with a perceptual (audio taper) curve
+     * (5 = unity, 0 = silence). Chains $curve → $scaleAndShift with exponent 3.
      *
      * For linear amplitude scaling, use {@link amplitude} instead.
      */
