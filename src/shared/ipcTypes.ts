@@ -327,7 +327,6 @@ export const MENU_CHANNELS = {
     CLOSE_BUFFER: 'modular:menu:close-buffer',
     TOGGLE_RECORDING: 'modular:menu:toggle-recording',
     OPEN_SETTINGS: 'modular:menu:open-settings',
-    SELECT_ALL: 'modular:menu:select-all',
 } as const;
 
 /**

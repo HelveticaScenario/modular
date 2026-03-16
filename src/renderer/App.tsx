@@ -23,7 +23,6 @@ import {
     type SourceLocationInfo,
     type TransportSnapshot,
     type UpdateAvailableInfo,
-    MENU_CHANNELS,
 } from '../shared/ipcTypes';
 import type { SliderDefinition } from '../shared/dsl/sliderTypes';
 import { findSliderValueSpan } from './dsl/sliderSourceEdit';
@@ -143,25 +142,6 @@ function App() {
     const editorRef = useRef<editor.IStandaloneCodeEditor>(null);
     const scopeCanvasMapRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
     const lastPatchResultRef = useRef<any>(null);
-
-    useEffect(() => {
-        const handleSelectAll = () => {
-            const editorInstance = editorRef.current;
-            if (editorInstance) {
-                editorInstance.focus();
-                const model = editorInstance.getModel();
-                if (model) {
-                    editorInstance.setSelection(model.getFullModelRange());
-                }
-            }
-        };
-
-        const channel = MENU_CHANNELS.SELECT_ALL;
-        electronAPI.on(channel, handleSelectAll);
-        return () => {
-            electronAPI.removeListener(channel, handleSelectAll);
-        };
-    }, []);
 
     /** Long-lived invisible tracked decorations spanning each scope() call.
      *  Monaco automatically adjusts these ranges as the document is edited,
