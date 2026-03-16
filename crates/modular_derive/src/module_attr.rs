@@ -714,8 +714,8 @@ fn impl_module_macro_attr(
             }
 
             fn install_params_deserializer(map: &mut std::collections::HashMap<String, crate::params::ParamsDeserializer>) {
-                fn deserializer(params: serde_json::Value) -> napi::Result<crate::params::CachedParams> {
-                    let parsed: #params_struct_name = serde_json::from_value(params)?;
+                fn deserializer(params: serde_json::Value) -> std::result::Result<crate::params::CachedParams, crate::param_errors::ModuleParamErrors> {
+                    let parsed: #params_struct_name = deserr::deserialize::<_, _, crate::param_errors::ModuleParamErrors>(params)?;
                     let channel_count = #channel_count_fn_name(&parsed);
                     Ok(crate::params::CachedParams {
                         params: Box::new(parsed),

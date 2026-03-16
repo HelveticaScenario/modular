@@ -27,8 +27,9 @@ impl crate::types::Connect for MixMode {
     fn connect(&mut self, _patch: &crate::Patch) {}
 }
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 pub struct MixParams {
     /// Input signals to mix channel-by-channel.
     ///
@@ -36,6 +37,7 @@ pub struct MixParams {
     pub inputs: Vec<PolySignal>,
     /// How inputs are combined.
     #[serde(default)]
+    #[deserr(default)]
     mode: MixMode,
     /// Final output level (perceptual curve, exponent 3).
     #[signal(default = 5.0, range = (0.0, 10.0))]
