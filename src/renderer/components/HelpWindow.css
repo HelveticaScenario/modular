@@ -90,6 +90,10 @@ h2 {
     margin-top: 0;
 }
 
+.help-title {
+    margin: 0;
+}
+
 pre {
     background: #111;
     padding: 10px;
@@ -116,11 +120,19 @@ pre {
     color: #6fd9c0;
 }
 
-/* Search input */
+/* Search container and input */
+.search-container {
+    position: sticky;
+    top: -20px; /* Offset the 20px padding of the .content area */
+    background: #1e1e1e; /* Match the body background to hide scrolling items behind it */
+    padding: 20px 20px 16px 20px; /* Cover the gap to the top and provide spacing below */
+    z-index: 10;
+    margin: 0 -20px 0 -20px; /* Stretch into the horizontal padding of the parent */
+}
+
 .search-input {
     width: 100%;
     padding: 8px;
-    margin-bottom: 16px;
     background: #333;
     color: #fff;
     border: 1px solid #444;
