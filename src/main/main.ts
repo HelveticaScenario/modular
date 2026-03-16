@@ -1537,7 +1537,7 @@ const createMenu = (): void => {
             : []),
         // File menu
         {
-            role: 'fileMenu',
+            label: 'File',
             submenu: [
                 {
                     label: 'New File',
@@ -1629,17 +1629,6 @@ const createMenu = (): void => {
         // View menu
         {
             role: 'viewMenu',
-            submenu: [
-                { role: 'reload' },
-                { role: 'forceReload' },
-                { role: 'toggleDevTools' },
-                { type: 'separator' },
-                { role: 'resetZoom' },
-                { role: 'zoomIn' },
-                { role: 'zoomOut' },
-                { type: 'separator' },
-                { role: 'togglefullscreen' },
-            ],
         },
         // Run menu
         {
@@ -1680,7 +1669,7 @@ const createMenu = (): void => {
                         }
                     },
                 },
-                { type: 'separator' },
+                // { type: 'separator' },
                 // {
                 //     label: 'Toggle Recording',
                 //     accelerator: 'Ctrl+R',
@@ -1697,20 +1686,6 @@ const createMenu = (): void => {
         // Window menu
         {
             role: 'windowMenu',
-            submenu: [
-                { role: 'minimize' },
-                { role: 'zoom' },
-                ...(isMac
-                    ? ([
-                          { type: 'separator' },
-                          { role: 'front' },
-                          { type: 'separator' },
-                          { role: 'window' },
-                      ] satisfies Electron.MenuItemConstructorOptions[])
-                    : ([
-                          { role: 'close' },
-                      ] satisfies Electron.MenuItemConstructorOptions[])),
-            ],
         },
         // Help menu (non-macOS: includes Check for Updates)
         ...(!isMac
