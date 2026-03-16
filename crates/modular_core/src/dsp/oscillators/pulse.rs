@@ -1,3 +1,4 @@
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -8,8 +9,10 @@ use crate::{
     PORT_MAX_CHANNELS,
 };
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase)]
+#[deserr(deny_unknown_fields)]
 struct PulseOscillatorParams {
     /// pitch in V/Oct (0V = C4)
     #[signal(type = pitch)]

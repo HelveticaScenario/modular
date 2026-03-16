@@ -14,6 +14,7 @@ use std::cmp::Ordering;
 use std::sync::Arc;
 
 use arrayvec::ArrayVec;
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -414,15 +415,18 @@ fn default_channels() -> usize {
     4
 }
 
-#[derive(Clone, Deserialize, ChannelCount, JsonSchema, Connect, Debug, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, ChannelCount, JsonSchema, Connect, Debug, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 pub struct IntervalSeqParams {
     /// patterns to combine (left-fold with appLeft addition); accepts a single
     /// pattern string or an array of pattern strings
     #[serde(default)]
+    #[deserr(default, skip)]
     patterns: IntervalPatternParam,
     /// scale for quantizing degrees to pitches (supports optional octave, e.g. "c3(major)")
     #[serde(default)]
+    #[deserr(default, skip)]
     scale: IntervalScaleParam,
     /// playhead position
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
@@ -430,6 +434,7 @@ pub struct IntervalSeqParams {
     playhead: Option<MonoSignal>,
     /// number of polyphonic voices (1–16)
     #[serde(default = "default_channels")]
+    #[deserr(default = default_channels())]
     pub channels: usize,
 }
 

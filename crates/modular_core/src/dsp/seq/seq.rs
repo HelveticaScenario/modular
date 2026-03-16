@@ -13,6 +13,7 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
 
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -137,11 +138,13 @@ fn default_channels() -> usize {
     4
 }
 
-#[derive(Clone, Deserialize, ChannelCount, JsonSchema, Connect, Debug, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, ChannelCount, JsonSchema, Connect, Debug, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 pub struct SeqParams {
     /// pattern string in mini-notation
     #[serde(default)]
+    #[deserr(default)]
     pattern: SeqPatternParam,
     /// playhead position (driven by the global clock)
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
@@ -151,6 +154,7 @@ pub struct SeqParams {
     pub channels: Option<usize>,
     /// The pattern string (used for serialization)
     #[serde(skip)]
+    #[deserr(skip)]
     #[schemars(skip)]
     pub pattern_source: String,
 }

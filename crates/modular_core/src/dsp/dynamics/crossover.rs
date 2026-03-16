@@ -3,12 +3,13 @@
 //! Splits input into low, mid, and high frequency bands using
 //! Linkwitz-Riley 4th-order crossover filters.
 
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
     dsp::utils::{changed, voct_to_hz},
-    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
+    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
     types::Clickless,
 };
 
@@ -22,8 +23,9 @@ const BUTTERWORTH_Q: f32 = 0.707_107; // 1/sqrt(2)
 
 // ── Params & Outputs ─────────────────────────────────────────────────────────
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct CrossoverParams {
     /// audio input signal
     input: PolySignal,

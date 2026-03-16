@@ -1,10 +1,12 @@
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::poly::{PolyOutput, PolySignal, PolySignalExt};
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct ScaleAndShiftParams {
     /// signal to scale and shift
     input: PolySignal,

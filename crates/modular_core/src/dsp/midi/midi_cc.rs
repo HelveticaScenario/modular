@@ -3,20 +3,23 @@
 //! Converts MIDI CC messages to control voltage signals.
 //! Supports both 7-bit (standard) and 14-bit (high-resolution) CC.
 
+use deserr::Deserr;
 use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::types::{MidiControlChange, MidiControlChange14Bit};
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct MidiCcParams {
     /// MIDI device name to receive from (leave unset to receive from all devices)
     device: Option<String>,
 
     /// CC number to monitor (0-127 for 7-bit, 0-31 for 14-bit mode)
     #[serde(default)]
+    #[deserr(default)]
     cc: u8,
 
     /// MIDI channel to listen on (1–16, leave unset for omni/all channels)
@@ -24,10 +27,12 @@ struct MidiCcParams {
 
     /// Smoothing time in milliseconds (0 = instant)
     #[serde(default)]
+    #[deserr(default)]
     smoothing_ms: f32,
 
     /// Enable 14-bit high-resolution CC mode (CC 0-31 MSB + CC 32-63 LSB)
     #[serde(default)]
+    #[deserr(default)]
     high_resolution: bool,
 }
 

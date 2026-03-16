@@ -1,13 +1,15 @@
 use crate::dsp::utils::{SchmittState, SchmittTrigger};
 use crate::{
-    PORT_MAX_CHANNELS,
     poly::{PolyOutput, PolySignal},
+    PORT_MAX_CHANNELS,
 };
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct SampleAndHoldParams {
     /// signal to sample
     input: PolySignal,
@@ -83,8 +85,9 @@ impl SampleAndHold {
 
 message_handlers!(impl SampleAndHold {});
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct TrackAndHoldParams {
     /// signal to track
     input: PolySignal,

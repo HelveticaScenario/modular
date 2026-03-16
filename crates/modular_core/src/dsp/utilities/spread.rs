@@ -1,3 +1,4 @@
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -7,8 +8,9 @@ fn default_count() -> usize {
     2
 }
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct SpreadParams {
     /// lower bound of the spread range
     min: Option<MonoSignal>,
@@ -16,6 +18,7 @@ struct SpreadParams {
     max: Option<MonoSignal>,
     /// number of output channels (1–16)
     #[serde(default = "default_count")]
+    #[deserr(default = default_count())]
     count: usize,
     /// distribution bias (-5 to 5): positive biases toward max, negative toward min
     #[signal(default = 0.0, range = (-5.0, 5.0))]

@@ -1,7 +1,7 @@
 use crate::dsp::utils::{hz_to_voct_f64, voct_to_hz_f64};
 use crate::poly::{MonoSignal, MonoSignalExt};
 use crate::types::{ClockMessages, Connect, Signal};
-use deserr::{DeserializeError, ErrorKind, IntoValue, ValuePointerRef};
+use deserr::{DeserializeError, Deserr, ErrorKind, IntoValue, ValuePointerRef};
 use fasteval::{Compiler, Evaler, Instruction};
 use napi::Result;
 use regex::Regex;
@@ -115,11 +115,13 @@ impl Connect for MathExpressionParam {
     }
 }
 
-#[derive(Clone, Deserialize, JsonSchema, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct MathParams {
     /// math expression to evaluate (e.g. "x * 2 + sin(t)")
     #[serde(default)]
+    #[deserr(default)]
     expression: MathExpressionParam,
     /// first input variable, referenced as `x` in the expression
     x: Option<MonoSignal>,

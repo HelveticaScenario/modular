@@ -3,11 +3,14 @@ use crate::{
     poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
     types::Clickless,
 };
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase)]
+#[deserr(deny_unknown_fields)]
 struct PPulseOscillatorParams {
     /// phasor input (0–1, wraps at boundaries)
     #[signal(range = (0.0, 1.0))]

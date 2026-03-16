@@ -1,3 +1,4 @@
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use simple_easing;
@@ -6,8 +7,9 @@ use crate::poly::{MonoSignalExt, PolySignal};
 use crate::types::InterpolationType;
 use crate::{MonoSignal, PolyOutput};
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct TrackParams {
     /// playhead position (wraps from 0 to 1)
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
@@ -15,9 +17,11 @@ struct TrackParams {
     playhead: Option<MonoSignal>,
     /// keyframe values and their positions (0–1)
     #[serde(default)]
+    #[deserr(default)]
     keyframes: Vec<(PolySignal, f32)>,
     /// interpolation curve between keyframes
     #[serde(default)]
+    #[deserr(default, skip)]
     interpolation_type: InterpolationType,
 }
 

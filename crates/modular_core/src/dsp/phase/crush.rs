@@ -3,14 +3,16 @@
 //! Adapted from the 4ms Ensemble Oscillator twist mode.
 //! Copyright 4ms Company. Used under GPL v3.
 
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 use crate::types::Clickless;
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct CrushParams {
     /// input phase (0 to 1)
     #[signal(range = (0.0, 1.0))]

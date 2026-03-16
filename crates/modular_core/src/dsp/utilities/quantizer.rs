@@ -4,6 +4,7 @@
 //! in a configurable scale. This is useful for constraining melodies to a key
 //! or for adding harmonic structure to random/noise sources.
 
+use deserr::{DeserializeError, Deserr, ErrorKind, IntoValue, ValuePointerRef};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -183,12 +184,31 @@ impl<'de> Deserialize<'de> for ScaleParam {
     }
 }
 
+impl<E: DeserializeError> deserr::Deserr<E> for ScaleParam {
+    fn deserialize_from_value<V: IntoValue>(
+        value: deserr::Value<V>,
+        location: ValuePointerRef<'_>,
+    ) -> std::result::Result<Self, E> {
+        let source = String::deserialize_from_value(value, location)?;
+        Self::parse(&source).ok_or_else(|| {
+            deserr::take_cf_content(E::error::<V>(
+                None,
+                ErrorKind::Unexpected {
+                    msg: format!("Invalid scale specification: {}", source),
+                },
+                location,
+            ))
+        })
+    }
+}
+
 fn default_scale() -> ScaleParam {
     ScaleParam::parse("chromatic").unwrap()
 }
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct QuantizerParams {
     /// Input V/Oct signal to quantize
     #[signal(type = pitch)]
@@ -198,6 +218,7 @@ struct QuantizerParams {
     offset: Option<PolySignal>,
     /// Scale specification: "chromatic", "C(major)", "D(0 2 4 5 7 9 11)"
     #[serde(default = "default_scale")]
+    #[deserr(default = default_scale())]
     scale: ScaleParam,
 }
 

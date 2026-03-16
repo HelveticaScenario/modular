@@ -5,6 +5,7 @@
 
 use std::f32::consts::PI;
 
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -13,8 +14,9 @@ use crate::dsp::utils::voct_to_hz;
 use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 use crate::types::Clickless;
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct FeedbackParams {
     /// input phase (0 to 1)
     #[signal(range = (0.0, 1.0))]

@@ -1,3 +1,4 @@
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -10,13 +11,16 @@ fn default_voices() -> usize {
     5
 }
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase)]
+#[deserr(deny_unknown_fields)]
 struct SupersawParams {
     /// pitch in V/Oct (0V = C4)
     freq: Option<PolySignal>,
     /// number of supersaw voices (1–16)
     #[serde(default = "default_voices")]
+    #[deserr(default = default_voices())]
     voices: usize,
     /// detune spread in semitones (default 0.18)
     #[signal(type = control, default = 0.18, range = (0, 12))]

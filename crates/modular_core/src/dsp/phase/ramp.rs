@@ -2,14 +2,16 @@
 //!
 //! Produces a phase ramp from 0 to 1 at a given frequency.
 
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::dsp::utils::voct_to_hz;
 use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct RampParams {
     /// pitch in V/Oct (0V = C4)
     #[signal(type = pitch)]

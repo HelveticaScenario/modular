@@ -3,10 +3,11 @@
 //! Peak-detecting compressor with configurable threshold, ratio,
 //! attack/release times, makeup gain, and input/output gain staging.
 
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 
 // Gain voltage scaling: maps [-5, 5] volts to [-24, 24] dB (4.8 dB per volt)
 const DB_PER_VOLT: f32 = 4.8;
@@ -71,8 +72,9 @@ struct CompressorState {
     channels: [ChannelState; PORT_MAX_CHANNELS],
 }
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct CompressorParams {
     /// audio input signal
     input: PolySignal,

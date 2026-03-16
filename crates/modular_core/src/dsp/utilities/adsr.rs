@@ -1,10 +1,12 @@
 use crate::dsp::utils::SchmittTrigger;
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct AdsrParams {
     /// gate input — rising edge starts the envelope, falling edge triggers release
     #[signal(type = gate, range = (0.0, 5.0))]

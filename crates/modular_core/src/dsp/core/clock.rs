@@ -1,3 +1,4 @@
+use deserr::Deserr;
 use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -21,8 +22,9 @@ where
     Ok(v)
 }
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct ClockParams {
     /// Tempo in BPM.
     tempo: f64,

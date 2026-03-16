@@ -1,10 +1,12 @@
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::poly::{PolyOutput, PolySignal};
 
-#[derive(Clone, Deserialize, JsonSchema, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct SignalParams {
     /// Input signal to forward.
     source: PolySignal,

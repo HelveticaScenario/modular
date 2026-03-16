@@ -1,3 +1,4 @@
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -8,13 +9,15 @@ fn default_count() -> usize {
     1
 }
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct UnisonParams {
     /// input signal to expand (typically V/Oct pitch)
     input: PolySignal,
     /// number of unison voices per input channel (1–16)
     #[serde(default = "default_count")]
+    #[deserr(default = default_count())]
     count: usize,
     /// detune spread amount (0–10V, exponential: 0V = none, 10V = 1 octave)
     spread: Option<PolySignal>,

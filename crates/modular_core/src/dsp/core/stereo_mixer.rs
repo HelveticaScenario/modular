@@ -1,13 +1,15 @@
 use crate::{
-    PORT_MAX_CHANNELS,
     poly::{MonoSignal, MonoSignalExt, PolyOutput, PolySignal, PolySignalExt},
     types::Clickless,
+    PORT_MAX_CHANNELS,
 };
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct StereoMixerParams {
     /// Input signal to place in the stereo field.
     input: PolySignal,

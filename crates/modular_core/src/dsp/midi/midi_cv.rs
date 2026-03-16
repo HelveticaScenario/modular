@@ -3,6 +3,7 @@
 //! Converts MIDI note messages to pitch CV and gate signals with configurable
 //! voice allocation modes following VCV Rack conventions.
 
+use deserr::Deserr;
 use napi::Result;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -18,8 +19,11 @@ use crate::types::{
 };
 
 /// Voice allocation mode for polyphonic operation
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Deserr, Serialize, JsonSchema,
+)]
 #[serde(rename_all = "lowercase")]
+#[deserr(rename_all = lowercase)]
 pub enum PolyMode {
     /// Round-robin through available voices
     #[default]
@@ -37,8 +41,11 @@ impl Connect for PolyMode {
 }
 
 /// Note priority for monophonic operation
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Deserr, Serialize, JsonSchema,
+)]
 #[serde(rename_all = "lowercase")]
+#[deserr(rename_all = lowercase)]
 pub enum MonoMode {
     /// Last note pressed wins
     #[default]
@@ -72,14 +79,16 @@ struct VoiceState {
     mod_wheel: u8,
 }
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct MidiCvParams {
     /// MIDI device name to receive from (leave unset to receive from all devices)
     device: Option<String>,
 
     /// Number of polyphonic voices (1-16)
     #[serde(default = "default_channels")]
+    #[deserr(default = default_channels())]
     channels: usize,
 
     /// MIDI channel to listen on (1–16, leave unset for omni/all channels)
@@ -87,14 +96,17 @@ struct MidiCvParams {
 
     /// Polyphonic voice allocation mode
     #[serde(default)]
+    #[deserr(default)]
     poly_mode: PolyMode,
 
     /// Monophonic note priority (used when only one voice is active)
     #[serde(default)]
+    #[deserr(default)]
     mono_mode: MonoMode,
 
     /// Pitch bend range in semitones (0 = disabled, default 2)
     #[serde(default = "default_pitch_bend_range")]
+    #[deserr(default = default_pitch_bend_range())]
     pitch_bend_range: u8,
 }
 

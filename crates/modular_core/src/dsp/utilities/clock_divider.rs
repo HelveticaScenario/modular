@@ -1,3 +1,4 @@
+use deserr::Deserr;
 use napi::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -10,8 +11,9 @@ fn default_division() -> u32 {
     1
 }
 
-#[derive(Clone, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct ClockDividerParams {
     /// division factor (e.g. 2 = output fires every other tick)
     pub division: u32,
