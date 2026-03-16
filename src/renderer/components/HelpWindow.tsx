@@ -14,6 +14,8 @@ import {
     DslTypeName,
     TypeDocumentation,
     isDslType,
+    GLOBAL_DOCS,
+    GlobalFunctionDoc,
 } from '../../shared/dsl/typeDocs';
 import {
     schemaToTypeExpr,
@@ -325,6 +327,62 @@ export const HelpWindow: React.FC = () => {
 
     const renderContent = () => {
         switch (activePage) {
+            case 'globals': {
+                const groups = GLOBAL_DOCS.reduce<Record<string, GlobalFunctionDoc[]>>(
+                    (acc, fn) => {
+                        (acc[fn.group] ??= []).push(fn);
+                        return acc;
+                    },
+                    {},
+                );
+                return (
+                    <div>
+                        <h2>Global Functions</h2>
+                        <p className="types-intro">
+                            These functions are available in every patch without
+                            any imports.
+                        </p>
+                        {Object.entries(groups).map(([group, fns]) => (
+                            <div key={group}>
+                                <h3>{group}</h3>
+                                {fns.map((fn) => (
+                                    <div key={fn.name} className="module-card">
+                                        <h4>
+                                            <code>{fn.signature}</code>
+                                        </h4>
+                                        <p>{fn.description}</p>
+                                        {fn.params && fn.params.length > 0 && (
+                                            <>
+                                                <h5>Parameters</h5>
+                                                <ul>
+                                                    {fn.params.map((p) => (
+                                                        <li key={p.name}>
+                                                            <strong>
+                                                                {p.name}:{' '}
+                                                                <LinkifyTypes
+                                                                    text={p.type}
+                                                                    onTypeClick={handleTypeClick}
+                                                                />
+                                                            </strong>{' '}
+                                                            &mdash; {p.description}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </>
+                                        )}
+                                        {fn.examples.length > 0 && (
+                                            <>
+                                                <h5>Example</h5>
+                                                <pre>{fn.examples.join('\n\n')}</pre>
+                                            </>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        ))}
+                    </div>
+                );
+            }
             case 'hotkeys':
                 return (
                     <div>
@@ -560,6 +618,12 @@ export const HelpWindow: React.FC = () => {
                     onClick={() => setActivePage('hotkeys')}
                 >
                     Hotkeys
+                </button>
+                <button
+                    className={activePage === 'globals' ? 'active' : ''}
+                    onClick={() => setActivePage('globals')}
+                >
+                    Globals
                 </button>
                 <button
                     className={activePage === 'types' ? 'active' : ''}

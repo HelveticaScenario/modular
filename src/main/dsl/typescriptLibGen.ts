@@ -465,6 +465,14 @@ interface ModuleOutput {
    * @example $sine('c4').range(0, 1, -5, 5)
    */
   range(outMin: Poly<Signal>, outMax: Poly<Signal>, inMin: Poly<Signal>, inMax: Poly<Signal>): ModuleOutput;
+
+  /**
+   * Register this output as a send to a bus, with optional gain.
+   * @param bus - The {@link Bus} to send to
+   * @param gain - Send level as {@link Poly<Signal>}
+   * @returns This output for chaining
+   */
+  send(bus: Bus, gain?: Poly<Signal>): this;
 }
 
 /**
@@ -642,6 +650,14 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
    * $c(osc1, osc2).pipeMix(s => $lpf(s, '1000hz'), 1).out()
    */
   pipeMix(pipeFn: (self: this) => ModuleOutput | Collection, mix?: Poly<Signal> ): Collection;
+
+  /**
+   * Register all outputs in this collection as a send to a bus, with optional gain.
+   * @param bus - The {@link Bus} to send to
+   * @param gain - Send level as {@link Poly<Signal>}
+   * @returns This collection for chaining
+   */
+  send(bus: Bus, gain?: Poly<Signal>): this;
 }
 
 /**
@@ -809,6 +825,48 @@ function $deferred(channels?: number): DeferredCollection;
  * $sine(440).amplitude(vol).out();
  */
 function $slider(label: string, value: number, min: number, max: number): ModuleOutput;
+
+/**
+ * A send-return bus. Create one with {@link $bus}, then call \`.send(bus, gain)\` on
+ * any {@link ModuleOutput} or {@link Collection} to route signals through it.
+ * The bus callback receives a mixed {@link Collection} of all sends.
+ */
+class Bus {
+  /** @internal */
+  private constructor();
+}
+
+/**
+ * Create a send-return bus.
+ *
+ * The callback receives a {@link Collection} that is the mix of all signals
+ * sent to this bus via \`.send(bus, gain)\`. Use it to add effects or route the
+ * mixed signal to an output.
+ *
+ * @param cb - Called during patch finalization with the mixed sends.
+ *             The return value of this function is discarded, it's up to the cb to
+ *             call \`.out()\` or \`.outMono()\` to actually hear anything.
+ * @returns A {@link Bus} handle passed to \`.send()\`
+ *
+ * @example
+ * const reverb = \\$bus((mixed) => \\$reverb(mixed).out());
+ * \\$saw('a').send(reverb, 0.6);
+ * \\$sine('a2').send(reverb, 0.4);
+ */
+function $bus(cb: (mixed: Collection) => unknown): Bus;
+
+/**
+ * Set a custom end-of-chain processor applied to the final mix before output gain.
+ *
+ * The callback receives the fully mixed {@link Collection} and should return a
+ * processed signal. It is called once during patch finalization.
+ *
+ * @param cb - Transform applied to the final mix
+ *
+ * @example
+ * $setEndOfChainCb((mix) => $lpf(mix, '2000hz'));
+ */
+function $setEndOfChainCb(cb: (mixed: Collection) => ModuleOutput | Collection | CollectionWithRange): void;
 
 /**
  * Compute the Cartesian product of the given arrays.
