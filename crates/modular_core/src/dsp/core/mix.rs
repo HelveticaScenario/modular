@@ -1,6 +1,5 @@
 use deserr::Deserr;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
 use crate::{
     poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
@@ -8,7 +7,7 @@ use crate::{
 };
 
 /// Mixing mode for combining input signals.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Deserr, JsonSchema, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Deserr, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[deserr(rename_all = lowercase)]
 pub enum MixMode {
@@ -27,7 +26,7 @@ impl crate::types::Connect for MixMode {
     fn connect(&mut self, _patch: &crate::Patch) {}
 }
 
-#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 pub struct MixParams {
@@ -313,7 +312,12 @@ mod tests {
 
     #[test]
     fn test_mix_empty_inputs_no_gain() {
-        let mut mixer = make_mix(serde_json::from_value(serde_json::json!({})).unwrap());
+        let params: MixParams =
+            deserr::deserialize::<MixParams, _, crate::param_errors::ModuleParamErrors>(
+                serde_json::json!({}),
+            )
+            .unwrap();
+        let mut mixer = make_mix(params);
         mixer.update(48000.0);
         // Empty inputs with no gain -> 1 channel of silence
         assert_eq!(mixer.outputs.sample.channels(), 1);

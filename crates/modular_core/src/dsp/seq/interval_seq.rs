@@ -1255,7 +1255,11 @@ mod tests {
     #[test]
     fn test_deserialize_patterns_from_string() {
         let json = serde_json::json!({ "patterns": "0 2 4" });
-        let params: IntervalSeqParams = serde_json::from_value(json).unwrap();
+        let params: IntervalSeqParams =
+            deserr::deserialize::<IntervalSeqParams, _, crate::param_errors::ModuleParamErrors>(
+                json,
+            )
+            .unwrap();
         assert!(params.patterns.pattern().is_some());
         assert_eq!(params.patterns.num_sources(), 1);
     }
@@ -1263,7 +1267,11 @@ mod tests {
     #[test]
     fn test_deserialize_patterns_from_array() {
         let json = serde_json::json!({ "patterns": ["0 2 4", "0 3"] });
-        let params: IntervalSeqParams = serde_json::from_value(json).unwrap();
+        let params: IntervalSeqParams =
+            deserr::deserialize::<IntervalSeqParams, _, crate::param_errors::ModuleParamErrors>(
+                json,
+            )
+            .unwrap();
         assert!(params.patterns.pattern().is_some());
         assert_eq!(params.patterns.num_sources(), 2);
     }

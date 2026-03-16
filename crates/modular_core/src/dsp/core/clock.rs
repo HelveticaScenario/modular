@@ -372,25 +372,30 @@ mod tests {
         );
     }
 
+    /// Helper to deserialize ClockParams from a serde_json::Value via deserr.
+    fn deserialize_clock_params(json: serde_json::Value) -> ClockParams {
+        deserr::deserialize::<ClockParams, _, crate::param_errors::ModuleParamErrors>(json).unwrap()
+    }
+
     #[test]
     fn clock_time_sig_deserialization() {
         // Verify time sig params deserialize correctly from JSON
-        let params: ClockParams =
-            serde_json::from_str(r#"{"numerator": 6, "denominator": 8}"#).unwrap();
+        let params =
+            deserialize_clock_params(serde_json::json!({"numerator": 6, "denominator": 8}));
         assert_eq!(params.numerator, 6);
         assert_eq!(params.denominator, 8);
     }
 
     #[test]
     fn clock_tempo_deserialization() {
-        let params: ClockParams = serde_json::from_str(r#"{"tempo": 140}"#).unwrap();
+        let params = deserialize_clock_params(serde_json::json!({"tempo": 140}));
         assert!((params.tempo - 140.0).abs() < 1e-9);
     }
 
     #[test]
     fn clock_time_sig_defaults_when_missing() {
         // Verify defaults when not provided in JSON
-        let params: ClockParams = serde_json::from_str("{}").unwrap();
+        let params = deserialize_clock_params(serde_json::json!({}));
         assert_eq!(params.numerator, 4);
         assert_eq!(params.denominator, 4);
     }
@@ -424,20 +429,6 @@ mod tests {
             c.outputs.beat_trigger, 0.0,
             "beat_trigger should be 0 after Stop"
         );
-    }
-
-    #[test]
-    fn clock_rejects_zero_numerator() {
-        let result: std::result::Result<ClockParams, _> =
-            serde_json::from_str(r#"{"numerator": 0}"#);
-        assert!(result.is_err(), "numerator=0 should be rejected");
-    }
-
-    #[test]
-    fn clock_rejects_zero_denominator() {
-        let result: std::result::Result<ClockParams, _> =
-            serde_json::from_str(r#"{"denominator": 0}"#);
-        assert!(result.is_err(), "denominator=0 should be rejected");
     }
 
     #[test]

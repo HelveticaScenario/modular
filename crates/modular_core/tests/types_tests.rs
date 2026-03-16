@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
 use napi::Result;
-use serde::Deserialize;
 use serde_json::json;
 
 use modular_core::patch::Patch;
@@ -167,7 +166,6 @@ fn signal_cable_connect_and_read() {
     approx_eq(s.get_value(), 3.5, 1e-6);
 }
 
-
 #[test]
 fn enum_tag_derive_generates_payload_free_enum() {
     #[derive(modular_derive::EnumTag)]
@@ -234,7 +232,6 @@ fn message_listener_macro_infers_tags_from_match() {
     s.handle_message(&Message::Clock(ClockMessages::Stop))
         .unwrap();
 }
-
 
 #[test]
 fn connect_noop_for_non_cable_and_non_track_signals() {
