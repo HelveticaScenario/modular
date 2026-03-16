@@ -18,14 +18,14 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    MonoSignal, Patch,
     dsp::{
         utilities::quantizer::ScaleParam,
-        utils::{TempGate, TempGateState, midi_to_voct_f64, min_gate_samples},
+        utils::{midi_to_voct_f64, min_gate_samples, TempGate, TempGateState},
     },
     pattern_system::Pattern,
-    poly::{PORT_MAX_CHANNELS, PolyOutput},
+    poly::{PolyOutput, PORT_MAX_CHANNELS},
     types::Connect,
+    MonoSignal, Patch,
 };
 
 /// Scale parameter for IntervalSeq that supports an optional octave in the root.
@@ -410,8 +410,6 @@ struct IntervalVoiceState {
     last_assigned: f64,
 }
 
-
-
 fn default_channels() -> usize {
     4
 }
@@ -518,9 +516,12 @@ fn extract_pattern_spans(
 ) -> Vec<Vec<(usize, usize)>> {
     let mut result = Vec::with_capacity(num_patterns);
 
-    // Pattern 0's span = source_span
+    // Pattern 0's span = source_span + source_extra_spans
     if num_patterns > 0 {
-        result.push(context.source_span.iter().map(|s| s.to_tuple()).collect());
+        let mut spans: Vec<(usize, usize)> =
+            context.source_span.iter().map(|s| s.to_tuple()).collect();
+        spans.extend(context.source_extra_spans.iter().map(|s| s.to_tuple()));
+        result.push(spans);
     }
 
     // Patterns 1..N spans = modifier_spans in order
@@ -529,7 +530,11 @@ fn extract_pattern_spans(
         .len()
         .min(num_patterns.saturating_sub(1));
     for i in 0..modifier_limit {
-        result.push(vec![context.modifier_spans[i].to_tuple()]);
+        let mut spans = vec![context.modifier_spans[i].to_tuple()];
+        if let Some(extras) = context.modifier_extra_spans.get(i) {
+            spans.extend(extras.iter().map(|s| s.to_tuple()));
+        }
+        result.push(spans);
     }
 
     // Pad with empty vecs if needed
@@ -1140,7 +1145,7 @@ mod tests {
 
         // D3 root
         seq.base_midi = 50; // D3
-        // Degree 0 = D3 = MIDI 50 = -10/12 V
+                            // Degree 0 = D3 = MIDI 50 = -10/12 V
         let v0 = seq.degree_to_voltage(0);
         assert!((v0 - (-10.0 / 12.0)).abs() < 0.001);
     }
@@ -1216,5 +1221,30 @@ mod tests {
         let params: IntervalSeqParams = serde_json::from_value(json).unwrap();
         assert!(params.patterns.pattern().is_some());
         assert_eq!(params.patterns.num_sources(), 2);
+    }
+
+    #[test]
+    fn test_extract_pattern_spans_includes_extras() {
+        use crate::pattern_system::{HapContext, SourceSpan};
+
+        // Single pattern with source_extra_spans (from *<4 6>)
+        let mut ctx = HapContext::with_span(SourceSpan::new(0, 1));
+        ctx.source_extra_spans.push(SourceSpan::new(5, 6));
+
+        let spans = extract_pattern_spans(&ctx, 1);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0], vec![(0, 1), (5, 6)]); // source + extra
+
+        // Two patterns: pattern 0 has extras, pattern 1 has extras
+        let mut ctx2 = HapContext::with_span(SourceSpan::new(0, 1));
+        ctx2.source_extra_spans.push(SourceSpan::new(5, 6));
+        ctx2.modifier_spans.push(SourceSpan::new(10, 11));
+        ctx2.modifier_extra_spans
+            .push(vec![SourceSpan::new(15, 16)]);
+
+        let spans2 = extract_pattern_spans(&ctx2, 2);
+        assert_eq!(spans2.len(), 2);
+        assert_eq!(spans2[0], vec![(0, 1), (5, 6)]); // pattern 0: source + extras
+        assert_eq!(spans2[1], vec![(10, 11), (15, 16)]); // pattern 1: modifier + extras
     }
 }
