@@ -138,7 +138,9 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
     }
 
     /**
-     * Scale all outputs by a factor
+     * Scale all outputs by a linear factor (5 = unity, 2.5 = half, 10 = 2x).
+     *
+     * For perceptual (audio-taper) volume control, use {@link gain} instead.
      */
     amplitude(factor: PolySignal): Collection {
         if (this.items.length === 0) return new Collection();
@@ -167,8 +169,10 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
     }
 
     /**
-     * Scale all outputs by a factor with a perceptual (audio taper) curve.
-     * Chains $curve → $scaleAndShift with exponent 3.
+     * Scale all outputs by a factor with a perceptual (audio taper) curve
+     * (5 = unity, 0 = silence). Chains $curve → $scaleAndShift with exponent 3.
+     *
+     * For linear amplitude scaling, use {@link amplitude} instead.
      */
     gain(level: PolySignal): Collection {
         if (this.items.length === 0) return new Collection();
@@ -1022,7 +1026,9 @@ export class ModuleOutput {
     }
 
     /**
-     * Scale this output by a factor
+     * Scale this output by a linear factor (5 = unity, 2.5 = half, 10 = 2x).
+     *
+     * For perceptual (audio-taper) volume control, use {@link gain} instead.
      */
     amplitude(factor: Value): Collection {
         const factory = this.builder.getFactory('$scaleAndShift');
@@ -1049,8 +1055,10 @@ export class ModuleOutput {
     }
 
     /**
-     * Scale this output by a factor with a perceptual (audio taper) curve.
-     * Chains $curve → $scaleAndShift with exponent 3.
+     * Scale this output by a factor with a perceptual (audio taper) curve
+     * (5 = unity, 0 = silence). Chains $curve → $scaleAndShift with exponent 3.
+     *
+     * For linear amplitude scaling, use {@link amplitude} instead.
      */
     gain(level: Value): Collection {
         const curveFactory = this.builder.getFactory('$curve');

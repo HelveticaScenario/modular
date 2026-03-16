@@ -301,7 +301,7 @@ type Mono<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
  * @see {@link Collection.out}
  */
 interface StereoOutOptions {
-  /** Output gain. If set, a util.scaleAndShift module is added after the stereo mix */
+  /** Output gain. If set, a $scaleAndShift module is added after the stereo mix */
   gain?: Poly<Signal>;
   /** Pan position (-5 = left, 0 = center, +5 = right). Default 0 */
   pan?: Poly<Signal>;
@@ -333,11 +333,14 @@ interface ModuleOutput {
   /** The channel index for polyphonic outputs */
   readonly channel: number;
   
-  /**
-   * Scale the signal by a factor. Creates a util.scaleAndShift module internally.
-   * @param factor - Scale factor as {@link Poly<Signal>}
-   * @returns The scaled {@link Collection} for chaining
-    * @example osc.amplitude(0.5)  // Half amplitude
+    /**
+     * Scale the signal by a linear factor (5 = unity, 2.5 = half, 10 = 2x).
+     * Creates a $scaleAndShift module internally.
+     *
+     * For perceptual (audio-taper) volume control, use {@link gain} instead.
+     * @param factor - Scale factor as {@link Poly<Signal>}
+     * @returns The scaled {@link Collection} for chaining
+     * @example osc.amplitude(2.5)  // Half amplitude
      */
    amplitude(factor: Poly<Signal>): Collection;
 
@@ -345,21 +348,23 @@ interface ModuleOutput {
    amp(factor: Poly<Signal>): Collection;
   
   /**
-   * Add a DC offset to the signal. Creates a util.scaleAndShift module internally.
+   * Add a DC offset to the signal. Creates a $scaleAndShift module internally.
    * @param offset - Offset value as {@link Poly<Signal>}
    * @returns The shifted {@link Collection} for chaining
    * @example lfo.shift(2.5)  // Shift to 0-5V range
    */
   shift(offset: Poly<Signal>): Collection;
 
-  /**
-   * Scale the signal by a factor with a perceptual (audio taper) curve.
-   * Chains \\$curve → \\$scaleAndShift with exponent 3.
-   * @param level - Amplitude level as {@link Poly<Signal>}
-   * @returns The scaled {@link Collection} for chaining
-   * @example osc.gain(2.5)  // Perceptual half volume
-   */
-  gain(level: Poly<Signal>): Collection;
+    /**
+     * Scale the signal by a factor with a perceptual (audio taper) curve
+     * (5 = unity, 0 = silence). Chains \\$curve → \\$scaleAndShift with exponent 3.
+     *
+     * For linear amplitude scaling, use {@link amplitude} instead.
+     * @param level - Amplitude level as {@link Poly<Signal>}
+     * @returns The scaled {@link Collection} for chaining
+     * @example osc.gain(2.5)
+     */
+   gain(level: Poly<Signal>): Collection;
 
   /**
    * Apply a power curve to this signal. Creates a \\$curve module internally.
@@ -519,9 +524,11 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
   readonly [index: number]: T;
   [Symbol.iterator](): Iterator<T>;
 
-  /**
-   * Scale all signals by a factor.
-   * @param factor - Scale factor as {@link Poly<Signal>}
+    /**
+     * Scale all signals by a linear factor (5 = unity, 2.5 = half, 10 = 2x).
+     *
+     * For perceptual (audio-taper) volume control, use {@link gain} instead.
+     * @param factor - Scale factor as {@link Poly<Signal>}
      * @see {@link ModuleOutput.amplitude}
      */
    amplitude(factor: Poly<Signal>): Collection;
@@ -536,11 +543,14 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
    */
   shift(offset: Poly<Signal>): Collection;
 
-  /**
-   * Scale all signals by a factor with a perceptual (audio taper) curve.
-   * @param level - Amplitude level as {@link Poly<Signal>}
-   * @see {@link ModuleOutput.gain}
-   */
+    /**
+     * Scale all signals by a factor with a perceptual (audio taper) curve
+     * (5 = unity, 0 = silence).
+     *
+     * For linear amplitude scaling, use {@link amplitude} instead.
+     * @param level - Amplitude level as {@link Poly<Signal>}
+     * @see {@link ModuleOutput.gain}
+     */
   gain(level: Poly<Signal>): Collection;
 
   /**
