@@ -1,14 +1,16 @@
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
-    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
+    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
     types::Clickless,
 };
 
 /// Mixing mode for combining input signals.
-#[derive(Clone, Copy, Debug, Default, Deserialize, JsonSchema, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Deserr, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[deserr(rename_all = lowercase)]
 pub enum MixMode {
     /// Sum all inputs.
     #[default]

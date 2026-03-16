@@ -9,6 +9,7 @@
 //! - Level input for dynamics/VCA control
 //! - Proper modulation routing matching the original hardware
 
+use deserr::Deserr;
 use mi_plaits_dsp::voice::{Modulations, Patch, Voice};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -27,8 +28,9 @@ const BLOCK_SIZE: usize = 12;
 const ENGINE_SAMPLE_RATE: f32 = 48000.0;
 
 /// Synthesis engine selection for Plaits
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Deserr, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase)]
 pub enum PlaitsEngine {
     /// Virtual analog oscillator with VCF - classic subtractive synthesis
     #[default]

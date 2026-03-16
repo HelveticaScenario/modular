@@ -1,3 +1,4 @@
+use deserr::Deserr;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -9,8 +10,9 @@ struct NoiseParams {
     color: NoiseKind,
 }
 
-#[derive(Clone, Copy, Deserialize, JsonSchema, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Deserialize, Deserr, JsonSchema, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase)]
 #[derive(Default)]
 enum NoiseKind {
     /// equal energy across all frequencies
