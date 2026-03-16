@@ -4,10 +4,8 @@ import { AudioControls } from './components/AudioControls';
 import { TransportDisplay } from './components/TransportDisplay';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { Settings } from './components/Settings';
-import {
-    UpdateNotification,
-    type UpdateNotificationState,
-} from './components/UpdateNotification';
+import type { UpdateNotificationState } from './components/UpdateNotification';
+import { UpdateNotification } from './components/UpdateNotification';
 import './App.css';
 // import type { editor } from 'monaco-editor';
 import { editor } from 'monaco-editor';
@@ -18,11 +16,11 @@ import { ControlPanel } from './components/ControlPanel';
 import electronAPI from './electronAPI';
 import { ValidationError } from '@modular/core';
 import type { QueuedTrigger } from '@modular/core';
-import {
-    type FileTreeEntry,
-    type SourceLocationInfo,
-    type TransportSnapshot,
-    type UpdateAvailableInfo,
+import type {
+    FileTreeEntry,
+    SourceLocationInfo,
+    TransportSnapshot,
+    UpdateAvailableInfo,
 } from '../shared/ipcTypes';
 import type { SliderDefinition } from '../shared/dsl/sliderTypes';
 import { findSliderValueSpan } from './dsl/sliderSourceEdit';
