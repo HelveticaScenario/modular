@@ -37,7 +37,7 @@ use napi_derive::napi;
 use regex::Regex;
 use rust_music_theory::note::{Notes, Pitch};
 use rust_music_theory::scale::Scale;
-use deserr::{DeserializeError, ErrorKind, IntoValue, Map as DeserrMap, ValuePointerRef};
+use deserr::{DeserializeError, Deserr, ErrorKind, IntoValue, Map as DeserrMap, ValuePointerRef};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -890,8 +890,10 @@ impl PartialEq for Signal {
     Serialize,
     Deserialize,
     JsonSchema,
+    Deserr,
 )]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase)]
 pub enum InterpolationType {
     #[default]
     Linear,

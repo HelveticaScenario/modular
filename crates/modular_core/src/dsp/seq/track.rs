@@ -21,7 +21,7 @@ struct TrackParams {
     keyframes: Vec<(PolySignal, f32)>,
     /// interpolation curve between keyframes
     #[serde(default)]
-    #[deserr(default, skip)]
+    #[deserr(default)]
     interpolation_type: InterpolationType,
 }
 
