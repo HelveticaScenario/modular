@@ -9,7 +9,6 @@ use std::sync::Arc;
 
 use deserr::{DeserializeError, ErrorKind, IntoValue, ValuePointerRef};
 use schemars::JsonSchema;
-use serde::Deserialize;
 
 use crate::{
     Patch,
@@ -365,19 +364,6 @@ impl SeqPatternParam {
     /// Get the pre-computed cached haps for cycles 0..999.
     pub fn cached_haps(&self) -> &[Arc<Vec<DspHap<SeqValue>>>] {
         &self.cached_haps
-    }
-}
-
-impl<'de> Deserialize<'de> for SeqPatternParam {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let source = String::deserialize(deserializer)?;
-        if source.is_empty() {
-            return Ok(Self::default());
-        }
-        Self::parse(&source).map_err(serde::de::Error::custom)
     }
 }
 

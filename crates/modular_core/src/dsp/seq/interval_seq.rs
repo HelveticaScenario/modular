@@ -16,7 +16,6 @@ use std::sync::Arc;
 use arrayvec::ArrayVec;
 use deserr::Deserr;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
 use crate::{
     dsp::{
@@ -39,20 +38,6 @@ struct IntervalScaleParam(ScaleParam);
 impl Default for IntervalScaleParam {
     fn default() -> Self {
         Self(ScaleParam::parse_with_octave("C(major)").unwrap())
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for IntervalScaleParam {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let source = String::deserialize(deserializer)?;
-        ScaleParam::parse_with_octave(&source)
-            .map(Self)
-            .ok_or_else(|| {
-                serde::de::Error::custom(format!("Invalid scale specification: {}", source))
-            })
     }
 }
 
@@ -171,7 +156,7 @@ impl crate::pattern_system::mini::convert::HasRest for IntervalValue {
 
 /// Source representation for interval patterns: either a single pattern
 /// string or an array of strings that get combined via `app_left` addition.
-#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, JsonSchema)]
 #[serde(untagged)]
 pub enum IntervalPatternSource {
     Single(String),
@@ -363,16 +348,6 @@ impl IntervalPatternParam {
     }
 }
 
-impl<'de> Deserialize<'de> for IntervalPatternParam {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let source = IntervalPatternSource::deserialize(deserializer)?;
-        Self::from_source(source).map_err(serde::de::Error::custom)
-    }
-}
-
 impl JsonSchema for IntervalPatternParam {
     fn schema_name() -> std::borrow::Cow<'static, str> {
         IntervalPatternSource::schema_name()
@@ -477,7 +452,7 @@ fn default_channels() -> usize {
     4
 }
 
-#[derive(Clone, Deserialize, Deserr, ChannelCount, JsonSchema, Connect, Debug, SignalParams)]
+#[derive(Clone, Deserr, ChannelCount, JsonSchema, Connect, Debug, SignalParams)]
 #[serde(rename_all = "camelCase")]
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 pub struct IntervalSeqParams {

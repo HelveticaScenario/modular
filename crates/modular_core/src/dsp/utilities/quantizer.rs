@@ -6,7 +6,6 @@
 
 use deserr::{DeserializeError, Deserr, ErrorKind, IntoValue, ValuePointerRef};
 use schemars::JsonSchema;
-use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::{
@@ -172,18 +171,6 @@ impl schemars::JsonSchema for ScaleParam {
     }
 }
 
-impl<'de> Deserialize<'de> for ScaleParam {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let source = String::deserialize(deserializer)?;
-        Self::parse(&source).ok_or_else(|| {
-            serde::de::Error::custom(format!("Invalid scale specification: {}", source))
-        })
-    }
-}
-
 impl<E: DeserializeError> deserr::Deserr<E> for ScaleParam {
     fn deserialize_from_value<V: IntoValue>(
         value: deserr::Value<V>,
@@ -206,7 +193,7 @@ fn default_scale() -> ScaleParam {
     ScaleParam::parse("chromatic").unwrap()
 }
 
-#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct QuantizerParams {

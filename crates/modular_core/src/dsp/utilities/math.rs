@@ -6,7 +6,6 @@ use fasteval::{Compiler, Evaler, Instruction};
 use napi::Result;
 use regex::Regex;
 use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 
@@ -80,16 +79,6 @@ impl MathExpressionParam {
     }
 }
 
-impl<'de> Deserialize<'de> for MathExpressionParam {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let source = String::deserialize(deserializer)?;
-        Self::parse(source).map_err(serde::de::Error::custom)
-    }
-}
-
 // deserr implementation for MathExpressionParam - transparent string wrapper that parses.
 impl<E: DeserializeError> deserr::Deserr<E> for MathExpressionParam {
     fn deserialize_from_value<V: IntoValue>(
@@ -115,7 +104,7 @@ impl Connect for MathExpressionParam {
     }
 }
 
-#[derive(Clone, Deserialize, Deserr, JsonSchema, ChannelCount, SignalParams)]
+#[derive(Clone, Deserr, JsonSchema, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct MathParams {
