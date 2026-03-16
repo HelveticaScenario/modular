@@ -1605,7 +1605,7 @@ const createMenu = (): void => {
         },
         // Edit menu
         {
-            role: 'editMenu',
+            label: 'Edit',
             submenu: [
                 { role: 'undo' },
                 { role: 'redo' },
