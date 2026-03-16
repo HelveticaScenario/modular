@@ -399,14 +399,16 @@ export const HelpWindow: React.FC = () => {
             case 'reference':
                 return (
                     <div>
-                        <h2>Module Reference</h2>
-                        <input
-                            type="text"
-                            placeholder="Search modules..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="search-input"
-                        />
+                        <h2 className="help-title">Module Reference</h2>
+                        <div className="search-container">
+                            <input
+                                type="text"
+                                placeholder="Search modules..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="search-input"
+                            />
+                        </div>
                         {filteredModules.map((module) => {
                             // console.log(module);
                             const params = getParams(module);
