@@ -1,8 +1,7 @@
 use deserr::Deserr;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
-#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 #[deserr(rename_all = camelCase)]
 #[deserr(deny_unknown_fields)]
@@ -13,7 +12,7 @@ struct NoiseParams {
     color: NoiseKind,
 }
 
-#[derive(Clone, Copy, Deserialize, Deserr, JsonSchema, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Deserr, JsonSchema, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 #[deserr(rename_all = camelCase)]
 #[derive(Default)]

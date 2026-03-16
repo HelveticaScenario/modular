@@ -15,7 +15,6 @@ use std::sync::Arc;
 
 use deserr::Deserr;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
 use crate::{
     MonoSignal,
@@ -138,7 +137,7 @@ fn default_channels() -> usize {
     4
 }
 
-#[derive(Clone, Deserialize, Deserr, ChannelCount, JsonSchema, Connect, Debug, SignalParams)]
+#[derive(Clone, Deserr, ChannelCount, JsonSchema, Connect, Debug, SignalParams)]
 #[serde(rename_all = "camelCase")]
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 pub struct SeqParams {

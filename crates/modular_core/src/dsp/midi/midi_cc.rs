@@ -6,11 +6,10 @@
 use deserr::Deserr;
 use napi::Result;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
 use crate::types::{MidiControlChange, MidiControlChange14Bit};
 
-#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct MidiCcParams {

@@ -1,7 +1,6 @@
 use deserr::Deserr;
 use napi::Result;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
 use crate::dsp::utils::{min_gate_samples, SchmittTrigger, TempGate, TempGateState};
 use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
@@ -11,7 +10,7 @@ fn default_division() -> u32 {
     1
 }
 
-#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct ClockDividerParams {

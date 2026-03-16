@@ -5,7 +5,6 @@
 
 use deserr::Deserr;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
 use crate::{
     dsp::utils::{changed, voct_to_hz},
@@ -23,7 +22,7 @@ const BUTTERWORTH_Q: f32 = 0.707_107; // 1/sqrt(2)
 
 // ── Params & Outputs ─────────────────────────────────────────────────────────
 
-#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct CrossoverParams {

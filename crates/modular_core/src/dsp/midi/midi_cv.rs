@@ -6,7 +6,7 @@
 use deserr::Deserr;
 use napi::Result;
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::dsp::utils::{
     min_gate_samples, TempGate, TempGateState, GATE_HIGH_VOLTAGE, GATE_LOW_VOLTAGE,
@@ -19,9 +19,7 @@ use crate::types::{
 };
 
 /// Voice allocation mode for polyphonic operation
-#[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Deserr, Serialize, JsonSchema,
-)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserr, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 #[deserr(rename_all = lowercase)]
 pub enum PolyMode {
@@ -41,9 +39,7 @@ impl Connect for PolyMode {
 }
 
 /// Note priority for monophonic operation
-#[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Deserr, Serialize, JsonSchema,
-)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserr, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 #[deserr(rename_all = lowercase)]
 pub enum MonoMode {
@@ -79,7 +75,7 @@ struct VoiceState {
     mod_wheel: u8,
 }
 
-#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct MidiCvParams {

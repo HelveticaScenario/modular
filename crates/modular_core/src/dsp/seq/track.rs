@@ -1,13 +1,12 @@
 use deserr::Deserr;
 use schemars::JsonSchema;
-use serde::Deserialize;
 use simple_easing;
 
 use crate::poly::{MonoSignalExt, PolySignal};
 use crate::types::InterpolationType;
 use crate::{MonoSignal, PolyOutput};
 
-#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct TrackParams {

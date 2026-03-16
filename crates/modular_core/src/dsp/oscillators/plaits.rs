@@ -12,7 +12,6 @@
 use deserr::Deserr;
 use mi_plaits_dsp::voice::{Modulations, Patch, Voice};
 use schemars::JsonSchema;
-use serde::Deserialize;
 
 use crate::{
     dsp::utils::{voct_to_midi, SchmittTrigger},
@@ -28,7 +27,7 @@ const BLOCK_SIZE: usize = 12;
 const ENGINE_SAMPLE_RATE: f32 = 48000.0;
 
 /// Synthesis engine selection for Plaits
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Deserr, JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserr, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 #[deserr(rename_all = camelCase)]
 pub enum PlaitsEngine {
@@ -119,7 +118,7 @@ impl Connect for PlaitsEngine {
     fn connect(&mut self, _patch: &ModularPatch) {}
 }
 
-#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 #[deserr(rename_all = camelCase)]
 #[deserr(deny_unknown_fields)]
