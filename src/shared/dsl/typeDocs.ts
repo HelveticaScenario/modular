@@ -117,7 +117,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 name: 'amplitude',
                 signature: 'amplitude(factor: Poly<Signal>): ModuleOutput',
                 description:
-                    'Scale the signal by a factor. Creates a $scaleAndShift module internally.',
+                    'Scale the signal by a linear factor. Creates a $scaleAndShift module internally. For perceptual (audio-taper) volume control, use gain() instead.',
                 example: 'osc.amplitude(2.5)  // Half amplitude',
             },
             {
@@ -138,7 +138,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 name: 'gain',
                 signature: 'gain(level: Poly<Signal>): ModuleOutput',
                 description:
-                    'Scale the signal with a perceptual (audio taper) curve. Chains $curve and $scaleAndShift internally with exponent 3.',
+                    'Scale the signal with a perceptual (audio taper) curve. Chains $curve and $scaleAndShift internally with exponent 3. For linear amplitude scaling, use amplitude() instead.',
                 example: 'osc.gain(2.5)  // Perceptual half volume',
             },
             {
@@ -259,7 +259,8 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             {
                 name: 'amplitude',
                 signature: 'amplitude(factor: Poly<Signal>): Collection',
-                description: 'Scale all signals in the collection by a factor.',
+                description:
+                    'Scale all signals in the collection by a linear factor. For perceptual (audio-taper) volume control, use gain() instead.',
                 example: '$c(osc1, osc2).amplitude(0.5)',
             },
             {
@@ -280,7 +281,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 name: 'gain',
                 signature: 'gain(level: Poly<Signal>): Collection',
                 description:
-                    'Scale all signals with a perceptual (audio taper) curve.',
+                    'Scale all signals with a perceptual (audio taper) curve. For linear amplitude scaling, use amplitude() instead.',
                 example: '$c(osc1, osc2).gain(2.5)',
             },
             {
