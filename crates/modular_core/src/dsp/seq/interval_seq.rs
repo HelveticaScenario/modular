@@ -65,6 +65,26 @@ impl schemars::JsonSchema for IntervalScaleParam {
     }
 }
 
+impl<E: deserr::DeserializeError> deserr::Deserr<E> for IntervalScaleParam {
+    fn deserialize_from_value<V: deserr::IntoValue>(
+        value: deserr::Value<V>,
+        location: deserr::ValuePointerRef<'_>,
+    ) -> std::result::Result<Self, E> {
+        let source = String::deserialize_from_value(value, location)?;
+        crate::dsp::utilities::quantizer::ScaleParam::parse_with_octave(&source)
+            .map(Self)
+            .ok_or_else(|| {
+                deserr::take_cf_content(E::error::<V>(
+                    None,
+                    deserr::ErrorKind::Unexpected {
+                        msg: format!("Invalid scale specification: {}", source),
+                    },
+                    location,
+                ))
+            })
+    }
+}
+
 impl Connect for IntervalScaleParam {
     fn connect(&mut self, _patch: &Patch) {}
 }
@@ -368,6 +388,48 @@ impl Connect for IntervalPatternParam {
     }
 }
 
+impl<E: deserr::DeserializeError> deserr::Deserr<E> for IntervalPatternSource {
+    fn deserialize_from_value<V: deserr::IntoValue>(
+        value: deserr::Value<V>,
+        location: deserr::ValuePointerRef<'_>,
+    ) -> std::result::Result<Self, E> {
+        match &value {
+            deserr::Value::String(_) => {
+                let s = String::deserialize_from_value(value, location)?;
+                Ok(IntervalPatternSource::Single(s))
+            }
+            deserr::Value::Sequence(_) => {
+                let v = Vec::<String>::deserialize_from_value(value, location)?;
+                Ok(IntervalPatternSource::Multiple(v))
+            }
+            _ => Err(deserr::take_cf_content(E::error::<V>(
+                None,
+                deserr::ErrorKind::IncorrectValueKind {
+                    actual: value,
+                    accepted: &[deserr::ValueKind::String, deserr::ValueKind::Sequence],
+                },
+                location,
+            ))),
+        }
+    }
+}
+
+impl<E: deserr::DeserializeError> deserr::Deserr<E> for IntervalPatternParam {
+    fn deserialize_from_value<V: deserr::IntoValue>(
+        value: deserr::Value<V>,
+        location: deserr::ValuePointerRef<'_>,
+    ) -> std::result::Result<Self, E> {
+        let source = IntervalPatternSource::deserialize_from_value(value, location)?;
+        Self::from_source(source).map_err(|e| {
+            deserr::take_cf_content(E::error::<V>(
+                None,
+                deserr::ErrorKind::Unexpected { msg: e },
+                location,
+            ))
+        })
+    }
+}
+
 /// Cached hap info for voice assignment.
 /// Holds an Arc reference to the cycle's combined hap vector plus an index,
 /// avoiding clone allocations on the audio thread.
@@ -422,11 +484,11 @@ pub struct IntervalSeqParams {
     /// patterns to combine (left-fold with appLeft addition); accepts a single
     /// pattern string or an array of pattern strings
     #[serde(default)]
-    #[deserr(default, skip)]
+    #[deserr(default)]
     patterns: IntervalPatternParam,
     /// scale for quantizing degrees to pitches (supports optional octave, e.g. "c3(major)")
     #[serde(default)]
-    #[deserr(default, skip)]
+    #[deserr(default)]
     scale: IntervalScaleParam,
     /// playhead position
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
