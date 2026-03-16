@@ -618,7 +618,7 @@ export const GLOBAL_DOCS: GlobalFunctionDoc[] = [
             'const vol = $slider("Volume", 0.5, 0, 1);\n$sine(440).amplitude(vol).out();',
             'const cutoff = $slider("Cutoff", 1000, 100, 8000);\n$saw(440).pipe(s => $lpf(s, cutoff)).out();',
         ],
-        group: 'Advanced',
+        group: 'Controls',
     },
     // ---- Advanced ----
     {
