@@ -219,7 +219,16 @@ impl<T: Clone + Send + Sync + 'static> Pattern<T> {
             query(state)
                 .into_iter()
                 .map(|mut hap| {
-                    hap.context.modifier_spans.clear();
+                    // Move modifier_spans → source_extra_spans so they're
+                    // preserved for highlighting but don't interfere with
+                    // the positional index that extract_pattern_spans uses.
+                    hap.context
+                        .source_extra_spans
+                        .extend(hap.context.modifier_spans.drain(..));
+                    // Also flatten any existing modifier_extra_spans
+                    for extras in hap.context.modifier_extra_spans.drain(..) {
+                        hap.context.source_extra_spans.extend(extras);
+                    }
                     hap
                 })
                 .collect()
@@ -842,5 +851,37 @@ mod tests {
         assert_eq!(dsp3.value, Some(1.0)); // actual value
         assert!((dsp3.whole_begin - 2.0 / 3.0).abs() < 0.001); // whole starts at 2/3
         assert!((dsp3.whole_end - 1.0).abs() < 0.001); // whole ends at 1
+    }
+
+    #[test]
+    fn test_strip_modifier_spans_preserves_in_source_extra() {
+        use crate::pattern_system::constructors::pure_with_span;
+        use crate::pattern_system::hap::SourceSpan;
+
+        // Create a pattern with a modifier span (simulating fast(<4 6>))
+        let pat = pure_with_span(1.0f64, SourceSpan::new(0, 1));
+        // Manually add a modifier span via a wrapping query
+        let query = pat.query.clone();
+        let pat_with_mod = Pattern::new(move |state: &State| {
+            query(state)
+                .into_iter()
+                .map(|mut hap| {
+                    hap.context.add_modifier_span(SourceSpan::new(5, 6));
+                    hap
+                })
+                .collect()
+        });
+
+        let stripped = pat_with_mod.strip_modifier_spans();
+        let haps = stripped.query_arc(
+            Fraction::from_integer(0.into()),
+            Fraction::from_integer(1.into()),
+        );
+        assert_eq!(haps.len(), 1);
+        // modifier_spans should be empty
+        assert!(haps[0].context.modifier_spans.is_empty());
+        // source_extra_spans should contain the preserved span
+        assert_eq!(haps[0].context.source_extra_spans.len(), 1);
+        assert_eq!(haps[0].context.source_extra_spans[0].to_tuple(), (5, 6));
     }
 }
