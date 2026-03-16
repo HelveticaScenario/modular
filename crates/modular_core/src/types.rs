@@ -37,6 +37,7 @@ use napi_derive::napi;
 use regex::Regex;
 use rust_music_theory::note::{Notes, Pitch};
 use rust_music_theory::scale::Scale;
+use deserr::{DeserializeError, ErrorKind, IntoValue, Map as DeserrMap, ValuePointerRef};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -626,6 +627,113 @@ impl serde::Serialize for Signal {
                 map.serialize_entry("channel", channel)?;
                 map.end()
             }
+        }
+    }
+}
+
+// deserr implementation for Signal - mirrors the serde Deserialize impl above.
+//
+// Accepts:
+//   - number (integer or float) -> Signal::Volts
+//   - string (e.g. "440hz", "C4") -> Signal::Volts (parsed via parse_signal_string)
+//   - object { type: "cable", module, port, channel? } -> Signal::Cable
+impl<E: DeserializeError> deserr::Deserr<E> for Signal {
+    fn deserialize_from_value<V: IntoValue>(
+        value: deserr::Value<V>,
+        location: ValuePointerRef<'_>,
+    ) -> std::result::Result<Self, E> {
+        match value {
+            deserr::Value::Integer(n) => Ok(Signal::Volts(n as f32)),
+            deserr::Value::NegativeInteger(n) => Ok(Signal::Volts(n as f32)),
+            deserr::Value::Float(n) => Ok(Signal::Volts(n as f32)),
+            deserr::Value::String(s) => parse_signal_string(&s).map(Signal::Volts).map_err(|e| {
+                deserr::take_cf_content(E::error::<V>(
+                    None,
+                    ErrorKind::Unexpected { msg: e },
+                    location,
+                ))
+            }),
+            deserr::Value::Map(mut map) => {
+                let type_val = map
+                    .remove("type")
+                    .and_then(|v| match v.into_value() {
+                        deserr::Value::String(s) => Some(s),
+                        _ => None,
+                    });
+
+                let module = map
+                    .remove("module")
+                    .and_then(|v| match v.into_value() {
+                        deserr::Value::String(s) => Some(s),
+                        _ => None,
+                    });
+
+                let port = map
+                    .remove("port")
+                    .and_then(|v| match v.into_value() {
+                        deserr::Value::String(s) => Some(s),
+                        _ => None,
+                    });
+
+                let channel = map
+                    .remove("channel")
+                    .and_then(|v| match v.into_value() {
+                        deserr::Value::Integer(n) => Some(n as usize),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+
+                match type_val.as_deref() {
+                    Some("cable") => {
+                        let module = module.ok_or_else(|| {
+                            deserr::take_cf_content(E::error::<V>(
+                                None,
+                                ErrorKind::MissingField { field: "module" },
+                                location,
+                            ))
+                        })?;
+                        let port = port.ok_or_else(|| {
+                            deserr::take_cf_content(E::error::<V>(
+                                None,
+                                ErrorKind::MissingField { field: "port" },
+                                location,
+                            ))
+                        })?;
+                        Ok(Signal::Cable {
+                            module,
+                            module_ptr: sync::Weak::new(),
+                            port,
+                            channel,
+                        })
+                    }
+                    Some(other) => Err(deserr::take_cf_content(E::error::<V>(
+                        None,
+                        ErrorKind::Unexpected {
+                            msg: format!("unknown signal type: {}", other),
+                        },
+                        location,
+                    ))),
+                    None => Err(deserr::take_cf_content(E::error::<V>(
+                        None,
+                        ErrorKind::MissingField { field: "type" },
+                        location,
+                    ))),
+                }
+            }
+            other => Err(deserr::take_cf_content(E::error(
+                None,
+                ErrorKind::IncorrectValueKind {
+                    actual: other,
+                    accepted: &[
+                        deserr::ValueKind::Integer,
+                        deserr::ValueKind::NegativeInteger,
+                        deserr::ValueKind::Float,
+                        deserr::ValueKind::String,
+                        deserr::ValueKind::Map,
+                    ],
+                },
+                location,
+            ))),
         }
     }
 }
