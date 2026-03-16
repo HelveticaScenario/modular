@@ -138,7 +138,7 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
     }
 
     /**
-     * Scale all outputs by a linear factor.
+     * Scale all outputs by a linear factor (5 = unity, 2.5 = half, 10 = 2×).
      *
      * For perceptual (audio-taper) volume control, use {@link gain} instead.
      */
@@ -1026,7 +1026,7 @@ export class ModuleOutput {
     }
 
     /**
-     * Scale this output by a linear factor.
+     * Scale this output by a linear factor (5 = unity, 2.5 = half, 10 = 2×).
      *
      * For perceptual (audio-taper) volume control, use {@link gain} instead.
      */

@@ -117,7 +117,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 name: 'amplitude',
                 signature: 'amplitude(factor: Poly<Signal>): ModuleOutput',
                 description:
-                    'Scale the signal by a linear factor. Creates a $scaleAndShift module internally. For perceptual (audio-taper) volume control, use gain() instead.',
+                    'Scale the signal by a linear factor (5 = unity, 2.5 = half, 10 = 2×). Creates a $scaleAndShift module internally. For perceptual (audio-taper) volume control, use gain() instead.',
                 example: 'osc.amplitude(2.5)  // Half amplitude',
             },
             {
@@ -260,8 +260,8 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 name: 'amplitude',
                 signature: 'amplitude(factor: Poly<Signal>): Collection',
                 description:
-                    'Scale all signals in the collection by a linear factor. For perceptual (audio-taper) volume control, use gain() instead.',
-                example: '$c(osc1, osc2).amplitude(0.5)',
+                    'Scale all signals in the collection by a linear factor (5 = unity, 2.5 = half, 10 = 2×). For perceptual (audio-taper) volume control, use gain() instead.',
+                example: '$c(osc1, osc2).amplitude(2.5)',
             },
             {
                 name: 'amp',
