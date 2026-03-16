@@ -1,38 +1,20 @@
 use deserr::Deserr;
 use napi::Result;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
 use crate::dsp::utils::{min_gate_samples, SchmittTrigger, TempGate, TempGateState};
 use crate::types::ClockMessages;
 use crate::PolyOutput;
 
-/// Deserialize a u32 that must be >= 1 (positive integer).
-/// Rejects 0 with a descriptive error so any clock instance gets validated.
-fn deserialize_positive_u32<'de, D>(deserializer: D) -> std::result::Result<u32, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let v = u32::deserialize(deserializer)?;
-    if v == 0 {
-        return Err(serde::de::Error::custom(
-            "must be a positive integer (>= 1)",
-        ));
-    }
-    Ok(v)
-}
-
-#[derive(Clone, Deserialize, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct ClockParams {
     /// Tempo in BPM.
     tempo: f64,
     /// Time signature numerator (beats per bar). Must be a positive integer.
-    #[serde(deserialize_with = "deserialize_positive_u32")]
     numerator: u32,
     /// Time signature denominator (beat value). Must be a positive integer.
-    #[serde(deserialize_with = "deserialize_positive_u32")]
     denominator: u32,
 }
 
