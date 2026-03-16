@@ -334,7 +334,7 @@ interface ModuleOutput {
   readonly channel: number;
   
     /**
-     * Scale the signal by a linear factor (5 = unity, 2.5 = half, 10 = 2×).
+     * Scale the signal by a linear factor (5 = unity, 2.5 = half, 10 = 2x).
      * Creates a $scaleAndShift module internally.
      *
      * For perceptual (audio-taper) volume control, use {@link gain} instead.
@@ -525,7 +525,7 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
   [Symbol.iterator](): Iterator<T>;
 
     /**
-     * Scale all signals by a linear factor (5 = unity, 2.5 = half, 10 = 2×).
+     * Scale all signals by a linear factor (5 = unity, 2.5 = half, 10 = 2x).
      *
      * For perceptual (audio-taper) volume control, use {@link gain} instead.
      * @param factor - Scale factor as {@link Poly<Signal>}
