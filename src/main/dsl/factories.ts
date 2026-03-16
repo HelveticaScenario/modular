@@ -282,34 +282,14 @@ export class DSLContext {
             );
 
             // Check for errors from param deserialization
-            if (deriveResult.errors) {
-                const missingParams = deriveResult.errors.flatMap(
-                    (e) => e.params,
-                );
-                if (missingParams.length > 0) {
-                    const paramList = missingParams
-                        .map((p) => `"${p}"`)
-                        .join(', ');
-                    const loc = sourceLocation
-                        ? ` at line ${sourceLocation.line}`
-                        : '';
-                    throw new Error(
-                        `${schema.name}${loc}: missing required parameter ${paramList}`,
-                    );
-                }
-
-                // Non-missing-field errors (type mismatches, invalid values, etc.)
-                const otherErrors = deriveResult.errors.filter(
-                    (e) => e.params.length === 0,
-                );
-                if (otherErrors.length > 0) {
-                    const loc = sourceLocation
-                        ? ` at line ${sourceLocation.line}`
-                        : '';
-                    throw new Error(
-                        `${schema.name}${loc}: ${otherErrors[0].message}`,
-                    );
-                }
+            if (deriveResult.errors && deriveResult.errors.length > 0) {
+                const messages = deriveResult.errors
+                    .map((e) => e.message)
+                    .join('; ');
+                const loc = sourceLocation
+                    ? ` at line ${sourceLocation.line}`
+                    : '';
+                throw new Error(`${schema.name}${loc}: ${messages}`);
             }
 
             if (
