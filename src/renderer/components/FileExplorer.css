@@ -197,7 +197,6 @@
 
 .file-list li.buffer-item {
     position: relative;
-    user-select: none;
 }
 
 .close-button {
@@ -316,7 +315,6 @@
     cursor: pointer;
     color: var(--text-secondary);
     font-size: var(--font-size);
-    user-select: none;
 }
 
 .tree-file {
