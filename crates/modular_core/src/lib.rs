@@ -17,6 +17,7 @@ extern crate serde_json;
 extern crate simple_easing;
 
 pub mod dsp;
+pub mod param_errors;
 pub mod params;
 pub mod patch;
 pub mod pattern_system;
