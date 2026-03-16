@@ -7,6 +7,7 @@
 //! - `PolySignal`: A fixed-capacity input buffer containing Signal values (for polyphonic module inputs)
 
 use arrayvec::ArrayVec;
+use deserr::{DeserializeError, ErrorKind, IntoValue, ValuePointerRef};
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
@@ -312,6 +313,50 @@ impl<'de> Deserialize<'de> for PolySignal {
     }
 }
 
+// deserr implementation for PolySignal - accepts single Signal or array of Signals.
+impl<E: DeserializeError> deserr::Deserr<E> for PolySignal {
+    fn deserialize_from_value<V: IntoValue>(
+        value: deserr::Value<V>,
+        location: ValuePointerRef<'_>,
+    ) -> Result<Self, E> {
+        match &value {
+            deserr::Value::Sequence(_) => {
+                // Array of signals
+                let signals =
+                    <Vec<crate::types::Signal> as deserr::Deserr<E>>::deserialize_from_value(
+                        value, location,
+                    )?;
+                if signals.is_empty() {
+                    return Err(deserr::take_cf_content(E::error::<V>(
+                        None,
+                        ErrorKind::Unexpected {
+                            msg: "PolySignal must have at least 1 channel".to_string(),
+                        },
+                        location,
+                    )));
+                }
+                if signals.len() > PORT_MAX_CHANNELS {
+                    return Err(deserr::take_cf_content(E::error::<V>(
+                        None,
+                        ErrorKind::Unexpected {
+                            msg: format!("PolySignal cannot exceed {} channels", PORT_MAX_CHANNELS),
+                        },
+                        location,
+                    )));
+                }
+                Ok(PolySignal::poly(&signals))
+            }
+            _ => {
+                // Single signal
+                let signal = <crate::types::Signal as deserr::Deserr<E>>::deserialize_from_value(
+                    value, location,
+                )?;
+                Ok(PolySignal::mono(signal))
+            }
+        }
+    }
+}
+
 impl JsonSchema for PolySignal {
     fn schema_name() -> Cow<'static, str> {
         Cow::Borrowed("PolySignal")
@@ -403,6 +448,18 @@ impl<'de> Deserialize<'de> for MonoSignal {
     {
         Ok(MonoSignal {
             inner: PolySignal::deserialize(deserializer)?,
+        })
+    }
+}
+
+// deserr implementation for MonoSignal - delegates to PolySignal.
+impl<E: DeserializeError> deserr::Deserr<E> for MonoSignal {
+    fn deserialize_from_value<V: IntoValue>(
+        value: deserr::Value<V>,
+        location: ValuePointerRef<'_>,
+    ) -> Result<Self, E> {
+        Ok(MonoSignal {
+            inner: PolySignal::deserialize_from_value(value, location)?,
         })
     }
 }
