@@ -262,9 +262,11 @@ fn validate_signals_in_json_value(
 ///
 /// Validates:
 /// - All module types exist in the schema
-/// - Params in `ModuleState.params` are known for the module type
 /// - Signal params with Cable references point to existing modules/ports
 /// - Scopes reference existing module outputs
+///
+/// Note: Param-level validation (unknown fields, type checking) is handled by
+/// deserr during deserialization. This validator focuses on graph-level concerns.
 pub fn validate_patch(
   patch: &PatchGraph,
   schemas: &[ModuleSchema],
@@ -277,8 +279,8 @@ pub fn validate_patch(
   // 1) Build fast lookup tables (schemas by name, modules by id).
   // 2) Validate each module:
   //    - module type exists
-  //    - module params only use known param names
   //    - for params whose schema indicates a `Signal`, validate any Cable references
+  //    (param-level validation is now handled by deserr)
   // 3) Validate scopes:
   //    - referenced module exists
   //    - referenced output port exists on the module type
@@ -335,29 +337,19 @@ pub fn validate_patch(
       continue;
     };
 
-    // 4) Validate each param key/value pair.
+    // 4) Validate cable references in Signal-typed params.
     //
-    // Notes:
-    // - Here we validate that any referenced cables actually exist.
-    // - Params may contain Signals nested inside arbitrary serializable structures.
+    // Note: Param-level validation (unknown fields, type checking) is now handled
+    // by deserr. This loop only validates graph-level concerns: that Cable
+    // references point to existing modules and valid output ports.
     for (param_name, param_value) in param_obj {
       // Skip internal metadata fields used for editor features (argument spans tracking).
       if param_name == ARGUMENT_SPANS_KEY {
         continue;
       }
 
-      // 4a) Unknown param names are always an error.
+      // Skip unknown param names — deserr now handles this via deny_unknown_fields.
       let Some(param_schema_node) = param_schemas.get(param_name) else {
-        errors.push(ValidationError {
-          field: format!("params.{}", param_name),
-          message: format!(
-            "Unknown parameter '{}' for module type '{}'",
-            param_name, module.module_type
-          ),
-          location: Some(location_str.clone()),
-          expected_type: None,
-          actual_value: None,
-        });
         continue;
       };
 
