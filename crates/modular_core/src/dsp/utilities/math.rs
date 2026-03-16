@@ -1,6 +1,7 @@
 use crate::dsp::utils::{hz_to_voct_f64, voct_to_hz_f64};
 use crate::poly::{MonoSignal, MonoSignalExt};
 use crate::types::{ClockMessages, Connect, Signal};
+use deserr::{DeserializeError, ErrorKind, IntoValue, ValuePointerRef};
 use fasteval::{Compiler, Evaler, Instruction};
 use napi::Result;
 use regex::Regex;
@@ -42,22 +43,13 @@ struct MathExpressionParam {
     compiled: Arc<MathCompiled>,
 }
 
-impl<'de> Deserialize<'de> for MathExpressionParam {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let source = String::deserialize(deserializer)?;
-
-        // Parse source to find module(id:port:channel)
-        // Replace with module(index)
-        // Store signals
-
+impl MathExpressionParam {
+    /// Parse a math expression string into a MathExpressionParam.
+    fn parse(source: String) -> std::result::Result<Self, String> {
         let re = Regex::new(r"module\(([a-zA-Z0-9\-_$]+):([a-zA-Z0-9\-_$]+):(\d+)\)")
-            .map_err(serde::de::Error::custom)?;
+            .map_err(|e| e.to_string())?;
         let mut signals = Vec::new();
 
-        // We need to replace all occurrences.
         let result = re.replace_all(&source, |caps: &regex::Captures| {
             let module = caps[1].to_string();
             let port = caps[2].to_string();
@@ -75,10 +67,7 @@ impl<'de> Deserialize<'de> for MathExpressionParam {
         let parser = fasteval::Parser::new();
         let instruction = match parser.parse(&result, &mut slab.ps) {
             Err(e) => {
-                return Err(serde::de::Error::custom(format!(
-                    "Failed to parse expression: {}",
-                    e
-                )));
+                return Err(format!("Failed to parse expression: {}", e));
             }
             Ok(expression) => expression.from(&slab.ps).compile(&slab.ps, &mut slab.cs),
         };
@@ -87,6 +76,33 @@ impl<'de> Deserialize<'de> for MathExpressionParam {
             source,
             signals,
             compiled: Arc::new(MathCompiled { slab, instruction }),
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for MathExpressionParam {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let source = String::deserialize(deserializer)?;
+        Self::parse(source).map_err(serde::de::Error::custom)
+    }
+}
+
+// deserr implementation for MathExpressionParam - transparent string wrapper that parses.
+impl<E: DeserializeError> deserr::Deserr<E> for MathExpressionParam {
+    fn deserialize_from_value<V: IntoValue>(
+        value: deserr::Value<V>,
+        location: ValuePointerRef<'_>,
+    ) -> std::result::Result<Self, E> {
+        let source = String::deserialize_from_value(value, location)?;
+        Self::parse(source).map_err(|e| {
+            deserr::take_cf_content(E::error::<V>(
+                None,
+                ErrorKind::Unexpected { msg: e },
+                location,
+            ))
         })
     }
 }
