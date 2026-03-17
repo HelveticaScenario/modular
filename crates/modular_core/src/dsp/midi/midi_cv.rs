@@ -187,7 +187,7 @@ pub struct MidiCv {
 }
 
 /// State for the MidiCv module.
-pub struct MidiCvState {
+struct MidiCvState {
     sample_rate: f32,
 
     /// Per-voice state

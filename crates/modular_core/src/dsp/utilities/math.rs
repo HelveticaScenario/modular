@@ -146,7 +146,7 @@ struct MathOutputs {
 }
 
 /// State for the Math module.
-pub struct MathState {
+struct MathState {
     phase: f32,
     loop_index: usize,
     running: bool,

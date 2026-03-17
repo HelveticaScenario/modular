@@ -341,18 +341,18 @@ pub struct Seq {
 }
 
 /// State for the Seq module.
-pub struct SeqState {
+struct SeqState {
     /// Per-voice state array
-    pub voices: [VoiceState; PORT_MAX_CHANNELS],
+    voices: [VoiceState; PORT_MAX_CHANNELS],
     /// Round-robin voice index for allocation
-    pub next_voice: usize,
+    next_voice: usize,
     /// Current cycle number (integer part of playhead)
-    pub current_cycle: Option<i64>,
+    current_cycle: Option<i64>,
     /// Arc-wrapped haps for the current cycle, updated on cycle boundaries
-    pub current_cycle_haps: Option<Arc<Vec<DspHap<SeqValue>>>>,
+    current_cycle_haps: Option<Arc<Vec<DspHap<SeqValue>>>>,
     /// Module-level cache for cycles >= 1000 (element 0 = cycle 1000).
     /// Only accumulates, never clears except on patch update.
-    pub module_cache: Vec<Option<Arc<Vec<DspHap<SeqValue>>>>>,
+    module_cache: Vec<Option<Arc<Vec<DspHap<SeqValue>>>>>,
 }
 
 impl Default for SeqState {

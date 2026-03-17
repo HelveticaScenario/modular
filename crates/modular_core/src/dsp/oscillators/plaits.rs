@@ -14,9 +14,9 @@ use mi_plaits_dsp::voice::{Modulations, Patch, Voice};
 use schemars::JsonSchema;
 
 use crate::{
-    dsp::utils::{SchmittTrigger, voct_to_midi},
+    dsp::utils::{voct_to_midi, SchmittTrigger},
     patch::Patch as ModularPatch,
-    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
+    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
     types::{Clickless, Connect},
 };
 
@@ -263,7 +263,7 @@ pub struct Plaits {
 }
 
 /// State for the Plaits module.
-pub struct PlaitsState {
+struct PlaitsState {
     channels: Vec<PlaitsChannelState>,
     buffer_pos: usize,
     sample_rate: f32,

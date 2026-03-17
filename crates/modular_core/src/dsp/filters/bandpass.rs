@@ -2,10 +2,10 @@ use deserr::Deserr;
 use schemars::JsonSchema;
 
 use crate::{
+    PORT_MAX_CHANNELS,
     dsp::utils::{changed, sanitize, voct_to_hz},
     poly::{PolyOutput, PolySignal, PolySignalExt},
     types::Clickless,
-    PORT_MAX_CHANNELS,
 };
 
 #[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
@@ -99,15 +99,15 @@ pub struct BandpassFilter {
 }
 
 /// State for the BandpassFilter module.
-pub struct BandpassFilterState {
+struct BandpassFilterState {
     /// Per-channel state
-    pub channels: [BpfChannelState; PORT_MAX_CHANNELS],
+    channels: [BpfChannelState; PORT_MAX_CHANNELS],
     /// Mono optimization
-    pub coeffs_mono: BiquadCoeffs,
-    pub last_center_mono: f32,
-    pub last_q_mono: f32,
-    pub smooth_center_mono: Clickless,
-    pub smooth_resonance_mono: Clickless,
+    coeffs_mono: BiquadCoeffs,
+    last_center_mono: f32,
+    last_q_mono: f32,
+    smooth_center_mono: Clickless,
+    smooth_resonance_mono: Clickless,
 }
 
 impl Default for BandpassFilterState {

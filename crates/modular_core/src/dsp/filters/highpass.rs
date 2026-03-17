@@ -99,15 +99,15 @@ pub struct HighpassFilter {
 }
 
 /// State for the HighpassFilter module.
-pub struct HighpassFilterState {
+struct HighpassFilterState {
     /// Per-channel state
-    pub channels: [HpfChannelState; PORT_MAX_CHANNELS],
+    channels: [HpfChannelState; PORT_MAX_CHANNELS],
     /// Mono optimization
-    pub coeffs_mono: BiquadCoeffs,
-    pub last_cutoff_mono: f32,
-    pub last_resonance_mono: f32,
-    pub smooth_cutoff_mono: Clickless,
-    pub smooth_resonance_mono: Clickless,
+    coeffs_mono: BiquadCoeffs,
+    last_cutoff_mono: f32,
+    last_resonance_mono: f32,
+    smooth_cutoff_mono: Clickless,
+    smooth_resonance_mono: Clickless,
 }
 
 impl Default for HighpassFilterState {

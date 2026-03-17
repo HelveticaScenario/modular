@@ -54,24 +54,24 @@ pub struct LowpassFilter {
 }
 
 /// State for the LowpassFilter module.
-pub struct LowpassFilterState {
+struct LowpassFilterState {
     /// Per-channel state (audio-rate)
-    pub z1: [f32; PORT_MAX_CHANNELS],
-    pub z2: [f32; PORT_MAX_CHANNELS],
+    z1: [f32; PORT_MAX_CHANNELS],
+    z2: [f32; PORT_MAX_CHANNELS],
     /// Cached coefficients (control-rate)
-    pub coeffs: [BiquadCoeffs; PORT_MAX_CHANNELS],
+    coeffs: [BiquadCoeffs; PORT_MAX_CHANNELS],
     /// Last seen params (for change detection)
-    pub last_cutoff: [f32; PORT_MAX_CHANNELS],
-    pub last_resonance: [f32; PORT_MAX_CHANNELS],
+    last_cutoff: [f32; PORT_MAX_CHANNELS],
+    last_resonance: [f32; PORT_MAX_CHANNELS],
     /// Parameter smoothing to prevent clicks on sudden changes
-    pub smooth_cutoff: [Clickless; PORT_MAX_CHANNELS],
-    pub smooth_resonance: [Clickless; PORT_MAX_CHANNELS],
+    smooth_cutoff: [Clickless; PORT_MAX_CHANNELS],
+    smooth_resonance: [Clickless; PORT_MAX_CHANNELS],
     /// Mono optimization
-    pub coeffs_mono: BiquadCoeffs,
-    pub last_cutoff_mono: f32,
-    pub last_resonance_mono: f32,
-    pub smooth_cutoff_mono: Clickless,
-    pub smooth_resonance_mono: Clickless,
+    coeffs_mono: BiquadCoeffs,
+    last_cutoff_mono: f32,
+    last_resonance_mono: f32,
+    smooth_cutoff_mono: Clickless,
+    smooth_resonance_mono: Clickless,
 }
 
 impl Default for LowpassFilterState {

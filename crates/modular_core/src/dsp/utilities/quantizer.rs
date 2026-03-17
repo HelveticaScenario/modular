@@ -229,7 +229,7 @@ struct ChannelState {
 }
 
 /// State for the Quantizer module.
-pub struct QuantizerState {
+struct QuantizerState {
     /// Per-channel state for tracking note changes
     channels: [ChannelState; PORT_MAX_CHANNELS],
 }

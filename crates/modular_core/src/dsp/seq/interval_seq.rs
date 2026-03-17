@@ -690,7 +690,7 @@ pub struct IntervalSeq {
 }
 
 /// State for the IntervalSeq module.
-pub struct IntervalSeqState {
+struct IntervalSeqState {
     /// Per-voice state array
     voices: [IntervalVoiceState; PORT_MAX_CHANNELS],
     /// Round-robin voice index for allocation

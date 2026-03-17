@@ -97,7 +97,7 @@ pub struct Noise {
 }
 
 /// State for the Noise module.
-pub struct NoiseState {
+struct NoiseState {
     generator: LcgRng,
     pink: PinkFilter,
     brown: f32,
