@@ -125,46 +125,58 @@ impl Connect for PlaitsEngine {
 struct PlaitsParams {
     /// Pitch input in V/Oct (0V = C4)
     #[signal(type = pitch)]
+    #[deserr(default)]
     freq: Option<PolySignal>,
 
     /// Synthesis engine selection
     engine: PlaitsEngine,
 
     /// Harmonics parameter (-5V to +5V, bipolar, default 0V) - function varies per engine
+    #[deserr(default)]
     harmonics: Option<PolySignal>,
 
     /// Timbre parameter (-5V to +5V, bipolar, default 0V) - function varies per engine
+    #[deserr(default)]
     timbre: Option<PolySignal>,
 
     /// Morph parameter (-5V to +5V, bipolar, default 0V) - function varies per engine
+    #[deserr(default)]
     morph: Option<PolySignal>,
 
     /// FM input (-5V to +5V) - frequency modulation
+    #[deserr(default)]
     fm: Option<PolySignal>,
 
     /// Timbre CV attenuverter (-5 to 5) - scales timbre modulation
+    #[deserr(default)]
     timbre_amt: Option<PolySignal>,
 
     /// FM CV attenuverter (-5 to 5) - scales frequency modulation
+    #[deserr(default)]
     fm_amt: Option<PolySignal>,
 
     /// Morph CV attenuverter (-5 to 5) - scales morph modulation
+    #[deserr(default)]
     morph_amt: Option<PolySignal>,
 
     /// Trigger input - gates/triggers the internal envelope
     #[signal(type = trig, range = (0.0, 5.0))]
+    #[deserr(default)]
     trigger: Option<PolySignal>,
 
     /// Level/dynamics input (0-5V) - controls VCA/LPG
     #[signal(range = (0.0, 5.0))]
+    #[deserr(default)]
     level: Option<PolySignal>,
 
     /// LPG color (0-5V) - lowpass gate filter response (low = mellow, high = bright)
     #[signal(default = 2.5, range = (0.0, 5.0))]
+    #[deserr(default)]
     lpg_color: Option<PolySignal>,
 
     /// LPG decay (0-5V) - lowpass gate envelope decay time
     #[signal(default = 2.5, range = (0.0, 5.0))]
+    #[deserr(default)]
     lpg_decay: Option<PolySignal>,
 }
 

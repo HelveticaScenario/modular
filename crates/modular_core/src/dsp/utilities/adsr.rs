@@ -12,15 +12,19 @@ struct AdsrParams {
     gate: PolySignal,
     /// attack time in seconds
     #[signal(default = 0.01, range = (0.0, 10.0))]
+    #[deserr(default)]
     attack: Option<PolySignal>,
     /// decay time in seconds
     #[signal(default = 0.1, range = (0.0, 10.0))]
+    #[deserr(default)]
     decay: Option<PolySignal>,
     /// sustain level in volts (0-5)
     #[signal(default = 5.0, range = (0.0, 5.0))]
+    #[deserr(default)]
     sustain: Option<PolySignal>,
     /// release time in seconds
     #[signal(default = 0.1, range = (0.0, 10.0))]
+    #[deserr(default)]
     release: Option<PolySignal>,
 }
 

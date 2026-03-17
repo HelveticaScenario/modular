@@ -19,9 +19,11 @@ struct ChebyParams {
     input: PolySignal,
     /// harmonic richness (0–5). At 0 the signal is clean; at 5 the highest harmonic content dominates
     #[signal(range = (0.0, 5.0))]
+    #[deserr(default)]
     amount: Option<PolySignal>,
     /// pitch of the source signal in V/Oct (optional, reduces aliasing at high frequencies)
     #[signal(type = pitch)]
+    #[deserr(default)]
     freq: Option<PolySignal>,
 }
 

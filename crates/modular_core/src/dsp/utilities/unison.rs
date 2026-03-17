@@ -19,6 +19,7 @@ struct UnisonParams {
     #[deserr(default = default_count())]
     count: usize,
     /// detune spread amount (0–10V, exponential: 0V = none, 10V = 1 octave)
+    #[deserr(default)]
     spread: Option<PolySignal>,
 }
 

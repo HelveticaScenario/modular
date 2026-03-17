@@ -18,6 +18,7 @@ struct CrushParams {
     input: PolySignal,
     /// crush amount (0-5, where 0 = clean, 5 = maximum distortion)
     #[signal(range = (0.0, 5.0))]
+    #[deserr(default)]
     amount: Option<PolySignal>,
 }
 

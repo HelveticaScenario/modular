@@ -16,9 +16,11 @@ struct LowpassFilterParams {
     input: PolySignal,
     /// cutoff frequency in V/Oct (0V = C4)
     #[signal(type = pitch, default = 0.0, range = (-5.0, 5.0))]
+    #[deserr(default)]
     cutoff: Option<PolySignal>,
     /// filter resonance (0-5)
     #[signal(type = control, default = 0.0, range = (0.0, 5.0))]
+    #[deserr(default)]
     resonance: Option<PolySignal>,
 }
 

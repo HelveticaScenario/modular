@@ -13,10 +13,12 @@ struct StereoMixerParams {
     /// Input signal to place in the stereo field.
     input: PolySignal,
     /// Pan position per channel (-5 = left, 0 = center, +5 = right).
+    #[deserr(default)]
     pan: Option<PolySignal>,
     /// Stereo spread across channels (0 = no spread, 5 = widest spread).
     /// Width offsets each channel around its base pan position.
     #[signal(range = (0.0, 5.0))]
+    #[deserr(default)]
     width: Option<MonoSignal>,
 }
 

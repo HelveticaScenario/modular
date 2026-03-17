@@ -80,6 +80,7 @@ struct VoiceState {
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct MidiCvParams {
     /// MIDI device name to receive from (leave unset to receive from all devices)
+    #[deserr(default)]
     device: Option<String>,
 
     /// Number of polyphonic voices (1-16)
@@ -88,6 +89,7 @@ struct MidiCvParams {
     channels: usize,
 
     /// MIDI channel to listen on (1–16, leave unset for omni/all channels)
+    #[deserr(default)]
     channel: Option<u8>,
 
     /// Polyphonic voice allocation mode

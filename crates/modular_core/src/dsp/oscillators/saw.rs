@@ -14,9 +14,11 @@ use crate::{
 struct SawOscillatorParams {
     /// pitch in V/Oct (0V = C4)
     #[signal(type = pitch)]
+    #[deserr(default)]
     freq: Option<PolySignal>,
     /// waveform shape: 0=saw, 2.5=triangle, 5=ramp
     #[signal(range = (0.0, 5.0))]
+    #[deserr(default)]
     shape: Option<PolySignal>,
 }
 

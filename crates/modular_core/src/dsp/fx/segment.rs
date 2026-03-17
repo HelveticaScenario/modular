@@ -19,9 +19,11 @@ struct SegmentParams {
     input: PolySignal,
     /// segment shape amount (0-5, morphs between 8 shapes)
     #[signal(range = (0.0, 5.0))]
+    #[deserr(default)]
     amount: Option<PolySignal>,
     /// pitch of the source signal in V/Oct (optional, reduces aliasing at high frequencies)
     #[signal(type = pitch)]
+    #[deserr(default)]
     freq: Option<PolySignal>,
 }
 

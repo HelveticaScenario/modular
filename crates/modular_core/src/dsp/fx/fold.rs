@@ -19,9 +19,11 @@ struct FoldParams {
     input: PolySignal,
     /// fold amount (0-5, where 0 = bypass, 5 = maximum folding)
     #[signal(default = 0.0, range = (0.0, 5.0))]
+    #[deserr(default)]
     amount: Option<PolySignal>,
     /// pitch of the source signal in V/Oct (optional, reduces aliasing at high frequencies)
     #[signal(type = pitch)]
+    #[deserr(default)]
     freq: Option<PolySignal>,
 }
 

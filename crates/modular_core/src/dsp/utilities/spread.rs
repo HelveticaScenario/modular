@@ -12,8 +12,10 @@ fn default_count() -> usize {
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct SpreadParams {
     /// lower bound of the spread range
+    #[deserr(default)]
     min: Option<MonoSignal>,
     /// upper bound of the spread range
+    #[deserr(default)]
     max: Option<MonoSignal>,
     /// number of output channels (1–16)
     #[serde(default = "default_count")]
@@ -21,6 +23,7 @@ struct SpreadParams {
     count: usize,
     /// distribution bias (-5 to 5): positive biases toward max, negative toward min
     #[signal(default = 0.0, range = (-5.0, 5.0))]
+    #[deserr(default)]
     bias: Option<MonoSignal>,
 }
 

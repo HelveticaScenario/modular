@@ -16,6 +16,7 @@ fn default_voices() -> usize {
 #[deserr(deny_unknown_fields)]
 struct SupersawParams {
     /// pitch in V/Oct (0V = C4)
+    #[deserr(default)]
     freq: Option<PolySignal>,
     /// number of supersaw voices (1–16)
     #[serde(default = "default_voices")]
@@ -23,6 +24,7 @@ struct SupersawParams {
     voices: usize,
     /// detune spread in semitones (default 0.18)
     #[signal(type = control, default = 0.18, range = (0, 12))]
+    #[deserr(default)]
     detune: Option<PolySignal>,
 }
 

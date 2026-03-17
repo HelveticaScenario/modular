@@ -11,6 +11,7 @@ struct CurveParams {
     input: PolySignal,
     /// exponent for the power curve (0 = step, 1 = linear, >1 = audio taper)
     #[signal(range = (0.0, 10.0))]
+    #[deserr(default)]
     exp: Option<PolySignal>,
 }
 

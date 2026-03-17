@@ -14,6 +14,7 @@ use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 struct RampParams {
     /// pitch in V/Oct (0V = C4)
     #[signal(type = pitch)]
+    #[deserr(default)]
     freq: Option<PolySignal>,
 }
 

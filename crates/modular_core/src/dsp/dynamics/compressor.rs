@@ -78,20 +78,28 @@ struct CompressorParams {
     /// audio input signal
     input: PolySignal,
     /// compression threshold (0-5V, default 2.5)
+    #[deserr(default)]
     threshold: Option<PolySignal>,
     /// compression ratio (1-20, default 4.0)
+    #[deserr(default)]
     ratio: Option<PolySignal>,
     /// attack time in seconds (default 0.01)
+    #[deserr(default)]
     attack: Option<PolySignal>,
     /// release time in seconds (default 0.1)
+    #[deserr(default)]
     release: Option<PolySignal>,
     /// makeup gain multiplier (0-5, default 1.0)
+    #[deserr(default)]
     makeup: Option<PolySignal>,
     /// input gain control (-5V = -24dB, 0V = unity, 5V = +24dB) — drives signal into the compressor
+    #[deserr(default)]
     input_gain: Option<PolySignal>,
     /// output gain control (-5V = -24dB, 0V = unity, 5V = +24dB) — trims level after compression
+    #[deserr(default)]
     output_gain: Option<PolySignal>,
     /// dry/wet blend (0 = fully dry, 5 = fully wet, default 5.0)
+    #[deserr(default)]
     mix: Option<PolySignal>,
 }
 

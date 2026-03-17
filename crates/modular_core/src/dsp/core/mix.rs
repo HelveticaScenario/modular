@@ -40,6 +40,7 @@ pub struct MixParams {
     mode: MixMode,
     /// Final output level (perceptual curve, exponent 3).
     #[signal(default = 5.0, range = (0.0, 10.0))]
+    #[deserr(default)]
     pub gain: Option<PolySignal>,
 }
 

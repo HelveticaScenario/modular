@@ -14,6 +14,7 @@ use crate::types::{MidiControlChange, MidiControlChange14Bit};
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct MidiCcParams {
     /// MIDI device name to receive from (leave unset to receive from all devices)
+    #[deserr(default)]
     device: Option<String>,
 
     /// CC number to monitor (0-127 for 7-bit, 0-31 for 14-bit mode)
@@ -22,6 +23,7 @@ struct MidiCcParams {
     cc: u8,
 
     /// MIDI channel to listen on (1–16, leave unset for omni/all channels)
+    #[deserr(default)]
     channel: Option<u8>,
 
     /// Smoothing time in milliseconds (0 = instant)

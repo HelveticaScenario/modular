@@ -29,8 +29,10 @@ struct CrossoverParams {
     /// audio input signal
     input: PolySignal,
     /// crossover frequency between low and mid bands (V/Oct, 0V = C4)
+    #[deserr(default)]
     low_mid_freq: Option<PolySignal>,
     /// crossover frequency between mid and high bands (V/Oct, 0V = C4)
+    #[deserr(default)]
     mid_high_freq: Option<PolySignal>,
 }
 

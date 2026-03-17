@@ -14,9 +14,11 @@ struct WrapParams {
     input: PolySignal,
     /// lower bound of the wrap range
     #[signal(default = 0.0)]
+    #[deserr(default)]
     min: Option<PolySignal>,
     /// upper bound of the wrap range
     #[signal(default = 5.0)]
+    #[deserr(default)]
     max: Option<PolySignal>,
 }
 

@@ -20,9 +20,11 @@ struct PulsarParams {
     input: PolySignal,
     /// compression amount (0-5, where 0 = no compression, 5 = maximum compression)
     #[signal(range = (0.0, 5.0))]
+    #[deserr(default)]
     amount: Option<PolySignal>,
     /// pitch in V/Oct (optional, reduces aliasing at high frequencies)
     #[signal(type = pitch)]
+    #[deserr(default)]
     freq: Option<PolySignal>,
 }
 

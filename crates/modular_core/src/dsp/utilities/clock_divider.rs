@@ -21,6 +21,7 @@ struct ClockDividerParams {
     pub input: PolySignal,
     /// trigger to reset the counter to 0
     #[signal(type = trig, range = (0.0, 5.0))]
+    #[deserr(default)]
     pub reset: Option<PolySignal>,
 }
 

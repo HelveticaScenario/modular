@@ -202,6 +202,7 @@ struct QuantizerParams {
     input: PolySignal,
     /// Offset added to input before quantization (in V/Oct)
     #[signal(type = pitch)]
+    #[deserr(default)]
     offset: Option<PolySignal>,
     /// Scale specification: "chromatic", "C(major)", "D(0 2 4 5 7 9 11)"
     #[serde(default = "default_scale")]

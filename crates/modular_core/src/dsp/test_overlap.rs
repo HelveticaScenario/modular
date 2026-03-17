@@ -11,6 +11,7 @@ use crate::poly::MonoSignal;
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct TestOverlapParams {
     /// this conflicts with the output name
+    #[deserr(default)]
     output: Option<MonoSignal>,
 }
 

@@ -16,8 +16,10 @@ struct PPulseOscillatorParams {
     phase: PolySignal,
     /// pulse width (0-5, 2.5 is square)
     #[signal(default = 2.5, range = (0.0, 5.0))]
+    #[deserr(default)]
     width: Option<PolySignal>,
     /// pulse width modulation CV — added to the width parameter
+    #[deserr(default)]
     pwm: Option<PolySignal>,
 }
 

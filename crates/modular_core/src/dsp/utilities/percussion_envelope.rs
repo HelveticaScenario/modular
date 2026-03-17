@@ -12,6 +12,7 @@ struct PercussionEnvelopeParams {
     trigger: PolySignal,
     /// decay time in seconds
     #[signal(default = 0.1, range = (0.0, 10.0))]
+    #[deserr(default)]
     decay: Option<PolySignal>,
 }
 

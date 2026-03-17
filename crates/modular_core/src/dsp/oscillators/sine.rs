@@ -15,6 +15,7 @@ use schemars::JsonSchema;
 struct SineOscillatorParams {
     /// pitch in V/Oct (0V = C4)
     #[signal(type = pitch)]
+    #[deserr(default)]
     freq: Option<PolySignal>,
 }
 
