@@ -4892,25 +4892,11 @@
       "properties": {
         "inMax": {
           "description": "maximum of input range",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         },
         "inMin": {
           "description": "minimum of input range",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         },
         "input": {
           "description": "signal input to remap",
@@ -4918,29 +4904,19 @@
         },
         "outMax": {
           "description": "maximum of output range",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         },
         "outMin": {
           "description": "minimum of output range",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         }
       },
       "required": [
-        "input"
+        "input",
+        "inMin",
+        "inMax",
+        "outMin",
+        "outMax"
       ],
       "$defs": {
         "PolySignal": {

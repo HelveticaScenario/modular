@@ -1,7 +1,7 @@
 use deserr::Deserr;
 use schemars::JsonSchema;
 
-use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
+use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
 use crate::types::Clickless;
 
 #[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
@@ -12,20 +12,16 @@ struct RemapParams {
     input: PolySignal,
     /// minimum of input range
     #[signal(default = -5.0)]
-    #[deserr(default)]
-    in_min: Option<PolySignal>,
+    in_min: PolySignal,
     /// maximum of input range
     #[signal(default = 5.0)]
-    #[deserr(default)]
-    in_max: Option<PolySignal>,
+    in_max: PolySignal,
     /// minimum of output range
     #[signal(default = -5.0)]
-    #[deserr(default)]
-    out_min: Option<PolySignal>,
+    out_min: PolySignal,
     /// maximum of output range
     #[signal(default = 5.0)]
-    #[deserr(default)]
-    out_max: Option<PolySignal>,
+    out_max: PolySignal,
 }
 
 #[derive(Default, Clone, Copy)]
@@ -78,10 +74,10 @@ impl Remap {
             let state = &mut self.state.channels[i];
 
             // Smooth range parameters to avoid clicks
-            state.in_min.update(self.params.in_min.value_or(i, -5.0));
-            state.in_max.update(self.params.in_max.value_or(i, 5.0));
-            state.out_min.update(self.params.out_min.value_or(i, -5.0));
-            state.out_max.update(self.params.out_max.value_or(i, 5.0));
+            state.in_min.update(self.params.in_min.get_value(i));
+            state.in_max.update(self.params.in_max.get_value(i));
+            state.out_min.update(self.params.out_min.get_value(i));
+            state.out_max.update(self.params.out_max.get_value(i));
 
             // Apply remapping using map_range utility
             let output = crate::dsp::utils::map_range(
