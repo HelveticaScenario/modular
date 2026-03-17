@@ -38,20 +38,14 @@ describe('validatePatchGraph', () => {
         expect(errors).toEqual([]);
     });
 
-    test('wrong param name "frequency" is rejected', () => {
-        const patch: PatchGraph = {
-            modules: [
-                {
-                    id: 'sine-1',
-                    moduleType: '$sine',
-                    idIsExplicit: false,
-                    params: { frequency: '440hz' },
-                },
-            ],
-            scopes: [],
-        };
-        const errors = validatePatchGraph(patch);
-        expect(errors.length).toBeGreaterThan(0);
+    test('wrong param name "frequency" is rejected via deserialization', () => {
+        // Unknown param validation is now handled by deserr (deny_unknown_fields)
+        // during deserialization, not by validatePatchGraph.
+        const result = deriveChannelCount('$sine', { frequency: '440hz' });
+        expect(result.channelCount).toBeUndefined();
+        expect(result.errors).toBeDefined();
+        expect(result.errors!.length).toBeGreaterThan(0);
+        expect(result.errors![0].message).toMatch(/unknown parameter/i);
     });
 
     test('invalid module type produces errors', () => {
@@ -71,20 +65,17 @@ describe('validatePatchGraph', () => {
         expect(errors[0].message).toMatch(/unknown|not found|exist/i);
     });
 
-    test('invalid param name produces errors', () => {
-        const patch: PatchGraph = {
-            modules: [
-                {
-                    id: 'sine-1',
-                    moduleType: '$sine',
-                    idIsExplicit: false,
-                    params: { freq: '440hz', bogusParam: 42 },
-                },
-            ],
-            scopes: [],
-        };
-        const errors = validatePatchGraph(patch);
-        expect(errors.length).toBeGreaterThan(0);
+    test('invalid param name produces errors via deserialization', () => {
+        // Unknown param validation is now handled by deserr (deny_unknown_fields)
+        // during deserialization, not by validatePatchGraph.
+        const result = deriveChannelCount('$sine', {
+            freq: '440hz',
+            bogusParam: 42,
+        });
+        expect(result.channelCount).toBeUndefined();
+        expect(result.errors).toBeDefined();
+        expect(result.errors!.length).toBeGreaterThan(0);
+        expect(result.errors![0].message).toMatch(/unknown parameter/i);
     });
 
     test('scope referencing non-existent module produces errors', () => {

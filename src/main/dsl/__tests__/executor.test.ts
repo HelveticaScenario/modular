@@ -601,7 +601,7 @@ describe('error handling', () => {
 
     test('missing required param throws with module name, line, and param name', () => {
         expect(() => execPatch('$lpf()')).toThrow(
-            '$lpf at line 1: missing required parameter "input"',
+            '$lpf at line 1: missing required parameter `input`',
         );
     });
 

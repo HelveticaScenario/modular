@@ -489,27 +489,17 @@ mod tests {
   }
 
   #[test]
-  fn test_unknown_param() {
-    let schemas = schemas();
-    let patch = PatchGraph {
-      modules: vec![ModuleState {
-        id: "sine-1".to_string(),
-        module_type: "$sine".to_string(),
-        id_is_explicit: None,
-        params: json!({
-            "unknown_param": {"type": "volts", "value": 1.0}
-        }),
-      }],
-      module_id_remaps: None,
-
-      scopes: vec![],
-    };
-
-    let result = validate_patch(&patch, &schemas);
+  fn test_unknown_param_via_deserr() {
+    // Unknown params are now rejected by deserr (deny_unknown_fields) rather
+    // than by validate_patch. Verify that deserr catches them.
+    let params = json!({
+        "unknown_param": {"type": "volts", "value": 1.0}
+    });
+    let result = crate::params_cache::deserialize_params("$sine", params, false);
     assert!(result.is_err());
-    let errors = result.unwrap_err();
+    let errors = result.err().unwrap().into_errors();
     assert_eq!(errors.len(), 1);
-    assert!(errors[0].message.contains("Unknown parameter"));
+    assert!(errors[0].message.contains("unknown parameter"));
   }
 
   #[test]
@@ -667,26 +657,16 @@ mod tests {
   }
 
   #[test]
-  fn test_multiple_errors() {
-    let schemas = schemas();
-    let patch = PatchGraph {
-      modules: vec![ModuleState {
-        id: "sine-1".to_string(),
-        module_type: "$sine".to_string(),
-        id_is_explicit: None,
-        params: json!({
-            "unknown1": 1.0,
-            "unknown2": 2.0
-        }),
-      }],
-      module_id_remaps: None,
-
-      scopes: vec![],
-    };
-
-    let result = validate_patch(&patch, &schemas);
+  fn test_multiple_unknown_params_via_deserr() {
+    // Multiple unknown params are now caught by deserr (deny_unknown_fields).
+    // deserr accumulates all errors via ControlFlow::Continue.
+    let params = json!({
+        "unknown1": 1.0,
+        "unknown2": 2.0
+    });
+    let result = crate::params_cache::deserialize_params("$sine", params, false);
     assert!(result.is_err());
-    let errors = result.unwrap_err();
+    let errors = result.err().unwrap().into_errors();
     assert_eq!(errors.len(), 2);
   }
 
