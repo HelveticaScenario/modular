@@ -655,9 +655,7 @@
         "name": "sample",
         "description": "compressed signal",
         "polyphonic": true,
-        "default": true,
-        "minValue": -5.0,
-        "maxValue": 5.0
+        "default": true
       }
     ],
     "signalParams": [
@@ -742,7 +740,7 @@
   },
   {
     "name": "$xover",
-    "documentation": "EXPERIMENTAL\n\nThree-band crossover / band splitter using Linkwitz-Riley 4th-order filters.\n\nSplits an input signal into three frequency bands (low, mid, high) with\nphase-coherent LR4 crossover filters. The default `sample` output passes\nthe input through unchanged, so the module is a no-op unless you\nexplicitly tap the `.low`, `.mid`, or `.high` outputs.\n\nTwo crossover frequencies define the band boundaries:\n- **lowMidFreq** — boundary between the low and mid bands (V/Oct, default ~200 Hz).\n- **midHighFreq** — boundary between the mid and high bands (V/Oct, default ~2000 Hz).\n\n```js\n// Split into 3 bands and process each independently\nlet bands = $xover(input, { lowMidFreq: '200hz', midHighFreq: '2000hz' })\nlet low  = $comp(bands.low,  { threshold: 2.5, ratio: 4 })\nlet mid  = $comp(bands.mid,  { threshold: 3,   ratio: 3 })\nlet high = $comp(bands.high, { threshold: 2,   ratio: 6 })\n$mix(low, mid, high).out()\n```",
+    "documentation": "EXPERIMENTAL\n\nThree-band crossover / band splitter.\n\nSplits an input signal into three frequency bands (low, mid, high).\nThe default `sample` output passes the input through unchanged, \nso the module is a no-op unless you explicitly tap the\n`.low`, `.mid`, or `.high` outputs.\n\nTwo crossover frequencies define the band boundaries:\n- **lowMidFreq** — boundary between the low and mid bands (V/Oct, default ~200 Hz).\n- **midHighFreq** — boundary between the mid and high bands (V/Oct, default ~2000 Hz).\n\n```js\n// Split into 3 bands and process each independently\nlet bands = $xover(input, { lowMidFreq: '200hz', midHighFreq: '2000hz' })\nlet low  = $comp(bands.low,  { threshold: 2.5, ratio: 4 })\nlet mid  = $comp(bands.mid,  { threshold: 3,   ratio: 3 })\nlet high = $comp(bands.high, { threshold: 2,   ratio: 6 })\n$mix([low, mid, high]).out()\n```",
     "paramsSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "title": "CrossoverParams",
@@ -843,33 +841,25 @@
         "name": "output",
         "description": "input passed through unchanged",
         "polyphonic": true,
-        "default": true,
-        "minValue": -5.0,
-        "maxValue": 5.0
+        "default": true
       },
       {
         "name": "low",
         "description": "low band output",
         "polyphonic": true,
-        "default": false,
-        "minValue": -5.0,
-        "maxValue": 5.0
+        "default": false
       },
       {
         "name": "mid",
         "description": "mid band output",
         "polyphonic": true,
-        "default": false,
-        "minValue": -5.0,
-        "maxValue": 5.0
+        "default": false
       },
       {
         "name": "high",
         "description": "high band output",
         "polyphonic": true,
-        "default": false,
-        "minValue": -5.0,
-        "maxValue": 5.0
+        "default": false
       }
     ],
     "signalParams": [

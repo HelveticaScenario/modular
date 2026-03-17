@@ -39,13 +39,13 @@ struct CrossoverParams {
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct CrossoverOutputs {
-    #[output("output", "input passed through unchanged", default, range = (-5.0, 5.0))]
+    #[output("output", "input passed through unchanged", default)]
     sample: PolyOutput,
-    #[output("low", "low band output", range = (-5.0, 5.0))]
+    #[output("low", "low band output")]
     low: PolyOutput,
-    #[output("mid", "mid band output", range = (-5.0, 5.0))]
+    #[output("mid", "mid band output")]
     mid: PolyOutput,
-    #[output("high", "high band output", range = (-5.0, 5.0))]
+    #[output("high", "high band output")]
     high: PolyOutput,
 }
 
@@ -178,12 +178,12 @@ struct CrossoverState {
 
 /// EXPERIMENTAL
 ///
-/// Three-band crossover / band splitter using Linkwitz-Riley 4th-order filters.
+/// Three-band crossover / band splitter.
 ///
-/// Splits an input signal into three frequency bands (low, mid, high) with
-/// phase-coherent LR4 crossover filters. The default `sample` output passes
-/// the input through unchanged, so the module is a no-op unless you
-/// explicitly tap the `.low`, `.mid`, or `.high` outputs.
+/// Splits an input signal into three frequency bands (low, mid, high).
+/// The default `sample` output passes the input through unchanged, 
+/// so the module is a no-op unless you explicitly tap the
+/// `.low`, `.mid`, or `.high` outputs.
 ///
 /// Two crossover frequencies define the band boundaries:
 /// - **lowMidFreq** — boundary between the low and mid bands (V/Oct, default ~200 Hz).
@@ -195,7 +195,7 @@ struct CrossoverState {
 /// let low  = $comp(bands.low,  { threshold: 2.5, ratio: 4 })
 /// let mid  = $comp(bands.mid,  { threshold: 3,   ratio: 3 })
 /// let high = $comp(bands.high, { threshold: 2,   ratio: 6 })
-/// $mix(low, mid, high).out()
+/// $mix([low, mid, high]).out()
 /// ```
 #[module(name = "$xover", args(input))]
 pub struct Crossover {
