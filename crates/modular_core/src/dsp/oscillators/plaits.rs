@@ -14,9 +14,9 @@ use mi_plaits_dsp::voice::{Modulations, Patch, Voice};
 use schemars::JsonSchema;
 
 use crate::{
-    dsp::utils::{voct_to_midi, SchmittTrigger},
+    dsp::utils::{SchmittTrigger, voct_to_midi},
     patch::Patch as ModularPatch,
-    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
+    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
     types::{Clickless, Connect},
 };
 
@@ -125,8 +125,7 @@ impl Connect for PlaitsEngine {
 struct PlaitsParams {
     /// Pitch input in V/Oct (0V = C4)
     #[signal(type = pitch)]
-    #[deserr(default)]
-    freq: Option<PolySignal>,
+    freq: PolySignal,
 
     /// Synthesis engine selection
     engine: PlaitsEngine,
@@ -360,7 +359,7 @@ impl Plaits {
             let engine_index = self.params.engine.to_index();
 
             let patch = Patch {
-                note: voct_to_midi(self.params.freq.value_or(ch, 0.0)),
+                note: voct_to_midi(self.params.freq.get_value(ch)),
                 harmonics: ((*state.harmonics + 5.0) / 10.0).clamp(0.0, 1.0),
                 timbre: ((*state.timbre + 5.0) / 10.0).clamp(0.0, 1.0),
                 morph: ((*state.morph + 5.0) / 10.0).clamp(0.0, 1.0),

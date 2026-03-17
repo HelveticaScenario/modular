@@ -904,14 +904,7 @@
       "properties": {
         "amount": {
           "description": "fold amount (0-5, where 0 = bypass, 5 = maximum folding)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         },
         "freq": {
           "description": "pitch of the source signal in V/Oct (optional, reduces aliasing at high frequencies)",
@@ -930,7 +923,8 @@
         }
       },
       "required": [
-        "input"
+        "input",
+        "amount"
       ],
       "$defs": {
         "PolySignal": {
@@ -1047,14 +1041,7 @@
       "properties": {
         "amount": {
           "description": "harmonic richness (0–5). At 0 the signal is clean; at 5 the highest harmonic content dominates",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         },
         "freq": {
           "description": "pitch of the source signal in V/Oct (optional, reduces aliasing at high frequencies)",
@@ -1073,7 +1060,8 @@
         }
       },
       "required": [
-        "input"
+        "input",
+        "amount"
       ],
       "$defs": {
         "PolySignal": {
@@ -1190,14 +1178,7 @@
       "properties": {
         "amount": {
           "description": "segment shape amount (0-5, morphs between 8 shapes)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         },
         "freq": {
           "description": "pitch of the source signal in V/Oct (optional, reduces aliasing at high frequencies)",
@@ -1216,7 +1197,8 @@
         }
       },
       "required": [
-        "input"
+        "input",
+        "amount"
       ],
       "$defs": {
         "PolySignal": {
@@ -1333,16 +1315,12 @@
       "properties": {
         "freq": {
           "description": "pitch in V/Oct (0V = C4)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         }
       },
+      "required": [
+        "freq"
+      ],
       "$defs": {
         "PolySignal": {
           "anyOf": [
@@ -1439,14 +1417,7 @@
       "properties": {
         "freq": {
           "description": "pitch in V/Oct (0V = C4)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         },
         "shape": {
           "description": "waveform shape: 0=saw, 2.5=triangle, 5=ramp",
@@ -1460,6 +1431,9 @@
           ]
         }
       },
+      "required": [
+        "freq"
+      ],
       "$defs": {
         "PolySignal": {
           "anyOf": [
@@ -1564,14 +1538,7 @@
       "properties": {
         "freq": {
           "description": "pitch in V/Oct (0V = C4)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         },
         "pwm": {
           "description": "pulse width modulation CV — added to the width parameter",
@@ -1596,6 +1563,9 @@
           ]
         }
       },
+      "required": [
+        "freq"
+      ],
       "$defs": {
         "PolySignal": {
           "anyOf": [
@@ -2149,14 +2119,7 @@
         },
         "freq": {
           "description": "Pitch input in V/Oct (0V = C4)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         },
         "harmonics": {
           "description": "Harmonics parameter (-5V to +5V, bipolar, default 0V) - function varies per engine",
@@ -2259,6 +2222,7 @@
         }
       },
       "required": [
+        "freq",
         "engine"
       ],
       "$defs": {
@@ -2592,14 +2556,7 @@
         },
         "freq": {
           "description": "pitch in V/Oct (0V = C4)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         },
         "voices": {
           "description": "number of supersaw voices (1–16)",
@@ -2609,6 +2566,9 @@
           "minimum": 0
         }
       },
+      "required": [
+        "freq"
+      ],
       "$defs": {
         "PolySignal": {
           "anyOf": [
@@ -6742,7 +6702,6 @@
           "description": "CC number to monitor (0-127 for 7-bit, 0-31 for 14-bit mode)",
           "type": "integer",
           "format": "uint8",
-          "default": 0,
           "maximum": 255,
           "minimum": 0
         },
@@ -6774,7 +6733,10 @@
           "format": "float",
           "default": 0.0
         }
-      }
+      },
+      "required": [
+        "cc"
+      ]
     },
     "outputs": [
       {

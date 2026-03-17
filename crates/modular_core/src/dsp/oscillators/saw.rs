@@ -14,8 +14,7 @@ use crate::{
 struct SawOscillatorParams {
     /// pitch in V/Oct (0V = C4)
     #[signal(type = pitch)]
-    #[deserr(default)]
-    freq: Option<PolySignal>,
+    freq: PolySignal,
     /// waveform shape: 0=saw, 2.5=triangle, 5=ramp
     #[signal(range = (0.0, 5.0))]
     #[deserr(default)]
@@ -79,7 +78,7 @@ impl SawOscillator {
             let shape_val = self.params.shape.value_or(ch, 0.0).clamp(0.0, 5.0);
             state.shape.update(shape_val);
 
-            let frequency = voct_to_hz(self.params.freq.value_or(ch, 0.0));
+            let frequency = voct_to_hz(self.params.freq.get_value(ch));
             let phase_increment = frequency * inv_sample_rate;
 
             // Convert shape (0–5) to symmetry (peak position):

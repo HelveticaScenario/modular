@@ -18,8 +18,6 @@ struct MidiCcParams {
     device: Option<String>,
 
     /// CC number to monitor (0-127 for 7-bit, 0-31 for 14-bit mode)
-    #[serde(default)]
-    #[deserr(default)]
     cc: u8,
 
     /// MIDI channel to listen on (1–16, leave unset for omni/all channels)

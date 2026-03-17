@@ -19,8 +19,7 @@ struct SegmentParams {
     input: PolySignal,
     /// segment shape amount (0-5, morphs between 8 shapes)
     #[signal(range = (0.0, 5.0))]
-    #[deserr(default)]
-    amount: Option<PolySignal>,
+    amount: PolySignal,
     /// pitch of the source signal in V/Oct (optional, reduces aliasing at high frequencies)
     #[signal(type = pitch)]
     #[deserr(default)]
@@ -65,7 +64,7 @@ impl Segment {
             let state = &mut self.state.channels[ch];
 
             let input = self.params.input.get_value(ch);
-            let amount_raw = self.params.amount.value_or(ch, 0.0);
+            let amount_raw = self.params.amount.get_value(ch);
 
             // Smooth amount parameter to avoid clicks
             state.amount.update(amount_raw);

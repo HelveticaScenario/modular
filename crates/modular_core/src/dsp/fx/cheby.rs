@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 
 use crate::dsp::fx::enosc_tables::{aa_cheby, interpolate_cheby};
 use crate::dsp::utils::voct_to_hz;
-use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
+use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
 use crate::types::Clickless;
 
 #[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
@@ -19,8 +19,7 @@ struct ChebyParams {
     input: PolySignal,
     /// harmonic richness (0–5). At 0 the signal is clean; at 5 the highest harmonic content dominates
     #[signal(range = (0.0, 5.0))]
-    #[deserr(default)]
-    amount: Option<PolySignal>,
+    amount: PolySignal,
     /// pitch of the source signal in V/Oct (optional, reduces aliasing at high frequencies)
     #[signal(type = pitch)]
     #[deserr(default)]
@@ -66,7 +65,7 @@ impl Cheby {
             let state = &mut self.state.channels[ch];
 
             let input = self.params.input.get_value(ch);
-            let amount_raw = self.params.amount.value_or(ch, 0.0);
+            let amount_raw = self.params.amount.get_value(ch);
 
             // Smooth amount parameter to avoid clicks
             state.amount.update(amount_raw);

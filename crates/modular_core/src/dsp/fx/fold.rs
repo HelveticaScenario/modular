@@ -19,8 +19,7 @@ struct FoldParams {
     input: PolySignal,
     /// fold amount (0-5, where 0 = bypass, 5 = maximum folding)
     #[signal(default = 0.0, range = (0.0, 5.0))]
-    #[deserr(default)]
-    amount: Option<PolySignal>,
+    amount: PolySignal,
     /// pitch of the source signal in V/Oct (optional, reduces aliasing at high frequencies)
     #[signal(type = pitch)]
     #[deserr(default)]
@@ -64,7 +63,7 @@ impl Fold {
             let state = &mut self.state.channels[ch];
 
             let input = self.params.input.get_value(ch);
-            let amount_raw = self.params.amount.value_or(ch, 0.0);
+            let amount_raw = self.params.amount.get_value(ch);
 
             // Smooth amount parameter to avoid clicks
             state.amount.update(amount_raw);

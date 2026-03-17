@@ -2,10 +2,10 @@ use deserr::Deserr;
 use schemars::JsonSchema;
 
 use crate::{
+    PORT_MAX_CHANNELS,
     dsp::utils::voct_to_hz,
     poly::{PolyOutput, PolySignal, PolySignalExt},
     types::Clickless,
-    PORT_MAX_CHANNELS,
 };
 
 #[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
@@ -15,8 +15,7 @@ use crate::{
 struct PulseOscillatorParams {
     /// pitch in V/Oct (0V = C4)
     #[signal(type = pitch)]
-    #[deserr(default)]
-    freq: Option<PolySignal>,
+    freq: PolySignal,
     /// pulse width (0-5, 2.5 is square)
     #[signal(default = 2.5, range = (0.0, 5.0))]
     #[deserr(default)]
@@ -77,7 +76,7 @@ impl PulseOscillator {
             let pwm = self.params.pwm.value_or(ch, 0.0);
             state.width.update((base_width + pwm).clamp(0.0, 5.0));
 
-            let frequency = voct_to_hz(self.params.freq.value_or(ch, 0.0));
+            let frequency = voct_to_hz(self.params.freq.get_value(ch));
             let phase_increment = frequency / sample_rate;
 
             // Pulse width (0.0 to 1.0, 0.5 is square wave)
