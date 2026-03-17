@@ -95,7 +95,7 @@ impl DeserializeError for ModuleParamErrors {
         error: ErrorKind<V>,
         location: ValuePointerRef<'_>,
     ) -> ControlFlow<Self, Self> {
-        let field = location_to_field(location);
+        let mut field = location_to_field(location);
         let message = match error {
             ErrorKind::IncorrectValueKind { actual, accepted } => {
                 let accepted_str: Vec<&str> = accepted
@@ -128,6 +128,15 @@ impl DeserializeError for ModuleParamErrors {
                 )
             }
             ErrorKind::MissingField { field: f } => {
+                // For MissingField errors, deserr passes the field name in the
+                // ErrorKind but the location points to the parent object. Use the
+                // missing field name as the error's field path so consumers can
+                // identify which param is missing.
+                if field.is_empty() {
+                    field = f.to_string();
+                } else {
+                    field = format!("{}.{}", field, f);
+                }
                 format!("missing required parameter `{}`", f)
             }
             ErrorKind::UnknownKey { key, accepted } => {
