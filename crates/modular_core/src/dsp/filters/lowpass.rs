@@ -2,7 +2,7 @@ use deserr::Deserr;
 use schemars::JsonSchema;
 
 use crate::{
-    dsp::utils::{changed, voct_to_hz},
+    dsp::utils::{changed, sanitize, voct_to_hz},
     poly::{PolyOutput, PolySignal, PolySignalExt},
     types::Clickless,
     PORT_MAX_CHANNELS,
@@ -185,6 +185,7 @@ impl LowpassFilter {
             };
 
             let w = input - c.a1 * state.z1[i] - c.a2 * state.z2[i];
+            let w = sanitize(w);
             let y = c.b0 * w + c.b1 * state.z1[i] + c.b2 * state.z2[i];
 
             state.z2[i] = state.z1[i];

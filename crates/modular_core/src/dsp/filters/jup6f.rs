@@ -2,7 +2,7 @@ use deserr::Deserr;
 use schemars::JsonSchema;
 
 use crate::{
-    dsp::utils::{changed, voct_to_hz},
+    dsp::utils::{changed, sanitize, voct_to_hz},
     poly::{PolyOutput, PolySignal, PolySignalExt},
     types::Clickless,
     PORT_MAX_CHANNELS,
@@ -84,16 +84,16 @@ pub struct Jup6f {
 }
 
 /// State for the Jup6f module.
-pub struct Jup6fState {
+struct Jup6fState {
     /// Per-channel ladder state
-    pub channels: [LadderState; PORT_MAX_CHANNELS],
+    channels: [LadderState; PORT_MAX_CHANNELS],
     /// Mono optimization
-    pub mono_g: f32,
-    pub mono_k: f32,
-    pub last_cutoff_mono: f32,
-    pub last_resonance_mono: f32,
-    pub smooth_cutoff_mono: Clickless,
-    pub smooth_resonance_mono: Clickless,
+    mono_g: f32,
+    mono_k: f32,
+    last_cutoff_mono: f32,
+    last_resonance_mono: f32,
+    smooth_cutoff_mono: Clickless,
+    smooth_resonance_mono: Clickless,
 }
 
 impl Default for Jup6fState {
@@ -102,8 +102,8 @@ impl Default for Jup6fState {
             channels: [LadderState::default(); PORT_MAX_CHANNELS],
             mono_g: 0.0,
             mono_k: 0.0,
-            last_cutoff_mono: f32::NAN,
-            last_resonance_mono: f32::NAN,
+            last_cutoff_mono: f32::NAN, // Indicate that coefficients have never been calculated 
+            last_resonance_mono: f32::NAN, // Indicate that coefficients have never been calculated 
             smooth_cutoff_mono: Clickless::default(),
             smooth_resonance_mono: Clickless::default(),
         }
@@ -153,22 +153,22 @@ fn process_ladder(input: f32, state: &mut [f32; 4], g: f32, k: f32) -> (f32, f32
     // Stage 1
     let v0 = (u - state[0]) * g1;
     let s0 = v0 + state[0];
-    state[0] = s0 + v0;
+    state[0] = sanitize(s0 + v0);
 
     // Stage 2
     let v1 = (tanh_approx(s0) - state[1]) * g1;
     let s1 = v1 + state[1];
-    state[1] = s1 + v1;
+    state[1] = sanitize(s1 + v1);
 
     // Stage 3
     let v2 = (tanh_approx(s1) - state[2]) * g1;
     let s2 = v2 + state[2];
-    state[2] = s2 + v2;
+    state[2] = sanitize(s2 + v2);
 
     // Stage 4
     let v3 = (tanh_approx(s2) - state[3]) * g1;
     let s3 = v3 + state[3];
-    state[3] = s3 + v3;
+    state[3] = sanitize(s3 + v3);
 
     // Multimode outputs derived from ladder taps:
     // LP24 = 4th stage output (24 dB/oct)

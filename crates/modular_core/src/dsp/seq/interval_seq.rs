@@ -1053,6 +1053,30 @@ impl crate::types::PatchUpdateHandler for IntervalSeq {
 message_handlers!(impl IntervalSeq {});
 
 #[cfg(test)]
+impl Default for IntervalSeq {
+    fn default() -> Self {
+        Self {
+            outputs: IntervalSeqOutputs::default(),
+            state: IntervalSeqState::default(),
+            params: IntervalSeqParams::default(),
+            _channel_count: 4,
+        }
+    }
+}
+
+#[cfg(test)]
+impl Default for IntervalSeqParams {
+    fn default() -> Self {
+        Self {
+            patterns: IntervalPatternParam::default(),
+            scale: IntervalScaleParam::default(),
+            playhead: None,
+            channels: default_channels(),
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

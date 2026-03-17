@@ -234,6 +234,29 @@ impl Clock {
 }
 
 #[cfg(test)]
+impl Default for ClockParams {
+    fn default() -> Self {
+        Self {
+            tempo: 120.0,
+            numerator: 4,
+            denominator: 4,
+        }
+    }
+}
+
+#[cfg(test)]
+impl Default for Clock {
+    fn default() -> Self {
+        Self {
+            outputs: ClockOutputs::default(),
+            state: ClockState::default(),
+            params: ClockParams::default(),
+            _channel_count: 2,
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -380,24 +403,31 @@ mod tests {
     #[test]
     fn clock_time_sig_deserialization() {
         // Verify time sig params deserialize correctly from JSON
-        let params =
-            deserialize_clock_params(serde_json::json!({"numerator": 6, "denominator": 8}));
+        let params = deserialize_clock_params(
+            serde_json::json!({"tempo": 120, "numerator": 6, "denominator": 8}),
+        );
         assert_eq!(params.numerator, 6);
         assert_eq!(params.denominator, 8);
     }
 
     #[test]
     fn clock_tempo_deserialization() {
-        let params = deserialize_clock_params(serde_json::json!({"tempo": 140}));
+        let params = deserialize_clock_params(
+            serde_json::json!({"tempo": 140, "numerator": 4, "denominator": 4}),
+        );
         assert!((params.tempo - 140.0).abs() < 1e-9);
     }
 
     #[test]
-    fn clock_time_sig_defaults_when_missing() {
-        // Verify defaults when not provided in JSON
-        let params = deserialize_clock_params(serde_json::json!({}));
-        assert_eq!(params.numerator, 4);
-        assert_eq!(params.denominator, 4);
+    fn clock_required_params_rejected_when_missing() {
+        // All params (tempo, numerator, denominator) are required
+        let result = deserr::deserialize::<ClockParams, _, crate::param_errors::ModuleParamErrors>(
+            serde_json::json!({}),
+        );
+        assert!(
+            result.is_err(),
+            "Empty JSON should fail: all clock params are required"
+        );
     }
 
     #[test]

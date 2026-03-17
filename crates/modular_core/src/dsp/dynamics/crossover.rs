@@ -7,7 +7,7 @@ use deserr::Deserr;
 use schemars::JsonSchema;
 
 use crate::{
-    dsp::utils::{changed, voct_to_hz},
+    dsp::utils::{changed, sanitize, voct_to_hz},
     poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
     types::Clickless,
 };
@@ -70,6 +70,7 @@ impl BiquadState {
     #[inline]
     fn process(&mut self, input: f32, c: &BiquadCoeffs) -> f32 {
         let w = input - c.a1 * self.z1 - c.a2 * self.z2;
+        let w = sanitize(w);
         let y = c.b0 * w + c.b1 * self.z1 + c.b2 * self.z2;
         self.z2 = self.z1;
         self.z1 = w;
@@ -181,7 +182,7 @@ struct CrossoverState {
 /// Three-band crossover / band splitter.
 ///
 /// Splits an input signal into three frequency bands (low, mid, high).
-/// The default `sample` output passes the input through unchanged, 
+/// The default `sample` output passes the input through unchanged,
 /// so the module is a no-op unless you explicitly tap the
 /// `.low`, `.mid`, or `.high` outputs.
 ///

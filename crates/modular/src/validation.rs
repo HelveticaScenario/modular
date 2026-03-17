@@ -492,10 +492,12 @@ mod tests {
   fn test_unknown_param_via_deserr() {
     // Unknown params are now rejected by deserr (deny_unknown_fields) rather
     // than by validate_patch. Verify that deserr catches them.
+    // Use $noise because all its params are optional — we only want
+    // the "unknown parameter" error, not an extra "missing required param" error.
     let params = json!({
         "unknown_param": {"type": "volts", "value": 1.0}
     });
-    let result = crate::params_cache::deserialize_params("$sine", params, false);
+    let result = crate::params_cache::deserialize_params("$noise", params, false);
     assert!(result.is_err());
     let errors = result.err().unwrap().into_errors();
     assert_eq!(errors.len(), 1);
@@ -660,11 +662,13 @@ mod tests {
   fn test_multiple_unknown_params_via_deserr() {
     // Multiple unknown params are now caught by deserr (deny_unknown_fields).
     // deserr accumulates all errors via ControlFlow::Continue.
+    // Use $noise because all its params are optional — we only want
+    // "unknown parameter" errors, not extra "missing required param" errors.
     let params = json!({
         "unknown1": 1.0,
         "unknown2": 2.0
     });
-    let result = crate::params_cache::deserialize_params("$sine", params, false);
+    let result = crate::params_cache::deserialize_params("$noise", params, false);
     assert!(result.is_err());
     let errors = result.err().unwrap().into_errors();
     assert_eq!(errors.len(), 2);

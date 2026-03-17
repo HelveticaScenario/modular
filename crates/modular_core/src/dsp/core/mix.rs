@@ -315,7 +315,7 @@ mod tests {
     fn test_mix_empty_inputs_no_gain() {
         let params: MixParams =
             deserr::deserialize::<MixParams, _, crate::param_errors::ModuleParamErrors>(
-                serde_json::json!({}),
+                serde_json::json!({"inputs": []}),
             )
             .unwrap();
         let mut mixer = make_mix(params);

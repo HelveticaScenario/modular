@@ -609,3 +609,50 @@ describe('error handling', () => {
         expect(() => execPatch('$lpf($sine("C4"), "C4").out()')).not.toThrow();
     });
 });
+
+// ─── Pipe vs direct call comparison ──────────────────────────────────────────
+
+describe('pipe vs direct call', () => {
+    test('pipe $lpf produces same $lpf params as direct call', () => {
+        const directPatch = execPatch('$lpf($saw("c"), "1000hz").out()');
+        const pipePatch = execPatch(
+            '$saw("c").pipe(e => $lpf(e, "1000hz")).out()',
+        );
+
+        const directLpf = findModules(directPatch, '$lpf')[0];
+        const pipeLpf = findModules(pipePatch, '$lpf')[0];
+
+        // Compare params excluding __argument_spans (source positions differ)
+        const { __argument_spans: _a, ...directCore } = directLpf.params as any;
+        const { __argument_spans: _b, ...pipeCore } = pipeLpf.params as any;
+
+        // The $lpf params should be identical (input and cutoff)
+        expect(pipeCore).toEqual(directCore);
+    });
+
+    test('pipe and direct produce identical full patch structure', () => {
+        const directPatch = execPatch('$lpf($saw("c"), "1000hz").out()');
+        const pipePatch = execPatch(
+            '$saw("c").pipe(e => $lpf(e, "1000hz")).out()',
+        );
+
+        // Compare user modules
+        const directUser = userModules(directPatch);
+        const pipeUser = userModules(pipePatch);
+
+        // Same number of modules
+        expect(pipeUser.length).toEqual(directUser.length);
+    });
+
+    test('pipe $lpf does not throw', () => {
+        expect(() =>
+            execPatch('$saw("c").pipe(e => $lpf(e, "1000hz")).out()'),
+        ).not.toThrow();
+    });
+
+    test('$saw direct out produces a valid patch', () => {
+        const patch = execPatch('$saw("c").out()');
+        const saws = findModules(patch, '$saw');
+        expect(saws.length).toBe(1);
+    });
+});

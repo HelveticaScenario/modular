@@ -2,7 +2,7 @@ use deserr::Deserr;
 use schemars::JsonSchema;
 
 use crate::{
-    dsp::utils::{changed, voct_to_hz},
+    dsp::utils::{changed, sanitize, voct_to_hz},
     poly::{PolyOutput, PolySignal, PolySignalExt},
     types::Clickless,
     PORT_MAX_CHANNELS,
@@ -186,6 +186,7 @@ impl BandpassFilter {
 
             let ch_state = &mut state.channels[i];
             let w = input - c.a1 * ch_state.z1 - c.a2 * ch_state.z2;
+            let w = sanitize(w);
             let y = c.b0 * w + c.b1 * ch_state.z1 + c.b2 * ch_state.z2;
 
             ch_state.z2 = ch_state.z1;

@@ -6,6 +6,7 @@
 use deserr::Deserr;
 use schemars::JsonSchema;
 
+use crate::dsp::utils::sanitize;
 use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 
 // Gain voltage scaling: maps [-5, 5] volts to [-24, 24] dB (4.8 dB per volt)
@@ -44,6 +45,7 @@ fn compress(
         (-1.0 / (release * sample_rate)).exp()
     };
     *envelope = input_abs + coeff * (*envelope - input_abs);
+    *envelope = sanitize(*envelope);
 
     // Gain computation in dB domain
     let level_db = 20.0 * (*envelope + 1e-10).log10();

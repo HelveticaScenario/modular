@@ -5,7 +5,7 @@
 //! reading samples after ticking.
 
 use modular_core::dsp::{get_constructors, get_params_deserializers};
-use modular_core::params::{extract_argument_spans, DeserializedParams};
+use modular_core::params::DeserializedParams;
 use modular_core::patch::Patch;
 use modular_core::types::{ModuleState, PatchGraph, Sampleable};
 use serde_json::json;
@@ -16,16 +16,15 @@ const DEFAULT_PORT: &str = "output";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/// Create a named module from the constructor registry with default params.
-fn make_module(module_type: &str, id: &str) -> Arc<Box<dyn Sampleable>> {
+/// Create a named module from the constructor registry with given params.
+fn make_module(module_type: &str, id: &str, params: serde_json::Value) -> Arc<Box<dyn Sampleable>> {
     let constructors = get_constructors();
     let deserializers = get_params_deserializers();
     let deserializer = deserializers
         .get(module_type)
         .unwrap_or_else(|| panic!("no params deserializer for '{module_type}'"));
-    let cached = deserializer(json!({})).unwrap_or_else(|e| {
-        panic!("default params deserialization for '{module_type}' failed: {e}")
-    });
+    let cached = deserializer(params)
+        .unwrap_or_else(|e| panic!("params deserialization for '{module_type}' failed: {e}"));
     let deserialized = DeserializedParams {
         params: cached.params,
         argument_spans: Default::default(),
@@ -39,25 +38,6 @@ fn make_module(module_type: &str, id: &str) -> Arc<Box<dyn Sampleable>> {
         deserialized,
     )
     .unwrap_or_else(|e| panic!("constructor for '{module_type}' failed: {e}"))
-}
-
-/// Set params on a module (JSON → deserialize → apply_deserialized_params).
-fn set_params(module: &dyn Sampleable, params: serde_json::Value, _channels: usize) {
-    let deserializers = get_params_deserializers();
-    let module_type = module.get_module_type();
-    let deserializer = deserializers
-        .get(module_type)
-        .unwrap_or_else(|| panic!("no params deserializer for '{module_type}'"));
-    let (stripped, argument_spans) = extract_argument_spans(params);
-    let cached = deserializer(stripped).expect("params deserialization failed");
-    let deserialized = DeserializedParams {
-        params: cached.params,
-        argument_spans,
-        channel_count: cached.channel_count,
-    };
-    module
-        .apply_deserialized_params(deserialized)
-        .expect("apply_deserialized_params failed");
 }
 
 /// Advance one sample: tick then update.
@@ -109,9 +89,8 @@ fn approx_eq(a: f32, b: f32, tol: f32) -> bool {
 
 #[test]
 fn sine_produces_bipolar_output() {
-    let osc = make_module("$sine", "sine-1");
+    let osc = make_module("$sine", "sine-1", json!({ "freq": 0.0 }));
     // 0 V/oct ≈ C4 (261.63 Hz)
-    set_params(&**osc, json!({ "freq": 0.0 }), 1);
 
     let samples = collect_samples(&**osc, 1000);
     let (mn, mx) = min_max(&samples);
@@ -123,9 +102,8 @@ fn sine_produces_bipolar_output() {
 
 #[test]
 fn sine_zero_frequency_is_dc() {
-    let osc = make_module("$sine", "sine-1");
+    let osc = make_module("$sine", "sine-1", json!({ "freq": -10.0 }));
     // Very low frequency → nearly DC over 100 samples
-    set_params(&**osc, json!({ "freq": -10.0 }), 1);
 
     let samples = collect_samples(&**osc, 100);
     let (mn, mx) = min_max(&samples);
@@ -140,9 +118,7 @@ fn sine_zero_frequency_is_dc() {
 
 #[test]
 fn sine_polyphonic() {
-    let osc = make_module("$sine", "sine-1");
-    // Two channels at different pitches
-    set_params(&**osc, json!({ "freq": [0.0, 1.0] }), 2);
+    let osc = make_module("$sine", "sine-1", json!({ "freq": [0.0, 1.0] }));
 
     let _ch0 = collect_channel(&**osc, 0, 500);
     // Reset for channel 1 read — we already stepped, so just read accumulated data
@@ -151,8 +127,7 @@ fn sine_polyphonic() {
     // from subsequent samples. That's fine — we just want to verify both channels
     // produce output.
 
-    let osc2 = make_module("$sine", "sine-2");
-    set_params(&**osc2, json!({ "freq": [0.0, 1.0] }), 2);
+    let osc2 = make_module("$sine", "sine-2", json!({ "freq": [0.0, 1.0] }));
 
     let mut ch0_samples = Vec::new();
     let mut ch1_samples = Vec::new();
@@ -186,8 +161,7 @@ fn sine_polyphonic() {
 
 #[test]
 fn saw_produces_bipolar_output() {
-    let osc = make_module("$saw", "saw-1");
-    set_params(&**osc, json!({ "freq": 0.0 }), 1);
+    let osc = make_module("$saw", "saw-1", json!({ "freq": 0.0 }));
 
     let samples = collect_samples(&**osc, 1000);
     let (mn, mx) = min_max(&samples);
@@ -200,8 +174,7 @@ fn saw_produces_bipolar_output() {
 
 #[test]
 fn pulse_produces_bipolar_output() {
-    let osc = make_module("$pulse", "pulse-1");
-    set_params(&**osc, json!({ "freq": 0.0 }), 1);
+    let osc = make_module("$pulse", "pulse-1", json!({ "freq": 0.0 }));
 
     let samples = collect_samples(&**osc, 1000);
     let (mn, mx) = min_max(&samples);
@@ -213,12 +186,14 @@ fn pulse_produces_bipolar_output() {
 #[test]
 fn pulse_width_affects_duty_cycle() {
     // Width 0 → near 50/50, width 5 → narrower positive
-    let osc_narrow = make_module("$pulse", "pulse-narrow");
-    set_params(&**osc_narrow, json!({ "freq": 0.0, "width": 4.0 }), 1);
+    let osc_narrow = make_module(
+        "$pulse",
+        "pulse-narrow",
+        json!({ "freq": 0.0, "width": 4.0 }),
+    );
     let samples_narrow = collect_samples(&**osc_narrow, 1000);
 
-    let osc_wide = make_module("$pulse", "pulse-wide");
-    set_params(&**osc_wide, json!({ "freq": 0.0, "width": 0.0 }), 1);
+    let osc_wide = make_module("$pulse", "pulse-wide", json!({ "freq": 0.0, "width": 0.0 }));
     let samples_wide = collect_samples(&**osc_wide, 1000);
 
     // Count positive samples
@@ -236,8 +211,7 @@ fn pulse_width_affects_duty_cycle() {
 
 #[test]
 fn noise_produces_output() {
-    let n = make_module("$noise", "noise-1");
-    set_params(&**n, json!({ "color": "white" }), 1);
+    let n = make_module("$noise", "noise-1", json!({ "color": "white" }));
 
     let samples = collect_samples(&**n, 1000);
     let (mn, mx) = min_max(&samples);
@@ -259,14 +233,13 @@ fn noise_produces_output() {
 
 #[test]
 fn scale_and_shift_applies() {
-    let sas = make_module("$scaleAndShift", "sas-1");
+    let sas = make_module(
+        "$scaleAndShift",
+        "sas-1",
+        json!({ "input": 1.0, "scale": 5.0, "shift": 2.0 }),
+    );
     // Formula: output = input * (scale / 5.0) + shift
     // input=1.0, scale=5.0 (= 1x gain), shift=2.0 → output = 1.0 * 1.0 + 2.0 = 3.0
-    set_params(
-        &**sas,
-        json!({ "input": 1.0, "scale": 5.0, "shift": 2.0 }),
-        1,
-    );
 
     // Step enough times for param smoothing to converge
     for _ in 0..500 {
@@ -279,6 +252,34 @@ fn scale_and_shift_applies() {
 
 // ─── Constructors ────────────────────────────────────────────────────────────
 
+/// Provide minimal required params for each module type so that deserialization
+/// succeeds. Modules with all-optional params can use `{}`.
+fn minimal_params(module_type: &str) -> serde_json::Value {
+    match module_type {
+        "$sine" | "$saw" | "$pulse" | "$supersaw" => json!({ "freq": 0.0 }),
+        "$pSine" | "$pSaw" | "$pPulse" => json!({ "phase": 0.0 }),
+        "$macro" => json!({ "freq": 0.0, "engine": "virtualAnalog" }),
+        "$lpf" | "$hpf" | "$bpf" | "$jup6f" | "$comp" | "$xover" | "$curve" | "$slew"
+        | "$quantizer" | "$wrap" | "$clamp" | "$unison" | "$crush" | "$feedback" | "$pulsar"
+        | "$rising" | "$falling" | "$stereoMix" => json!({ "input": 0.0 }),
+        "$signal" => json!({ "source": 0.0 }),
+        "$scaleAndShift" => json!({ "input": 0.0 }),
+        "$cheby" | "$fold" | "$segment" => json!({ "input": 0.0, "amount": 0.0 }),
+        "$remap" => {
+            json!({ "input": 0.0, "inMin": 0.0, "inMax": 5.0, "outMin": 0.0, "outMax": 5.0 })
+        }
+        "$mix" => json!({ "inputs": [] }),
+        "$adsr" => json!({ "gate": 0.0 }),
+        "$perc" => json!({ "trigger": 0.0 }),
+        "$clockDivider" => json!({ "division": 2, "input": 0.0 }),
+        "$sah" => json!({ "input": 0.0, "trigger": 0.0 }),
+        "$tah" => json!({ "input": 0.0, "gate": 0.0 }),
+        "$midiCC" => json!({ "cc": 1 }),
+        "_clock" => json!({ "tempo": 120.0, "numerator": 4, "denominator": 4 }),
+        _ => json!({}),
+    }
+}
+
 #[test]
 fn all_constructors_produce_valid_modules() {
     let constructors = get_constructors();
@@ -287,8 +288,9 @@ fn all_constructors_produce_valid_modules() {
         let deserializer = deserializers
             .get(name.as_str())
             .unwrap_or_else(|| panic!("no params deserializer for '{name}'"));
-        let cached = deserializer(json!({}))
-            .unwrap_or_else(|e| panic!("default params deserialization for '{name}' failed: {e}"));
+        let params = minimal_params(name);
+        let cached = deserializer(params)
+            .unwrap_or_else(|e| panic!("params deserialization for '{name}' failed: {e}"));
         let deserialized = DeserializedParams {
             params: cached.params,
             argument_spans: Default::default(),
@@ -313,15 +315,16 @@ fn all_constructors_can_tick() {
         let deserializer = deserializers
             .get(name.as_str())
             .unwrap_or_else(|| panic!("no params deserializer for '{name}'"));
-        let cached = deserializer(json!({}))
-            .unwrap_or_else(|e| panic!("default params deserialization for '{name}' failed: {e}"));
+        let params = minimal_params(name);
+        let cached = deserializer(params)
+            .unwrap_or_else(|e| panic!("params deserialization for '{name}' failed: {e}"));
         let deserialized = DeserializedParams {
             params: cached.params,
             argument_spans: Default::default(),
             channel_count: cached.channel_count,
         };
         let module = constructor(&format!("test-{name}"), SAMPLE_RATE, deserialized).unwrap();
-        // Should not panic with default (zero) params
+        // Should not panic with minimal params
         module.tick();
         module.update();
         let _ = module.get_poly_sample(DEFAULT_PORT);
@@ -604,8 +607,7 @@ fn from_graph_process_frame_advances_all_modules() {
 #[test]
 fn curve_linear_passthrough() {
     // exp=1 should be linear: output ≈ input
-    let m = make_module("$curve", "curve-1");
-    set_params(&**m, json!({ "input": 3.0, "exp": 1.0 }), 1);
+    let m = make_module("$curve", "curve-1", json!({ "input": 3.0, "exp": 1.0 }));
     for _ in 0..500 {
         step(&**m);
     }
@@ -619,8 +621,7 @@ fn curve_linear_passthrough() {
 #[test]
 fn curve_unity_at_5v() {
     // At 5V input, output should be 5V regardless of exponent
-    let m = make_module("$curve", "curve-2");
-    set_params(&**m, json!({ "input": 5.0, "exp": 3.0 }), 1);
+    let m = make_module("$curve", "curve-2", json!({ "input": 5.0, "exp": 3.0 }));
     for _ in 0..500 {
         step(&**m);
     }
@@ -634,8 +635,7 @@ fn curve_unity_at_5v() {
 #[test]
 fn curve_cubic_midpoint() {
     // exp=3, input=2.5: output = 5 * (2.5/5)^3 = 5 * 0.125 = 0.625
-    let m = make_module("$curve", "curve-3");
-    set_params(&**m, json!({ "input": 2.5, "exp": 3.0 }), 1);
+    let m = make_module("$curve", "curve-3", json!({ "input": 2.5, "exp": 3.0 }));
     for _ in 0..500 {
         step(&**m);
     }
@@ -649,8 +649,7 @@ fn curve_cubic_midpoint() {
 #[test]
 fn curve_preserves_sign() {
     // Negative input should produce negative output
-    let m = make_module("$curve", "curve-4");
-    set_params(&**m, json!({ "input": -2.5, "exp": 2.0 }), 1);
+    let m = make_module("$curve", "curve-4", json!({ "input": -2.5, "exp": 2.0 }));
     for _ in 0..500 {
         step(&**m);
     }
@@ -665,8 +664,7 @@ fn curve_preserves_sign() {
 #[test]
 fn curve_zero_input() {
     // Zero input should produce zero output
-    let m = make_module("$curve", "curve-5");
-    set_params(&**m, json!({ "input": 0.0, "exp": 3.0 }), 1);
+    let m = make_module("$curve", "curve-5", json!({ "input": 0.0, "exp": 3.0 }));
     for _ in 0..500 {
         step(&**m);
     }
@@ -680,8 +678,7 @@ fn curve_zero_input() {
 #[test]
 fn curve_exp_zero_step_function() {
     // exp=0: any nonzero input → ±5V
-    let m = make_module("$curve", "curve-6");
-    set_params(&**m, json!({ "input": 1.0, "exp": 0.0 }), 1);
+    let m = make_module("$curve", "curve-6", json!({ "input": 1.0, "exp": 0.0 }));
     for _ in 0..500 {
         step(&**m);
     }

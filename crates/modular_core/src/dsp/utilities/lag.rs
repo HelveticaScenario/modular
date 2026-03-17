@@ -1,4 +1,5 @@
 use crate::{
+    dsp::utils::sanitize,
     poly::{PolyOutput, PolySignal, PolySignalExt},
     PORT_MAX_CHANNELS,
 };
@@ -70,7 +71,7 @@ impl LagProcessor {
             let state = &mut self.state.channels[ch];
             let input = self.params.input.get_value(ch);
             if !state.initialized {
-                state.current_value = input;
+                state.current_value = sanitize(input);
                 state.initialized = true;
             }
 
@@ -93,6 +94,7 @@ impl LagProcessor {
             };
 
             state.current_value += change;
+            state.current_value = sanitize(state.current_value);
             self.outputs.sample.set(ch, state.current_value);
         }
     }

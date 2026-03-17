@@ -204,11 +204,20 @@ pub struct Clickless {
 impl Clickless {
     pub fn update(&mut self, input: f32) {
         if !self.initialized {
-            self.value = input;
+            // On first call, snap to input — but guard against NaN/Inf
+            // so the smoother never starts in a corrupted state.
+            self.value = if input.is_finite() { input } else { 0.0 };
             self.initialized = true;
             return;
         }
-        self.value = smooth_value(self.value, input);
+        let smoothed = smooth_value(self.value, input);
+        if smoothed.is_finite() {
+            self.value = smoothed;
+        } else if input.is_finite() {
+            // Smoother corrupted but input is valid — snap to input to recover.
+            self.value = input;
+        }
+        // If neither is finite, hold previous value (best-effort freeze).
     }
 }
 

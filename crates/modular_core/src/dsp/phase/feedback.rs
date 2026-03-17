@@ -9,7 +9,7 @@ use deserr::Deserr;
 use schemars::JsonSchema;
 
 use crate::dsp::fx::enosc_tables::aa_feedback;
-use crate::dsp::utils::voct_to_hz;
+use crate::dsp::utils::{sanitize, voct_to_hz};
 use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 use crate::types::Clickless;
 
@@ -121,6 +121,7 @@ impl Feedback {
             // Update one-pole LP filter: state += (input - state) / 4
             // Matches IOnePoleLp<s1_15, 2> where SHIFT=2 → coefficient = 1/4
             state.lp_state += (sine - state.lp_state) * 0.25;
+            state.lp_state = sanitize(state.lp_state);
 
             // Output the distorted phase
             self.outputs.sample.set(ch, phase);
