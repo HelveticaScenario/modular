@@ -2673,14 +2673,7 @@
       "properties": {
         "cutoff": {
           "description": "cutoff frequency in V/Oct (0V = C4)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         },
         "input": {
           "description": "signal input",
@@ -2699,7 +2692,8 @@
         }
       },
       "required": [
-        "input"
+        "input",
+        "cutoff"
       ],
       "$defs": {
         "PolySignal": {
@@ -2817,14 +2811,7 @@
       "properties": {
         "cutoff": {
           "description": "cutoff frequency in V/Oct (0V = C4)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         },
         "input": {
           "description": "signal input",
@@ -2843,7 +2830,8 @@
         }
       },
       "required": [
-        "input"
+        "input",
+        "cutoff"
       ],
       "$defs": {
         "PolySignal": {
@@ -2961,14 +2949,7 @@
       "properties": {
         "center": {
           "description": "center frequency in V/Oct (0V = C4)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         },
         "input": {
           "description": "signal input",
@@ -2987,7 +2968,8 @@
         }
       },
       "required": [
-        "input"
+        "input",
+        "center"
       ],
       "$defs": {
         "PolySignal": {
@@ -3105,14 +3087,7 @@
       "properties": {
         "cutoff": {
           "description": "cutoff frequency in V/Oct (0V = C4)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         },
         "input": {
           "description": "signal input",
@@ -3131,7 +3106,8 @@
         }
       },
       "required": [
-        "input"
+        "input",
+        "cutoff"
       ],
       "$defs": {
         "PolySignal": {
@@ -3685,16 +3661,12 @@
       "properties": {
         "freq": {
           "description": "pitch in V/Oct (0V = C4)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         }
       },
+      "required": [
+        "freq"
+      ],
       "$defs": {
         "PolySignal": {
           "anyOf": [
@@ -4236,14 +4208,7 @@
       "properties": {
         "exp": {
           "description": "exponent for the power curve (0 = step, 1 = linear, >1 = audio taper)",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         },
         "input": {
           "description": "signal to apply curve to",
@@ -4251,7 +4216,8 @@
         }
       },
       "required": [
-        "input"
+        "input",
+        "exp"
       ],
       "$defs": {
         "PolySignal": {
@@ -4732,6 +4698,9 @@
           ]
         }
       },
+      "required": [
+        "expression"
+      ],
       "$defs": {
         "MonoSignal": {
           "anyOf": [
@@ -5653,32 +5622,22 @@
           "description": "number of output channels (1–16)",
           "type": "integer",
           "format": "uint",
-          "default": 2,
           "minimum": 0
         },
         "max": {
           "description": "upper bound of the spread range",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/MonoSignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/MonoSignal"
         },
         "min": {
           "description": "lower bound of the spread range",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/MonoSignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/MonoSignal"
         }
       },
+      "required": [
+        "min",
+        "max",
+        "count"
+      ],
       "$defs": {
         "MonoSignal": {
           "anyOf": [
@@ -5932,29 +5891,17 @@
         },
         "max": {
           "description": "upper bound of the wrap range",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         },
         "min": {
           "description": "lower bound of the wrap range",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PolySignal"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PolySignal"
         }
       },
       "required": [
-        "input"
+        "input",
+        "min",
+        "max"
       ],
       "$defs": {
         "PolySignal": {
@@ -6095,6 +6042,9 @@
           ]
         }
       },
+      "required": [
+        "pattern"
+      ],
       "$defs": {
         "MonoSignal": {
           "anyOf": [
@@ -6215,7 +6165,6 @@
         "keyframes": {
           "description": "keyframe values and their positions (0–1)",
           "type": "array",
-          "default": [],
           "items": {
             "type": "array",
             "maxItems": 2,
@@ -6243,6 +6192,9 @@
           ]
         }
       },
+      "required": [
+        "keyframes"
+      ],
       "$defs": {
         "InterpolationType": {
           "type": "string",
@@ -6406,6 +6358,10 @@
           "$ref": "#/$defs/IntervalScaleParam"
         }
       },
+      "required": [
+        "patterns",
+        "scale"
+      ],
       "$defs": {
         "IntervalPatternSource": {
           "description": "Source representation for interval patterns: either a single pattern\nstring or an array of strings that get combined via `app_left` addition.",
