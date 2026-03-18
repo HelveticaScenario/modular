@@ -5,26 +5,29 @@
 
 use std::f32::consts::PI;
 
+use deserr::Deserr;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
 use crate::dsp::fx::enosc_tables::aa_feedback;
-use crate::dsp::utils::voct_to_hz;
-use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
+use crate::dsp::utils::{sanitize, voct_to_hz};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 use crate::types::Clickless;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct FeedbackParams {
     /// input phase (0 to 1)
     #[signal(range = (0.0, 1.0))]
     input: PolySignal,
     /// feedback amount (0-5, where 0 = no feedback, 5 = maximum feedback FM)
     #[signal(range = (0.0, 5.0))]
-    amount: PolySignal,
+    #[deserr(default)]
+    amount: Option<PolySignal>,
     /// pitch in V/Oct (optional, reduces aliasing at high frequencies)
     #[signal(type = pitch)]
-    freq: PolySignal,
+    #[deserr(default)]
+    freq: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -38,6 +41,12 @@ struct FeedbackOutputs {
 struct ChannelState {
     amount: Clickless,
     lp_state: f32, // One-pole LP filter state (matches IOnePoleLp<s1_15, 2>)
+}
+
+/// State for the Feedback module.
+#[derive(Default)]
+struct FeedbackState {
+    channels: [ChannelState; PORT_MAX_CHANNELS],
 }
 
 /// Phase effect: FM feedback distortion.
@@ -54,14 +63,10 @@ struct ChannelState {
 /// // Apply feedback distortion to a ramp phase and convert to audio
 /// $pSine($feedback($ramp('c3'), 3)).out()
 /// ```
-#[module(
-    name = "$feedback",
-    args(input, amount?)
-)]
-#[derive(Default)]
+#[module(name = "$feedback", args(input, amount))]
 pub struct Feedback {
     outputs: FeedbackOutputs,
-    channels: [ChannelState; PORT_MAX_CHANNELS],
+    state: FeedbackState,
     params: FeedbackParams,
 }
 
@@ -71,10 +76,10 @@ impl Feedback {
         let freq_connected = !self.params.freq.is_disconnected();
 
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
 
             let input = self.params.input.get_value(ch);
-            let amount_raw = self.params.amount.get_value_or(ch, 0.0);
+            let amount_raw = self.params.amount.value_or(ch, 0.0);
 
             // Smooth amount parameter to avoid clicks
             state.amount.update(amount_raw);
@@ -89,7 +94,7 @@ impl Feedback {
 
             // Apply anti-aliasing when freq is connected
             let amount_norm = if freq_connected {
-                let freq_hz = voct_to_hz(self.params.freq.get_value(ch));
+                let freq_hz = voct_to_hz(self.params.freq.value_or_zero(ch));
                 aa_feedback(freq_hz / sample_rate, amount_norm)
             } else {
                 amount_norm
@@ -116,6 +121,7 @@ impl Feedback {
             // Update one-pole LP filter: state += (input - state) / 4
             // Matches IOnePoleLp<s1_15, 2> where SHIFT=2 → coefficient = 1/4
             state.lp_state += (sine - state.lp_state) * 0.25;
+            state.lp_state = sanitize(state.lp_state);
 
             // Output the distorted phase
             self.outputs.sample.set(ch, phase);

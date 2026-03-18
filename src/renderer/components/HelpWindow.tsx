@@ -5,7 +5,6 @@ import React, {
     useCallback,
     ReactNode,
 } from 'react';
-import { ModuleSchema } from '@modular/core';
 import Markdown from 'react-markdown';
 import electronAPI from '../electronAPI';
 import {
@@ -19,6 +18,8 @@ import {
     schemaToTypeExpr,
     getEnumVariants,
     EnumVariantInfo,
+    Schema,
+    Schemas,
 } from '../../shared/dsl/schemaTypeResolver';
 import './HelpWindow.css';
 
@@ -195,7 +196,7 @@ const TypeCard: React.FC<TypeCardProps> = ({
 export const HelpWindow: React.FC = () => {
     const [activePage, setActivePage] = useState<Page>('hotkeys');
     const [searchQuery, setSearchQuery] = useState('');
-    const [schemas, setSchemas] = useState<Record<string, ModuleSchema>>({});
+    const [schemas, setSchemas] = useState<Schemas>();
     const [selectedType, setSelectedType] = useState<DslTypeName | null>(null);
     const [expandedTypes, setExpandedTypes] = useState<Set<DslTypeName>>(
         new Set(),
@@ -206,13 +207,8 @@ export const HelpWindow: React.FC = () => {
         electronAPI
             .getSchemas()
             .then((schemaList) => {
-                const schemaMap: Record<string, ModuleSchema> = {};
-                for (const s of schemaList) {
-                    // _clock is internal-only (used for ROOT_CLOCK); hide from user-facing docs
-                    if (s.name === '_clock') continue;
-                    schemaMap[s.name] = s;
-                }
-                setSchemas(schemaMap);
+                // _clock is internal-only (used for ROOT_CLOCK); hide from user-facing docs
+                setSchemas(schemaList.filter((e) => e.name !== '_clock'));
             })
             .catch(console.error);
     }, []);
@@ -278,29 +274,30 @@ export const HelpWindow: React.FC = () => {
         );
     }, [schemas, searchQuery]);
 
-    const getSignature = (module: ModuleSchema): string => {
-        const positionalArgs = module.positionalArgs || [];
+    const getSignature = (module: Schema): string => {
+        const positionalArgs = module.positionalArgs;
         const positionalKeys = new Set(positionalArgs.map((a) => a.name));
+        const schemaRequired: string[] = module.paramsSchema.required ?? [];
 
         const parts: string[] = positionalArgs.map((a) =>
-            a.optional ? `${a.name}?` : a.name,
+            schemaRequired.includes(a.name) ? a.name : `${a.name}?`,
         );
 
-        const configKeys = Object.keys(
-            (module.paramsSchema as any)?.properties ?? {},
-        ).filter((k) => !positionalKeys.has(k));
+        const configKeys = Object.keys(module.paramsSchema.properties).filter(
+            (k) => !positionalKeys.has(k),
+        );
 
         if (configKeys.length > 0) {
-            parts.push(`{ ${configKeys.map((k) => `${k}?`).join(', ')} }`);
+            parts.push(
+                `{ ${configKeys.map((k) => (schemaRequired.includes(k) ? k : `${k}?`)).join(', ')} }`,
+            );
         }
 
         return `${module.name}(${parts.join(', ')})`;
     };
 
-    const getParams = (module: ModuleSchema) => {
-        const properties = Object.entries(
-            module.paramsSchema?.properties ?? {},
-        );
+    const getParams = (module: Schema) => {
+        const properties = Object.entries(module.paramsSchema.properties);
         return properties.map(([name, schema]) => {
             let type: string | undefined;
             try {

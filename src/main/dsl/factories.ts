@@ -201,7 +201,6 @@ export class DSLContext {
 
         // Register factories with the builder for internal use (late binding)
         // This allows GraphBuilder methods like .amplitude(), .shift(), .range() to use factories
-        // Note: This adds overhead from channel count derivation but ensures consistency
         const factoryMap = new Map<string, FactoryFunction>();
         for (const schema of schemas) {
             factoryMap.set(
@@ -228,7 +227,6 @@ export class DSLContext {
             // Capture argument spans from the pre-analyzed registry
             const argumentSpans = captureArgumentSpans(sourceLocation);
 
-            // @ts-ignore
             const positionalArgs = schema.positionalArgs || [];
             const params: Record<string, any> = {};
             let config: any = {};
@@ -247,16 +245,11 @@ export class DSLContext {
             }
 
             if (config) {
-                if (typeof config === 'string') {
-                    id = config;
-                } else {
-                    id = config.id;
-                    // Merge other config params
-                    for (const key in config) {
-                        if (key !== 'id') {
-                            params[key] = config[key];
-                        }
-                    }
+                const { id: configId, ...restConfig } = config;
+                id = configId;
+                // Merge other config params
+                for (const key of Object.keys(restConfig)) {
+                    params[key] = restConfig[key];
                 }
             }
 
@@ -283,13 +276,27 @@ export class DSLContext {
             // Derive channel count from params using Rust-side derivation (backed by LRU cache)
             // This handles modules with custom derivation logic (like mix, seq)
             // as well as standard inference from PolySignal inputs
-            const derivedChannels = deriveChannelCount(
+            const deriveResult = deriveChannelCount(
                 schema.name,
                 node.getParamsSnapshot(),
             );
 
-            if (derivedChannels !== null) {
-                node._setDerivedChannelCount(derivedChannels);
+            // Check for errors from param deserialization
+            if (deriveResult.errors && deriveResult.errors.length > 0) {
+                const messages = deriveResult.errors
+                    .map((e) => e.message)
+                    .join('; ');
+                const loc = sourceLocation
+                    ? ` at line ${sourceLocation.line}`
+                    : '';
+                throw new Error(`${schema.name}${loc}: ${messages}`);
+            }
+
+            if (
+                deriveResult.channelCount !== null &&
+                deriveResult.channelCount !== undefined
+            ) {
+                node._setDerivedChannelCount(deriveResult.channelCount);
             }
 
             // Return based on output configuration

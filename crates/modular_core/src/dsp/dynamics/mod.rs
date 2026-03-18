@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use crate::params::ParamsDeserializer;
-use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
+use crate::types::{Module, ModuleSchema, SampleableConstructor};
 
 pub mod compressor;
 pub mod crossover;
@@ -13,11 +13,6 @@ pub mod crossover;
 pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     compressor::Compressor::install_constructor(map);
     crossover::Crossover::install_constructor(map);
-}
-
-pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
-    compressor::Compressor::install_params_validator(map);
-    crossover::Crossover::install_params_validator(map);
 }
 
 pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer>) {

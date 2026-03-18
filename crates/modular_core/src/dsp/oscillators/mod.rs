@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::params::ParamsDeserializer;
-use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
+use crate::types::{Module, ModuleSchema, SampleableConstructor};
 
 pub mod noise;
 pub mod p_pulse;
@@ -23,19 +23,6 @@ pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     noise::Noise::install_constructor(map);
     plaits::Plaits::install_constructor(map);
     supersaw::Supersaw::install_constructor(map);
-}
-
-pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
-    sine::SineOscillator::install_params_validator(map);
-    saw::SawOscillator::install_params_validator(map);
-    pulse::PulseOscillator::install_params_validator(map);
-    p_sine::PSineOscillator::install_params_validator(map);
-    p_saw::PSawOscillator::install_params_validator(map);
-    p_pulse::PPulseOscillator::install_params_validator(map);
-    noise::Noise::install_params_validator(map);
-
-    plaits::Plaits::install_params_validator(map);
-    supersaw::Supersaw::install_params_validator(map);
 }
 
 pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer>) {

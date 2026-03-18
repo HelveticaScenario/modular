@@ -3,10 +3,11 @@
 //! Peak-detecting compressor with configurable threshold, ratio,
 //! attack/release times, makeup gain, and input/output gain staging.
 
+use deserr::Deserr;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
-use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
+use crate::dsp::utils::sanitize;
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 
 // Gain voltage scaling: maps [-5, 5] volts to [-24, 24] dB (4.8 dB per volt)
 const DB_PER_VOLT: f32 = 4.8;
@@ -44,6 +45,7 @@ fn compress(
         (-1.0 / (release * sample_rate)).exp()
     };
     *envelope = input_abs + coeff * (*envelope - input_abs);
+    *envelope = sanitize(*envelope);
 
     // Gain computation in dB domain
     let level_db = 20.0 * (*envelope + 1e-10).log10();
@@ -65,38 +67,53 @@ struct ChannelState {
     envelope: f32,
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+/// State for the Compressor module.
+#[derive(Default)]
+struct CompressorState {
+    channels: [ChannelState; PORT_MAX_CHANNELS],
+}
+
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct CompressorParams {
     /// audio input signal
     input: PolySignal,
     /// compression threshold (0-5V, default 2.5)
-    threshold: PolySignal,
+    #[deserr(default)]
+    threshold: Option<PolySignal>,
     /// compression ratio (1-20, default 4.0)
-    ratio: PolySignal,
+    #[deserr(default)]
+    ratio: Option<PolySignal>,
     /// attack time in seconds (default 0.01)
-    attack: PolySignal,
+    #[deserr(default)]
+    attack: Option<PolySignal>,
     /// release time in seconds (default 0.1)
-    release: PolySignal,
+    #[deserr(default)]
+    release: Option<PolySignal>,
     /// makeup gain multiplier (0-5, default 1.0)
-    makeup: PolySignal,
+    #[deserr(default)]
+    makeup: Option<PolySignal>,
     /// input gain control (-5V = -24dB, 0V = unity, 5V = +24dB) — drives signal into the compressor
-    input_gain: PolySignal,
+    #[deserr(default)]
+    input_gain: Option<PolySignal>,
     /// output gain control (-5V = -24dB, 0V = unity, 5V = +24dB) — trims level after compression
-    output_gain: PolySignal,
+    #[deserr(default)]
+    output_gain: Option<PolySignal>,
     /// dry/wet blend (0 = fully dry, 5 = fully wet, default 5.0)
-    mix: PolySignal,
+    #[deserr(default)]
+    mix: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct CompressorOutputs {
-    #[output("sample", "compressed signal", default, range = (-5.0, 5.0))]
+    #[output("sample", "compressed signal", default)]
     sample: PolyOutput,
 }
 
 /// EXPERIMENTAL
-/// 
+///
 /// Single-band feed-forward compressor with peak envelope follower.
 ///
 /// Applies feed-forward compression in the log domain with configurable
@@ -132,10 +149,9 @@ struct CompressorOutputs {
 /// $mix(low, mid, high).out()
 /// ```
 #[module(name = "$comp", args(input))]
-#[derive(Default)]
 pub struct Compressor {
     outputs: CompressorOutputs,
-    channels: [ChannelState; PORT_MAX_CHANNELS],
+    state: CompressorState,
     params: CompressorParams,
 }
 
@@ -144,20 +160,20 @@ impl Compressor {
         let channels = self.channel_count();
 
         for ch in 0..channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
 
-            let input = self.params.input.get_value_or(ch, 0.0);
+            let input = self.params.input.get_value(ch);
 
             // Apply input gain
-            let input_gain_voltage = self.params.input_gain.get_value_or(ch, 0.0);
+            let input_gain_voltage = self.params.input_gain.value_or(ch, 0.0);
             let gained = input * voltage_to_gain(input_gain_voltage);
 
             // Read compressor parameters
-            let threshold = self.params.threshold.get_value_or(ch, 2.5);
-            let ratio = self.params.ratio.get_value_or(ch, 4.0);
-            let attack = self.params.attack.get_value_or(ch, 0.01);
-            let release = self.params.release.get_value_or(ch, 0.1);
-            let makeup = self.params.makeup.get_value_or(ch, 1.0);
+            let threshold = self.params.threshold.value_or(ch, 2.5);
+            let ratio = self.params.ratio.value_or(ch, 4.0);
+            let attack = self.params.attack.value_or(ch, 0.01);
+            let release = self.params.release.value_or(ch, 0.1);
+            let makeup = self.params.makeup.value_or(ch, 1.0);
 
             // Compress
             let compressed = compress(
@@ -172,11 +188,11 @@ impl Compressor {
             );
 
             // Apply output gain
-            let output_gain_voltage = self.params.output_gain.get_value_or(ch, 0.0);
+            let output_gain_voltage = self.params.output_gain.value_or(ch, 0.0);
             let out = compressed * voltage_to_gain(output_gain_voltage);
 
             // Dry/wet mix (dry signal is original input before gain staging)
-            let mix_amount = self.params.mix.get_value_or(ch, 5.0).clamp(0.0, 5.0) / 5.0;
+            let mix_amount = self.params.mix.value_or(ch, 5.0).clamp(0.0, 5.0) / 5.0;
             let output = input * (1.0 - mix_amount) + out * mix_amount;
 
             self.outputs.sample.set(ch, output);

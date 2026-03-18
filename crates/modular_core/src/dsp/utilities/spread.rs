@@ -1,25 +1,26 @@
+use deserr::Deserr;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
-use crate::poly::{MonoSignal, PolyOutput};
+use crate::poly::{MonoSignal, MonoSignalExt, PolyOutput};
 
 fn default_count() -> usize {
     2
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct SpreadParams {
     /// lower bound of the spread range
     min: MonoSignal,
     /// upper bound of the spread range
     max: MonoSignal,
     /// number of output channels (1–16)
-    #[serde(default = "default_count")]
     count: usize,
     /// distribution bias (-5 to 5): positive biases toward max, negative toward min
     #[signal(default = 0.0, range = (-5.0, 5.0))]
-    bias: MonoSignal,
+    #[deserr(default)]
+    bias: Option<MonoSignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -51,7 +52,6 @@ struct SpreadOutputs {
 /// $spread(0, 5, 8, { bias: -3 })
 /// ```
 #[module(name = "$spread", channels_param = "count", args(min, max, count))]
-#[derive(Default)]
 pub struct Spread {
     outputs: SpreadOutputs,
     params: SpreadParams,
@@ -60,9 +60,9 @@ pub struct Spread {
 impl Spread {
     fn update(&mut self, _sample_rate: f32) {
         let count = self.channel_count().max(1) as usize;
-        let min_val = self.params.min.get_value_or(0.0);
-        let max_val = self.params.max.get_value_or(0.0);
-        let bias = self.params.bias.get_value_or(0.0);
+        let min_val = self.params.min.get_value();
+        let max_val = self.params.max.get_value();
+        let bias = self.params.bias.value_or(0.0);
 
         // Compute the power curve exponent from bias.
         // bias = 0 → exponent = 1 (linear)

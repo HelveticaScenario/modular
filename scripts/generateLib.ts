@@ -1,11 +1,9 @@
-import { getSchemas } from '@modular/core';
+import schemas from '@modular/core/schemas.json';
 import { buildLibSource } from '../src/main/dsl/typescriptLibGen';
 import * as fs from 'fs';
 import * as path from 'path';
 
 async function main() {
-    console.log('Fetching schemas...');
-    const schemas = getSchemas();
     console.log(`Found ${schemas.length} module schemas`);
 
     console.log('Building library source...');

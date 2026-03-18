@@ -1,11 +1,11 @@
 use crate::dsp::utils::{hz_to_voct_f64, voct_to_hz_f64};
-use crate::poly::MonoSignal;
+use crate::poly::{MonoSignal, MonoSignalExt};
 use crate::types::{ClockMessages, Connect, Signal};
+use deserr::{DeserializeError, Deserr, ErrorKind, IntoValue, ValuePointerRef};
 use fasteval::{Compiler, Evaler, Instruction};
 use napi::Result;
 use regex::Regex;
 use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 
@@ -42,22 +42,13 @@ struct MathExpressionParam {
     compiled: Arc<MathCompiled>,
 }
 
-impl<'de> Deserialize<'de> for MathExpressionParam {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let source = String::deserialize(deserializer)?;
-
-        // Parse source to find module(id:port:channel)
-        // Replace with module(index)
-        // Store signals
-
+impl MathExpressionParam {
+    /// Parse a math expression string into a MathExpressionParam.
+    fn parse(source: String) -> std::result::Result<Self, String> {
         let re = Regex::new(r"module\(([a-zA-Z0-9\-_$]+):([a-zA-Z0-9\-_$]+):(\d+)\)")
-            .map_err(serde::de::Error::custom)?;
+            .map_err(|e| e.to_string())?;
         let mut signals = Vec::new();
 
-        // We need to replace all occurrences.
         let result = re.replace_all(&source, |caps: &regex::Captures| {
             let module = caps[1].to_string();
             let port = caps[2].to_string();
@@ -75,10 +66,7 @@ impl<'de> Deserialize<'de> for MathExpressionParam {
         let parser = fasteval::Parser::new();
         let instruction = match parser.parse(&result, &mut slab.ps) {
             Err(e) => {
-                return Err(serde::de::Error::custom(format!(
-                    "Failed to parse expression: {}",
-                    e
-                )));
+                return Err(format!("Failed to parse expression: {}", e));
             }
             Ok(expression) => expression.from(&slab.ps).compile(&slab.ps, &mut slab.cs),
         };
@@ -91,6 +79,23 @@ impl<'de> Deserialize<'de> for MathExpressionParam {
     }
 }
 
+// deserr implementation for MathExpressionParam - transparent string wrapper that parses.
+impl<E: DeserializeError> deserr::Deserr<E> for MathExpressionParam {
+    fn deserialize_from_value<V: IntoValue>(
+        value: deserr::Value<V>,
+        location: ValuePointerRef<'_>,
+    ) -> std::result::Result<Self, E> {
+        let source = String::deserialize_from_value(value, location)?;
+        Self::parse(source).map_err(|e| {
+            deserr::take_cf_content(E::error::<V>(
+                None,
+                ErrorKind::Unexpected { msg: e },
+                location,
+            ))
+        })
+    }
+}
+
 impl Connect for MathExpressionParam {
     fn connect(&mut self, patch: &crate::Patch) {
         for signal in &mut self.signals {
@@ -99,25 +104,35 @@ impl Connect for MathExpressionParam {
     }
 }
 
-#[derive(Clone, Deserialize, Default, JsonSchema, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Clone, Deserr, JsonSchema, ChannelCount, SignalParams)]
+#[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct MathParams {
     /// math expression to evaluate (e.g. "x * 2 + sin(t)")
     expression: MathExpressionParam,
     /// first input variable, referenced as `x` in the expression
-    x: MonoSignal,
+    #[deserr(default)]
+    x: Option<MonoSignal>,
     /// second input variable, referenced as `y` in the expression
-    y: MonoSignal,
+    #[deserr(default)]
+    y: Option<MonoSignal>,
     /// third input variable, referenced as `z` in the expression
-    z: MonoSignal,
+    #[deserr(default)]
+    z: Option<MonoSignal>,
 }
 
 impl Connect for MathParams {
     fn connect(&mut self, patch: &crate::Patch) {
         Connect::connect(&mut self.expression, patch);
-        Connect::connect(&mut self.x, patch);
-        Connect::connect(&mut self.y, patch);
-        Connect::connect(&mut self.z, patch);
+        if let Some(ref mut x) = self.x {
+            Connect::connect(x, patch);
+        }
+        if let Some(ref mut y) = self.y {
+            Connect::connect(y, patch);
+        }
+        if let Some(ref mut z) = self.z {
+            Connect::connect(z, patch);
+        }
     }
 }
 
@@ -126,6 +141,23 @@ impl Connect for MathParams {
 struct MathOutputs {
     #[output("output", "result of the expression", default)]
     output: f32,
+}
+
+/// State for the Math module.
+struct MathState {
+    phase: f32,
+    loop_index: usize,
+    running: bool,
+}
+
+impl Default for MathState {
+    fn default() -> Self {
+        Self {
+            phase: 0.0,
+            loop_index: 0,
+            running: true,
+        }
+    }
 }
 
 /// Evaluates a math expression every sample, giving you arbitrary control
@@ -153,24 +185,7 @@ struct MathOutputs {
 pub struct Math {
     outputs: MathOutputs,
     params: MathParams,
-
-    // State
-    phase: f32,
-    loop_index: usize,
-    running: bool,
-}
-
-impl Default for Math {
-    fn default() -> Self {
-        Self {
-            outputs: MathOutputs::default(),
-            params: MathParams::default(),
-            phase: 0.0,
-            loop_index: 0,
-            running: true,
-            _channel_count: 0,
-        }
-    }
+    state: MathState,
 }
 
 message_handlers!(impl Math {
@@ -180,11 +195,11 @@ message_handlers!(impl Math {
 impl Math {
     fn update(&mut self, sample_rate: f32) {
         // Update time
-        if self.running {
-            self.phase += 1.0 / sample_rate;
-            if self.phase >= 1.0 {
-                self.phase -= 1.0;
-                self.loop_index += 1;
+        if self.state.running {
+            self.state.phase += 1.0 / sample_rate;
+            if self.state.phase >= 1.0 {
+                self.state.phase -= 1.0;
+                self.state.loop_index += 1;
             }
         }
 
@@ -192,16 +207,16 @@ impl Math {
     }
 
     fn eval(&mut self) -> std::result::Result<f64, fasteval::Error> {
-        let x = self.params.x.get_value_or(0.0) as f64;
-        let y = self.params.y.get_value_or(0.0) as f64;
-        let z = self.params.z.get_value_or(0.0) as f64;
-        let t = self.phase as f64 + self.loop_index as f64;
+        let x = self.params.x.value_or(0.0) as f64;
+        let y = self.params.y.value_or(0.0) as f64;
+        let z = self.params.z.value_or(0.0) as f64;
+        let t = self.state.phase as f64 + self.state.loop_index as f64;
         let signals = self
             .params
             .expression
             .signals
             .iter()
-            .map(|s| s.get_value_or(0.0) as f64)
+            .map(|s| s.get_value() as f64)
             .collect::<Vec<_>>();
 
         let mut btree = BTreeMap::new();
@@ -240,12 +255,12 @@ impl Math {
     fn on_clock_message(&mut self, m: &ClockMessages) -> Result<()> {
         match m {
             ClockMessages::Start => {
-                self.running = true;
-                self.phase = 0.0;
-                self.loop_index = 0;
+                self.state.running = true;
+                self.state.phase = 0.0;
+                self.state.loop_index = 0;
             }
             ClockMessages::Stop => {
-                self.running = false;
+                self.state.running = false;
             }
         }
         Ok(())

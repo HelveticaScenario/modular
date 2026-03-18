@@ -37,6 +37,7 @@ use napi_derive::napi;
 use regex::Regex;
 use rust_music_theory::note::{Notes, Pitch};
 use rust_music_theory::scale::Scale;
+use deserr::{DeserializeError, Deserr, ErrorKind, IntoValue, Map as DeserrMap, ValuePointerRef};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -117,7 +118,7 @@ lazy_static! {
     pub static ref ROOT_ID: String = WellKnownModule::RootOutput.id().into();
     pub static ref ROOT_OUTPUT_PORT: &'static str = WellKnownModule::RootOutput.default_port();
     pub static ref ROOT_CLOCK_ID: String = WellKnownModule::RootClock.id().into();
-    static ref RE_HZ: Regex = Regex::new(r"^(-?\d*\.?\d+)hz$").unwrap();
+    static ref RE_HZ: Regex = Regex::new(r"(?i)^(-?\d*\.?\d+)hz$").unwrap();
     static ref RE_MIDI: Regex = Regex::new(r"^(-?\d*\.?\d+)m$").unwrap();
     static ref RE_SCALE: Regex = Regex::new(r"^(-?\d*\.?\d+)s\(([^:]+):([^)]+)\)$").unwrap();
     static ref RE_NOTE: Regex = Regex::new(r"^([A-Ga-g])([#b]?)(-?\d+)?$").unwrap();
@@ -171,31 +172,13 @@ pub trait Module {
     fn install_constructor(map: &mut HashMap<String, SampleableConstructor>);
     fn get_schema() -> ModuleSchema;
 
-    /// Register this module's parameter validator in the provided map.
-    ///
-    /// The key is the module type string (e.g. "noise"). The value is a function
-    /// that attempts to deserialize a JSON params object into the module's concrete
-    /// `*Params` type.
-    fn install_params_validator(map: &mut HashMap<String, ParamsValidator>);
-
     /// Register this module's params deserializer in the provided map.
     ///
     /// The key is the module type string (e.g. "sine"). The value is a function
     /// that deserializes a JSON params object (with `__argument_spans` already
     /// stripped) into a `CachedParams`.
     fn install_params_deserializer(map: &mut HashMap<String, crate::params::ParamsDeserializer>);
-
-    /// Validate a JSON params object by attempting to parse it as the module's concrete
-    /// params type.
-    ///
-    /// This is intended for server-side patch validation before applying the patch.
-    fn validate_params_json(params: &serde_json::Value) -> napi::Result<()>;
 }
-
-/// Function pointer type used to validate a module's `ModuleState.params`.
-///
-/// The validator should return Ok if deserialization into the module's concrete params type succeeds.
-pub type ParamsValidator = fn(&serde_json::Value) -> napi::Result<()>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
@@ -221,11 +204,20 @@ pub struct Clickless {
 impl Clickless {
     pub fn update(&mut self, input: f32) {
         if !self.initialized {
-            self.value = input;
+            // On first call, snap to input — but guard against NaN/Inf
+            // so the smoother never starts in a corrupted state.
+            self.value = if input.is_finite() { input } else { 0.0 };
             self.initialized = true;
             return;
         }
-        self.value = smooth_value(self.value, input);
+        let smoothed = smooth_value(self.value, input);
+        if smoothed.is_finite() {
+            self.value = smoothed;
+        } else if input.is_finite() {
+            // Smoother corrupted but input is valid — snap to input to recover.
+            self.value = input;
+        }
+        // If neither is finite, hold previous value (best-effort freeze).
     }
 }
 
@@ -550,9 +542,9 @@ fn parse_signal_string(s: &str) -> StdResult<f32, String> {
 
 /// A single-channel signal value.
 ///
-/// This represents either a constant voltage, a cable connection to a specific
-/// channel of another module's output, or a disconnected input.
-#[derive(Clone, Debug, Default)]
+/// This represents either a constant voltage or a cable connection to a specific
+/// channel of another module's output.
+#[derive(Clone, Debug)]
 pub enum Signal {
     /// Static voltage value (mono)
     Volts(f32),
@@ -564,8 +556,6 @@ pub enum Signal {
         /// Which channel of the output to read (0-indexed)
         channel: usize,
     },
-    #[default]
-    Disconnected,
 }
 
 // Custom serde deserialization to allow a bare number as shorthand for volts.
@@ -602,7 +592,6 @@ impl<'de> Deserialize<'de> for Signal {
                 #[serde(default)]
                 channel: usize,
             },
-            Disconnected,
         }
 
         match SignalDe::deserialize(deserializer)? {
@@ -621,7 +610,6 @@ impl<'de> Deserialize<'de> for Signal {
                     port,
                     channel,
                 },
-                SignalTagged::Disconnected => Signal::Disconnected,
             }),
         }
     }
@@ -648,11 +636,106 @@ impl serde::Serialize for Signal {
                 map.serialize_entry("channel", channel)?;
                 map.end()
             }
-            Signal::Disconnected => {
-                let mut map = serializer.serialize_map(Some(1))?;
-                map.serialize_entry("type", "disconnected")?;
-                map.end()
+        }
+    }
+}
+
+// deserr implementation for Signal - mirrors the serde Deserialize impl above.
+//
+// Accepts:
+//   - number (integer or float) -> Signal::Volts
+//   - string (e.g. "440hz", "C4") -> Signal::Volts (parsed via parse_signal_string)
+//   - object { type: "cable", module, port, channel? } -> Signal::Cable
+impl<E: DeserializeError> deserr::Deserr<E> for Signal {
+    fn deserialize_from_value<V: IntoValue>(
+        value: deserr::Value<V>,
+        location: ValuePointerRef<'_>,
+    ) -> std::result::Result<Self, E> {
+        match value {
+            deserr::Value::Integer(n) => Ok(Signal::Volts(n as f32)),
+            deserr::Value::NegativeInteger(n) => Ok(Signal::Volts(n as f32)),
+            deserr::Value::Float(n) => Ok(Signal::Volts(n as f32)),
+            deserr::Value::String(s) => parse_signal_string(&s).map(Signal::Volts).map_err(|e| {
+                deserr::take_cf_content(E::error::<V>(
+                    None,
+                    ErrorKind::Unexpected { msg: e },
+                    location,
+                ))
+            }),
+            deserr::Value::Map(mut map) => {
+                let type_val = map
+                    .remove("type")
+                    .and_then(|v| match v.into_value() {
+                        deserr::Value::String(s) => Some(s),
+                        _ => None,
+                    });
+
+                let module = map
+                    .remove("module")
+                    .and_then(|v| match v.into_value() {
+                        deserr::Value::String(s) => Some(s),
+                        _ => None,
+                    });
+
+                let port = map
+                    .remove("port")
+                    .and_then(|v| match v.into_value() {
+                        deserr::Value::String(s) => Some(s),
+                        _ => None,
+                    });
+
+                let channel = map
+                    .remove("channel")
+                    .and_then(|v| match v.into_value() {
+                        deserr::Value::Integer(n) => Some(n as usize),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+
+                match type_val.as_deref() {
+                    Some("cable") => {
+                        let module = module.ok_or_else(|| {
+                            deserr::take_cf_content(E::error::<V>(
+                                None,
+                                ErrorKind::MissingField { field: "module" },
+                                location,
+                            ))
+                        })?;
+                        let port = port.ok_or_else(|| {
+                            deserr::take_cf_content(E::error::<V>(
+                                None,
+                                ErrorKind::MissingField { field: "port" },
+                                location,
+                            ))
+                        })?;
+                        Ok(Signal::Cable {
+                            module,
+                            module_ptr: sync::Weak::new(),
+                            port,
+                            channel,
+                        })
+                    }
+                    Some(other) => Err(deserr::take_cf_content(E::error::<V>(
+                        None,
+                        ErrorKind::Unexpected {
+                            msg: format!("unknown signal type: {}", other),
+                        },
+                        location,
+                    ))),
+                    None => Err(deserr::take_cf_content(E::error::<V>(
+                        None,
+                        ErrorKind::MissingField { field: "type" },
+                        location,
+                    ))),
+                }
             }
+            _ => Err(deserr::take_cf_content(E::error::<V>(
+                None,
+                ErrorKind::Unexpected {
+                    msg: "Invalid signal format".to_string(),
+                },
+                location,
+            ))),
         }
     }
 }
@@ -680,7 +763,6 @@ enum SignalTaggedSchema {
         #[serde(default)]
         channel: usize,
     },
-    Disconnected,
 }
 
 impl JsonSchema for Signal {
@@ -697,7 +779,6 @@ impl Signal {
     /// Get the mono voltage value from this signal.
     /// For Volts, returns the stored value.
     /// For Cable, fetches the specific channel from the connected module's output.
-    /// For Disconnected, returns 0.0.
     pub fn get_value(&self) -> f32 {
         match self {
             Signal::Volts(v) => *v,
@@ -713,22 +794,42 @@ impl Signal {
                     .unwrap_or(0.0),
                 None => 0.0,
             },
-            Signal::Disconnected => 0.0,
+        }
+    }
+}
+
+/// Extension trait for normalling pattern on optional signals.
+pub trait SignalExt {
+    /// Returns the signal's value, or `default` if None.
+    fn value_or(&self, default: f32) -> f32;
+
+    /// Returns the signal's value, or calls `f` if None.
+    fn value_or_else(&self, f: impl FnOnce() -> f32) -> f32;
+
+    /// Returns the signal's value, or 0.0 if None.
+    fn value_or_zero(&self) -> f32;
+}
+
+impl SignalExt for Option<Signal> {
+    fn value_or(&self, default: f32) -> f32 {
+        match self {
+            Some(s) => s.get_value(),
+            None => default,
         }
     }
 
-    /// Get value with fallback for disconnected inputs (normalled input)
-    pub fn get_value_or(&self, default: f32) -> f32 {
-        if self.is_disconnected() {
-            default
-        } else {
-            self.get_value()
+    fn value_or_else(&self, f: impl FnOnce() -> f32) -> f32 {
+        match self {
+            Some(s) => s.get_value(),
+            None => f(),
         }
     }
 
-    /// Check if the signal is disconnected
-    pub fn is_disconnected(&self) -> bool {
-        matches!(self, Signal::Disconnected)
+    fn value_or_zero(&self) -> f32 {
+        match self {
+            Some(s) => s.get_value(),
+            None => 0.0,
+        }
     }
 }
 
@@ -773,7 +874,6 @@ impl PartialEq for Signal {
                     && module_1 == module_2
                     && channel_1 == channel_2
             }
-            (Signal::Disconnected, Signal::Disconnected) => true,
             _ => false,
         }
     }
@@ -792,8 +892,10 @@ impl PartialEq for Signal {
     Serialize,
     Deserialize,
     JsonSchema,
+    Deserr,
 )]
 #[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase)]
 pub enum InterpolationType {
     #[default]
     Linear,
@@ -852,10 +954,10 @@ pub struct OutputSchema {
     pub name: String,
     pub description: String,
     /// Whether this output is polyphonic (PolyOutput) or monophonic (f32/f64)
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default)]
     pub polyphonic: bool,
     /// Whether this is the default output for the module
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default)]
     pub default: bool,
     /// The minimum value of the raw output range (before any remapping)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -877,6 +979,7 @@ pub trait OutputStruct: Default + Send + Sync + 'static {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct SchemaContainer {
     pub schema: schemars::Schema,
 }
@@ -919,7 +1022,6 @@ impl FromNapiValue for SchemaContainer {
 #[napi(object)]
 pub struct PositionalArg {
     pub name: String,
-    pub optional: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1026,7 +1128,8 @@ pub struct ModuleIdRemap {
     pub to: String,
 }
 
-pub type SampleableConstructor = Box<dyn Fn(&String, f32) -> Result<Arc<Box<dyn Sampleable>>>>;
+pub type SampleableConstructor =
+    Box<dyn Fn(&String, f32, crate::params::DeserializedParams) -> Result<Arc<Box<dyn Sampleable>>>>;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

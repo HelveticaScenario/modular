@@ -41,7 +41,7 @@ fn get_params_cache() -> &'static Mutex<LruCache<(String, serde_json::Value), Ca
 /// Strips argument spans before cache lookup so identical param values at
 /// different source positions share the same cache entry. Spans are extracted
 /// fresh and attached to the returned `DeserializedParams`.
-/// 
+///
 /// If `with_cache` is false, skips the cache and always deserializes fresh for set_module_param / slider path.
 /// Slider interactions produce many intermediate values that would pollute
 /// the cache.
@@ -49,7 +49,7 @@ pub fn deserialize_params(
   module_type: &str,
   params: serde_json::Value,
   with_cache: bool,
-) -> napi::Result<DeserializedParams> {
+) -> Result<DeserializedParams, modular_core::param_errors::ModuleParamErrors> {
   let (stripped, argument_spans) = extract_argument_spans(params);
   let key = (module_type.to_string(), stripped.clone());
 
@@ -67,10 +67,12 @@ pub fn deserialize_params(
 
   // Cache miss — deserialize
   let deserializer = get_params_deserializers().get(module_type).ok_or_else(|| {
-    napi::Error::from_reason(format!(
-      "No params deserializer for module type: {}",
-      module_type
-    ))
+    let mut errors = modular_core::param_errors::ModuleParamErrors::default();
+    errors.add(
+      String::new(),
+      format!("No params deserializer for module type: {}", module_type),
+    );
+    errors
   })?;
   let cached = deserializer(stripped)?;
 

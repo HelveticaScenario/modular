@@ -5,8 +5,41 @@
  * and the renderer help window to display human-readable param types.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type JSONSchema = any;
+import type schemas from '@modular/core/schemas.json';
+
+/**
+ * A single module schema entry, typed from the actual schemas.json data.
+ * Replaces the looser hand-written `ModuleSchema` interface from N-API.
+ */
+export type Schema = (typeof schemas)[number];
+
+/** The full schemas array type inferred from schemas.json. */
+export type Schemas = typeof schemas;
+
+/**
+ * Structural type for a JSON Schema node.
+ * Used when traversing sub-schemas within a module's `paramsSchema`.
+ */
+export type JSONSchema = {
+    readonly type?: string | readonly string[];
+    readonly $ref?: string;
+    readonly oneOf?: readonly JSONSchema[];
+    readonly anyOf?: readonly JSONSchema[];
+    readonly allOf?: readonly JSONSchema[];
+    readonly enum?: readonly unknown[];
+    readonly const?: unknown;
+    readonly properties?: Readonly<Record<string, JSONSchema | undefined>>;
+    readonly required?: readonly string[];
+    readonly items?: JSONSchema;
+    readonly prefixItems?: readonly JSONSchema[];
+    readonly $defs?: Readonly<Record<string, JSONSchema | undefined>>;
+    readonly title?: string;
+    readonly description?: string;
+    readonly default?: unknown;
+    readonly format?: string;
+    readonly minimum?: number;
+    readonly maximum?: number;
+};
 
 function isValidIdentifier(name: string): boolean {
     return /^[$A-Z_][0-9A-Z_$]*$/i.test(name);
@@ -76,17 +109,9 @@ export function getEnumVariants(
     schema: JSONSchema,
     rootSchema: JSONSchema,
 ): EnumVariantInfo[] | null {
-    if (
-        schema === null ||
-        schema === undefined ||
-        typeof schema === 'boolean'
-    ) {
-        return null;
-    }
-
     // Follow $ref
     if (schema.$ref) {
-        const resolved = resolveRef(String(schema.$ref), rootSchema);
+        const resolved = resolveRef(schema.$ref, rootSchema);
         // Sentinel strings mean it's a signal type, not an enum
         if (typeof resolved === 'string') return null;
         return getEnumVariants(resolved, rootSchema);
@@ -94,21 +119,21 @@ export function getEnumVariants(
 
     // oneOf / anyOf with all-const variants (schemars output for documented enums)
     const variants = schema.oneOf || schema.anyOf;
-    if (Array.isArray(variants)) {
+    if (variants !== undefined) {
         const isEnum = variants.every((v: JSONSchema) => v.const !== undefined);
         if (isEnum) {
-            return variants.map((v: JSONSchema) => ({
+            return variants.map((v) => ({
                 value: JSON.stringify(v.const),
                 rawValue: v.const,
-                description: v.description as string | undefined,
+                description: v.description,
             }));
         }
         return null;
     }
 
     // Bare enum array (schemars output for undocumented enums)
-    if (Array.isArray(schema.enum) && schema.enum.length > 0) {
-        return schema.enum.map((v: unknown) => ({
+    if (schema.enum !== undefined && schema.enum.length > 0) {
+        return schema.enum.map((v) => ({
             value: JSON.stringify(v),
             rawValue: v,
             description: undefined,
@@ -129,34 +154,40 @@ export function schemaToTypeExpr(
     schema: JSONSchema,
     rootSchema: JSONSchema,
 ): string {
-    if (schema === null || schema === undefined) {
-        throw new Error('Unsupported schema: null/undefined');
-    }
-    if (typeof schema === 'boolean') {
-        throw new Error('Unsupported schema: boolean schema');
-    }
-
     // Handle oneOf/anyOf - check if all variants resolve to Signal
     if (schema.oneOf || schema.anyOf) {
         const variants = schema.oneOf || schema.anyOf;
-        if (Array.isArray(variants)) {
+        if (variants !== undefined) {
+            // Filter out null variants (from Rust Option<T>); optionality is
+            // handled at the param level with `?:` in TypeScript.
+            const nonNullVariants = variants.filter(
+                (v: JSONSchema) =>
+                    !(v && typeof v === 'object' && v.type === 'null'),
+            );
+
+            // If all non-null variants were filtered out, treat as unknown
+            if (nonNullVariants.length === 0) {
+                return 'unknown';
+            }
+
+            // If only one non-null variant remains, resolve it directly
+            if (nonNullVariants.length === 1) {
+                return schemaToTypeExpr(nonNullVariants[0], rootSchema);
+            }
+
             // Check if this is an enum (all variants have 'const')
-            const isEnum = variants.every(
+            const isEnum = nonNullVariants.every(
                 (v: JSONSchema) => v.const !== undefined,
             );
             if (isEnum) {
-                return variants
+                return nonNullVariants
                     .map((v: JSONSchema) => JSON.stringify(v.const))
                     .join(' | ');
             }
 
-            const types = variants.map((v: JSONSchema) => {
-                try {
-                    return schemaToTypeExpr(v, rootSchema);
-                } catch {
-                    return 'any';
-                }
-            });
+            const types = nonNullVariants.map((v: JSONSchema) =>
+                schemaToTypeExpr(v, rootSchema),
+            );
             // If all variants are Signal, return Signal
             if (types.every((t) => t === 'Signal')) {
                 return 'Poly<Signal>';
@@ -167,17 +198,15 @@ export function schemaToTypeExpr(
             }
 
             // Otherwise, return the union of all variant types
-            return types.length > 0 ? types.join(' | ') : 'any';
+            return types.join(' | ');
         }
-        return 'any';
     }
     if (schema.allOf) {
         return 'any';
     }
-    if (Array.isArray(schema.type)) {
+    if (schema.type !== undefined && typeof schema.type !== 'string') {
         // Handle union type arrays like ["integer", "null"] or ["string", "null"]
-        const types = schema.type as string[];
-        const nonNullTypes = types.filter((t: string) => t !== 'null');
+        const nonNullTypes = schema.type.filter((t) => t !== 'null');
         if (nonNullTypes.length === 1) {
             // This is a nullable type, treat it as the non-null type (optional in TS)
             const singleType = nonNullTypes[0];
@@ -187,7 +216,7 @@ export function schemaToTypeExpr(
             if (singleType === 'boolean') return 'boolean';
         }
         // Fall back to union of all non-null types
-        const mapped = nonNullTypes.map((t: string) => {
+        const mapped = nonNullTypes.map((t) => {
             if (t === 'integer' || t === 'number') return 'number';
             if (t === 'string') return 'string';
             if (t === 'boolean') return 'boolean';
@@ -197,7 +226,7 @@ export function schemaToTypeExpr(
     }
 
     if (schema.$ref) {
-        const resolved = resolveRef(String(schema.$ref), rootSchema);
+        const resolved = resolveRef(schema.$ref, rootSchema);
         if (resolved === 'Signal') return 'Signal';
         if (resolved === 'Poly<Signal>') return 'Poly<Signal>';
         if (resolved === 'Mono<Signal>') return 'Mono<Signal>';
@@ -205,12 +234,10 @@ export function schemaToTypeExpr(
     }
 
     if (schema.enum) {
-        if (!Array.isArray(schema.enum) || schema.enum.length === 0) {
+        if (schema.enum.length === 0) {
             throw new Error('Unsupported enum schema');
         }
-        return schema.enum
-            .map((v: JSONSchema) => JSON.stringify(v))
-            .join(' | ');
+        return schema.enum.map((v) => JSON.stringify(v)).join(' | ');
     }
 
     const type = schema.type;
@@ -226,14 +253,13 @@ export function schemaToTypeExpr(
         const props = schema.properties;
         if (!props || typeof props !== 'object') return '{}';
 
-        const requiredSet = new Set<string>(
-            Array.isArray(schema.required) ? schema.required : [],
-        );
-        const entries = Object.entries(props as Record<string, JSONSchema>);
+        const requiredSet = new Set<string>(schema.required);
+        const entries = Object.entries(props);
         if (entries.length === 0) return '{}';
 
         const parts: string[] = [];
         for (const [propName, propSchema] of entries) {
+            if (!propSchema) continue;
             const optional = requiredSet.has(propName) ? '' : '?';
             parts.push(
                 `${renderPropertyKey(propName)}${optional}: ${schemaToTypeExpr(propSchema, rootSchema)}`,
@@ -243,10 +269,9 @@ export function schemaToTypeExpr(
     }
 
     if (type === 'array') {
-        if (Array.isArray(schema.prefixItems)) {
-            const items = schema.prefixItems as JSONSchema[];
-            const tuple = items
-                .map((s: JSONSchema) => schemaToTypeExpr(s, rootSchema))
+        if (schema.prefixItems !== undefined) {
+            const tuple = schema.prefixItems
+                .map((s) => schemaToTypeExpr(s, rootSchema))
                 .join(', ');
             return `[${tuple}]`;
         }
@@ -257,14 +282,6 @@ export function schemaToTypeExpr(
     }
 
     if (type === undefined) {
-        // If there's a $ref we didn't catch, or other structural hints, try to handle
-        if (schema.$ref) {
-            const resolved = resolveRef(String(schema.$ref), rootSchema);
-            if (resolved === 'Signal') return 'Signal';
-            if (resolved === 'Poly<Signal>') return 'Poly<Signal>';
-            if (resolved === 'Mono<Signal>') return 'Mono<Signal>';
-            return schemaToTypeExpr(resolved, rootSchema);
-        }
         // Schema with only 'const' (used in tagged unions)
         if (schema.const !== undefined) {
             return JSON.stringify(schema.const);

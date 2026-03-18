@@ -2,14 +2,15 @@
 //!
 //! Produces a phase ramp from 0 to 1 at a given frequency.
 
+use deserr::Deserr;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
 use crate::dsp::utils::voct_to_hz;
 use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct RampParams {
     /// pitch in V/Oct (0V = C4)
     #[signal(type = pitch)]
@@ -29,6 +30,12 @@ struct ChannelState {
     phase: f32,
 }
 
+/// State for the Ramp module.
+#[derive(Default)]
+struct RampState {
+    channels: [ChannelState; PORT_MAX_CHANNELS],
+}
+
 /// Phase ramp generator.
 ///
 /// Produces a rising sawtooth phase signal from 0 to 1 at the given frequency.
@@ -36,10 +43,9 @@ struct ChannelState {
 /// feed its output into phase-distortion modules (crush, feedback, pulsar)
 /// and then into a waveshaper (e.g. `$pSine`) to produce audio.
 #[module(name = "$ramp", args(freq))]
-#[derive(Default)]
 pub struct Ramp {
     outputs: RampOutputs,
-    channels: [ChannelState; PORT_MAX_CHANNELS],
+    state: RampState,
     params: RampParams,
 }
 
@@ -49,9 +55,9 @@ impl Ramp {
         let inv_sample_rate = 1.0 / sample_rate;
 
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
 
-            let frequency = voct_to_hz(self.params.freq.get_value_or(ch, 0.0));
+            let frequency = voct_to_hz(self.params.freq.get_value(ch));
             let phase_increment = frequency * inv_sample_rate;
 
             state.phase += phase_increment;

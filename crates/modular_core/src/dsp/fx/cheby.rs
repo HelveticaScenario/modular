@@ -3,16 +3,17 @@
 //! Adapted from the 4ms Ensemble Oscillator warp mode.
 //! Copyright 4ms Company. Used under GPL v3.
 
+use deserr::Deserr;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
 use crate::dsp::fx::enosc_tables::{aa_cheby, interpolate_cheby};
 use crate::dsp::utils::voct_to_hz;
-use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
+use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
 use crate::types::Clickless;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct ChebyParams {
     /// input signal to shape (bipolar, typically -5 to 5)
     input: PolySignal,
@@ -21,7 +22,8 @@ struct ChebyParams {
     amount: PolySignal,
     /// pitch of the source signal in V/Oct (optional, reduces aliasing at high frequencies)
     #[signal(type = pitch)]
-    freq: PolySignal,
+    #[deserr(default)]
+    freq: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -36,19 +38,21 @@ struct ChannelState {
     amount: Clickless,
 }
 
+/// State for the Cheby module.
+#[derive(Default)]
+struct ChebyState {
+    channels: [ChannelState; PORT_MAX_CHANNELS],
+}
+
 /// Harmonic waveshaping effect that adds controlled overtone content.
 ///
 /// At low amounts the signal passes through cleanly; turning it up
 /// progressively emphasizes higher harmonics (2nd, 3rd, … up to 16th),
 /// thickening and brightening the tone.
-#[module(
-    name = "$cheby",
-    args(input, amount?)
-)]
-#[derive(Default)]
+#[module(name = "$cheby", args(input, amount))]
 pub struct Cheby {
     outputs: ChebyOutputs,
-    channels: [ChannelState; PORT_MAX_CHANNELS],
+    state: ChebyState,
     params: ChebyParams,
 }
 
@@ -58,10 +62,10 @@ impl Cheby {
         let freq_connected = !self.params.freq.is_disconnected();
 
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
 
             let input = self.params.input.get_value(ch);
-            let amount_raw = self.params.amount.get_value_or(ch, 0.0);
+            let amount_raw = self.params.amount.get_value(ch);
 
             // Smooth amount parameter to avoid clicks
             state.amount.update(amount_raw);
@@ -72,7 +76,7 @@ impl Cheby {
 
             // Apply anti-aliasing when freq is connected
             let amount_norm = if freq_connected {
-                let freq_hz = voct_to_hz(self.params.freq.get_value(ch));
+                let freq_hz = voct_to_hz(self.params.freq.value_or_zero(ch));
                 aa_cheby(freq_hz / sample_rate, amount_norm)
             } else {
                 amount_norm
