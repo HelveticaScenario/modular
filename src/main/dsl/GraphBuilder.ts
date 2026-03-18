@@ -481,14 +481,11 @@ export class GraphBuilder {
             });
         }
 
-        // Module params start empty; only user-provided values are set.
-        const params: Record<string, unknown> = {};
-
         const moduleState: ModuleState = {
             id,
             moduleType,
             idIsExplicit: Boolean(explicitId),
-            params,
+            params: {},
         };
 
         this.modules.set(id, moduleState);
