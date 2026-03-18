@@ -580,7 +580,7 @@ export class GraphBuilder {
         // Process output groups and build channel collections
         if (this.outGroups.size > 0) {
             // Collect all channel collections to mix together
-            const allChannelCollections: (ModuleOutput | undefined)[][] = [];
+            const allChannelCollections: (ModuleOutput | number)[][] = [];
 
             // Sort by baseChannel for deterministic processing
             const sortedChannels = [...this.outGroups.keys()].sort(
@@ -641,12 +641,12 @@ export class GraphBuilder {
                     }
 
                     // Build channel collection with baseChannel silent channels prepended
-                    const channelCollection: (ModuleOutput | undefined)[] = [];
+                    const channelCollection: (ModuleOutput | number)[] = [];
 
                     // Add silent channels for baseChannel offset
                     for (let i = 0; i < baseChannel; i++) {
                         // Push 0 (Signal::Volts(0.0)) to represent silence
-                        channelCollection.push(undefined);
+                        channelCollection.push(0);
                     }
 
                     // Add the actual output signals
