@@ -729,17 +729,10 @@ impl<E: DeserializeError> deserr::Deserr<E> for Signal {
                     ))),
                 }
             }
-            other => Err(deserr::take_cf_content(E::error(
+            _ => Err(deserr::take_cf_content(E::error::<V>(
                 None,
-                ErrorKind::IncorrectValueKind {
-                    actual: other,
-                    accepted: &[
-                        deserr::ValueKind::Integer,
-                        deserr::ValueKind::NegativeInteger,
-                        deserr::ValueKind::Float,
-                        deserr::ValueKind::String,
-                        deserr::ValueKind::Map,
-                    ],
+                ErrorKind::Unexpected {
+                    msg: "Invalid signal format".to_string(),
                 },
                 location,
             ))),
