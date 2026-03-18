@@ -142,8 +142,6 @@ fn default_channels() -> usize {
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 pub struct SeqParams {
     /// pattern string in mini-notation
-    #[serde(default)]
-    #[deserr(default)]
     pattern: SeqPatternParam,
     /// playhead position (driven by the global clock)
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]

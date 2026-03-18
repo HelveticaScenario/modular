@@ -14,12 +14,10 @@ struct WrapParams {
     input: PolySignal,
     /// lower bound of the wrap range
     #[signal(default = 0.0)]
-    #[deserr(default)]
-    min: Option<PolySignal>,
+    min: PolySignal,
     /// upper bound of the wrap range
     #[signal(default = 5.0)]
-    #[deserr(default)]
-    max: Option<PolySignal>,
+    max: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -51,8 +49,8 @@ impl Wrap {
 
         for i in 0..channels as usize {
             let val = self.params.input.get_value(i);
-            let a = self.params.min.value_or(i, 0.0);
-            let b = self.params.max.value_or(i, 5.0);
+            let a = self.params.min.get_value(i);
+            let b = self.params.max.get_value(i);
             let (min, max) = if b < a { (b, a) } else { (a, b) };
 
             let output = if (max - min).abs() < f32::EPSILON {
@@ -78,8 +76,8 @@ mod tests {
             outputs: WrapOutputs::default(),
             params: WrapParams {
                 input: PolySignal::mono(Signal::Volts(input)),
-                min: Some(PolySignal::mono(Signal::Volts(min))),
-                max: Some(PolySignal::mono(Signal::Volts(max))),
+                min: PolySignal::mono(Signal::Volts(min)),
+                max: PolySignal::mono(Signal::Volts(max)),
             },
             _channel_count: 1,
         };

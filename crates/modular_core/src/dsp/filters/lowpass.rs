@@ -2,10 +2,10 @@ use deserr::Deserr;
 use schemars::JsonSchema;
 
 use crate::{
+    PORT_MAX_CHANNELS,
     dsp::utils::{changed, sanitize, voct_to_hz},
     poly::{PolyOutput, PolySignal, PolySignalExt},
     types::Clickless,
-    PORT_MAX_CHANNELS,
 };
 
 #[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
@@ -16,8 +16,7 @@ struct LowpassFilterParams {
     input: PolySignal,
     /// cutoff frequency in V/Oct (0V = C4)
     #[signal(type = pitch, default = 0.0, range = (-5.0, 5.0))]
-    #[deserr(default)]
-    cutoff: Option<PolySignal>,
+    cutoff: PolySignal,
     /// filter resonance (0-5)
     #[signal(type = control, default = 0.0, range = (0.0, 5.0))]
     #[deserr(default)]
@@ -133,11 +132,7 @@ impl LowpassFilter {
         let channels = self.channel_count();
         let state = &mut self.state;
 
-        let cutoff_mono = self
-            .params
-            .cutoff
-            .as_ref()
-            .is_some_and(|s| s.is_monophonic());
+        let cutoff_mono = self.params.cutoff.is_monophonic();
         let resonance_mono = self
             .params
             .resonance
@@ -148,7 +143,7 @@ impl LowpassFilter {
         if cutoff_mono && resonance_mono {
             state
                 .smooth_cutoff_mono
-                .update(self.params.cutoff.value_or(0, 0.0));
+                .update(self.params.cutoff.get_value(0));
             state
                 .smooth_resonance_mono
                 .update(self.params.resonance.value_or(0, 0.0));
@@ -162,7 +157,7 @@ impl LowpassFilter {
             }
         } else {
             for i in 0..channels as usize {
-                state.smooth_cutoff[i].update(self.params.cutoff.value_or(i, 0.0));
+                state.smooth_cutoff[i].update(self.params.cutoff.get_value(i));
                 state.smooth_resonance[i].update(self.params.resonance.value_or(i, 0.0));
                 let c = *state.smooth_cutoff[i];
                 let r = *state.smooth_resonance[i];

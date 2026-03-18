@@ -458,12 +458,8 @@ fn default_channels() -> usize {
 pub struct IntervalSeqParams {
     /// patterns to combine (left-fold with appLeft addition); accepts a single
     /// pattern string or an array of pattern strings
-    #[serde(default)]
-    #[deserr(default)]
     patterns: IntervalPatternParam,
     /// scale for quantizing degrees to pitches (supports optional octave, e.g. "c3(major)")
-    #[serde(default)]
-    #[deserr(default)]
     scale: IntervalScaleParam,
     /// playhead position
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]

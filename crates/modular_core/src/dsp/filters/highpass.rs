@@ -16,8 +16,7 @@ struct HighpassFilterParams {
     input: PolySignal,
     /// cutoff frequency in V/Oct (0V = C4)
     #[signal(type = pitch)]
-    #[deserr(default)]
-    cutoff: Option<PolySignal>,
+    cutoff: PolySignal,
     /// filter resonance (0-5)
     #[signal(range = (0.0, 5.0))]
     #[deserr(default)]
@@ -128,11 +127,7 @@ impl HighpassFilter {
         let num_channels = self.channel_count();
         let state = &mut self.state;
 
-        let cutoff_mono = self
-            .params
-            .cutoff
-            .as_ref()
-            .is_some_and(|s| s.is_monophonic());
+        let cutoff_mono = self.params.cutoff.is_monophonic();
         let resonance_mono = self
             .params
             .resonance
@@ -143,7 +138,7 @@ impl HighpassFilter {
         if cutoff_mono && resonance_mono {
             state
                 .smooth_cutoff_mono
-                .update(self.params.cutoff.value_or(0, 0.0));
+                .update(self.params.cutoff.get_value(0));
             state
                 .smooth_resonance_mono
                 .update(self.params.resonance.value_or(0, 0.0));
@@ -159,7 +154,7 @@ impl HighpassFilter {
             for i in 0..num_channels {
                 state.channels[i]
                     .smooth_cutoff
-                    .update(self.params.cutoff.value_or(i, 0.0));
+                    .update(self.params.cutoff.get_value(i));
                 state.channels[i]
                     .smooth_resonance
                     .update(self.params.resonance.value_or(i, 0.0));

@@ -12,14 +12,10 @@ fn default_count() -> usize {
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct SpreadParams {
     /// lower bound of the spread range
-    #[deserr(default)]
-    min: Option<MonoSignal>,
+    min: MonoSignal,
     /// upper bound of the spread range
-    #[deserr(default)]
-    max: Option<MonoSignal>,
+    max: MonoSignal,
     /// number of output channels (1–16)
-    #[serde(default = "default_count")]
-    #[deserr(default = default_count())]
     count: usize,
     /// distribution bias (-5 to 5): positive biases toward max, negative toward min
     #[signal(default = 0.0, range = (-5.0, 5.0))]
@@ -64,8 +60,8 @@ pub struct Spread {
 impl Spread {
     fn update(&mut self, _sample_rate: f32) {
         let count = self.channel_count().max(1) as usize;
-        let min_val = self.params.min.value_or(0.0);
-        let max_val = self.params.max.value_or(0.0);
+        let min_val = self.params.min.get_value();
+        let max_val = self.params.max.get_value();
         let bias = self.params.bias.value_or(0.0);
 
         // Compute the power curve exponent from bias.

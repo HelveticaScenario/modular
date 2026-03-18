@@ -6,7 +6,7 @@ use deserr::Deserr;
 use schemars::JsonSchema;
 
 use crate::dsp::utils::voct_to_hz;
-use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
+use crate::poly::{PolyOutput, PolySignal, PORT_MAX_CHANNELS};
 
 #[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
@@ -14,8 +14,7 @@ use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
 struct RampParams {
     /// pitch in V/Oct (0V = C4)
     #[signal(type = pitch)]
-    #[deserr(default)]
-    freq: Option<PolySignal>,
+    freq: PolySignal,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -58,7 +57,7 @@ impl Ramp {
         for ch in 0..num_channels {
             let state = &mut self.state.channels[ch];
 
-            let frequency = voct_to_hz(self.params.freq.value_or(ch, 0.0));
+            let frequency = voct_to_hz(self.params.freq.get_value(ch));
             let phase_increment = frequency * inv_sample_rate;
 
             state.phase += phase_increment;

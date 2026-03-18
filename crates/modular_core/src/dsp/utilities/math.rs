@@ -109,8 +109,6 @@ impl Connect for MathExpressionParam {
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct MathParams {
     /// math expression to evaluate (e.g. "x * 2 + sin(t)")
-    #[serde(default)]
-    #[deserr(default)]
     expression: MathExpressionParam,
     /// first input variable, referenced as `x` in the expression
     #[deserr(default)]

@@ -16,8 +16,6 @@ struct TrackParams {
     #[deserr(default)]
     playhead: Option<MonoSignal>,
     /// keyframe values and their positions (0–1)
-    #[serde(default)]
-    #[deserr(default)]
     keyframes: Vec<(PolySignal, f32)>,
     /// interpolation curve between keyframes
     #[serde(default)]
