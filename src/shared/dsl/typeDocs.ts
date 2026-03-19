@@ -455,6 +455,235 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
     },
 };
 
+export interface GlobalFunctionDoc {
+    name: string;
+    signature: string;
+    description: string;
+    params?: Array<{ name: string; type: string; description: string }>;
+    returns?: string;
+    examples: string[];
+    group: string;
+}
+
+/**
+ * Documentation for all DSL global functions and helpers.
+ */
+export const GLOBAL_DOCS: GlobalFunctionDoc[] = [
+    // ---- Helpers ----
+    {
+        name: '$hz',
+        signature: '$hz(frequency: number): number',
+        description:
+            'Convert a frequency in Hertz to a 1V/octave voltage value.',
+        params: [
+            {
+                name: 'frequency',
+                type: 'number',
+                description: 'Frequency in Hz',
+            },
+        ],
+        returns: 'Voltage value usable as a Signal',
+        examples: ['$hz(440)    // A4', '$hz(261.63) // ~C4'],
+        group: 'Helpers',
+    },
+    {
+        name: '$note',
+        signature: '$note(noteName: string): number',
+        description: 'Convert a note name string to a 1V/octave voltage value.',
+        params: [
+            {
+                name: 'noteName',
+                type: 'string',
+                description: 'Note name like "C4", "A#3", "Bb5"',
+            },
+        ],
+        returns: 'Voltage value usable as a Signal',
+        examples: ['$note("C4")  // Middle C', '$note("A4")  // 440 Hz'],
+        group: 'Helpers',
+    },
+    {
+        name: '$c',
+        signature:
+            '$c(...args: (ModuleOutput | Iterable<ModuleOutput>)[]): Collection',
+        description:
+            'Create a Collection from one or more ModuleOutputs. Collections support chainable DSP methods, indexing, and spreading.',
+        examples: [
+            '$c(osc1, osc2).amplitude(0.5).out()',
+            '$c(osc1, osc2)[0]  // index access',
+        ],
+        group: 'Helpers',
+    },
+    {
+        name: '$r',
+        signature:
+            '$r(...args: (ModuleOutputWithRange | Iterable<ModuleOutputWithRange>)[]): CollectionWithRange',
+        description:
+            'Create a CollectionWithRange from ranged outputs. The range() method uses stored min/max values.',
+        examples: [
+            '$r(lfo1, lfo2).range(0, 5).out()',
+            '$r(...seq.gates).range(0, 1)',
+        ],
+        group: 'Helpers',
+    },
+    {
+        name: '$cartesian',
+        signature:
+            '$cartesian<A extends unknown[][]>(...arrays: A): ElementsOf<A>[]',
+        description:
+            'Compute the Cartesian product of the given arrays. Returns every possible combination of one element from each array.',
+        examples: [
+            "$cartesian([220, 440], ['sine', 'saw'])\n// → [[220,'sine'],[220,'saw'],[440,'sine'],[440,'saw']]",
+            "$cartesian([1, 2], ['a', 'b']).pipe(\n  (osc, [freq, shape]) => $oscillator({ freq, shape }).out(),\n)",
+        ],
+        group: 'Helpers',
+    },
+    // ---- Global Settings ----
+    {
+        name: '$setTempo',
+        signature: '$setTempo(tempo: number): void',
+        description: 'Set the global tempo for the root clock.',
+        params: [
+            { name: 'tempo', type: 'number', description: 'Tempo in BPM' },
+        ],
+        examples: ['$setTempo(120)  // 120 BPM', '$setTempo(140)  // 140 BPM'],
+        group: 'Global Settings',
+    },
+    {
+        name: '$setTimeSignature',
+        signature:
+            '$setTimeSignature(numerator: number, denominator: number): void',
+        description:
+            'Set the time signature for the root clock. Both values must be positive integers.',
+        params: [
+            {
+                name: 'numerator',
+                type: 'number',
+                description: 'Beats per bar (e.g. 3, 4, 6, 7)',
+            },
+            {
+                name: 'denominator',
+                type: 'number',
+                description:
+                    'Beat value (e.g. 4 for quarter note, 8 for eighth note)',
+            },
+        ],
+        examples: [
+            '$setTimeSignature(4, 4)  // 4/4 (default)',
+            '$setTimeSignature(3, 4)  // 3/4 waltz',
+            '$setTimeSignature(7, 8)  // 7/8 asymmetric',
+        ],
+        group: 'Global Settings',
+    },
+    {
+        name: '$setOutputGain',
+        signature: '$setOutputGain(gain: Mono<Signal>): void',
+        description:
+            'Set the global output gain applied to the final mix. 2.5 is the default (50%); 5.0 is unity gain.',
+        params: [
+            {
+                name: 'gain',
+                type: 'Mono<Signal>',
+                description: 'Gain level (2.5 default, 5.0 unity)',
+            },
+        ],
+        examples: [
+            '$setOutputGain(2.5) // 50% gain (default)',
+            '$setOutputGain(5.0) // unity gain',
+            "$setOutputGain($sine('1hz')) // modulated gain",
+        ],
+        group: 'Global Settings',
+    },
+    // ---- Controls -----
+    {
+        name: '$slider',
+        signature:
+            '$slider(label: string, value: number, min: number, max: number): ModuleOutput',
+        description:
+            'Create a UI slider bound to a signal module. The slider appears in the Control panel. Dragging it updates the audio engine and the source code value in real time.',
+        params: [
+            {
+                name: 'label',
+                type: 'string',
+                description: 'Display label (must be a string literal)',
+            },
+            {
+                name: 'value',
+                type: 'number',
+                description: 'Initial value (must be a numeric literal)',
+            },
+            { name: 'min', type: 'number', description: 'Minimum value' },
+            { name: 'max', type: 'number', description: 'Maximum value' },
+        ],
+        returns: 'ModuleOutput carrying the current slider value',
+        examples: [
+            'const vol = $slider("Volume", 0.5, 0, 1);\n$sine(440).amplitude(vol).out();',
+            'const cutoff = $slider("Cutoff", 1000, 100, 8000);\n$saw(440).pipe(s => $lpf(s, cutoff)).out();',
+        ],
+        group: 'Controls',
+    },
+    // ---- Advanced ----
+    {
+        name: '$deferred',
+        signature: '$deferred(channels?: number): DeferredCollection',
+        description:
+            'Create placeholder signals that can be assigned later. Useful for feedback loops.',
+        params: [
+            {
+                name: 'channels',
+                type: 'number',
+                description: 'Number of deferred outputs (1-16, default 1)',
+            },
+        ],
+        returns: 'DeferredCollection',
+        examples: [
+            'const feedback = $deferred();\nconst delayed = $delay(osc.out, feedback[0]);\nfeedback.set(delayed);',
+        ],
+        group: 'Advanced',
+    },
+
+    {
+        name: '$bus',
+        signature: '$bus(cb: (mixed: Collection) => unknown): Bus',
+        description:
+            'Create a send-return bus. Signals are routed to the bus via `.send(bus, gain)` on any ModuleOutput or Collection. ' +
+            'The callback receives a Collection that is the mix of all sends, allowing effects or further routing to be applied.',
+        params: [
+            {
+                name: 'cb',
+                type: '(mixed: Collection) => unknown',
+                description:
+                    'Called at patch finalization with the mixed sends. Call .out() or return a signal.',
+            },
+        ],
+        returns: 'Bus handle passed to .send()',
+        examples: [
+            'const fx = $bus((mixed) => $reverb(mixed).out());\n$saw(440).send(fx, 0.6);\n$sine(220).send(fx, 0.4);',
+            '// Multiple sends at different gain levels\nconst verb = $bus((mixed) => mixed.gain(0.8).out());\nvoices.send(verb, 0.5);',
+        ],
+        group: 'Advanced',
+    },
+    {
+        name: '$setEndOfChainCb',
+        signature:
+            '$setEndOfChainCb(cb: (mixed: Collection) => ModuleOutput | Collection | CollectionWithRange): void',
+        description:
+            'Set a custom processor applied to the final mix just before the global output gain. ' +
+            'The callback receives the fully mixed Collection and should return a processed signal.',
+        params: [
+            {
+                name: 'cb',
+                type: '(mixed: Collection) => ModuleOutput | Collection | CollectionWithRange',
+                description: 'Transform applied to the final mix',
+            },
+        ],
+        examples: [
+            `$setEndOfChainCb((mix) => $lpf(mix, '2000hz'));`,
+            '$setEndOfChainCb((mix) => mix.scope());',
+        ],
+        group: 'Advanced',
+    },
+];
+
 /**
  * Check if a string is a known DSL type name.
  */
