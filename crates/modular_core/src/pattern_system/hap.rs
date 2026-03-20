@@ -34,9 +34,15 @@ impl SourceSpan {
 pub struct HapContext {
     /// Primary source location (the main atom/value).
     pub source_span: Option<SourceSpan>,
+    /// Extra spans associated with source_span (from pattern-internal modifiers
+    /// like `*<4 6>`, preserved through strip_modifier_spans).
+    pub source_extra_spans: Vec<SourceSpan>,
     /// Spans from modifier patterns (scale, add, etc.).
     /// DEPRECATED: We no longer have modifiers in patterns.
     pub modifier_spans: Vec<SourceSpan>,
+    /// Extra spans for each modifier_spans entry (parallel indexing).
+    /// Carries source_extra_spans from the right side of combine().
+    pub modifier_extra_spans: Vec<Vec<SourceSpan>>,
 }
 
 impl HapContext {
@@ -49,7 +55,9 @@ impl HapContext {
     pub fn with_span(span: SourceSpan) -> Self {
         Self {
             source_span: Some(span),
+            source_extra_spans: Vec::new(),
             modifier_spans: Vec::new(),
+            modifier_extra_spans: Vec::new(),
         }
     }
 
@@ -61,14 +69,21 @@ impl HapContext {
     /// Combine two contexts (e.g., when combining haps in applicative operations).
     pub fn combine(&self, other: &HapContext) -> HapContext {
         let mut combined = self.clone();
-        // Add the other's source span as a modifier span
+        // Add the other's source span as a modifier span (positional indexing for app_left)
         if let Some(span) = &other.source_span {
             combined.modifier_spans.push(span.clone());
         }
-        // Add all of other's modifier spans
+        // Carry the other's source_extra_spans alongside the modifier entry just added
+        combined
+            .modifier_extra_spans
+            .push(other.source_extra_spans.clone());
+        // Carry over other's modifier_spans and their parallel extras
         combined
             .modifier_spans
             .extend(other.modifier_spans.iter().cloned());
+        combined
+            .modifier_extra_spans
+            .extend(other.modifier_extra_spans.iter().cloned());
         combined
     }
 
@@ -79,7 +94,11 @@ impl HapContext {
 
     /// Get all spans (source + modifiers) as an iterator.
     pub fn get_all_spans(&self) -> impl Iterator<Item = &SourceSpan> {
-        self.source_span.iter().chain(self.modifier_spans.iter())
+        self.source_span
+            .iter()
+            .chain(self.source_extra_spans.iter())
+            .chain(self.modifier_spans.iter())
+            .chain(self.modifier_extra_spans.iter().flatten())
     }
 
     /// Get all spans as tuples for JSON serialization.
@@ -571,6 +590,33 @@ mod tests {
 
         assert!((dsp.whole_duration() - 1.0).abs() < 1e-10);
         assert!((dsp.part_duration() - 0.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_context_extra_spans_survive_combine() {
+        // Simulate what happens after strip_modifier_spans:
+        // pattern A has source_extra_spans from internal modifiers
+        let mut ctx_a = HapContext::with_span(SourceSpan::new(0, 1));
+        ctx_a.source_extra_spans.push(SourceSpan::new(5, 6)); // from *<4 6>
+
+        // pattern B has its own source_extra_spans
+        let mut ctx_b = HapContext::with_span(SourceSpan::new(10, 11));
+        ctx_b.source_extra_spans.push(SourceSpan::new(15, 16));
+
+        // combine simulates app_left merging
+        let combined = ctx_a.combine(&ctx_b);
+
+        // Pattern 0: source_span + source_extra_spans
+        assert_eq!(combined.source_span.as_ref().unwrap().to_tuple(), (0, 1));
+        assert_eq!(combined.source_extra_spans.len(), 1);
+        assert_eq!(combined.source_extra_spans[0].to_tuple(), (5, 6));
+
+        // Pattern 1: modifier_spans[0] = B's source, modifier_extra_spans[0] = B's extras
+        assert_eq!(combined.modifier_spans.len(), 1);
+        assert_eq!(combined.modifier_spans[0].to_tuple(), (10, 11));
+        assert_eq!(combined.modifier_extra_spans.len(), 1);
+        assert_eq!(combined.modifier_extra_spans[0].len(), 1);
+        assert_eq!(combined.modifier_extra_spans[0][0].to_tuple(), (15, 16));
     }
 
     #[test]
