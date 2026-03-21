@@ -159,11 +159,10 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             },
             {
                 name: 'out',
-                signature:
-                    'out(baseChannel?: number, options?: StereoOutOptions): this',
+                signature: 'out(options?: StereoOutOptions): this',
                 description:
                     'Send this output to the speakers as stereo audio. Left plays on baseChannel, right on baseChannel+1.',
-                example: 'osc.out(0, { gain: 2.5, pan: -2 })',
+                example: 'osc.out({ baseChannel:0, gain: 2.5, pan: -2 })',
             },
             {
                 name: 'outMono',
@@ -301,8 +300,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             },
             {
                 name: 'out',
-                signature:
-                    'out(baseChannel?: number, options?: StereoOutOptions): this',
+                signature: 'out(options?: StereoOutOptions): this',
                 description:
                     'Send all outputs to speakers as stereo, summed together.',
                 example: '$c(osc1, osc2, osc3).out()',
@@ -442,14 +440,15 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         name: 'StereoOutOptions',
         description:
             'Options for stereo output routing via the out() method. ' +
-            'Controls gain, panning, and stereo width.',
+            'Controls base channel, gain, panning, and stereo width.',
         definition:
-            'interface { gain?: Poly<Signal>; pan?: Poly<Signal>; width?: Signal }',
+            'interface { baseChannel?: number; gain?: Poly<Signal>; pan?: Poly<Signal>; width?: Signal }',
         examples: [
-            "$sine('c').out(0, { gain: 2.5 })           // 50% gain",
-            "$sine('c').out(0, { pan: -2.5 })           // Pan left",
-            "$sine('c').out(0, { width: 5 })            // Full stereo spread",
-            "$sine('c').out(0, { gain: $perc($pulse('8hz')), pan: $sine('1hz') })  // Modulated",
+            "$sine('c').out({ baseChannel: 4 })      // Output of channels 4 and 5",
+            "$sine('c').out({ gain: 2.5 })           // 50% gain",
+            "$sine('c').out({ pan: -2.5 })           // Pan left",
+            "$sine('c').out({ width: 5 })            // Full stereo spread",
+            "$sine('c').out({ gain: $perc($pulse('8hz')), pan: $sine('1hz') })  // Modulated",
         ],
         seeAlso: ['ModuleOutput', 'Collection', 'Poly<Signal>'],
     },

@@ -266,16 +266,16 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
 
     /**
      * Send all outputs to speakers as stereo
-     * @param baseChannel - Base output channel (0-15, default 0)
+     * @param options.baseChannel - Base output channel (0-15, default 0)
      * @param options.gain - Output gain
      * @param options.pan - Pan position (-5 = left, 0 = center, +5 = right)
      * @param options.width - Stereo width/spread (0 = no spread, 5 = full spread)
      */
-    out(baseChannel: number = 0, options: StereoOutOptions = {}): this {
+    out(options: StereoOutOptions = {}): this {
         if (this.items.length > 0) {
             this.items[0].builder.addOut([...this.items], {
+                baseChannel: 0,
                 ...options,
-                baseChannel,
             });
         }
         return this;
@@ -1170,13 +1170,13 @@ export class ModuleOutput {
 
     /**
      * Send this output to speakers as stereo
-     * @param baseChannel - Base output channel (0-15, default 0)
+     * @param options.baseChannel - Base output channel (0-15, default 0)
      * @param options.gain - Output gain (adds util.scaleAndShift after stereo mix)
      * @param options.pan - Pan position (-5 = left, 0 = center, +5 = right)
      * @param options.width - Stereo width/spread (0 = no spread, 5 = full spread)
      */
-    out(baseChannel: number = 0, options: StereoOutOptions = {}): this {
-        this.builder.addOut(this, { ...options, baseChannel });
+    out(options: StereoOutOptions = {}): this {
+        this.builder.addOut(this, { baseChannel: 0, ...options });
         return this;
     }
 

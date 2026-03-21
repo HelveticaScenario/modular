@@ -301,6 +301,8 @@ type Mono<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
  * @see {@link Collection.out}
  */
 interface StereoOutOptions {
+  /** Base output channel (0-15, default 0). Left plays on baseChannel, right on baseChannel+1 */
+  baseChannel?: number;
   /** Output gain. If set, a $scaleAndShift module is added after the stereo mix */
   gain?: Poly<Signal>;
   /** Pan position (-5 = left, 0 = center, +5 = right). Default 0 */
@@ -388,11 +390,10 @@ interface ModuleOutput {
   
   /**
    * Send this output to speakers as stereo.
-   * @param baseChannel - Base output channel (0-15, default 0). Left plays on baseChannel, right on baseChannel+1
    * @param options - Stereo output options ({@link StereoOutOptions})
-   * @example osc.out(0, { gain: 2.5, pan: -2 })
+   * @example osc.out({ gain: 2.5, pan: -2 })
    */
-  out(baseChannel?: number, options?: StereoOutOptions): this;
+  out(options?: StereoOutOptions): this;
   
   /**
    * Send this output to speakers as mono.
@@ -580,10 +581,9 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
 
   /**
    * Send all outputs to speakers as stereo, summed together.
-   * @param baseChannel - Base output channel (0-14, default 0)
    * @param options - Stereo output options ({@link StereoOutOptions})
    */
-  out(baseChannel?: number, options?: StereoOutOptions): this;
+  out(options?: StereoOutOptions): this;
 
   /**
    * Send all outputs to speakers as mono, summed together.
