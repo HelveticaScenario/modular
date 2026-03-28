@@ -235,6 +235,52 @@ pre {
     font-size: 13px;
 }
 
+/* Example play buttons */
+.example-block {
+    position: relative;
+    margin-bottom: 8px;
+}
+
+.example-block:last-child {
+    margin-bottom: 0;
+}
+
+.example-play-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: none;
+    background: #333;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    opacity: 0.6;
+    transition:
+        opacity 0.2s,
+        background 0.2s;
+    z-index: 1;
+}
+
+.example-play-btn:hover {
+    opacity: 1;
+    background: #444;
+}
+
+.example-play-btn.playing {
+    opacity: 1;
+    background: #d32f2f;
+}
+
+.example-block pre {
+    padding-right: 44px;
+}
+
 /* Method cards */
 .method-card {
     background: #1e1e1e;
