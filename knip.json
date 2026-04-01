@@ -1,5 +1,5 @@
 {
-    "$schema": "https://unpkg.com/knip@latest/schema.json",
+    "$schema": "https://unpkg.com/knip@6.1.1/schema.json",
     "entry": [
         "src/main/main.ts",
         "src/renderer/renderer.tsx",
@@ -12,6 +12,10 @@
         "playwright.config.ts",
         "scripts/**/*.{ts,mjs}"
     ],
-    "project": ["src/**/*.{ts,tsx}"],
-    "ignore": ["crates/**", "e2e/**", "public/**"]
+    "project": [
+        "src/**/*.{ts,tsx}",
+        "crates/modular/__test__/**/*.ts",
+        "e2e/**/*.ts"
+    ],
+    "ignoreDependencies": ["@modular/core"]
 }
