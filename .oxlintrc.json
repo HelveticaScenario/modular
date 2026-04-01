@@ -1,6 +1,12 @@
 {
     "$schema": "https://cdn.jsdelivr.net/npm/oxlint@1.58.0/configuration_schema.json",
-    "plugins": ["react", "typescript"],
+    "plugins": ["react", "typescript", "import"],
+    "jsPlugins": [
+        {
+            "name": "stylistic",
+            "specifier": "./node_modules/@stylistic/eslint-plugin/dist/index.js"
+        }
+    ],
     "options": {
         "typeAware": true
     },
@@ -23,6 +29,12 @@
         "react/react-in-jsx-scope": "off",
         "no-extend-native": "off",
         "typescript/no-implied-eval": "off",
-        "typescript/no-unsafe-type-assertion": "off"
+        "typescript/no-unsafe-type-assertion": "off",
+        "import/no-cycle": "error",
+        "import/no-unassigned-import": "off",
+        "import/no-named-as-default": "off",
+        "import/default": "off",
+        "react/rules-of-hooks": "error",
+        "react/exhaustive-deps": "warn"
     }
 }
