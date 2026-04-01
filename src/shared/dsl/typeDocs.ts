@@ -50,12 +50,12 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             'Signals follow the 1V/octave convention where 0V corresponds to C4 (~261.63 Hz).',
         definition: 'number | Note | HZ | MidiNote | Scale | ModuleOutput',
         examples: [
-            'sine("C4")           // Note string - converted to 1V/oct',
-            'sine(440)            // Number - constant voltage',
-            'sine("440hz")        // Hz string - converted to voltage',
-            'sine("60m")          // MIDI note 60 (middle C)',
-            'sine(lfo.out)        // ModuleOutput from another module',
-            'sine("4s(C:major)")  // Scale pattern',
+            '$sine("C4").out()           // Note string - converted to 1V/oct',
+            '$sine(440).out()            // Number - constant voltage',
+            '$sine("440hz").out()        // Hz string - converted to voltage',
+            '$sine("60m").out()          // MIDI note 60 (middle C)',
+            '$sine($sine("1hz")).out()   // ModuleOutput from another module',
+            '$sine("4s(C:major)").out()  // Scale pattern',
         ],
         seeAlso: [
             'Poly<Signal>',
@@ -75,9 +75,8 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             'or an iterable of ModuleOutputs. When used as input to a module, arrays are expanded to create multiple voices.',
         definition: 'Signal | Signal[] | Iterable<ModuleOutput>',
         examples: [
-            'filter.lpf(["C3", "E3", "G3"], { cutoff: 1000 })  // 3-voice chord',
-            'osc.saw([...seq.pitch])                           // Spread sequencer outputs',
-            'mix.add(osc1.out, osc2.out, osc3.out)             // Multiple ModuleOutputs',
+            '$lpf($sine(["C3", "E3", "G3"]), "C5").out()  // 3-voice chord',
+            '$sine(["C3", "E3", "G3"]).out()              // Array of notes for polyphony',
         ],
         seeAlso: ['Signal', 'Mono<Signal>', 'ModuleOutput', 'Collection'],
     },
@@ -90,9 +89,9 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             'Used for control parameters like tempo, stereo width, or math variables where a single combined value is needed.',
         definition: 'Signal | Signal[] | Iterable<ModuleOutput>',
         examples: [
-            '$clockDivider(clock.trigger, 4)                  // Clock signal summed to mono',
-            '$stereoMix(osc, { width: lfo })                  // Width control summed to mono',
-            '$math("x + y", { x: osc1, y: osc2 })            // Variables summed to single values',
+            '$clockDivider($clock.beatTrigger, 4).out()       // Clock signal summed to mono',
+            '$stereoMix($sine(["C3", "E3", "G3"]), { width: $sine("1hz") }).out()  // Width control summed to mono',
+            '$math("x + y", { x: $sine("C4")[0], y: $saw("E4")[0] }).out()  // Variables summed to single values',
         ],
         seeAlso: ['Signal', 'Poly<Signal>', 'ModuleOutput'],
     },
@@ -106,10 +105,9 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         definition:
             'interface { moduleId: string; portName: string; channel: number; ... }',
         examples: [
-            'const osc = $sine("c4")',
-            'osc.amplitude(0.5).out()           // Chain methods',
-            'osc.scope().out()             // Add visualization',
-            "$lpf(osc, 'c3', { q: 4 })     // Use as input to another module",
+            '$sine("c4").amplitude(0.5).out()       // Chain methods',
+            '$sine("c4").scope().out()              // Add visualization',
+            "$lpf($sine('c4'), 'c3').out()          // Use as input to another module",
         ],
         seeAlso: ['ModuleOutputWithRange', 'Collection', 'Signal'],
         methods: [
@@ -118,35 +116,35 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 signature: 'amplitude(factor: Poly<Signal>): ModuleOutput',
                 description:
                     'Scale the signal by a linear factor (5 = unity, 2.5 = half, 10 = 2x). Creates a $scaleAndShift module internally. For perceptual (audio-taper) volume control, use gain() instead.',
-                example: 'osc.amplitude(2.5)  // Half amplitude',
+                example: '$sine("c4").amplitude(2.5).out()  // Half amplitude',
             },
             {
                 name: 'amp',
                 signature: 'amp(factor: Poly<Signal>): ModuleOutput',
                 description:
                     'Alias for amplitude(). Scale the signal by a factor.',
-                example: 'osc.amp(2.5)  // Half amplitude',
+                example: '$sine("c4").amp(2.5).out()  // Half amplitude',
             },
             {
                 name: 'shift',
                 signature: 'shift(offset: Poly<Signal>): ModuleOutput',
                 description:
                     'Add a DC offset to the signal. Creates a $scaleAndShift module internally.',
-                example: 'lfo.shift(2.5)  // Shift LFO to 0-5V range',
+                example: '$sine("1hz").shift(2.5).out()  // Shift LFO to 0-5V range',
             },
             {
                 name: 'gain',
                 signature: 'gain(level: Poly<Signal>): ModuleOutput',
                 description:
                     'Scale the signal with a perceptual (audio taper) curve (5 = unity, 0 = silence). Chains $curve and $scaleAndShift internally with exponent 3. For linear amplitude scaling, use amplitude() instead.',
-                example: 'osc.gain(2.5)',
+                example: '$sine("c4").gain(2.5).out()',
             },
             {
                 name: 'exp',
                 signature: 'exp(factor?: Poly<Signal>): ModuleOutput',
                 description:
                     'Apply a power curve to the signal. Creates a $curve module internally. Default exponent is 3.',
-                example: 'lfo.exp(2)  // Quadratic curve',
+                example: '$sine("1hz").exp(2).out()  // Quadratic curve',
             },
             {
                 name: 'scope',
@@ -155,14 +153,14 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 description:
                     'Add an oscilloscope visualization for this output. The scope appears as an overlay in the editor.',
                 example:
-                    'osc.scope({ msPerFrame: 100, range: [-10, 10] }).out()',
+                    '$sine("c4").scope({ msPerFrame: 100, range: [-10, 10] }).out()',
             },
             {
                 name: 'out',
                 signature: 'out(options?: StereoOutOptions): this',
                 description:
                     'Send this output to the speakers as stereo audio. Left plays on baseChannel, right on baseChannel+1.',
-                example: 'osc.out({ baseChannel:0, gain: 2.5, pan: -2 })',
+                example: '$sine("c4").out({ baseChannel:0, gain: 2.5, pan: -2 })',
             },
             {
                 name: 'outMono',
@@ -170,7 +168,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                     'outMono(channel?: number, gain?: Poly<Signal>): this',
                 description:
                     'Send this output to a single speaker channel as mono audio.',
-                example: 'lfo.outMono(2, 0.3)',
+                example: '$sine("1hz").outMono(2)',
             },
             {
                 name: 'pipe',
@@ -189,8 +187,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                     'collecting all results into a Collection. ' +
                     'Useful for generating a family of voices that each vary by one parameter.',
                 example:
-                    '// Create 2 groups of 3 voices with different cutoff values\n' +
-                    "$sine(['C4', 'E4', 'G4']).pipe((s, cut) => $lfp(s, cut), ['440hz', '880hz']).out()",
+                    "$sine(['C4', 'E4', 'G4']).pipe((s, cut) => $lpf(s, cut), ['440hz', '880hz']).out()",
             },
             {
                 name: 'pipeMix',
@@ -221,7 +218,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         definition:
             'interface extends ModuleOutput { minValue: number; maxValue: number; range(...): ModuleOutput }',
         examples: [
-            "const lfo = $sine('1hz').range(0, 5)              // LFO outputs 0 to +5",
+            "$sine('1hz')[0].range(0, 5).out()              // LFO outputs 0 to +5",
         ],
         seeAlso: ['ModuleOutput', 'CollectionWithRange'],
         methods: [
@@ -233,7 +230,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                     'Remap the output from its native range (minValue, maxValue) to a new range (outMin, outMax). ' +
                     'Unlike Collection.range(), this uses the stored min/max values automatically.',
                 example:
-                    'lfo.range(note("c3"), note("c5"))  // Remap LFO to pitch range',
+                    '$sine("1hz")[0].range($note("c3"), $note("c5")).out()  // Remap LFO to pitch range',
             },
         ],
     },
@@ -247,11 +244,8 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
         definition:
             'interface extends Iterable<ModuleOutput> { length: number; [index]: ModuleOutput; ... }',
         examples: [
-            '$c(osc1, osc2, osc3).amplitude(0.5).out()  // Apply amplitude to all, send to output',
-            'const voices = $c(osc1, osc2, osc3)',
-            'for (const v of voices) { ... }      // Iterate over outputs',
-            '[...voices]                          // Spread to array',
-            'voices[0]                            // Index access',
+            '$c(...$sine("C4"), ...$saw("E4")).amplitude(0.5).out()  // Apply amplitude to all, send to output',
+            '$c($noise("white"), $noise("pink")).out()              // Collect and output',
         ],
         seeAlso: ['CollectionWithRange', 'ModuleOutput', 'Poly<Signal>'],
         methods: [
@@ -260,35 +254,35 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 signature: 'amplitude(factor: Poly<Signal>): Collection',
                 description:
                     'Scale all signals in the collection by a linear factor (5 = unity, 2.5 = half, 10 = 2x). For perceptual (audio-taper) volume control, use gain() instead.',
-                example: '$c(osc1, osc2).amplitude(2.5)',
+                example: '$c(...$sine("C4"), ...$saw("E4")).amplitude(2.5).out()',
             },
             {
                 name: 'amp',
                 signature: 'amp(factor: Poly<Signal>): Collection',
                 description:
                     'Alias for amplitude(). Scale all signals in the collection by a factor.',
-                example: '$c(osc1, osc2).amp(0.5)',
+                example: '$c(...$sine("C4"), ...$saw("E4")).amp(0.5).out()',
             },
             {
                 name: 'shift',
                 signature: 'shift(offset: Poly<Signal>): Collection',
                 description:
                     'Add a DC offset to all signals in the collection.',
-                example: '$c(lfo1, lfo2).shift(2.5)',
+                example: '$c(...$sine("1hz"), ...$saw("2hz")).shift(2.5).out()',
             },
             {
                 name: 'gain',
                 signature: 'gain(level: Poly<Signal>): Collection',
                 description:
                     'Scale all signals with a perceptual (audio taper) curve (5 = unity, 0 = silence). For linear amplitude scaling, use amplitude() instead.',
-                example: '$c(osc1, osc2).gain(2.5)',
+                example: '$c(...$sine("C4"), ...$saw("E4")).gain(2.5).out()',
             },
             {
                 name: 'exp',
                 signature: 'exp(factor?: Poly<Signal>): Collection',
                 description:
                     'Apply a power curve to all signals in the collection. Default exponent is 3.',
-                example: '$c(lfo1, lfo2).exp(2)',
+                example: '$c(...$sine("1hz"), ...$saw("2hz")).exp(2).out()',
             },
             {
                 name: 'scope',
@@ -296,14 +290,14 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                     'scope(config?: { msPerFrame?: number; triggerThreshold?: number; range?: [number, number] }): this',
                 description:
                     'Add scope visualization for the first output in the collection.',
-                example: '$c(osc1, osc2).scope().out()',
+                example: '$c(...$sine("C4"), ...$saw("E4")).scope().out()',
             },
             {
                 name: 'out',
                 signature: 'out(options?: StereoOutOptions): this',
                 description:
                     'Send all outputs to speakers as stereo, summed together.',
-                example: '$c(osc1, osc2, osc3).out()',
+                example: '$c(...$sine("C4"), ...$saw("E4"), ...$pulse("G4")).out()',
             },
             {
                 name: 'outMono',
@@ -311,7 +305,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                     'outMono(channel?: number, gain?: Poly<Signal>): this',
                 description:
                     'Send all outputs to a single speaker channel as mono, summed together.',
-                example: '$c(osc1, osc2).outMono(0, 0.3)',
+                example: '$c(...$sine("C4"), ...$saw("E4")).outMono(0)',
             },
             {
                 name: 'range',
@@ -319,7 +313,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                     'range(outMin: Poly<Signal>, outMax: Poly<Signal>, inMin: Poly<Signal>, inMax: Poly<Signal>): Collection',
                 description:
                     'Remap all outputs from input range to output range. Requires explicit input min/max.',
-                example: '$c(lfo1, lfo2).range(0, 1, -5, 5)',
+                example: '$c(...$sine("1hz"), ...$saw("2hz")).range(0, 1, -5, 5).out()',
             },
             {
                 name: 'pipe',
@@ -327,7 +321,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 description:
                     'Pass this collection through a transform function and return the result. ' +
                     'Enables inline transforms and reusable signal-processing helpers.',
-                example: '$c(osc1, osc2).pipe(all => all.amplitude(0.5)).out()',
+                example: '$c(...$sine("C4"), ...$saw("E4")).pipe(all => all.amplitude(0.5)).out()',
             },
             {
                 name: 'pipe',
@@ -337,7 +331,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                     'Call pipeFn once for every element in the provided array, ' +
                     'collecting all results into a Collection.',
                 example:
-                    "$c(osc1, osc2).pipe((col, cutoff) => $lpf(col, cutoff), ['200hz', '800hz', '3200hz']).out()",
+                    "$c(...$sine('C4'), ...$saw('E4')).pipe((col, cutoff) => $lpf(col, cutoff), ['200hz', '800hz', '3200hz']).out()",
             },
             {
                 name: 'pipeMix',
@@ -346,7 +340,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 description:
                     'Pipe this collection through a transform, then mix the original and transformed signals together using a $mix module. ' +
                     'The callback receives this collection and returns a second signal; both are passed as inputs to $mix.',
-                example: "$c(osc1, osc2).pipeMix(s => $lpf(s, '1000hz')).out()",
+                example: "$c(...$sine('C4'), ...$saw('E4')).pipeMix(s => $lpf(s, '1000hz')).out()",
             },
         ],
     },
@@ -358,8 +352,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
             'Created with the $r() helper function. Like Collection, but the range() method uses stored min/max values.',
         definition: 'interface extends Iterable<ModuleOutputWithRange> { ... }',
         examples: [
-            '$r(lfo1, lfo2).range(0, 5).out()     // Remap using stored ranges',
-            '$r(...seq.gates).range(0, 1)        // Spread and remap gates',
+            '$r(...$sine("1hz"), ...$saw("2hz")).range(0, 5).out()     // Remap using stored ranges',
         ],
         seeAlso: ['Collection', 'ModuleOutputWithRange'],
         methods: [
@@ -370,7 +363,7 @@ export const TYPE_DOCS: Record<DslTypeName, TypeDocumentation> = {
                 description:
                     'Remap all outputs from their native ranges to a new range. ' +
                     "Uses each output's stored minValue/maxValue.",
-                example: '$r(lfo1, lfo2).range(200, 2000)',
+                example: '$r(...$sine("1hz"), ...$saw("2hz")).range(200, 2000).out()',
             },
         ],
     },
@@ -507,8 +500,8 @@ export const GLOBAL_DOCS: GlobalFunctionDoc[] = [
         description:
             'Create a Collection from one or more ModuleOutputs. Collections support chainable DSP methods, indexing, and spreading.',
         examples: [
-            '$c(osc1, osc2).amplitude(0.5).out()',
-            '$c(osc1, osc2)[0]  // index access',
+            '$c(...$sine("C4"), ...$saw("E4")).amplitude(0.5).out()',
+            '$c($noise("white"), $noise("pink"))[0].out()  // index access',
         ],
         group: 'Helpers',
     },
@@ -519,8 +512,7 @@ export const GLOBAL_DOCS: GlobalFunctionDoc[] = [
         description:
             'Create a CollectionWithRange from ranged outputs. The range() method uses stored min/max values.',
         examples: [
-            '$r(lfo1, lfo2).range(0, 5).out()',
-            '$r(...seq.gates).range(0, 1)',
+            '$r(...$sine("1hz"), ...$saw("2hz")).range(0, 5).out()',
         ],
         group: 'Helpers',
     },
@@ -531,8 +523,7 @@ export const GLOBAL_DOCS: GlobalFunctionDoc[] = [
         description:
             'Compute the Cartesian product of the given arrays. Returns every possible combination of one element from each array.',
         examples: [
-            "$cartesian([220, 440], ['sine', 'saw'])\n// → [[220,'sine'],[220,'saw'],[440,'sine'],[440,'saw']]",
-            "$cartesian([1, 2], ['a', 'b']).pipe(\n  (osc, [freq, shape]) => $oscillator({ freq, shape }).out(),\n)",
+            "$cartesian(['C3', 'C4'], [0, 2.5]).map(\n  ([note, shape]) => $saw(note, { shape })\n).forEach(s => s.out())",
         ],
         group: 'Helpers',
     },
@@ -635,7 +626,7 @@ export const GLOBAL_DOCS: GlobalFunctionDoc[] = [
         ],
         returns: 'DeferredCollection',
         examples: [
-            'const feedback = $deferred();\nconst delayed = $delay(osc.out, feedback[0]);\nfeedback.set(delayed);',
+            'const fb = $deferred()\nconst sig = $slew(fb[0], { rise: 0.01, fall: 0.01 })\nfb.set(sig)\nsig.out()',
         ],
         group: 'Advanced',
     },
@@ -656,8 +647,7 @@ export const GLOBAL_DOCS: GlobalFunctionDoc[] = [
         ],
         returns: 'Bus handle passed to .send()',
         examples: [
-            'const fx = $bus((mixed) => $reverb(mixed).out());\n$saw(440).send(fx, 0.6);\n$sine(220).send(fx, 0.4);',
-            '// Multiple sends at different gain levels\nconst verb = $bus((mixed) => mixed.gain(0.8).out());\nvoices.send(verb, 0.5);',
+            'const fx = $bus((mixed) => mixed.gain(0.8).out())\n$saw("C3").send(fx, 0.6)\n$sine("E3").send(fx, 0.4)',
         ],
         group: 'Advanced',
     },
