@@ -182,7 +182,7 @@ export function resolveDslSymbol(
  * Resolve the DSL symbol at a given model position.
  * Convenience wrapper combining path resolution and symbol matching.
  */
-export function resolveDslSymbolAtPosition(
+function resolveDslSymbolAtPosition(
     model: editor.ITextModel,
     position: Position,
     moduleNames: Set<string>,

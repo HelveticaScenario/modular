@@ -27,8 +27,6 @@ interface FileExplorerProps {
     onKeepBuffer: (bufferId: string) => void;
 }
 
-export const SCRATCH_FILE = '__scratch__.mjs';
-
 function TreeNode({
     entry,
     onOpenFile,
