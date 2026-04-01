@@ -22,7 +22,20 @@ pub fn min_gate_samples(sample_rate: f32) -> u32 {
 
 #[inline]
 pub fn changed(a: f32, b: f32) -> bool {
-    (a - b).abs() > 1e-6
+    // NaN is used as a sentinel for "never computed" in filter state,
+    // so any NaN argument must be treated as a change.
+    a.is_nan() || b.is_nan() || (a - b).abs() > 1e-6
+}
+
+/// Replace non-finite values (NaN, ±Inf) with 0.0 to prevent
+/// sticky corruption of recursive filter state.
+#[inline]
+pub fn sanitize(x: f32) -> f32 {
+    if x.is_finite() {
+        x
+    } else {
+        0.0
+    }
 }
 
 /// Map a value from one range to another. If the input range is degenerate, returns `y0`.
@@ -743,7 +756,7 @@ mod tests {
     #[test]
     fn schmitt_full_cycle_low_high_low() {
         let mut st = SchmittTrigger::default(); // 0.1, 1.0
-        // Start from uninitialized with low input
+                                                // Start from uninitialized with low input
         let (_, e) = st.process_with_edge(0.0);
         assert_eq!(e, EdgeEvent::Falling);
         assert_eq!(st.state(), SchmittState::Low);

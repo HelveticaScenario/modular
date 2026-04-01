@@ -1,21 +1,22 @@
 // Test module to verify that overlapping parameter and output names
 // produce a runtime panic when the schema is created.
 
+use deserr::Deserr;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
 use crate::poly::MonoSignal;
 
-#[derive(Clone, Default, Deserialize, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct TestOverlapParams {
     /// this conflicts with the output name
-    output: MonoSignal,
+    #[deserr(default)]
+    output: Option<MonoSignal>,
 }
 
 /// Test module with overlapping names.
 #[module(name = "$test-overlap")]
-#[derive(Default)]
 pub struct TestOverlap {
     outputs: TestOverlapOutputs,
     params: TestOverlapParams,

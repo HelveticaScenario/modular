@@ -1,26 +1,31 @@
 use crate::dsp::utils::SchmittTrigger;
-use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal};
+use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
+use deserr::Deserr;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct AdsrParams {
     /// gate input — rising edge starts the envelope, falling edge triggers release
     #[signal(type = gate, range = (0.0, 5.0))]
     gate: PolySignal,
     /// attack time in seconds
     #[signal(default = 0.01, range = (0.0, 10.0))]
-    attack: PolySignal,
+    #[deserr(default)]
+    attack: Option<PolySignal>,
     /// decay time in seconds
     #[signal(default = 0.1, range = (0.0, 10.0))]
-    decay: PolySignal,
+    #[deserr(default)]
+    decay: Option<PolySignal>,
     /// sustain level in volts (0-5)
     #[signal(default = 5.0, range = (0.0, 5.0))]
-    sustain: PolySignal,
+    #[deserr(default)]
+    sustain: Option<PolySignal>,
     /// release time in seconds
     #[signal(default = 0.1, range = (0.0, 10.0))]
-    release: PolySignal,
+    #[deserr(default)]
+    release: Option<PolySignal>,
 }
 
 #[derive(Clone, Copy, PartialEq, Default)]
@@ -59,6 +64,12 @@ impl Default for ChannelState {
     }
 }
 
+/// State for the Adsr module.
+#[derive(Default)]
+struct AdsrState {
+    channels: [ChannelState; PORT_MAX_CHANNELS],
+}
+
 /// An Attack-Decay-Sustain-Release envelope generator.
 ///
 /// Generates a control voltage envelope driven by a **gate** input.
@@ -77,10 +88,9 @@ impl Default for ChannelState {
 /// $sine('c4').amplitude(env).out()
 /// ```
 #[module(name = "$adsr", args(gate))]
-#[derive(Default)]
 pub struct Adsr {
     outputs: AdsrOutputs,
-    channels: [ChannelState; PORT_MAX_CHANNELS],
+    state: AdsrState,
     params: AdsrParams,
 }
 
@@ -96,13 +106,13 @@ impl Adsr {
         let num_channels = self.channel_count();
 
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
 
             // Smooth parameter targets to avoid clicks when values change (times in seconds)
-            state.attack = self.params.attack.get_value_or(ch, 0.0).max(0.0);
-            state.decay = self.params.decay.get_value_or(ch, 0.0).max(0.0);
-            state.release = self.params.release.get_value_or(ch, 0.0).max(0.0);
-            state.sustain = self.params.sustain.get_value_or(ch, 5.0).max(0.0);
+            state.attack = self.params.attack.value_or(ch, 0.0).max(0.0);
+            state.decay = self.params.decay.value_or(ch, 0.0).max(0.0);
+            state.release = self.params.release.value_or(ch, 0.0).max(0.0);
+            state.sustain = self.params.sustain.value_or(ch, 5.0).max(0.0);
 
             let attack = state.attack;
             let decay = state.decay;

@@ -486,9 +486,9 @@ export class GraphBuilder {
     /** Global output gain signal (default: 2.5) */
     private outputGain: Signal = 2.5;
     /** Time signature numerator (beats per bar) for ROOT_CLOCK */
-    private timeSignatureNumerator: number | undefined;
+    private timeSignatureNumerator: number = 4;
     /** Time signature denominator (beat value) for ROOT_CLOCK */
-    private timeSignatureDenominator: number | undefined;
+    private timeSignatureDenominator: number = 4;
     private busses: Bus[] = [];
     private endOfChainCb: (
         mixed: Collection,
@@ -552,23 +552,11 @@ export class GraphBuilder {
             });
         }
 
-        // Initialize module params: default all signal params to disconnected.
-        // Other params are left unset unless the DSL sets them explicitly.
-        const params: Record<string, unknown> = {};
-        for (const param of schema.params) {
-            if (param.kind === 'signal' || param.kind === 'polySignal') {
-                params[param.name] = { type: 'disconnected' };
-            } else if (param.kind === 'signalArray') {
-                // Required arrays (e.g. sum.signals) should be valid by default.
-                params[param.name] = [];
-            }
-        }
-
         const moduleState: ModuleState = {
             id,
             moduleType,
             idIsExplicit: Boolean(explicitId),
-            params,
+            params: {},
         };
 
         this.modules.set(id, moduleState);
@@ -678,7 +666,7 @@ export class GraphBuilder {
         // Process output groups and build channel collections
         if (this.outGroups.size > 0) {
             // Collect all channel collections to mix together
-            const allChannelCollections: (ModuleOutput | undefined)[][] = [];
+            const allChannelCollections: (ModuleOutput | number)[][] = [];
 
             // Sort by baseChannel for deterministic processing
             const sortedChannels = [...this.outGroups.keys()].sort(
@@ -739,12 +727,12 @@ export class GraphBuilder {
                     }
 
                     // Build channel collection with baseChannel silent channels prepended
-                    const channelCollection: (ModuleOutput | undefined)[] = [];
+                    const channelCollection: (ModuleOutput | number)[] = [];
 
-                    // Add silent/disconnected channels for baseChannel offset
+                    // Add silent channels for baseChannel offset
                     for (let i = 0; i < baseChannel; i++) {
-                        // Create a signal module with disconnected input (outputs silence)
-                        channelCollection.push(undefined);
+                        // Push 0 (Signal::Volts(0.0)) to represent silence
+                        channelCollection.push(0);
                     }
 
                     // Add the actual output signals
@@ -764,20 +752,16 @@ export class GraphBuilder {
             // Create root signal module with the final mix
             signalFactory(gainedMix, { id: 'ROOT_OUTPUT' });
         } else {
-            // No outputs registered - create empty root signal
-            signalFactory(undefined, { id: 'ROOT_OUTPUT' });
+            // No outputs registered - create silent root signal (0V)
+            signalFactory(0, { id: 'ROOT_OUTPUT' });
         }
 
         // Update ROOT_CLOCK tempo with the current tempo setting
         const rootClock = this.modules.get('ROOT_CLOCK');
         if (rootClock) {
             rootClock.params.tempo = this.tempo;
-            if (this.timeSignatureNumerator !== undefined) {
-                rootClock.params.numerator = this.timeSignatureNumerator;
-            }
-            if (this.timeSignatureDenominator !== undefined) {
-                rootClock.params.denominator = this.timeSignatureDenominator;
-            }
+            rootClock.params.numerator = this.timeSignatureNumerator;
+            rootClock.params.denominator = this.timeSignatureDenominator;
         }
 
         // Build a map of deferred output strings to their resolved output strings
@@ -845,6 +829,22 @@ export class GraphBuilder {
 
         console.log('Built PatchGraph:', ret);
         return ret;
+    }
+
+    /**
+     * Reset the builder state
+     */
+    reset(): void {
+        this.modules.clear();
+        this.scopes = [];
+        this.counters.clear();
+        this.outGroups.clear();
+        this.sourceLocationMap.clear();
+        this.deferredOutputs.clear();
+        this.tempo = 120;
+        this.outputGain = 2.5;
+        this.timeSignatureNumerator = 4;
+        this.timeSignatureDenominator = 4;
     }
 
     /**
@@ -1506,7 +1506,8 @@ function valueToSignal(value: unknown): unknown {
             channel: value.channel,
         };
     } else if (value === null || value === undefined) {
-        return { type: 'disconnected' };
+        // Silence: 0 becomes Signal::Volts(0.0) in Rust
+        return 0;
     }
     // It's a number
     return value;

@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use crate::params::ParamsDeserializer;
-use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
+use crate::types::{Module, ModuleSchema, SampleableConstructor};
 
 pub mod enosc_tables;
 
@@ -19,12 +19,6 @@ pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     fold::Fold::install_constructor(map);
     cheby::Cheby::install_constructor(map);
     segment::Segment::install_constructor(map);
-}
-
-pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
-    fold::Fold::install_params_validator(map);
-    cheby::Cheby::install_params_validator(map);
-    segment::Segment::install_params_validator(map);
 }
 
 pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer>) {

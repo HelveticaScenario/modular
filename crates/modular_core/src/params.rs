@@ -103,7 +103,8 @@ pub struct CachedParams {
 
 /// Function that deserializes a JSON value (with `__argument_spans` already
 /// stripped) into a `CachedParams`.
-pub type ParamsDeserializer = fn(serde_json::Value) -> napi::Result<CachedParams>;
+pub type ParamsDeserializer =
+    fn(serde_json::Value) -> Result<CachedParams, crate::param_errors::ModuleParamErrors>;
 
 // ---------------------------------------------------------------------------
 // Utilities

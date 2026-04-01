@@ -3,11 +3,12 @@ use crate::{
     poly::{PolyOutput, PolySignal},
     PORT_MAX_CHANNELS,
 };
+use deserr::Deserr;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct SampleAndHoldParams {
     /// signal to sample
     input: PolySignal,
@@ -29,6 +30,12 @@ struct SampleAndHoldChannelState {
     held_value: f32,
 }
 
+/// State for the SampleAndHold module.
+#[derive(Default)]
+struct SampleAndHoldState {
+    channels: [SampleAndHoldChannelState; PORT_MAX_CHANNELS],
+}
+
 /// Captures and holds a voltage on each trigger.
 ///
 /// When **trigger** receives a rising edge, the current value of **input**
@@ -46,11 +53,10 @@ struct SampleAndHoldChannelState {
 /// )
 /// ```
 #[module(name = "$sah", args(input, trigger))]
-#[derive(Default)]
 pub struct SampleAndHold {
     outputs: SampleAndHoldOutputs,
     params: SampleAndHoldParams,
-    channels: [SampleAndHoldChannelState; PORT_MAX_CHANNELS],
+    state: SampleAndHoldState,
 }
 
 impl SampleAndHold {
@@ -58,7 +64,7 @@ impl SampleAndHold {
         let num_channels = self.channel_count();
 
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
             let input = self.params.input.get_value(ch);
             let trigger = self.params.trigger.get_value(ch);
 
@@ -78,8 +84,9 @@ impl SampleAndHold {
 
 message_handlers!(impl SampleAndHold {});
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct TrackAndHoldParams {
     /// signal to track
     input: PolySignal,
@@ -100,6 +107,12 @@ struct TrackAndHoldChannelState {
     gate: SchmittTrigger,
 }
 
+/// State for the TrackAndHold module.
+#[derive(Default)]
+struct TrackAndHoldState {
+    channels: [TrackAndHoldChannelState; PORT_MAX_CHANNELS],
+}
+
 /// Follows the input while the gate is low, and holds the value when the
 /// gate goes high.
 ///
@@ -111,11 +124,10 @@ struct TrackAndHoldChannelState {
 /// $tah($sine('2hz'), gate)
 /// ```
 #[module(name = "$tah", args(input, gate))]
-#[derive(Default)]
 pub struct TrackAndHold {
     outputs: TrackAndHoldOutputs,
     params: TrackAndHoldParams,
-    channels: [TrackAndHoldChannelState; PORT_MAX_CHANNELS],
+    state: TrackAndHoldState,
 }
 
 impl TrackAndHold {
@@ -123,7 +135,7 @@ impl TrackAndHold {
         let num_channels = self.channel_count();
 
         for ch in 0..num_channels {
-            let state = &mut self.channels[ch];
+            let state = &mut self.state.channels[ch];
             let input = self.params.input.get_value(ch);
             let gate = self.params.gate.get_value(ch);
 

@@ -252,7 +252,7 @@ dependencies = [
  "ansi_term",
  "atty",
  "bitflags 1.3.2",
- "strsim",
+ "strsim 0.8.0",
  "textwrap",
  "unicode-width",
  "vec_map",
@@ -479,6 +479,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ececcb659e7ba858fb4f10388c250a7252eb0a27373f1a72b8748afdd248e587"
 dependencies = [
  "powerfmt",
+]
+
+[[package]]
+name = "deserr"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29fb12ab48b3b8de8ccd548c37e45dcdaf57c41506aad2e01f2c1a550ce31cb1"
+dependencies = [
+ "deserr-internal",
+ "serde-cs",
+ "serde_json",
+ "strsim 0.11.1",
+]
+
+[[package]]
+name = "deserr-internal"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94561228c7d7c8c1299c9cd1ce455edfaa7256d31159349dfe29e7226714731c"
+dependencies = [
+ "convert_case 0.6.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
 ]
 
 [[package]]
@@ -1086,6 +1110,7 @@ name = "modular_core"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
+ "deserr",
  "fasteval",
  "keyframe",
  "lazy_static",
@@ -1763,6 +1788,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-cs"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07d1716265edfe2ff32c1f3168aedc01964b75432aadae3407c9f1fea40557c9"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "serde-wasm-bindgen"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1887,6 +1921,12 @@ name = "strsim"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ea5119cdb4c55b55d432abb513a0429384878c15dde60cc77b1c99de1a95a6a"
+
+[[package]]
+name = "strsim"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "strum"

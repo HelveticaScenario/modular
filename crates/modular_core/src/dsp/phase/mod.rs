@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use crate::params::ParamsDeserializer;
-use crate::types::{Module, ModuleSchema, ParamsValidator, SampleableConstructor};
+use crate::types::{Module, ModuleSchema, SampleableConstructor};
 
 pub mod crush;
 pub mod feedback;
@@ -18,13 +18,6 @@ pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     feedback::Feedback::install_constructor(map);
     pulsar::Pulsar::install_constructor(map);
     ramp::Ramp::install_constructor(map);
-}
-
-pub fn install_param_validators(map: &mut HashMap<String, ParamsValidator>) {
-    crush::Crush::install_params_validator(map);
-    feedback::Feedback::install_params_validator(map);
-    pulsar::Pulsar::install_params_validator(map);
-    ramp::Ramp::install_params_validator(map);
 }
 
 pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer>) {

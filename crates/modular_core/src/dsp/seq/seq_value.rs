@@ -7,8 +7,8 @@
 
 use std::sync::Arc;
 
+use deserr::{DeserializeError, ErrorKind, IntoValue, ValuePointerRef};
 use schemars::JsonSchema;
-use serde::Deserialize;
 
 use crate::{
     Patch,
@@ -367,16 +367,23 @@ impl SeqPatternParam {
     }
 }
 
-impl<'de> Deserialize<'de> for SeqPatternParam {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let source = String::deserialize(deserializer)?;
+// deserr implementation for SeqPatternParam - transparent string wrapper that parses.
+impl<E: DeserializeError> deserr::Deserr<E> for SeqPatternParam {
+    fn deserialize_from_value<V: IntoValue>(
+        value: deserr::Value<V>,
+        location: ValuePointerRef<'_>,
+    ) -> Result<Self, E> {
+        let source = String::deserialize_from_value(value, location)?;
         if source.is_empty() {
             return Ok(Self::default());
         }
-        Self::parse(&source).map_err(serde::de::Error::custom)
+        Self::parse(&source).map_err(|e| {
+            deserr::take_cf_content(E::error::<V>(
+                None,
+                ErrorKind::Unexpected { msg: e },
+                location,
+            ))
+        })
     }
 }
 

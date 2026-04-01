@@ -10,6 +10,10 @@ edition = "2024"
 default = []
 tracy = ["profiling/profile-with-tracy", "modular_derive/tracy"]
 
+[[bin]]
+name = "generate-schemas"
+path = "src/bin/generate_schemas.rs"
+
 [dependencies]
 serde_json = "1.0.147"
 arrayvec = "0.7"
@@ -21,6 +25,7 @@ modular_derive = { version = "*", path = "../modular_derive" }
 parking_lot = "0.12"
 mi-plaits-dsp = { version = "0.1", path = "../mi-plaits-dsp-rs" }
 schemars = "1.1.0"
+deserr = { version = "0.6", features = ["serde-json"] }
 simple-easing = "1.0.1"
 napi-derive = "3.4.1"
 pest = "2.8.0"

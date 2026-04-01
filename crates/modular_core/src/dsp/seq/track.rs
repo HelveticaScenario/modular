@@ -1,21 +1,25 @@
+use deserr::Deserr;
 use schemars::JsonSchema;
-use serde::Deserialize;
 use simple_easing;
 
-use crate::poly::PolySignal;
+use crate::poly::{MonoSignalExt, PolySignal};
 use crate::types::InterpolationType;
 use crate::{MonoSignal, PolyOutput};
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct TrackParams {
     /// playhead position (wraps from 0 to 1)
     #[default_connection(module = RootClock, port = "playhead", channels = [0, 1])]
     #[signal(range = (0.0, 1.0))]
-    playhead: MonoSignal,
+    #[deserr(default)]
+    playhead: Option<MonoSignal>,
     /// keyframe values and their positions (0–1)
     keyframes: Vec<(PolySignal, f32)>,
     /// interpolation curve between keyframes
+    #[serde(default)]
+    #[deserr(default)]
     interpolation_type: InterpolationType,
 }
 
@@ -50,7 +54,6 @@ struct TrackOutputs {
 /// $lpf(osc, $track([['c2', 0], ['c5', 0.5], ['c3', 1]]))
 /// ```
 #[module(name = "$track", args(keyframes), channels_derive = derive_track_channel_count)]
-#[derive(Default)]
 pub struct Track {
     outputs: TrackOutputs,
     params: TrackParams,
@@ -59,7 +62,7 @@ pub struct Track {
 impl Track {
     fn update(&mut self, _sample_rate: f32) {
         // Sum channels 0 and 1 of the playhead
-        let playhead_value = self.params.playhead.get_value_f64();
+        let playhead_value = self.params.playhead.value_or_zero() as f64;
 
         let t = playhead_value.fract() as f32;
         let t = if t < 0.0 { t + 1.0 } else { t };

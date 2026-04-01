@@ -1,15 +1,16 @@
+use deserr::Deserr;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
 use crate::{
-    dsp::utils::{changed, voct_to_hz},
-    poly::{PolyOutput, PolySignal},
+    dsp::utils::{changed, sanitize, voct_to_hz},
+    poly::{PolyOutput, PolySignal, PolySignalExt},
     types::Clickless,
     PORT_MAX_CHANNELS,
 };
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct Jup6fParams {
     /// signal input
     input: PolySignal,
@@ -18,7 +19,8 @@ struct Jup6fParams {
     cutoff: PolySignal,
     /// filter resonance (0-5). High values produce self-oscillation.
     #[signal(range = (0.0, 5.0))]
-    resonance: PolySignal,
+    #[deserr(default)]
+    resonance: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -73,19 +75,38 @@ struct LadderState {
 /// let env = $adsr($pPulse($clock[0]), { attack: 0.4, decay: 0.6, sustain: 0.3, release: 1.0 })
 /// $jup6f($saw('c2'), env.range('200hz', '4000hz'), 2.5)
 /// ```
-#[module(name = "$jup6f", args(input, cutoff, resonance?))]
-#[derive(Default)]
+#[module(name = "$jup6f", args(input, cutoff, resonance))]
 pub struct Jup6f {
     outputs: Jup6fOutputs,
+    state: Jup6fState,
+    params: Jup6fParams,
+}
+
+/// State for the Jup6f module.
+struct Jup6fState {
+    /// Per-channel ladder state
     channels: [LadderState; PORT_MAX_CHANNELS],
-    // Mono optimization
+    /// Mono optimization
     mono_g: f32,
     mono_k: f32,
     last_cutoff_mono: f32,
     last_resonance_mono: f32,
     smooth_cutoff_mono: Clickless,
     smooth_resonance_mono: Clickless,
-    params: Jup6fParams,
+}
+
+impl Default for Jup6fState {
+    fn default() -> Self {
+        Self {
+            channels: [LadderState::default(); PORT_MAX_CHANNELS],
+            mono_g: 0.0,
+            mono_k: 0.0,
+            last_cutoff_mono: f32::NAN, // Indicate that coefficients have never been calculated 
+            last_resonance_mono: f32::NAN, // Indicate that coefficients have never been calculated 
+            smooth_cutoff_mono: Clickless::default(),
+            smooth_resonance_mono: Clickless::default(),
+        }
+    }
 }
 
 /// Compute the ladder tuning coefficient (g) and resonance feedback (k)
@@ -131,22 +152,22 @@ fn process_ladder(input: f32, state: &mut [f32; 4], g: f32, k: f32) -> (f32, f32
     // Stage 1
     let v0 = (u - state[0]) * g1;
     let s0 = v0 + state[0];
-    state[0] = s0 + v0;
+    state[0] = sanitize(s0 + v0);
 
     // Stage 2
     let v1 = (tanh_approx(s0) - state[1]) * g1;
     let s1 = v1 + state[1];
-    state[1] = s1 + v1;
+    state[1] = sanitize(s1 + v1);
 
     // Stage 3
     let v2 = (tanh_approx(s1) - state[2]) * g1;
     let s2 = v2 + state[2];
-    state[2] = s2 + v2;
+    state[2] = sanitize(s2 + v2);
 
     // Stage 4
     let v3 = (tanh_approx(s2) - state[3]) * g1;
     let s3 = v3 + state[3];
-    state[3] = s3 + v3;
+    state[3] = sanitize(s3 + v3);
 
     // Multimode outputs derived from ladder taps:
     // LP24 = 4th stage output (24 dB/oct)
@@ -175,57 +196,66 @@ fn tanh_approx(x: f32) -> f32 {
 impl Jup6f {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
-        let is_mono = self.params.cutoff.is_monophonic() && self.params.resonance.is_monophonic();
+        let state = &mut self.state;
+        let cutoff_mono = self.params.cutoff.is_monophonic();
+        let resonance_mono = self
+            .params
+            .resonance
+            .as_ref()
+            .is_some_and(|s| s.is_monophonic());
+        let is_mono = cutoff_mono && resonance_mono;
 
         // Update coefficients
         if is_mono {
-            self.smooth_cutoff_mono
-                .update(self.params.cutoff.get_value_or(0, 0.0));
-            self.smooth_resonance_mono
-                .update(self.params.resonance.get_value_or(0, 0.0));
-            let c = *self.smooth_cutoff_mono;
-            let r = *self.smooth_resonance_mono;
+            state
+                .smooth_cutoff_mono
+                .update(self.params.cutoff.get_value(0));
+            state
+                .smooth_resonance_mono
+                .update(self.params.resonance.value_or(0, 0.0));
+            let c = *state.smooth_cutoff_mono;
+            let r = *state.smooth_resonance_mono;
 
-            if changed(c, self.last_cutoff_mono) || changed(r, self.last_resonance_mono) {
+            if changed(c, state.last_cutoff_mono) || changed(r, state.last_resonance_mono) {
                 let (g, k) = compute_coeffs(c, r, sample_rate);
-                self.mono_g = g;
-                self.mono_k = k;
-                self.last_cutoff_mono = c;
-                self.last_resonance_mono = r;
+                state.mono_g = g;
+                state.mono_k = k;
+                state.last_cutoff_mono = c;
+                state.last_resonance_mono = r;
             }
         } else {
             for i in 0..num_channels {
-                self.channels[i]
+                state.channels[i]
                     .smooth_cutoff
-                    .update(self.params.cutoff.get_value_or(i, 0.0));
-                self.channels[i]
+                    .update(self.params.cutoff.get_value(i));
+                state.channels[i]
                     .smooth_resonance
-                    .update(self.params.resonance.get_value_or(i, 0.0));
-                let c = *self.channels[i].smooth_cutoff;
-                let r = *self.channels[i].smooth_resonance;
+                    .update(self.params.resonance.value_or(i, 0.0));
+                let c = *state.channels[i].smooth_cutoff;
+                let r = *state.channels[i].smooth_resonance;
 
-                if changed(c, self.channels[i].last_cutoff)
-                    || changed(r, self.channels[i].last_resonance)
+                if changed(c, state.channels[i].last_cutoff)
+                    || changed(r, state.channels[i].last_resonance)
                 {
                     let (g, k) = compute_coeffs(c, r, sample_rate);
-                    self.channels[i].g = g;
-                    self.channels[i].k = k;
-                    self.channels[i].last_cutoff = c;
-                    self.channels[i].last_resonance = r;
+                    state.channels[i].g = g;
+                    state.channels[i].k = k;
+                    state.channels[i].last_cutoff = c;
+                    state.channels[i].last_resonance = r;
                 }
             }
         }
 
         for i in 0..num_channels {
-            let input = self.params.input.get_value_or(i, 0.0) * 0.2; // ±5V → ±1V
+            let input = self.params.input.get_value(i) * 0.2; // ±5V → ±1V
 
             let (g, k) = if is_mono {
-                (self.mono_g, self.mono_k)
+                (state.mono_g, state.mono_k)
             } else {
-                (self.channels[i].g, self.channels[i].k)
+                (state.channels[i].g, state.channels[i].k)
             };
 
-            let (lp24, lp12, bp, hp) = process_ladder(input, &mut self.channels[i].s, g, k);
+            let (lp24, lp12, bp, hp) = process_ladder(input, &mut state.channels[i].s, g, k);
 
             self.outputs.lp24.set(i, lp24 * 5.0);
             self.outputs.lp12.set(i, lp12 * 5.0);

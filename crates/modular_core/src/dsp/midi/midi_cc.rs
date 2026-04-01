@@ -3,33 +3,35 @@
 //! Converts MIDI CC messages to control voltage signals.
 //! Supports both 7-bit (standard) and 14-bit (high-resolution) CC.
 
+use deserr::Deserr;
 use napi::Result;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
 use crate::types::{MidiControlChange, MidiControlChange14Bit};
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct MidiCcParams {
     /// MIDI device name to receive from (leave unset to receive from all devices)
-    #[serde(default)]
+    #[deserr(default)]
     device: Option<String>,
 
     /// CC number to monitor (0-127 for 7-bit, 0-31 for 14-bit mode)
-    #[serde(default)]
     cc: u8,
 
     /// MIDI channel to listen on (1–16, leave unset for omni/all channels)
-    #[serde(default)]
+    #[deserr(default)]
     channel: Option<u8>,
 
     /// Smoothing time in milliseconds (0 = instant)
     #[serde(default)]
+    #[deserr(default)]
     smoothing_ms: f32,
 
     /// Enable 14-bit high-resolution CC mode (CC 0-31 MSB + CC 32-63 LSB)
     #[serde(default)]
+    #[deserr(default)]
     high_resolution: bool,
 }
 
@@ -38,6 +40,16 @@ struct MidiCcParams {
 struct MidiCcOutputs {
     #[output("output", "CC value as voltage (0-5V)", default, range = (0.0, 5.0))]
     output: f32,
+}
+
+/// State for the MidiCc module.
+#[derive(Default)]
+struct MidiCcState {
+    sample_rate: f32,
+    /// Current CC value (normalized 0.0-1.0, supports both 7-bit and 14-bit)
+    current_value: f32,
+    /// Smoothed output value
+    smoothed_value: f32,
 }
 
 /// Converts a MIDI continuous controller (CC) message into a smooth control voltage (0–5V).
@@ -58,15 +70,10 @@ struct MidiCcOutputs {
 /// $sine('c4').amplitude(breath).out();
 /// ```
 #[module(name = "$midiCC", args())]
-#[derive(Default)]
 pub struct MidiCc {
     outputs: MidiCcOutputs,
     params: MidiCcParams,
-    sample_rate: f32,
-    /// Current CC value (normalized 0.0-1.0, supports both 7-bit and 14-bit)
-    current_value: f32,
-    /// Smoothed output value
-    smoothed_value: f32,
+    state: MidiCcState,
 }
 
 impl MidiCc {
@@ -99,7 +106,7 @@ impl MidiCc {
             && self.should_process_channel(msg.channel)
         {
             // Normalize 7-bit value (0-127) to 0.0-1.0
-            self.current_value = msg.value as f32 / 127.0;
+            self.state.current_value = msg.value as f32 / 127.0;
         }
         Ok(())
     }
@@ -118,27 +125,27 @@ impl MidiCc {
             // Normalize 14-bit value (0-16383) to 0.0-1.0
             // Note: max useful value is 127*128=16256 (MSB=127, LSB=0)
             // but we normalize to full 14-bit range for simplicity
-            self.current_value = msg.value as f32 / 16383.0;
+            self.state.current_value = msg.value as f32 / 16383.0;
         }
         Ok(())
     }
 
     fn update(&mut self, sample_rate: f32) {
-        self.sample_rate = sample_rate;
+        self.state.sample_rate = sample_rate;
 
         // Calculate target voltage from normalized value
-        let target = self.current_value * 5.0;
+        let target = self.state.current_value * 5.0;
 
         // Apply smoothing
         if self.params.smoothing_ms > 0.0 {
             let smoothing_samples = self.params.smoothing_ms * sample_rate / 1000.0;
             let alpha = 1.0 / smoothing_samples.max(1.0);
-            self.smoothed_value += (target - self.smoothed_value) * alpha;
+            self.state.smoothed_value += (target - self.state.smoothed_value) * alpha;
         } else {
-            self.smoothed_value = target;
+            self.state.smoothed_value = target;
         }
 
-        self.outputs.output = self.smoothed_value;
+        self.outputs.output = self.state.smoothed_value;
     }
 }
 

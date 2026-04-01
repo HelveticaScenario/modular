@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { editor } from 'monaco-editor';
-import type { ModuleSchema } from '@modular/core';
 import { useTheme } from '../themes/ThemeContext';
 import { useCustomMonaco } from '../hooks/useCustomMonaco';
 import { configSchema } from '../configSchema';
@@ -25,6 +24,7 @@ import {
 import { startModuleStatePolling } from './monaco/moduleStateTracking';
 import { registerMidiCompletionProvider } from './monaco/midiCompletionProvider';
 import electronAPI from '../electronAPI';
+import { Schemas } from 'src/shared/dsl/schemaTypeResolver';
 
 export interface PatchEditorProps {
     value: string;
@@ -52,7 +52,7 @@ export function MonacoPatchEditor({
 }: PatchEditorProps) {
     // Fetch DSL lib source once at mount for Monaco autocomplete
     const [libSource, setLibSource] = useState<string | null>(null);
-    const [schemas, setSchemas] = useState<ModuleSchema[]>([]);
+    const [schemas, setSchemas] = useState<Schemas>([]);
 
     useEffect(() => {
         electronAPI.getDslLibSource().then(setLibSource).catch(console.error);

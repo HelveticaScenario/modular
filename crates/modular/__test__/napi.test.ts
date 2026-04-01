@@ -6,105 +6,12 @@
 
 import { describe, test, expect } from 'vitest';
 import {
-    getSchemas,
     validatePatchGraph,
     deriveChannelCount,
     getMiniLeafSpans,
     getPatternPolyphony,
-    type ModuleSchema,
     type PatchGraph,
-    type ValidationError,
 } from '@modular/core';
-
-// ─── getSchemas ──────────────────────────────────────────────────────────────
-
-describe('getSchemas', () => {
-    test('returns a non-empty array of schemas', () => {
-        const schemas = getSchemas();
-        expect(Array.isArray(schemas)).toBe(true);
-        expect(schemas.length).toBeGreaterThan(0);
-    });
-
-    test('each schema has required fields', () => {
-        const schemas = getSchemas();
-        for (const s of schemas) {
-            expect(s).toHaveProperty('name');
-            expect(s).toHaveProperty('documentation');
-            expect(s).toHaveProperty('paramsSchema');
-            expect(s).toHaveProperty('outputs');
-            expect(typeof s.name).toBe('string');
-            expect(typeof s.documentation).toBe('string');
-        }
-    });
-
-    test('schemas include $sine with expected outputs', () => {
-        const schemas = getSchemas();
-        const sine = schemas.find((s) => s.name === '$sine');
-        expect(sine).toBeDefined();
-        expect(sine!.outputs.length).toBeGreaterThan(0);
-    });
-
-    test('schemas include _clock with expected positionalArgs', () => {
-        const schemas = getSchemas();
-        const clock = schemas.find((s) => s.name === '_clock');
-        expect(clock).toBeDefined();
-        expect(clock!.positionalArgs).toBeDefined();
-        expect(clock!.positionalArgs!.length).toBeGreaterThan(0);
-    });
-
-    test('schemas include polyphonic module with channels', () => {
-        const schemas = getSchemas();
-        // Find a module that declares channelsParam (polyphonic)
-        const withChannels = schemas.filter(
-            (s) => s.channelsParam !== undefined && s.channelsParam !== null,
-        );
-        expect(withChannels.length).toBeGreaterThan(0);
-    });
-
-    test('schemas are stable across calls', () => {
-        const a = getSchemas();
-        const b = getSchemas();
-        expect(a.length).toBe(b.length);
-        expect(a.map((s) => s.name).sort()).toEqual(
-            b.map((s) => s.name).sort(),
-        );
-    });
-
-    test('schemas include signalParams for modules with signal inputs', () => {
-        const schemas = getSchemas();
-        const lpf = schemas.find((s) => s.name === '$lpf');
-        expect(lpf).toBeDefined();
-        expect(lpf!.signalParams).toBeDefined();
-        expect(lpf!.signalParams.length).toBeGreaterThan(0);
-
-        // Check that cutoff has pitch type with correct range and description
-        const cutoff = lpf!.signalParams.find((p: any) => p.name === 'cutoff');
-        expect(cutoff).toBeDefined();
-        expect(cutoff!.signalType).toBe('pitch');
-        expect(cutoff!.defaultValue).toBe(0.0);
-        expect(cutoff!.minValue).toBe(-5.0);
-        expect(cutoff!.maxValue).toBe(5.0);
-        expect(cutoff!.description).toContain('cutoff');
-
-        // Check that resonance has control type
-        const resonance = lpf!.signalParams.find(
-            (p: any) => p.name === 'resonance',
-        );
-        expect(resonance).toBeDefined();
-        expect(resonance!.signalType).toBe('control');
-        expect(resonance!.defaultValue).toBe(0.0);
-        expect(resonance!.minValue).toBe(0.0);
-        expect(resonance!.maxValue).toBe(5.0);
-
-        // Check that unannotated signal params get defaults
-        const input = lpf!.signalParams.find((p: any) => p.name === 'input');
-        expect(input).toBeDefined();
-        expect(input!.signalType).toBe('control');
-        expect(input!.defaultValue).toBe(0.0);
-        expect(input!.minValue).toBe(-5.0);
-        expect(input!.maxValue).toBe(5.0);
-    });
-});
 
 // ─── validatePatchGraph ──────────────────────────────────────────────────────
 
@@ -131,20 +38,14 @@ describe('validatePatchGraph', () => {
         expect(errors).toEqual([]);
     });
 
-    test('wrong param name "frequency" is rejected', () => {
-        const patch: PatchGraph = {
-            modules: [
-                {
-                    id: 'sine-1',
-                    moduleType: '$sine',
-                    idIsExplicit: false,
-                    params: { frequency: '440hz' },
-                },
-            ],
-            scopes: [],
-        };
-        const errors = validatePatchGraph(patch);
-        expect(errors.length).toBeGreaterThan(0);
+    test('wrong param name "frequency" is rejected via deserialization', () => {
+        // Unknown param validation is now handled by deserr (deny_unknown_fields)
+        // during deserialization, not by validatePatchGraph.
+        const result = deriveChannelCount('$sine', { frequency: '440hz' });
+        expect(result.channelCount).toBeUndefined();
+        expect(result.errors).toBeDefined();
+        expect(result.errors!.length).toBeGreaterThan(0);
+        expect(result.errors![0].message).toMatch(/unknown parameter/i);
     });
 
     test('invalid module type produces errors', () => {
@@ -164,20 +65,17 @@ describe('validatePatchGraph', () => {
         expect(errors[0].message).toMatch(/unknown|not found|exist/i);
     });
 
-    test('invalid param name produces errors', () => {
-        const patch: PatchGraph = {
-            modules: [
-                {
-                    id: 'sine-1',
-                    moduleType: '$sine',
-                    idIsExplicit: false,
-                    params: { freq: '440hz', bogusParam: 42 },
-                },
-            ],
-            scopes: [],
-        };
-        const errors = validatePatchGraph(patch);
-        expect(errors.length).toBeGreaterThan(0);
+    test('invalid param name produces errors via deserialization', () => {
+        // Unknown param validation is now handled by deserr (deny_unknown_fields)
+        // during deserialization, not by validatePatchGraph.
+        const result = deriveChannelCount('$sine', {
+            freq: '440hz',
+            bogusParam: 42,
+        });
+        expect(result.channelCount).toBeUndefined();
+        expect(result.errors).toBeDefined();
+        expect(result.errors!.length).toBeGreaterThan(0);
+        expect(result.errors![0].message).toMatch(/unknown parameter/i);
     });
 
     test('scope referencing non-existent module produces errors', () => {
@@ -250,25 +148,37 @@ describe('validatePatchGraph', () => {
 
 describe('deriveChannelCount', () => {
     test('single note returns 1', () => {
-        const count = deriveChannelCount('$sine', { freq: 'C4' });
-        expect(count).toBe(1);
+        const result = deriveChannelCount('$sine', { freq: 'C4' });
+        expect(result.channelCount).toBe(1);
+        expect(result.errors).toBeUndefined();
     });
 
     test('array of notes returns correct count', () => {
-        const count = deriveChannelCount('$sine', {
+        const result = deriveChannelCount('$sine', {
             freq: ['C4', 'E4', 'G4'],
         });
-        expect(count).toBe(3);
+        expect(result.channelCount).toBe(3);
+        expect(result.errors).toBeUndefined();
     });
 
-    test('unknown module type returns null', () => {
-        const count = deriveChannelCount('$unknownFoo', { x: 1 });
-        expect(count).toBeNull();
+    test('unknown module type returns errors', () => {
+        const result = deriveChannelCount('$unknownFoo', { x: 1 });
+        expect(result.channelCount).toBeUndefined();
+        expect(result.errors).toBeDefined();
+        expect(result.errors!.length).toBeGreaterThan(0);
     });
 
     test('Hz string returns 1', () => {
-        const count = deriveChannelCount('$sine', { freq: '440hz' });
-        expect(count).toBe(1);
+        const result = deriveChannelCount('$sine', { freq: '440hz' });
+        expect(result.channelCount).toBe(1);
+        expect(result.errors).toBeUndefined();
+    });
+
+    test('missing required param returns error with param name', () => {
+        const result = deriveChannelCount('$lpf', { cutoff: 'C4' });
+        expect(result.channelCount).toBeUndefined();
+        expect(result.errors).toBeDefined();
+        expect(result.errors![0].params).toContain('input');
     });
 });
 

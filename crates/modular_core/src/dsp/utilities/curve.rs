@@ -1,10 +1,11 @@
+use deserr::Deserr;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
 use crate::poly::{PolyOutput, PolySignal};
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct CurveParams {
     /// signal to apply curve to
     input: PolySignal,
@@ -34,7 +35,6 @@ struct CurveOutputs {
 /// $curve(signal, 3)    // cubic curve (audio taper)
 /// ```
 #[module(name = "$curve", args(input, exp))]
-#[derive(Default)]
 pub struct Curve {
     outputs: CurveOutputs,
     params: CurveParams,

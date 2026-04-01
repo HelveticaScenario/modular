@@ -1,15 +1,16 @@
+use deserr::Deserr;
 use schemars::JsonSchema;
-use serde::Deserialize;
 
 use crate::{
-    dsp::utils::{changed, voct_to_hz},
-    poly::{PolyOutput, PolySignal},
-    types::Clickless,
     PORT_MAX_CHANNELS,
+    dsp::utils::{changed, sanitize, voct_to_hz},
+    poly::{PolyOutput, PolySignal, PolySignalExt},
+    types::Clickless,
 };
 
-#[derive(Clone, Deserialize, Default, JsonSchema, Connect, ChannelCount, SignalParams)]
-#[serde(default, rename_all = "camelCase")]
+#[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
+#[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct BandpassFilterParams {
     /// signal input
     input: PolySignal,
@@ -18,7 +19,8 @@ struct BandpassFilterParams {
     center: PolySignal,
     /// filter resonance — controls bandwidth (0–5)
     #[signal(default = 1.0, range = (0.0, 5.0))]
-    resonance: PolySignal,
+    #[deserr(default)]
+    resonance: Option<PolySignal>,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -88,72 +90,102 @@ fn compute_bpf_biquad(center: f32, resonance: f32, sample_rate: f32) -> BiquadCo
 /// // resonant bandpass sweep on noise
 /// $bpf($noise("white"), $sine('0.5hz').range('440hz', '1200hz'), 3)
 /// ```
-#[module(name = "$bpf", args(input, center, resonance?))]
-#[derive(Default)]
+#[module(name = "$bpf", args(input, center, resonance))]
 pub struct BandpassFilter {
     outputs: BandpassFilterOutputs,
+    state: BandpassFilterState,
+    params: BandpassFilterParams,
+}
+
+/// State for the BandpassFilter module.
+struct BandpassFilterState {
+    /// Per-channel state
     channels: [BpfChannelState; PORT_MAX_CHANNELS],
-    // For mono optimization
+    /// Mono optimization
     coeffs_mono: BiquadCoeffs,
     last_center_mono: f32,
     last_q_mono: f32,
     smooth_center_mono: Clickless,
     smooth_resonance_mono: Clickless,
-    params: BandpassFilterParams,
+}
+
+impl Default for BandpassFilterState {
+    fn default() -> Self {
+        Self {
+            channels: [BpfChannelState::default(); PORT_MAX_CHANNELS],
+            coeffs_mono: BiquadCoeffs::default(),
+            last_center_mono: f32::NAN,
+            last_q_mono: f32::NAN,
+            smooth_center_mono: Clickless::default(),
+            smooth_resonance_mono: Clickless::default(),
+        }
+    }
 }
 
 impl BandpassFilter {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
+        let state = &mut self.state;
+
+        let center_mono = self.params.center.is_monophonic();
+        let resonance_mono = self
+            .params
+            .resonance
+            .as_ref()
+            .is_some_and(|s| s.is_monophonic());
 
         // Update coefficients with smoothed params to prevent clicks
-        if self.params.center.is_monophonic() && self.params.resonance.is_monophonic() {
-            self.smooth_center_mono
-                .update(self.params.center.get_value_or(0, 0.0));
-            self.smooth_resonance_mono
-                .update(self.params.resonance.get_value_or(0, 1.0));
-            let c = *self.smooth_center_mono;
-            let r = *self.smooth_resonance_mono;
+        if center_mono && resonance_mono {
+            state
+                .smooth_center_mono
+                .update(self.params.center.get_value(0));
+            state
+                .smooth_resonance_mono
+                .update(self.params.resonance.value_or(0, 1.0));
+            let c = *state.smooth_center_mono;
+            let r = *state.smooth_resonance_mono;
 
-            if changed(c, self.last_center_mono) || changed(r, self.last_q_mono) {
-                self.coeffs_mono = compute_bpf_biquad(c, r, sample_rate);
-                self.last_center_mono = c;
-                self.last_q_mono = r;
+            if changed(c, state.last_center_mono) || changed(r, state.last_q_mono) {
+                state.coeffs_mono = compute_bpf_biquad(c, r, sample_rate);
+                state.last_center_mono = c;
+                state.last_q_mono = r;
             }
         } else {
             for i in 0..num_channels {
-                self.channels[i]
+                state.channels[i]
                     .smooth_center
-                    .update(self.params.center.get_value_or(i, 0.0));
-                self.channels[i]
+                    .update(self.params.center.get_value(i));
+                state.channels[i]
                     .smooth_resonance
-                    .update(self.params.resonance.get_value_or(i, 1.0));
-                let c = *self.channels[i].smooth_center;
-                let r = *self.channels[i].smooth_resonance;
+                    .update(self.params.resonance.value_or(i, 1.0));
+                let c = *state.channels[i].smooth_center;
+                let r = *state.channels[i].smooth_resonance;
 
-                if changed(c, self.channels[i].last_center) || changed(r, self.channels[i].last_q) {
-                    self.channels[i].coeffs = compute_bpf_biquad(c, r, sample_rate);
-                    self.channels[i].last_center = c;
-                    self.channels[i].last_q = r;
+                if changed(c, state.channels[i].last_center) || changed(r, state.channels[i].last_q)
+                {
+                    state.channels[i].coeffs = compute_bpf_biquad(c, r, sample_rate);
+                    state.channels[i].last_center = c;
+                    state.channels[i].last_q = r;
                 }
             }
         }
 
         for i in 0..num_channels {
-            let input = self.params.input.get_value_or(i, 0.0);
+            let input = self.params.input.get_value(i);
 
-            let c = if self.params.center.is_monophonic() && self.params.resonance.is_monophonic() {
-                self.coeffs_mono
+            let c = if center_mono && resonance_mono {
+                state.coeffs_mono
             } else {
-                self.channels[i].coeffs
+                state.channels[i].coeffs
             };
 
-            let state = &mut self.channels[i];
-            let w = input - c.a1 * state.z1 - c.a2 * state.z2;
-            let y = c.b0 * w + c.b1 * state.z1 + c.b2 * state.z2;
+            let ch_state = &mut state.channels[i];
+            let w = input - c.a1 * ch_state.z1 - c.a2 * ch_state.z2;
+            let w = sanitize(w);
+            let y = c.b0 * w + c.b1 * ch_state.z1 + c.b2 * ch_state.z2;
 
-            state.z2 = state.z1;
-            state.z1 = w;
+            ch_state.z2 = ch_state.z1;
+            ch_state.z1 = w;
             self.outputs.sample.set(i, y);
         }
     }
