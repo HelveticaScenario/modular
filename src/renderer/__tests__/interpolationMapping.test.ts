@@ -2,7 +2,7 @@
  * Tests for template interpolation position mapping in sequence tracking.
  */
 
-import { describe, test, expect } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 /**
  * Represents an interpolation region in a template string.
@@ -33,23 +33,23 @@ function extractInterpolationRegions(
         let endIdx = startIdx + 2;
 
         while (endIdx < sourcePattern.length && depth > 0) {
-            if (sourcePattern[endIdx] === '{') depth++;
-            else if (sourcePattern[endIdx] === '}') depth--;
+            if (sourcePattern[endIdx] === '{') {depth++;}
+            else if (sourcePattern[endIdx] === '}') {depth--;}
             endIdx++;
         }
 
         if (depth === 0) {
             regions.push({
-                sourceStart: startIdx,
+                evaluatedLen: 0,
+                evaluatedStart: 0,
                 sourceEnd: endIdx,
                 sourceLen: endIdx - startIdx,
-                evaluatedStart: 0,
-                evaluatedLen: 0,
+                sourceStart: startIdx,
             });
         }
     }
 
-    if (regions.length === 0) return null;
+    if (regions.length === 0) {return null;}
 
     const literalPieces: {
         text: string;
@@ -61,9 +61,9 @@ function extractInterpolationRegions(
     for (const region of regions) {
         if (pos < region.sourceStart) {
             literalPieces.push({
-                text: sourcePattern.slice(pos, region.sourceStart),
-                sourceStart: pos,
                 sourceEnd: region.sourceStart,
+                sourceStart: pos,
+                text: sourcePattern.slice(pos, region.sourceStart),
             });
         }
         pos = region.sourceEnd;
@@ -71,9 +71,9 @@ function extractInterpolationRegions(
 
     if (pos < sourcePattern.length) {
         literalPieces.push({
-            text: sourcePattern.slice(pos),
-            sourceStart: pos,
             sourceEnd: sourcePattern.length,
+            sourceStart: pos,
+            text: sourcePattern.slice(pos),
         });
     }
 
@@ -138,18 +138,18 @@ function buildPositionMapper(
     };
 }
 
-// interpolation region extraction tests
+// Interpolation region extraction tests
 
 describe('extractInterpolationRegions', () => {
     test('handles single interpolation at start', () => {
         const regions = extractInterpolationRegions('${note} c e', 'g c e');
         expect(regions).toEqual([
             {
-                sourceStart: 0,
+                evaluatedLen: 1,
+                evaluatedStart: 0,
                 sourceEnd: 7,
                 sourceLen: 7,
-                evaluatedStart: 0,
-                evaluatedLen: 1,
+                sourceStart: 0,
             },
         ]);
     });
@@ -158,11 +158,11 @@ describe('extractInterpolationRegions', () => {
         const regions = extractInterpolationRegions('a ${x} b', 'a XX b');
         expect(regions).toEqual([
             {
-                sourceStart: 2,
+                evaluatedLen: 2,
+                evaluatedStart: 2,
                 sourceEnd: 6,
                 sourceLen: 4,
-                evaluatedStart: 2,
-                evaluatedLen: 2,
+                sourceStart: 2,
             },
         ]);
     });
@@ -171,11 +171,11 @@ describe('extractInterpolationRegions', () => {
         const regions = extractInterpolationRegions('a b ${x}', 'a b c');
         expect(regions).toEqual([
             {
-                sourceStart: 4,
+                evaluatedLen: 1,
+                evaluatedStart: 4,
                 sourceEnd: 8,
                 sourceLen: 4,
-                evaluatedStart: 4,
-                evaluatedLen: 1,
+                sourceStart: 4,
             },
         ]);
     });
@@ -187,18 +187,18 @@ describe('extractInterpolationRegions', () => {
         );
         expect(regions).toEqual([
             {
-                sourceStart: 2,
+                evaluatedLen: 2,
+                evaluatedStart: 2,
                 sourceEnd: 6,
                 sourceLen: 4,
-                evaluatedStart: 2,
-                evaluatedLen: 2,
+                sourceStart: 2,
             },
             {
-                sourceStart: 9,
+                evaluatedLen: 3,
+                evaluatedStart: 7,
                 sourceEnd: 13,
                 sourceLen: 4,
-                evaluatedStart: 7,
-                evaluatedLen: 3,
+                sourceStart: 9,
             },
         ]);
     });
@@ -212,17 +212,17 @@ describe('extractInterpolationRegions', () => {
         const regions = extractInterpolationRegions('${x} b', ' b');
         expect(regions).toEqual([
             {
-                sourceStart: 0,
+                evaluatedLen: 0,
+                evaluatedStart: 0,
                 sourceEnd: 4,
                 sourceLen: 4,
-                evaluatedStart: 0,
-                evaluatedLen: 0,
+                sourceStart: 0,
             },
         ]);
     });
 });
 
-// position mapping tests
+// Position mapping tests
 
 describe('buildPositionMapper', () => {
     test('maps positions for single interpolation at start', () => {

@@ -49,13 +49,13 @@ export function analyzeSourceSpans(
 ): AnalysisResult {
     // Create an in-memory TypeScript project
     const project = new Project({
-        useInMemoryFileSystem: true,
         compilerOptions: {
-            target: ts.ScriptTarget.ESNext,
             allowJs: true,
             checkJs: false,
             noEmit: true,
+            target: ts.ScriptTarget.ESNext,
         },
+        useInMemoryFileSystem: true,
     });
 
     // Add source as a virtual file
@@ -75,5 +75,5 @@ export function analyzeSourceSpans(
         firstLineColumnOffset,
     );
 
-    return { registry, interpolationResolutions, callSiteSpans };
+    return { callSiteSpans, interpolationResolutions, registry };
 }

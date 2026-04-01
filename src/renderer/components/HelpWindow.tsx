@@ -1,27 +1,26 @@
-import React, {
-    useState,
-    useMemo,
-    useEffect,
-    useCallback,
-    ReactNode,
-} from 'react';
+import type { ReactNode } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import Markdown from 'react-markdown';
 import electronAPI from '../electronAPI';
-import {
-    TYPE_DOCS,
-    DSL_TYPE_NAMES,
+import type {
     DslTypeName,
     TypeDocumentation,
-    isDslType,
-    GLOBAL_DOCS,
     GlobalFunctionDoc,
 } from '../../shared/dsl/typeDocs';
 import {
-    schemaToTypeExpr,
-    getEnumVariants,
+    TYPE_DOCS,
+    DSL_TYPE_NAMES,
+    isDslType,
+    GLOBAL_DOCS,
+} from '../../shared/dsl/typeDocs';
+import type {
     EnumVariantInfo,
     Schema,
     Schemas,
+} from '../../shared/dsl/schemaTypeResolver';
+import {
+    schemaToTypeExpr,
+    getEnumVariants,
 } from '../../shared/dsl/schemaTypeResolver';
 import './HelpWindow.css';
 
@@ -200,9 +199,7 @@ export const HelpWindow: React.FC = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [schemas, setSchemas] = useState<Schemas>();
     const [selectedType, setSelectedType] = useState<DslTypeName | null>(null);
-    const [expandedTypes, setExpandedTypes] = useState<Set<DslTypeName>>(
-        new Set(),
-    );
+    const [expandedTypes, setExpandedTypes] = useState(new Set<DslTypeName>());
 
     // Fetch schemas once at mount
     useEffect(() => {
@@ -266,7 +263,9 @@ export const HelpWindow: React.FC = () => {
     }, [selectedType, activePage]);
 
     const filteredModules = useMemo(() => {
-        if (!schemas) return [];
+        if (!schemas) {
+            return [];
+        }
         return Object.values(schemas).filter(
             (schema) =>
                 schema.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -277,7 +276,7 @@ export const HelpWindow: React.FC = () => {
     }, [schemas, searchQuery]);
 
     const getSignature = (module: Schema): string => {
-        const positionalArgs = module.positionalArgs;
+        const { positionalArgs } = module;
         const positionalKeys = new Set(positionalArgs.map((a) => a.name));
         const schemaRequired: string[] = module.paramsSchema.required ?? [];
 
@@ -314,9 +313,9 @@ export const HelpWindow: React.FC = () => {
                 // Fall back to no variant info
             }
             return {
+                description: schema.description as string | undefined,
                 name,
                 type,
-                description: schema.description as string | undefined,
                 variants,
             };
         });
@@ -325,13 +324,12 @@ export const HelpWindow: React.FC = () => {
     const renderContent = () => {
         switch (activePage) {
             case 'globals': {
-                const groups = GLOBAL_DOCS.reduce<Record<string, GlobalFunctionDoc[]>>(
-                    (acc, fn) => {
-                        (acc[fn.group] ??= []).push(fn);
-                        return acc;
-                    },
-                    {},
-                );
+                const groups = GLOBAL_DOCS.reduce<
+                    Record<string, GlobalFunctionDoc[]>
+                >((acc, fn) => {
+                    (acc[fn.group] ??= []).push(fn);
+                    return acc;
+                }, {});
                 return (
                     <div>
                         <h2>Global Functions</h2>
@@ -357,11 +355,16 @@ export const HelpWindow: React.FC = () => {
                                                             <strong>
                                                                 {p.name}:{' '}
                                                                 <LinkifyTypes
-                                                                    text={p.type}
-                                                                    onTypeClick={handleTypeClick}
+                                                                    text={
+                                                                        p.type
+                                                                    }
+                                                                    onTypeClick={
+                                                                        handleTypeClick
+                                                                    }
                                                                 />
                                                             </strong>{' '}
-                                                            &mdash; {p.description}
+                                                            &mdash;{' '}
+                                                            {p.description}
                                                         </li>
                                                     ))}
                                                 </ul>
@@ -370,7 +373,9 @@ export const HelpWindow: React.FC = () => {
                                         {fn.examples.length > 0 && (
                                             <>
                                                 <h5>Example</h5>
-                                                <pre>{fn.examples.join('\n\n')}</pre>
+                                                <pre>
+                                                    {fn.examples.join('\n\n')}
+                                                </pre>
                                             </>
                                         )}
                                     </div>
@@ -465,7 +470,7 @@ export const HelpWindow: React.FC = () => {
                             />
                         </div>
                         {filteredModules.map((module) => {
-                            // console.log(module);
+                            // Console.log(module);
                             const params = getParams(module);
                             return (
                                 <div key={module.name} className="module-card">
@@ -593,7 +598,7 @@ export const HelpWindow: React.FC = () => {
                                                 </strong>
                                                 :{' '}
                                                 <LinkifyTypes
-                                                    text={`${out.description}`}
+                                                    text={out.description}
                                                     onTypeClick={
                                                         handleTypeClick
                                                     }

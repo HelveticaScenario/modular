@@ -1,10 +1,5 @@
 import type { Monaco } from '../../hooks/useCustomMonaco';
 import { applyDslLibToMonaco } from './monacoHelpers';
-import {
-    registerDslDefinitionProvider,
-    buildSymbolSets,
-    DefinitionProviderDeps,
-} from './definitionProvider';
 import type { ModuleSchema } from '@modular/core';
 
 export interface MonacoSetupOptions {
@@ -15,7 +10,7 @@ export interface MonacoSetupOptions {
 export function setupMonacoJavascript(
     monaco: Monaco,
     libSource: string,
-    options: MonacoSetupOptions = {},
+    _options: MonacoSetupOptions = {},
 ) {
     const ts = monaco.typescript;
     console.log('Monaco TS version:', ts);
@@ -23,13 +18,13 @@ export function setupMonacoJavascript(
 
     jsDefaults.setCompilerOptions({
         allowJs: true,
+        allowNonTsExtensions: true,
         checkJs: true,
         lib: ['esnext'],
-        allowNonTsExtensions: true,
-        target: ts.ScriptTarget.ES2020,
         module: ts.ModuleKind.ESNext,
         moduleResolution: ts.ModuleResolutionKind.NodeJs,
         noEmit: true,
+        target: ts.ScriptTarget.ES2020,
     });
 
     jsDefaults.setDiagnosticsOptions({
@@ -40,19 +35,6 @@ export function setupMonacoJavascript(
     jsDefaults.setEagerModelSync(true);
 
     const { extraLib, extraLibModel } = applyDslLibToMonaco(monaco, libSource);
-
-    // Register definition provider if schemas are provided
-    let definitionProvider: { dispose: () => void } | null = null;
-    if (options.schemas) {
-        const { moduleNames, namespaceNames } = buildSymbolSets(
-            options.schemas,
-        );
-        const deps: DefinitionProviderDeps = {
-            moduleNames,
-            namespaceNames,
-        };
-        // definitionProvider = registerDslDefinitionProvider(monaco, deps);
-    }
 
     return () => {
         extraLib?.dispose();

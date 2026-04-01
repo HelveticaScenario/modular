@@ -1,21 +1,13 @@
-import {
-    ModuleSchema,
-    deriveChannelCount,
-    getReservedOutputNames,
-} from '@modular/core';
-import {
-    GraphBuilder,
-    ModuleNode,
-    ModuleOutput,
-    Collection,
-    CollectionWithRange,
-} from './GraphBuilder';
+import type { ModuleSchema } from '@modular/core';
+import { deriveChannelCount, getReservedOutputNames } from '@modular/core';
+import type { ModuleOutput } from './GraphBuilder';
+import { GraphBuilder, Collection, CollectionWithRange } from './GraphBuilder';
 import type { SourceSpan } from '../../shared/dsl/spanTypes';
-import type { SpanRegistry, CallSiteKey } from './analyzeSource';
+import type { CallSiteKey, SpanRegistry } from './analyzeSource';
 import {
     captureSourceLocation,
-    setDSLWrapperLineOffset,
     getDSLWrapperLineOffset,
+    setDSLWrapperLineOffset,
 } from './captureSourceLocation';
 
 // Re-export so existing call sites (e.g. executor.ts) keep working.
@@ -44,9 +36,7 @@ export function setActiveSpanRegistry(registry: SpanRegistry | null): void {
 /**
  * Type for argument spans attached to module params
  */
-export interface ArgumentSpans {
-    [argName: string]: SourceSpan;
-}
+export type ArgumentSpans = Record<string, SourceSpan>;
 
 /**
  * Look up argument spans from the active span registry using the source location.
@@ -89,9 +79,9 @@ type ModuleReturn = SingleOutput | PolyOutput | MultiOutput;
 
 type FactoryFunction = (...args: any[]) => ModuleReturn;
 
-type NamespaceTree = {
+interface NamespaceTree {
     [key: string]: NamespaceTree | FactoryFunction;
-};
+}
 
 function sanitizeIdentifier(name: string): string {
     let id = name.replace(
@@ -164,7 +154,7 @@ function buildNamespaceTree(
                         `Namespace collision: ${ns} is both a module and a namespace`,
                     );
                 }
-                current = current[ns] as NamespaceTree;
+                current = current[ns];
             }
 
             if (
@@ -275,7 +265,7 @@ export class DSLContext {
 
             // Derive channel count from params using Rust-side derivation (backed by LRU cache)
             // This handles modules with custom derivation logic (like mix, seq)
-            // as well as standard inference from PolySignal inputs
+            // As well as standard inference from PolySignal inputs
             const deriveResult = deriveChannelCount(
                 schema.name,
                 node.getParamsSnapshot(),
@@ -307,33 +297,31 @@ export class DSLContext {
                 // Single output - return ModuleOutput, Collection, or CollectionWithRange
                 const output = outputs[0];
                 return node._output(output.name, output.polyphonic ?? false);
-            } else {
-                // Multiple outputs - create hybrid object extending the default output
-                // Find the default output (or use first if none marked)
-                const defaultOutput =
-                    outputs.find((o) => o.default) || outputs[0];
-                const defaultValue = node._output(
-                    defaultOutput.name,
-                    defaultOutput.polyphonic ?? false,
-                );
-
-                // Create the additional output properties
-                const additionalOutputs: Record<
-                    string,
-                    ModuleOutput | Collection | CollectionWithRange
-                > = {};
-                for (const output of outputs) {
-                    if (output.name === defaultOutput.name) continue;
-                    const safeName = sanitizeOutputName(output.name);
-                    additionalOutputs[safeName] = node._output(
-                        output.name,
-                        output.polyphonic ?? false,
-                    );
-                }
-
-                // Return hybrid object: default output with additional properties
-                return Object.assign(defaultValue, additionalOutputs);
             }
+            // Multiple outputs - create hybrid object extending the default output
+            // Find the default output (or use first if none marked)
+            const defaultOutput = outputs.find((o) => o.default) || outputs[0];
+            const defaultValue = node._output(
+                defaultOutput.name,
+                defaultOutput.polyphonic ?? false,
+            );
+
+            // Create the additional output properties
+            const additionalOutputs: Record<
+                string,
+                ModuleOutput | Collection | CollectionWithRange
+            > = {};
+            for (const output of outputs) {
+                if (output.name === defaultOutput.name) continue;
+                const safeName = sanitizeOutputName(output.name);
+                additionalOutputs[safeName] = node._output(
+                    output.name,
+                    output.polyphonic ?? false,
+                );
+            }
+
+            // Return hybrid object: default output with additional properties
+            return Object.assign(defaultValue, additionalOutputs);
         };
     }
 
@@ -396,13 +384,13 @@ export function note(noteName: string): number {
 
     // Map note letters to semitones (C = 0)
     const noteMap: Record<string, number> = {
+        a: 9,
+        b: 11,
         c: 0,
         d: 2,
         e: 4,
         f: 5,
         g: 7,
-        a: 9,
-        b: 11,
     };
 
     let semitone = noteMap[noteLetter];
@@ -416,7 +404,7 @@ export function note(noteName: string): number {
 
     // Calculate frequency: C4 = 261.6255653005986 Hz (middle C)
     const semitonesFromC4 = (octave - 4) * 12 + semitone;
-    const frequency = C4_HZ * Math.pow(2, semitonesFromC4 / 12);
+    const frequency = C4_HZ * 2 ** (semitonesFromC4 / 12);
 
     return hz(frequency);
 }

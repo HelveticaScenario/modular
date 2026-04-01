@@ -32,30 +32,30 @@ export function findSliderValueSpan(
     const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     // Match: $slider( optional-whitespace, "label" or 'label', optional-whitespace, comma
     const pattern = new RegExp(
-        `\\\$slider\\s*\\(\\s*(?:"${escapedLabel}"|'${escapedLabel}')\\s*,`,
+        `\\$slider\\s*\\(\\s*(?:"${escapedLabel}"|'${escapedLabel}')\\s*,`,
         'g',
     );
 
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(source)) !== null) {
-        // match[0] ends right after the comma following the label
+        // Match[0] ends right after the comma following the label
         const afterComma = match.index + match[0].length;
 
         // Skip whitespace after the comma
         let start = afterComma;
-        while (start < source.length && /\s/.test(source[start])) start++;
+        while (start < source.length && /\s/.test(source[start])) {start++;}
 
-        if (start >= source.length) continue;
+        if (start >= source.length) {continue;}
 
         // Parse the numeric literal: optional minus, digits, optional decimal + digits
         const numMatch = source
             .slice(start)
             .match(/^-?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?/);
-        if (!numMatch) continue;
+        if (!numMatch) {continue;}
 
         return {
-            start,
             end: start + numMatch[0].length,
+            start,
         };
     }
 

@@ -24,17 +24,15 @@ import type React from 'react';
 import type { editor } from 'monaco-editor';
 import type { Monaco } from '../../hooks/useCustomMonaco';
 import type {
-    SourceSpan,
     ResolvedInterpolation,
+    SourceSpan,
 } from '../../../shared/dsl/spanTypes';
 import { getActiveInterpolationResolutions } from '../../../shared/dsl/spanTypes';
 
 /**
  * Argument spans as they come from module state (document offsets)
  */
-export interface ArgumentSpans {
-    [argName: string]: SourceSpan;
-}
+export type ArgumentSpans = Record<string, SourceSpan>;
 
 /**
  * Internal span info for a single parameter
@@ -53,9 +51,7 @@ export interface ParamSpanInfo {
 /**
  * Map of parameter name to its span info
  */
-export interface ParamSpans {
-    [paramName: string]: ParamSpanInfo;
-}
+export type ParamSpans = Record<string, ParamSpanInfo>;
 
 /**
  * Generic module state structure
@@ -98,23 +94,28 @@ function extractInterpolationRegions(
         let endIdx = startIdx + 2;
 
         while (endIdx < sourceContent.length && depth > 0) {
-            if (sourceContent[endIdx] === '{') depth++;
-            else if (sourceContent[endIdx] === '}') depth--;
+            if (sourceContent[endIdx] === '{') {
+                depth++;
+            } else if (sourceContent[endIdx] === '}') {
+                depth--;
+            }
             endIdx++;
         }
 
         if (depth === 0) {
             regions.push({
-                sourceStart: startIdx,
+                evaluatedLen: 0,
+                evaluatedStart: 0,
                 sourceEnd: endIdx,
                 sourceLen: endIdx - startIdx,
-                evaluatedStart: 0,
-                evaluatedLen: 0,
+                sourceStart: startIdx,
             });
         }
     }
 
-    if (regions.length === 0) return null;
+    if (regions.length === 0) {
+        return null;
+    }
 
     // Build literal pieces for mapping
     const literalPieces: {
@@ -127,9 +128,9 @@ function extractInterpolationRegions(
     for (const region of regions) {
         if (pos < region.sourceStart) {
             literalPieces.push({
-                text: sourceContent.slice(pos, region.sourceStart),
-                sourceStart: pos,
                 sourceEnd: region.sourceStart,
+                sourceStart: pos,
+                text: sourceContent.slice(pos, region.sourceStart),
             });
         }
         pos = region.sourceEnd;
@@ -137,9 +138,9 @@ function extractInterpolationRegions(
 
     if (pos < sourceContent.length) {
         literalPieces.push({
-            text: sourceContent.slice(pos),
-            sourceStart: pos,
             sourceEnd: sourceContent.length,
+            sourceStart: pos,
+            text: sourceContent.slice(pos),
         });
     }
 
@@ -199,28 +200,32 @@ function buildInterpolationRegionsFromResolutions(
         let endIdx = startIdx + 2;
 
         while (endIdx < sourceContent.length && depth > 0) {
-            if (sourceContent[endIdx] === '{') depth++;
-            else if (sourceContent[endIdx] === '}') depth--;
+            if (sourceContent[endIdx] === '{') {
+                depth++;
+            } else if (sourceContent[endIdx] === '}') {
+                depth--;
+            }
             endIdx++;
         }
 
         if (depth === 0) {
-            sourceRegions.push({ sourceStart: startIdx, sourceEnd: endIdx });
+            sourceRegions.push({ sourceEnd: endIdx, sourceStart: startIdx });
         }
     }
 
     if (
         sourceRegions.length === 0 ||
         sourceRegions.length !== resolutions.length
-    )
+    ) {
         return null;
+    }
 
     return sourceRegions.map((sr, i) => ({
-        sourceStart: sr.sourceStart,
+        evaluatedLen: resolutions[i].evaluatedLength,
+        evaluatedStart: resolutions[i].evaluatedStart,
         sourceEnd: sr.sourceEnd,
         sourceLen: sr.sourceEnd - sr.sourceStart,
-        evaluatedStart: resolutions[i].evaluatedStart,
-        evaluatedLen: resolutions[i].evaluatedLength,
+        sourceStart: sr.sourceStart,
     }));
 }
 
@@ -275,19 +280,21 @@ function resolveInterpolatedPosition(
     for (const r of resolutions) {
         const rEnd = r.evaluatedStart + r.evaluatedLength;
         // Use <= for the end check because span ends are exclusive:
-        // a Rust span [0, 2] means characters 0-1, and position 2 is the
-        // exclusive end that should map to the exclusive end of the const literal.
+        // A Rust span [0, 2] means characters 0-1, and position 2 is the
+        // Exclusive end that should map to the exclusive end of the const literal.
         if (evalPos >= r.evaluatedStart && evalPos <= rEnd) {
             const offsetInResult = evalPos - r.evaluatedStart;
 
             // If the const has nested resolutions (it's a template with interpolations),
-            // check if this offset falls inside one of the nested interpolations
+            // Check if this offset falls inside one of the nested interpolations
             if (r.nestedResolutions && r.nestedResolutions.length > 0) {
                 const nestedResult = resolveInterpolatedPosition(
                     offsetInResult,
                     r.nestedResolutions,
                 );
-                if (nestedResult !== null) return nestedResult;
+                if (nestedResult !== null) {
+                    return nestedResult;
+                }
             }
 
             // Simple case or fallback: map directly into the const literal
@@ -398,7 +405,9 @@ export function startModuleStatePolling({
             const states = await getModuleStates();
             const newDecorations: editor.IModelDeltaDecoration[] = [];
             const model = editor.getModel();
-            if (!model) return;
+            if (!model) {
+                return;
+            }
 
             // Clean up cache entries for modules that no longer exist in the patch.
             // Without this, tracked decorations from removed modules would linger.
@@ -420,7 +429,9 @@ export function startModuleStatePolling({
                 const argumentSpans = typedState.argument_spans;
                 const paramSpans = typedState.param_spans;
 
-                if (!argumentSpans || !paramSpans) continue;
+                if (!argumentSpans || !paramSpans) {
+                    continue;
+                }
 
                 // Get or create module cache
                 let moduleCache = globalCache.get(moduleId);
@@ -436,11 +447,15 @@ export function startModuleStatePolling({
                     const { spans, source: evaluatedSource } = paramInfo;
 
                     // Skip if no spans to highlight
-                    if (!spans || spans.length === 0) continue;
+                    if (!spans || spans.length === 0) {
+                        continue;
+                    }
 
                     // Get the document position for this argument
                     const argSpan = argumentSpans[paramName];
-                    if (!argSpan) continue;
+                    if (!argSpan) {
+                        continue;
+                    }
 
                     // Get or create param cache
                     let paramCache = moduleCache.get(paramName);
@@ -472,10 +487,10 @@ export function startModuleStatePolling({
                         const startPos = model.getPositionAt(argSpan.start);
                         const endPos = model.getPositionAt(argSpan.end);
                         const sourceText = model.getValueInRange({
-                            startLineNumber: startPos.lineNumber,
-                            startColumn: startPos.column,
-                            endLineNumber: endPos.lineNumber,
                             endColumn: endPos.column,
+                            endLineNumber: endPos.lineNumber,
+                            startColumn: startPos.column,
+                            startLineNumber: startPos.lineNumber,
                         });
 
                         // Check if it's a template literal with interpolations
@@ -513,8 +528,8 @@ export function startModuleStatePolling({
                             }
 
                             // Prefer building regions from resolution data (accurate)
-                            // over indexOf-based text matching (can fail when
-                            // interpolated content contains literal piece substrings)
+                            // Over indexOf-based text matching (can fail when
+                            // Interpolated content contains literal piece substrings)
                             let regions: InterpolationRegion[] | null = null;
                             if (resolutions) {
                                 regions =
@@ -546,10 +561,12 @@ export function startModuleStatePolling({
                             paramCache.trackedDecorationIds = undefined;
                         }
 
-                        if (!paramCache.positionMapper) continue;
+                        if (!paramCache.positionMapper) {
+                            continue;
+                        }
 
                         // Create tracked decorations once for all interpolated spans,
-                        // mapping each evaluated position to its document position
+                        // Mapping each evaluated position to its document position
                         // (either in the template literal source or a const literal).
                         const allSpans = paramInfo.all_spans;
 
@@ -613,18 +630,18 @@ export function startModuleStatePolling({
                                         model.getPositionAt(endOffset);
 
                                     decorationsToCreate.push({
-                                        range: new monaco.Range(
-                                            startPos.lineNumber,
-                                            startPos.column,
-                                            endPos.lineNumber,
-                                            endPos.column,
-                                        ),
                                         options: {
                                             stickiness:
                                                 monaco.editor
                                                     .TrackedRangeStickiness
                                                     .NeverGrowsWhenTypingAtEdges,
                                         },
+                                        range: new monaco.Range(
+                                            startPos.lineNumber,
+                                            startPos.column,
+                                            endPos.lineNumber,
+                                            endPos.column,
+                                        ),
                                     });
                                 }
                             }
@@ -654,17 +671,21 @@ export function startModuleStatePolling({
                                 const spanId = `${spanStart}:${spanEnd}`;
                                 const decoId =
                                     paramCache.trackedDecorationIds.get(spanId);
-                                if (!decoId) continue;
+                                if (!decoId) {
+                                    continue;
+                                }
 
                                 const range = model.getDecorationRange(decoId);
-                                if (!range || range.isEmpty()) continue;
+                                if (!range || range.isEmpty()) {
+                                    continue;
+                                }
 
                                 newDecorations.push({
-                                    range,
                                     options: {
                                         className: activeClassName,
                                         isWholeLine: false,
                                     },
+                                    range,
                                 });
                             }
                         }
@@ -699,12 +720,6 @@ export function startModuleStatePolling({
                                 const endPos = model.getPositionAt(endOffset);
 
                                 decorationsToCreate.push({
-                                    range: new monaco.Range(
-                                        startPos.lineNumber,
-                                        startPos.column,
-                                        endPos.lineNumber,
-                                        endPos.column,
-                                    ),
                                     options: {
                                         // Use stickiness so decorations track with text edits
                                         stickiness:
@@ -712,6 +727,12 @@ export function startModuleStatePolling({
                                                 .NeverGrowsWhenTypingAtEdges,
                                         // No visual style - these are invisible tracking decorations
                                     },
+                                    range: new monaco.Range(
+                                        startPos.lineNumber,
+                                        startPos.column,
+                                        endPos.lineNumber,
+                                        endPos.column,
+                                    ),
                                 });
                             }
 
@@ -749,14 +770,16 @@ export function startModuleStatePolling({
 
                                 // Get the current (tracked) range of this decoration
                                 const range = model.getDecorationRange(decoId);
-                                if (!range || range.isEmpty()) continue;
+                                if (!range || range.isEmpty()) {
+                                    continue;
+                                }
 
                                 newDecorations.push({
-                                    range,
                                     options: {
                                         className: activeClassName,
                                         isWholeLine: false,
                                     },
+                                    range,
                                 });
                             }
                         }
@@ -771,7 +794,7 @@ export function startModuleStatePolling({
                 activeDecorationRef.current =
                     editor.createDecorationsCollection(newDecorations);
             }
-        } catch (e) {
+        } catch {
             // Ignore polling errors
         }
     }, pollInterval);

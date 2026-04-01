@@ -6,22 +6,20 @@
  */
 
 import type {
-    ModuleSchema,
-    PatchGraph,
     ApplyPatchError,
-    AudioThreadHealthSnapshot,
+    AudioConfigOptions,
     AudioDeviceInfo,
-    MidiInputInfo,
-    HostInfo,
     BufferSizeRange,
+    CurrentAudioState,
     DeviceCacheSnapshot,
     HostDeviceInfo,
-    CurrentAudioState,
-    AudioConfigOptions,
-    TransportSnapshot,
+    HostInfo,
+    MidiInputInfo,
+    PatchGraph,
     QueuedTrigger,
-    getMiniLeafSpans,
     Synthesizer,
+    TransportSnapshot,
+    getMiniLeafSpans,
 } from '@modular/core';
 import type schemas from '@modular/core/schemas.json';
 import type { SliderDefinition } from './dsl/sliderTypes';
@@ -193,7 +191,7 @@ export interface DSLExecuteResult {
  */
 export interface FileTreeEntry {
     name: string;
-    path: string; // relative to workspace root
+    path: string; // Relative to workspace root
     type: 'file' | 'directory';
     children?: FileTreeEntry[];
 }
@@ -318,15 +316,15 @@ export const IPC_CHANNELS = {
 } as const;
 
 export const MENU_CHANNELS = {
+    CLOSE_BUFFER: 'modular:menu:close-buffer',
     NEW_FILE: 'modular:menu:new-file',
+    OPEN_SETTINGS: 'modular:menu:open-settings',
+    OPEN_WORKSPACE: 'modular:menu:open-workspace',
     SAVE: 'modular:menu:save',
     STOP: 'modular:menu:stop',
+    TOGGLE_RECORDING: 'modular:menu:toggle-recording',
     UPDATE_PATCH: 'modular:menu:update-patch',
     UPDATE_PATCH_NEXT_BEAT: 'modular:menu:update-patch-next-beat',
-    OPEN_WORKSPACE: 'modular:menu:open-workspace',
-    CLOSE_BUFFER: 'modular:menu:close-buffer',
-    TOGGLE_RECORDING: 'modular:menu:toggle-recording',
-    OPEN_SETTINGS: 'modular:menu:open-settings',
 } as const;
 
 /**

@@ -7,14 +7,14 @@ import { Settings } from './components/Settings';
 import type { UpdateNotificationState } from './components/UpdateNotification';
 import { UpdateNotification } from './components/UpdateNotification';
 import './App.css';
-// import type { editor } from 'monaco-editor';
+// Import type { editor } from 'monaco-editor';
 import { editor } from 'monaco-editor';
 import { getErrorMessage } from './utils/errorUtils';
 import { FileExplorer } from './components/FileExplorer';
 import { Sidebar } from './components/Sidebar';
 import { ControlPanel } from './components/ControlPanel';
 import electronAPI from './electronAPI';
-import { ValidationError } from '@modular/core';
+import type { ValidationError } from '@modular/core';
 import type { QueuedTrigger } from '@modular/core';
 import type {
     FileTreeEntry,
@@ -24,13 +24,12 @@ import type {
 } from '../shared/ipcTypes';
 import type { SliderDefinition } from '../shared/dsl/sliderTypes';
 import { findSliderValueSpan } from './dsl/sliderSourceEdit';
-import type { EditorBuffer, ScopeView } from './types/editor';
-import { getBufferId } from './app/buffers';
+import type { ScopeView } from './types/editor';
 import { setActiveInterpolationResolutions } from '../shared/dsl/spanTypes';
 import {
     drawOscilloscope,
-    scopeBufferKeyToString,
     scopeBufferKeyFromChannel,
+    scopeBufferKeyToString,
 } from './app/oscilloscope';
 import { useEditorBuffers } from './app/hooks/useEditorBuffers';
 
@@ -62,9 +61,9 @@ function transformErrorsWithSourceLocations(
         }
 
         // For auto-generated module locations like "sine(...)",
-        // try to find source line from the map
+        // Try to find source line from the map
         // The moduleType(...) format is produced by Rust, but we need the actual moduleId
-        // to look up in the map. Let's check all entries in the map.
+        // To look up in the map. Let's check all entries in the map.
         for (const [moduleId, loc] of Object.entries(sourceLocationMap)) {
             if (
                 !loc.idIsExplicit &&
@@ -114,7 +113,7 @@ function App() {
         setRenamingPath,
         handleRenameCommit,
         formatFileLabel,
-    } = useEditorBuffers({ workspaceRoot, refreshFileTree });
+    } = useEditorBuffers({ refreshFileTree, workspaceRoot });
 
     // Audio state
     const [isClockRunning, setIsClockRunning] = useState(true);
@@ -135,10 +134,10 @@ function App() {
         status: 'idle',
     });
     // Store the version currently being offered so we can reference it later
-    const pendingUpdateVersion = useRef<string>('');
+    const pendingUpdateVersion = useRef('');
 
     const editorRef = useRef<editor.IStandaloneCodeEditor>(null);
-    const scopeCanvasMapRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
+    const scopeCanvasMapRef = useRef(new Map<string, HTMLCanvasElement>());
     const lastPatchResultRef = useRef<any>(null);
 
     /** Long-lived invisible tracked decorations spanning each scope() call.
@@ -162,12 +161,18 @@ function App() {
         (label: string, newValue: number) => {
             // Find the slider definition
             const slider = sliderDefs.find((s) => s.label === label);
-            if (!slider) return;
+            if (!slider) {
+                return;
+            }
 
             // Update audio engine via lightweight param update
-            electronAPI.synthesizer.setModuleParam(slider.moduleId, '$signal', {
-                source: newValue,
-            });
+            void electronAPI.synthesizer.setModuleParam(
+                slider.moduleId,
+                '$signal',
+                {
+                    source: newValue,
+                },
+            );
 
             // Update the source code in the editor
             const editorInstance = editorRef.current;
@@ -215,13 +220,13 @@ function App() {
             .then((workspace) => {
                 if (workspace) {
                     setWorkspaceRoot(workspace.path);
-                    refreshFileTree();
+                    void refreshFileTree();
                 }
             })
             .catch((err) => {
                 console.error('Failed to load workspace:', err);
             });
-    }, []);
+    }, [refreshFileTree]);
 
     const selectWorkspaceFolder = useCallback(async () => {
         // Check for dirty file-backed buffers before switching
@@ -278,7 +283,7 @@ function App() {
         async (relPath: string, options?: { preview?: boolean }) => {
             try {
                 await openFile(relPath, options);
-            } catch (error) {
+            } catch {
                 setError(`Failed to open file: ${relPath}`);
             }
         },
@@ -289,8 +294,8 @@ function App() {
         async (targetIdOrPath?: string) => {
             try {
                 await deleteFile(targetIdOrPath);
-            } catch (error) {
-                setError(getErrorMessage(error, 'Failed to delete file'));
+            } catch (err) {
+                setError(getErrorMessage(err, 'Failed to delete file'));
             }
         },
         [deleteFile],
@@ -300,43 +305,53 @@ function App() {
         async (oldPath: string, newName: string) => {
             try {
                 await handleRenameCommit(oldPath, newName);
-            } catch (error) {
-                setError(getErrorMessage(error, 'Failed to rename file'));
+            } catch (err) {
+                setError(getErrorMessage(err, 'Failed to rename file'));
             }
         },
         [handleRenameCommit],
     );
 
     // Handle context menu commands
-    useEffect(() => {
-        return electronAPI.onContextMenuCommand((action) => {
-            switch (action.command) {
-                case 'save':
-                    saveFile(action.bufferId).catch((error) => {
-                        setError(getErrorMessage(error, 'Failed to save file'));
-                    });
-                    break;
-                case 'rename':
-                    renameFile(action.path || action.bufferId).catch(
-                        (error) => {
+    useEffect(
+        () =>
+            electronAPI.onContextMenuCommand((action) => {
+                switch (action.command) {
+                    case 'save':
+                        saveFile(action.bufferId).catch((err) => {
                             setError(
-                                getErrorMessage(error, 'Failed to rename file'),
+                                getErrorMessage(err, 'Failed to save file'),
                             );
-                        },
-                    );
-                    break;
-                case 'delete':
-                    deleteFile(action.path || action.bufferId).catch(
-                        (error) => {
-                            setError(
-                                getErrorMessage(error, 'Failed to delete file'),
-                            );
-                        },
-                    );
-                    break;
-            }
-        });
-    }, [saveFile, renameFile, deleteFile]);
+                        });
+                        break;
+                    case 'rename':
+                        renameFile(action.path || action.bufferId).catch(
+                            (err) => {
+                                setError(
+                                    getErrorMessage(
+                                        err,
+                                        'Failed to rename file',
+                                    ),
+                                );
+                            },
+                        );
+                        break;
+                    case 'delete':
+                        deleteFile(action.path || action.bufferId).catch(
+                            (err) => {
+                                setError(
+                                    getErrorMessage(
+                                        err,
+                                        'Failed to delete file',
+                                    ),
+                                );
+                            },
+                        );
+                        break;
+                }
+            }),
+        [saveFile, renameFile, deleteFile],
+    );
 
     // Subscribe to update events from main process
     useEffect(() => {
@@ -344,10 +359,10 @@ function App() {
             (info: UpdateAvailableInfo) => {
                 pendingUpdateVersion.current = info.version;
                 setUpdateState({
-                    status: 'available',
-                    version: info.version,
                     releaseUrl: info.releaseUrl,
+                    status: 'available',
                     supportsInAppUpdate: info.supportsInAppUpdate,
+                    version: info.version,
                 });
             },
         );
@@ -361,7 +376,7 @@ function App() {
             setUpdateState({ status: 'ready' });
         });
         const unsubError = electronAPI.update.onError((message: string) => {
-            setUpdateState({ status: 'error', message });
+            setUpdateState({ message, status: 'error' });
         });
 
         return () => {
@@ -404,7 +419,7 @@ function App() {
         scopeCanvasMapRef.current.delete(key);
     }, []);
 
-    const patchCodeRef = useRef<string>(patchCode);
+    const patchCodeRef = useRef(patchCode);
     useEffect(() => {
         patchCodeRef.current = patchCode;
     }, [patchCode]);
@@ -453,7 +468,9 @@ function App() {
                             );
                             const channelKeysStr =
                                 canvas.dataset.scopeChannelKeys;
-                            if (!channelKeysStr) continue;
+                            if (!channelKeysStr) {
+                                continue;
+                            }
 
                             const channelKeys = JSON.parse(
                                 channelKeysStr,
@@ -468,10 +485,12 @@ function App() {
                                 if (entry) {
                                     channels.push(entry.data);
                                     readOffsets.push(entry.stats.readOffset);
-                                    if (entry.stats.min < globalMin)
+                                    if (entry.stats.min < globalMin) {
                                         globalMin = entry.stats.min;
-                                    if (entry.stats.max > globalMax)
+                                    }
+                                    if (entry.stats.max > globalMax) {
                                         globalMax = entry.stats.max;
+                                    }
                                 }
                             }
 
@@ -479,8 +498,8 @@ function App() {
                                 drawOscilloscope(channels, canvas, {
                                     range: [rangeMin, rangeMax],
                                     stats: {
-                                        min: globalMin,
                                         max: globalMax,
+                                        min: globalMin,
                                         peakToPeak: globalMax - globalMin,
                                         readOffset: readOffsets,
                                     },
@@ -529,8 +548,8 @@ function App() {
         async (id?: string) => {
             try {
                 await saveFile(id);
-            } catch (error) {
-                setError(getErrorMessage(error, 'Failed to save file'));
+            } catch (err) {
+                setError(getErrorMessage(err, 'Failed to save file'));
             }
         },
         [saveFile],
@@ -546,10 +565,12 @@ function App() {
         handleOpenWorkspaceRef.current = selectWorkspaceFolder;
     }, [selectWorkspaceFolder]);
 
-    const handleSubmitRef = useRef((trigger?: QueuedTrigger) => {});
+    const handleSubmitRef = useRef((_trigger?: QueuedTrigger) => {});
     useEffect(() => {
         handleSubmitRef.current = async (trigger?: QueuedTrigger) => {
-            if (!activeBufferId) return;
+            if (!activeBufferId) {
+                return;
+            }
             try {
                 const patchCodeValue = patchCodeRef.current;
 
@@ -603,7 +624,7 @@ function App() {
                     : undefined;
 
                 const scopes = result.appliedPatch?.scopes || [];
-                const callSiteSpans = result.callSiteSpans;
+                const { callSiteSpans } = result;
 
                 const editorInstance = editorRef.current;
                 const model = editorInstance?.getModel();
@@ -633,10 +654,10 @@ function App() {
                         | undefined;
 
                     views.push({
-                        key: scopeKey,
-                        file: activeBufferId,
-                        range: scope.range ?? [-5, 5],
                         channelKeys,
+                        file: activeBufferId,
+                        key: scopeKey,
+                        range: scope.range ?? [-5, 5],
                     });
 
                     if (model && loc) {
@@ -647,16 +668,16 @@ function App() {
                         const endLineContent =
                             model.getLineContent(endLine) ?? '';
                         decorationDescs.push({
-                            range: {
-                                startLineNumber: loc.line,
-                                startColumn: loc.column,
-                                endLineNumber: endLine,
-                                endColumn: endLineContent.length + 1,
-                            },
                             options: {
                                 stickiness:
                                     editor.TrackedRangeStickiness
                                         .NeverGrowsWhenTypingAtEdges,
+                            },
+                            range: {
+                                endColumn: endLineContent.length + 1,
+                                endLineNumber: endLine,
+                                startColumn: loc.column,
+                                startLineNumber: loc.line,
                             },
                         });
                     }
@@ -674,26 +695,26 @@ function App() {
                 const newSliderDefs = result.sliders ?? [];
 
                 // For queued (non-immediate) triggers, defer UI state until the
-                // audio thread actually applies the patch update.
+                // Audio thread actually applies the patch update.
                 const isDeferred =
                     trigger === 'NextBar' || trigger === 'NextBeat';
 
                 if (isDeferred && result.updateId != null) {
                     // Stash both new decorations and UI state; keep old
-                    // decorations alive so the current view zones still work.
+                    // Decorations alive so the current view zones still work.
                     // Any previously pending (but never committed) decorations
-                    // are cleaned up before storing the new pending state.
+                    // Are cleaned up before storing the new pending state.
                     pendingUIStateRef.current?.scopeDecorations?.clear();
                     pendingUIStateRef.current = {
-                        updateId: result.updateId,
-                        scopeViews: views,
-                        sliderDefs: newSliderDefs,
                         interpolationResolutions: interpolationMap,
                         scopeDecorations: newScopeDecorations,
+                        scopeViews: views,
+                        sliderDefs: newSliderDefs,
+                        updateId: result.updateId,
                     };
                 } else {
                     // Immediate trigger (or button click): swap decorations
-                    // and apply UI state right away.
+                    // And apply UI state right away.
                     pendingUIStateRef.current?.scopeDecorations?.clear();
                     pendingUIStateRef.current = null;
                     scopeDecorationsRef.current?.clear();
@@ -714,15 +735,15 @@ function App() {
     // Expose test API for E2E tests
     useEffect(() => {
         window.__TEST_API__ = {
-            getEditorValue: () => editorRef.current?.getValue() ?? '',
-            setEditorValue: (code: string) => editorRef.current?.setValue(code),
             executePatch: async () => {
                 handleSubmitRef.current();
             },
+            getAudioHealth: () => electronAPI.synthesizer.getHealth(),
+            getEditorValue: () => editorRef.current?.getValue() ?? '',
             getLastPatchResult: () => lastPatchResultRef.current,
             getScopeData: () => electronAPI.synthesizer.getScopes(),
-            getAudioHealth: () => electronAPI.synthesizer.getHealth(),
             isClockRunning: () => isClockRunningRef.current,
+            setEditorValue: (code: string) => editorRef.current?.setValue(code),
         };
         return () => {
             delete window.__TEST_API__;
@@ -765,15 +786,15 @@ function App() {
         });
         const cleanupCloseBuffer = electronAPI.onMenuCloseBuffer(() => {
             if (activeBufferId) {
-                closeBuffer(activeBufferId);
+                void closeBuffer(activeBufferId);
             }
         });
         const cleanupToggleRecording = electronAPI.onMenuToggleRecording(() => {
             if (isRecording) {
-                electronAPI.synthesizer.stopRecording();
+                void electronAPI.synthesizer.stopRecording();
                 setIsRecording(false);
             } else {
-                electronAPI.synthesizer.startRecording();
+                void electronAPI.synthesizer.startRecording();
                 setIsRecording(true);
             }
         });
@@ -794,7 +815,7 @@ function App() {
             cleanupToggleRecording();
             cleanupOpenSettings();
         };
-    }, [activeBufferId, closeBuffer, isRecording, buffers]);
+    }, [activeBufferId, closeBuffer, isRecording, buffers, createUntitledFile]);
 
     return (
         <div className="app">

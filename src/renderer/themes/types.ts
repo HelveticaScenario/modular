@@ -76,28 +76,25 @@ export function mapVSCodeTheme(vscodeTheme: VSCodeTheme): AppTheme {
     const defaults =
         type === 'dark'
             ? {
+                  accent: '#007acc',
                   bgPrimary: '#1e1e1e',
                   bgSecondary: '#252526',
                   bgTertiary: '#2d2d2d',
+                  textMuted: '#555555',
                   textPrimary: '#cccccc',
                   textSecondary: '#888888',
-                  textMuted: '#555555',
-                  accent: '#007acc',
               }
             : {
+                  accent: '#007acc',
                   bgPrimary: '#ffffff',
                   bgSecondary: '#f3f3f3',
                   bgTertiary: '#e8e8e8',
+                  textMuted: '#999999',
                   textPrimary: '#333333',
                   textSecondary: '#666666',
-                  textMuted: '#999999',
-                  accent: '#007acc',
               };
 
     return {
-        id: vscodeTheme.name.toLowerCase().replace(/\s+/g, '-'),
-        name: vscodeTheme.name,
-        type,
         colors: {
             // Backgrounds - map from VS Code workbench colors
             bgPrimary: get('editor.background', defaults.bgPrimary),
@@ -193,14 +190,17 @@ export function mapVSCodeTheme(vscodeTheme: VSCodeTheme): AppTheme {
                 defaults.textSecondary,
             ),
         },
+        id: vscodeTheme.name.toLowerCase().replace(/\s+/g, '-'),
+        name: vscodeTheme.name,
         raw: vscodeTheme,
+        type,
     };
 }
 
 // Helper to adjust alpha of a hex color
 function adjustAlpha(hex: string, alpha: number): string {
     // Handle already-rgba colors
-    if (hex.startsWith('rgba')) return hex;
+    if (hex.startsWith('rgba')) {return hex;}
     if (hex.startsWith('rgb')) {
         const match = hex.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
         if (match) {

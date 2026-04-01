@@ -35,10 +35,10 @@ export interface OutputSchemaWithRange {
 }
 
 const ResolvedModuleOutput = z.object({
-    type: z.literal('cable'),
+    channel: z.number().optional(),
     module: z.string(),
     port: z.string(),
-    channel: z.number().optional(),
+    type: z.literal('cable'),
 });
 
 export type ResolvedModuleOutput = z.infer<typeof ResolvedModuleOutput>;
@@ -138,8 +138,8 @@ export class Bus {
         }
         const outputs = Array.isArray(value) ? [...value] : [value];
         const group: SendGroup = {
-            outputs,
             gain,
+            outputs,
         };
         this.sendGroups.push(group);
     }
@@ -192,7 +192,9 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
      * For perceptual (audio-taper) volume control, use {@link gain} instead.
      */
     amplitude(factor: PolySignal): Collection {
-        if (this.items.length === 0) return new Collection();
+        if (this.items.length === 0) {
+            return new Collection();
+        }
         const factory = this.items[0].builder.getFactory('$scaleAndShift');
         if (!factory) {
             throw new Error('Factory for util.scaleAndShift not registered');
@@ -209,7 +211,9 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
      * Shift all outputs by an offset
      */
     shift(offset: PolySignal): Collection {
-        if (this.items.length === 0) return new Collection();
+        if (this.items.length === 0) {
+            return new Collection();
+        }
         const factory = this.items[0].builder.getFactory('$scaleAndShift');
         if (!factory) {
             throw new Error('Factory for util.scaleAndShift not registered');
@@ -224,7 +228,9 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
      * For linear amplitude scaling, use {@link amplitude} instead.
      */
     gain(level: PolySignal): Collection {
-        if (this.items.length === 0) return new Collection();
+        if (this.items.length === 0) {
+            return new Collection();
+        }
         const curveFactory = this.items[0].builder.getFactory('$curve');
         const scaleFactory = this.items[0].builder.getFactory('$scaleAndShift');
         if (!curveFactory || !scaleFactory) {
@@ -240,7 +246,9 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
      * Apply a power curve to all outputs. Creates a $curve module internally.
      */
     exp(factor: PolySignal = GAIN_CURVE_EXP): Collection {
-        if (this.items.length === 0) return new Collection();
+        if (this.items.length === 0) {
+            return new Collection();
+        }
         const factory = this.items[0].builder.getFactory('$curve');
         if (!factory) {
             throw new Error('Factory for $curve not registered');
@@ -308,16 +316,18 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
         return this;
     }
 
-    pipe<T>(pipelineFunc: (self: this) => T): T;
-    pipe<T extends ModuleOutput | Iterable<ModuleOutput>, E>(
-        pipelineFunc: (self: this, item: E) => T,
+    pipe<U>(pipelineFunc: (self: this) => U): U;
+    pipe<U extends ModuleOutput | Iterable<ModuleOutput>, E>(
+        pipelineFunc: (self: this, item: E) => U,
         array: E[],
     ): Collection;
-    pipe<T>(
-        pipelineFunc: (self: this, ...args: unknown[]) => T,
+    pipe<U>(
+        pipelineFunc: (self: this, ...args: unknown[]) => U,
         ...arrays: unknown[][]
-    ): T | Collection {
-        if (arrays.length === 0) return pipelineFunc(this);
+    ): U | Collection {
+        if (arrays.length === 0) {
+            return pipelineFunc(this);
+        }
         return $c(
             ...arrays[0].map(
                 (item) =>
@@ -350,10 +360,10 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
         // Remap mix from 0-5 to 5-0 for crossfade between original and transformed signals
         return mixFactory([
             this.amplitude(
-                clampFactory(remapFactory(mix, 5, 0, 0, 5), { min: 0, max: 5 }),
+                clampFactory(remapFactory(mix, 5, 0, 0, 5), { max: 5, min: 0 }),
             ),
             result.amplitude(
-                clampFactory(mix, { min: 0, max: 5 }) as PolySignal,
+                clampFactory(mix, { max: 5, min: 0 }) as PolySignal,
             ),
         ]) as Collection;
     }
@@ -368,10 +378,6 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
  * Use .range(outMin, outMax, inMin, inMax) to remap with explicit input range.
  */
 export class Collection extends BaseCollection<ModuleOutput> {
-    constructor(...args: ModuleOutput[]) {
-        super(...args);
-    }
-
     /**
      * Remap outputs from explicit input range to output range
      */
@@ -381,7 +387,9 @@ export class Collection extends BaseCollection<ModuleOutput> {
         inMin: PolySignal,
         inMax: PolySignal,
     ): Collection {
-        if (this.items.length === 0) return new Collection();
+        if (this.items.length === 0) {
+            return new Collection();
+        }
         const factory = this.items[0].builder.getFactory('$remap');
         if (!factory) {
             throw new Error('Factory for util.remap not registered');
@@ -395,15 +403,13 @@ export class Collection extends BaseCollection<ModuleOutput> {
  * Use .range(outMin, outMax) to remap using stored min/max values.
  */
 export class CollectionWithRange extends BaseCollection<ModuleOutputWithRange> {
-    constructor(...args: ModuleOutputWithRange[]) {
-        super(...args);
-    }
-
     /**
      * Remap outputs from their known range to a new output range
      */
     range(outMin: PolySignal, outMax: PolySignal): Collection {
-        if (this.items.length === 0) return new Collection();
+        if (this.items.length === 0) {
+            return new Collection();
+        }
         const factory = this.items[0].builder.getFactory('$remap');
         if (!factory) {
             throw new Error('Factory for util.remap not registered');
@@ -470,17 +476,17 @@ export interface SourceLocation {
  * consistency across all module creation paths.
  */
 export class GraphBuilder {
-    private modules: Map<string, ModuleState> = new Map();
-    private counters: Map<string, number> = new Map();
+    private modules = new Map<string, ModuleState>();
+    private counters = new Map<string, number>();
     private schemas: ProcessedModuleSchema[] = [];
-    private schemaByName: Map<string, ProcessedModuleSchema> = new Map();
+    private schemaByName = new Map<string, ProcessedModuleSchema>();
     private scopes: ScopeWithLocation[] = [];
     /** Output groups keyed by baseChannel */
-    private outGroups: Map<number, OutGroup[]> = new Map();
-    private factoryRegistry: Map<string, FactoryFunction> = new Map();
-    private sourceLocationMap: Map<string, SourceLocation> = new Map();
+    private outGroups = new Map<number, OutGroup[]>();
+    private factoryRegistry = new Map<string, FactoryFunction>();
+    private sourceLocationMap = new Map<string, SourceLocation>();
     /** Track all deferred outputs for string replacement during toPatch */
-    private deferredOutputs: Map<string, DeferredModuleOutput> = new Map();
+    private deferredOutputs = new Map<string, DeferredModuleOutput>();
     /** Global tempo for ROOT_CLOCK in BPM (default: 120) */
     private tempo: number = 120;
     /** Global output gain signal (default: 2.5) */
@@ -513,7 +519,7 @@ export class GraphBuilder {
         let id = `${moduleType}-${counter}`;
 
         // If the generated ID is already taken (e.g. by an explicit ID),
-        // keep incrementing until we find a free one.
+        // Keep incrementing until we find a free one.
         while (this.modules.has(id)) {
             counter++;
             id = `${moduleType}-${counter}`;
@@ -546,16 +552,16 @@ export class GraphBuilder {
         // Store source location for error mapping
         if (sourceLocation) {
             this.sourceLocationMap.set(id, {
-                line: sourceLocation.line,
                 column: sourceLocation.column,
                 idIsExplicit: Boolean(explicitId),
+                line: sourceLocation.line,
             });
         }
 
         const moduleState: ModuleState = {
             id,
-            moduleType,
             idIsExplicit: Boolean(explicitId),
+            moduleType,
             params: {},
         };
 
@@ -653,7 +659,7 @@ export class GraphBuilder {
             bus.lock();
         }
         for (const bus of this.busses) {
-            // its up to the bus callback functions to register themselves
+            // Its up to the bus callback functions to register themselves
             bus.finalize();
         }
 
@@ -803,9 +809,9 @@ export class GraphBuilder {
                             const resolved = deferredOutput.resolve();
                             if (resolved) {
                                 return {
+                                    channel: ch.channel,
                                     moduleId: resolved.moduleId,
                                     portName: resolved.portName,
-                                    channel: ch.channel,
                                 };
                             }
                             return null;
@@ -875,10 +881,10 @@ export class GraphBuilder {
 
         const outputs = Array.isArray(value) ? [...value] : [value];
         const group: StereoOutGroup = {
-            type: 'stereo',
-            outputs,
             gain: options.gain,
+            outputs,
             pan: options.pan,
+            type: 'stereo',
             width: options.width,
         };
 
@@ -907,9 +913,9 @@ export class GraphBuilder {
 
         const outputs = Array.isArray(value) ? [...value] : [value];
         const group: MonoOutGroup = {
-            type: 'mono',
-            outputs,
             gain: options.gain,
+            outputs,
+            type: 'mono',
         };
 
         const existing = this.outGroups.get(channel) ?? [];
@@ -962,17 +968,17 @@ export class GraphBuilder {
 
         const outputs = Array.isArray(value) ? value : [value];
         const channels = outputs.map((o) => ({
+            channel: o.channel,
             moduleId: o.moduleId,
             portName: o.portName,
-            channel: o.channel,
         }));
 
         this.scopes.push({
             channels,
             msPerFrame,
-            triggerThreshold: thresh,
             range,
             sourceLocation,
+            triggerThreshold: thresh,
         });
     }
 }
@@ -1067,15 +1073,14 @@ export class ModuleNode {
                     );
                 }
                 return new CollectionWithRange(...outputs);
-            } else {
-                const outputs: ModuleOutput[] = [];
-                for (let i = 0; i < this.channelCount; i++) {
-                    outputs.push(
-                        new ModuleOutput(this.builder, this.id, portName, i),
-                    );
-                }
-                return new Collection(...outputs);
             }
+            const outputs: ModuleOutput[] = [];
+            for (let i = 0; i < this.channelCount; i++) {
+                outputs.push(
+                    new ModuleOutput(this.builder, this.id, portName, i),
+                );
+            }
+            return new Collection(...outputs);
         }
 
         if (hasRange) {
@@ -1202,16 +1207,18 @@ export class ModuleOutput {
         return this;
     }
 
-    pipe<T>(pipelineFunc: (self: this) => T): T;
-    pipe<T extends ModuleOutput | Iterable<ModuleOutput>, E>(
-        pipelineFunc: (self: this, item: E) => T,
+    pipe<U>(pipelineFunc: (self: this) => U): U;
+    pipe<U extends ModuleOutput | Iterable<ModuleOutput>, E>(
+        pipelineFunc: (self: this, item: E) => U,
         array: E[],
     ): Collection;
-    pipe<T>(
-        pipelineFunc: (self: this, ...args: unknown[]) => T,
+    pipe<U>(
+        pipelineFunc: (self: this, ...args: unknown[]) => U,
         ...arrays: unknown[][]
-    ): T | Collection {
-        if (arrays.length === 0) return pipelineFunc(this);
+    ): U | Collection {
+        if (arrays.length === 0) {
+            return pipelineFunc(this);
+        }
         return $c(
             ...arrays[0].map(
                 (item) =>
@@ -1288,11 +1295,6 @@ export class ModuleOutputWithRange extends ModuleOutput {
     }
 }
 
-/** Type for transforms that return a new ModuleOutput */
-type OutputTransform = (output: ModuleOutput) => ModuleOutput;
-/** Type for side effects that operate on a ModuleOutput but don't return a new one */
-type OutputSideEffect = (output: ModuleOutput) => void;
-
 /**
  * DeferredModuleOutput is a placeholder for a signal that will be assigned later.
  * Useful for feedback loops and forward references in the DSL.
@@ -1340,7 +1342,7 @@ export class DeferredModuleOutput extends ModuleOutput {
         let output = this.resolvedModuleOutput;
         if (output instanceof DeferredModuleOutput) {
             this.resolving = true;
-            let resolved = output.resolve();
+            const resolved = output.resolve();
             this.resolving = false;
 
             if (resolved === null) {
@@ -1358,10 +1360,6 @@ export class DeferredModuleOutput extends ModuleOutput {
  * Provides a .set() method to assign ModuleOutputs to all contained deferred outputs.
  */
 export class DeferredCollection extends BaseCollection<DeferredModuleOutput> {
-    constructor(...args: DeferredModuleOutput[]) {
-        super(...args);
-    }
-
     /**
      * Set the values for all deferred outputs in this collection.
      * @param outputs - A ModuleOutput or iterable of ModuleOutputs to distribute across outputs
@@ -1402,10 +1400,10 @@ export function replaceValues(input: unknown, replacer: Replacer): unknown {
         }
 
         const out: Record<string, unknown> = {};
-        for (const [key, value] of Object.entries(replaced)) {
-            const v = walk(key, value);
-            if (v !== undefined) {
-                out[key] = v;
+        for (const [k, v] of Object.entries(replaced)) {
+            const entryVal = walk(k, v);
+            if (entryVal !== undefined) {
+                out[k] = entryVal;
             }
         }
         return out;
@@ -1481,9 +1479,8 @@ function replaceDeferred(
             );
             if (resolved) {
                 return valueToSignal(resolved.resolve());
-            } else {
-                return maybeResolvedModuleOutput.data;
             }
+            return maybeResolvedModuleOutput.data;
         }
         return value;
     }
@@ -1500,10 +1497,10 @@ function replaceDeferred(
 function valueToSignal(value: unknown): unknown {
     if (value instanceof ModuleOutput) {
         return {
-            type: 'cable',
+            channel: value.channel,
             module: value.moduleId,
             port: value.portName,
-            channel: value.channel,
+            type: 'cable',
         };
     } else if (value === null || value === undefined) {
         // Silence: 0 becomes Signal::Volts(0.0) in Rust

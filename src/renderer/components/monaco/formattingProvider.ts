@@ -5,11 +5,11 @@ import type { Monaco } from '../../hooks/useCustomMonaco';
 import type { PrettierConfig } from '../../../shared/ipcTypes';
 
 const DEFAULT_PRETTIER_OPTIONS = {
-    singleQuote: true,
-    trailingComma: 'all' as const,
-    semi: false,
-    tabWidth: 2,
     printWidth: 60,
+    semi: false,
+    singleQuote: true,
+    tabWidth: 2,
+    trailingComma: 'all' as const,
 };
 
 export function registerDslFormattingProvider(
@@ -23,7 +23,7 @@ export function registerDslFormattingProvider(
                 const formatted = await prettier.format(model.getValue(), {
                     ...DEFAULT_PRETTIER_OPTIONS,
                     ...userConfig,
-                    // parser and plugins must not be overridden
+                    // Parser and plugins must not be overridden
                     parser: 'babel',
                     plugins: [prettierBabel, prettierEstree],
                 });

@@ -34,7 +34,7 @@ export const drawOscilloscope = (
     options: ScopeDrawOptions,
 ) => {
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) {return;}
 
     const { range = [-5, 5], stats } = options;
     const [minVoltage, maxVoltage] = range;
@@ -157,7 +157,7 @@ export const drawOscilloscope = (
     ctx.lineWidth = 1.5 * dpr;
 
     for (const [ch, data] of channels.entries()) {
-        if (!data || data.length < 2) continue;
+        if (!data || data.length < 2) {continue;}
 
         const sampleCount = Math.min(windowSize, data.length);
         const stepX = waveformWidth / (windowSize - 1);
@@ -165,7 +165,7 @@ export const drawOscilloscope = (
         ctx.beginPath();
 
         for (let i = 0; i < sampleCount; i++) {
-            let dataIndex = (i + stats.readOffset[ch]) % data.length;
+            const dataIndex = (i + stats.readOffset[ch]) % data.length;
             const x = waveformLeft + stepX * i;
             const rawSample = data[dataIndex];
             const clampedSample = Math.max(

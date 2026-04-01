@@ -1,13 +1,17 @@
 {
     "$schema": "https://cdn.jsdelivr.net/npm/oxlint@1.58.0/configuration_schema.json",
     "plugins": ["react", "typescript"],
+    "options": {
+        "typeAware": true
+    },
+    "settings": {
+        "react": {
+            "version": "19.2.7"
+        }
+    },
     "categories": {
         "correctness": "error",
-        "suspicious": "error",
-        "pedantic": "warn",
-        "style": "warn",
-        "restriction": "warn",
-        "nursery": "warn"
+        "suspicious": "error"
     },
     "env": {
         "browser": true,
@@ -16,6 +20,9 @@
     },
     "ignorePatterns": [".webpack/", "out/", ".vite/", "node_modules/"],
     "rules": {
-        "react/react-in-jsx-scope": "off"
+        "react/react-in-jsx-scope": "off",
+        "no-extend-native": "off",
+        "typescript/no-implied-eval": "off",
+        "typescript/no-unsafe-type-assertion": "off"
     }
 }

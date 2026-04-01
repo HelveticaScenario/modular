@@ -4,54 +4,41 @@
  */
 
 const audioConfigSchema = {
-    type: 'object',
+    additionalProperties: false,
     description: 'Audio device configuration',
     properties: {
+        bufferSize: {
+            description: 'Buffer size in samples (e.g., 256, 512)',
+            type: 'number',
+        },
         hostId: {
-            type: 'string',
             description: "Audio host identifier (e.g., 'CoreAudio', 'WASAPI')",
+            type: 'string',
         },
         inputDeviceId: {
-            type: ['string', 'null'],
             description: 'Input device ID, or null for no input',
+            type: ['string', 'null'],
         },
         outputDeviceId: {
-            type: 'string',
             description: 'Output device ID',
+            type: 'string',
         },
         sampleRate: {
-            type: 'number',
             description: 'Sample rate in Hz (e.g., 44100, 48000)',
-        },
-        bufferSize: {
             type: 'number',
-            description: 'Buffer size in samples (e.g., 256, 512)',
         },
     },
-    additionalProperties: false,
+    type: 'object',
 };
 
 export const configSchema = {
     $schema: 'http://json-schema.org/draft-07/schema#',
-    title: 'Operator Configuration',
+    additionalProperties: false,
     description: 'Configuration file for the Operator synthesizer application',
-    type: 'object',
     properties: {
-        theme: {
-            type: 'string',
-            description: 'The color theme for the application and editor',
-            enum: [
-                'modular-dark',
-                'one-dark-pro',
-                'dracula',
-                'gruvbox-dark',
-                'tokyo-night',
-                'catppuccin-mocha',
-            ],
-            default: 'modular-dark',
-        },
+        audioConfig: audioConfigSchema,
         cursorStyle: {
-            type: 'string',
+            default: 'block',
             description: 'The cursor style in the editor',
             enum: [
                 'line',
@@ -61,10 +48,10 @@ export const configSchema = {
                 'block-outline',
                 'underline-thin',
             ],
-            default: 'block',
+            type: 'string',
         },
         font: {
-            type: 'string',
+            default: 'Fira Code',
             description: 'The monospace font family used in the editor',
             enum: [
                 'Fira Code',
@@ -95,60 +82,73 @@ export const configSchema = {
                 'Menlo',
                 'Consolas',
             ],
-            default: 'Fira Code',
+            type: 'string',
         },
         fontLigatures: {
-            type: 'boolean',
-            description: 'Enable or disable font ligatures in the editor',
             default: true,
+            description: 'Enable or disable font ligatures in the editor',
+            type: 'boolean',
         },
         fontSize: {
-            type: 'number',
-            description: 'The font size in the editor (8–72)',
-            minimum: 8,
-            maximum: 72,
             default: 17,
+            description: 'The font size in the editor (8–72)',
+            maximum: 72,
+            minimum: 8,
+            type: 'number',
+        },
+        lastOpenedFolder: {
+            description:
+                'Path to the last opened workspace folder (managed automatically)',
+            type: 'string',
         },
         prettier: {
-            type: 'object',
+            additionalProperties: true,
             description:
                 "Prettier formatting options. Merged with defaults: singleQuote=true, trailingComma='all', semi=false, tabWidth=2, printWidth=60. The parser and plugins cannot be overridden.",
             properties: {
-                singleQuote: {
-                    type: 'boolean',
-                    description: 'Use single quotes instead of double quotes',
-                    default: true,
-                },
-                trailingComma: {
-                    type: 'string',
-                    description: 'Trailing comma style',
-                    enum: ['all', 'es5', 'none'],
-                    default: 'all',
+                printWidth: {
+                    default: 60,
+                    description: 'Line width before wrapping',
+                    type: 'number',
                 },
                 semi: {
-                    type: 'boolean',
-                    description: 'Add semicolons at the end of statements',
                     default: false,
+                    description: 'Add semicolons at the end of statements',
+                    type: 'boolean',
+                },
+                singleQuote: {
+                    default: true,
+                    description: 'Use single quotes instead of double quotes',
+                    type: 'boolean',
                 },
                 tabWidth: {
-                    type: 'number',
-                    description: 'Number of spaces per indentation level',
                     default: 2,
-                },
-                printWidth: {
+                    description: 'Number of spaces per indentation level',
                     type: 'number',
-                    description: 'Line width before wrapping',
-                    default: 60,
+                },
+                trailingComma: {
+                    default: 'all',
+                    description: 'Trailing comma style',
+                    enum: ['all', 'es5', 'none'],
+                    type: 'string',
                 },
             },
-            additionalProperties: true,
+            type: 'object',
         },
-        lastOpenedFolder: {
+        theme: {
+            default: 'modular-dark',
+            description: 'The color theme for the application and editor',
+            enum: [
+                'modular-dark',
+                'one-dark-pro',
+                'dracula',
+                'gruvbox-dark',
+                'tokyo-night',
+                'catppuccin-mocha',
+            ],
             type: 'string',
-            description:
-                'Path to the last opened workspace folder (managed automatically)',
         },
-        audioConfig: audioConfigSchema,
     },
-    additionalProperties: false,
+    title: 'Operator Configuration',
+    type: 'object',
 };

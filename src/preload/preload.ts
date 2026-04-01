@@ -2,17 +2,17 @@
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 import { contextBridge, ipcRenderer } from 'electron/renderer';
 import {
-    IPC_CHANNELS,
+    AppConfig,
+    ContextMenuAction,
+    ContextMenuOptions,
+    DSLExecuteResult,
     IPCHandlers,
     IPCRequest,
     IPCResponse,
-    Promisify,
+    IPC_CHANNELS,
     MENU_CHANNELS,
-    ContextMenuOptions,
-    ContextMenuAction,
-    AppConfig,
-    DSLExecuteResult,
     MainLogEntry,
+    Promisify,
     UpdateAvailableInfo,
 } from '../shared/ipcTypes';
 import type { QueuedTrigger } from '../shared/ipcTypes';
@@ -24,7 +24,7 @@ function invokeIPC<T extends keyof typeof IPC_CHANNELS>(
     channel: T,
     ...args: IPCRequest<(typeof IPC_CHANNELS)[T]>
 ): IPCResponse<(typeof IPC_CHANNELS)[T]> {
-    // @ts-ignore - TypeScript is having trouble inferring the return type here
+    // @ts-expect-error - TypeScript is having trouble inferring the return type here
     return ipcRenderer.invoke(IPC_CHANNELS[channel], ...args);
 }
 
@@ -263,35 +263,35 @@ const electronAPI: ElectronAPI = {
 
     // Synthesizer operations
     synthesizer: {
-        getSampleRate: (...args) => invokeIPC('SYNTH_GET_SAMPLE_RATE', ...args),
-
         getChannels: (...args) => invokeIPC('SYNTH_GET_CHANNELS', ...args),
 
-        getScopes: (...args) => invokeIPC('SYNTH_GET_SCOPES', ...args),
+        getHealth: (...args) => invokeIPC('SYNTH_GET_HEALTH', ...args),
 
         getModuleStates: (...args) =>
             invokeIPC('SYNTH_GET_MODULE_STATES', ...args),
 
-        updatePatch: (...args) => invokeIPC('SYNTH_UPDATE_PATCH', ...args),
+        getSampleRate: (...args) => invokeIPC('SYNTH_GET_SAMPLE_RATE', ...args),
 
-        startRecording: (...args) =>
-            invokeIPC('SYNTH_START_RECORDING', ...args),
+        getScopes: (...args) => invokeIPC('SYNTH_GET_SCOPES', ...args),
 
-        stopRecording: (...args) => invokeIPC('SYNTH_STOP_RECORDING', ...args),
+        getTransportState: (...args) =>
+            invokeIPC('SYNTH_GET_TRANSPORT_STATE', ...args),
 
         isRecording: (...args) => invokeIPC('SYNTH_IS_RECORDING', ...args),
-
-        getHealth: (...args) => invokeIPC('SYNTH_GET_HEALTH', ...args),
-
-        stop: (...args) => invokeIPC('SYNTH_STOP', ...args),
 
         isStopped: (...args) => invokeIPC('SYNTH_IS_STOPPED', ...args),
 
         setModuleParam: (...args) =>
             invokeIPC('SYNTH_SET_MODULE_PARAM', ...args),
 
-        getTransportState: (...args) =>
-            invokeIPC('SYNTH_GET_TRANSPORT_STATE', ...args),
+        startRecording: (...args) =>
+            invokeIPC('SYNTH_START_RECORDING', ...args),
+
+        stop: (...args) => invokeIPC('SYNTH_STOP', ...args),
+
+        stopRecording: (...args) => invokeIPC('SYNTH_STOP_RECORDING', ...args),
+
+        updatePatch: (...args) => invokeIPC('SYNTH_UPDATE_PATCH', ...args),
     },
 
     // Audio device operations
@@ -343,9 +343,9 @@ const electronAPI: ElectronAPI = {
 
     // MIDI device operations
     midi: {
-        listInputs: (...args) => invokeIPC('MIDI_LIST_INPUTS', ...args),
-
         getInput: (...args) => invokeIPC('MIDI_GET_INPUT', ...args),
+
+        listInputs: (...args) => invokeIPC('MIDI_LIST_INPUTS', ...args),
 
         setInput: (...args) => invokeIPC('MIDI_SET_INPUT', ...args),
 
@@ -354,28 +354,28 @@ const electronAPI: ElectronAPI = {
 
     // Filesystem operations
     filesystem: {
-        selectWorkspace: (...args) => invokeIPC('FS_SELECT_WORKSPACE', ...args),
+        createFolder: (...args) => invokeIPC('FS_CREATE_FOLDER', ...args),
+
+        deleteFile: (...args) => invokeIPC('FS_DELETE_FILE', ...args),
 
         getWorkspace: (...args) => invokeIPC('FS_GET_WORKSPACE', ...args),
 
         listFiles: (...args) => invokeIPC('FS_LIST_FILES', ...args),
 
-        readFile: (...args) => invokeIPC('FS_READ_FILE', ...args),
+        moveFile: (...args) => invokeIPC('FS_MOVE_FILE', ...args),
 
-        writeFile: (...args) => invokeIPC('FS_WRITE_FILE', ...args),
+        readFile: (...args) => invokeIPC('FS_READ_FILE', ...args),
 
         renameFile: (...args) => invokeIPC('FS_RENAME_FILE', ...args),
 
-        deleteFile: (...args) => invokeIPC('FS_DELETE_FILE', ...args),
-
-        moveFile: (...args) => invokeIPC('FS_MOVE_FILE', ...args),
-
-        createFolder: (...args) => invokeIPC('FS_CREATE_FOLDER', ...args),
-
-        showSaveDialog: (...args) => invokeIPC('FS_SHOW_SAVE_DIALOG', ...args),
+        selectWorkspace: (...args) => invokeIPC('FS_SELECT_WORKSPACE', ...args),
 
         showInputDialog: (...args) =>
             invokeIPC('FS_SHOW_INPUT_DIALOG', ...args),
+
+        showSaveDialog: (...args) => invokeIPC('FS_SHOW_SAVE_DIALOG', ...args),
+
+        writeFile: (...args) => invokeIPC('FS_WRITE_FILE', ...args),
     },
 
     // Menu events
@@ -410,9 +410,9 @@ const electronAPI: ElectronAPI = {
     // Config operations
     config: {
         getPath: () => invokeIPC('CONFIG_GET_PATH'),
+        onChange: menuEventHandler(IPC_CHANNELS.CONFIG_ON_CHANGE),
         read: () => invokeIPC('CONFIG_READ'),
         write: (config) => invokeIPC('CONFIG_WRITE', config),
-        onChange: menuEventHandler(IPC_CHANNELS.CONFIG_ON_CHANGE),
     },
 
     // Main process log forwarding
@@ -426,8 +426,8 @@ const electronAPI: ElectronAPI = {
         onAvailable: menuEventHandler<[UpdateAvailableInfo]>(
             IPC_CHANNELS.UPDATE_AVAILABLE,
         ),
-        onDownloading: menuEventHandler(IPC_CHANNELS.UPDATE_DOWNLOADING),
         onDownloaded: menuEventHandler(IPC_CHANNELS.UPDATE_DOWNLOADED),
+        onDownloading: menuEventHandler(IPC_CHANNELS.UPDATE_DOWNLOADING),
         onError: menuEventHandler<[string]>(IPC_CHANNELS.UPDATE_ERROR),
     },
 };

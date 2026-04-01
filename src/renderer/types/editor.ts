@@ -28,9 +28,9 @@ export type UnsavedBufferSnapshot =
           content: string;
       };
 
-export type ScopeView = {
+export interface ScopeView {
     key: string;
     file: string;
     range: [number, number];
     channelKeys: string[];
-};
+}

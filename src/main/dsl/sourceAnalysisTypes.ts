@@ -6,8 +6,8 @@
  */
 
 import type {
-    SourceSpan,
     InterpolationResolutionMap,
+    SourceSpan,
 } from '../../shared/dsl/spanTypes';
 
 // Re-export shared types/state from spanTypes (which has no Node.js dependencies)

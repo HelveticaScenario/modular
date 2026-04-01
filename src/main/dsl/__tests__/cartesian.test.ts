@@ -2,7 +2,7 @@
  * Tests for the $cartesian() utility function.
  */
 
-import { describe, test, expect } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { $cartesian } from '../GraphBuilder';
 
 describe('$cartesian()', () => {

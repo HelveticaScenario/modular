@@ -1,16 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
-import { editor } from 'monaco-editor';
+import type { editor } from 'monaco-editor';
 import { useTheme } from '../themes/ThemeContext';
 import { useCustomMonaco } from '../hooks/useCustomMonaco';
 import { configSchema } from '../configSchema';
 import { formatPath } from './monaco/monacoHelpers';
 import type { ScopeView } from '../types/editor';
 import { setupMonacoJavascript } from './monaco/monacoLanguage';
-import {
-    buildSymbolSets,
-    resolveDslSymbolAtPosition,
-} from './monaco/definitionProvider';
+import { buildSymbolSets } from './monaco/definitionProvider';
 import { registerDslFormattingProvider } from './monaco/formattingProvider';
 import { applyMonacoTheme } from './monaco/theme';
 import {
@@ -18,13 +15,13 @@ import {
     registerConfigSchemaForFile,
 } from './monaco/jsonSchema';
 import {
-    createScopeViewZones,
     type ScopeViewZoneHandle,
+    createScopeViewZones,
 } from './monaco/scopeViewZones';
 import { startModuleStatePolling } from './monaco/moduleStateTracking';
 import { registerMidiCompletionProvider } from './monaco/midiCompletionProvider';
 import electronAPI from '../electronAPI';
-import { Schemas } from 'src/shared/dsl/schemaTypeResolver';
+import type { Schemas } from 'src/shared/dsl/schemaTypeResolver';
 
 export interface PatchEditorProps {
     value: string;
@@ -70,17 +67,19 @@ export function MonacoPatchEditor({
 
     // Poll module states for active step highlighting using the generic system
     // This uses argument_spans from Rust to know where arguments are in the document,
-    // combined with source_spans for internal highlighting (like mini-notation spans)
+    // Combined with source_spans for internal highlighting (like mini-notation spans)
     useEffect(() => {
-        if (!editor || !monaco) return;
+        if (!editor || !monaco) {
+            return;
+        }
         return startModuleStatePolling({
-            editor,
-            monaco,
-            currentFile,
-            runningBufferId,
             activeDecorationRef,
+            currentFile,
+            editor,
             getModuleStates: () =>
                 window.electronAPI.synthesizer.getModuleStates(),
+            monaco,
+            runningBufferId,
         });
     }, [editor, monaco, currentFile, runningBufferId]);
 
@@ -95,14 +94,16 @@ export function MonacoPatchEditor({
 
     // Create / recreate scope view zones when the scope list changes
     useEffect(() => {
-        if (!editor || !monaco) return;
+        if (!editor || !monaco) {
+            return;
+        }
         const handle = createScopeViewZones({
             editor,
             monaco,
-            views: activeScopeViews,
-            scopeDecorations,
             onRegisterScopeCanvas,
             onUnregisterScopeCanvas,
+            scopeDecorations,
+            views: activeScopeViews,
         });
         scopeZoneHandleRef.current = handle;
         return () => {
@@ -119,61 +120,68 @@ export function MonacoPatchEditor({
     ]);
 
     // On every content change, re-read positions from tracked decorations and
-    // reposition view zones if any scope call has moved to a different line.
+    // Reposition view zones if any scope call has moved to a different line.
     useEffect(() => {
-        if (!editor) return;
+        if (!editor) {
+            return;
+        }
         const disposable = editor.onDidChangeModelContent(() => {
             scopeZoneHandleRef.current?.repositionZones();
         });
         return () => disposable.dispose();
     }, [editor]);
 
-    const handleMount: OnMount = (ed, monaco) => {
+    const handleMount: OnMount = (ed, _monacoInstance) => {
         setEditor(ed);
         editorRef.current = ed;
 
         const model = ed.getModel();
         if (model) {
-            model.updateOptions({ tabSize: 2, insertSpaces: true });
+            model.updateOptions({ insertSpaces: true, tabSize: 2 });
         }
 
         // On Windows/Linux, use Ctrl; on macOS, use WinCtrl (physical Ctrl)
         // This ensures all shortcuts use the Control key on all platforms.
         const ctrl =
             electronAPI.platform === 'darwin'
-                ? monaco.KeyMod.WinCtrl
-                : monaco.KeyMod.CtrlCmd;
+                ? _monacoInstance.KeyMod.WinCtrl
+                : _monacoInstance.KeyMod.CtrlCmd;
 
         // On Windows, Monaco swallows global accelerators, so we need to
-        // register them as Monaco keybindings that trigger the Electron menu actions.
+        // Register them as Monaco keybindings that trigger the Electron menu actions.
         // Ctrl+Enter -> Update Patch (next bar; if already queued, Rust discards old + applies new immediately)
-        ed.addCommand(ctrl | monaco.KeyCode.Enter, () => {
+        ed.addCommand(ctrl | _monacoInstance.KeyCode.Enter, () => {
             window.electronAPI.triggerMenuAction('UPDATE_PATCH');
         });
 
         // Ctrl+Shift+Enter -> Update Patch (next beat)
-        ed.addCommand(ctrl | monaco.KeyMod.Shift | monaco.KeyCode.Enter, () => {
-            window.electronAPI.triggerMenuAction('UPDATE_PATCH_NEXT_BEAT');
-        });
+        ed.addCommand(
+            ctrl | _monacoInstance.KeyMod.Shift | _monacoInstance.KeyCode.Enter,
+            () => {
+                window.electronAPI.triggerMenuAction('UPDATE_PATCH_NEXT_BEAT');
+            },
+        );
 
         // Ctrl+. -> Stop Sound
-        ed.addCommand(ctrl | monaco.KeyCode.Period, () => {
+        ed.addCommand(ctrl | _monacoInstance.KeyCode.Period, () => {
             window.electronAPI.triggerMenuAction('STOP');
         });
 
         // Ctrl+N -> New File
-        ed.addCommand(ctrl | monaco.KeyCode.KeyN, () => {
+        ed.addCommand(ctrl | _monacoInstance.KeyCode.KeyN, () => {
             window.electronAPI.triggerMenuAction('NEW_FILE');
         });
 
         // Ctrl+W -> Close Buffer
-        ed.addCommand(ctrl | monaco.KeyCode.KeyW, () => {
+        ed.addCommand(ctrl | _monacoInstance.KeyCode.KeyW, () => {
             window.electronAPI.triggerMenuAction('CLOSE_BUFFER');
         });
     };
 
     useEffect(() => {
-        if (!monaco || !libSource) return;
+        if (!monaco || !libSource) {
+            return;
+        }
         return setupMonacoJavascript(monaco, libSource, {
             schemas,
         });
@@ -191,36 +199,47 @@ export function MonacoPatchEditor({
 
     // Open help for DSL symbols on Cmd+Click (not Cmd+Hover)
     useEffect(() => {
-        if (!editor || !monaco || schemas.length === 0) return;
-        const { moduleNames, namespaceNames } = buildSymbolSets(schemas);
+        if (!editor || !monaco || schemas.length === 0) {
+            return;
+        }
+        const { moduleNames: _moduleNames, namespaceNames: _namespaceNames } =
+            buildSymbolSets(schemas);
         const disposable = editor.onMouseDown((e) => {
             // Check for Cmd (Mac) / Ctrl (Win/Linux) + primary button click
-            if (!e.event.metaKey && !e.event.ctrlKey) return;
-            if (e.target.position == null) return;
+            if (!e.event.metaKey && !e.event.ctrlKey) {
+                return;
+            }
+            if (e.target.position == null) {
+                return;
+            }
 
             const model = editor.getModel();
-            if (!model) return;
+            if (!model) {
+                return;
+            }
 
             editor.focus();
             editor.trigger('api', 'editor.action.peekDefinition', {});
 
-            // console.log({ model, e });
+            // Console.log({ model, e });
 
-            // const match = resolveDslSymbolAtPosition(
-            //     model,
-            //     e.target.position,
-            //     moduleNames,
-            //     namespaceNames,
+            // Const match = resolveDslSymbolAtPosition(
+            //     Model,
+            //     E.target.position,
+            //     ModuleNames,
+            //     NamespaceNames,
             // );
-            // if (match) {
-            //     electronAPI.openHelpForSymbol(match.symbolType, match.symbolName);
+            // If (match) {
+            //     ElectronAPI.openHelpForSymbol(match.symbolType, match.symbolName);
             // }
         });
         return () => disposable.dispose();
     }, [editor, monaco, schemas]);
 
     useEffect(() => {
-        if (!monaco) return;
+        if (!monaco) {
+            return;
+        }
         const disposable = registerDslFormattingProvider(
             monaco,
             prettierConfig,
@@ -230,7 +249,9 @@ export function MonacoPatchEditor({
 
     // Register MIDI device autocomplete provider
     useEffect(() => {
-        if (!monaco) return;
+        if (!monaco) {
+            return;
+        }
         const midiProvider = registerMidiCompletionProvider(monaco, () =>
             electronAPI.midi.listInputs(),
         );
@@ -239,26 +260,36 @@ export function MonacoPatchEditor({
 
     // Define Monaco theme from the current app theme
     useEffect(() => {
-        if (!monaco) return;
+        if (!monaco) {
+            return;
+        }
         applyMonacoTheme(monaco, appTheme, monacoThemeId);
     }, [monaco, appTheme, monacoThemeId]);
 
     // Configure JSON schema for config files
     useEffect(() => {
-        if (!monaco) return;
+        if (!monaco) {
+            return;
+        }
         registerConfigSchema(monaco, configSchema);
     }, [monaco]);
 
     // Also configure schema when editing config file specifically
     useEffect(() => {
-        if (!monaco || !currentFile?.endsWith('config.json')) return;
+        if (!monaco || !currentFile?.endsWith('config.json')) {
+            return;
+        }
         registerConfigSchemaForFile(monaco, configSchema, currentFile);
     }, [monaco, currentFile]);
 
     // Determine language based on file extension
     const editorLanguage = useMemo(() => {
-        if (!currentFile) return 'javascript';
-        if (currentFile.endsWith('.json')) return 'json';
+        if (!currentFile) {
+            return 'javascript';
+        }
+        if (currentFile.endsWith('.json')) {
+            return 'json';
+        }
         return 'javascript';
     }, [currentFile]);
 
@@ -284,23 +315,23 @@ export function MonacoPatchEditor({
                         fontFamily: `${font}, monospace`,
                         fontLigatures: fontLigatures,
                         fontSize: fontSize,
-                        // lineHeight: 1.6,
-                        padding: { top: 8, bottom: 8 },
+                        // LineHeight: 1.6,
+                        padding: { bottom: 8, top: 8 },
                         renderLineHighlight: 'line',
                         cursorBlinking: 'solid',
                         cursorStyle: cursorStyle,
                         scrollbar: {
-                            vertical: 'auto',
                             horizontal: 'auto',
-                            verticalScrollbarSize: 8,
                             horizontalScrollbarSize: 8,
+                            vertical: 'auto',
+                            verticalScrollbarSize: 8,
                         },
                         overviewRulerBorder: false,
                         hideCursorInOverviewRuler: true,
                         renderLineHighlightOnlyWhenFocus: false,
                         guides: {
-                            indentation: true,
                             bracketPairs: false,
+                            indentation: true,
                         },
                     }}
                 />

@@ -1,6 +1,6 @@
 import { loader } from '@monaco-editor/react/dist';
 import type * as monaco_editor from 'monaco-editor';
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 export function useCustomMonaco() {
     const [monaco, setMonaco] = useState(
@@ -14,8 +14,8 @@ export function useCustomMonaco() {
             cancelable = loader.init();
 
             cancelable
-                .then((monaco) => {
-                    setMonaco(monaco as typeof monaco_editor);
+                .then((monacoInstance) => {
+                    setMonaco(monacoInstance as typeof monaco_editor);
                 })
                 .catch((err) => {
                     if (err.type !== 'cancelation') {
@@ -28,7 +28,7 @@ export function useCustomMonaco() {
         }
 
         return () => cancelable?.cancel();
-    }, []);
+    }, [monaco]);
 
     return monaco;
 }

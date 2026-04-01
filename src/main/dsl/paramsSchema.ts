@@ -1,10 +1,10 @@
-import { ModuleSchema } from '@modular/core';
+import type { ModuleSchema } from '@modular/core';
 
 /**
  * A small, pragmatic subset of JSON Schema (as emitted by `schemars`).
  * We intentionally keep this minimal and treat unknown shapes as `unknown`.
  */
-export type JsonSchema = {
+export interface JsonSchema {
     $ref?: string;
     $schema?: string;
     title?: string;
@@ -34,9 +34,8 @@ export type JsonSchema = {
     definitions?: Record<string, JsonSchema>;
 
     // Allow extra schemars/json-schema keywords without modeling them.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     [k: string]: any;
-};
+}
 
 export type ParamKind =
     | 'signal'
@@ -55,7 +54,7 @@ function isSignalType(s: string): s is SignalType {
     return SIGNAL_TYPES.has(s);
 }
 
-export type ParamDescriptor = {
+export interface ParamDescriptor {
     name: string;
     kind: ParamKind;
     description?: string;
@@ -65,7 +64,7 @@ export type ParamDescriptor = {
     defaultValue?: number;
     minValue?: number;
     maxValue?: number;
-};
+}
 
 export type ProcessedModuleSchema = ModuleSchema & {
     params: ParamDescriptor[];
@@ -80,7 +79,9 @@ function asJsonSchema(value: unknown): JsonSchema | null {
     if (typeof value === 'boolean') {
         return { const: value };
     }
-    if (!isPlainObject(value)) return null;
+    if (!isPlainObject(value)) {
+        return null;
+    }
     return value as JsonSchema;
 }
 
@@ -89,18 +90,23 @@ function getByJsonPointer(
     pointer: string,
 ): JsonSchema | null {
     // Only support local refs.
-    if (!pointer.startsWith('#/')) return null;
+    if (!pointer.startsWith('#/')) {
+        return null;
+    }
     const parts = pointer
         .slice(2)
         .split('/')
         .map((p) => p.replace(/~1/g, '/').replace(/~0/g, '~'));
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let cur: any = root;
     for (const part of parts) {
-        if (!isPlainObject(cur)) return null;
+        if (!isPlainObject(cur)) {
+            return null;
+        }
         cur = cur[part];
-        if (cur === undefined) return null;
+        if (cur === undefined) {
+            return null;
+        }
     }
     return asJsonSchema(cur);
 }
@@ -111,10 +117,16 @@ function deref(
     seen = new Set<string>(),
 ): JsonSchema {
     const ref = schema.$ref;
-    if (!ref) return schema;
-    if (seen.has(ref)) return schema;
+    if (!ref) {
+        return schema;
+    }
+    if (seen.has(ref)) {
+        return schema;
+    }
     const resolved = getByJsonPointer(root, ref);
-    if (!resolved) return schema;
+    if (!resolved) {
+        return schema;
+    }
     seen.add(ref);
     return deref(root, resolved, seen);
 }
@@ -129,7 +141,9 @@ function mergeObjectSchemas(a: JsonSchema, b: JsonSchema): JsonSchema {
             new Set([...(a.required ?? []), ...(b.required ?? [])]),
         );
     }
-    if (!out.description) out.description = a.description ?? b.description;
+    if (!out.description) {
+        out.description = a.description ?? b.description;
+    }
     return out;
 }
 
@@ -153,7 +167,9 @@ function resolveAndMerge(root: JsonSchema, schema: JsonSchema): JsonSchema {
 }
 
 function extractTypeTag(schema: JsonSchema): string | null {
-    if (typeof schema.const === 'string') return schema.const;
+    if (typeof schema.const === 'string') {
+        return schema.const;
+    }
     if (Array.isArray(schema.enum)) {
         const str = schema.enum.find((v) => typeof v === 'string');
         return typeof str === 'string' ? str : null;
@@ -170,18 +186,24 @@ function isSignalParamSchema(root: JsonSchema, schema: JsonSchema): boolean {
     const resolved = resolveAndMerge(root, schema);
 
     // Check for direct $ref to Signal
-    if (schema.$ref === '#/$defs/Signal') return true;
+    if (schema.$ref === '#/$defs/Signal') {
+        return true;
+    }
 
     // Check for title indicating Signal
-    if (resolved.title === 'Signal') return true;
+    if (resolved.title === 'Signal') {
+        return true;
+    }
 
     // Check for the actual Signal schema structure:
-    // anyOf: [number, string, SignalTaggedSchema ref]
+    // AnyOf: [number, string, SignalTaggedSchema ref]
     const union = resolved.oneOf ?? resolved.anyOf;
-    if (!union || !Array.isArray(union)) return false;
+    if (!union || !Array.isArray(union)) {
+        return false;
+    }
 
     let hasNumber = false;
-    let hasString = false;
+    let _hasString = false;
     let hasTaggedSchema = false;
 
     for (const branch of union) {
@@ -195,7 +217,7 @@ function isSignalParamSchema(root: JsonSchema, schema: JsonSchema): boolean {
 
         // Check for string type
         if (b.type === 'string') {
-            hasString = true;
+            _hasString = true;
             continue;
         }
 
@@ -209,7 +231,9 @@ function isSignalParamSchema(root: JsonSchema, schema: JsonSchema): boolean {
                     const tag = extractTypeTag(
                         resolveAndMerge(root, tb.properties.type),
                     );
-                    if (tag) tags.add(tag);
+                    if (tag) {
+                        tags.add(tag);
+                    }
                 }
             }
             // SignalTaggedSchema has a "cable" variant
@@ -229,10 +253,14 @@ function isSignalArrayParamSchema(
     schema: JsonSchema,
 ): boolean {
     const resolved = resolveAndMerge(root, schema);
-    if (resolved.type !== 'array') return false;
+    if (resolved.type !== 'array') {
+        return false;
+    }
 
-    const items = resolved.items;
-    if (!items) return false;
+    const { items } = resolved;
+    if (!items) {
+        return false;
+    }
 
     if (Array.isArray(items)) {
         // Tuple validation; treat as signal array if all entries are signals.
@@ -255,16 +283,22 @@ function isPolySignalParamSchema(
     schema: JsonSchema,
 ): boolean {
     // Check for direct $ref to PolySignal
-    if (schema.$ref === '#/$defs/PolySignal') return true;
+    if (schema.$ref === '#/$defs/PolySignal') {
+        return true;
+    }
 
     const resolved = resolveAndMerge(root, schema);
 
     // Check for title indicating PolySignal
-    if (resolved.title === 'PolySignal') return true;
+    if (resolved.title === 'PolySignal') {
+        return true;
+    }
 
     // Check for anyOf pattern: [Signal, Signal[]]
     const union = resolved.oneOf ?? resolved.anyOf;
-    if (!union || !Array.isArray(union) || union.length < 2) return false;
+    if (!union || !Array.isArray(union) || union.length < 2) {
+        return false;
+    }
 
     let hasSignal = false;
     let hasSignalArray = false;
@@ -290,16 +324,16 @@ function extractStringEnum(schema: JsonSchema): string[] | undefined {
         Array.isArray(resolved.enum) &&
         resolved.enum.every((v) => typeof v === 'string')
     ) {
-        return resolved.enum as string[];
+        return resolved.enum;
     }
     if (
         Array.isArray(resolved.enum) &&
         resolved.enum.every((v) => typeof v === 'string')
     ) {
-        return resolved.enum as string[];
+        return resolved.enum;
     }
 
-    // oneOf with const values format (serde rename_all enums)
+    // OneOf with const values format (serde rename_all enums)
     const union = resolved.oneOf ?? resolved.anyOf;
     if (union && Array.isArray(union)) {
         const values: string[] = [];
@@ -321,7 +355,9 @@ function extractStringEnum(schema: JsonSchema): string[] | undefined {
  */
 function isStringEnumSchema(schema: JsonSchema): boolean {
     const union = schema.oneOf ?? schema.anyOf;
-    if (!union || !Array.isArray(union) || union.length === 0) return false;
+    if (!union || !Array.isArray(union) || union.length === 0) {
+        return false;
+    }
 
     return union.every(
         (branch) =>
@@ -331,9 +367,15 @@ function isStringEnumSchema(schema: JsonSchema): boolean {
 
 function inferKind(root: JsonSchema, schema: JsonSchema): ParamKind {
     // Check polySignal first since it's a union of Signal | Signal[]
-    if (isPolySignalParamSchema(root, schema)) return 'polySignal';
-    if (isSignalParamSchema(root, schema)) return 'signal';
-    if (isSignalArrayParamSchema(root, schema)) return 'signalArray';
+    if (isPolySignalParamSchema(root, schema)) {
+        return 'polySignal';
+    }
+    if (isSignalParamSchema(root, schema)) {
+        return 'signal';
+    }
+    if (isSignalArrayParamSchema(root, schema)) {
+        return 'signalArray';
+    }
 
     const resolved = resolveAndMerge(root, schema);
 
@@ -395,25 +437,27 @@ export function processModuleSchema(
             const signalMeta = signalParamsByName.get(name);
 
             return {
-                name,
-                kind: inferedKind,
                 description: resolved.description,
-                optional: !required.has(name),
                 enumValues,
+                kind: inferedKind,
+                name,
+                optional: !required.has(name),
                 ...(signalMeta && {
+                    defaultValue: signalMeta.defaultValue,
+                    maxValue: signalMeta.maxValue,
+                    minValue: signalMeta.minValue,
                     signalType: isSignalType(signalMeta.signalType)
                         ? signalMeta.signalType
                         : 'control',
-                    defaultValue: signalMeta.defaultValue,
-                    minValue: signalMeta.minValue,
-                    maxValue: signalMeta.maxValue,
                 }),
             };
         },
     );
 
     const paramsByName: Record<string, ParamDescriptor> = {};
-    for (const p of params) paramsByName[p.name] = p;
+    for (const p of params) {
+        paramsByName[p.name] = p;
+    }
 
     return {
         ...schema,

@@ -57,7 +57,7 @@ import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
 import * as monaco from 'monaco-editor';
 
 // Suppress Monaco Editor's harmless "Canceled" errors that occur during
-// normal operations like dismissing the "Go to Symbol" dialog with Escape.
+// Normal operations like dismissing the "Go to Symbol" dialog with Escape.
 // These must be registered early before React/webpack error overlays catch them.
 window.addEventListener(
     'error',
