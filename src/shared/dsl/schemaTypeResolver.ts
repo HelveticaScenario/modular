@@ -109,6 +109,11 @@ export function getEnumVariants(
     schema: JSONSchema,
     rootSchema: JSONSchema,
 ): EnumVariantInfo[] | null {
+    // Handle null/undefined/boolean schemas
+    if (!schema || typeof schema !== 'object') {
+        return null;
+    }
+    
     // Follow $ref
     if (schema.$ref) {
         const resolved = resolveRef(schema.$ref, rootSchema);
