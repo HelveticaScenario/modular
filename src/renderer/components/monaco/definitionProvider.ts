@@ -179,23 +179,6 @@ export function resolveDslSymbol(
 }
 
 /**
- * Resolve the DSL symbol at a given model position.
- * Convenience wrapper combining path resolution and symbol matching.
- */
-function resolveDslSymbolAtPosition(
-    model: editor.ITextModel,
-    position: Position,
-    moduleNames: Set<string>,
-    namespaceNames: Set<string>,
-): DslSymbolMatch | null {
-    const resolved = resolveDottedPath(model, position);
-    if (!resolved) {
-        return null;
-    }
-    return resolveDslSymbol(resolved, moduleNames, namespaceNames);
-}
-
-/**
  * Build sets of module names and namespace names from schemas.
  */
 export function buildSymbolSets(schemas: { name: string }[]): {
