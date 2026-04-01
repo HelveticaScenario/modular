@@ -4,10 +4,8 @@ import { AudioControls } from './components/AudioControls';
 import { TransportDisplay } from './components/TransportDisplay';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { Settings } from './components/Settings';
-import {
-    UpdateNotification,
-    type UpdateNotificationState,
-} from './components/UpdateNotification';
+import type { UpdateNotificationState } from './components/UpdateNotification';
+import { UpdateNotification } from './components/UpdateNotification';
 import './App.css';
 // import type { editor } from 'monaco-editor';
 import { editor } from 'monaco-editor';

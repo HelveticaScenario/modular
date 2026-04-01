@@ -302,7 +302,9 @@ type Mono<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
  * @see {@link Collection.out}
  */
 interface StereoOutOptions {
-  /** Output gain. If set, a util.scaleAndShift module is added after the stereo mix */
+  /** Base output channel (0-15, default 0). Left plays on baseChannel, right on baseChannel+1 */
+  baseChannel?: number;
+  /** Output gain. If set, a $scaleAndShift module is added after the stereo mix */
   gain?: Poly<Signal>;
   /** Pan position (-5 = left, 0 = center, +5 = right). Default 0 */
   pan?: Poly<Signal>;
@@ -334,11 +336,14 @@ interface ModuleOutput {
   /** The channel index for polyphonic outputs */
   readonly channel: number;
   
-  /**
-   * Scale the signal by a factor. Creates a util.scaleAndShift module internally.
-   * @param factor - Scale factor as {@link Poly<Signal>}
-   * @returns The scaled {@link Collection} for chaining
-    * @example osc.amplitude(0.5)  // Half amplitude
+    /**
+     * Scale the signal by a linear factor (5 = unity, 2.5 = half, 10 = 2x).
+     * Creates a $scaleAndShift module internally.
+     *
+     * For perceptual (audio-taper) volume control, use {@link gain} instead.
+     * @param factor - Scale factor as {@link Poly<Signal>}
+     * @returns The scaled {@link Collection} for chaining
+     * @example osc.amplitude(2.5)  // Half amplitude
      */
    amplitude(factor: Poly<Signal>): Collection;
 
@@ -346,21 +351,23 @@ interface ModuleOutput {
    amp(factor: Poly<Signal>): Collection;
   
   /**
-   * Add a DC offset to the signal. Creates a util.scaleAndShift module internally.
+   * Add a DC offset to the signal. Creates a $scaleAndShift module internally.
    * @param offset - Offset value as {@link Poly<Signal>}
    * @returns The shifted {@link Collection} for chaining
    * @example lfo.shift(2.5)  // Shift to 0-5V range
    */
   shift(offset: Poly<Signal>): Collection;
 
-  /**
-   * Scale the signal by a factor with a perceptual (audio taper) curve.
-   * Chains \\$curve → \\$scaleAndShift with exponent 3.
-   * @param level - Amplitude level as {@link Poly<Signal>}
-   * @returns The scaled {@link Collection} for chaining
-   * @example osc.gain(2.5)  // Perceptual half volume
-   */
-  gain(level: Poly<Signal>): Collection;
+    /**
+     * Scale the signal by a factor with a perceptual (audio taper) curve
+     * (5 = unity, 0 = silence). Chains \\$curve → \\$scaleAndShift with exponent 3.
+     *
+     * For linear amplitude scaling, use {@link amplitude} instead.
+     * @param level - Amplitude level as {@link Poly<Signal>}
+     * @returns The scaled {@link Collection} for chaining
+     * @example osc.gain(2.5)
+     */
+   gain(level: Poly<Signal>): Collection;
 
   /**
    * Apply a power curve to this signal. Creates a \\$curve module internally.
@@ -384,11 +391,10 @@ interface ModuleOutput {
   
   /**
    * Send this output to speakers as stereo.
-   * @param baseChannel - Base output channel (0-15, default 0). Left plays on baseChannel, right on baseChannel+1
    * @param options - Stereo output options ({@link StereoOutOptions})
-   * @example osc.out(0, { gain: 2.5, pan: -2 })
+   * @example osc.out({ gain: 2.5, pan: -2 })
    */
-  out(baseChannel?: number, options?: StereoOutOptions): this;
+  out(options?: StereoOutOptions): this;
   
   /**
    * Send this output to speakers as mono.
@@ -466,6 +472,14 @@ interface ModuleOutput {
    * @example $sine('c4').range(0, 1, -5, 5)
    */
   range(outMin: Poly<Signal>, outMax: Poly<Signal>, inMin: Poly<Signal>, inMax: Poly<Signal>): ModuleOutput;
+
+  /**
+   * Register this output as a send to a bus, with optional gain.
+   * @param bus - The {@link Bus} to send to
+   * @param gain - Send level as {@link Poly<Signal>}
+   * @returns This output for chaining
+   */
+  send(bus: Bus, gain?: Poly<Signal>): this;
 }
 
 /**
@@ -520,9 +534,11 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
   readonly [index: number]: T;
   [Symbol.iterator](): Iterator<T>;
 
-  /**
-   * Scale all signals by a factor.
-   * @param factor - Scale factor as {@link Poly<Signal>}
+    /**
+     * Scale all signals by a linear factor (5 = unity, 2.5 = half, 10 = 2x).
+     *
+     * For perceptual (audio-taper) volume control, use {@link gain} instead.
+     * @param factor - Scale factor as {@link Poly<Signal>}
      * @see {@link ModuleOutput.amplitude}
      */
    amplitude(factor: Poly<Signal>): Collection;
@@ -537,11 +553,14 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
    */
   shift(offset: Poly<Signal>): Collection;
 
-  /**
-   * Scale all signals by a factor with a perceptual (audio taper) curve.
-   * @param level - Amplitude level as {@link Poly<Signal>}
-   * @see {@link ModuleOutput.gain}
-   */
+    /**
+     * Scale all signals by a factor with a perceptual (audio taper) curve
+     * (5 = unity, 0 = silence).
+     *
+     * For linear amplitude scaling, use {@link amplitude} instead.
+     * @param level - Amplitude level as {@link Poly<Signal>}
+     * @see {@link ModuleOutput.gain}
+     */
   gain(level: Poly<Signal>): Collection;
 
   /**
@@ -563,10 +582,9 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
 
   /**
    * Send all outputs to speakers as stereo, summed together.
-   * @param baseChannel - Base output channel (0-14, default 0)
    * @param options - Stereo output options ({@link StereoOutOptions})
    */
-  out(baseChannel?: number, options?: StereoOutOptions): this;
+  out(options?: StereoOutOptions): this;
 
   /**
    * Send all outputs to speakers as mono, summed together.
@@ -643,6 +661,14 @@ class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
    * $c(osc1, osc2).pipeMix(s => $lpf(s, '1000hz'), 1).out()
    */
   pipeMix(pipeFn: (self: this) => ModuleOutput | Collection, mix?: Poly<Signal> ): Collection;
+
+  /**
+   * Register all outputs in this collection as a send to a bus, with optional gain.
+   * @param bus - The {@link Bus} to send to
+   * @param gain - Send level as {@link Poly<Signal>}
+   * @returns This collection for chaining
+   */
+  send(bus: Bus, gain?: Poly<Signal>): this;
 }
 
 /**
@@ -810,6 +836,48 @@ function $deferred(channels?: number): DeferredCollection;
  * $sine(440).amplitude(vol).out();
  */
 function $slider(label: string, value: number, min: number, max: number): ModuleOutput;
+
+/**
+ * A send-return bus. Create one with {@link $bus}, then call \`.send(bus, gain)\` on
+ * any {@link ModuleOutput} or {@link Collection} to route signals through it.
+ * The bus callback receives a mixed {@link Collection} of all sends.
+ */
+class Bus {
+  /** @internal */
+  private constructor();
+}
+
+/**
+ * Create a send-return bus.
+ *
+ * The callback receives a {@link Collection} that is the mix of all signals
+ * sent to this bus via \`.send(bus, gain)\`. Use it to add effects or route the
+ * mixed signal to an output.
+ *
+ * @param cb - Called during patch finalization with the mixed sends.
+ *             The return value of this function is discarded, it's up to the cb to
+ *             call \`.out()\` or \`.outMono()\` to actually hear anything.
+ * @returns A {@link Bus} handle passed to \`.send()\`
+ *
+ * @example
+ * const reverb = \\$bus((mixed) => \\$reverb(mixed).out());
+ * \\$saw('a').send(reverb, 0.6);
+ * \\$sine('a2').send(reverb, 0.4);
+ */
+function $bus(cb: (mixed: Collection) => unknown): Bus;
+
+/**
+ * Set a custom end-of-chain processor applied to the final mix before output gain.
+ *
+ * The callback receives the fully mixed {@link Collection} and should return a
+ * processed signal. It is called once during patch finalization.
+ *
+ * @param cb - Transform applied to the final mix
+ *
+ * @example
+ * $setEndOfChainCb((mix) => $lpf(mix, '2000hz'));
+ */
+function $setEndOfChainCb(cb: (mixed: Collection) => ModuleOutput | Collection | CollectionWithRange): void;
 
 /**
  * Compute the Cartesian product of the given arrays.

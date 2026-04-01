@@ -670,7 +670,7 @@ impl Synthesizer {
     for module in &patch.modules {
       // Check if this is a MIDI module type
       match module.module_type.as_str() {
-        "midi.cv" | "midi.cc" | "midi.gate" => {
+        "$midiCV" | "$midiCC" => {
           // Extract device param from params JSON
           if let Some(device) = module.params.get("device").and_then(|v| v.as_str()) {
             if !device.is_empty() {

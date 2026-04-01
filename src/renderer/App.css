@@ -21,7 +21,6 @@
     border-bottom: 1px solid var(--border-subtle);
     min-height: 38px;
     -webkit-app-region: drag;
-    user-select: none;
 }
 
 /* Allow interactive elements in header */

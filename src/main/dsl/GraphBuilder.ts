@@ -114,6 +114,55 @@ export interface MonoOutGroup {
 
 export type OutGroup = StereoOutGroup | MonoOutGroup;
 
+interface SendGroup {
+    outputs: ModuleOutput[];
+    gain?: PolySignal;
+}
+
+export class Bus {
+    private builder: GraphBuilder;
+    private cb: (mixed: Collection) => unknown;
+    private sendGroups: SendGroup[] = [];
+    private locked: boolean = false;
+
+    constructor(builder: GraphBuilder, cb: (mixed: Collection) => unknown) {
+        this.builder = builder;
+        this.cb = cb;
+
+        builder.addBus(this);
+    }
+
+    addSend(value: ModuleOutput | ModuleOutput[], gain?: PolySignal): void {
+        if (this.locked) {
+            throw new Error('`.send` is not allowed in $bus callbacks');
+        }
+        const outputs = Array.isArray(value) ? [...value] : [value];
+        const group: SendGroup = {
+            outputs,
+            gain,
+        };
+        this.sendGroups.push(group);
+    }
+
+    lock() {
+        this.locked = true;
+    }
+
+    finalize() {
+        const mixFactory = this.builder.getFactory('$mix');
+        const mixed = mixFactory(
+            this.sendGroups.map((e) => {
+                const coll = $c(e.outputs);
+                if (e.gain !== undefined) {
+                    return coll.gain(e.gain);
+                }
+                return coll;
+            }),
+        ) as Collection;
+        this.cb(mixed);
+    }
+}
+
 /**
  * BaseCollection provides iterable, indexable container for ModuleOutput arrays
  * with chainable DSP methods (amplitude, shift, scope, out).
@@ -138,7 +187,9 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
     }
 
     /**
-     * Scale all outputs by a factor
+     * Scale all outputs by a linear factor (5 = unity, 2.5 = half, 10 = 2x).
+     *
+     * For perceptual (audio-taper) volume control, use {@link gain} instead.
      */
     amplitude(factor: PolySignal): Collection {
         if (this.items.length === 0) return new Collection();
@@ -167,8 +218,10 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
     }
 
     /**
-     * Scale all outputs by a factor with a perceptual (audio taper) curve.
-     * Chains $curve → $scaleAndShift with exponent 3.
+     * Scale all outputs by a factor with a perceptual (audio taper) curve
+     * (5 = unity, 0 = silence). Chains $curve → $scaleAndShift with exponent 3.
+     *
+     * For linear amplitude scaling, use {@link amplitude} instead.
      */
     gain(level: PolySignal): Collection {
         if (this.items.length === 0) return new Collection();
@@ -213,16 +266,16 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
 
     /**
      * Send all outputs to speakers as stereo
-     * @param baseChannel - Base output channel (0-15, default 0)
+     * @param options.baseChannel - Base output channel (0-15, default 0)
      * @param options.gain - Output gain
      * @param options.pan - Pan position (-5 = left, 0 = center, +5 = right)
      * @param options.width - Stereo width/spread (0 = no spread, 5 = full spread)
      */
-    out(baseChannel: number = 0, options: StereoOutOptions = {}): this {
+    out(options: StereoOutOptions = {}): this {
         if (this.items.length > 0) {
             this.items[0].builder.addOut([...this.items], {
+                baseChannel: 0,
                 ...options,
-                baseChannel,
             });
         }
         return this;
@@ -240,6 +293,18 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
                 gain,
             });
         }
+        return this;
+    }
+
+    /**
+     * Add self to the send-return bus
+     *
+     * @param bus
+     * @param gain
+     * @returns
+     */
+    send(bus: Bus, gain?: PolySignal): this {
+        bus.addSend([...this], gain);
         return this;
     }
 
@@ -267,7 +332,7 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
         pipelineFunc: (
             self: this,
         ) => ModuleOutput | BaseCollection<ModuleOutput>,
-        mix: Value & PolySignal = 2.5,
+        mix: PolySignal = 2.5,
     ): Collection {
         const clampFactory = this.items[0].builder.getFactory('$clamp');
         if (!clampFactory) {
@@ -288,7 +353,7 @@ export class BaseCollection<T extends ModuleOutput> implements Iterable<T> {
                 clampFactory(remapFactory(mix, 5, 0, 0, 5), { min: 0, max: 5 }),
             ),
             result.amplitude(
-                clampFactory(mix, { min: 0, max: 5 }) as Value & PolySignal,
+                clampFactory(mix, { min: 0, max: 5 }) as PolySignal,
             ),
         ]) as Collection;
     }
@@ -424,6 +489,12 @@ export class GraphBuilder {
     private timeSignatureNumerator: number = 4;
     /** Time signature denominator (beat value) for ROOT_CLOCK */
     private timeSignatureDenominator: number = 4;
+    private busses: Bus[] = [];
+    private endOfChainCb: (
+        mixed: Collection,
+    ) => ModuleOutput | Collection | CollectionWithRange = (e) => e;
+    private processingBusses: boolean = false;
+    private processingEndOfChain: boolean = false;
 
     constructor(schemas: ModuleSchema[]) {
         this.schemas = processSchemas(schemas);
@@ -544,12 +615,29 @@ export class GraphBuilder {
         this.timeSignatureDenominator = denominator;
     }
 
+    setEndOfChainCb(
+        cb: (
+            mixed: Collection,
+        ) => ModuleOutput | Collection | CollectionWithRange,
+    ): void {
+        if (this.processingEndOfChain) {
+            throw new Error(
+                '`$setEndOfChainCb` is not allowed in its own callback.',
+            );
+        }
+        this.endOfChainCb = cb;
+    }
+
     /**
      * Get a factory function by module type name.
      * Returns undefined if factories haven't been registered yet.
      */
-    getFactory(moduleType: string): FactoryFunction | undefined {
-        return this.factoryRegistry.get(moduleType);
+    getFactory(moduleType: string): FactoryFunction {
+        const factory = this.factoryRegistry.get(moduleType);
+        if (!factory) {
+            throw new Error(`Factory ${moduleType} not found`);
+        }
+        return factory;
     }
 
     /**
@@ -559,23 +647,21 @@ export class GraphBuilder {
      * which adds overhead from channel count derivation on every patch build.
      */
     toPatch(): PatchGraph {
+        this.processingBusses = true;
+        for (const bus of this.busses) {
+            // Lock the bus from having more sends applied to it
+            bus.lock();
+        }
+        for (const bus of this.busses) {
+            // its up to the bus callback functions to register themselves
+            bus.finalize();
+        }
+
         const signalFactory = this.getFactory('$signal');
         const mixFactory = this.getFactory('$mix');
         const stereoMixerFactory = this.getFactory('$stereoMix');
         const scaleAndShiftFactory = this.getFactory('$scaleAndShift');
         const curveFactory = this.getFactory('$curve');
-
-        if (
-            !signalFactory ||
-            !mixFactory ||
-            !stereoMixerFactory ||
-            !scaleAndShiftFactory ||
-            !curveFactory
-        ) {
-            throw new Error(
-                'Required factories (signal, mix, stereoMixer, util.scaleAndShift, curve) not registered',
-            );
-        }
 
         // Process output groups and build channel collections
         if (this.outGroups.size > 0) {
@@ -659,8 +745,9 @@ export class GraphBuilder {
             // Each collection contributes to corresponding output channels
             const finalMix = mixFactory(allChannelCollections) as Collection;
 
-            // Apply global output gain
-            const gainedMix = finalMix.gain(this.outputGain);
+            // Apply end of chain processing and global output gain
+            this.processingEndOfChain = true;
+            const gainedMix = this.endOfChainCb(finalMix).gain(this.outputGain);
 
             // Create root signal module with the final mix
             signalFactory(gainedMix, { id: 'ROOT_OUTPUT' });
@@ -673,12 +760,8 @@ export class GraphBuilder {
         const rootClock = this.modules.get('ROOT_CLOCK');
         if (rootClock) {
             rootClock.params.tempo = this.tempo;
-            if (this.timeSignatureNumerator !== undefined) {
-                rootClock.params.numerator = this.timeSignatureNumerator;
-            }
-            if (this.timeSignatureDenominator !== undefined) {
-                rootClock.params.denominator = this.timeSignatureDenominator;
-            }
+            rootClock.params.numerator = this.timeSignatureNumerator;
+            rootClock.params.denominator = this.timeSignatureDenominator;
         }
 
         // Build a map of deferred output strings to their resolved output strings
@@ -779,6 +862,12 @@ export class GraphBuilder {
         value: ModuleOutput | ModuleOutput[],
         options: StereoOutOptions = {},
     ): void {
+        if (this.processingEndOfChain) {
+            throw new Error(
+                '`.out` is not allowed in the end of chain processor callback.',
+            );
+        }
+
         const baseChannel = options.baseChannel ?? 0;
         if (baseChannel < 0 || baseChannel > 14) {
             throw new Error(`baseChannel must be 0-14, got ${baseChannel}`);
@@ -805,6 +894,12 @@ export class GraphBuilder {
         value: ModuleOutput | ModuleOutput[],
         options: MonoOutOptions = {},
     ): void {
+        if (this.processingEndOfChain) {
+            throw new Error(
+                '`.outMono` is not allowed in the end of chain processor callback.',
+            );
+        }
+
         const channel = options.channel ?? 0;
         if (channel < 0 || channel > 15) {
             throw new Error(`channel must be 0-15, got ${channel}`);
@@ -820,6 +915,17 @@ export class GraphBuilder {
         const existing = this.outGroups.get(channel) ?? [];
         existing.push(group);
         this.outGroups.set(channel, existing);
+    }
+
+    addBus(bus: Bus) {
+        if (this.processingEndOfChain) {
+            throw new Error(
+                '`$bus` is not allowed in the end of chain processor callback.',
+            );
+        } else if (this.processingBusses) {
+            throw new Error('`$bus` is not allowed in other $bus callbacks');
+        }
+        this.busses.push(bus);
     }
 
     /**
@@ -870,8 +976,6 @@ export class GraphBuilder {
         });
     }
 }
-
-type Value = number | ModuleOutput | ModuleOutput[] | ModuleNode | ModuleNode[];
 
 /**
  * ModuleNode represents a module instance in the DSL (internal use only)
@@ -1010,44 +1114,37 @@ export class ModuleOutput {
     }
 
     /**
-     * Scale this output by a factor
+     * Scale this output by a linear factor (5 = unity, 2.5 = half, 10 = 2x).
+     *
+     * For perceptual (audio-taper) volume control, use {@link gain} instead.
      */
-    amplitude(factor: Value): Collection {
+    amplitude(factor: PolySignal): Collection {
         const factory = this.builder.getFactory('$scaleAndShift');
-        if (!factory) {
-            throw new Error('Factory for util.scaleAndShift not registered');
-        }
         return factory(this, factor) as Collection;
     }
 
     /** Alias for {@link amplitude} */
-    amp(factor: Value): Collection {
+    amp(factor: PolySignal): Collection {
         return this.amplitude(factor);
     }
 
     /**
      * Shift this output by an offset
      */
-    shift(offset: Value): Collection {
+    shift(offset: PolySignal): Collection {
         const factory = this.builder.getFactory('$scaleAndShift');
-        if (!factory) {
-            throw new Error('Factory for util.scaleAndShift not registered');
-        }
         return factory(this, undefined, offset) as Collection;
     }
 
     /**
-     * Scale this output by a factor with a perceptual (audio taper) curve.
-     * Chains $curve → $scaleAndShift with exponent 3.
+     * Scale this output by a factor with a perceptual (audio taper) curve
+     * (5 = unity, 0 = silence). Chains $curve → $scaleAndShift with exponent 3.
+     *
+     * For linear amplitude scaling, use {@link amplitude} instead.
      */
-    gain(level: Value): Collection {
+    gain(level: PolySignal): Collection {
         const curveFactory = this.builder.getFactory('$curve');
         const scaleFactory = this.builder.getFactory('$scaleAndShift');
-        if (!curveFactory || !scaleFactory) {
-            throw new Error(
-                'Factory for $curve or $scaleAndShift not registered',
-            );
-        }
         const curvedLevel = curveFactory(level, GAIN_CURVE_EXP);
         return scaleFactory(this, curvedLevel) as Collection;
     }
@@ -1055,11 +1152,8 @@ export class ModuleOutput {
     /**
      * Apply a power curve to this output. Creates a $curve module internally.
      */
-    exp(factor: Value = GAIN_CURVE_EXP): Collection {
+    exp(factor: PolySignal = GAIN_CURVE_EXP): Collection {
         const factory = this.builder.getFactory('$curve');
-        if (!factory) {
-            throw new Error('Factory for $curve not registered');
-        }
         return factory(this, factor) as Collection;
     }
 
@@ -1076,13 +1170,13 @@ export class ModuleOutput {
 
     /**
      * Send this output to speakers as stereo
-     * @param baseChannel - Base output channel (0-15, default 0)
+     * @param options.baseChannel - Base output channel (0-15, default 0)
      * @param options.gain - Output gain (adds util.scaleAndShift after stereo mix)
      * @param options.pan - Pan position (-5 = left, 0 = center, +5 = right)
      * @param options.width - Stereo width/spread (0 = no spread, 5 = full spread)
      */
-    out(baseChannel: number = 0, options: StereoOutOptions = {}): this {
-        this.builder.addOut(this, { ...options, baseChannel });
+    out(options: StereoOutOptions = {}): this {
+        this.builder.addOut(this, { baseChannel: 0, ...options });
         return this;
     }
 
@@ -1093,6 +1187,18 @@ export class ModuleOutput {
      */
     outMono(channel: number = 0, gain?: PolySignal): this {
         this.builder.addOutMono(this, { channel, gain });
+        return this;
+    }
+
+    /**
+     * Add self to the send-return bus
+     *
+     * @param bus
+     * @param gain
+     * @returns
+     */
+    send(bus: Bus, gain?: PolySignal): this {
+        bus.addSend(this, gain);
         return this;
     }
 
@@ -1123,9 +1229,6 @@ export class ModuleOutput {
         options?: Record<string, unknown>,
     ): Collection {
         const mixFactory = this.builder.getFactory('$mix');
-        if (!mixFactory) {
-            throw new Error('Factory for $mix not registered');
-        }
         const result = pipelineFunc(this);
         return mixFactory([this, result], options) as Collection;
     }
@@ -1140,9 +1243,6 @@ export class ModuleOutput {
         inMax: PolySignal,
     ): Collection {
         const factory = this.builder.getFactory('$remap');
-        if (!factory) {
-            throw new Error('Factory for $remap not registered');
-        }
         return factory(this, outMin, outMax, inMin, inMax) as Collection;
     }
 
@@ -1178,9 +1278,6 @@ export class ModuleOutputWithRange extends ModuleOutput {
      */
     range(outMin: PolySignal, outMax: PolySignal): Collection {
         const factory = this.builder.getFactory('$remap');
-        if (!factory) {
-            throw new Error('Factory for remap not registered');
-        }
         return factory(
             this,
             outMin,

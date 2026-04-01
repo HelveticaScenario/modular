@@ -1500,19 +1500,19 @@ const createMenu = (): void => {
     const template: Electron.MenuItemConstructorOptions[] = [
         // App menu (macOS only)
         ...(isMac
-            ? [
+            ? ([
                   {
                       label: app.name,
                       submenu: [
-                          { role: 'about' as const },
-                          { type: 'separator' as const },
+                          { role: 'about' },
+                          { type: 'separator' },
                           {
                               label: 'Check for Updates...',
                               click: async () => {
                                   await checkForUpdateAvailability();
                               },
                           },
-                          { type: 'separator' as const },
+                          { type: 'separator' },
                           {
                               label: 'Settings...',
                               accelerator: 'Cmd+,',
@@ -1524,17 +1524,17 @@ const createMenu = (): void => {
                                   }
                               },
                           },
-                          { type: 'separator' as const },
-                          { role: 'services' as const },
-                          { type: 'separator' as const },
-                          { role: 'hide' as const },
-                          { role: 'hideOthers' as const },
-                          { role: 'unhide' as const },
-                          { type: 'separator' as const },
-                          { role: 'quit' as const },
+                          { type: 'separator' },
+                          { role: 'services' },
+                          { type: 'separator' },
+                          { role: 'hide' },
+                          { role: 'hideOthers' },
+                          { role: 'unhide' },
+                          { type: 'separator' },
+                          { role: 'quit' },
                       ],
                   },
-              ]
+              ] satisfies Electron.MenuItemConstructorOptions[])
             : []),
         // File menu
         {
@@ -1562,7 +1562,7 @@ const createMenu = (): void => {
                         }
                     },
                 },
-                { type: 'separator' as const },
+                { type: 'separator' },
                 {
                     label: 'Save',
                     accelerator: 'CmdOrCtrl+S',
@@ -1585,10 +1585,10 @@ const createMenu = (): void => {
                         }
                     },
                 },
-                { type: 'separator' as const },
+                { type: 'separator' },
                 ...(isMac
                     ? []
-                    : [
+                    : ([
                           {
                               label: 'Settings...',
                               accelerator: 'Ctrl+,',
@@ -1600,57 +1600,36 @@ const createMenu = (): void => {
                                   }
                               },
                           },
-                      ]),
-                isMac ? { role: 'close' as const } : { role: 'quit' as const },
+                      ] satisfies Electron.MenuItemConstructorOptions[])),
+                isMac ? { role: 'close' } : { role: 'quit' },
             ],
         },
         // Edit menu
         {
             label: 'Edit',
             submenu: [
-                { role: 'undo' as const },
-                { role: 'redo' as const },
-                { type: 'separator' as const },
-                { role: 'cut' as const },
-                { role: 'copy' as const },
-                { role: 'paste' as const },
+                { role: 'undo' },
+                { role: 'redo' },
+                { type: 'separator' },
+                { role: 'cut' },
+                { role: 'copy' },
+                { role: 'paste' },
                 ...(isMac
-                    ? [
-                          { role: 'pasteAndMatchStyle' as const },
-                          { role: 'delete' as const },
-                          { role: 'selectAll' as const },
-                      ]
-                    : [
-                          { role: 'delete' as const },
-                          { type: 'separator' as const },
-                          { role: 'selectAll' as const },
-                      ]),
+                    ? ([
+                          { role: 'pasteAndMatchStyle' },
+                          { role: 'delete' },
+                          { role: 'selectAll' },
+                      ] satisfies Electron.MenuItemConstructorOptions[])
+                    : ([
+                          { role: 'delete' },
+                          { type: 'separator' },
+                          { role: 'selectAll' },
+                      ] satisfies Electron.MenuItemConstructorOptions[])),
             ],
         },
         // View menu
         {
-            label: 'View',
-            submenu: [
-                { role: 'reload' as const },
-                { role: 'forceReload' as const },
-                {
-                    label: 'Toggle Developer Tools',
-                    accelerator: isMac ? 'Cmd+Option+I' : 'Ctrl+Shift+I',
-                    click: (_item, focusedWindow) => {
-                        if (focusedWindow) {
-                            BrowserWindow.fromId(
-                                focusedWindow.id,
-                            )?.webContents.toggleDevTools();
-                        }
-                    },
-                },
-                { type: 'separator' as const },
-                { role: 'resetZoom' as const },
-                { role: 'zoomIn' as const },
-                { role: 'zoomOut' as const },
-                { type: 'separator' as const },
-                { role: 'togglefullscreen' as const },
-            ],
+            role: 'viewMenu',
         },
         // Run menu
         {
@@ -1691,7 +1670,7 @@ const createMenu = (): void => {
                         }
                     },
                 },
-                { type: 'separator' as const },
+                // { type: 'separator' },
                 // {
                 //     label: 'Toggle Recording',
                 //     accelerator: 'Ctrl+R',
@@ -1707,23 +1686,11 @@ const createMenu = (): void => {
         },
         // Window menu
         {
-            label: 'Window',
-            submenu: [
-                { role: 'minimize' as const },
-                { role: 'zoom' as const },
-                ...(isMac
-                    ? [
-                          { type: 'separator' as const },
-                          { role: 'front' as const },
-                          { type: 'separator' as const },
-                          { role: 'window' as const },
-                      ]
-                    : [{ role: 'close' as const }]),
-            ],
+            role: 'windowMenu',
         },
         // Help menu (non-macOS: includes Check for Updates)
         ...(!isMac
-            ? [
+            ? ([
                   {
                       label: 'Help',
                       submenu: [
@@ -1735,7 +1702,7 @@ const createMenu = (): void => {
                           },
                       ],
                   },
-              ]
+              ] satisfies Electron.MenuItemConstructorOptions[])
             : []),
     ];
 

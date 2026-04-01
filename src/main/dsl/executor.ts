@@ -14,6 +14,10 @@ import {
     SourceLocation,
     DeferredModuleOutput,
     DeferredCollection,
+    Bus,
+    Collection,
+    ModuleOutput,
+    CollectionWithRange,
 } from './GraphBuilder';
 import { analyzeSourceSpans } from './analyzeSource';
 import type { CallSiteSpanRegistry } from './analyzeSource';
@@ -143,6 +147,18 @@ export function executePatchScript(
         return new DeferredCollection(...items);
     };
 
+    const $bus = (cb: (mixed: Collection) => unknown): Bus => {
+        return new Bus(builder, cb);
+    };
+
+    const $setEndOfChainCb = (
+        cb: (
+            mixed: Collection,
+        ) => ModuleOutput | Collection | CollectionWithRange,
+    ) => {
+        builder.setEndOfChainCb(cb);
+    };
+
     // Slider collector — populated by $slider() calls during execution
     const sliders: SliderDefinition[] = [];
 
@@ -205,10 +221,13 @@ export function executePatchScript(
         $deferred,
         // Slider control
         $slider,
+        // Bus
+        $bus,
         // Global settings
         $setTempo,
         $setOutputGain,
         $setTimeSignature,
+        $setEndOfChainCb,
         // Built-in modules
         $clock,
         $input: rootInput,
