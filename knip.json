@@ -1,0 +1,17 @@
+{
+    "$schema": "https://unpkg.com/knip@latest/schema.json",
+    "entry": [
+        "src/main/main.ts",
+        "src/renderer/renderer.tsx",
+        "src/preload/preload.ts",
+        "vite.main.config.ts",
+        "vite.preload.config.ts",
+        "vite.renderer.config.ts",
+        "forge.config.ts",
+        "vitest.config.ts",
+        "playwright.config.ts",
+        "scripts/**/*.{ts,mjs}"
+    ],
+    "project": ["src/**/*.{ts,tsx}"],
+    "ignore": ["crates/**", "e2e/**", "public/**"]
+}
