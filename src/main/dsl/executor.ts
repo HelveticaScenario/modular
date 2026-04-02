@@ -313,6 +313,7 @@ export function validateDSLSyntax(source: string): {
     error?: string;
 } {
     try {
+        // Create function only for syntax validation - not executed
         const _fn = new Function(source);
         return { valid: true };
     } catch (error) {

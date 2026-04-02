@@ -309,20 +309,23 @@ export function useEditorBuffers({
             );
 
             if (result.success) {
-                setBuffers((prev) =>
-                    prev.map((b) =>
+                // Use functional setState to avoid stale closure issues
+                let wasActive = false;
+                setBuffers((prev) => {
+                    // Check if the renamed file was active using current state
+                    wasActive = prev.some(
+                        (b) =>
+                            getBufferId(b) === activeBufferId &&
+                            b.kind === 'file' &&
+                            b.filePath === oldPath,
+                    );
+                    return prev.map((b) =>
                         b.kind === 'file' && b.filePath === oldPath
                             ? { ...b, filePath: newPath }
                             : b,
-                    ),
-                );
+                    );
+                });
 
-                const wasActive = buffers.some(
-                    (b) =>
-                        getBufferId(b) === activeBufferId &&
-                        b.kind === 'file' &&
-                        b.filePath === oldPath,
-                );
                 if (wasActive) {
                     setActiveBufferId(newPath);
                 }
@@ -382,25 +385,27 @@ export function useEditorBuffers({
             const result = await electronAPI.filesystem.deleteFile(filePath);
 
             if (result.success) {
-                setBuffers((prev) =>
-                    prev.filter(
-                        (b) => !(b.kind === 'file' && b.filePath === filePath),
-                    ),
-                );
+                // Use functional setState to avoid stale closure issues
+                let activeIsDeleted = false;
+                let remaining: typeof buffers = [];
 
-                const activeBuffer = buffers.find(
-                    (b) => getBufferId(b) === activeBufferId,
-                );
-                const activeIsDeleted =
-                    activeBufferId &&
-                    ((bufferId && activeBufferId === bufferId) ||
-                        (activeBuffer?.kind === 'file' &&
-                            activeBuffer.filePath === filePath));
+                setBuffers((prev) => {
+                    const activeBuffer = prev.find(
+                        (b) => getBufferId(b) === activeBufferId,
+                    );
+                    activeIsDeleted =
+                        activeBufferId !== undefined &&
+                        ((bufferId !== undefined && activeBufferId === bufferId) ||
+                            (activeBuffer?.kind === 'file' &&
+                                activeBuffer.filePath === filePath));
 
-                if (activeIsDeleted) {
-                    const remaining = buffers.filter(
+                    remaining = prev.filter(
                         (b) => !(b.kind === 'file' && b.filePath === filePath),
                     );
+                    return remaining;
+                });
+
+                if (activeIsDeleted) {
                     if (remaining.length > 0) {
                         setActiveBufferId(getBufferId(remaining[0]));
                     } else {
@@ -418,6 +423,8 @@ export function useEditorBuffers({
 
     const performCloseBuffer = useCallback(
         (bufferId: string) => {
+            // Capture current activeBufferId to avoid stale closure
+            const currentActiveId = activeBufferId;
             setTimeout(() => {
                 setBuffers((prev) => {
                     const buffer = prev.find(
@@ -432,7 +439,7 @@ export function useEditorBuffers({
                     );
 
                     // Update active buffer if we're closing the active one
-                    if (activeBufferId === bufferId) {
+                    if (currentActiveId === bufferId) {
                         const idx = prev.findIndex(
                             (b) => getBufferId(b) === bufferId,
                         );

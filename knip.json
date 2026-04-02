@@ -83,8 +83,7 @@
         "@modular/core-openharmony-arm64",
         "@modular/core-openharmony-x64",
         "@modular/core-openharmony-arm",
-        "@modular/core-wasm32-wasi",
-        "src"
+        "@modular/core-wasm32-wasi"
     ],
     "ignoreBinaries": ["build", "electron-rebuild"],
     "ignoreExportsUsedInFile": true,

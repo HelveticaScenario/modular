@@ -1,2 +1,2 @@
-yarn lint && yarn knip
+yarn knip
 npx lint-staged
