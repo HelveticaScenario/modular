@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
 import electronAPI from '../../electronAPI';
 import type { EditorBuffer } from '../../types/editor';
@@ -32,15 +32,7 @@ export function useEditorBuffers({
         },
     );
 
-    const [usedUntitledNumbers, setUsedUntitledNumbers] = useState(
-        new Set<number>(),
-    );
-    const usedUntitledNumbersRef = useRef(usedUntitledNumbers);
-    usedUntitledNumbersRef.current = usedUntitledNumbers;
-
-    const [renamingPath, setRenamingPath] = useState<string | null>(null);
-
-    useEffect(() => {
+    const usedUntitledNumbers = useMemo(() => {
         const used = new Set<number>();
         buffers.forEach((b) => {
             if (b.kind === 'untitled') {
@@ -50,8 +42,14 @@ export function useEditorBuffers({
                 }
             }
         });
-        setUsedUntitledNumbers(used);
+        return used;
     }, [buffers]);
+    const usedUntitledNumbersRef = useRef(usedUntitledNumbers);
+    useEffect(() => {
+        usedUntitledNumbersRef.current = usedUntitledNumbers;
+    });
+
+    const [renamingPath, setRenamingPath] = useState<string | null>(null);
 
     const activeBuffer = buffers.find((b) => getBufferId(b) === activeBufferId);
     const patchCode = activeBuffer?.content ?? DEFAULT_PATCH;
@@ -156,7 +154,6 @@ export function useEditorBuffers({
         next.add(nextIdNum);
         usedUntitledNumbersRef.current = next;
 
-        setUsedUntitledNumbers(next);
         setBuffers((prev) => [...prev, newBuffer]);
         setActiveBufferId(nextId);
     }, []);
@@ -189,12 +186,8 @@ export function useEditorBuffers({
                 if (result.success) {
                     const match = buffer.id.match(/^untitled-(\d+)$/);
                     if (match) {
-                        const num = parseInt(match[1], 10);
-                        setUsedUntitledNumbers((prev) => {
-                            const next = new Set(prev);
-                            next.delete(num);
-                            return next;
-                        });
+                        // usedUntitledNumbers is derived from buffers via useMemo;
+                        // it will update automatically when setBuffers is called below.
                     }
 
                     setBuffers((prev) =>
@@ -434,15 +427,8 @@ export function useEditorBuffers({
                 );
 
                 if (buffer.kind === 'untitled') {
-                    const match = buffer.id.match(/^untitled-(\d+)$/);
-                    if (match) {
-                        const num = parseInt(match[1], 10);
-                        setUsedUntitledNumbers((prev) => {
-                            const next = new Set(prev);
-                            next.delete(num);
-                            return next;
-                        });
-                    }
+                    // usedUntitledNumbers is derived from buffers via useMemo;
+                    // it will update automatically when setBuffers is called below.
                 }
 
                 if (activeBufferId === bufferId) {

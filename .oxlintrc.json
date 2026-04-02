@@ -5,6 +5,10 @@
         {
             "name": "stylistic",
             "specifier": "./node_modules/@stylistic/eslint-plugin/dist/index.js"
+        },
+        {
+            "name": "react-hooks-js",
+            "specifier": "eslint-plugin-react-hooks"
         }
     ],
     "options": {
@@ -26,15 +30,32 @@
     },
     "ignorePatterns": [".webpack/", "out/", ".vite/", "node_modules/"],
     "rules": {
-        "react/react-in-jsx-scope": "off",
+        "import/default": "off",
+        "import/no-cycle": "error",
+        "import/no-named-as-default": "off",
+        "import/no-unassigned-import": "off",
         "no-extend-native": "off",
+        "react-hooks-js/component-hook-factories": "error",
+        "react-hooks-js/config": "error",
+        "react-hooks-js/error-boundaries": "error",
+        "react-hooks-js/exhaustive-deps": "off",
+        "react-hooks-js/gating": "error",
+        "react-hooks-js/globals": "error",
+        "react-hooks-js/immutability": "error",
+        "react-hooks-js/incompatible-library": "warn",
+        "react-hooks-js/preserve-manual-memoization": "error",
+        "react-hooks-js/purity": "error",
+        "react-hooks-js/refs": "error",
+        "react-hooks-js/rules-of-hooks": "off",
+        "react-hooks-js/set-state-in-effect": "error",
+        "react-hooks-js/set-state-in-render": "error",
+        "react-hooks-js/static-components": "error",
+        "react-hooks-js/unsupported-syntax": "warn",
+        "react-hooks-js/use-memo": "error",
+        "react/exhaustive-deps": "warn",
+        "react/react-in-jsx-scope": "off",
+        "react/rules-of-hooks": "error",
         "typescript/no-implied-eval": "off",
         "typescript/no-unsafe-type-assertion": "off",
-        "import/no-cycle": "error",
-        "import/no-unassigned-import": "off",
-        "import/no-named-as-default": "off",
-        "import/default": "off",
-        "react/rules-of-hooks": "error",
-        "react/exhaustive-deps": "warn"
     }
 }

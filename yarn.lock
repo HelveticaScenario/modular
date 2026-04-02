@@ -1914,7 +1914,6 @@ __metadata:
     electron: "npm:39.2.7"
     electron-squirrel-startup: "npm:^1.0.1"
     eslint-plugin-react-hooks: "npm:^7.0.1"
-    events: "npm:^3.3.0"
     husky: "npm:^9.1.7"
     knip: "npm:^6.1.1"
     lint-staged: "npm:^16.2.7"
@@ -1925,7 +1924,6 @@ __metadata:
     react: "npm:^19.2.3"
     react-dom: "npm:^19.2.3"
     react-markdown: "npm:^10.1.0"
-    react-use-websocket: "npm:^4.13.0"
     ts-morph: "npm:^27.0.2"
     tsx: "npm:^4.21.0"
     typescript: "npm:~5.9.3"
@@ -5876,7 +5874,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"events@npm:^3.2.0, events@npm:^3.3.0":
+"events@npm:^3.2.0":
   version: 3.3.0
   resolution: "events@npm:3.3.0"
   checksum: 10c0/d6b6f2adbccbcda74ddbab52ed07db727ef52e31a61ed26db9feb7dc62af7fc8e060defa65e5f8af9449b86b52cc1a1f6a79f2eafcf4e62add2b7a1fa4a432f6
@@ -8890,13 +8888,6 @@ __metadata:
     "@types/react": ">=18"
     react: ">=18"
   checksum: 10c0/4a5dc7d15ca6d05e9ee95318c1904f83b111a76f7588c44f50f1d54d4c97193b84e4f64c4b592057c989228238a2590306cedd0c4d398e75da49262b2b5ae1bf
-  languageName: node
-  linkType: hard
-
-"react-use-websocket@npm:^4.13.0":
-  version: 4.13.0
-  resolution: "react-use-websocket@npm:4.13.0"
-  checksum: 10c0/92f0941c67984f3b43979a2e5aa9a358d1e2b01591575b09fdcdd638d0c4275f6c5e180d1173632bc0fd564458afc3583643635eaeb4e0b8ce059555576661f3
   languageName: node
   linkType: hard
 

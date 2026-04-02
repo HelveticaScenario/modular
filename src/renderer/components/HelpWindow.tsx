@@ -34,10 +34,7 @@ type Page = 'getting-started' | 'hotkeys' | 'globals' | 'types' | 'reference';
 const SORTED_TYPE_NAMES = [...DSL_TYPE_NAMES].sort(
     (a, b) => b.length - a.length,
 );
-const TYPE_PATTERN = new RegExp(
-    `(?<!\\w)(${SORTED_TYPE_NAMES.join('|')})(?!\\w)`,
-    'g',
-);
+const TYPE_PATTERN_SOURCE = `(?<!\\w)(${SORTED_TYPE_NAMES.join('|')})(?!\\w)`;
 
 interface TypeLinkProps {
     typeName: DslTypeName;
@@ -71,10 +68,9 @@ const LinkifyTypes: React.FC<LinkifyTypesProps> = ({ text, onTypeClick }) => {
     let match: RegExpExecArray | null;
     let key = 0;
 
-    // Reset regex state
-    TYPE_PATTERN.lastIndex = 0;
+    const typePattern = new RegExp(TYPE_PATTERN_SOURCE, 'g');
 
-    while ((match = TYPE_PATTERN.exec(text)) !== null) {
+    while ((match = typePattern.exec(text)) !== null) {
         // Add text before the match
         if (match.index > lastIndex) {
             parts.push(text.slice(lastIndex, match.index));

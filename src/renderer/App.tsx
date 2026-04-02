@@ -559,6 +559,10 @@ function App() {
     useEffect(() => {
         handleSaveFileRef.current = handleSaveFile;
     }, [handleSaveFile]);
+    const handleSaveFileStable = useCallback(
+        () => handleSaveFileRef.current(),
+        [],
+    );
 
     const handleOpenWorkspaceRef = useRef(() => {});
     useEffect(() => {
@@ -757,6 +761,7 @@ function App() {
             setIsClockRunning(false);
         };
     }, []);
+    const handleStop = useCallback(() => handleStopRef.current(), []);
 
     const dismissError = useCallback(() => {
         setError(null);
@@ -824,7 +829,7 @@ function App() {
                 <AudioControls
                     isRunning={isClockRunning}
                     isRecording={isRecording}
-                    onStop={handleStopRef.current}
+                    onStop={handleStop}
                     onStartRecording={async () => {
                         await electronAPI.synthesizer.startRecording();
                         setIsRecording(true);
@@ -868,6 +873,7 @@ function App() {
                                 onChange={handlePatchChange}
                                 editorRef={editorRef}
                                 scopeViews={scopeViews}
+                                // oxlint-disable-next-line react-hooks-js/refs -- intentional: live Monaco decoration collection mutated outside React
                                 scopeDecorations={scopeDecorationsRef.current}
                                 onRegisterScopeCanvas={registerScopeCanvas}
                                 onUnregisterScopeCanvas={unregisterScopeCanvas}
@@ -891,7 +897,7 @@ function App() {
                                     onSelectBuffer={setActiveBufferId}
                                     onOpenFile={handleOpenFile}
                                     onCreateFile={createUntitledFile}
-                                    onSaveFile={handleSaveFileRef.current}
+                                    onSaveFile={handleSaveFileStable}
                                     onRenameFile={renameFile}
                                     onDeleteFile={handleDeleteFile}
                                     onCloseBuffer={closeBuffer}

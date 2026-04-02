@@ -43,14 +43,12 @@ function TreeNode({
     onRenameCancel: () => void;
 }) {
     const [expanded, setExpanded] = useState(true);
-    const [editName, setEditName] = useState(entry.name);
     const inputRef = useRef<HTMLInputElement>(null);
 
     const isRenaming = renamingPath === entry.path;
 
     useEffect(() => {
         if (isRenaming && inputRef.current) {
-            setEditName(entry.name);
             inputRef.current.focus();
             const { name } = entry;
             const lastDotIndex = name.lastIndexOf('.');
@@ -65,7 +63,7 @@ function TreeNode({
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter') {
             e.stopPropagation();
-            onRenameCommit(entry.path, editName);
+            onRenameCommit(entry.path, inputRef.current?.value ?? entry.name);
         } else if (e.key === 'Escape') {
             e.stopPropagation();
             onRenameCancel();
@@ -98,8 +96,7 @@ function TreeNode({
                         ref={inputRef}
                         type="text"
                         className="rename-input"
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
+                        defaultValue={entry.name}
                         onKeyDown={handleKeyDown}
                         // OnBlur={handleBlur} // Blur handling can be tricky with specific commit logic, skipping for now to avoid accidental commits while debugging
                         onBlur={onRenameCancel} // For now cancel on blur to be safe, or just keep focus
@@ -166,14 +163,12 @@ function BufferItem({
     onKeepBuffer: (id: string) => void;
 }) {
     const bufferId = getBufferId(buffer);
-    const [editName, setEditName] = useState(formatLabel(buffer));
     const inputRef = useRef<HTMLInputElement>(null);
     const isRenaming =
         buffer.kind === 'file' && renamingPath === buffer.filePath;
 
     useEffect(() => {
         if (isRenaming && inputRef.current) {
-            setEditName(formatLabel(buffer));
             inputRef.current.focus();
             const name = formatLabel(buffer);
             const lastDotIndex = name.lastIndexOf('.');
@@ -189,7 +184,10 @@ function BufferItem({
         if (e.key === 'Enter') {
             e.stopPropagation();
             if (buffer.kind === 'file') {
-                onRenameCommit(buffer.filePath, editName);
+                onRenameCommit(
+                    buffer.filePath,
+                    inputRef.current?.value ?? formatLabel(buffer),
+                );
             }
         } else if (e.key === 'Escape') {
             e.stopPropagation();
@@ -217,8 +215,7 @@ function BufferItem({
                     ref={inputRef}
                     type="text"
                     className="rename-input"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
+                    defaultValue={formatLabel(buffer)}
                     onKeyDown={handleKeyDown}
                     onBlur={onRenameCancel}
                     onClick={(e) => e.stopPropagation()}
