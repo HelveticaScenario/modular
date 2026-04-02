@@ -56,6 +56,6 @@
         "react/react-in-jsx-scope": "off",
         "react/rules-of-hooks": "error",
         "typescript/no-implied-eval": "off",
-        "typescript/no-unsafe-type-assertion": "off",
+        "typescript/no-unsafe-type-assertion": "off"
     }
 }

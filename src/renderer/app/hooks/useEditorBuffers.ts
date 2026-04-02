@@ -133,29 +133,39 @@ export function useEditorBuffers({
     );
 
     const createUntitledFile = useCallback(() => {
-        // Read from the ref so we always see the latest value synchronously,
-        // Avoiding both stale closures and React StrictMode double-invocation.
-        const currentUsed = usedUntitledNumbersRef.current;
-        let nextIdNum = 1;
-        while (currentUsed.has(nextIdNum)) {
-            nextIdNum++;
-        }
+        setBuffers((prev) => {
+            // Derive next ID from current state to avoid race conditions
+            const currentUsed = new Set<number>();
+            prev.forEach((b) => {
+                if (b.kind === 'untitled') {
+                    const match = b.id.match(/^untitled-(\d+)$/);
+                    if (match) {
+                        currentUsed.add(parseInt(match[1], 10));
+                    }
+                }
+            });
 
-        const nextId = `untitled-${nextIdNum}`;
-        const newBuffer: EditorBuffer = {
-            content: DEFAULT_PATCH,
-            dirty: false,
-            id: nextId,
-            kind: 'untitled',
-        };
+            let nextIdNum = 1;
+            while (currentUsed.has(nextIdNum)) {
+                nextIdNum++;
+            }
 
-        // Eagerly update the ref so a second rapid call sees this number as taken.
-        const next = new Set(currentUsed);
-        next.add(nextIdNum);
-        usedUntitledNumbersRef.current = next;
+            const nextId = `untitled-${nextIdNum}`;
+            const newBuffer: EditorBuffer = {
+                content: DEFAULT_PATCH,
+                dirty: false,
+                id: nextId,
+                kind: 'untitled',
+            };
 
-        setBuffers((prev) => [...prev, newBuffer]);
-        setActiveBufferId(nextId);
+            // Update ref for useMemo dependency
+            const next = new Set(currentUsed);
+            next.add(nextIdNum);
+            usedUntitledNumbersRef.current = next;
+
+            setActiveBufferId(nextId);
+            return [...prev, newBuffer];
+        });
     }, []);
 
     const saveFile = useCallback(
@@ -184,12 +194,6 @@ export function useEditorBuffers({
                 );
 
                 if (result.success) {
-                    const match = buffer.id.match(/^untitled-(\d+)$/);
-                    if (match) {
-                        // usedUntitledNumbers is derived from buffers via useMemo;
-                        // it will update automatically when setBuffers is called below.
-                    }
-
                     setBuffers((prev) =>
                         prev.map((b) =>
                             getBufferId(b) === idToSave
@@ -384,16 +388,14 @@ export function useEditorBuffers({
                     ),
                 );
 
+                const activeBuffer = buffers.find(
+                    (b) => getBufferId(b) === activeBufferId,
+                );
                 const activeIsDeleted =
                     activeBufferId &&
                     ((bufferId && activeBufferId === bufferId) ||
-                        (buffers.find((b) => getBufferId(b) === activeBufferId)
-                            ?.kind === 'file' &&
-                            (
-                                buffers.find(
-                                    (b) => getBufferId(b) === activeBufferId,
-                                ) as any
-                            ).filePath === filePath));
+                        (activeBuffer?.kind === 'file' &&
+                            activeBuffer.filePath === filePath));
 
                 if (activeIsDeleted) {
                     const remaining = buffers.filter(
@@ -416,40 +418,39 @@ export function useEditorBuffers({
 
     const performCloseBuffer = useCallback(
         (bufferId: string) => {
-            const buffer = buffers.find((b) => getBufferId(b) === bufferId);
-            if (!buffer) {
-                return;
-            }
-
             setTimeout(() => {
-                setBuffers((prev) =>
-                    prev.filter((b) => getBufferId(b) !== bufferId),
-                );
-
-                if (buffer.kind === 'untitled') {
-                    // usedUntitledNumbers is derived from buffers via useMemo;
-                    // it will update automatically when setBuffers is called below.
-                }
-
-                if (activeBufferId === bufferId) {
-                    const idx = buffers.findIndex(
+                setBuffers((prev) => {
+                    const buffer = prev.find(
                         (b) => getBufferId(b) === bufferId,
                     );
-                    const remaining = buffers.filter(
+                    if (!buffer) {
+                        return prev;
+                    }
+
+                    const remaining = prev.filter(
                         (b) => getBufferId(b) !== bufferId,
                     );
-                    if (remaining.length > 0) {
-                        // Select the buffer that was immediately after the closed one,
-                        // Or the last one if we closed the tail.
-                        const nextIdx = Math.min(idx, remaining.length - 1);
-                        setActiveBufferId(getBufferId(remaining[nextIdx]));
-                    } else {
-                        setActiveBufferId(undefined);
+
+                    // Update active buffer if we're closing the active one
+                    if (activeBufferId === bufferId) {
+                        const idx = prev.findIndex(
+                            (b) => getBufferId(b) === bufferId,
+                        );
+                        if (remaining.length > 0) {
+                            // Select the buffer that was immediately after the closed one,
+                            // Or the last one if we closed the tail.
+                            const nextIdx = Math.min(idx, remaining.length - 1);
+                            setActiveBufferId(getBufferId(remaining[nextIdx]));
+                        } else {
+                            setActiveBufferId(undefined);
+                        }
                     }
-                }
+
+                    return remaining;
+                });
             }, 50);
         },
-        [activeBufferId, buffers],
+        [activeBufferId],
     );
 
     const closeBuffer = useCallback(
