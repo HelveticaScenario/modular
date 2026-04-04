@@ -1,19 +1,16 @@
 import React, {
-    useState,
-    useEffect,
-    useCallback,
-    useMemo,
-    useImperativeHandle,
     forwardRef,
-    useRef,
+    useCallback,
+    useEffect,
+    useImperativeHandle,
+    useMemo,
+    useState,
 } from 'react';
 import electronAPI from '../electronAPI';
 import type {
     AudioDeviceInfo,
-    MidiInputInfo,
-    HostInfo,
-    DeviceCacheSnapshot,
     CurrentAudioState,
+    DeviceCacheSnapshot,
 } from '../../shared/ipcTypes';
 
 export interface AudioSettingsHandle {
@@ -33,10 +30,14 @@ function computeCommonSampleRates(
     outputDevice: AudioDeviceInfo | null,
     inputDevice: AudioDeviceInfo | null,
 ): number[] {
-    if (!outputDevice) return [];
+    if (!outputDevice) {
+        return [];
+    }
 
     const outputRates = outputDevice.supportedSampleRates || [];
-    if (!inputDevice) return [...outputRates].sort((a, b) => a - b);
+    if (!inputDevice) {
+        return [...outputRates].sort((a, b) => a - b);
+    }
 
     const inputRates = new Set(inputDevice.supportedSampleRates || []);
     return outputRates.filter((r) => inputRates.has(r)).sort((a, b) => a - b);
@@ -52,7 +53,9 @@ function computeBufferSizes(
 ): number[] {
     const powerOf2Sizes = [64, 128, 256, 512, 1024, 2048, 4096];
 
-    if (!outputDevice) return [];
+    if (!outputDevice) {
+        return [];
+    }
 
     // Find the common range
     let minSize = outputDevice.bufferSizeRange?.min ?? 64;
@@ -101,7 +104,9 @@ export const AudioSettingsTab = forwardRef<
 
     // Filter devices by selected host
     const outputDevicesForHost = useMemo(() => {
-        if (!deviceCache || !selectedHostId) return [];
+        if (!deviceCache || !selectedHostId) {
+            return [];
+        }
         const hostData = deviceCache.hosts.find(
             (h) => h.hostId === selectedHostId,
         );
@@ -109,7 +114,9 @@ export const AudioSettingsTab = forwardRef<
     }, [deviceCache, selectedHostId]);
 
     const inputDevicesForHost = useMemo(() => {
-        if (!deviceCache || !selectedHostId) return [];
+        if (!deviceCache || !selectedHostId) {
+            return [];
+        }
         const hostData = deviceCache.hosts.find(
             (h) => h.hostId === selectedHostId,
         );
@@ -174,12 +181,16 @@ export const AudioSettingsTab = forwardRef<
 
     // When host changes, reset device selections to defaults for that host
     useEffect(() => {
-        if (!deviceCache || !selectedHostId) return;
+        if (!deviceCache || !selectedHostId) {
+            return;
+        }
 
         const hostData = deviceCache.hosts.find(
             (h) => h.hostId === selectedHostId,
         );
-        if (!hostData) return;
+        if (!hostData) {
+            return;
+        }
 
         // If current output device isn't in this host, select default
         const outputInHost = hostData.outputDevices.find(
@@ -199,13 +210,18 @@ export const AudioSettingsTab = forwardRef<
         if (!inputInHost && selectedInputDeviceId !== null) {
             setSelectedInputDeviceId(null);
         }
-    }, [deviceCache, selectedHostId]);
+    }, [
+        deviceCache,
+        selectedHostId,
+        selectedInputDeviceId,
+        selectedOutputDeviceId,
+    ]);
 
     // Update sample rate and buffer size when device selection changes
     useEffect(() => {
         // Auto-select a sensible sample rate if the current one is not available.
         // Prefer the output device's native/default rate (from cpal) so we
-        // match what the OS considers optimal for this device.
+        // Match what the OS considers optimal for this device.
         if (
             selectedSampleRate === null ||
             !availableSampleRates.includes(selectedSampleRate)
@@ -232,7 +248,13 @@ export const AudioSettingsTab = forwardRef<
                     : null;
             setSelectedBufferSize(lowest);
         }
-    }, [availableSampleRates, availableBufferSizes]);
+    }, [
+        availableSampleRates,
+        availableBufferSizes,
+        selectedSampleRate,
+        selectedBufferSize,
+        selectedOutputDevice,
+    ]);
 
     // Refresh devices from hardware
     const refreshDevices = useCallback(async () => {
@@ -253,7 +275,7 @@ export const AudioSettingsTab = forwardRef<
     // Load on active
     useEffect(() => {
         if (isActive) {
-            loadData();
+            void loadData();
         }
     }, [isActive, loadData]);
 
@@ -319,7 +341,9 @@ export const AudioSettingsTab = forwardRef<
 
     // Check if selections differ from current running state
     const checkIsDirty = useCallback(() => {
-        if (!currentState) return false;
+        if (!currentState) {
+            return false;
+        }
         return (
             selectedHostId !== currentState.hostId ||
             selectedOutputDeviceId !== (currentState.outputDeviceId ?? null) ||

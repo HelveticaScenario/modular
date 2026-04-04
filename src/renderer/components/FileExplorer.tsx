@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './FileExplorer.css';
 import type { FileTreeEntry } from '../../shared/ipcTypes';
 import type { EditorBuffer } from '../types/editor';
@@ -27,8 +27,6 @@ interface FileExplorerProps {
     onKeepBuffer: (bufferId: string) => void;
 }
 
-export const SCRATCH_FILE = '__scratch__.mjs';
-
 function TreeNode({
     entry,
     onOpenFile,
@@ -45,16 +43,14 @@ function TreeNode({
     onRenameCancel: () => void;
 }) {
     const [expanded, setExpanded] = useState(true);
-    const [editName, setEditName] = useState(entry.name);
     const inputRef = useRef<HTMLInputElement>(null);
 
     const isRenaming = renamingPath === entry.path;
 
     useEffect(() => {
         if (isRenaming && inputRef.current) {
-            setEditName(entry.name);
             inputRef.current.focus();
-            const name = entry.name;
+            const { name } = entry;
             const lastDotIndex = name.lastIndexOf('.');
             if (lastDotIndex !== -1) {
                 inputRef.current.setSelectionRange(0, lastDotIndex);
@@ -67,7 +63,7 @@ function TreeNode({
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter') {
             e.stopPropagation();
-            onRenameCommit(entry.path, editName);
+            onRenameCommit(entry.path, inputRef.current?.value ?? entry.name);
         } else if (e.key === 'Escape') {
             e.stopPropagation();
             onRenameCancel();
@@ -100,10 +96,9 @@ function TreeNode({
                         ref={inputRef}
                         type="text"
                         className="rename-input"
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
+                        defaultValue={entry.name}
                         onKeyDown={handleKeyDown}
-                        // onBlur={handleBlur} // Blur handling can be tricky with specific commit logic, skipping for now to avoid accidental commits while debugging
+                        // OnBlur={handleBlur} // Blur handling can be tricky with specific commit logic, skipping for now to avoid accidental commits while debugging
                         onBlur={onRenameCancel} // For now cancel on blur to be safe, or just keep focus
                     />
                 ) : (
@@ -168,14 +163,12 @@ function BufferItem({
     onKeepBuffer: (id: string) => void;
 }) {
     const bufferId = getBufferId(buffer);
-    const [editName, setEditName] = useState(formatLabel(buffer));
     const inputRef = useRef<HTMLInputElement>(null);
     const isRenaming =
         buffer.kind === 'file' && renamingPath === buffer.filePath;
 
     useEffect(() => {
         if (isRenaming && inputRef.current) {
-            setEditName(formatLabel(buffer));
             inputRef.current.focus();
             const name = formatLabel(buffer);
             const lastDotIndex = name.lastIndexOf('.');
@@ -191,7 +184,10 @@ function BufferItem({
         if (e.key === 'Enter') {
             e.stopPropagation();
             if (buffer.kind === 'file') {
-                onRenameCommit(buffer.filePath, editName);
+                onRenameCommit(
+                    buffer.filePath,
+                    inputRef.current?.value ?? formatLabel(buffer),
+                );
             }
         } else if (e.key === 'Escape') {
             e.stopPropagation();
@@ -219,8 +215,7 @@ function BufferItem({
                     ref={inputRef}
                     type="text"
                     className="rename-input"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
+                    defaultValue={formatLabel(buffer)}
                     onKeyDown={handleKeyDown}
                     onBlur={onRenameCancel}
                     onClick={(e) => e.stopPropagation()}
@@ -261,27 +256,32 @@ export function FileExplorer({
     onSelectBuffer,
     onOpenFile,
     onCreateFile,
-    onSaveFile,
-    onRenameFile,
-    onDeleteFile,
+    onSaveFile: _onSaveFile,
+    onRenameFile: _onRenameFile,
+    onDeleteFile: _onDeleteFile,
     onCloseBuffer,
-    onSelectWorkspace,
+    onSelectWorkspace: _onSelectWorkspace,
     onRefreshTree,
     onRenameCommit,
     onRenameCancel,
     onKeepBuffer,
 }: FileExplorerProps) {
-    const activeBuffer = buffers.find((b) => getBufferId(b) === activeBufferId);
+    const _activeBuffer = buffers.find(
+        (b) => getBufferId(b) === activeBufferId,
+    );
 
     const handleBufferContextMenu = (e: React.MouseEvent, bufferId: string) => {
         e.preventDefault();
         const buffer = buffers.find((b) => getBufferId(b) === bufferId);
 
         let contextType: 'file' | 'untitled' | 'unknown' = 'unknown';
-        if (buffer?.kind === 'file') contextType = 'file';
-        else if (buffer?.kind === 'untitled') contextType = 'untitled';
+        if (buffer?.kind === 'file') {
+            contextType = 'file';
+        } else if (buffer?.kind === 'untitled') {
+            contextType = 'untitled';
+        }
 
-        electronAPI.showContextMenu({
+        void electronAPI.showContextMenu({
             type: contextType, // Only allow file operations for real files
             path: buffer?.kind === 'file' ? buffer.filePath : undefined,
             bufferId: bufferId,
@@ -303,12 +303,12 @@ export function FileExplorer({
             (b) => b.kind === 'file' && b.filePath === entry.path,
         );
 
-        electronAPI.showContextMenu({
-            type: entry.type === 'directory' ? 'directory' : 'file',
-            path: entry.path,
+        void electronAPI.showContextMenu({
             bufferId: buffer ? getBufferId(buffer) : undefined,
             isOpenBuffer: !!buffer,
             isWorkspaceFile: true,
+            path: entry.path,
+            type: entry.type === 'directory' ? 'directory' : 'file',
             x: e.clientX,
             y: e.clientY,
         });

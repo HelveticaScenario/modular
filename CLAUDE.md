@@ -13,7 +13,6 @@ yarn install               # Install dependencies
 yarn start                 # Build native Rust module + launch Electron app (watches Rust changes)
 yarn build-native          # Build native Rust module only
 yarn generate-lib          # Regenerate DSL TypeScript types after Rust N-API type changes
-yarn lint                  # ESLint
 yarn typecheck             # TypeScript type checking
 ```
 

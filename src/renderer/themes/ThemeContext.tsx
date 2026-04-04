@@ -3,7 +3,7 @@ import type { AppTheme } from './types';
 import { mapVSCodeTheme } from './types';
 import { bundledThemes } from './bundled';
 import electronAPI from '../electronAPI';
-import type { MonospaceFont, PrettierConfig } from '../../shared/ipcTypes';
+import type { PrettierConfig } from '../../shared/ipcTypes';
 
 type CursorStyle =
     | 'line'
@@ -75,9 +75,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         getThemeById('modular-dark'),
     );
     const [cursorStyle, setCursorStyle] = useState<CursorStyle>('line');
-    const [font, setFont] = useState<string>('Fira Code');
-    const [fontLigatures, setFontLigatures] = useState<boolean>(true);
-    const [fontSize, setFontSize] = useState<number>(17);
+    const [font, setFont] = useState('Fira Code');
+    const [fontLigatures, setFontLigatures] = useState(true);
+    const [fontSize, setFontSize] = useState(17);
     const [prettierConfig, setPrettierConfig] = useState<PrettierConfig>({});
 
     // Load initial config and set up watcher
@@ -129,10 +129,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
             });
         }
 
-        init();
+        void init();
 
         return () => {
-            if (unsubscribe) unsubscribe();
+            if (unsubscribe) {
+                unsubscribe();
+            }
         };
     }, []);
 
@@ -144,13 +146,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return (
         <ThemeContext.Provider
             value={{
-                theme,
-                themes,
                 cursorStyle,
                 font,
                 fontLigatures,
                 fontSize,
                 prettierConfig,
+                theme,
+                themes,
             }}
         >
             {children}

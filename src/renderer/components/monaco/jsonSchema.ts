@@ -1,9 +1,8 @@
 import type { Monaco } from '../../hooks/useCustomMonaco';
 
 export function registerConfigSchema(monaco: Monaco, schema: object) {
-    const jsonDefaults = monaco.json.jsonDefaults;
+    const {jsonDefaults} = monaco.json;
     jsonDefaults.setDiagnosticsOptions({
-        validate: true,
         allowComments: true,
         schemas: [
             {
@@ -17,6 +16,7 @@ export function registerConfigSchema(monaco: Monaco, schema: object) {
                 schema,
             },
         ],
+        validate: true,
     });
 }
 
@@ -25,10 +25,9 @@ export function registerConfigSchemaForFile(
     schema: object,
     currentFile: string,
 ) {
-    const jsonDefaults = monaco.json.jsonDefaults;
+    const {jsonDefaults} = monaco.json;
     const fileUri = `file://${currentFile}`;
     jsonDefaults.setDiagnosticsOptions({
-        validate: true,
         allowComments: true,
         schemas: [
             {
@@ -37,6 +36,7 @@ export function registerConfigSchemaForFile(
                 schema,
             },
         ],
+        validate: true,
     });
     return fileUri;
 }

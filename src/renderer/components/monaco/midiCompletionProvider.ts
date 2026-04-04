@@ -4,18 +4,18 @@
  */
 import type { Monaco } from '../../hooks/useCustomMonaco';
 import type {
-    languages,
-    editor,
-    Position,
     CancellationToken,
     IRange,
+    Position,
+    editor,
+    languages,
 } from 'monaco-editor';
 
 /**
  * Function to fetch MIDI device list from the Electron main process.
  */
 export type MidiDeviceFetcher = () => Promise<
-    Array<{ name: string; index: number }>
+    { name: string; index: number }[]
 >;
 
 /**
@@ -32,8 +32,6 @@ export function registerMidiCompletionProvider(
 ): { dispose: () => void } {
     const provider: languages.CompletionItemProvider = {
         // Trigger on quotes and after typing
-        triggerCharacters: ['"', "'", ':'],
-
         async provideCompletionItems(
             model: editor.ITextModel,
             position: Position,
@@ -132,6 +130,8 @@ export function registerMidiCompletionProvider(
                 incomplete: false, // List is complete
             };
         },
+
+        triggerCharacters: ['"', "'", ':'],
     };
 
     const disposable = monaco.languages.registerCompletionItemProvider(

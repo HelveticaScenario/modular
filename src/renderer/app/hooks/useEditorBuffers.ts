@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
 import electronAPI from '../../electronAPI';
 import type { EditorBuffer } from '../../types/editor';
@@ -11,10 +11,10 @@ import {
     saveUnsavedBuffers,
 } from '../buffers';
 
-type UseEditorBuffersParams = {
+interface UseEditorBuffersParams {
     workspaceRoot: string | null;
     refreshFileTree: () => Promise<void>;
-};
+}
 
 export function useEditorBuffers({
     workspaceRoot,
@@ -32,15 +32,7 @@ export function useEditorBuffers({
         },
     );
 
-    const [usedUntitledNumbers, setUsedUntitledNumbers] = useState<Set<number>>(
-        new Set(),
-    );
-    const usedUntitledNumbersRef = useRef(usedUntitledNumbers);
-    usedUntitledNumbersRef.current = usedUntitledNumbers;
-
-    const [renamingPath, setRenamingPath] = useState<string | null>(null);
-
-    useEffect(() => {
+    const usedUntitledNumbers = useMemo(() => {
         const used = new Set<number>();
         buffers.forEach((b) => {
             if (b.kind === 'untitled') {
@@ -50,9 +42,14 @@ export function useEditorBuffers({
                 }
             }
         });
-        setUsedUntitledNumbers(used);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+        return used;
+    }, [buffers]);
+    const usedUntitledNumbersRef = useRef(usedUntitledNumbers);
+    useEffect(() => {
+        usedUntitledNumbersRef.current = usedUntitledNumbers;
+    });
+
+    const [renamingPath, setRenamingPath] = useState<string | null>(null);
 
     const activeBuffer = buffers.find((b) => getBufferId(b) === activeBufferId);
     const patchCode = activeBuffer?.content ?? DEFAULT_PATCH;
@@ -108,7 +105,7 @@ export function useEditorBuffers({
             const content = await electronAPI.filesystem.readFile(absPath);
 
             setBuffers((prev) => {
-                let nextBuffers = [...prev];
+                const nextBuffers = [...prev];
                 const existingPreviewIndex = nextBuffers.findIndex(
                     (b) => b.isPreview,
                 );
@@ -121,12 +118,12 @@ export function useEditorBuffers({
                 }
 
                 const newBuffer: EditorBuffer = {
-                    kind: 'file',
-                    filePath: absPath,
                     content,
-                    id: v4(),
                     dirty: false,
+                    filePath: absPath,
+                    id: v4(),
                     isPreview: options?.preview ?? false,
+                    kind: 'file',
                 };
                 return [...nextBuffers, newBuffer];
             });
@@ -136,45 +133,60 @@ export function useEditorBuffers({
     );
 
     const createUntitledFile = useCallback(() => {
-        // Read from the ref so we always see the latest value synchronously,
-        // avoiding both stale closures and React StrictMode double-invocation.
-        const currentUsed = usedUntitledNumbersRef.current;
-        let nextIdNum = 1;
-        while (currentUsed.has(nextIdNum)) {
-            nextIdNum++;
-        }
+        setBuffers((prev) => {
+            // Derive next ID from current state to avoid race conditions
+            const currentUsed = new Set<number>();
+            prev.forEach((b) => {
+                if (b.kind === 'untitled') {
+                    const match = b.id.match(/^untitled-(\d+)$/);
+                    if (match) {
+                        currentUsed.add(parseInt(match[1], 10));
+                    }
+                }
+            });
 
-        const nextId = `untitled-${nextIdNum}`;
-        const newBuffer: EditorBuffer = {
-            kind: 'untitled',
-            id: nextId,
-            content: DEFAULT_PATCH,
-            dirty: false,
-        };
+            let nextIdNum = 1;
+            while (currentUsed.has(nextIdNum)) {
+                nextIdNum++;
+            }
 
-        // Eagerly update the ref so a second rapid call sees this number as taken.
-        const next = new Set(currentUsed);
-        next.add(nextIdNum);
-        usedUntitledNumbersRef.current = next;
+            const nextId = `untitled-${nextIdNum}`;
+            const newBuffer: EditorBuffer = {
+                content: DEFAULT_PATCH,
+                dirty: false,
+                id: nextId,
+                kind: 'untitled',
+            };
 
-        setUsedUntitledNumbers(next);
-        setBuffers((prev) => [...prev, newBuffer]);
-        setActiveBufferId(nextId);
+            // Update ref for useMemo dependency
+            const next = new Set(currentUsed);
+            next.add(nextIdNum);
+            usedUntitledNumbersRef.current = next;
+
+            setActiveBufferId(nextId);
+            return [...prev, newBuffer];
+        });
     }, []);
 
     const saveFile = useCallback(
         async (targetId?: string) => {
             const idToSave = targetId || activeBufferId;
             const buffer = buffers.find((b) => getBufferId(b) === idToSave);
-            if (!buffer) return;
+            if (!buffer) {
+                return;
+            }
 
             if (buffer.kind === 'untitled') {
                 const input =
                     await electronAPI.filesystem.showSaveDialog('untitled.mjs');
-                if (!input) return;
+                if (!input) {
+                    return;
+                }
 
                 const normalized = normalizeFileName(input);
-                if (!normalized) return;
+                if (!normalized) {
+                    return;
+                }
 
                 const result = await electronAPI.filesystem.writeFile(
                     normalized,
@@ -182,25 +194,15 @@ export function useEditorBuffers({
                 );
 
                 if (result.success) {
-                    const match = buffer.id.match(/^untitled-(\d+)$/);
-                    if (match) {
-                        const num = parseInt(match[1], 10);
-                        setUsedUntitledNumbers((prev) => {
-                            const next = new Set(prev);
-                            next.delete(num);
-                            return next;
-                        });
-                    }
-
                     setBuffers((prev) =>
                         prev.map((b) =>
                             getBufferId(b) === idToSave
                                 ? {
-                                      kind: 'file' as const,
-                                      filePath: normalized,
-                                      id: b.id,
                                       content: buffer.content,
                                       dirty: false,
+                                      filePath: normalized,
+                                      id: b.id,
+                                      kind: 'file' as const,
                                   }
                                 : b,
                         ),
@@ -255,7 +257,7 @@ export function useEditorBuffers({
                 );
 
             if (buffer && buffer.kind === 'file') {
-                filePath = buffer.filePath;
+                ({ filePath } = buffer);
             } else if (resolvedPath && typeof resolvedPath === 'string') {
                 filePath = resolvedPath;
             } else if (activeBufferId) {
@@ -263,11 +265,13 @@ export function useEditorBuffers({
                     (b) => getBufferId(b) === activeBufferId,
                 );
                 if (active && active.kind === 'file') {
-                    filePath = active.filePath;
+                    ({ filePath } = active);
                 }
             }
 
-            if (!filePath) return;
+            if (!filePath) {
+                return;
+            }
             setRenamingPath(filePath);
         },
         [activeBufferId, buffers, workspaceRoot],
@@ -276,10 +280,14 @@ export function useEditorBuffers({
     const handleRenameCommit = useCallback(
         async (oldPath: string, newName: string) => {
             setRenamingPath(null);
-            if (!newName) return;
+            if (!newName) {
+                return;
+            }
 
             const currentFileName = oldPath.split(/[/\\]/).pop();
-            if (newName === currentFileName) return;
+            if (newName === currentFileName) {
+                return;
+            }
 
             const normalized = normalizeFileName(newName);
 
@@ -291,7 +299,9 @@ export function useEditorBuffers({
                 newPath = `${dir}${separator}${normalized}`;
             }
 
-            if (!newPath || newPath === oldPath) return;
+            if (!newPath || newPath === oldPath) {
+                return;
+            }
 
             const result = await electronAPI.filesystem.renameFile(
                 oldPath,
@@ -299,20 +309,23 @@ export function useEditorBuffers({
             );
 
             if (result.success) {
-                setBuffers((prev) =>
-                    prev.map((b) =>
+                // Use functional setState to avoid stale closure issues
+                let wasActive = false;
+                setBuffers((prev) => {
+                    // Check if the renamed file was active using current state
+                    wasActive = prev.some(
+                        (b) =>
+                            getBufferId(b) === activeBufferId &&
+                            b.kind === 'file' &&
+                            b.filePath === oldPath,
+                    );
+                    return prev.map((b) =>
                         b.kind === 'file' && b.filePath === oldPath
                             ? { ...b, filePath: newPath }
                             : b,
-                    ),
-                );
+                    );
+                });
 
-                const wasActive = buffers.some(
-                    (b) =>
-                        getBufferId(b) === activeBufferId &&
-                        b.kind === 'file' &&
-                        b.filePath === oldPath,
-                );
                 if (wasActive) {
                     setActiveBufferId(newPath);
                 }
@@ -347,7 +360,7 @@ export function useEditorBuffers({
                 );
 
             if (buffer && buffer.kind === 'file') {
-                filePath = buffer.filePath;
+                ({ filePath } = buffer);
                 bufferId = getBufferId(buffer);
             } else if (resolvedPath && typeof resolvedPath === 'string') {
                 filePath = resolvedPath;
@@ -356,39 +369,43 @@ export function useEditorBuffers({
                     (b) => getBufferId(b) === activeBufferId,
                 );
                 if (active && active.kind === 'file') {
-                    filePath = active.filePath;
+                    ({ filePath } = active);
                     bufferId = getBufferId(active);
                 }
             }
 
-            if (!filePath) return;
+            if (!filePath) {
+                return;
+            }
 
-            if (!window.confirm(`Delete ${filePath}?`)) return;
+            if (!window.confirm(`Delete ${filePath}?`)) {
+                return;
+            }
 
             const result = await electronAPI.filesystem.deleteFile(filePath);
 
             if (result.success) {
-                setBuffers((prev) =>
-                    prev.filter(
-                        (b) => !(b.kind === 'file' && b.filePath === filePath),
-                    ),
-                );
+                // Use functional setState to avoid stale closure issues
+                let activeIsDeleted = false;
+                let remaining: typeof buffers = [];
 
-                const activeIsDeleted =
-                    activeBufferId &&
-                    ((bufferId && activeBufferId === bufferId) ||
-                        (buffers.find((b) => getBufferId(b) === activeBufferId)
-                            ?.kind === 'file' &&
-                            (
-                                buffers.find(
-                                    (b) => getBufferId(b) === activeBufferId,
-                                ) as any
-                            ).filePath === filePath));
+                setBuffers((prev) => {
+                    const currentActiveBuffer = prev.find(
+                        (b) => getBufferId(b) === activeBufferId,
+                    );
+                    activeIsDeleted =
+                        activeBufferId !== undefined &&
+                        ((bufferId !== undefined && activeBufferId === bufferId) ||
+                            (currentActiveBuffer?.kind === 'file' &&
+                                currentActiveBuffer.filePath === filePath));
 
-                if (activeIsDeleted) {
-                    const remaining = buffers.filter(
+                    remaining = prev.filter(
                         (b) => !(b.kind === 'file' && b.filePath === filePath),
                     );
+                    return remaining;
+                });
+
+                if (activeIsDeleted) {
                     if (remaining.length > 0) {
                         setActiveBufferId(getBufferId(remaining[0]));
                     } else {
@@ -404,10 +421,51 @@ export function useEditorBuffers({
         [activeBufferId, buffers, refreshFileTree, workspaceRoot],
     );
 
+    const performCloseBuffer = useCallback(
+        (bufferId: string) => {
+            // Capture current activeBufferId to avoid stale closure
+            const currentActiveId = activeBufferId;
+            setTimeout(() => {
+                setBuffers((prev) => {
+                    const buffer = prev.find(
+                        (b) => getBufferId(b) === bufferId,
+                    );
+                    if (!buffer) {
+                        return prev;
+                    }
+
+                    const remaining = prev.filter(
+                        (b) => getBufferId(b) !== bufferId,
+                    );
+
+                    // Update active buffer if we're closing the active one
+                    if (currentActiveId === bufferId) {
+                        const idx = prev.findIndex(
+                            (b) => getBufferId(b) === bufferId,
+                        );
+                        if (remaining.length > 0) {
+                            // Select the buffer that was immediately after the closed one,
+                            // Or the last one if we closed the tail.
+                            const nextIdx = Math.min(idx, remaining.length - 1);
+                            setActiveBufferId(getBufferId(remaining[nextIdx]));
+                        } else {
+                            setActiveBufferId(undefined);
+                        }
+                    }
+
+                    return remaining;
+                });
+            }, 50);
+        },
+        [activeBufferId],
+    );
+
     const closeBuffer = useCallback(
         async (bufferId: string) => {
             const buffer = buffers.find((b) => getBufferId(b) === bufferId);
-            if (!buffer) return;
+            if (!buffer) {
+                return;
+            }
 
             if (buffer.dirty) {
                 const response = await electronAPI.showUnsavedChangesDialog(
@@ -431,50 +489,7 @@ export function useEditorBuffers({
                 performCloseBuffer(bufferId);
             }
         },
-        [buffers, saveFile],
-    );
-
-    const performCloseBuffer = useCallback(
-        (bufferId: string) => {
-            const buffer = buffers.find((b) => getBufferId(b) === bufferId);
-            if (!buffer) return;
-
-            setTimeout(() => {
-                setBuffers((prev) =>
-                    prev.filter((b) => getBufferId(b) !== bufferId),
-                );
-
-                if (buffer.kind === 'untitled') {
-                    const match = buffer.id.match(/^untitled-(\d+)$/);
-                    if (match) {
-                        const num = parseInt(match[1], 10);
-                        setUsedUntitledNumbers((prev) => {
-                            const next = new Set(prev);
-                            next.delete(num);
-                            return next;
-                        });
-                    }
-                }
-
-                if (activeBufferId === bufferId) {
-                    const idx = buffers.findIndex(
-                        (b) => getBufferId(b) === bufferId,
-                    );
-                    const remaining = buffers.filter(
-                        (b) => getBufferId(b) !== bufferId,
-                    );
-                    if (remaining.length > 0) {
-                        // Select the buffer that was immediately after the closed one,
-                        // or the last one if we closed the tail.
-                        const nextIdx = Math.min(idx, remaining.length - 1);
-                        setActiveBufferId(getBufferId(remaining[nextIdx]));
-                    } else {
-                        setActiveBufferId(undefined);
-                    }
-                }
-            }, 50);
-        },
-        [activeBufferId, buffers],
+        [buffers, saveFile, performCloseBuffer],
     );
 
     const keepBuffer = useCallback((bufferId: string) => {
@@ -485,27 +500,28 @@ export function useEditorBuffers({
         );
     }, []);
 
-    const formatFileLabel = useCallback((buffer: EditorBuffer) => {
-        return formatBufferLabel(buffer);
-    }, []);
+    const formatFileLabel = useCallback(
+        (buffer: EditorBuffer) => formatBufferLabel(buffer),
+        [],
+    );
 
     return {
-        buffers,
-        setBuffers,
         activeBufferId,
-        setActiveBufferId,
-        patchCode,
-        handlePatchChange,
-        openFile,
-        createUntitledFile,
-        saveFile,
-        renameFile,
-        deleteFile,
+        buffers,
         closeBuffer,
-        keepBuffer,
-        renamingPath,
-        setRenamingPath,
-        handleRenameCommit,
+        createUntitledFile,
+        deleteFile,
         formatFileLabel,
+        handlePatchChange,
+        handleRenameCommit,
+        keepBuffer,
+        openFile,
+        patchCode,
+        renameFile,
+        renamingPath,
+        saveFile,
+        setActiveBufferId,
+        setBuffers,
+        setRenamingPath,
     };
 }

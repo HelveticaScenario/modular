@@ -13,20 +13,15 @@
  * for nested template const chains.
  */
 
-import {
-    Node,
-    CallExpression,
-    VariableDeclarationKind,
-    type SourceFile,
-} from 'ts-morph';
+import type { CallExpression } from 'ts-morph';
+import { Node, VariableDeclarationKind, type SourceFile } from 'ts-morph';
 import type { ModuleSchema } from '@modular/core';
 
 import type {
-    SourceSpan,
-    InterpolationResolutionMap,
-    SpanRegistry,
     CallSiteKey,
-    CallSiteSpans,
+    InterpolationResolutionMap,
+    SourceSpan,
+    SpanRegistry,
 } from './sourceAnalysisTypes';
 import type { ResolvedInterpolation } from '../../shared/dsl/spanTypes';
 
@@ -39,7 +34,7 @@ function buildFactoryNames(schemas: ModuleSchema[]): Set<string> {
 
     for (const schema of schemas) {
         // Track all module calls — positional args, config object properties,
-        // and const variable references can all contribute trackable spans
+        // And const variable references can all contribute trackable spans
         const parts = schema.name.split('.');
         const finalName = parts[parts.length - 1];
         names.add(finalName);
@@ -129,7 +124,7 @@ function isTrackableLiteral(node: Node): boolean {
         Node.isTemplateExpression(node) ||
         Node.isArrayLiteralExpression(node) ||
         Node.isObjectLiteralExpression(node) ||
-        Node.isPrefixUnaryExpression(node) // for negative numbers like -5
+        Node.isPrefixUnaryExpression(node) // For negative numbers like -5
     );
 }
 
@@ -142,18 +137,21 @@ function buildConstLiteralMap(sourceFile: SourceFile): Map<string, SourceSpan> {
     const map = new Map<string, SourceSpan>();
 
     for (const statement of sourceFile.getStatements()) {
-        if (!Node.isVariableStatement(statement)) continue;
+        if (!Node.isVariableStatement(statement)) {
+            continue;
+        }
 
         const declList = statement.getDeclarationList();
-        if (declList.getDeclarationKind() !== VariableDeclarationKind.Const)
+        if (declList.getDeclarationKind() !== VariableDeclarationKind.Const) {
             continue;
+        }
 
         for (const decl of declList.getDeclarations()) {
             const initializer = decl.getInitializer();
             if (initializer && isTrackableLiteral(initializer)) {
                 map.set(decl.getName(), {
-                    start: initializer.getStart(),
                     end: initializer.getEnd(),
+                    start: initializer.getStart(),
                 });
             }
         }
@@ -170,11 +168,14 @@ function buildConstNodeMap(sourceFile: SourceFile): Map<string, Node> {
     const map = new Map<string, Node>();
 
     for (const statement of sourceFile.getStatements()) {
-        if (!Node.isVariableStatement(statement)) continue;
+        if (!Node.isVariableStatement(statement)) {
+            continue;
+        }
 
         const declList = statement.getDeclarationList();
-        if (declList.getDeclarationKind() !== VariableDeclarationKind.Const)
+        if (declList.getDeclarationKind() !== VariableDeclarationKind.Const) {
             continue;
+        }
 
         for (const decl of declList.getDeclarations()) {
             const initializer = decl.getInitializer();
@@ -198,7 +199,7 @@ function buildConstNodeMap(sourceFile: SourceFile): Map<string, Node> {
 function getConstStringLength(
     node: Node,
     constNodeMap: Map<string, Node>,
-    visited: Set<string> = new Set(),
+    visited = new Set<string>(),
 ): number | null {
     if (Node.isStringLiteral(node)) {
         // Strip quotes and compute length
@@ -222,7 +223,9 @@ function getConstStringLength(
                 constNodeMap,
                 visited,
             );
-            if (exprLength === null) return null; // Can't determine
+            if (exprLength === null) {
+                return null;
+            } // Can't determine
             totalLength += exprLength;
 
             // The literal part of the span (between } and next ${ or closing `)
@@ -247,9 +250,13 @@ function getExpressionStringLength(
 ): number | null {
     if (Node.isIdentifier(expr)) {
         const name = expr.getText();
-        if (visited.has(name)) return null; // Circular reference
+        if (visited.has(name)) {
+            return null;
+        } // Circular reference
         const constNode = constNodeMap.get(name);
-        if (!constNode) return null;
+        if (!constNode) {
+            return null;
+        }
 
         visited.add(name);
         const result = getConstStringLength(constNode, constNodeMap, visited);
@@ -285,7 +292,9 @@ function resolveInterpolations(
     constNodeMap: Map<string, Node>,
     constMap: Map<string, SourceSpan>,
 ): ResolvedInterpolation[] | null {
-    if (!Node.isTemplateExpression(node)) return null;
+    if (!Node.isTemplateExpression(node)) {
+        return null;
+    }
 
     const resolutions: ResolvedInterpolation[] = [];
     const head = node.getHead();
@@ -314,9 +323,9 @@ function resolveInterpolations(
                     );
 
                     resolutions.push({
-                        evaluatedStart: evalOffset,
-                        evaluatedLength: evalLength,
                         constLiteralSpan: constSpan,
+                        evaluatedLength: evalLength,
+                        evaluatedStart: evalOffset,
                         nestedResolutions: nested ?? undefined,
                     });
 
@@ -362,7 +371,7 @@ function getTrackableSpan(
     constMap: Map<string, SourceSpan>,
 ): SourceSpan | null {
     if (isTrackableLiteral(node)) {
-        return { start: node.getStart(), end: node.getEnd() };
+        return { end: node.getEnd(), start: node.getStart() };
     }
 
     // Try resolving const variable reference
@@ -426,7 +435,9 @@ export function analyzeArgumentSpans(
 
     // Walk all call expressions
     sourceFile.forEachDescendant((node: Node) => {
-        if (!Node.isCallExpression(node)) return;
+        if (!Node.isCallExpression(node)) {
+            return;
+        }
 
         const call = node;
         const funcName = getCalledFunctionName(call);
@@ -458,14 +469,18 @@ export function analyzeArgumentSpans(
         }
 
         // Skip if not a tracked factory
-        if (!funcName || !factoryNames.has(funcName)) return;
+        if (!funcName || !factoryNames.has(funcName)) {
+            return;
+        }
 
         // Get the schema for this call
         const fullPath = getFullCallPath(call);
         const schema =
             schemaMap.get(funcName) ||
             (fullPath ? schemaMap.get(fullPath) : null);
-        if (!schema) return;
+        if (!schema) {
+            return;
+        }
 
         const args = call.getArguments();
         const argsMap = new Map<string, SourceSpan>();
@@ -512,10 +527,10 @@ export function analyzeArgumentSpans(
                 argsMap.set(argDef.name, span);
 
                 // Resolve interpolations for template expressions
-                const node = getTrackableNode(arg, constNodeMap);
-                if (node) {
+                const innerNode = getTrackableNode(arg, constNodeMap);
+                if (innerNode) {
                     const resolutions = resolveInterpolations(
-                        node,
+                        innerNode,
                         constNodeMap,
                         constMap,
                     );
@@ -535,7 +550,9 @@ export function analyzeArgumentSpans(
                 for (const prop of configArg.getProperties()) {
                     if (Node.isPropertyAssignment(prop)) {
                         const propName = prop.getName();
-                        if (propName === 'id') continue;
+                        if (propName === 'id') {
+                            continue;
+                        }
 
                         const initializer = prop.getInitializerOrThrow();
                         const span = getTrackableSpan(initializer, constMap);
@@ -543,13 +560,13 @@ export function analyzeArgumentSpans(
                             argsMap.set(propName, span);
 
                             // Resolve interpolations for template expressions
-                            const node = getTrackableNode(
+                            const innerNode2 = getTrackableNode(
                                 initializer,
                                 constNodeMap,
                             );
-                            if (node) {
+                            if (innerNode2) {
                                 const resolutions = resolveInterpolations(
-                                    node,
+                                    innerNode2,
                                     constNodeMap,
                                     constMap,
                                 );
@@ -564,7 +581,9 @@ export function analyzeArgumentSpans(
                         }
                     } else if (Node.isShorthandPropertyAssignment(prop)) {
                         const propName = prop.getName();
-                        if (propName === 'id') continue;
+                        if (propName === 'id') {
+                            continue;
+                        }
 
                         // For shorthand { myVar }, resolve the variable to its const literal
                         const span = constMap.get(propName) ?? null;
@@ -594,12 +613,14 @@ export function analyzeArgumentSpans(
         }
 
         // Skip if no trackable arguments
-        if (argsMap.size === 0) return;
+        if (argsMap.size === 0) {
+            return;
+        }
 
         // Get the call site position
         // For property access calls like `seq.iCycle()`, V8 stack traces point to the
-        // opening parenthesis, not the start of the expression. So we need to find
-        // the position of the `(` in the call.
+        // Opening parenthesis, not the start of the expression. So we need to find
+        // The position of the `(` in the call.
         const callExpression = call.getExpression();
         let callStartPos: number;
 
@@ -616,7 +637,7 @@ export function analyzeArgumentSpans(
         // Add the lineOffset to account for wrapper code in new Function().
         const { line, column } = sourceFile.getLineAndColumnAtPos(callStartPos);
         // For line 1 of source, add the firstLineColumnOffset because
-        // the function body template indents the first line with spaces.
+        // The function body template indents the first line with spaces.
         const columnOffset = line === 1 ? firstLineColumnOffset : 0;
         const key: CallSiteKey = `${line + lineOffset}:${column + columnOffset}`;
 
@@ -626,5 +647,5 @@ export function analyzeArgumentSpans(
         });
     });
 
-    return { registry, interpolationResolutions };
+    return { interpolationResolutions, registry };
 }

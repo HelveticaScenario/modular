@@ -11,10 +11,10 @@ interface AudioControlsProps {
 
 export function AudioControls({
     isRunning,
-    isRecording,
+    isRecording: _isRecording,
     onStop,
-    onStartRecording,
-    onStopRecording,
+    onStartRecording: _onStartRecording,
+    onStopRecording: _onStopRecording,
     onUpdatePatch,
 }: AudioControlsProps) {
     return (

@@ -20,7 +20,7 @@ export type Schemas = typeof schemas;
  * Structural type for a JSON Schema node.
  * Used when traversing sub-schemas within a module's `paramsSchema`.
  */
-export type JSONSchema = {
+export interface JSONSchema {
     readonly type?: string | readonly string[];
     readonly $ref?: string;
     readonly oneOf?: readonly JSONSchema[];
@@ -39,7 +39,7 @@ export type JSONSchema = {
     readonly format?: string;
     readonly minimum?: number;
     readonly maximum?: number;
-};
+}
 
 function isValidIdentifier(name: string): boolean {
     return /^[$A-Z_][0-9A-Z_$]*$/i.test(name);
@@ -58,7 +58,7 @@ export function resolveRef(
     ref: string,
     rootSchema: JSONSchema,
 ): JSONSchema | 'Signal' | 'Poly<Signal>' | 'Mono<Signal>' {
-    if (ref === 'Signal') return 'Signal';
+    if (ref === 'Signal') {return 'Signal';}
 
     const defsPrefix = '#/$defs/';
     if (!ref.startsWith(defsPrefix)) {
@@ -66,9 +66,9 @@ export function resolveRef(
     }
 
     const defName = ref.slice(defsPrefix.length);
-    if (defName === 'Signal') return 'Signal';
-    if (defName === 'PolySignal') return 'Poly<Signal>';
-    if (defName === 'MonoSignal') return 'Mono<Signal>';
+    if (defName === 'Signal') {return 'Signal';}
+    if (defName === 'PolySignal') {return 'Poly<Signal>';}
+    if (defName === 'MonoSignal') {return 'Mono<Signal>';}
 
     const defs = rootSchema?.$defs;
     if (!defs || typeof defs !== 'object') {
@@ -80,9 +80,9 @@ export function resolveRef(
         throw new Error(`Unresolved $ref: ${ref}`);
     }
 
-    if (resolved?.title === 'Signal') return 'Signal';
-    if (resolved?.title === 'PolySignal') return 'Poly<Signal>';
-    if (resolved?.title === 'MonoSignal') return 'Mono<Signal>';
+    if (resolved?.title === 'Signal') {return 'Signal';}
+    if (resolved?.title === 'PolySignal') {return 'Poly<Signal>';}
+    if (resolved?.title === 'MonoSignal') {return 'Mono<Signal>';}
     return resolved;
 }
 
@@ -113,19 +113,19 @@ export function getEnumVariants(
     if (schema.$ref) {
         const resolved = resolveRef(schema.$ref, rootSchema);
         // Sentinel strings mean it's a signal type, not an enum
-        if (typeof resolved === 'string') return null;
+        if (typeof resolved === 'string') {return null;}
         return getEnumVariants(resolved, rootSchema);
     }
 
-    // oneOf / anyOf with all-const variants (schemars output for documented enums)
+    // OneOf / anyOf with all-const variants (schemars output for documented enums)
     const variants = schema.oneOf || schema.anyOf;
     if (variants !== undefined) {
         const isEnum = variants.every((v: JSONSchema) => v.const !== undefined);
         if (isEnum) {
             return variants.map((v) => ({
-                value: JSON.stringify(v.const),
-                rawValue: v.const,
                 description: v.description,
+                rawValue: v.const,
+                value: JSON.stringify(v.const),
             }));
         }
         return null;
@@ -134,9 +134,9 @@ export function getEnumVariants(
     // Bare enum array (schemars output for undocumented enums)
     if (schema.enum !== undefined && schema.enum.length > 0) {
         return schema.enum.map((v) => ({
-            value: JSON.stringify(v),
-            rawValue: v,
             description: undefined,
+            rawValue: v,
+            value: JSON.stringify(v),
         }));
     }
 
@@ -159,7 +159,7 @@ export function schemaToTypeExpr(
         const variants = schema.oneOf || schema.anyOf;
         if (variants !== undefined) {
             // Filter out null variants (from Rust Option<T>); optionality is
-            // handled at the param level with `?:` in TypeScript.
+            // Handled at the param level with `?:` in TypeScript.
             const nonNullVariants = variants.filter(
                 (v: JSONSchema) =>
                     !(v && typeof v === 'object' && v.type === 'null'),
@@ -211,15 +211,15 @@ export function schemaToTypeExpr(
             // This is a nullable type, treat it as the non-null type (optional in TS)
             const singleType = nonNullTypes[0];
             if (singleType === 'integer' || singleType === 'number')
-                return 'number';
-            if (singleType === 'string') return 'string';
-            if (singleType === 'boolean') return 'boolean';
+                {return 'number';}
+            if (singleType === 'string') {return 'string';}
+            if (singleType === 'boolean') {return 'boolean';}
         }
         // Fall back to union of all non-null types
         const mapped = nonNullTypes.map((t) => {
-            if (t === 'integer' || t === 'number') return 'number';
-            if (t === 'string') return 'string';
-            if (t === 'boolean') return 'boolean';
+            if (t === 'integer' || t === 'number') {return 'number';}
+            if (t === 'string') {return 'string';}
+            if (t === 'boolean') {return 'boolean';}
             return 'any';
         });
         return mapped.length > 0 ? mapped.join(' | ') : 'any';
@@ -227,9 +227,9 @@ export function schemaToTypeExpr(
 
     if (schema.$ref) {
         const resolved = resolveRef(schema.$ref, rootSchema);
-        if (resolved === 'Signal') return 'Signal';
-        if (resolved === 'Poly<Signal>') return 'Poly<Signal>';
-        if (resolved === 'Mono<Signal>') return 'Mono<Signal>';
+        if (resolved === 'Signal') {return 'Signal';}
+        if (resolved === 'Poly<Signal>') {return 'Poly<Signal>';}
+        if (resolved === 'Mono<Signal>') {return 'Mono<Signal>';}
         return schemaToTypeExpr(resolved, rootSchema);
     }
 
@@ -240,26 +240,26 @@ export function schemaToTypeExpr(
         return schema.enum.map((v) => JSON.stringify(v)).join(' | ');
     }
 
-    const type = schema.type;
+    const {type} = schema;
 
-    if (type === 'integer' || type === 'number') return 'number';
-    if (type === 'string') return 'string';
-    if (type === 'boolean') return 'boolean';
+    if (type === 'integer' || type === 'number') {return 'number';}
+    if (type === 'string') {return 'string';}
+    if (type === 'boolean') {return 'boolean';}
 
     const looksLikeObject =
         type === 'object' ||
-        (!!schema.properties && typeof schema.properties === 'object');
+        (Boolean(schema.properties) && typeof schema.properties === 'object');
     if (looksLikeObject) {
         const props = schema.properties;
-        if (!props || typeof props !== 'object') return '{}';
+        if (!props || typeof props !== 'object') {return '{}';}
 
         const requiredSet = new Set<string>(schema.required);
         const entries = Object.entries(props);
-        if (entries.length === 0) return '{}';
+        if (entries.length === 0) {return '{}';}
 
         const parts: string[] = [];
         for (const [propName, propSchema] of entries) {
-            if (!propSchema) continue;
+            if (!propSchema) {continue;}
             const optional = requiredSet.has(propName) ? '' : '?';
             parts.push(
                 `${renderPropertyKey(propName)}${optional}: ${schemaToTypeExpr(propSchema, rootSchema)}`,

@@ -38,7 +38,7 @@ export function analyzeCallSiteSpans(
     const callSiteSpans: CallSiteSpanRegistry = new Map();
 
     sourceFile.forEachDescendant((node: Node) => {
-        if (!Node.isCallExpression(node)) return;
+        if (!Node.isCallExpression(node)) {return;}
 
         const call = node;
         const expression = call.getExpression();
@@ -48,22 +48,22 @@ export function analyzeCallSiteSpans(
         if (Node.isPropertyAccessExpression(expression)) {
             // Method call like .scope() — V8 reports position of the method name
             const methodName = expression.getName();
-            if (!DSL_METHODS_TO_TRACK.has(methodName)) return;
+            if (!DSL_METHODS_TO_TRACK.has(methodName)) {return;}
             callStartPos = expression.getNameNode().getStart();
         } else if (Node.isIdentifier(expression)) {
             // Standalone call like $slider()
             const funcName = expression.getText();
-            if (!DSL_FUNCTIONS_TO_TRACK.has(funcName)) return;
+            if (!DSL_FUNCTIONS_TO_TRACK.has(funcName)) {return;}
             callStartPos = call.getStart();
         } else {
             return;
         }
 
         // Compute key in user-source coordinates so the renderer can look up
-        // directly from captureSourceLocation's {line, column} values.
+        // Directly from captureSourceLocation's {line, column} values.
         // Key format: "${userLine}:${v8Column}" where:
-        //   userLine = tsMorphLine (1-based, same as captureSourceLocation().line)
-        //   v8Column = tsMorphCol + firstLineColumnOffset for line 1, else tsMorphCol
+        //   UserLine = tsMorphLine (1-based, same as captureSourceLocation().line)
+        //   V8Column = tsMorphCol + firstLineColumnOffset for line 1, else tsMorphCol
         //              (1-based, same as captureSourceLocation().column)
         const { line: startTsMorphLine, column: startTsMorphCol } =
             sourceFile.getLineAndColumnAtPos(callStartPos);
@@ -79,8 +79,8 @@ export function analyzeCallSiteSpans(
         );
 
         callSiteSpans.set(key, {
-            startLine: startTsMorphLine,
             endLine: endTsMorphLine,
+            startLine: startTsMorphLine,
         });
     });
 

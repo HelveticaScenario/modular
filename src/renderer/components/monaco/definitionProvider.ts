@@ -5,12 +5,12 @@
 
 import type { Monaco } from '../../hooks/useCustomMonaco';
 import type {
-    languages,
-    editor,
-    Position,
     CancellationToken,
+    Position,
+    editor,
+    languages,
 } from 'monaco-editor';
-import { DSL_TYPE_NAMES, isDslType } from '../../../shared/dsl/typeDocs';
+import { isDslType } from '../../../shared/dsl/typeDocs';
 
 export interface DefinitionProviderDeps {
     /** Set of module factory names (including namespaced ones like "osc.sine") */
@@ -29,7 +29,9 @@ function resolveDottedPath(
     position: Position,
 ): { fullPath: string; word: string } | null {
     const word = model.getWordAtPosition(position);
-    if (!word) return null;
+    if (!word) {
+        return null;
+    }
 
     const line = model.getLineContent(position.lineNumber);
     const wordStart = word.startColumn - 1;
@@ -37,7 +39,7 @@ function resolveDottedPath(
 
     // Collect identifiers connected by dots (allowing whitespace around dots)
     // We'll build the path from discrete identifier strings rather than slicing
-    // the raw line, so "osc .saw" resolves to "osc.saw".
+    // The raw line, so "osc .saw" resolves to "osc.saw".
 
     // Start with the current word
     const currentWord = word.word;
@@ -47,16 +49,26 @@ function resolveDottedPath(
     let i = wordStart - 1;
     while (i >= 0) {
         // Skip whitespace
-        while (i >= 0 && /\s/.test(line[i])) i--;
-        if (i < 0 || line[i] !== '.') break;
+        while (i >= 0 && /\s/.test(line[i])) {
+            i--;
+        }
+        if (i < 0 || line[i] !== '.') {
+            break;
+        }
         // Found a dot, skip it
         i--;
         // Skip whitespace before the dot
-        while (i >= 0 && /\s/.test(line[i])) i--;
-        if (i < 0 || !/[\w$]/.test(line[i])) break;
+        while (i >= 0 && /\s/.test(line[i])) {
+            i--;
+        }
+        if (i < 0 || !/[\w$]/.test(line[i])) {
+            break;
+        }
         // Read identifier backwards
-        let identEnd = i + 1;
-        while (i > 0 && /[\w$]/.test(line[i - 1])) i--;
+        const identEnd = i + 1;
+        while (i > 0 && /[\w$]/.test(line[i - 1])) {
+            i--;
+        }
         prefixParts.unshift(line.slice(i, identEnd));
         i--;
     }
@@ -66,16 +78,26 @@ function resolveDottedPath(
     i = wordEnd;
     while (i < line.length) {
         // Skip whitespace
-        while (i < line.length && /\s/.test(line[i])) i++;
-        if (i >= line.length || line[i] !== '.') break;
+        while (i < line.length && /\s/.test(line[i])) {
+            i++;
+        }
+        if (i >= line.length || line[i] !== '.') {
+            break;
+        }
         // Found a dot, skip it
         i++;
         // Skip whitespace after the dot
-        while (i < line.length && /\s/.test(line[i])) i++;
-        if (i >= line.length || !/[\w$]/.test(line[i])) break;
+        while (i < line.length && /\s/.test(line[i])) {
+            i++;
+        }
+        if (i >= line.length || !/[\w$]/.test(line[i])) {
+            break;
+        }
         // Read identifier forwards
-        let identStart = i;
-        while (i < line.length && /[\w$]/.test(line[i])) i++;
+        const identStart = i;
+        while (i < line.length && /[\w$]/.test(line[i])) {
+            i++;
+        }
         suffixParts.push(line.slice(identStart, i));
     }
 
@@ -98,7 +120,9 @@ export function registerDslDefinitionProvider(
             _token: CancellationToken,
         ) {
             const resolved = resolveDottedPath(model, position);
-            if (!resolved) return null;
+            if (!resolved) {
+                return null;
+            }
 
             const match = resolveDslSymbol(
                 resolved,
@@ -107,7 +131,9 @@ export function registerDslDefinitionProvider(
             );
             // For DSL symbols, return null to suppress TypeScript navigating to .d.ts
             // Help is opened separately via editor.onMouseDown (Cmd+Click)
-            if (match) return null;
+            if (match) {
+                return null;
+            }
 
             // Not a DSL symbol - let TypeScript handle it
             return null;
@@ -138,39 +164,24 @@ export function resolveDslSymbol(
     const { fullPath, word } = resolved;
 
     if (isDslType(word)) {
-        return { symbolType: 'type', symbolName: word };
+        return { symbolName: word, symbolType: 'type' };
     }
     if (moduleNames.has(fullPath)) {
-        return { symbolType: 'module', symbolName: fullPath };
+        return { symbolName: fullPath, symbolType: 'module' };
     }
     if (moduleNames.has(word)) {
-        return { symbolType: 'module', symbolName: word };
+        return { symbolName: word, symbolType: 'module' };
     }
     if (namespaceNames.has(word)) {
-        return { symbolType: 'namespace', symbolName: word };
+        return { symbolName: word, symbolType: 'namespace' };
     }
     return null;
 }
 
 /**
- * Resolve the DSL symbol at a given model position.
- * Convenience wrapper combining path resolution and symbol matching.
- */
-export function resolveDslSymbolAtPosition(
-    model: editor.ITextModel,
-    position: Position,
-    moduleNames: Set<string>,
-    namespaceNames: Set<string>,
-): DslSymbolMatch | null {
-    const resolved = resolveDottedPath(model, position);
-    if (!resolved) return null;
-    return resolveDslSymbol(resolved, moduleNames, namespaceNames);
-}
-
-/**
  * Build sets of module names and namespace names from schemas.
  */
-export function buildSymbolSets(schemas: Array<{ name: string }>): {
+export function buildSymbolSets(schemas: { name: string }[]): {
     moduleNames: Set<string>;
     namespaceNames: Set<string>;
 } {

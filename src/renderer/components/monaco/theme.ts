@@ -6,7 +6,7 @@ export function applyMonacoTheme(
     appTheme: AppTheme,
     monacoThemeId: string,
 ) {
-    const raw = appTheme.raw;
+    const {raw} = appTheme;
 
     const rules = raw.tokenColors
         .map((tc) => {
@@ -14,19 +14,19 @@ export function applyMonacoTheme(
                 ? tc.scope
                 : [tc.scope || ''];
             return scopes.map((scope) => ({
-                token: scope.replace(/\./g, ' ').trim() || '',
-                foreground: tc.settings.foreground?.replace('#', ''),
                 background: tc.settings.background?.replace('#', ''),
                 fontStyle: tc.settings.fontStyle,
+                foreground: tc.settings.foreground?.replace('#', ''),
+                token: scope.replace(/\./g, ' ').trim() || '',
             }));
         })
         .flat();
 
     monaco.editor.defineTheme(monacoThemeId, {
         base: appTheme.type === 'light' ? 'vs' : 'vs-dark',
+        colors: raw.colors,
         inherit: true,
         rules,
-        colors: raw.colors,
     });
 
     monaco.editor.setTheme(monacoThemeId);

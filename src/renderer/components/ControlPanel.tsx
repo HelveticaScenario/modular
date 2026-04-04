@@ -63,10 +63,7 @@ function SliderControl({ slider, onChange }: SliderControlProps) {
         [slider.label, onChange],
     );
 
-    const formatValue = (v: number): string => {
-        // Show up to 4 significant digits, removing trailing zeros
-        return Number(v.toPrecision(4)).toString();
-    };
+    const formatValue = (v: number): string => Number(v.toPrecision(4)).toString();
 
     return (
         <div className="slider-control">

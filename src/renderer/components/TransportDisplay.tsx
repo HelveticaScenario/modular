@@ -19,8 +19,6 @@ export function TransportDisplay({ transport }: TransportDisplayProps) {
         timeSigDenominator,
         bar,
         beatInBar,
-        barPhase,
-        isPlaying,
         hasQueuedUpdate,
     } = transport;
 

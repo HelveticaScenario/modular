@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { reconcilePatchBySimilarity } from '../patchSimilarityRemap';
 
 function graph({ modules, scopes = [] }: any): any {
@@ -50,8 +50,8 @@ describe('reconcilePatchBySimilarity', () => {
             desired,
             current,
             {
-                matchThreshold: 0.9,
                 ambiguityMargin: 0.05,
+                matchThreshold: 0.9,
             },
         );
 
@@ -88,8 +88,8 @@ describe('reconcilePatchBySimilarity', () => {
         });
 
         const { moduleIdRemap } = reconcilePatchBySimilarity(desired, current, {
-            matchThreshold: 0.5,
             ambiguityMargin: 0.01,
+            matchThreshold: 0.5,
         });
 
         // Both candidates tie, so we expect rejection.
@@ -112,8 +112,8 @@ describe('reconcilePatchBySimilarity', () => {
         });
 
         const { moduleIdRemap } = reconcilePatchBySimilarity(desired, current, {
-            matchThreshold: 0.9,
             ambiguityMargin: 0.05,
+            matchThreshold: 0.9,
         });
 
         expect(moduleIdRemap).toEqual({ a: 'x', b: 'y' });
@@ -129,9 +129,9 @@ describe('reconcilePatchBySimilarity', () => {
                     moduleType: 'filter',
                     params: {
                         input: {
-                            type: 'cable',
                             module: 'a',
                             port: 'output',
+                            type: 'cable',
                         },
                     },
                 },
@@ -147,9 +147,9 @@ describe('reconcilePatchBySimilarity', () => {
                     moduleType: 'filter',
                     params: {
                         input: {
-                            type: 'cable',
                             module: 'x',
                             port: 'output',
+                            type: 'cable',
                         },
                     },
                 },
@@ -157,8 +157,8 @@ describe('reconcilePatchBySimilarity', () => {
         });
 
         const { moduleIdRemap } = reconcilePatchBySimilarity(desired, current, {
-            matchThreshold: 0.8,
             ambiguityMargin: 0.05,
+            matchThreshold: 0.8,
         });
 
         expect(moduleIdRemap).toEqual({ a: 'x', b: 'y' });
@@ -181,12 +181,12 @@ describe('reconcilePatchBySimilarity', () => {
                 id: `g${i}`,
                 moduleType: 'gain',
                 params: {
+                    gain: i,
                     input: {
-                        type: 'cable',
                         module: `s${i}`,
                         port: 'output',
+                        type: 'cable',
                     },
-                    gain: i,
                     tag: `gain-${i}`,
                 },
             });
@@ -207,12 +207,12 @@ describe('reconcilePatchBySimilarity', () => {
                 id: `ga${i}`,
                 moduleType: 'gain',
                 params: {
+                    gain: p,
                     input: {
-                        type: 'cable',
                         module: `a${i}`,
                         port: 'output',
+                        type: 'cable',
                     },
-                    gain: p,
                     tag: `gain-${p}`,
                 },
             });
@@ -222,8 +222,8 @@ describe('reconcilePatchBySimilarity', () => {
         const current = graph({ modules: currentModules });
 
         const { moduleIdRemap } = reconcilePatchBySimilarity(desired, current, {
-            matchThreshold: 0.95,
             ambiguityMargin: 0.1,
+            matchThreshold: 0.95,
         });
 
         expect(Object.keys(moduleIdRemap).length).toBe(2 * N);

@@ -2,12 +2,12 @@
  * Tests for the array overload on ModuleOutput.pipe and BaseCollection.pipe.
  */
 
-import { describe, test, expect, beforeAll } from 'vitest';
+import { beforeAll, describe, expect, test } from 'vitest';
 import schemas from '@modular/core/schemas.json';
 import {
-    GraphBuilder,
     BaseCollection,
     Collection,
+    GraphBuilder,
     ModuleOutput,
 } from '../GraphBuilder';
 
@@ -32,7 +32,7 @@ describe('BaseCollection.pipe', () => {
 
     test('with one array returns a Collection', () => {
         const col = new BaseCollection<ModuleOutput>(makeOutput());
-        const result = col.pipe((_self, val) => makeOutput(), [10, 20]);
+        const result = col.pipe((_self, _val) => makeOutput(), [10, 20]);
         expect(result).toBeInstanceOf(Collection);
     });
 

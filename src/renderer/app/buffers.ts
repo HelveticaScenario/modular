@@ -13,24 +13,24 @@ export const readUnsavedBuffers = (): EditorBuffer[] => {
 
     try {
         const raw = window.localStorage.getItem(UNSAVED_STORAGE_KEY);
-        if (!raw) return [];
+        if (!raw) {return [];}
 
         const parsed = JSON.parse(raw) as UnsavedBufferSnapshot[];
         return parsed.map((snapshot): EditorBuffer => {
             if (snapshot.kind === 'file') {
                 return {
-                    kind: 'file',
-                    filePath: snapshot.filePath,
                     content: snapshot.content,
-                    id: snapshot.id,
                     dirty: true,
+                    filePath: snapshot.filePath,
+                    id: snapshot.id,
+                    kind: 'file',
                 };
             }
             return {
-                kind: 'untitled',
-                id: snapshot.id,
                 content: snapshot.content,
                 dirty: true,
+                id: snapshot.id,
+                kind: 'untitled',
             };
         });
     } catch (error) {
@@ -40,7 +40,7 @@ export const readUnsavedBuffers = (): EditorBuffer[] => {
 };
 
 export const saveUnsavedBuffers = (buffers: EditorBuffer[]) => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined') {return;}
 
     try {
         const dirtyBuffers = buffers.filter((b) => b.dirty);
@@ -48,16 +48,16 @@ export const saveUnsavedBuffers = (buffers: EditorBuffer[]) => {
             (buffer) => {
                 if (buffer.kind === 'file') {
                     return {
-                        kind: 'file',
-                        id: buffer.filePath,
-                        filePath: buffer.filePath,
                         content: buffer.content,
+                        filePath: buffer.filePath,
+                        id: buffer.filePath,
+                        kind: 'file',
                     };
                 }
                 return {
-                    kind: 'untitled',
-                    id: buffer.id,
                     content: buffer.content,
+                    id: buffer.id,
+                    kind: 'untitled',
                 };
             },
         );
@@ -71,9 +71,7 @@ export const saveUnsavedBuffers = (buffers: EditorBuffer[]) => {
     }
 };
 
-export const getBufferId = (buffer: EditorBuffer): string => {
-    return buffer.kind === 'file' ? buffer.filePath : buffer.id;
-};
+export const getBufferId = (buffer: EditorBuffer): string => buffer.kind === 'file' ? buffer.filePath : buffer.id;
 
 export const formatBufferLabel = (buffer: EditorBuffer) => {
     if (buffer.kind === 'untitled') {

@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { getEnumVariants } from '../schemaTypeResolver';
 
 describe('getEnumVariants', () => {
@@ -25,24 +25,24 @@ describe('getEnumVariants', () => {
         const result = getEnumVariants(schema, {});
         expect(result).toEqual([
             {
-                value: '"sum"',
-                rawValue: 'sum',
                 description: 'Sum all inputs at each channel',
+                rawValue: 'sum',
+                value: '"sum"',
             },
             {
-                value: '"average"',
-                rawValue: 'average',
                 description: 'Average all inputs at each channel',
+                rawValue: 'average',
+                value: '"average"',
             },
             {
-                value: '"max"',
-                rawValue: 'max',
                 description: 'Take the maximum absolute value at each channel',
+                rawValue: 'max',
+                value: '"max"',
             },
             {
-                value: '"min"',
-                rawValue: 'min',
                 description: 'Take the minimum absolute value at each channel',
+                rawValue: 'min',
+                value: '"min"',
             },
         ]);
     });
@@ -53,9 +53,9 @@ describe('getEnumVariants', () => {
         };
         const result = getEnumVariants(schema, {});
         expect(result).toEqual([
-            { value: '"white"', rawValue: 'white', description: undefined },
-            { value: '"pink"', rawValue: 'pink', description: undefined },
-            { value: '"brown"', rawValue: 'brown', description: undefined },
+            { description: undefined, rawValue: 'white', value: '"white"' },
+            { description: undefined, rawValue: 'pink', value: '"pink"' },
+            { description: undefined, rawValue: 'brown', value: '"brown"' },
         ]);
     });
 
@@ -64,7 +64,7 @@ describe('getEnumVariants', () => {
         expect(getEnumVariants({ type: 'string' }, {})).toBeNull();
         expect(
             getEnumVariants(
-                { type: 'object', properties: { x: { type: 'number' } } },
+                { properties: { x: { type: 'number' } }, type: 'object' },
                 {},
             ),
         ).toBeNull();
@@ -98,14 +98,14 @@ describe('getEnumVariants', () => {
         const result = getEnumVariants(schema, rootSchema);
         expect(result).toEqual([
             {
-                value: '"sum"',
-                rawValue: 'sum',
                 description: 'Sum all inputs',
+                rawValue: 'sum',
+                value: '"sum"',
             },
             {
-                value: '"average"',
-                rawValue: 'average',
                 description: 'Average all inputs',
+                rawValue: 'average',
+                value: '"average"',
             },
         ]);
     });
@@ -143,8 +143,8 @@ describe('getEnumVariants', () => {
         };
         const result = getEnumVariants(schema, {});
         expect(result).toEqual([
-            { value: '"a"', rawValue: 'a', description: 'First' },
-            { value: '"b"', rawValue: 'b', description: 'Second' },
+            { description: 'First', rawValue: 'a', value: '"a"' },
+            { description: 'Second', rawValue: 'b', value: '"b"' },
         ]);
     });
 
@@ -157,8 +157,8 @@ describe('getEnumVariants', () => {
         };
         const result = getEnumVariants(schema, {});
         expect(result).toEqual([
-            { value: '"x"', rawValue: 'x', description: 'Has description' },
-            { value: '"y"', rawValue: 'y', description: undefined },
+            { description: 'Has description', rawValue: 'x', value: '"x"' },
+            { description: undefined, rawValue: 'y', value: '"y"' },
         ]);
     });
 });

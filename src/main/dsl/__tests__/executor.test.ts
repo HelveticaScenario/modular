@@ -7,10 +7,10 @@
  * No Electron, no audio hardware needed — runs in plain Node.js via Vitest.
  */
 
-import { describe, test, expect } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import type { PatchGraph } from '@modular/core';
 import schemas from '@modular/core/schemas.json';
-import { executePatchScript, type DSLExecutionResult } from '../executor';
+import { type DSLExecutionResult, executePatchScript } from '../executor';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -59,7 +59,7 @@ describe('basic oscillators', () => {
         const patch = execPatch('$sine("C4").out()');
         const sines = findModules(patch, '$sine');
         expect(sines.length).toBe(1);
-        expect(patch.scopes).toEqual([]); // no scope call
+        expect(patch.scopes).toEqual([]); // No scope call
     });
 
     test('$sine with Hz string "440hz"', () => {
@@ -139,7 +139,7 @@ describe('signal input variants', () => {
     });
 
     test('$setTempo() accepts plain BPM number', () => {
-        const patch = execPatch('$setTempo(140)');
+        const _patch = execPatch('$setTempo(140)');
         // Should not throw — $setTempo(140) sets tempo as plain BPM
     });
 
@@ -337,7 +337,7 @@ describe('chaining methods', () => {
 
     test('ModuleOutputWithRange.range() remaps', () => {
         const patch = execPatch('$sine("C4")[0].range("C3", "C5").out()');
-        // range() on a ModuleOutputWithRange creates a remap module
+        // Range() on a ModuleOutputWithRange creates a remap module
         expect(findModules(patch, '$sine').length).toBe(1);
         expect(findModules(patch, '$remap').length).toBeGreaterThan(0);
     });
@@ -623,8 +623,8 @@ describe('pipe vs direct call', () => {
         const pipeLpf = findModules(pipePatch, '$lpf')[0];
 
         // Compare params excluding __argument_spans (source positions differ)
-        const { __argument_spans: _a, ...directCore } = directLpf.params as any;
-        const { __argument_spans: _b, ...pipeCore } = pipeLpf.params as any;
+        const { __argument_spans: _a, ...directCore } = directLpf.params;
+        const { __argument_spans: _b, ...pipeCore } = pipeLpf.params;
 
         // The $lpf params should be identical (input and cutoff)
         expect(pipeCore).toEqual(directCore);

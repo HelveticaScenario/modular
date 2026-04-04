@@ -34,7 +34,6 @@ export type TestFixtures = {
  *   test('my test', async ({ window }) => { ... });
  */
 export const test = base.extend<TestFixtures>({
-    // eslint-disable-next-line no-empty-pattern
     electronApp: async ({}, use) => {
         // Create a temp workspace directory so the app doesn't show the
         // "Open Folder" empty-state screen during tests.

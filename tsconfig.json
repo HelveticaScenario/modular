@@ -7,7 +7,7 @@
         "esModuleInterop": true,
         "noImplicitAny": true,
         "sourceMap": true,
-        "baseUrl": ".",
+        "rootDir": "./src",
         "outDir": "dist",
         "moduleResolution": "bundler",
         "resolveJsonModule": true,

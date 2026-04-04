@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import './Sidebar.css';
 
 export type SidebarTab = 'explorer' | 'control';

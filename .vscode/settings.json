@@ -35,5 +35,6 @@
         "voct",
         "waveshaper",
         "waveshaping"
-    ]
+    ],
+    "oxc.typeAware": true
 }

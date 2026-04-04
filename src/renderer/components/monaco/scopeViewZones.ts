@@ -2,7 +2,7 @@ import type { ScopeView } from '../../types/editor';
 import type { editor } from 'monaco-editor';
 import type { Monaco } from '../../hooks/useCustomMonaco';
 
-type ScopeViewZoneParams = {
+interface ScopeViewZoneParams {
     editor: editor.IStandaloneCodeEditor;
     monaco: Monaco;
     views: ScopeView[];
@@ -10,15 +10,15 @@ type ScopeViewZoneParams = {
     scopeDecorations: editor.IEditorDecorationsCollection | null;
     onRegisterScopeCanvas?: (key: string, canvas: HTMLCanvasElement) => void;
     onUnregisterScopeCanvas?: (key: string) => void;
-};
+}
 
-export type ScopeViewZoneHandle = {
+export interface ScopeViewZoneHandle {
     /** Tear down all view zones, canvases, and listeners. */
     dispose: () => void;
     /** Re-read positions from the tracked decoration collection and call
      *  layoutZone for any view zone whose end-line has shifted. */
     repositionZones: () => void;
-};
+}
 
 /**
  * Resolve the afterLineNumber for a scope view zone.
@@ -41,7 +41,7 @@ function resolveLineNumber(
 
 export function createScopeViewZones({
     editor,
-    monaco,
+    monaco: _monaco,
     views,
     scopeDecorations,
     onRegisterScopeCanvas,
@@ -132,8 +132,8 @@ export function createScopeViewZones({
 
         const delegate: editor.IViewZone = {
             afterLineNumber,
-            heightInPx: scopeHeight,
             domNode: container,
+            heightInPx: scopeHeight,
             marginDomNode: undefined,
         };
 
@@ -149,19 +149,23 @@ export function createScopeViewZones({
     });
 
     const repositionZones = () => {
-        if (!scopeDecorations || viewZoneIds.length === 0) return;
+        if (!scopeDecorations || viewZoneIds.length === 0) {
+            return;
+        }
 
         let needsLayout = false;
         const idsToRemove: string[] = [];
 
         for (let i = 0; i < viewZoneDelegates.length; i++) {
-            if (viewZoneIds[i] === null) continue; // already removed
+            if (viewZoneIds[i] === null) {
+                continue;
+            } // Already removed
 
             const resolvedLine = resolveLineNumber(scopeDecorations, i);
 
             if (resolvedLine === null) {
                 // Decoration was deleted — remove the view zone entirely and
-                // unregister the canvas so the renderer stops painting it.
+                // Unregister the canvas so the renderer stops painting it.
                 idsToRemove.push(viewZoneIds[i]!);
                 viewZoneIds[i] = null;
                 viewZoneDelegates[i] = null;

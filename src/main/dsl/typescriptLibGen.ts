@@ -1,10 +1,8 @@
 import { getReservedOutputNames } from '@modular/core';
+import type { Schemas, Schema } from '../../shared/dsl/schemaTypeResolver';
 import {
     schemaToTypeExpr,
     getEnumVariants,
-    Schemas,
-    Schema,
-    JSONSchema,
 } from '../../shared/dsl/schemaTypeResolver';
 
 const BASE_LIB_SOURCE = `
@@ -902,21 +900,21 @@ function $cartesian<A extends unknown[][]>(...arrays: A): ElementsOf<A>[];
 `;
 
 export function buildLibSource(schemas: Schemas): string {
-    // console.log('buildLibSource schemas:', schemas);
+    // Console.log('buildLibSource schemas:', schemas);
     const schemaLib = generateDSL(schemas);
     return `declare global {\n${BASE_LIB_SOURCE}\n\n${schemaLib} \n}\n\n export {};\n`;
 }
 
-type NamespaceNode = {
+interface NamespaceNode {
     namespaces: Map<string, NamespaceNode>;
     classes: Map<string, Schema>;
     order: Array<{ kind: 'namespace' | 'class'; name: string }>;
-};
+}
 
 function makeNamespaceNode(): NamespaceNode {
     return {
-        namespaces: new Map(),
         classes: new Map(),
+        namespaces: new Map(),
         order: [],
     };
 }
@@ -930,7 +928,7 @@ function buildTreeFromSchemas(schemas: Schemas): NamespaceNode {
             throw new Error('ModuleSchema is missing a non-empty name');
         }
 
-        const paramsSchema = moduleSchema.paramsSchema;
+        const { paramsSchema } = moduleSchema;
         if (!paramsSchema || typeof paramsSchema !== 'object') {
             throw new Error(`ModuleSchema ${fullName} is missing paramsSchema`);
         }
@@ -966,7 +964,9 @@ function buildTreeFromSchemas(schemas: Schemas): NamespaceNode {
 }
 
 function capitalizeName(name: string): string {
-    if (!name) return name;
+    if (!name) {
+        return name;
+    }
     return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
@@ -1037,7 +1037,9 @@ function generateMultiOutputInterface(
     indent: string,
 ): string[] {
     const outputs = moduleSchema.outputs || [];
-    if (outputs.length <= 1) return [];
+    if (outputs.length <= 1) {
+        return [];
+    }
 
     // Find the default output
     const defaultOutput = outputs.find((o) => o.default) || outputs[0];
@@ -1058,7 +1060,9 @@ function generateMultiOutputInterface(
 
     // Add properties for non-default outputs
     for (const output of outputs) {
-        if (output.name === defaultOutput.name) continue;
+        if (output.name === defaultOutput.name) {
+            continue;
+        }
 
         const outputType = getOutputType(output);
         const safeName = sanitizeOutputName(output.name);
@@ -1083,10 +1087,9 @@ function getFactoryReturnType(moduleSchema: Schema): string {
         return 'void';
     } else if (outputs.length === 1) {
         return getOutputType(outputs[0]);
-    } else {
-        // Multiple outputs - return the generated interface name
-        return getMultiOutputInterfaceName(moduleSchema);
     }
+    // Multiple outputs - return the generated interface name
+    return getMultiOutputInterfaceName(moduleSchema);
 }
 
 function renderFactoryFunction(
@@ -1095,9 +1098,9 @@ function renderFactoryFunction(
     indent: string,
 ): string[] {
     const functionName = moduleSchema.name.split('.').pop()!;
-    const paramsSchema: JSONSchema = moduleSchema.paramsSchema;
+    const { paramsSchema } = moduleSchema;
 
-    let args: string[] = [];
+    const args: string[] = [];
     const positionalArgs = moduleSchema.positionalArgs || [];
     const schemaRequired: readonly string[] = paramsSchema.required || [];
     // Build docstring lines
@@ -1163,7 +1166,9 @@ function renderFactoryFunction(
     for (const key of allParamKeys) {
         if (!positionalKeys.has(key)) {
             const propSchema = paramsSchema.properties?.[key];
-            if (!propSchema) continue;
+            if (!propSchema) {
+                continue;
+            }
             const type = schemaToTypeExpr(propSchema, paramsSchema);
             const optionalMark = schemaRequired.includes(key) ? '' : '?';
             configProps.push(`${key}${optionalMark}: ${type}`);
@@ -1251,14 +1256,18 @@ function renderTree(node: NamespaceNode, indentLevel: number = 0): string[] {
     for (const item of node.order) {
         if (item.kind === 'class') {
             const classSpec = node.classes.get(item.name);
-            if (!classSpec) continue;
+            if (!classSpec) {
+                continue;
+            }
             lines.push(...renderInterface(classSpec, indent));
             lines.push('');
             continue;
         }
 
         const child = node.namespaces.get(item.name);
-        if (!child) continue;
+        if (!child) {
+            continue;
+        }
         lines.push(`${indent}export namespace ${item.name} {`);
         lines.push(...renderTree(child, indentLevel + 1));
         lines.push(`${indent}}`);
@@ -1280,8 +1289,8 @@ export function generateDSL(schemas: Schemas): string {
 
     // $clock is a pre-configured clock instance available to users.
     // Because the _clock factory is filtered from userFacingSchemas, its multi-output
-    // interface won't have been generated by renderTree. Generate it here
-    // so that `$clock` has a proper type.
+    // Interface won't have been generated by renderTree. Generate it here
+    // So that `$clock` has a proper type.
     const clockSchema = schemas.find((s) => s.name === '_clock');
     if (clockSchema) {
         const clockInterface = generateMultiOutputInterface(clockSchema, '');

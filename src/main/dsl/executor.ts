@@ -1,23 +1,25 @@
-import { ModuleSchema, PatchGraph } from '@modular/core';
+import type { ModuleSchema, PatchGraph } from '@modular/core';
 import {
     DSLContext,
     hz,
     note,
-    setDSLWrapperLineOffset,
     setActiveSpanRegistry,
+    setDSLWrapperLineOffset,
 } from './factories';
+import type {
+    Signal,
+    SourceLocation,
+    Collection,
+    ModuleOutput,
+    CollectionWithRange,
+} from './GraphBuilder';
 import {
     $c,
     $r,
     $cartesian,
-    Signal,
-    SourceLocation,
     DeferredModuleOutput,
     DeferredCollection,
     Bus,
-    Collection,
-    ModuleOutput,
-    CollectionWithRange,
 } from './GraphBuilder';
 import { analyzeSourceSpans } from './analyzeSource';
 import type { CallSiteSpanRegistry } from './analyzeSource';
@@ -52,6 +54,8 @@ export interface DSLExecutionResult {
 // Non-enumerable to avoid polluting for-in loops.
 if (typeof Array.prototype.pipe !== 'function') {
     Object.defineProperty(Array.prototype, 'pipe', {
+        configurable: true,
+        enumerable: false,
         value: function pipe<T>(
             this: unknown,
             pipelineFunc: (self: typeof this) => T,
@@ -59,8 +63,6 @@ if (typeof Array.prototype.pipe !== 'function') {
             return pipelineFunc(this);
         },
         writable: true,
-        configurable: true,
-        enumerable: false,
     });
 }
 
@@ -72,7 +74,7 @@ export function executePatchScript(
     schemas: ModuleSchema[],
 ): DSLExecutionResult {
     // Create DSL context
-    // console.log('Executing DSL script with schemas:', schemas);
+    // Console.log('Executing DSL script with schemas:', schemas);
     const context = new DSLContext(schemas);
 
     // Create the execution environment with all DSL functions
@@ -99,10 +101,10 @@ export function executePatchScript(
 
     const rootInput = signal(
         Array.from({ length: 16 }, (_, i) => ({
-            type: 'cable',
+            channel: i,
             module: 'HIDDEN_AUDIO_IN',
             port: 'input',
-            channel: i,
+            type: 'cable',
         })),
         { id: 'ROOT_INPUT' },
     );
@@ -147,9 +149,8 @@ export function executePatchScript(
         return new DeferredCollection(...items);
     };
 
-    const $bus = (cb: (mixed: Collection) => unknown): Bus => {
-        return new Bus(builder, cb);
-    };
+    const $bus = (cb: (mixed: Collection) => unknown): Bus =>
+        new Bus(builder, cb);
 
     const $setEndOfChainCb = (
         cb: (
@@ -202,7 +203,7 @@ export function executePatchScript(
         // Create backing signal module via the existing signal factory
         const result = signal(value, { id: moduleId });
 
-        sliders.push({ moduleId, label, value, min, max });
+        sliders.push({ label, max, min, moduleId, value });
 
         return result;
     };
@@ -233,12 +234,12 @@ export function executePatchScript(
         $input: rootInput,
     };
 
-    // console.log(dslGlobals);
+    // Console.log(dslGlobals);
 
     // Build the function body - count wrapper lines for source mapping
     // When new Function() executes code, line numbers in stack traces are relative
-    // to the function body string. The template literal structure plus new Function's
-    // own wrapper results in user code starting at line 5 in stack traces.
+    // To the function body string. The template literal structure plus new Function's
+    // Own wrapper results in user code starting at line 5 in stack traces.
     const wrapperLineCount = 4;
     setDSLWrapperLineOffset(wrapperLineCount);
 
@@ -276,29 +277,31 @@ export function executePatchScript(
         fn(...paramValues);
 
         // Build and return the patch with source locations
-        const builder = context.getBuilder();
-        const patch = builder.toPatch();
-        const sourceLocationMap = builder.getSourceLocationMap();
+        const resultBuilder = context.getBuilder();
+        const patch = resultBuilder.toPatch();
+        const sourceLocationMap = resultBuilder.getSourceLocationMap();
 
         return {
-            patch,
-            sourceLocationMap,
-            interpolationResolutions,
-            sliders,
             callSiteSpans,
+            interpolationResolutions,
+            patch,
+            sliders,
+            sourceLocationMap,
         };
     } catch (error) {
         if (error instanceof Error) {
-            throw new Error(`DSL execution error: ${error.message}`);
+            throw new Error(`DSL execution error: ${error.message}`, {
+                cause: error,
+            });
         }
         throw error;
     } finally {
         // Clear the span registry after execution — spans are already baked into
-        // module state via ARGUMENT_SPANS_KEY so the registry isn't needed anymore.
+        // Module state via ARGUMENT_SPANS_KEY so the registry isn't needed anymore.
         setActiveSpanRegistry(null);
         // NOTE: Do NOT clear interpolation resolutions here. They are read
-        // asynchronously by moduleStateTracking during decoration polling and
-        // must persist until the next execution replaces them.
+        // Asynchronously by moduleStateTracking during decoration polling and
+        // Must persist until the next execution replaces them.
     }
 }
 
@@ -310,12 +313,13 @@ export function validateDSLSyntax(source: string): {
     error?: string;
 } {
     try {
-        new Function(source);
+        // Create function only for syntax validation - not executed
+        const _fn = new Function(source);
         return { valid: true };
     } catch (error) {
         if (error instanceof Error) {
-            return { valid: false, error: error.message };
+            return { error: error.message, valid: false };
         }
-        return { valid: false, error: 'Unknown syntax error' };
+        return { error: 'Unknown syntax error', valid: false };
     }
 }

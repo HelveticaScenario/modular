@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import type {
     AppConfig,
-    MonospaceFont,
     BundledFont,
+    MonospaceFont,
     SystemFont,
 } from '../../shared/ipcTypes';
 import type { AppTheme } from '../themes/types';
@@ -65,7 +65,9 @@ interface EditorSettingsTabProps {
 function isFontInstalled(fontName: string): boolean {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    if (!ctx) return false;
+    if (!ctx) {
+        return false;
+    }
 
     const testString = 'mmmmmmmmmmlli1WWW@#$';
     const baselines = ['monospace', 'sans-serif', 'serif'] as const;
@@ -90,15 +92,10 @@ export function EditorSettingsTab({
     themes,
     onConfigChange,
 }: EditorSettingsTabProps) {
-    const [availableSystemFonts, setAvailableSystemFonts] = useState<
-        SystemFont[]
-    >([]);
-
-    useEffect(() => {
+    const [availableSystemFonts] = useState<SystemFont[]>(() =>
         // Detect which system fonts are actually installed via canvas measurement
-        const available = SYSTEM_FONTS.filter(isFontInstalled);
-        setAvailableSystemFonts(available);
-    }, []);
+        SYSTEM_FONTS.filter(isFontInstalled),
+    );
 
     return (
         <div className="settings-tab-content">

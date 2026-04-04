@@ -33,7 +33,7 @@ export function captureSourceLocation():
 
     // Stack frames from evaluated code look like:
     // "    at eval (eval at executePatchScript ..., <anonymous>:5:12)"
-    // or in some V8 versions:
+    // Or in some V8 versions:
     // "    at <anonymous>:5:12"
     const lines = stackHolder.stack.split('\n');
 
@@ -44,7 +44,7 @@ export function captureSourceLocation():
             const column = parseInt(anonymousMatch[2], 10);
             const adjustedLine = rawLine - dslWrapperLineOffset;
             if (adjustedLine > 0) {
-                return { line: adjustedLine, column };
+                return { column, line: adjustedLine };
             }
         }
     }

@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import electronAPI from '../electronAPI';
 import type { AppConfig } from '../../shared/ipcTypes';
 import { useTheme } from '../themes/ThemeContext';
-import { AudioSettingsTab, type AudioSettingsHandle } from './AudioSettings';
+import { type AudioSettingsHandle, AudioSettingsTab } from './AudioSettings';
 import { EditorSettingsTab } from './EditorSettingsTab';
 import { FormatterSettingsTab } from './FormatterSettingsTab';
 import './Settings.css';
@@ -28,7 +28,7 @@ interface SettingsProps {
 export function Settings({ isOpen, onClose }: SettingsProps) {
     const [activeTab, setActiveTab] = useState<SettingsTabId>('editor');
     // Saved config (what's on disk)
-    const [savedConfig, setSavedConfig] = useState<AppConfig>({});
+    const [_savedConfig, setSavedConfig] = useState<AppConfig>({});
     // Draft config (local edits, not yet persisted)
     const [draftConfig, setDraftConfig] = useState<AppConfig>({});
     const [saving, setSaving] = useState(false);
@@ -39,7 +39,9 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
 
     // Load config when opened
     useEffect(() => {
-        if (!isOpen) return;
+        if (!isOpen) {
+            return;
+        }
         electronAPI.config
             .read()
             .then((cfg) => {
@@ -51,7 +53,9 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
 
     // Listen for external config changes (e.g. manual JSON edits)
     useEffect(() => {
-        if (!isOpen) return;
+        if (!isOpen) {
+            return;
+        }
         const unsubscribe = electronAPI.config.onChange((newConfig) => {
             setSavedConfig(newConfig);
             setDraftConfig(newConfig);
@@ -88,7 +92,9 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
 
     // Close on Escape key
     useEffect(() => {
-        if (!isOpen) return;
+        if (!isOpen) {
+            return;
+        }
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
                 onClose();
@@ -108,7 +114,9 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
         }
     }, [isOpen]);
 
-    if (!isOpen) return null;
+    if (!isOpen) {
+        return null;
+    }
 
     return (
         <div className="settings-overlay" onClick={onClose}>

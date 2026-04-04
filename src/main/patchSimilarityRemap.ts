@@ -28,16 +28,20 @@ function isExplicitId(module: Pick<ModuleState, 'id' | 'moduleType'>): boolean {
     // (napi-rs typically maps Option<bool> to `boolean | null | undefined` in TS)
     const maybeFlag = (module as unknown as { idIsExplicit?: boolean | null })
         .idIsExplicit;
-    if (typeof maybeFlag === 'boolean') return maybeFlag;
+    if (typeof maybeFlag === 'boolean') {
+        return maybeFlag;
+    }
 
     // Back-compat fallback for older graphs.
-    if (RESERVED_MODULE_IDS.has(module.id)) return true;
+    if (RESERVED_MODULE_IDS.has(module.id)) {
+        return true;
+    }
     return !isLikelyImplicitId(module.id, module.moduleType);
 }
 
 function deepClone<T>(value: T): T {
     // PatchGraph is plain JSON-ish data; JSON clone is fine and avoids structuredClone
-    // availability differences between Electron main/renderer build targets.
+    // Availability differences between Electron main/renderer build targets.
     return JSON.parse(JSON.stringify(value)) as T;
 }
 
@@ -48,7 +52,9 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function isCableRef(
     value: unknown,
 ): value is { type: 'cable'; module: string; port: string } {
-    if (!isPlainObject(value)) return false;
+    if (!isPlainObject(value)) {
+        return false;
+    }
     return (
         value.type === 'cable' &&
         typeof value.module === 'string' &&
@@ -70,7 +76,9 @@ function walkValues(
         return;
     }
 
-    if (!isPlainObject(value)) return;
+    if (!isPlainObject(value)) {
+        return;
+    }
 
     const keys = Object.keys(value).sort();
     for (const key of keys) {
@@ -123,23 +131,24 @@ interface GraphContext {
     featuresByModuleId: Map<string, Map<string, Feature>>;
 }
 
-function canonicalizeForFingerprint(
+function _canonicalizeForFingerprint(
     value: unknown,
     ctx: { typeById: Map<string, string> },
 ): unknown {
     if (isCableRef(value)) {
         const upstreamType = ctx.typeById.get(value.module) ?? 'unknown';
-        return { type: 'cable', upstreamType, port: value.port };
+        return { port: value.port, type: 'cable', upstreamType };
     }
 
     if (Array.isArray(value)) {
-        return value.map((v) => canonicalizeForFingerprint(v, ctx));
+        return value.map((v) => _canonicalizeForFingerprint(v, ctx));
     }
     if (isPlainObject(value)) {
         const out: Record<string, unknown> = {};
         const keys = Object.keys(value).sort();
-        for (const k of keys)
-            out[k] = canonicalizeForFingerprint(value[k], ctx);
+        for (const k of keys) {
+            out[k] = _canonicalizeForFingerprint(value[k], ctx);
+        }
         return out;
     }
     return value;
@@ -163,7 +172,7 @@ function extractFeatures(
                 value: canonical,
                 weight: kindWeight('cableRef'),
             });
-            return; // treat as leaf
+            return; // Treat as leaf
         }
 
         if (typeof v === 'number') {
@@ -235,7 +244,7 @@ function buildGraphContext(graph: PatchGraph): GraphContext {
         );
     }
 
-    return { typeById, featuresByModuleId };
+    return { featuresByModuleId, typeById };
 }
 
 function multisetAdd(map: Map<string, number>, key: string): void {
@@ -254,11 +263,15 @@ function computeDownstreamUsage(
     };
 
     const moduleType = new Map<string, string>();
-    for (const m of graph.modules) moduleType.set(m.id, m.moduleType);
+    for (const m of graph.modules) {
+        moduleType.set(m.id, m.moduleType);
+    }
 
     for (const consumer of graph.modules) {
         walkValues(consumer.params, (v, path) => {
-            if (!isCableRef(v)) return;
+            if (!isCableRef(v)) {
+                return;
+            }
             const consumerType = consumer.moduleType;
             const token = `${consumerType}:${path}:${v.port}`;
             record(v.module, token);
@@ -314,8 +327,12 @@ function paramSimilarity(
     featuresB: Map<string, Feature>,
 ): number {
     const keys = new Set<string>();
-    for (const k of featuresA.keys()) keys.add(k);
-    for (const k of featuresB.keys()) keys.add(k);
+    for (const k of featuresA.keys()) {
+        keys.add(k);
+    }
+    for (const k of featuresB.keys()) {
+        keys.add(k);
+    }
 
     let weightedSum = 0;
     let weightTotal = 0;
@@ -329,7 +346,9 @@ function paramSimilarity(
         weightTotal += weight;
     }
 
-    if (weightTotal <= 0) return 0;
+    if (weightTotal <= 0) {
+        return 0;
+    }
     return weightedSum / weightTotal;
 }
 
@@ -338,8 +357,12 @@ function multisetJaccard(
     b: Map<string, number>,
 ): number {
     const keys = new Set<string>();
-    for (const k of a.keys()) keys.add(k);
-    for (const k of b.keys()) keys.add(k);
+    for (const k of a.keys()) {
+        keys.add(k);
+    }
+    for (const k of b.keys()) {
+        keys.add(k);
+    }
 
     let minSum = 0;
     let maxSum = 0;
@@ -350,7 +373,9 @@ function multisetJaccard(
         maxSum += Math.max(av, bv);
     }
 
-    if (maxSum === 0) return 1; // both empty => identical
+    if (maxSum === 0) {
+        return 1;
+    } // Both empty => identical
     return minSum / maxSum;
 }
 
@@ -364,7 +389,9 @@ function moduleSimilarity(
     desiredCtx: GraphContext,
     currentCtx: GraphContext,
 ): number {
-    if (desired.moduleType !== current.moduleType) return 0;
+    if (desired.moduleType !== current.moduleType) {
+        return 0;
+    }
 
     const desiredFeatures =
         desiredCtx.featuresByModuleId.get(desired.id) ??
@@ -383,7 +410,7 @@ function moduleSimilarity(
 
     // Explicit id bias:
     // - If the desired module id is user-assigned (not the DSL auto `${type}-${n}`),
-    //   strongly prefer matching the same id.
+    //   Strongly prefer matching the same id.
     // - Do NOT create a hard lock for implicit ids, since those are unstable.
     const desiredExplicit = isExplicitId(desired);
     const sameId = desired.id === current.id;
@@ -418,7 +445,9 @@ function hungarian(cost: number[][]): number[] {
             let j1 = 0;
 
             for (let j = 1; j <= n; j++) {
-                if (used[j]) continue;
+                if (used[j]) {
+                    continue;
+                }
                 const cur = cost[i0 - 1][j - 1] - u[i0] - v[j];
                 if (cur < minv[j]) {
                     minv[j] = cur;
@@ -448,8 +477,8 @@ function hungarian(cost: number[][]): number[] {
         } while (j0 !== 0);
     }
 
-    // p[j] = assigned row for column j
-    const assignment = new Array(n).fill(-1); // row -> column
+    // P[j] = assigned row for column j
+    const assignment = new Array(n).fill(-1); // Row -> column
     for (let j = 1; j <= n; j++) {
         if (p[j] > 0) {
             assignment[p[j] - 1] = j - 1;
@@ -464,7 +493,9 @@ function remapModuleIdsInValue(
 ): unknown {
     if (isCableRef(value)) {
         const remapped = idMap.get(value.module);
-        if (!remapped) return value;
+        if (!remapped) {
+            return value;
+        }
         return { ...value, module: remapped };
     }
 
@@ -476,7 +507,7 @@ function remapModuleIdsInValue(
         const out: Record<string, unknown> = {};
         // Avoid Object.entries to keep compatibility with older TS lib targets.
         for (const k in value) {
-            if (Object.prototype.hasOwnProperty.call(value, k)) {
+            if (Object.hasOwn(value, k)) {
                 out[k] = remapModuleIdsInValue(value[k], idMap);
             }
         }
@@ -486,7 +517,7 @@ function remapModuleIdsInValue(
     return value;
 }
 
-function remapGraph(
+function _remapGraph(
     desiredGraph: PatchGraph,
     idMap: Map<string, string>,
 ): PatchGraph {
@@ -494,14 +525,18 @@ function remapGraph(
 
     for (const module of applied.modules) {
         const nextId = idMap.get(module.id);
-        if (nextId) module.id = nextId;
+        if (nextId) {
+            module.id = nextId;
+        }
         module.params = remapModuleIdsInValue(module.params, idMap);
     }
 
     for (const scope of applied.scopes) {
         for (const channel of scope.channels) {
             const nextId = idMap.get(channel.moduleId);
-            if (nextId) channel.moduleId = nextId;
+            if (nextId) {
+                channel.moduleId = nextId;
+            }
         }
     }
 
@@ -537,13 +572,17 @@ export function reconcilePatchBySimilarity(
 
     const matchThreshold = options.matchThreshold ?? DEFAULT_MATCH_THRESHOLD;
     const ambiguityMargin = options.ambiguityMargin ?? DEFAULT_AMBIGUITY_MARGIN;
-    const debugLog = options.debugLog;
+    const { debugLog } = options;
 
     const currentById = new Map<string, ModuleState>();
-    for (const m of currentGraph.modules) currentById.set(m.id, m);
+    for (const m of currentGraph.modules) {
+        currentById.set(m.id, m);
+    }
 
     const desiredById = new Map<string, ModuleState>();
-    for (const m of desiredGraph.modules) desiredById.set(m.id, m);
+    for (const m of desiredGraph.modules) {
+        desiredById.set(m.id, m);
+    }
 
     const usedCurrentIds = new Set<string>();
 
@@ -562,10 +601,14 @@ export function reconcilePatchBySimilarity(
     }
 
     // If the desired module has an explicit id and exists in current with same id+type,
-    // anchor it early.
+    // Anchor it early.
     for (const desired of desiredGraph.modules) {
-        if (RESERVED_MODULE_IDS.has(desired.id)) continue;
-        if (!isExplicitId(desired)) continue;
+        if (RESERVED_MODULE_IDS.has(desired.id)) {
+            continue;
+        }
+        if (!isExplicitId(desired)) {
+            continue;
+        }
 
         const current = currentById.get(desired.id);
         if (current && current.moduleType === desired.moduleType) {
@@ -587,17 +630,25 @@ export function reconcilePatchBySimilarity(
     const currentByType = new Map<string, ModuleState[]>();
 
     for (const desired of desiredGraph.modules) {
-        if (RESERVED_MODULE_IDS.has(desired.id)) continue;
+        if (RESERVED_MODULE_IDS.has(desired.id)) {
+            continue;
+        }
         // Skip desired ids already anchored via explicit exact match.
-        if (anchoredDesiredIds.has(desired.id)) continue;
+        if (anchoredDesiredIds.has(desired.id)) {
+            continue;
+        }
         const list = desiredByType.get(desired.moduleType) ?? [];
         list.push(desired);
         desiredByType.set(desired.moduleType, list);
     }
 
     for (const current of currentGraph.modules) {
-        if (usedCurrentIds.has(current.id)) continue;
-        if (RESERVED_MODULE_IDS.has(current.id)) continue;
+        if (usedCurrentIds.has(current.id)) {
+            continue;
+        }
+        if (RESERVED_MODULE_IDS.has(current.id)) {
+            continue;
+        }
         const list = currentByType.get(current.moduleType) ?? [];
         list.push(current);
         currentByType.set(current.moduleType, list);
@@ -608,9 +659,11 @@ export function reconcilePatchBySimilarity(
 
         const m = desiredList.length;
         const n = currentList.length;
-        if (m === 0 || n === 0) continue;
+        if (m === 0 || n === 0) {
+            continue;
+        }
 
-        // cost matrix: size x size, where size = n + m (adds one dummy column per desired)
+        // Cost matrix: size x size, where size = n + m (adds one dummy column per desired)
         const size = n + m;
         const thresholdCost = 1 - matchThreshold;
 
@@ -644,8 +697,8 @@ export function reconcilePatchBySimilarity(
 
         // Dummy rows to make the matrix square / allow unused columns.
         // IMPORTANT: use a constant non-zero-ish cost here (not 0) to avoid
-        // degeneracy in large matrices where dummy rows can "steal" real columns
-        // and force desired rows onto dummy columns.
+        // Degeneracy in large matrices where dummy rows can "steal" real columns
+        // And force desired rows onto dummy columns.
         for (let i = m; i < size; i++) {
             for (let j = 0; j < size; j++) {
                 cost[i][j] = thresholdCost;
@@ -656,7 +709,9 @@ export function reconcilePatchBySimilarity(
 
         for (let i = 0; i < m; i++) {
             const assignedCol = assignment[i];
-            if (assignedCol < 0 || assignedCol >= n) continue; // dummy => unmatched
+            if (assignedCol < 0 || assignedCol >= n) {
+                continue;
+            } // Dummy => unmatched
 
             const score = scoreMatrix[i][assignedCol];
             // Ambiguity guard: best must beat second-best by margin.
@@ -714,8 +769,12 @@ export function reconcilePatchBySimilarity(
             }
 
             // Never remap onto a reserved id.
-            if (RESERVED_MODULE_IDS.has(currentId)) continue;
-            if (RESERVED_MODULE_IDS.has(desiredId)) continue;
+            if (RESERVED_MODULE_IDS.has(currentId)) {
+                continue;
+            }
+            if (RESERVED_MODULE_IDS.has(desiredId)) {
+                continue;
+            }
 
             idMap.set(currentId, desiredId);
             usedCurrentIds.add(currentId);
@@ -731,13 +790,15 @@ export function reconcilePatchBySimilarity(
     }
 
     // 3) Do NOT rewrite ids here. We keep the desired patch's ids so the
-    // renderer/UI stays aligned with the DSL. The Rust engine will consume the
-    // remap hints (moduleIdRemaps) to preserve instances while keeping desired ids.
+    // Renderer/UI stays aligned with the DSL. The Rust engine will consume the
+    // Remap hints (moduleIdRemaps) to preserve instances while keeping desired ids.
     const appliedPatch = desiredGraph;
 
     const moduleIdRemap: Record<string, string> = {};
     for (const [from, to] of idMap.entries()) {
-        if (from !== to) moduleIdRemap[from] = to;
+        if (from !== to) {
+            moduleIdRemap[from] = to;
+        }
     }
 
     if (debugLog) {
@@ -759,6 +820,6 @@ export function reconcilePatchBySimilarity(
             'patch-similarity-end',
         ),
     );
-    // performance.
+    // Performance.
     return { appliedPatch, moduleIdRemap };
 }

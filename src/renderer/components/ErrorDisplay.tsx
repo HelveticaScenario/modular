@@ -1,4 +1,4 @@
-import { ValidationError } from '@modular/core';
+import type { ValidationError } from '@modular/core';
 
 interface ErrorDisplayProps {
     error: string | null;
@@ -7,7 +7,7 @@ interface ErrorDisplayProps {
 }
 
 export function ErrorDisplay({ error, errors, onDismiss }: ErrorDisplayProps) {
-    if (!error && (!errors || errors.length === 0)) return null;
+    if (!error && (!errors || errors.length === 0)) {return null;}
 
     return (
         <div className="error-display">
