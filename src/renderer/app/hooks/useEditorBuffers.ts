@@ -390,14 +390,14 @@ export function useEditorBuffers({
                 let remaining: typeof buffers = [];
 
                 setBuffers((prev) => {
-                    const activeBuffer = prev.find(
+                    const currentActiveBuffer = prev.find(
                         (b) => getBufferId(b) === activeBufferId,
                     );
                     activeIsDeleted =
                         activeBufferId !== undefined &&
                         ((bufferId !== undefined && activeBufferId === bufferId) ||
-                            (activeBuffer?.kind === 'file' &&
-                                activeBuffer.filePath === filePath));
+                            (currentActiveBuffer?.kind === 'file' &&
+                                currentActiveBuffer.filePath === filePath));
 
                     remaining = prev.filter(
                         (b) => !(b.kind === 'file' && b.filePath === filePath),
