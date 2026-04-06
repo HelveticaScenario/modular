@@ -2,14 +2,11 @@
     "$schema": "https://unpkg.com/knip@6.1.1/schema.json",
     "entry": [
         "src/main/main.ts",
-        "src/renderer/renderer.tsx",
         "src/preload/preload.ts",
         "vite.main.config.ts",
         "vite.preload.config.ts",
         "vite.renderer.config.ts",
         "forge.config.ts",
-        "vitest.config.ts",
-        "playwright.config.ts",
         "scripts/**/*.{ts,mjs}",
         "src/main/dsl/GraphBuilder.ts",
         "src/main/dsl/executor.ts",
@@ -17,17 +14,17 @@
         "src/renderer/components/monaco/definitionProvider.ts",
         "src/shared/dsl/typeDocs.ts"
     ],
-    "project": [
-        "src/**/*.{ts,tsx}",
-        "crates/modular/__test__/**/*.ts",
-        "e2e/**/*.ts"
-    ],
+    "project": ["e2e/**/*.ts"],
     "ignore": [
         "crates/modular/scripts/copy-host-binary-to-npm.mjs",
         "crates/modular/wasi-worker-browser.mjs"
     ],
     "ignoreDependencies": [
         "@modular/core",
+        "@monaco-editor/react",
+        "react-markdown",
+        "ts-morph",
+        "uuid",
         "@fontsource/anonymous-pro",
         "@fontsource/cascadia-code",
         "@fontsource/commit-mono",

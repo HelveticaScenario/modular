@@ -339,7 +339,7 @@ pub fn validate_patch(
 
     // 4) Validate cable references in Signal-typed params.
     //
-    // Note: Param-level validation (unknown fields, type checking) is now handled
+    // Note: Param-level validation (unknown fields, type checking) is handled
     // by deserr. This loop only validates graph-level concerns: that Cable
     // references point to existing modules and valid output ports.
     for (param_name, param_value) in param_obj {
