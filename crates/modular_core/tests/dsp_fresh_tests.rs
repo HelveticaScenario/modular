@@ -274,6 +274,7 @@ fn minimal_params(module_type: &str) -> serde_json::Value {
         "$clockDivider" => json!({ "division": 2, "input": 0.0 }),
         "$sah" => json!({ "input": 0.0, "trigger": 0.0 }),
         "$tah" => json!({ "input": 0.0, "gate": 0.0 }),
+        "$step" => json!({ "steps": [0.0], "next": 0.0 }),
         "$midiCC" => json!({ "cc": 1 }),
         "_clock" => json!({ "tempo": 120.0, "numerator": 4, "denominator": 4 }),
         _ => json!({}),
@@ -600,6 +601,26 @@ fn from_graph_process_frame_advances_all_modules() {
         slow_mn < -4.0,
         "slow osc should oscillate, trough={slow_mn}"
     );
+}
+
+// ─── Step sequencer ──────────────────────────────────────────────────────────
+
+#[test]
+fn step_rejects_empty_steps() {
+    let deserializers = get_params_deserializers();
+    let deserializer = deserializers.get("$step").expect("no deserializer for $step");
+    let result = deserializer(json!({ "steps": [], "next": 0.0 }));
+    match result {
+        Ok(_) => panic!("empty steps should be rejected"),
+        Err(err) => {
+            let errors = err.into_errors();
+            assert!(
+                errors.iter().any(|e| e.message.contains("at least one step")),
+                "error should mention 'at least one step', got: {:?}",
+                errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+            );
+        }
+    }
 }
 
 // ─── Curve ───────────────────────────────────────────────────────────────────

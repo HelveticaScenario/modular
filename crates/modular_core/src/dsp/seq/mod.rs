@@ -16,6 +16,7 @@ pub mod scale;
 pub mod seq;
 pub mod seq_value;
 pub mod track;
+pub mod step;
 
 pub use interval_seq::{IntervalPatternParam, IntervalSeq, IntervalValue};
 pub use scale::{FixedRoot, ScaleRoot, ScaleSnapper};
@@ -25,12 +26,14 @@ pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     seq::Seq::install_constructor(map);
     track::Track::install_constructor(map);
     interval_seq::IntervalSeq::install_constructor(map);
+    step::Step::install_constructor(map);
 }
 
 pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer>) {
     seq::Seq::install_params_deserializer(map);
     track::Track::install_params_deserializer(map);
     interval_seq::IntervalSeq::install_params_deserializer(map);
+    step::Step::install_params_deserializer(map);
 }
 
 pub fn schemas() -> Vec<ModuleSchema> {
@@ -38,5 +41,6 @@ pub fn schemas() -> Vec<ModuleSchema> {
         seq::Seq::get_schema(),
         track::Track::get_schema(),
         interval_seq::IntervalSeq::get_schema(),
+        step::Step::get_schema(),
     ]
 }

@@ -6483,6 +6483,149 @@
     ]
   },
   {
+    "name": "$step",
+    "documentation": "Step sequencer",
+    "paramsSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "StepParams",
+      "type": "object",
+      "properties": {
+        "next": {
+          "description": "Next step trigger",
+          "$ref": "#/$defs/MonoSignal"
+        },
+        "reset": {
+          "description": "Reset trigger",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MonoSignal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "steps": {
+          "description": "Steps of the sequence",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PolySignal"
+          }
+        }
+      },
+      "required": [
+        "steps",
+        "next"
+      ],
+      "$defs": {
+        "MonoSignal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Signal"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Signal"
+              }
+            }
+          ]
+        },
+        "PolySignal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Signal"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Signal"
+              }
+            }
+          ]
+        },
+        "Signal": {
+          "anyOf": [
+            {
+              "type": "number",
+              "format": "double"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/SignalTaggedSchema"
+            }
+          ]
+        },
+        "SignalTaggedSchema": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "channel": {
+                  "type": "integer",
+                  "format": "uint",
+                  "default": 0,
+                  "minimum": 0
+                },
+                "module": {
+                  "type": "string"
+                },
+                "port": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "const": "cable"
+                }
+              },
+              "required": [
+                "type",
+                "module",
+                "port"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "outputs": [
+      {
+        "name": "output",
+        "description": "forwarded signal",
+        "polyphonic": true,
+        "default": true
+      }
+    ],
+    "signalParams": [
+      {
+        "name": "next",
+        "description": "Next step trigger",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": -5.0,
+        "maxValue": 5.0
+      },
+      {
+        "name": "reset",
+        "description": "Reset trigger",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": -5.0,
+        "maxValue": 5.0
+      }
+    ],
+    "positionalArgs": [
+      {
+        "name": "steps"
+      },
+      {
+        "name": "next"
+      }
+    ]
+  },
+  {
     "name": "$midiCV",
     "documentation": "Converts MIDI note input into control voltages for driving synthesizer modules.\nSupports polyphonic voice allocation with up to 16 voices.\n\n## Outputs\n\n| Output | Signal | Range |\n|---|---|---|\n| `pitch` | V/Oct pitch (0V = C4), includes pitch bend | — |\n| `gate` | High while a note is held | 0–5V |\n| `velocity` | Note-on velocity | 0–5V |\n| `aftertouch` | Channel or polyphonic aftertouch | 0–5V |\n| `retrigger` | 5V pulse for 1ms on each new note | 0–5V |\n| `pitchWheel` | Pitch bend wheel position | -5V–+5V |\n| `modWheel` | Mod wheel (CC 1) | 0–5V |\n\n## Polyphonic modes (`polyMode`)\n\n- `\"rotate\"` — cycles through voices round-robin\n- `\"reuse\"` — reuses the voice that last played the same note\n- `\"reset\"` — always starts allocation from voice 1\n- `\"mpe\"` — one voice per MIDI channel (for MPE controllers)\n\n## Monophonic modes (`monoMode`, when `channels: 1`)\n\n- `\"last\"` — most recently pressed note wins\n- `\"first\"` — first pressed note wins\n- `\"lowest\"` — lowest held note wins\n- `\"highest\"` — highest held note wins\n\n## Example\n\n```js\n// 4-voice polyphonic MIDI synth\nconst midi = $midiCV({ channels: 4 });\n$sine(midi.pitch).amplitude($adsr(midi.gate,{attack: 0.01, decay: 0.1, sustain: 0.8, release: 0.5})).out();\n\n// Mono lead with pitch bend\nconst lead = $midiCV({ channels: 1, pitchBendRange: 12 });\n$saw(lead.pitch).amplitude($adsr(lead.gate,{attack: 0.01, decay: 0.1, sustain: 0.8, release: 0.5})).out();\n```",
     "paramsSchema": {
