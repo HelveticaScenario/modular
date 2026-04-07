@@ -1313,6 +1313,22 @@
       "title": "SineOscillatorParams",
       "type": "object",
       "properties": {
+        "fm": {
+          "description": "FM input signal (pre-scaled by user)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PolySignal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fmMode": {
+          "description": "FM mode: throughZero (default), lin, or exp",
+          "$ref": "#/$defs/FmMode",
+          "default": "throughZero"
+        },
         "freq": {
           "description": "pitch in V/Oct (0V = C4)",
           "$ref": "#/$defs/PolySignal"
@@ -1322,6 +1338,26 @@
         "freq"
       ],
       "$defs": {
+        "FmMode": {
+          "description": "FM synthesis mode for oscillators.",
+          "oneOf": [
+            {
+              "description": "Through-zero FM: frequency can go negative (phase runs backward)",
+              "type": "string",
+              "const": "throughZero"
+            },
+            {
+              "description": "Linear FM: like through-zero but frequency clamped to >= 0",
+              "type": "string",
+              "const": "lin"
+            },
+            {
+              "description": "Exponential FM: modulator added to pitch in V/Oct space",
+              "type": "string",
+              "const": "exp"
+            }
+          ]
+        },
         "PolySignal": {
           "anyOf": [
             {
@@ -1399,6 +1435,14 @@
         "defaultValue": 0.0,
         "minValue": -5.0,
         "maxValue": 5.0
+      },
+      {
+        "name": "fm",
+        "description": "FM input signal (pre-scaled by user)",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": -5.0,
+        "maxValue": 5.0
       }
     ],
     "positionalArgs": [
@@ -1415,6 +1459,22 @@
       "title": "SawOscillatorParams",
       "type": "object",
       "properties": {
+        "fm": {
+          "description": "FM input signal (pre-scaled by user)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PolySignal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fmMode": {
+          "description": "FM mode: throughZero (default), lin, or exp",
+          "$ref": "#/$defs/FmMode",
+          "default": "throughZero"
+        },
         "freq": {
           "description": "pitch in V/Oct (0V = C4)",
           "$ref": "#/$defs/PolySignal"
@@ -1435,6 +1495,26 @@
         "freq"
       ],
       "$defs": {
+        "FmMode": {
+          "description": "FM synthesis mode for oscillators.",
+          "oneOf": [
+            {
+              "description": "Through-zero FM: frequency can go negative (phase runs backward)",
+              "type": "string",
+              "const": "throughZero"
+            },
+            {
+              "description": "Linear FM: like through-zero but frequency clamped to >= 0",
+              "type": "string",
+              "const": "lin"
+            },
+            {
+              "description": "Exponential FM: modulator added to pitch in V/Oct space",
+              "type": "string",
+              "const": "exp"
+            }
+          ]
+        },
         "PolySignal": {
           "anyOf": [
             {
@@ -1520,6 +1600,14 @@
         "defaultValue": 0.0,
         "minValue": 0.0,
         "maxValue": 5.0
+      },
+      {
+        "name": "fm",
+        "description": "FM input signal (pre-scaled by user)",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": -5.0,
+        "maxValue": 5.0
       }
     ],
     "positionalArgs": [
@@ -1536,6 +1624,22 @@
       "title": "PulseOscillatorParams",
       "type": "object",
       "properties": {
+        "fm": {
+          "description": "FM input signal (pre-scaled by user)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PolySignal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fmMode": {
+          "description": "FM mode: throughZero (default), lin, or exp",
+          "$ref": "#/$defs/FmMode",
+          "default": "throughZero"
+        },
         "freq": {
           "description": "pitch in V/Oct (0V = C4)",
           "$ref": "#/$defs/PolySignal"
@@ -1567,6 +1671,26 @@
         "freq"
       ],
       "$defs": {
+        "FmMode": {
+          "description": "FM synthesis mode for oscillators.",
+          "oneOf": [
+            {
+              "description": "Through-zero FM: frequency can go negative (phase runs backward)",
+              "type": "string",
+              "const": "throughZero"
+            },
+            {
+              "description": "Linear FM: like through-zero but frequency clamped to >= 0",
+              "type": "string",
+              "const": "lin"
+            },
+            {
+              "description": "Exponential FM: modulator added to pitch in V/Oct space",
+              "type": "string",
+              "const": "exp"
+            }
+          ]
+        },
         "PolySignal": {
           "anyOf": [
             {
@@ -1656,6 +1780,14 @@
       {
         "name": "pwm",
         "description": "pulse width modulation CV — added to the width parameter",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": -5.0,
+        "maxValue": 5.0
+      },
+      {
+        "name": "fm",
+        "description": "FM input signal (pre-scaled by user)",
         "signalType": "control",
         "defaultValue": 0.0,
         "minValue": -5.0,
@@ -2554,6 +2686,22 @@
             }
           ]
         },
+        "fm": {
+          "description": "FM input signal (pre-scaled by user)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PolySignal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fmMode": {
+          "description": "FM mode: throughZero (default), lin, or exp",
+          "$ref": "#/$defs/FmMode",
+          "default": "throughZero"
+        },
         "freq": {
           "description": "pitch in V/Oct (0V = C4)",
           "$ref": "#/$defs/PolySignal"
@@ -2570,6 +2718,26 @@
         "freq"
       ],
       "$defs": {
+        "FmMode": {
+          "description": "FM synthesis mode for oscillators.",
+          "oneOf": [
+            {
+              "description": "Through-zero FM: frequency can go negative (phase runs backward)",
+              "type": "string",
+              "const": "throughZero"
+            },
+            {
+              "description": "Linear FM: like through-zero but frequency clamped to >= 0",
+              "type": "string",
+              "const": "lin"
+            },
+            {
+              "description": "Exponential FM: modulator added to pitch in V/Oct space",
+              "type": "string",
+              "const": "exp"
+            }
+          ]
+        },
         "PolySignal": {
           "anyOf": [
             {
@@ -2655,6 +2823,14 @@
         "defaultValue": 0.18,
         "minValue": 0.0,
         "maxValue": 12.0
+      },
+      {
+        "name": "fm",
+        "description": "FM input signal (pre-scaled by user)",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": -5.0,
+        "maxValue": 5.0
       }
     ],
     "positionalArgs": [

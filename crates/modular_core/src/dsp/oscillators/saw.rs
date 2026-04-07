@@ -2,7 +2,7 @@ use deserr::Deserr;
 use schemars::JsonSchema;
 
 use crate::{
-    dsp::utils::voct_to_hz,
+    dsp::oscillators::{apply_fm, FmMode},
     poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
     types::Clickless,
 };
@@ -19,6 +19,13 @@ struct SawOscillatorParams {
     #[signal(range = (0.0, 5.0))]
     #[deserr(default)]
     shape: Option<PolySignal>,
+    /// FM input signal (pre-scaled by user)
+    #[deserr(default)]
+    fm: Option<PolySignal>,
+    /// FM mode: throughZero (default), lin, or exp
+    #[serde(default)]
+    #[deserr(default)]
+    fm_mode: FmMode,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -78,7 +85,9 @@ impl SawOscillator {
             let shape_val = self.params.shape.value_or(ch, 0.0).clamp(0.0, 5.0);
             state.shape.update(shape_val);
 
-            let frequency = voct_to_hz(self.params.freq.get_value(ch));
+            let pitch = self.params.freq.get_value(ch);
+            let fm = self.params.fm.value_or(ch, 0.0);
+            let frequency = apply_fm(pitch, fm, self.params.fm_mode);
             let phase_increment = frequency * inv_sample_rate;
 
             // Convert shape (0–5) to symmetry (peak position):
@@ -88,16 +97,14 @@ impl SawOscillator {
             // DPW: compute integral at current phase BEFORE advancing
             let integral_old = triangle_integral(state.phase, s);
 
-            // Advance phase
+            // Advance phase (rem_euclid supports negative increments from through-zero FM)
             state.phase += phase_increment;
-            if state.phase >= 1.0 {
-                state.phase -= 1.0;
-            }
+            state.phase = state.phase.rem_euclid(1.0);
 
             // DPW: compute integral at new phase, differentiate
             let integral_new = triangle_integral(state.phase, s);
 
-            let raw_output = if phase_increment > 1.0e-7 {
+            let raw_output = if phase_increment.abs() > 1.0e-7 {
                 (integral_new - integral_old) / phase_increment
             } else {
                 // Near-DC fallback: use naive waveform (no aliasing at low freq)

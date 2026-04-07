@@ -3,7 +3,7 @@ use schemars::JsonSchema;
 
 use crate::{
     PORT_MAX_CHANNELS,
-    dsp::utils::voct_to_hz,
+    dsp::oscillators::{apply_fm, FmMode},
     poly::{PolyOutput, PolySignal, PolySignalExt},
     types::Clickless,
 };
@@ -23,6 +23,13 @@ struct PulseOscillatorParams {
     /// pulse width modulation CV — added to the width parameter
     #[deserr(default)]
     pwm: Option<PolySignal>,
+    /// FM input signal (pre-scaled by user)
+    #[deserr(default)]
+    fm: Option<PolySignal>,
+    /// FM mode: throughZero (default), lin, or exp
+    #[serde(default)]
+    #[deserr(default)]
+    fm_mode: FmMode,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -76,7 +83,9 @@ impl PulseOscillator {
             let pwm = self.params.pwm.value_or(ch, 0.0);
             state.width.update((base_width + pwm).clamp(0.0, 5.0));
 
-            let frequency = voct_to_hz(self.params.freq.get_value(ch));
+            let pitch = self.params.freq.get_value(ch);
+            let fm = self.params.fm.value_or(ch, 0.0);
+            let frequency = apply_fm(pitch, fm, self.params.fm_mode);
             let phase_increment = frequency / sample_rate;
 
             // Pulse width (0.0 to 1.0, 0.5 is square wave)
@@ -84,16 +93,15 @@ impl PulseOscillator {
 
             state.phase += phase_increment;
 
-            // Wrap phase
-            if state.phase >= 1.0 {
-                state.phase -= 1.0;
-            }
+            // Wrap phase (rem_euclid supports negative increments from through-zero FM)
+            state.phase = state.phase.rem_euclid(1.0);
 
             // Naive pulse wave
             let mut naive_pulse = if state.phase < pulse_width { 1.0 } else { -1.0 };
 
             // Apply PolyBLEP at the rising edge (phase = 0)
-            naive_pulse += poly_blep_pulse(state.phase, phase_increment);
+            let abs_phase_inc = phase_increment.abs();
+            naive_pulse += poly_blep_pulse(state.phase, abs_phase_inc);
 
             // Apply PolyBLEP at the falling edge (phase = pulse_width)
             naive_pulse -= poly_blep_pulse(
@@ -102,7 +110,7 @@ impl PulseOscillator {
                 } else {
                     state.phase - pulse_width + 1.0
                 },
-                phase_increment,
+                abs_phase_inc,
             );
 
             self.outputs.sample.set(ch, naive_pulse * 5.0);

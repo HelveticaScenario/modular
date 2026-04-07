@@ -1,7 +1,8 @@
 use crate::{
     dsp::{
         consts::{LUT_SINE, LUT_SINE_SIZE},
-        utils::{interpolate, voct_to_hz},
+        oscillators::{apply_fm, FmMode},
+        utils::interpolate,
     },
     poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
 };
@@ -16,6 +17,13 @@ struct SineOscillatorParams {
     /// pitch in V/Oct (0V = C4)
     #[signal(type = pitch)]
     freq: PolySignal,
+    /// FM input signal (pre-scaled by user)
+    #[deserr(default)]
+    fm: Option<PolySignal>,
+    /// FM mode: throughZero (default), lin, or exp
+    #[serde(default)]
+    #[deserr(default)]
+    fm_mode: FmMode,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -58,11 +66,12 @@ impl SineOscillator {
         for ch in 0..num_channels {
             let state = &mut self.state.channels[ch];
 
-            let frequency = voct_to_hz(self.params.freq.get_value(ch)) / sample_rate;
+            let pitch = self.params.freq.get_value(ch);
+            let fm = self.params.fm.value_or(ch, 0.0);
+            let frequency = apply_fm(pitch, fm, self.params.fm_mode) / sample_rate;
             state.phase += frequency;
-            while state.phase >= 1.0 {
-                state.phase -= 1.0;
-            }
+            // Wrap phase to [0, 1) — supports negative increments (through-zero FM)
+            state.phase = state.phase.rem_euclid(1.0);
             let sine = interpolate(LUT_SINE, state.phase, LUT_SINE_SIZE);
             self.outputs.sample.set(ch, sine * 5.0);
         }

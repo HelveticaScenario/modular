@@ -2,7 +2,7 @@ use deserr::Deserr;
 use schemars::JsonSchema;
 
 use crate::{
-    dsp::utils::voct_to_hz,
+    dsp::oscillators::{apply_fm, FmMode},
     poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
 };
 
@@ -25,6 +25,13 @@ struct SupersawParams {
     #[signal(type = control, default = 0.18, range = (0, 12))]
     #[deserr(default)]
     detune: Option<PolySignal>,
+    /// FM input signal (pre-scaled by user)
+    #[deserr(default)]
+    fm: Option<PolySignal>,
+    /// FM mode: throughZero (default), lin, or exp
+    #[serde(default)]
+    #[deserr(default)]
+    fm_mode: FmMode,
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -166,23 +173,23 @@ impl Supersaw {
                 };
 
                 let pitch = self.params.freq.get_value(input_ch);
-                let freq = voct_to_hz(pitch) * (2.0f32).powf(offset_semitones / 12.0);
+                let fm = self.params.fm.value_or(input_ch, 0.0);
+                let base_freq = apply_fm(pitch, fm, self.params.fm_mode);
+                let freq = base_freq * (2.0f32).powf(offset_semitones / 12.0);
                 let dt = freq * inv_sample_rate;
 
                 let state_idx = input_ch * PORT_MAX_CHANNELS + voice;
                 let phase = &mut self.state.osc_states[state_idx];
 
-                // Advance phase
+                // Advance phase (rem_euclid supports negative increments from through-zero FM)
                 *phase += dt;
-                while *phase >= 1.0 {
-                    *phase -= 1.0;
-                }
+                *phase = phase.rem_euclid(1.0);
 
                 // Naive saw: maps [0,1) to [-1,1)
                 let mut saw = 2.0 * *phase - 1.0;
 
                 // Apply PolyBLEP correction
-                saw -= poly_blep_saw(*phase, dt);
+                saw -= poly_blep_saw(*phase, dt.abs());
 
                 accum += saw;
             }
@@ -218,6 +225,8 @@ mod tests {
             freq: PolySignal::mono(Signal::Volts(0.0)),
             voices: 1,
             detune: None,
+            fm: None,
+            fm_mode: FmMode::default(),
         });
         // Run several samples to get past initialization
         for _ in 0..100 {
@@ -234,6 +243,8 @@ mod tests {
             freq: PolySignal::mono(Signal::Volts(0.0)),
             voices: 7,
             detune: None,
+            fm: None,
+            fm_mode: FmMode::default(),
         };
         assert_eq!(supersaw_derive_channel_count(&params), 7);
     }
@@ -244,6 +255,8 @@ mod tests {
             freq: PolySignal::mono(Signal::Volts(0.0)),
             voices: 5,
             detune: None,
+            fm: None,
+            fm_mode: FmMode::default(),
         });
         for _ in 0..1000 {
             s.update(48000.0);
@@ -263,6 +276,8 @@ mod tests {
             freq: PolySignal::mono(Signal::Volts(0.0)),
             voices: 32,
             detune: None,
+            fm: None,
+            fm_mode: FmMode::default(),
         };
         assert_eq!(supersaw_derive_channel_count(&params), 16);
 
@@ -270,6 +285,8 @@ mod tests {
             freq: PolySignal::mono(Signal::Volts(0.0)),
             voices: 0,
             detune: None,
+            fm: None,
+            fm_mode: FmMode::default(),
         };
         assert_eq!(supersaw_derive_channel_count(&params_zero), 1);
     }
@@ -281,6 +298,8 @@ mod tests {
             freq: PolySignal::mono(Signal::Volts(0.0)),
             voices: 3,
             detune: Some(PolySignal::mono(Signal::Volts(0.0))),
+            fm: None,
+            fm_mode: FmMode::default(),
         });
         // Force known phases (overwrite whatever init set)
         for i in 0..PORT_MAX_CHANNELS * PORT_MAX_CHANNELS {
@@ -291,6 +310,8 @@ mod tests {
             freq: PolySignal::mono(Signal::Volts(0.0)),
             voices: 3,
             detune: Some(PolySignal::mono(Signal::Volts(2.0))),
+            fm: None,
+            fm_mode: FmMode::default(),
         });
         for i in 0..PORT_MAX_CHANNELS * PORT_MAX_CHANNELS {
             s_detune.state.osc_states[i] = 0.25;
@@ -325,6 +346,8 @@ mod tests {
             freq: PolySignal::mono(Signal::Volts(0.0)),
             voices: 4,
             detune: Some(PolySignal::mono(Signal::Volts(0.0))),
+            fm: None,
+            fm_mode: FmMode::default(),
         });
         // Trigger phase initialization via init()
         s.init(48000.0);
@@ -343,6 +366,8 @@ mod tests {
             freq: PolySignal::mono(Signal::Volts(0.0)),
             voices: 3,
             detune: Some(PolySignal::mono(Signal::Volts(0.0))),
+            fm: None,
+            fm_mode: FmMode::default(),
         });
         // Force known phases, zero detune -> all voices should produce identical output
         for i in 0..PORT_MAX_CHANNELS * PORT_MAX_CHANNELS {
@@ -373,6 +398,8 @@ mod tests {
             freq: PolySignal::mono(Signal::Volts(0.0)),
             voices: 1,
             detune: Some(PolySignal::mono(Signal::Volts(0.0))),
+            fm: None,
+            fm_mode: FmMode::default(),
         });
         // Set phase to 0.75 -> naive saw = 2*0.75 - 1 = 0.5
         s1.state.osc_states[0] = 0.75;
@@ -389,6 +416,8 @@ mod tests {
             ]),
             voices: 1,
             detune: Some(PolySignal::mono(Signal::Volts(0.0))),
+            fm: None,
+            fm_mode: FmMode::default(),
         });
         // Set all 4 input channel phases identically
         for input_ch in 0..4 {
