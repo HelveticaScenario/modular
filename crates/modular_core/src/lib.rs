@@ -37,6 +37,7 @@ pub use params::{
 };
 
 pub use types::{
-    Module, ModuleSchema, ModuleState, PatchGraph, ROOT_ID, ROOT_OUTPUT_PORT, Sampleable,
-    SampleableConstructor, SampleableMap, Signal, SignalExt, SignalParamSchema,
+    Buffer, BufferData, BufferSpec, Module, ModuleSchema, ModuleState, PatchGraph, ROOT_ID,
+    ROOT_OUTPUT_PORT, Sampleable, SampleableConstructor, SampleableMap, Signal, SignalExt,
+    SignalParamSchema,
 };

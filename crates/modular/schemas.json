@@ -4108,6 +4108,310 @@
     ]
   },
   {
+    "name": "$bufRead",
+    "documentation": "Reads a sample frame from a buffer and outputs its channels as a poly signal.",
+    "paramsSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "BufReadParams",
+      "type": "object",
+      "properties": {
+        "buffer": {
+          "$ref": "#/$defs/Buffer"
+        },
+        "frame": {
+          "$ref": "#/$defs/MonoSignal"
+        }
+      },
+      "required": [
+        "buffer",
+        "frame"
+      ],
+      "$defs": {
+        "Buffer": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "channels": {
+                  "type": "integer",
+                  "format": "uint",
+                  "minimum": 0
+                },
+                "frameCount": {
+                  "type": "integer",
+                  "format": "uint",
+                  "minimum": 0
+                },
+                "path": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "const": "buffer"
+                }
+              },
+              "required": [
+                "type",
+                "path",
+                "channels",
+                "frameCount"
+              ]
+            }
+          ]
+        },
+        "MonoSignal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Signal"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Signal"
+              }
+            }
+          ]
+        },
+        "Signal": {
+          "anyOf": [
+            {
+              "type": "number",
+              "format": "double"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/SignalTaggedSchema"
+            }
+          ]
+        },
+        "SignalTaggedSchema": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "channel": {
+                  "type": "integer",
+                  "format": "uint",
+                  "default": 0,
+                  "minimum": 0
+                },
+                "module": {
+                  "type": "string"
+                },
+                "port": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "const": "cable"
+                }
+              },
+              "required": [
+                "type",
+                "module",
+                "port"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "outputs": [
+      {
+        "name": "output",
+        "description": "buffer sample output",
+        "polyphonic": true,
+        "default": true
+      }
+    ],
+    "signalParams": [
+      {
+        "name": "frame",
+        "description": "",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": -5.0,
+        "maxValue": 5.0
+      }
+    ],
+    "positionalArgs": [
+      {
+        "name": "buffer"
+      },
+      {
+        "name": "frame"
+      }
+    ]
+  },
+  {
+    "name": "$bufWrite",
+    "documentation": "Writes a signal into a buffer at a sample frame position and passes the signal through.",
+    "paramsSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "BufWriteParams",
+      "type": "object",
+      "properties": {
+        "buffer": {
+          "$ref": "#/$defs/Buffer"
+        },
+        "frame": {
+          "$ref": "#/$defs/MonoSignal"
+        },
+        "input": {
+          "$ref": "#/$defs/PolySignal"
+        }
+      },
+      "required": [
+        "buffer",
+        "frame",
+        "input"
+      ],
+      "$defs": {
+        "Buffer": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "channels": {
+                  "type": "integer",
+                  "format": "uint",
+                  "minimum": 0
+                },
+                "frameCount": {
+                  "type": "integer",
+                  "format": "uint",
+                  "minimum": 0
+                },
+                "path": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "const": "buffer"
+                }
+              },
+              "required": [
+                "type",
+                "path",
+                "channels",
+                "frameCount"
+              ]
+            }
+          ]
+        },
+        "MonoSignal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Signal"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Signal"
+              }
+            }
+          ]
+        },
+        "PolySignal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Signal"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Signal"
+              }
+            }
+          ]
+        },
+        "Signal": {
+          "anyOf": [
+            {
+              "type": "number",
+              "format": "double"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/SignalTaggedSchema"
+            }
+          ]
+        },
+        "SignalTaggedSchema": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "channel": {
+                  "type": "integer",
+                  "format": "uint",
+                  "default": 0,
+                  "minimum": 0
+                },
+                "module": {
+                  "type": "string"
+                },
+                "port": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "const": "cable"
+                }
+              },
+              "required": [
+                "type",
+                "module",
+                "port"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "outputs": [
+      {
+        "name": "output",
+        "description": "input signal after writing to the buffer",
+        "polyphonic": true,
+        "default": true
+      }
+    ],
+    "signalParams": [
+      {
+        "name": "frame",
+        "description": "",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": -5.0,
+        "maxValue": 5.0
+      },
+      {
+        "name": "input",
+        "description": "",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": -5.0,
+        "maxValue": 5.0
+      }
+    ],
+    "positionalArgs": [
+      {
+        "name": "buffer"
+      },
+      {
+        "name": "frame"
+      },
+      {
+        "name": "input"
+      }
+    ]
+  },
+  {
     "name": "$clamp",
     "documentation": "Constrains a signal between a minimum and maximum value.\n\nBounds are independently optional — omit **min** or **max** to leave\nthat side unclamped.\n\n```js\n// clamp a sine into the 0–5 V range\n$clamp($sine('440hz'), 0, 5)\n\n// one-sided: floor at 0 V, no ceiling\n$clamp(signal, { min: 0 })\n```",
     "paramsSchema": {

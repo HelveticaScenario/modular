@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { getEnumVariants } from '../schemaTypeResolver';
+import { getEnumVariants, schemaToTypeExpr } from '../schemaTypeResolver';
 
 describe('getEnumVariants', () => {
     test('extracts variants from oneOf with const + description (documented enum)', () => {
@@ -71,10 +71,10 @@ describe('getEnumVariants', () => {
     });
 
     test('returns null for null/undefined/boolean schemas', () => {
-        expect(getEnumVariants(null, {})).toBeNull();
-        expect(getEnumVariants(undefined, {})).toBeNull();
-        expect(getEnumVariants(true, {})).toBeNull();
-        expect(getEnumVariants(false, {})).toBeNull();
+        expect(getEnumVariants(null as any, {})).toBeNull();
+        expect(getEnumVariants(undefined as any, {})).toBeNull();
+        expect(getEnumVariants(true as any, {})).toBeNull();
+        expect(getEnumVariants(false as any, {})).toBeNull();
     });
 
     test('follows $ref to resolve enum in $defs', () => {
@@ -127,6 +127,17 @@ describe('getEnumVariants', () => {
         ).toBeNull();
     });
 
+    test('returns null for Buffer $ref sentinel', () => {
+        const rootSchema = {
+            $defs: {
+                Buffer: { title: 'Buffer' },
+            },
+        };
+        expect(
+            getEnumVariants({ $ref: '#/$defs/Buffer' }, rootSchema),
+        ).toBeNull();
+    });
+
     test('returns null for oneOf/anyOf that is not all-const (union types)', () => {
         const schema = {
             oneOf: [{ type: 'string' }, { type: 'number' }],
@@ -160,5 +171,16 @@ describe('getEnumVariants', () => {
             { description: 'Has description', rawValue: 'x', value: '"x"' },
             { description: undefined, rawValue: 'y', value: '"y"' },
         ]);
+    });
+
+    test('schemaToTypeExpr resolves Buffer refs to Buffer', () => {
+        const rootSchema = {
+            $defs: {
+                Buffer: { title: 'Buffer' },
+            },
+        };
+        expect(schemaToTypeExpr({ $ref: '#/$defs/Buffer' }, rootSchema)).toBe(
+            'Buffer',
+        );
     });
 });

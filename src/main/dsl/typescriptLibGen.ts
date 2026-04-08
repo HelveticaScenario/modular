@@ -1,5 +1,9 @@
 import { getReservedOutputNames } from '@modular/core';
-import type { Schemas, Schema } from '../../shared/dsl/schemaTypeResolver';
+import type {
+    JSONSchema,
+    Schemas,
+    Schema,
+} from '../../shared/dsl/schemaTypeResolver';
 import {
     schemaToTypeExpr,
     getEnumVariants,
@@ -295,6 +299,19 @@ type Poly<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
 type Mono<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
 
 /**
+ * A workspace-backed audio buffer resource shared across modules.
+ *
+ * Buffers are stored on disk as WAV files inside the current workspace's
+ * \`tmp\` directory and exposed to modules as mutable channel × frame arrays.
+ */
+type Buffer = {
+  readonly type: "buffer";
+  readonly path: string;
+  readonly channels: number;
+  readonly frameCount: number;
+};
+
+/**
  * Options for stereo output routing via the out() method.
  * @see {@link ModuleOutput.out}
  * @see {@link Collection.out}
@@ -358,7 +375,7 @@ interface ModuleOutput {
 
     /**
      * Scale the signal by a factor with a perceptual (audio taper) curve
-     * (5 = unity, 0 = silence). Chains \\$curve → \\$scaleAndShift with exponent 3.
+     * (5 = unity, 0 = silence).
      *
      * For linear amplitude scaling, use {@link amplitude} instead.
      * @param level - Amplitude level as {@link Poly<Signal>}
@@ -383,7 +400,6 @@ interface ModuleOutput {
    * @param config.triggerThreshold - Trigger threshold in volts (optional)
    * @param config.triggerWaitToRender - Whether the scope should wait to render until the buffer fills (default true). Only applicable if triggerThreshold is set.
    * @param config.range - Voltage range for display as [min, max] tuple (default [-5, 5])
-   * @example osc.scope({ msPerFrame: 100, range: [-10, 10] }).out()
    */
   scope(config?: { msPerFrame?: number; triggerThreshold?: number; triggerWaitToRender?: boolean; range?: [number, number] }): this;
   
@@ -900,7 +916,7 @@ function $cartesian<A extends unknown[][]>(...arrays: A): ElementsOf<A>[];
 `;
 
 export function buildLibSource(schemas: Schemas): string {
-    // Console.log('buildLibSource schemas:', schemas);
+    // console.log('buildLibSource schemas:', schemas);
     const schemaLib = generateDSL(schemas);
     return `declare global {\n${BASE_LIB_SOURCE}\n\n${schemaLib} \n}\n\n export {};\n`;
 }
@@ -1088,7 +1104,7 @@ function getFactoryReturnType(moduleSchema: Schema): string {
     } else if (outputs.length === 1) {
         return getOutputType(outputs[0]);
     }
-    // Multiple outputs - return the generated interface name
+
     return getMultiOutputInterfaceName(moduleSchema);
 }
 
@@ -1099,6 +1115,9 @@ function renderFactoryFunction(
 ): string[] {
     const functionName = moduleSchema.name.split('.').pop()!;
     const { paramsSchema } = moduleSchema;
+    const schemaProperties = paramsSchema.properties as
+        | Record<string, JSONSchema | undefined>
+        | undefined;
 
     const args: string[] = [];
     const positionalArgs = moduleSchema.positionalArgs || [];
@@ -1115,7 +1134,7 @@ function renderFactoryFunction(
 
     for (let i = 0; i < positionalArgs.length; i++) {
         const arg = positionalArgs[i];
-        const propSchema = paramsSchema.properties?.[arg.name];
+        const propSchema = schemaProperties?.[arg.name];
         const type = propSchema
             ? schemaToTypeExpr(propSchema, paramsSchema)
             : 'any';
@@ -1165,7 +1184,7 @@ function renderFactoryFunction(
 
     for (const key of allParamKeys) {
         if (!positionalKeys.has(key)) {
-            const propSchema = paramsSchema.properties?.[key];
+            const propSchema = schemaProperties?.[key];
             if (!propSchema) {
                 continue;
             }
@@ -1311,6 +1330,14 @@ export function generateDSL(schemas: Schemas): string {
         const signalReturnType = getFactoryReturnType(signalSchema);
         lines.push(`export const $input: Readonly<${signalReturnType}>;`);
     }
+
+    lines.push('');
+    lines.push(
+        '/** Create or reuse a workspace-backed WAV buffer in the current workspace tmp directory. */',
+    );
+    lines.push(
+        'export function $buffer(path: string, lengthSeconds: number, channels?: number): Buffer;',
+    );
 
     return lines.join('\n') + '\n';
 }

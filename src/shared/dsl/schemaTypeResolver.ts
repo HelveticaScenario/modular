@@ -51,14 +51,19 @@ function renderPropertyKey(name: string): string {
 
 /**
  * Resolve a `$ref` pointer against the root schema's `$defs`.
- * Returns the well-known Signal/Poly<Signal>/Mono<Signal> sentinel strings
+ * Returns the well-known Signal/Poly<Signal>/Mono<Signal>/Buffer sentinel strings
  * for the three signal types, otherwise the raw resolved sub-schema.
  */
 export function resolveRef(
     ref: string,
     rootSchema: JSONSchema,
-): JSONSchema | 'Signal' | 'Poly<Signal>' | 'Mono<Signal>' {
-    if (ref === 'Signal') {return 'Signal';}
+): JSONSchema | 'Signal' | 'Poly<Signal>' | 'Mono<Signal>' | 'Buffer' {
+    if (ref === 'Signal') {
+        return 'Signal';
+    }
+    if (ref === 'Buffer') {
+        return 'Buffer';
+    }
 
     const defsPrefix = '#/$defs/';
     if (!ref.startsWith(defsPrefix)) {
@@ -66,9 +71,18 @@ export function resolveRef(
     }
 
     const defName = ref.slice(defsPrefix.length);
-    if (defName === 'Signal') {return 'Signal';}
-    if (defName === 'PolySignal') {return 'Poly<Signal>';}
-    if (defName === 'MonoSignal') {return 'Mono<Signal>';}
+    if (defName === 'Signal') {
+        return 'Signal';
+    }
+    if (defName === 'PolySignal') {
+        return 'Poly<Signal>';
+    }
+    if (defName === 'MonoSignal') {
+        return 'Mono<Signal>';
+    }
+    if (defName === 'Buffer') {
+        return 'Buffer';
+    }
 
     const defs = rootSchema?.$defs;
     if (!defs || typeof defs !== 'object') {
@@ -80,9 +94,18 @@ export function resolveRef(
         throw new Error(`Unresolved $ref: ${ref}`);
     }
 
-    if (resolved?.title === 'Signal') {return 'Signal';}
-    if (resolved?.title === 'PolySignal') {return 'Poly<Signal>';}
-    if (resolved?.title === 'MonoSignal') {return 'Mono<Signal>';}
+    if (resolved?.title === 'Signal') {
+        return 'Signal';
+    }
+    if (resolved?.title === 'PolySignal') {
+        return 'Poly<Signal>';
+    }
+    if (resolved?.title === 'MonoSignal') {
+        return 'Mono<Signal>';
+    }
+    if (resolved?.title === 'Buffer') {
+        return 'Buffer';
+    }
     return resolved;
 }
 
@@ -109,11 +132,17 @@ export function getEnumVariants(
     schema: JSONSchema,
     rootSchema: JSONSchema,
 ): EnumVariantInfo[] | null {
+    if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+        return null;
+    }
+
     // Follow $ref
     if (schema.$ref) {
         const resolved = resolveRef(schema.$ref, rootSchema);
         // Sentinel strings mean it's a signal type, not an enum
-        if (typeof resolved === 'string') {return null;}
+        if (typeof resolved === 'string') {
+            return null;
+        }
         return getEnumVariants(resolved, rootSchema);
     }
 
@@ -210,16 +239,27 @@ export function schemaToTypeExpr(
         if (nonNullTypes.length === 1) {
             // This is a nullable type, treat it as the non-null type (optional in TS)
             const singleType = nonNullTypes[0];
-            if (singleType === 'integer' || singleType === 'number')
-                {return 'number';}
-            if (singleType === 'string') {return 'string';}
-            if (singleType === 'boolean') {return 'boolean';}
+            if (singleType === 'integer' || singleType === 'number') {
+                return 'number';
+            }
+            if (singleType === 'string') {
+                return 'string';
+            }
+            if (singleType === 'boolean') {
+                return 'boolean';
+            }
         }
         // Fall back to union of all non-null types
         const mapped = nonNullTypes.map((t) => {
-            if (t === 'integer' || t === 'number') {return 'number';}
-            if (t === 'string') {return 'string';}
-            if (t === 'boolean') {return 'boolean';}
+            if (t === 'integer' || t === 'number') {
+                return 'number';
+            }
+            if (t === 'string') {
+                return 'string';
+            }
+            if (t === 'boolean') {
+                return 'boolean';
+            }
             return 'any';
         });
         return mapped.length > 0 ? mapped.join(' | ') : 'any';
@@ -227,9 +267,18 @@ export function schemaToTypeExpr(
 
     if (schema.$ref) {
         const resolved = resolveRef(schema.$ref, rootSchema);
-        if (resolved === 'Signal') {return 'Signal';}
-        if (resolved === 'Poly<Signal>') {return 'Poly<Signal>';}
-        if (resolved === 'Mono<Signal>') {return 'Mono<Signal>';}
+        if (resolved === 'Signal') {
+            return 'Signal';
+        }
+        if (resolved === 'Poly<Signal>') {
+            return 'Poly<Signal>';
+        }
+        if (resolved === 'Mono<Signal>') {
+            return 'Mono<Signal>';
+        }
+        if (resolved === 'Buffer') {
+            return 'Buffer';
+        }
         return schemaToTypeExpr(resolved, rootSchema);
     }
 
@@ -240,26 +289,38 @@ export function schemaToTypeExpr(
         return schema.enum.map((v) => JSON.stringify(v)).join(' | ');
     }
 
-    const {type} = schema;
+    const { type } = schema;
 
-    if (type === 'integer' || type === 'number') {return 'number';}
-    if (type === 'string') {return 'string';}
-    if (type === 'boolean') {return 'boolean';}
+    if (type === 'integer' || type === 'number') {
+        return 'number';
+    }
+    if (type === 'string') {
+        return 'string';
+    }
+    if (type === 'boolean') {
+        return 'boolean';
+    }
 
     const looksLikeObject =
         type === 'object' ||
         (Boolean(schema.properties) && typeof schema.properties === 'object');
     if (looksLikeObject) {
         const props = schema.properties;
-        if (!props || typeof props !== 'object') {return '{}';}
+        if (!props || typeof props !== 'object') {
+            return '{}';
+        }
 
         const requiredSet = new Set<string>(schema.required);
         const entries = Object.entries(props);
-        if (entries.length === 0) {return '{}';}
+        if (entries.length === 0) {
+            return '{}';
+        }
 
         const parts: string[] = [];
         for (const [propName, propSchema] of entries) {
-            if (!propSchema) {continue;}
+            if (!propSchema) {
+                continue;
+            }
             const optional = requiredSet.has(propName) ? '' : '?';
             parts.push(
                 `${renderPropertyKey(propName)}${optional}: ${schemaToTypeExpr(propSchema, rootSchema)}`,

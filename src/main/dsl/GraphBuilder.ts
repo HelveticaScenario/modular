@@ -47,6 +47,12 @@ export type ResolvedModuleOutput = z.infer<typeof ResolvedModuleOutput>;
 export type OrArray<T> = T | T[];
 export type Signal = number | string | ModuleOutput;
 export type PolySignal = OrArray<Signal> | Iterable<ModuleOutput>;
+export type Buffer = {
+    type: 'buffer';
+    path: string;
+    channels: number;
+    frameCount: number;
+};
 
 // ─── Cartesian product helpers ────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 use modular_core::params::ARGUMENT_SPANS_KEY;
 use modular_core::types::{
-  ModuleSchema, ModuleState, PatchGraph, Signal, WellKnownModule,
+  BufferSpec, ModuleSchema, ModuleState, PatchGraph, Signal, WellKnownModule,
 };
 use napi_derive::napi;
 use schemars::Schema;
@@ -298,6 +298,7 @@ pub fn validate_patch(
   // === Schema helpers ===
   // The runtime patch stores parameter values as JSON (`ModuleState.params`), but
   // the authoritative set of valid parameter names/types lives in the module schema.
+  let mut buffer_specs_by_path: HashMap<String, BufferSpec> = HashMap::new();
 
   // === Module validation ===
   // Validate each module instance in the patch.
@@ -348,6 +349,34 @@ pub fn validate_patch(
         continue;
       }
 
+      let field = format!("params.{}", param_name);
+      let mut buffer_specs = Vec::new();
+      modular_core::types::collect_buffer_specs_in_json_value(param_value, &mut buffer_specs);
+      for spec in buffer_specs {
+        match buffer_specs_by_path.get(&spec.path) {
+          Some(existing) if existing.same_shape(&spec) => {}
+          Some(existing) => {
+            errors.push(ValidationError {
+              field: field.clone(),
+              message: format!(
+                "Buffer path '{}' is used with conflicting shapes (existing: {} channels × {} frames, got: {} channels × {} frames)",
+                spec.path,
+                existing.channels,
+                existing.frame_count,
+                spec.channels,
+                spec.frame_count
+              ),
+              location: Some(location_str.clone()),
+              expected_type: None,
+              actual_value: Some(truncate_json(param_value)),
+            });
+          }
+          None => {
+            buffer_specs_by_path.insert(spec.path.clone(), spec);
+          }
+        }
+      }
+
       // Skip unknown param names — deserr now handles this via deny_unknown_fields.
       let Some(param_schema_node) = param_schemas.get(param_name) else {
         continue;
@@ -357,8 +386,6 @@ pub fn validate_patch(
       if !schema_refers_to_signal(param_schema_node) {
         continue;
       }
-
-      let field = format!("params.{}", param_name);
       validate_signals_in_json_value(
         param_value,
         &field,
@@ -702,6 +729,87 @@ mod tests {
       }],
       module_id_remaps: None,
 
+      scopes: vec![],
+    };
+
+    assert!(validate_patch(&patch, &schemas).is_ok());
+  }
+
+  #[test]
+  fn test_buffer_path_conflict_is_rejected() {
+    let schemas = schemas();
+    let patch = PatchGraph {
+      modules: vec![
+        ModuleState {
+          id: "one".to_string(),
+          module_type: "$noise".to_string(),
+          id_is_explicit: None,
+          params: json!({
+              "buffer": {
+                "type": "buffer",
+                "path": "/tmp/shared.wav",
+                "channels": 1,
+                "frameCount": 48000
+              }
+          }),
+        },
+        ModuleState {
+          id: "two".to_string(),
+          module_type: "$noise".to_string(),
+          id_is_explicit: None,
+          params: json!({
+              "buffer": {
+                "type": "buffer",
+                "path": "/tmp/shared.wav",
+                "channels": 2,
+                "frameCount": 96000
+              }
+          }),
+        },
+      ],
+      module_id_remaps: None,
+      scopes: vec![],
+    };
+
+    let result = validate_patch(&patch, &schemas);
+    assert!(result.is_err());
+    let errors = result.unwrap_err();
+    assert!(errors.iter().any(|error| error.message.contains("conflicting shapes")));
+  }
+
+  #[test]
+  fn test_buffer_path_shared_shape_is_allowed() {
+    let schemas = schemas();
+    let patch = PatchGraph {
+      modules: vec![
+        ModuleState {
+          id: "one".to_string(),
+          module_type: "$noise".to_string(),
+          id_is_explicit: None,
+          params: json!({
+              "buffer": {
+                "type": "buffer",
+                "path": "/tmp/shared.wav",
+                "channels": 1,
+                "frameCount": 48000
+              }
+          }),
+        },
+        ModuleState {
+          id: "two".to_string(),
+          module_type: "$noise".to_string(),
+          id_is_explicit: None,
+          params: json!({
+              "buffer": {
+                "type": "buffer",
+                "path": "/tmp/shared.wav",
+                "channels": 1,
+                "frameCount": 48000
+              }
+          }),
+        },
+      ],
+      module_id_remaps: None,
       scopes: vec![],
     };
 

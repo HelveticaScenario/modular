@@ -696,7 +696,10 @@ registerIPCHandler(
                 interpolationResolutions,
                 sliders,
                 callSiteSpans,
-            } = executePatchScript(source, schemas);
+            } = executePatchScript(source, schemas, {
+                sampleRate: synth.sampleRate(),
+                workspaceRoot: currentWorkspaceRoot,
+            });
             patch.moduleIdRemaps = [];
 
             // Convert Map to Record for IPC serialization

@@ -1,6 +1,7 @@
 #![deny(clippy::all)]
 
 mod audio;
+mod buffer;
 mod commands;
 mod midi;
 mod params_cache;

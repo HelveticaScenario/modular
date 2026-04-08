@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { ModuleSchema, PatchGraph } from '@modular/core';
 import {
     DSLContext,
@@ -7,6 +8,7 @@ import {
     setDSLWrapperLineOffset,
 } from './factories';
 import type {
+    Buffer,
     Signal,
     SourceLocation,
     Collection,
@@ -50,6 +52,11 @@ export interface DSLExecutionResult {
     callSiteSpans: CallSiteSpanRegistry;
 }
 
+export interface DSLExecutionOptions {
+    sampleRate?: number;
+    workspaceRoot?: string | null;
+}
+
 // Install pipe() on Array.prototype so arrays in the DSL can use it.
 // Non-enumerable to avoid polluting for-in loops.
 if (typeof Array.prototype.pipe !== 'function') {
@@ -72,10 +79,13 @@ if (typeof Array.prototype.pipe !== 'function') {
 export function executePatchScript(
     source: string,
     schemas: ModuleSchema[],
+    options: DSLExecutionOptions = {},
 ): DSLExecutionResult {
     // Create DSL context
     // Console.log('Executing DSL script with schemas:', schemas);
     const context = new DSLContext(schemas);
+    const sampleRate = options.sampleRate ?? 48_000;
+    const workspaceRoot = options.workspaceRoot ?? null;
 
     // Create the execution environment with all DSL functions
     // Remove _clock from user-facing namespace (it's internal, used only for ROOT_CLOCK)
@@ -160,6 +170,61 @@ export function executePatchScript(
         builder.setEndOfChainCb(cb);
     };
 
+    const $buffer = (
+        bufferPath: string,
+        lengthSeconds: number,
+        channels: number = 1,
+    ): Buffer => {
+        if (typeof bufferPath !== 'string' || bufferPath.trim().length === 0) {
+            throw new Error('$buffer() path must be a non-empty string');
+        }
+        if (path.isAbsolute(bufferPath)) {
+            throw new Error('$buffer() path must be workspace-relative');
+        }
+        if (
+            typeof lengthSeconds !== 'number' ||
+            !Number.isFinite(lengthSeconds)
+        ) {
+            throw new Error('$buffer() lengthSeconds must be a finite number');
+        }
+        if (lengthSeconds <= 0) {
+            throw new Error(
+                `$buffer() lengthSeconds must be greater than 0, got ${lengthSeconds}`,
+            );
+        }
+        if (!Number.isInteger(channels) || channels < 1 || channels > 16) {
+            throw new Error(
+                `$buffer() channels must be an integer between 1 and 16, got ${channels}`,
+            );
+        }
+        if (!workspaceRoot) {
+            throw new Error('$buffer() requires an open workspace');
+        }
+
+        const trimmedPath = bufferPath.trim();
+        const normalizedPath = path.extname(trimmedPath)
+            ? trimmedPath
+            : `${trimmedPath}.wav`;
+        const tmpRoot = path.resolve(workspaceRoot, 'tmp');
+        const resolvedPath = path.resolve(tmpRoot, normalizedPath);
+        if (
+            resolvedPath !== tmpRoot &&
+            !resolvedPath.startsWith(`${tmpRoot}${path.sep}`)
+        ) {
+            throw new Error(
+                '$buffer() path must stay within the workspace tmp directory',
+            );
+        }
+
+        const frameCount = Math.max(1, Math.ceil(lengthSeconds * sampleRate));
+        return {
+            channels,
+            frameCount,
+            path: resolvedPath,
+            type: 'buffer',
+        };
+    };
+
     // Slider collector — populated by $slider() calls during execution
     const sliders: SliderDefinition[] = [];
 
@@ -229,6 +294,7 @@ export function executePatchScript(
         $setOutputGain,
         $setTimeSignature,
         $setEndOfChainCb,
+        $buffer,
         // Built-in modules
         $clock,
         $input: rootInput,

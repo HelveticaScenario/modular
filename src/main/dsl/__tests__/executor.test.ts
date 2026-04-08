@@ -12,10 +12,15 @@ import type { PatchGraph } from '@modular/core';
 import schemas from '@modular/core/schemas.json';
 import { type DSLExecutionResult, executePatchScript } from '../executor';
 
+const DEFAULT_EXECUTION_OPTIONS = {
+    sampleRate: 48_000,
+    workspaceRoot: '/workspace',
+} as const;
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function exec(source: string): DSLExecutionResult {
-    return executePatchScript(source, schemas);
+    return executePatchScript(source, schemas, DEFAULT_EXECUTION_OPTIONS);
 }
 
 function execPatch(source: string): PatchGraph {
@@ -441,6 +446,20 @@ describe('utilities', () => {
         );
         expect(findModules(patch, '$math').length).toBe(1);
     });
+
+    test('$bufRead', () => {
+        const patch = execPatch(
+            'const buffer = $buffer("loops/read-test", 0.25, 2)\n$bufRead(buffer, 0).out()',
+        );
+        expect(findModules(patch, '$bufRead').length).toBe(1);
+    });
+
+    test('$bufWrite', () => {
+        const patch = execPatch(
+            'const buffer = $buffer("loops/write-test", 0.25, 2)\n$bufWrite(buffer, 0, $sine("C4")).out()',
+        );
+        expect(findModules(patch, '$bufWrite').length).toBe(1);
+    });
 });
 
 // ─── Deferred / feedback ─────────────────────────────────────────────────────
@@ -654,5 +673,34 @@ describe('pipe vs direct call', () => {
         const patch = execPatch('$saw("c").out()');
         const saws = findModules(patch, '$saw');
         expect(saws.length).toBe(1);
+    });
+});
+
+describe('$buffer()', () => {
+    test('resolves a workspace tmp path and frame count from sample rate', () => {
+        expect(() =>
+            exec(`
+                const buffer = $buffer('loops/kick', 0.5, 2);
+                if (buffer.path !== '/workspace/tmp/loops/kick.wav') {
+                    throw new Error(buffer.path);
+                }
+                if (buffer.frameCount !== 24000) {
+                    throw new Error(String(buffer.frameCount));
+                }
+                if (buffer.channels !== 2) {
+                    throw new Error(String(buffer.channels));
+                }
+            `),
+        ).not.toThrow();
+    });
+
+    test('rejects paths that escape the workspace tmp directory', () => {
+        expect(() =>
+            executePatchScript(
+                '$buffer("../escape", 1)',
+                schemas,
+                DEFAULT_EXECUTION_OPTIONS,
+            ),
+        ).toThrow(/workspace tmp directory/);
     });
 });

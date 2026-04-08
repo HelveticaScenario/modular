@@ -4,6 +4,7 @@ use crate::params::ParamsDeserializer;
 use crate::types::{Module, ModuleSchema, SampleableConstructor};
 
 pub mod adsr;
+pub mod buffer;
 pub mod clamp;
 pub mod clock_divider;
 pub mod curve;
@@ -26,6 +27,8 @@ pub use scale::{validate_scale_type, FixedRoot, ScaleSnapper};
 
 pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
     adsr::Adsr::install_constructor(map);
+    buffer::BufRead::install_constructor(map);
+    buffer::BufWrite::install_constructor(map);
     clamp::Clamp::install_constructor(map);
     clock_divider::ClockDivider::install_constructor(map);
     curve::Curve::install_constructor(map);
@@ -46,6 +49,8 @@ pub fn install_constructors(map: &mut HashMap<String, SampleableConstructor>) {
 
 pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer>) {
     adsr::Adsr::install_params_deserializer(map);
+    buffer::BufRead::install_params_deserializer(map);
+    buffer::BufWrite::install_params_deserializer(map);
     clamp::Clamp::install_params_deserializer(map);
     clock_divider::ClockDivider::install_params_deserializer(map);
     curve::Curve::install_params_deserializer(map);
@@ -67,6 +72,8 @@ pub fn install_params_deserializers(map: &mut HashMap<String, ParamsDeserializer
 pub fn schemas() -> Vec<ModuleSchema> {
     vec![
         adsr::Adsr::get_schema(),
+        buffer::BufRead::get_schema(),
+        buffer::BufWrite::get_schema(),
         clamp::Clamp::get_schema(),
         clock_divider::ClockDivider::get_schema(),
         curve::Curve::get_schema(),

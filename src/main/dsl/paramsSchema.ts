@@ -41,6 +41,7 @@ export type ParamKind =
     | 'signal'
     | 'polySignal'
     | 'signalArray'
+    | 'buffer'
     | 'number'
     | 'string'
     | 'boolean'
@@ -315,6 +316,48 @@ function isPolySignalParamSchema(
     return hasSignal && hasSignalArray;
 }
 
+function isBufferParamSchema(root: JsonSchema, schema: JsonSchema): boolean {
+    if (schema.$ref === '#/$defs/Buffer') {
+        return true;
+    }
+
+    const resolved = resolveAndMerge(root, schema);
+    if (resolved.title === 'Buffer') {
+        return true;
+    }
+
+    const union = resolved.oneOf ?? resolved.anyOf;
+    if (union && Array.isArray(union) && union.length === 1) {
+        return isBufferParamSchema(root, union[0]);
+    }
+
+    if (resolved.type !== 'object') {
+        return false;
+    }
+
+    const typeSchema = resolved.properties?.type
+        ? resolveAndMerge(root, resolved.properties.type)
+        : null;
+    const pathSchema = resolved.properties?.path
+        ? resolveAndMerge(root, resolved.properties.path)
+        : null;
+    const channelsSchema = resolved.properties?.channels
+        ? resolveAndMerge(root, resolved.properties.channels)
+        : null;
+    const frameCountSchema = resolved.properties?.frameCount
+        ? resolveAndMerge(root, resolved.properties.frameCount)
+        : null;
+
+    return (
+        extractTypeTag(typeSchema ?? {}) === 'buffer' &&
+        pathSchema?.type === 'string' &&
+        (channelsSchema?.type === 'integer' ||
+            channelsSchema?.type === 'number') &&
+        (frameCountSchema?.type === 'integer' ||
+            frameCountSchema?.type === 'number')
+    );
+}
+
 function extractStringEnum(schema: JsonSchema): string[] | undefined {
     const resolved = schema;
 
@@ -369,6 +412,9 @@ function inferKind(root: JsonSchema, schema: JsonSchema): ParamKind {
     // Check polySignal first since it's a union of Signal | Signal[]
     if (isPolySignalParamSchema(root, schema)) {
         return 'polySignal';
+    }
+    if (isBufferParamSchema(root, schema)) {
+        return 'buffer';
     }
     if (isSignalParamSchema(root, schema)) {
         return 'signal';

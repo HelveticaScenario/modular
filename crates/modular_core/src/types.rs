@@ -42,6 +42,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::borrow::Cow;
+use std::cell::UnsafeCell;
 use std::fmt::Debug;
 use std::ops::{Add, Deref, Div, Mul, Sub};
 use std::result::Result as StdResult;
@@ -538,6 +539,404 @@ fn parse_signal_string(s: &str) -> StdResult<f32, String> {
     }
 
     Err("Invalid signal format".to_string())
+}
+
+#[derive(Debug)]
+pub struct BufferData {
+    channels: usize,
+    frame_count: usize,
+    samples: UnsafeCell<Vec<Vec<f32>>>,
+}
+
+unsafe impl Send for BufferData {}
+unsafe impl Sync for BufferData {}
+
+impl BufferData {
+    pub fn new_zeroed(channels: usize, frame_count: usize) -> Self {
+        Self {
+            channels,
+            frame_count,
+            samples: UnsafeCell::new(vec![vec![0.0; frame_count]; channels]),
+        }
+    }
+
+    pub fn from_samples(samples: Vec<Vec<f32>>) -> Self {
+        let channels = samples.len();
+        let frame_count = samples.first().map_or(0, Vec::len);
+
+        Self {
+            channels,
+            frame_count,
+            samples: UnsafeCell::new(samples),
+        }
+    }
+
+    pub fn channel_count(&self) -> usize {
+        self.channels
+    }
+
+    pub fn frame_count(&self) -> usize {
+        self.frame_count
+    }
+
+    pub fn fill(&self, value: f32) {
+        self.with_data_mut(|data| {
+            for channel in data.iter_mut() {
+                channel.fill(value);
+            }
+        });
+    }
+
+    pub fn read(&self, channel: usize, frame: usize) -> f32 {
+        self.with_data(|data| {
+            data.get(channel)
+                .and_then(|channel_data| channel_data.get(frame))
+                .copied()
+                .unwrap_or(0.0)
+        })
+    }
+
+    pub fn write(&self, channel: usize, frame: usize, value: f32) {
+        self.with_data_mut(|data| {
+            if let Some(channel_data) = data.get_mut(channel)
+                && let Some(sample) = channel_data.get_mut(frame)
+            {
+                *sample = value;
+            }
+        });
+    }
+
+    pub fn copy_overlap_from(&self, other: &Self) {
+        self.with_data_mut(|dst| {
+            other.with_data(|src| {
+                let channel_count = dst.len().min(src.len());
+                for channel_idx in 0..channel_count {
+                    let frame_count = dst[channel_idx].len().min(src[channel_idx].len());
+                    dst[channel_idx][..frame_count]
+                        .copy_from_slice(&src[channel_idx][..frame_count]);
+                }
+            });
+        });
+    }
+
+    pub fn snapshot(&self) -> Vec<Vec<f32>> {
+        self.with_data(Clone::clone)
+    }
+
+    pub fn with_data<R>(&self, f: impl FnOnce(&Vec<Vec<f32>>) -> R) -> R {
+        unsafe { f(&*self.samples.get()) }
+    }
+
+    pub fn with_data_mut<R>(&self, f: impl FnOnce(&mut Vec<Vec<f32>>) -> R) -> R {
+        unsafe { f(&mut *self.samples.get()) }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Deserr, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+#[deserr(rename_all = camelCase, deny_unknown_fields)]
+pub struct BufferSpec {
+    pub path: String,
+    pub channels: usize,
+    pub frame_count: usize,
+}
+
+impl BufferSpec {
+    pub fn new(path: String, channels: usize, frame_count: usize) -> StdResult<Self, String> {
+        let spec = Self {
+            path,
+            channels,
+            frame_count,
+        };
+        spec.validate()?;
+        Ok(spec)
+    }
+
+    pub fn same_shape(&self, other: &Self) -> bool {
+        self.channels == other.channels && self.frame_count == other.frame_count
+    }
+
+    pub fn validate(&self) -> StdResult<(), String> {
+        if self.path.trim().is_empty() {
+            return Err("Buffer path must not be empty".to_string());
+        }
+
+        if !(1..=crate::poly::PORT_MAX_CHANNELS).contains(&self.channels) {
+            return Err(format!(
+                "Buffer channels must be between 1 and {}, got {}",
+                crate::poly::PORT_MAX_CHANNELS,
+                self.channels
+            ));
+        }
+
+        if self.frame_count == 0 {
+            return Err("Buffer frameCount must be greater than 0".to_string());
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+enum BufferSerde {
+    Buffer {
+        path: String,
+        channels: usize,
+        frame_count: usize,
+    },
+}
+
+#[derive(JsonSchema)]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[allow(dead_code)]
+enum BufferSchema {
+    Buffer {
+        path: String,
+        channels: usize,
+        frame_count: usize,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub struct Buffer {
+    spec: BufferSpec,
+    buffer_ptr: sync::Weak<BufferData>,
+}
+
+impl Buffer {
+    pub fn new(spec: BufferSpec) -> Self {
+        Self {
+            spec,
+            buffer_ptr: sync::Weak::new(),
+        }
+    }
+
+    pub fn spec(&self) -> &BufferSpec {
+        &self.spec
+    }
+
+    pub fn into_spec(self) -> BufferSpec {
+        self.spec
+    }
+
+    pub fn path(&self) -> &str {
+        &self.spec.path
+    }
+
+    pub fn channel_count(&self) -> usize {
+        self.spec.channels
+    }
+
+    pub fn frame_count(&self) -> usize {
+        self.spec.frame_count
+    }
+
+    pub fn is_connected(&self) -> bool {
+        self.buffer_ptr.upgrade().is_some()
+    }
+
+    pub fn fill(&self, value: f32) {
+        if let Some(buffer) = self.buffer_ptr.upgrade() {
+            buffer.fill(value);
+        }
+    }
+
+    pub fn clear(&self) {
+        self.fill(0.0);
+    }
+
+    pub fn read(&self, channel: usize, frame: usize) -> f32 {
+        self.buffer_ptr
+            .upgrade()
+            .map(|buffer| buffer.read(channel, frame))
+            .unwrap_or(0.0)
+    }
+
+    pub fn write(&self, channel: usize, frame: usize, value: f32) {
+        if let Some(buffer) = self.buffer_ptr.upgrade() {
+            buffer.write(channel, frame, value);
+        }
+    }
+
+    pub fn with_data<R>(&self, f: impl FnOnce(&Vec<Vec<f32>>) -> R) -> Option<R> {
+        self.buffer_ptr.upgrade().map(|buffer| buffer.with_data(f))
+    }
+
+    pub fn with_data_mut<R>(&self, f: impl FnOnce(&mut Vec<Vec<f32>>) -> R) -> Option<R> {
+        self.buffer_ptr.upgrade().map(|buffer| buffer.with_data_mut(f))
+    }
+}
+
+impl<'de> Deserialize<'de> for Buffer {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let tagged = BufferSerde::deserialize(deserializer)?;
+        let spec = match tagged {
+            BufferSerde::Buffer {
+                path,
+                channels,
+                frame_count,
+            } => BufferSpec::new(path, channels, frame_count).map_err(serde::de::Error::custom)?,
+        };
+        Ok(Buffer::new(spec))
+    }
+}
+
+impl Serialize for Buffer {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        BufferSerde::Buffer {
+            path: self.spec.path.clone(),
+            channels: self.spec.channels,
+            frame_count: self.spec.frame_count,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<E: DeserializeError> deserr::Deserr<E> for Buffer {
+    fn deserialize_from_value<V: IntoValue>(
+        value: deserr::Value<V>,
+        location: ValuePointerRef<'_>,
+    ) -> std::result::Result<Self, E> {
+        match value {
+            deserr::Value::Map(mut map) => {
+                let type_val = map.remove("type").and_then(|v| match v.into_value() {
+                    deserr::Value::String(s) => Some(s),
+                    _ => None,
+                });
+
+                let path = map.remove("path").and_then(|v| match v.into_value() {
+                    deserr::Value::String(s) => Some(s),
+                    _ => None,
+                });
+
+                let channels = map.remove("channels").and_then(|v| match v.into_value() {
+                    deserr::Value::Integer(n) => Some(n as usize),
+                    _ => None,
+                });
+
+                let frame_count = map.remove("frameCount").and_then(|v| match v.into_value() {
+                    deserr::Value::Integer(n) => Some(n as usize),
+                    _ => None,
+                });
+
+                match type_val.as_deref() {
+                    Some("buffer") => {
+                        let path = path.ok_or_else(|| {
+                            deserr::take_cf_content(E::error::<V>(
+                                None,
+                                ErrorKind::MissingField { field: "path" },
+                                location,
+                            ))
+                        })?;
+                        let channels = channels.ok_or_else(|| {
+                            deserr::take_cf_content(E::error::<V>(
+                                None,
+                                ErrorKind::MissingField { field: "channels" },
+                                location,
+                            ))
+                        })?;
+                        let frame_count = frame_count.ok_or_else(|| {
+                            deserr::take_cf_content(E::error::<V>(
+                                None,
+                                ErrorKind::MissingField { field: "frameCount" },
+                                location,
+                            ))
+                        })?;
+                        let spec = BufferSpec::new(path, channels, frame_count).map_err(|msg| {
+                            deserr::take_cf_content(E::error::<V>(
+                                None,
+                                ErrorKind::Unexpected { msg },
+                                location,
+                            ))
+                        })?;
+                        Ok(Buffer::new(spec))
+                    }
+                    Some(other) => Err(deserr::take_cf_content(E::error::<V>(
+                        None,
+                        ErrorKind::Unexpected {
+                            msg: format!("unknown buffer type: {}", other),
+                        },
+                        location,
+                    ))),
+                    None => Err(deserr::take_cf_content(E::error::<V>(
+                        None,
+                        ErrorKind::MissingField { field: "type" },
+                        location,
+                    ))),
+                }
+            }
+            _ => Err(deserr::take_cf_content(E::error::<V>(
+                None,
+                ErrorKind::Unexpected {
+                    msg: "Invalid buffer format".to_string(),
+                },
+                location,
+            ))),
+        }
+    }
+}
+
+impl JsonSchema for Buffer {
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("Buffer")
+    }
+
+    fn json_schema(r#gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        BufferSchema::json_schema(r#gen)
+    }
+}
+
+impl Connect for Buffer {
+    fn connect(&mut self, patch: &Patch) {
+        if let Some(buffer) = patch.buffers.get(&self.spec.path) {
+            self.buffer_ptr = Arc::downgrade(buffer);
+        } else {
+            self.buffer_ptr = sync::Weak::new();
+        }
+    }
+}
+
+impl PartialEq for Buffer {
+    fn eq(&self, other: &Self) -> bool {
+        self.spec == other.spec
+            && match (self.buffer_ptr.upgrade(), other.buffer_ptr.upgrade()) {
+                (Some(left), Some(right)) => Arc::ptr_eq(&left, &right),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+}
+
+pub fn collect_buffer_specs_in_json_value(value: &Value, out: &mut Vec<BufferSpec>) {
+    if let Some(obj) = value.as_object()
+        && obj.get("type").and_then(|v| v.as_str()) == Some("buffer")
+    {
+        if let Ok(buffer) = serde_json::from_value::<Buffer>(value.clone()) {
+            out.push(buffer.into_spec());
+            return;
+        }
+    }
+
+    match value {
+        Value::Array(arr) => {
+            for item in arr {
+                collect_buffer_specs_in_json_value(item, out);
+            }
+        }
+        Value::Object(map) => {
+            for item in map.values() {
+                collect_buffer_specs_in_json_value(item, out);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// A single-channel signal value.

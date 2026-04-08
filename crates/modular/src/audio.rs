@@ -11,6 +11,7 @@ use modular_core::PatchGraph;
 use modular_core::dsp::get_constructors;
 use modular_core::dsp::schema;
 use modular_core::dsp::utils::SchmittTrigger;
+use modular_core::types::BufferSpec;
 use modular_core::types::ClockMessages;
 use modular_core::types::Message;
 use modular_core::types::ScopeMode;
@@ -40,6 +41,7 @@ use modular_core::patch::Patch;
 use modular_core::types::{ROOT_OUTPUT_PORT, ScopeBufferKey};
 use std::time::Instant;
 
+use crate::buffer::RuntimeBuffer;
 use crate::commands::{
   AudioError, COMMAND_QUEUE_CAPACITY, ERROR_QUEUE_CAPACITY, GARBAGE_QUEUE_CAPACITY, GarbageItem,
   GraphCommand, PatchUpdate, QueuedTrigger,
@@ -815,6 +817,8 @@ pub struct AudioState {
   stopped: Arc<AtomicBool>,
   /// Scope collection - shared with audio thread for UI reads
   scope_collection: Arc<Mutex<HashMap<ScopeBufferKey, ScopeBuffer>>>,
+  /// Active buffer specs - written by audio thread, read by main thread for replacement detection
+  buffer_specs: Arc<Mutex<HashMap<String, BufferSpec>>>,
   /// Recording writer - shared with audio thread
   recording_writer: Arc<Mutex<Option<WavWriter<BufWriter<File>>>>>,
   /// Recording path
@@ -860,6 +864,7 @@ impl AudioState {
       garbage_rx: Mutex::new(garbage_rx),
       stopped: Arc::new(AtomicBool::new(true)),
       scope_collection: Arc::new(Mutex::new(HashMap::new())),
+      buffer_specs: Arc::new(Mutex::new(HashMap::new())),
       recording_writer: Arc::new(Mutex::new(None)),
       recording_path: Arc::new(Mutex::new(None)),
       sample_rate,
@@ -929,6 +934,7 @@ impl AudioState {
     AudioSharedState {
       stopped: self.stopped.clone(),
       scope_collection: self.scope_collection.clone(),
+      buffer_specs: self.buffer_specs.clone(),
       recording_writer: self.recording_writer.clone(),
       audio_budget_meter: self.audio_budget_meter.clone(),
       module_states: self.module_states.clone(),
@@ -1022,6 +1028,47 @@ impl AudioState {
 
     // Build maps for efficient lookup
     let desired_modules: HashMap<String, _> = modules.into_iter().map(|m| (m.id.clone(), m)).collect();
+
+    let mut desired_buffer_specs: HashMap<String, BufferSpec> = HashMap::new();
+    for module_state in desired_modules.values() {
+      let mut specs = Vec::new();
+      modular_core::types::collect_buffer_specs_in_json_value(&module_state.params, &mut specs);
+
+      for spec in specs {
+        match desired_buffer_specs.get(&spec.path) {
+          Some(existing) if existing.same_shape(&spec) => {}
+          Some(_) => {
+            return Err(napi::Error::from_reason(format!(
+              "Conflicting Buffer specs found for path '{}'",
+              spec.path
+            )));
+          }
+          None => {
+            desired_buffer_specs.insert(spec.path.clone(), spec);
+          }
+        }
+      }
+    }
+
+    let current_buffer_specs = self.buffer_specs.lock().clone();
+    update.desired_buffer_paths = desired_buffer_specs.keys().cloned().collect();
+    for spec in desired_buffer_specs.values() {
+      let Some(runtime_buffer) = (match current_buffer_specs.get(&spec.path) {
+        Some(existing) if existing.same_shape(spec) => None,
+        Some(_) => Some(RuntimeBuffer::zeroed(spec.clone(), sample_rate as u32)),
+        None => Some(RuntimeBuffer::load_or_zero(spec.clone(), sample_rate as u32)),
+      }) else {
+        continue;
+      };
+
+      let runtime_buffer = runtime_buffer.map_err(|err| {
+        napi::Error::from_reason(format!(
+          "Failed to create buffer resource '{}': {}",
+          spec.path, err
+        ))
+      })?;
+      update.buffer_adds.push(runtime_buffer);
+    }
 
     // Compute scopes to add/remove (no updates — key includes config)
     {
@@ -1125,6 +1172,7 @@ impl AudioState {
       let _ = self.send_command(GraphCommand::ClearPatch);
       let mut scope_collection = self.scope_collection.lock();
       scope_collection.clear();
+      self.buffer_specs.lock().clear();
       // Auto-unmute on SetPatch to match prior imperative flow
       self.set_stopped(false);
     }
@@ -1146,6 +1194,7 @@ impl AudioState {
 pub struct AudioSharedState {
   pub stopped: Arc<AtomicBool>,
   pub scope_collection: Arc<Mutex<HashMap<ScopeBufferKey, ScopeBuffer>>>,
+  pub buffer_specs: Arc<Mutex<HashMap<String, BufferSpec>>>,
   pub recording_writer: Arc<Mutex<Option<WavWriter<BufWriter<File>>>>>,
   pub audio_budget_meter: Arc<AudioBudgetMeter>,
   /// Module states (e.g., seq current step) - written by audio thread, read by main thread
@@ -1171,6 +1220,8 @@ fn chrono_simple_timestamp() -> String {
 struct AudioProcessor {
   /// The DSP patch graph - owned directly, no mutex needed
   patch: Patch,
+  /// Runtime-owned buffer resources keyed by path
+  active_buffers: HashMap<String, RuntimeBuffer>,
   /// Command queue consumer
   command_rx: CommandConsumer,
   /// Error queue producer
@@ -1181,6 +1232,8 @@ struct AudioProcessor {
   stopped: Arc<AtomicBool>,
   /// Shared scope collection
   scope_collection: Arc<Mutex<HashMap<ScopeBufferKey, ScopeBuffer>>>,
+  /// Shared active buffer spec snapshot
+  buffer_specs: Arc<Mutex<HashMap<String, BufferSpec>>>,
   /// Shared module states (e.g., seq current step)
   module_states: Arc<Mutex<HashMap<String, serde_json::Value>>>,
   /// MIDI input manager for polling
@@ -1200,11 +1253,13 @@ impl AudioProcessor {
   ) -> Self {
     Self {
       patch: Patch::new(),
+      active_buffers: HashMap::new(),
       command_rx,
       error_tx,
       garbage_tx,
       stopped: shared.stopped,
       scope_collection: shared.scope_collection,
+      buffer_specs: shared.buffer_specs,
       module_states: shared.module_states,
       midi_manager: shared.midi_manager,
       queued_update: None,
@@ -1295,6 +1350,14 @@ impl AudioProcessor {
               let _ = self.garbage_tx.push(GarbageItem::Module(module));
             }
           }
+          let buffer_paths: Vec<String> = self.active_buffers.keys().cloned().collect();
+          for path in buffer_paths {
+            self.patch.buffers.remove(&path);
+            if let Some(buffer) = self.active_buffers.remove(&path) {
+              let _ = self.garbage_tx.push(GarbageItem::Buffer(buffer));
+            }
+          }
+          self.buffer_specs.lock().clear();
           self.patch.insert_audio_in();
           self.patch.rebuild_message_listeners();
         }
@@ -1304,9 +1367,21 @@ impl AudioProcessor {
 
   /// Apply a patch update command
   fn apply_patch_update(&mut self, update: PatchUpdate) {
+    let PatchUpdate {
+      remaps,
+      inserts,
+      desired_ids,
+      param_updates,
+      buffer_adds,
+      desired_buffer_paths,
+      scope_adds,
+      scope_removes,
+      ..
+    } = update;
+
     // Apply remaps first
     let mut remapped_ids: Vec<String> = Vec::new();
-    for remap in update.remaps {
+    for remap in remaps {
       // Skip reserved module IDs
       if is_reserved_module_id(&remap.from) || is_reserved_module_id(&remap.to) {
         continue;
@@ -1323,11 +1398,9 @@ impl AudioProcessor {
       }
     }
 
-    let desired_ids = &update.desired_ids;
-
     // Insert new modules (already Arc-wrapped on main thread)
     let mut newly_inserted_ids: Vec<String> = Vec::new();
-    for (id, module) in update.inserts {
+    for (id, module) in inserts {
       if !self.patch.sampleables.contains_key(&id) {
         newly_inserted_ids.push(id.clone());
         self.patch.sampleables.insert(id, module);
@@ -1354,8 +1427,49 @@ impl AudioProcessor {
       }
     }
 
+    for incoming in buffer_adds {
+      let path = incoming.path().to_string();
+      if let Some(existing) = self.active_buffers.get(&path) {
+        if existing.same_shape(&incoming) {
+          let _ = self.garbage_tx.push(GarbageItem::Buffer(incoming));
+          continue;
+        }
+      }
+
+      if let Some(replaced) = self.active_buffers.remove(&path) {
+        incoming.copy_overlap_from(&replaced);
+        replaced.suppress_flush_on_drop();
+        let _ = self.garbage_tx.push(GarbageItem::Buffer(replaced));
+      }
+
+      incoming.enable_flush_on_drop();
+      self.patch.buffers.insert(path.clone(), incoming.shared());
+      self.active_buffers.insert(path, incoming);
+    }
+
+    let stale_buffer_paths: Vec<String> = self
+      .active_buffers
+      .keys()
+      .filter(|path| !desired_buffer_paths.contains(*path))
+      .cloned()
+      .collect();
+    for path in stale_buffer_paths {
+      self.patch.buffers.remove(&path);
+      if let Some(buffer) = self.active_buffers.remove(&path) {
+        let _ = self.garbage_tx.push(GarbageItem::Buffer(buffer));
+      }
+    }
+
+    {
+      let mut shared_specs = self.buffer_specs.lock();
+      shared_specs.clear();
+      for (path, buffer) in &self.active_buffers {
+        shared_specs.insert(path.clone(), buffer.spec().clone());
+      }
+    }
+
     // Apply pre-deserialized params for all modules
-    for (id, deserialized) in update.param_updates {
+    for (id, deserialized) in param_updates {
       if let Some(module) = self.patch.sampleables.get(&id)
         && let Err(e) = module.apply_deserialized_params(deserialized)
       {
@@ -1389,14 +1503,14 @@ impl AudioProcessor {
       let mut scope_collection = self.scope_collection.lock();
 
       // Remove scopes
-      for key in &update.scope_removes {
+      for key in &scope_removes {
         if let Some(buffer) = scope_collection.remove(key) {
           let _ = self.garbage_tx.push(GarbageItem::Scope(buffer));
         }
       }
 
       // Add new scopes
-      for (key, buffer) in update.scope_adds {
+      for (key, buffer) in scope_adds {
         scope_collection.insert(key, buffer);
       }
     }
@@ -2103,6 +2217,7 @@ mod tests {
     let shared = AudioSharedState {
       stopped: Arc::new(AtomicBool::new(true)),
       scope_collection: Arc::new(Mutex::new(HashMap::new())),
+      buffer_specs: Arc::new(Mutex::new(HashMap::new())),
       recording_writer: Arc::new(Mutex::new(None)),
       audio_budget_meter: Arc::new(AudioBudgetMeter::new()),
       module_states: Arc::new(Mutex::new(HashMap::new())),
