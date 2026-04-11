@@ -681,7 +681,8 @@ describe('$buffer()', () => {
         expect(() =>
             exec(`
                 const buffer = $buffer('loops/kick', 0.5, 2);
-                if (buffer.path !== '/workspace/tmp/loops/kick.wav') {
+                const normalizedPath = buffer.path.replace(/\\\\/g, '/');
+                if (!normalizedPath.endsWith('/workspace/tmp/loops/kick.wav')) {
                     throw new Error(buffer.path);
                 }
                 if (buffer.frameCount !== 24000) {
