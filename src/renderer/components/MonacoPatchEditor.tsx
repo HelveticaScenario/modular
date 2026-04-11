@@ -21,7 +21,7 @@ import {
 import { startModuleStatePolling } from './monaco/moduleStateTracking';
 import { registerMidiCompletionProvider } from './monaco/midiCompletionProvider';
 import electronAPI from '../electronAPI';
-import type { Schemas } from 'src/shared/dsl/schemaTypeResolver';
+import type { Schemas } from '../../shared/dsl/schemaTypeResolver';
 
 export interface PatchEditorProps {
     value: string;

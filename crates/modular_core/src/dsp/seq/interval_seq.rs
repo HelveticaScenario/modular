@@ -1282,7 +1282,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_patterns_from_string() {
-        let json = serde_json::json!({ "patterns": "0 2 4" });
+        let json = serde_json::json!({ "patterns": "0 2 4", "scale": "c(major)" });
         let params: IntervalSeqParams =
             deserr::deserialize::<IntervalSeqParams, _, crate::param_errors::ModuleParamErrors>(
                 json,
@@ -1294,7 +1294,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_patterns_from_array() {
-        let json = serde_json::json!({ "patterns": ["0 2 4", "0 3"] });
+        let json = serde_json::json!({ "patterns": ["0 2 4", "0 3"], "scale": "c(major)" });
         let params: IntervalSeqParams =
             deserr::deserialize::<IntervalSeqParams, _, crate::param_errors::ModuleParamErrors>(
                 json,

@@ -25,7 +25,7 @@ export function registerDslFormattingProvider(
                     ...userConfig,
                     // Parser and plugins must not be overridden
                     parser: 'babel',
-                    plugins: [prettierBabel, prettierEstree],
+                    plugins: [prettierBabel, prettierEstree as any],
                 });
 
                 return [

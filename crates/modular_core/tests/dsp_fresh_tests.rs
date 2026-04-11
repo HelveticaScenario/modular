@@ -256,15 +256,31 @@ fn scale_and_shift_applies() {
 /// succeeds. Modules with all-optional params can use `{}`.
 fn minimal_params(module_type: &str) -> serde_json::Value {
     match module_type {
-        "$sine" | "$saw" | "$pulse" | "$supersaw" => json!({ "freq": 0.0 }),
+        "$sine" | "$saw" | "$pulse" | "$supersaw" | "$ramp" => json!({ "freq": 0.0 }),
         "$pSine" | "$pSaw" | "$pPulse" => json!({ "phase": 0.0 }),
         "$macro" => json!({ "freq": 0.0, "engine": "virtualAnalog" }),
-        "$lpf" | "$hpf" | "$bpf" | "$jup6f" | "$comp" | "$xover" | "$curve" | "$slew"
-        | "$quantizer" | "$wrap" | "$clamp" | "$unison" | "$crush" | "$feedback" | "$pulsar"
-        | "$rising" | "$falling" | "$stereoMix" => json!({ "input": 0.0 }),
+        "$lpf" | "$hpf" | "$jup6f" => json!({ "input": 0.0, "cutoff": 0.0 }),
+        "$bpf" => json!({ "input": 0.0, "center": 0.0 }),
+        "$xover" => json!({ "input": 0.0, "lowMidFreq": 0.0, "midHighFreq": 0.0 }),
+        "$comp" => json!({ "input": 0.0, "threshold": 0.0 }),
+        "$wrap" | "$clamp" => json!({ "input": 0.0, "min": -5.0, "max": 5.0 }),
+        "$curve" => json!({ "input": 0.0, "exp": 1.0 }),
+        "$cycle" | "$intervalSeq" => json!({ "pattern": "0" }),
+        "$iCycle" => json!({ "patterns": "0", "scale": "c(major)" }),
+        "$slew" | "$quantizer" | "$unison" | "$crush" | "$feedback" | "$pulsar" | "$rising"
+        | "$falling" | "$stereoMix" => json!({ "input": 0.0 }),
+        "$track" => json!({ "keyframes": [] }),
+        "$math" => json!({ "expression": "1+1" }),
+        "$spread" => json!({ "min": -1.0, "max": 1.0, "count": 3 }),
         "$signal" => json!({ "source": 0.0 }),
         "$scaleAndShift" => json!({ "input": 0.0 }),
         "$cheby" | "$fold" | "$segment" => json!({ "input": 0.0, "amount": 0.0 }),
+        "$bufWrite" => {
+            json!({ "buffer": { "type": "buffer", "path": "test", "channels": 1, "frameCount": 100 }, "frame": 0.0, "input": 0.0 })
+        }
+        "$bufRead" => {
+            json!({ "buffer": { "type": "buffer", "path": "test", "channels": 1, "frameCount": 100 }, "frame": 0.0 })
+        }
         "$remap" => {
             json!({ "input": 0.0, "inMin": 0.0, "inMax": 5.0, "outMin": 0.0, "outMax": 5.0 })
         }
@@ -608,14 +624,18 @@ fn from_graph_process_frame_advances_all_modules() {
 #[test]
 fn step_rejects_empty_steps() {
     let deserializers = get_params_deserializers();
-    let deserializer = deserializers.get("$step").expect("no deserializer for $step");
+    let deserializer = deserializers
+        .get("$step")
+        .expect("no deserializer for $step");
     let result = deserializer(json!({ "steps": [], "next": 0.0 }));
     match result {
         Ok(_) => panic!("empty steps should be rejected"),
         Err(err) => {
             let errors = err.into_errors();
             assert!(
-                errors.iter().any(|e| e.message.contains("at least one step")),
+                errors
+                    .iter()
+                    .any(|e| e.message.contains("at least one step")),
                 "error should mention 'at least one step', got: {:?}",
                 errors.iter().map(|e| &e.message).collect::<Vec<_>>()
             );

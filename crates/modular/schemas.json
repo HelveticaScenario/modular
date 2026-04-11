@@ -4119,6 +4119,7 @@
           "$ref": "#/$defs/Buffer"
         },
         "frame": {
+          "description": "read position (0 to 5V scales to 0 to buffer length)",
           "$ref": "#/$defs/MonoSignal"
         }
       },
@@ -4229,10 +4230,10 @@
     "signalParams": [
       {
         "name": "frame",
-        "description": "",
+        "description": "read position (0 to 5V scales to 0 to buffer length)",
         "signalType": "control",
         "defaultValue": 0.0,
-        "minValue": -5.0,
+        "minValue": 0.0,
         "maxValue": 5.0
       }
     ],
@@ -4257,6 +4258,7 @@
           "$ref": "#/$defs/Buffer"
         },
         "frame": {
+          "description": "write position (0 to 5V scales to 0 to buffer length)",
           "$ref": "#/$defs/MonoSignal"
         },
         "input": {
@@ -4384,10 +4386,10 @@
     "signalParams": [
       {
         "name": "frame",
-        "description": "",
+        "description": "write position (0 to 5V scales to 0 to buffer length)",
         "signalType": "control",
         "defaultValue": 0.0,
-        "minValue": -5.0,
+        "minValue": 0.0,
         "maxValue": 5.0
       },
       {
@@ -4791,6 +4793,305 @@
       },
       {
         "name": "exp"
+      }
+    ]
+  },
+  {
+    "name": "$delayRead",
+    "documentation": "Reads a signal from a buffer at a specified delay time relative to a sync position.",
+    "paramsSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "DelayReadParams",
+      "type": "object",
+      "properties": {
+        "buffer": {
+          "$ref": "#/$defs/Buffer"
+        },
+        "sync": {
+          "description": "Sync signal from a delayWrite module",
+          "$ref": "#/$defs/MonoSignal"
+        },
+        "time": {
+          "description": "Delay time in seconds (e.g. 0.5 for 500ms)",
+          "$ref": "#/$defs/MonoSignal"
+        }
+      },
+      "required": [
+        "buffer",
+        "time",
+        "sync"
+      ],
+      "$defs": {
+        "Buffer": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "channels": {
+                  "type": "integer",
+                  "format": "uint",
+                  "minimum": 0
+                },
+                "frameCount": {
+                  "type": "integer",
+                  "format": "uint",
+                  "minimum": 0
+                },
+                "path": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "const": "buffer"
+                }
+              },
+              "required": [
+                "type",
+                "path",
+                "channels",
+                "frameCount"
+              ]
+            }
+          ]
+        },
+        "MonoSignal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Signal"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Signal"
+              }
+            }
+          ]
+        },
+        "Signal": {
+          "anyOf": [
+            {
+              "type": "number",
+              "format": "double"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/SignalTaggedSchema"
+            }
+          ]
+        },
+        "SignalTaggedSchema": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "channel": {
+                  "type": "integer",
+                  "format": "uint",
+                  "default": 0,
+                  "minimum": 0
+                },
+                "module": {
+                  "type": "string"
+                },
+                "port": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "const": "cable"
+                }
+              },
+              "required": [
+                "type",
+                "module",
+                "port"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "outputs": [
+      {
+        "name": "output",
+        "description": "delayed signal",
+        "polyphonic": true,
+        "default": true
+      }
+    ],
+    "signalParams": [
+      {
+        "name": "time",
+        "description": "Delay time in seconds (e.g. 0.5 for 500ms)",
+        "signalType": "control",
+        "defaultValue": 0.1,
+        "minValue": 0.0,
+        "maxValue": 5.0
+      },
+      {
+        "name": "sync",
+        "description": "Sync signal from a delayWrite module",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": 0.0,
+        "maxValue": 5.0
+      }
+    ],
+    "positionalArgs": [
+      {
+        "name": "buffer"
+      },
+      {
+        "name": "time"
+      },
+      {
+        "name": "sync"
+      }
+    ]
+  },
+  {
+    "name": "$delayWrite",
+    "documentation": "Writes a signal continuously into a buffer to act as a delay line.",
+    "paramsSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "DelayWriteParams",
+      "type": "object",
+      "properties": {
+        "buffer": {
+          "$ref": "#/$defs/Buffer"
+        },
+        "input": {
+          "$ref": "#/$defs/PolySignal"
+        }
+      },
+      "required": [
+        "buffer",
+        "input"
+      ],
+      "$defs": {
+        "Buffer": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "channels": {
+                  "type": "integer",
+                  "format": "uint",
+                  "minimum": 0
+                },
+                "frameCount": {
+                  "type": "integer",
+                  "format": "uint",
+                  "minimum": 0
+                },
+                "path": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "const": "buffer"
+                }
+              },
+              "required": [
+                "type",
+                "path",
+                "channels",
+                "frameCount"
+              ]
+            }
+          ]
+        },
+        "PolySignal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Signal"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Signal"
+              }
+            }
+          ]
+        },
+        "Signal": {
+          "anyOf": [
+            {
+              "type": "number",
+              "format": "double"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/SignalTaggedSchema"
+            }
+          ]
+        },
+        "SignalTaggedSchema": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "channel": {
+                  "type": "integer",
+                  "format": "uint",
+                  "default": 0,
+                  "minimum": 0
+                },
+                "module": {
+                  "type": "string"
+                },
+                "port": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "const": "cable"
+                }
+              },
+              "required": [
+                "type",
+                "module",
+                "port"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "outputs": [
+      {
+        "name": "output",
+        "description": "input signal after writing to the buffer",
+        "polyphonic": true,
+        "default": true
+      },
+      {
+        "name": "sync",
+        "description": "current write frame index for syncing with delayRead",
+        "polyphonic": true,
+        "default": false
+      }
+    ],
+    "signalParams": [
+      {
+        "name": "input",
+        "description": "",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": -5.0,
+        "maxValue": 5.0
+      }
+    ],
+    "positionalArgs": [
+      {
+        "name": "buffer"
+      },
+      {
+        "name": "input"
       }
     ]
   },

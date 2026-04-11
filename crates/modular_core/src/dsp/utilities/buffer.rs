@@ -2,8 +2,8 @@ use deserr::Deserr;
 use schemars::JsonSchema;
 
 use crate::{
-    Buffer, MonoSignal,
     poly::{PolyOutput, PolySignal},
+    Buffer, MonoSignal,
 };
 
 fn buf_read_derive_channel_count(params: &BufReadParams) -> usize {
@@ -31,19 +31,31 @@ fn read_interpolated(buffer: &Buffer, channel: usize, frame: f32) -> f32 {
         return buffer.read(channel, left);
     }
 
-    let right = (left + 1).min(frame_count - 1);
-    let a = buffer.read(channel, left);
-    let b = buffer.read(channel, right);
-    a + (b - a) * frac
+    let i0 = left.saturating_sub(1);
+    let i1 = left;
+    let i2 = (left + 1).min(frame_count - 1);
+    let i3 = (left + 2).min(frame_count - 1);
+
+    let y0 = buffer.read(channel, i0);
+    let y1 = buffer.read(channel, i1);
+    let y2 = buffer.read(channel, i2);
+    let y3 = buffer.read(channel, i3);
+
+    let c0 = y1;
+    let c1 = 0.5 * (y2 - y0);
+    let c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
+    let c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+
+    ((c3 * frac + c2) * frac + c1) * frac + c0
 }
 
-fn write_frame_index(frame: f32, frame_count: usize) -> Option<usize> {
+fn write_frame_index(frame: f64, frame_count: usize) -> Option<usize> {
     if !frame.is_finite() || frame_count == 0 {
         return None;
     }
 
     let index = frame.floor();
-    if index < 0.0 || index >= frame_count as f32 {
+    if index < 0.0 || index >= frame_count as f64 {
         return None;
     }
 
@@ -55,6 +67,8 @@ fn write_frame_index(frame: f32, frame_count: usize) -> Option<usize> {
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct BufReadParams {
     buffer: Buffer,
+    /// read position (0 to 5V scales to 0 to buffer length)
+    #[signal(default = 0.0, range = (0.0, 5.0))]
     frame: MonoSignal,
 }
 
@@ -74,7 +88,10 @@ pub struct BufRead {
 
 impl BufRead {
     fn update(&mut self, _sample_rate: f32) {
-        let frame = self.params.frame.get_value();
+        let frame_volts = self.params.frame.get_value(); //.rem_euclid(5.0);
+        let frame_count = self.params.buffer.frame_count();
+        // let frame = (frame_volts / 5.0) * frame_count as f32;
+        let frame = frame_volts;
         let channels = self.channel_count();
 
         for channel in 0..channels {
@@ -91,6 +108,8 @@ message_handlers!(impl BufRead {});
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 struct BufWriteParams {
     buffer: Buffer,
+    /// write position (0 to 5V scales to 0 to buffer length)
+    #[signal(default = 0.0, range = (0.0, 5.0))]
     frame: MonoSignal,
     input: PolySignal,
 }
@@ -102,10 +121,16 @@ struct BufWriteOutputs {
     sample: PolyOutput,
 }
 
+#[derive(Default)]
+struct BufWriteState {
+    last_frame: Option<usize>,
+}
+
 /// Writes a signal into a buffer at a sample frame position and passes the signal through.
 #[module(name = "$bufWrite", args(buffer, frame, input))]
 pub struct BufWrite {
     outputs: BufWriteOutputs,
+    state: BufWriteState,
     params: BufWriteParams,
 }
 
@@ -118,17 +143,48 @@ impl BufWrite {
                 .set(channel, self.params.input.get_value(channel));
         }
 
-        let Some(frame) = write_frame_index(self.params.frame.get_value(), self.params.buffer.frame_count())
-        else {
+        let scaled_frame = (self.params.frame.get_value_f64()); //.rem_euclid(5.0);
+
+        let frame_count = self.params.buffer.frame_count();
+        // let scaled_frame = (frame_volts / 5.0) * frame_count as f64;
+
+        let Some(frame) = write_frame_index(scaled_frame, frame_count) else {
+            self.state.last_frame = None;
+            // println!("cant");
             return;
         };
 
+        // println!("{frame_volts} {frame}");
+
         let buffer_channels = self.params.buffer.channel_count();
-        for channel in 0..buffer_channels {
-            self.params
-                .buffer
-                .write(channel, frame, self.params.input.get_value(channel));
+
+        let last = self.state.last_frame.unwrap_or(frame);
+
+        // if (frame < last) {
+        //     println!("")
+        // }
+
+        // Determine fill range: fill gaps up to 64 frames (handles high frequency writing).
+        // For larger jumps (wrap-around), we just write the single frame.
+        let (start, end) = if frame > last && frame - last < 64 {
+            // println!("big jump 1 {:?}", (last + 1, frame));
+            (last + 1, frame)
+        } else if last > frame && last - frame < 64 {
+            // println!("big jump 2 {:?}", (frame, last - 1));
+            (frame, last - 1)
+        } else {
+            (frame, frame)
+        };
+
+        for f in start..=end {
+            for channel in 0..buffer_channels {
+                self.params
+                    .buffer
+                    .write(channel, f, self.params.input.get_value(channel));
+            }
         }
+
+        self.state.last_frame = Some(frame);
     }
 }
 
@@ -140,8 +196,8 @@ mod tests {
     use std::sync::Arc;
 
     use crate::{
-        BufferData, Patch,
         types::{BufferSpec, Connect, OutputStruct, Signal},
+        BufferData, Patch,
     };
 
     fn mono(value: f32) -> MonoSignal {
@@ -181,6 +237,7 @@ mod tests {
         BufWrite {
             params,
             outputs,
+            state: BufWriteState::default(),
             _channel_count: channels,
         }
     }
@@ -200,7 +257,7 @@ mod tests {
         let (_patch, buffer) = make_connected_buffer(vec![vec![1.0, 3.0], vec![2.0, 4.0]]);
         let mut module = make_buf_read(BufReadParams {
             buffer,
-            frame: mono(0.5),
+            frame: mono(0.5), // 0.5 index
         });
 
         module.update(48_000.0);
@@ -229,7 +286,7 @@ mod tests {
         let (_patch, buffer) = make_connected_buffer(vec![vec![0.0; 4], vec![0.0; 4]]);
         let mut module = make_buf_write(BufWriteParams {
             buffer,
-            frame: mono(1.0),
+            frame: mono(1.0), // index 1.0
             input: PolySignal::poly(&[Signal::Volts(1.25), Signal::Volts(-0.5)]),
         });
 
@@ -247,7 +304,7 @@ mod tests {
         let (_patch, buffer) = make_connected_buffer(vec![vec![0.0; 4], vec![0.0; 4]]);
         let mut module = make_buf_write(BufWriteParams {
             buffer,
-            frame: mono(2.0),
+            frame: mono(2.0), // index 2.0
             input: PolySignal::mono(Signal::Volts(0.75)),
         });
 
