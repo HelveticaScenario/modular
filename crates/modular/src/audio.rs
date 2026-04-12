@@ -1379,23 +1379,32 @@ impl AudioProcessor {
       ..
     } = update;
 
-    // Apply remaps first
+    // Apply remaps in two phases to avoid chain/swap collisions.
+    // Phase 1: Extract all remap sources into a temporary map.
+    // Phase 2: Insert them at their new IDs.
+    // This prevents chains (A→B, B→C) from overwriting modules that are
+    // themselves being remapped, and also handles swaps (A→B, B→A).
     let mut remapped_ids: Vec<String> = Vec::new();
-    for remap in remaps {
-      // Skip reserved module IDs
-      if is_reserved_module_id(&remap.from) || is_reserved_module_id(&remap.to) {
-        continue;
-      }
-      if remap.from == remap.to {
-        continue;
-      }
+    let mut remap_staging = Vec::new();
+    let filtered_remaps: Vec<_> = remaps
+      .into_iter()
+      .filter(|r| {
+        !is_reserved_module_id(&r.from) && !is_reserved_module_id(&r.to) && r.from != r.to
+      })
+      .collect();
+
+    // Phase 1: Remove all sources
+    for remap in &filtered_remaps {
       if let Some(module) = self.patch.sampleables.remove(&remap.from) {
-        // Remove existing target if present
-        self.patch.sampleables.remove(&remap.to);
         self.patch.remove_message_listeners_for_module(&remap.from);
-        self.patch.sampleables.insert(remap.to.clone(), module);
-        remapped_ids.push(remap.to);
+        remap_staging.push((remap.to.clone(), module));
       }
+    }
+
+    // Phase 2: Insert at destinations
+    for (to_id, module) in remap_staging {
+      self.patch.sampleables.insert(to_id.clone(), module);
+      remapped_ids.push(to_id);
     }
 
     // Insert new modules (already Arc-wrapped on main thread)
@@ -2170,6 +2179,7 @@ pub struct TransportSnapshot {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use modular_core::types::ModuleIdRemap;
 
   // ============================================================================
   // Legacy tests - commented out after Phase 2 architecture change
@@ -2229,5 +2239,176 @@ mod tests {
 
     // Processor starts with empty patch (may have hidden audio_in)
     assert!(processor.patch.sampleables.is_empty() || processor.patch.sampleables.len() == 1);
+  }
+
+  // A minimal mock Sampleable for testing remaps. Each instance encodes
+  // its identity in `get_module_type()` so we can verify which concrete
+  // module ends up at which map slot after remapping.
+  struct MockModule {
+    /// Identity label returned by `get_module_type()` for assertions.
+    label: String,
+    /// The "current" ID used by the Sampleable interface.
+    current_id: String,
+  }
+
+  impl MockModule {
+    fn new(label: &str) -> Arc<Box<dyn modular_core::types::Sampleable>> {
+      Arc::new(Box::new(Self {
+        label: label.to_string(),
+        current_id: label.to_string(),
+      }))
+    }
+  }
+
+  impl modular_core::types::MessageHandler for MockModule {}
+
+  impl modular_core::types::Sampleable for MockModule {
+    fn get_id(&self) -> &str {
+      &self.current_id
+    }
+    fn tick(&self) {}
+    fn update(&self) {}
+    fn get_poly_sample(&self, _port: &str) -> napi::Result<modular_core::poly::PolyOutput> {
+      Ok(modular_core::poly::PolyOutput::default())
+    }
+    fn get_module_type(&self) -> &str {
+      &self.label
+    }
+    fn apply_deserialized_params(
+      &self,
+      _deserialized: modular_core::params::DeserializedParams,
+    ) -> napi::Result<()> {
+      Ok(())
+    }
+    fn connect(&self, _patch: &modular_core::patch::Patch) {}
+  }
+
+  fn create_test_processor() -> AudioProcessor {
+    let (
+      _cmd_producer,
+      cmd_consumer,
+      err_producer,
+      _err_consumer,
+      garbage_producer,
+      _garbage_consumer,
+    ) = create_audio_channels();
+
+    let shared = AudioSharedState {
+      stopped: Arc::new(AtomicBool::new(true)),
+      scope_collection: Arc::new(Mutex::new(HashMap::new())),
+      buffer_specs: Arc::new(Mutex::new(HashMap::new())),
+      recording_writer: Arc::new(Mutex::new(None)),
+      audio_budget_meter: Arc::new(AudioBudgetMeter::new()),
+      module_states: Arc::new(Mutex::new(HashMap::new())),
+      midi_manager: Arc::new(MidiInputManager::new()),
+      transport_meter: Arc::new(TransportMeter::default()),
+    };
+
+    AudioProcessor::new(cmd_consumer, err_producer, garbage_producer, shared)
+  }
+
+  #[test]
+  fn test_remap_chain_preserves_modules() {
+    // Regression test: when remaps form a chain (A→B, B→C), all modules
+    // must survive. Before the fix, applying A→B first would overwrite B
+    // (destroying it) before B→C could move it to C.
+    let mut processor = create_test_processor();
+
+    // Set up initial state: cycle-2 (shift), cycle-3 (thirds)
+    processor.patch.sampleables.insert("cycle-2".into(), MockModule::new("shift"));
+    processor.patch.sampleables.insert("cycle-3".into(), MockModule::new("thirds"));
+
+    // Remap chain: cycle-2→cycle-3, cycle-3→cycle-4
+    let mut update = PatchUpdate::new(48000.0);
+    update.remaps = vec![
+      ModuleIdRemap { from: "cycle-2".into(), to: "cycle-3".into() },
+      ModuleIdRemap { from: "cycle-3".into(), to: "cycle-4".into() },
+    ];
+    // Both new IDs are desired (won't be garbage-collected)
+    update.desired_ids.insert("cycle-3".into());
+    update.desired_ids.insert("cycle-4".into());
+
+    processor.apply_patch_update(update);
+
+    // Verify: "shift" module should now be at cycle-3, "thirds" at cycle-4
+    assert!(
+      processor.patch.sampleables.contains_key("cycle-3"),
+      "cycle-3 should exist after remap"
+    );
+    assert!(
+      processor.patch.sampleables.contains_key("cycle-4"),
+      "cycle-4 should exist after remap"
+    );
+    assert_eq!(
+      processor.patch.sampleables.get("cycle-3").unwrap().get_module_type(),
+      "shift",
+      "cycle-3 should contain the shift module"
+    );
+    assert_eq!(
+      processor.patch.sampleables.get("cycle-4").unwrap().get_module_type(),
+      "thirds",
+      "cycle-4 should contain the thirds module"
+    );
+    // cycle-2 should have been removed (not in desired_ids)
+    assert!(
+      !processor.patch.sampleables.contains_key("cycle-2"),
+      "cycle-2 should be removed (no longer desired)"
+    );
+  }
+
+  #[test]
+  fn test_remap_swap_preserves_both_modules() {
+    // Test swap: A→B and B→A simultaneously
+    let mut processor = create_test_processor();
+
+    processor.patch.sampleables.insert("osc-1".into(), MockModule::new("alpha"));
+    processor.patch.sampleables.insert("osc-2".into(), MockModule::new("beta"));
+
+    let mut update = PatchUpdate::new(48000.0);
+    update.remaps = vec![
+      ModuleIdRemap { from: "osc-1".into(), to: "osc-2".into() },
+      ModuleIdRemap { from: "osc-2".into(), to: "osc-1".into() },
+    ];
+    update.desired_ids.insert("osc-1".into());
+    update.desired_ids.insert("osc-2".into());
+
+    processor.apply_patch_update(update);
+
+    assert_eq!(
+      processor.patch.sampleables.get("osc-1").unwrap().get_module_type(),
+      "beta",
+      "osc-1 should now contain beta (swapped)"
+    );
+    assert_eq!(
+      processor.patch.sampleables.get("osc-2").unwrap().get_module_type(),
+      "alpha",
+      "osc-2 should now contain alpha (swapped)"
+    );
+  }
+
+  #[test]
+  fn test_remap_simple_rename() {
+    // Simple case: single remap, no chain
+    let mut processor = create_test_processor();
+
+    processor.patch.sampleables.insert("vca-1".into(), MockModule::new("my-vca"));
+
+    let mut update = PatchUpdate::new(48000.0);
+    update.remaps = vec![
+      ModuleIdRemap { from: "vca-1".into(), to: "vca-2".into() },
+    ];
+    update.desired_ids.insert("vca-2".into());
+
+    processor.apply_patch_update(update);
+
+    assert!(
+      !processor.patch.sampleables.contains_key("vca-1"),
+      "old ID should be gone"
+    );
+    assert_eq!(
+      processor.patch.sampleables.get("vca-2").unwrap().get_module_type(),
+      "my-vca",
+      "module should be at new ID"
+    );
   }
 }
