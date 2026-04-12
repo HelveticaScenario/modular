@@ -47,8 +47,8 @@ pub struct PatchUpdate {
   /// Buffer resources to add or replace (constructed on main thread)
   pub buffer_adds: Vec<RuntimeBuffer>,
 
-  /// Set of desired buffer paths after this update is applied.
-  pub desired_buffer_paths: std::collections::HashSet<String>,
+  /// Set of desired buffer names after this update is applied.
+  pub desired_buffer_names: std::collections::HashSet<String>,
 
   /// Pre-built scope buffers to add (constructed on main thread)
   pub scope_adds: Vec<(ScopeBufferKey, ScopeBuffer)>,
@@ -70,7 +70,7 @@ impl PatchUpdate {
       remaps: Vec::new(),
       param_updates: Vec::new(),
       buffer_adds: Vec::new(),
-      desired_buffer_paths: std::collections::HashSet::new(),
+      desired_buffer_names: std::collections::HashSet::new(),
       scope_adds: Vec::new(),
       scope_removes: Vec::new(),
       sample_rate,
@@ -84,7 +84,7 @@ impl PatchUpdate {
       && self.remaps.is_empty()
       && self.param_updates.is_empty()
       && self.buffer_adds.is_empty()
-      && self.desired_buffer_paths.is_empty()
+      && self.desired_buffer_names.is_empty()
       && self.scope_adds.is_empty()
       && self.scope_removes.is_empty()
   }

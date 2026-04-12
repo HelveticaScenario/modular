@@ -210,7 +210,7 @@ mod tests {
         let spec = BufferSpec::new("test.wav".to_string(), channels, frame_count).unwrap();
         let mut patch = Patch::new();
         patch.buffers.insert(
-            spec.path.clone(),
+            spec.name.clone(),
             Arc::new(BufferData::from_samples(samples)),
         );
 

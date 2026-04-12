@@ -1035,38 +1035,30 @@ impl AudioState {
       modular_core::types::collect_buffer_specs_in_json_value(&module_state.params, &mut specs);
 
       for spec in specs {
-        match desired_buffer_specs.get(&spec.path) {
+        match desired_buffer_specs.get(&spec.name) {
           Some(existing) if existing.same_shape(&spec) => {}
           Some(_) => {
             return Err(napi::Error::from_reason(format!(
-              "Conflicting Buffer specs found for path '{}'",
-              spec.path
+              "Conflicting Buffer specs found for name '{}'",
+              spec.name
             )));
           }
           None => {
-            desired_buffer_specs.insert(spec.path.clone(), spec);
+            desired_buffer_specs.insert(spec.name.clone(), spec);
           }
         }
       }
     }
 
     let current_buffer_specs = self.buffer_specs.lock().clone();
-    update.desired_buffer_paths = desired_buffer_specs.keys().cloned().collect();
+    update.desired_buffer_names = desired_buffer_specs.keys().cloned().collect();
     for spec in desired_buffer_specs.values() {
-      let Some(runtime_buffer) = (match current_buffer_specs.get(&spec.path) {
+      let Some(runtime_buffer) = (match current_buffer_specs.get(&spec.name) {
         Some(existing) if existing.same_shape(spec) => None,
-        Some(_) => Some(RuntimeBuffer::zeroed(spec.clone(), sample_rate as u32)),
-        None => Some(RuntimeBuffer::load_or_zero(spec.clone(), sample_rate as u32)),
+        _ => Some(RuntimeBuffer::zeroed(spec.clone())),
       }) else {
         continue;
       };
-
-      let runtime_buffer = runtime_buffer.map_err(|err| {
-        napi::Error::from_reason(format!(
-          "Failed to create buffer resource '{}': {}",
-          spec.path, err
-        ))
-      })?;
       update.buffer_adds.push(runtime_buffer);
     }
 
@@ -1220,7 +1212,7 @@ fn chrono_simple_timestamp() -> String {
 struct AudioProcessor {
   /// The DSP patch graph - owned directly, no mutex needed
   patch: Patch,
-  /// Runtime-owned buffer resources keyed by path
+  /// Runtime-owned buffer resources keyed by name
   active_buffers: HashMap<String, RuntimeBuffer>,
   /// Command queue consumer
   command_rx: CommandConsumer,
@@ -1350,10 +1342,10 @@ impl AudioProcessor {
               let _ = self.garbage_tx.push(GarbageItem::Module(module));
             }
           }
-          let buffer_paths: Vec<String> = self.active_buffers.keys().cloned().collect();
-          for path in buffer_paths {
-            self.patch.buffers.remove(&path);
-            if let Some(buffer) = self.active_buffers.remove(&path) {
+          let buffer_names: Vec<String> = self.active_buffers.keys().cloned().collect();
+          for name in buffer_names {
+            self.patch.buffers.remove(&name);
+            if let Some(buffer) = self.active_buffers.remove(&name) {
               let _ = self.garbage_tx.push(GarbageItem::Buffer(buffer));
             }
           }
@@ -1373,7 +1365,7 @@ impl AudioProcessor {
       desired_ids,
       param_updates,
       buffer_adds,
-      desired_buffer_paths,
+      desired_buffer_names,
       scope_adds,
       scope_removes,
       ..
@@ -1437,34 +1429,32 @@ impl AudioProcessor {
     }
 
     for incoming in buffer_adds {
-      let path = incoming.path().to_string();
-      if let Some(existing) = self.active_buffers.get(&path) {
+      let name = incoming.name().to_string();
+      if let Some(existing) = self.active_buffers.get(&name) {
         if existing.same_shape(&incoming) {
           let _ = self.garbage_tx.push(GarbageItem::Buffer(incoming));
           continue;
         }
       }
 
-      if let Some(replaced) = self.active_buffers.remove(&path) {
+      if let Some(replaced) = self.active_buffers.remove(&name) {
         incoming.copy_overlap_from(&replaced);
-        replaced.suppress_flush_on_drop();
         let _ = self.garbage_tx.push(GarbageItem::Buffer(replaced));
       }
 
-      incoming.enable_flush_on_drop();
-      self.patch.buffers.insert(path.clone(), incoming.shared());
-      self.active_buffers.insert(path, incoming);
+      self.patch.buffers.insert(name.clone(), incoming.shared());
+      self.active_buffers.insert(name, incoming);
     }
 
-    let stale_buffer_paths: Vec<String> = self
+    let stale_buffer_names: Vec<String> = self
       .active_buffers
       .keys()
-      .filter(|path| !desired_buffer_paths.contains(*path))
+      .filter(|name| !desired_buffer_names.contains(*name))
       .cloned()
       .collect();
-    for path in stale_buffer_paths {
-      self.patch.buffers.remove(&path);
-      if let Some(buffer) = self.active_buffers.remove(&path) {
+    for name in stale_buffer_names {
+      self.patch.buffers.remove(&name);
+      if let Some(buffer) = self.active_buffers.remove(&name) {
         let _ = self.garbage_tx.push(GarbageItem::Buffer(buffer));
       }
     }
@@ -1472,8 +1462,8 @@ impl AudioProcessor {
     {
       let mut shared_specs = self.buffer_specs.lock();
       shared_specs.clear();
-      for (path, buffer) in &self.active_buffers {
-        shared_specs.insert(path.clone(), buffer.spec().clone());
+      for (name, buffer) in &self.active_buffers {
+        shared_specs.insert(name.clone(), buffer.spec().clone());
       }
     }
 

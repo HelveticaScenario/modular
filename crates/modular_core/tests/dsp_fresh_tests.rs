@@ -276,10 +276,16 @@ fn minimal_params(module_type: &str) -> serde_json::Value {
         "$scaleAndShift" => json!({ "input": 0.0 }),
         "$cheby" | "$fold" | "$segment" => json!({ "input": 0.0, "amount": 0.0 }),
         "$bufWrite" => {
-            json!({ "buffer": { "type": "buffer", "path": "test", "channels": 1, "frameCount": 100 }, "frame": 0.0, "input": 0.0 })
+            json!({ "buffer": { "type": "buffer", "name": "test", "channels": 1, "frameCount": 100 }, "frame": 0.0, "input": 0.0 })
         }
         "$bufRead" => {
-            json!({ "buffer": { "type": "buffer", "path": "test", "channels": 1, "frameCount": 100 }, "frame": 0.0 })
+            json!({ "buffer": { "type": "buffer", "name": "test", "channels": 1, "frameCount": 100 }, "frame": 0.0 })
+        }
+        "$delayWrite" => {
+            json!({ "buffer": { "type": "buffer", "name": "test", "channels": 1, "frameCount": 100 }, "input": 0.0 })
+        }
+        "$delayRead" => {
+            json!({ "buffer": { "type": "buffer", "name": "test", "channels": 1, "frameCount": 100 }, "time": 0.1, "sync": 0.0 })
         }
         "$remap" => {
             json!({ "input": 0.0, "inMin": 0.0, "inMax": 5.0, "outMin": 0.0, "outMax": 5.0 })

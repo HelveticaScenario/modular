@@ -164,20 +164,20 @@ impl Patch {
             crate::types::collect_buffer_specs_in_json_value(&module_state.params, &mut specs);
 
             for spec in specs {
-                match buffer_specs_by_path.get(&spec.path) {
+                match buffer_specs_by_path.get(&spec.name) {
                     Some(existing) if existing.same_shape(&spec) => {}
                     Some(_) => {
                         return Err(format!(
                             "Conflicting Buffer specs found for path '{}'",
-                            spec.path
+                            spec.name
                         ));
                     }
                     None => {
                         patch.buffers.insert(
-                            spec.path.clone(),
+                            spec.name.clone(),
                             Arc::new(BufferData::new_zeroed(spec.channels, spec.frame_count)),
                         );
-                        buffer_specs_by_path.insert(spec.path.clone(), spec);
+                        buffer_specs_by_path.insert(spec.name.clone(), spec);
                     }
                 }
             }

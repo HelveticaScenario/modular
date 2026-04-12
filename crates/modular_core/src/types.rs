@@ -636,15 +636,15 @@ impl BufferData {
 #[serde(rename_all = "camelCase")]
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
 pub struct BufferSpec {
-    pub path: String,
+    pub name: String,
     pub channels: usize,
     pub frame_count: usize,
 }
 
 impl BufferSpec {
-    pub fn new(path: String, channels: usize, frame_count: usize) -> StdResult<Self, String> {
+    pub fn new(name: String, channels: usize, frame_count: usize) -> StdResult<Self, String> {
         let spec = Self {
-            path,
+            name,
             channels,
             frame_count,
         };
@@ -657,8 +657,8 @@ impl BufferSpec {
     }
 
     pub fn validate(&self) -> StdResult<(), String> {
-        if self.path.trim().is_empty() {
-            return Err("Buffer path must not be empty".to_string());
+        if self.name.trim().is_empty() {
+            return Err("Buffer name must not be empty".to_string());
         }
 
         if !(1..=crate::poly::PORT_MAX_CHANNELS).contains(&self.channels) {
@@ -681,7 +681,7 @@ impl BufferSpec {
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 enum BufferSerde {
     Buffer {
-        path: String,
+        name: String,
         channels: usize,
         frame_count: usize,
     },
@@ -692,7 +692,7 @@ enum BufferSerde {
 #[allow(dead_code)]
 enum BufferSchema {
     Buffer {
-        path: String,
+        name: String,
         channels: usize,
         frame_count: usize,
     },
@@ -720,8 +720,8 @@ impl Buffer {
         self.spec
     }
 
-    pub fn path(&self) -> &str {
-        &self.spec.path
+    pub fn name(&self) -> &str {
+        &self.spec.name
     }
 
     pub fn channel_count(&self) -> usize {
@@ -776,10 +776,10 @@ impl<'de> Deserialize<'de> for Buffer {
         let tagged = BufferSerde::deserialize(deserializer)?;
         let spec = match tagged {
             BufferSerde::Buffer {
-                path,
+                name,
                 channels,
                 frame_count,
-            } => BufferSpec::new(path, channels, frame_count).map_err(serde::de::Error::custom)?,
+            } => BufferSpec::new(name, channels, frame_count).map_err(serde::de::Error::custom)?,
         };
         Ok(Buffer::new(spec))
     }
@@ -791,7 +791,7 @@ impl Serialize for Buffer {
         S: serde::Serializer,
     {
         BufferSerde::Buffer {
-            path: self.spec.path.clone(),
+            name: self.spec.name.clone(),
             channels: self.spec.channels,
             frame_count: self.spec.frame_count,
         }
@@ -811,7 +811,7 @@ impl<E: DeserializeError> deserr::Deserr<E> for Buffer {
                     _ => None,
                 });
 
-                let path = map.remove("path").and_then(|v| match v.into_value() {
+                let name = map.remove("name").and_then(|v| match v.into_value() {
                     deserr::Value::String(s) => Some(s),
                     _ => None,
                 });
@@ -828,10 +828,10 @@ impl<E: DeserializeError> deserr::Deserr<E> for Buffer {
 
                 match type_val.as_deref() {
                     Some("buffer") => {
-                        let path = path.ok_or_else(|| {
+                        let name = name.ok_or_else(|| {
                             deserr::take_cf_content(E::error::<V>(
                                 None,
-                                ErrorKind::MissingField { field: "path" },
+                                ErrorKind::MissingField { field: "name" },
                                 location,
                             ))
                         })?;
@@ -849,7 +849,7 @@ impl<E: DeserializeError> deserr::Deserr<E> for Buffer {
                                 location,
                             ))
                         })?;
-                        let spec = BufferSpec::new(path, channels, frame_count).map_err(|msg| {
+                        let spec = BufferSpec::new(name, channels, frame_count).map_err(|msg| {
                             deserr::take_cf_content(E::error::<V>(
                                 None,
                                 ErrorKind::Unexpected { msg },
@@ -895,7 +895,7 @@ impl JsonSchema for Buffer {
 
 impl Connect for Buffer {
     fn connect(&mut self, patch: &Patch) {
-        if let Some(buffer) = patch.buffers.get(&self.spec.path) {
+        if let Some(buffer) = patch.buffers.get(&self.spec.name) {
             self.buffer_ptr = Arc::downgrade(buffer);
         } else {
             self.buffer_ptr = sync::Weak::new();

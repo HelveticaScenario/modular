@@ -298,7 +298,7 @@ pub fn validate_patch(
   // === Schema helpers ===
   // The runtime patch stores parameter values as JSON (`ModuleState.params`), but
   // the authoritative set of valid parameter names/types lives in the module schema.
-  let mut buffer_specs_by_path: HashMap<String, BufferSpec> = HashMap::new();
+  let mut buffer_specs_by_name: HashMap<String, BufferSpec> = HashMap::new();
 
   // === Module validation ===
   // Validate each module instance in the patch.
@@ -353,14 +353,14 @@ pub fn validate_patch(
       let mut buffer_specs = Vec::new();
       modular_core::types::collect_buffer_specs_in_json_value(param_value, &mut buffer_specs);
       for spec in buffer_specs {
-        match buffer_specs_by_path.get(&spec.path) {
+        match buffer_specs_by_name.get(&spec.name) {
           Some(existing) if existing.same_shape(&spec) => {}
           Some(existing) => {
             errors.push(ValidationError {
               field: field.clone(),
               message: format!(
-                "Buffer path '{}' is used with conflicting shapes (existing: {} channels × {} frames, got: {} channels × {} frames)",
-                spec.path,
+                "Buffer '{}' is used with conflicting shapes (existing: {} channels × {} frames, got: {} channels × {} frames)",
+                spec.name,
                 existing.channels,
                 existing.frame_count,
                 spec.channels,
@@ -372,7 +372,7 @@ pub fn validate_patch(
             });
           }
           None => {
-            buffer_specs_by_path.insert(spec.path.clone(), spec);
+            buffer_specs_by_name.insert(spec.name.clone(), spec);
           }
         }
       }
@@ -747,7 +747,7 @@ mod tests {
           params: json!({
               "buffer": {
                 "type": "buffer",
-                "path": "/tmp/shared.wav",
+                "name": "shared",
                 "channels": 1,
                 "frameCount": 48000
               }
@@ -760,7 +760,7 @@ mod tests {
           params: json!({
               "buffer": {
                 "type": "buffer",
-                "path": "/tmp/shared.wav",
+                "name": "shared",
                 "channels": 2,
                 "frameCount": 96000
               }
@@ -789,7 +789,7 @@ mod tests {
           params: json!({
               "buffer": {
                 "type": "buffer",
-                "path": "/tmp/shared.wav",
+                "name": "shared",
                 "channels": 1,
                 "frameCount": 48000
               }
@@ -802,7 +802,7 @@ mod tests {
           params: json!({
               "buffer": {
                 "type": "buffer",
-                "path": "/tmp/shared.wav",
+                "name": "shared",
                 "channels": 1,
                 "frameCount": 48000
               }
