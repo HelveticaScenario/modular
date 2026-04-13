@@ -677,13 +677,12 @@ describe('pipe vs direct call', () => {
 });
 
 describe('$buffer()', () => {
-    test('resolves a workspace tmp path and frame count from sample rate', () => {
+    test('creates a buffer with name and computed frame count', () => {
         expect(() =>
             exec(`
-                const buffer = $buffer('loops/kick', 0.5, 2);
-                const normalizedPath = buffer.path.replace(/\\\\/g, '/');
-                if (!normalizedPath.endsWith('/workspace/tmp/loops/kick.wav')) {
-                    throw new Error(buffer.path);
+                const buffer = $buffer('kick', 0.5, 2);
+                if (buffer.name !== 'kick') {
+                    throw new Error('expected name "kick", got ' + buffer.name);
                 }
                 if (buffer.frameCount !== 24000) {
                     throw new Error(String(buffer.frameCount));
@@ -695,13 +694,24 @@ describe('$buffer()', () => {
         ).not.toThrow();
     });
 
-    test('rejects paths that escape the workspace tmp directory', () => {
+    test('trims whitespace from name', () => {
+        expect(() =>
+            exec(`
+                const buffer = $buffer('  padded  ', 1);
+                if (buffer.name !== 'padded') {
+                    throw new Error('expected trimmed name, got "' + buffer.name + '"');
+                }
+            `),
+        ).not.toThrow();
+    });
+
+    test('rejects empty name', () => {
         expect(() =>
             executePatchScript(
-                '$buffer("../escape", 1)',
+                '$buffer("", 1)',
                 schemas,
                 DEFAULT_EXECUTION_OPTIONS,
             ),
-        ).toThrow(/workspace tmp directory/);
+        ).toThrow(/name must be a non-empty string/);
     });
 });

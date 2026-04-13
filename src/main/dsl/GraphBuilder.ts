@@ -49,7 +49,7 @@ export type Signal = number | string | ModuleOutput;
 export type PolySignal = OrArray<Signal> | Iterable<ModuleOutput>;
 export type Buffer = {
     type: 'buffer';
-    path: string;
+    name: string;
     channels: number;
     frameCount: number;
 };

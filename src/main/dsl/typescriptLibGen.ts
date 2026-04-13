@@ -299,14 +299,15 @@ type Poly<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
 type Mono<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
 
 /**
- * A workspace-backed audio buffer resource shared across modules.
+ * A named audio buffer resource shared across modules.
  *
- * Buffers are stored on disk as WAV files inside the current workspace's
- * \`tmp\` directory and exposed to modules as mutable channel × frame arrays.
+ * Buffers are mutable channel × frame arrays stored in memory.
+ * Buffers with the same name share data across modules and survive
+ * patch re-evaluations when the name and shape remain the same.
  */
 type Buffer = {
   readonly type: "buffer";
-  readonly path: string;
+  readonly name: string;
   readonly channels: number;
   readonly frameCount: number;
 };
@@ -1332,11 +1333,9 @@ export function generateDSL(schemas: Schemas): string {
     }
 
     lines.push('');
+    lines.push('/** Create or reuse a named in-memory audio buffer. */');
     lines.push(
-        '/** Create or reuse a workspace-backed WAV buffer in the current workspace tmp directory. */',
-    );
-    lines.push(
-        'export function $buffer(path: string, lengthSeconds: number, channels?: number): Buffer;',
+        'export function $buffer(name: string, lengthSeconds: number, channels?: number): Buffer;',
     );
 
     return lines.join('\n') + '\n';

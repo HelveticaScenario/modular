@@ -4143,7 +4143,7 @@
                   "format": "uint",
                   "minimum": 0
                 },
-                "path": {
+                "name": {
                   "type": "string"
                 },
                 "type": {
@@ -4153,7 +4153,7 @@
               },
               "required": [
                 "type",
-                "path",
+                "name",
                 "channels",
                 "frameCount"
               ]
@@ -4286,7 +4286,7 @@
                   "format": "uint",
                   "minimum": 0
                 },
-                "path": {
+                "name": {
                   "type": "string"
                 },
                 "type": {
@@ -4296,7 +4296,7 @@
               },
               "required": [
                 "type",
-                "path",
+                "name",
                 "channels",
                 "frameCount"
               ]
@@ -4837,7 +4837,7 @@
                   "format": "uint",
                   "minimum": 0
                 },
-                "path": {
+                "name": {
                   "type": "string"
                 },
                 "type": {
@@ -4847,7 +4847,7 @@
               },
               "required": [
                 "type",
-                "path",
+                "name",
                 "channels",
                 "frameCount"
               ]
@@ -4986,7 +4986,7 @@
                   "format": "uint",
                   "minimum": 0
                 },
-                "path": {
+                "name": {
                   "type": "string"
                 },
                 "type": {
@@ -4996,7 +4996,7 @@
               },
               "required": [
                 "type",
-                "path",
+                "name",
                 "channels",
                 "frameCount"
               ]

@@ -335,7 +335,7 @@ export function useEditorBuffers({
                 throw new Error(result.error || 'Failed to rename file');
             }
         },
-        [activeBufferId, buffers, refreshFileTree],
+        [activeBufferId, refreshFileTree],
     );
 
     const deleteFile = useCallback(
@@ -395,7 +395,8 @@ export function useEditorBuffers({
                     );
                     activeIsDeleted =
                         activeBufferId !== undefined &&
-                        ((bufferId !== undefined && activeBufferId === bufferId) ||
+                        ((bufferId !== undefined &&
+                            activeBufferId === bufferId) ||
                             (currentActiveBuffer?.kind === 'file' &&
                                 currentActiveBuffer.filePath === filePath));
 

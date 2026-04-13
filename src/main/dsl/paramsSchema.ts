@@ -338,8 +338,8 @@ function isBufferParamSchema(root: JsonSchema, schema: JsonSchema): boolean {
     const typeSchema = resolved.properties?.type
         ? resolveAndMerge(root, resolved.properties.type)
         : null;
-    const pathSchema = resolved.properties?.path
-        ? resolveAndMerge(root, resolved.properties.path)
+    const nameSchema = resolved.properties?.name
+        ? resolveAndMerge(root, resolved.properties.name)
         : null;
     const channelsSchema = resolved.properties?.channels
         ? resolveAndMerge(root, resolved.properties.channels)
@@ -350,7 +350,7 @@ function isBufferParamSchema(root: JsonSchema, schema: JsonSchema): boolean {
 
     return (
         extractTypeTag(typeSchema ?? {}) === 'buffer' &&
-        pathSchema?.type === 'string' &&
+        nameSchema?.type === 'string' &&
         (channelsSchema?.type === 'integer' ||
             channelsSchema?.type === 'number') &&
         (frameCountSchema?.type === 'integer' ||

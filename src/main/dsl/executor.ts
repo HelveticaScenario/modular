@@ -1,4 +1,3 @@
-import path from 'node:path';
 import type { ModuleSchema, PatchGraph } from '@modular/core';
 import {
     DSLContext,
@@ -85,7 +84,6 @@ export function executePatchScript(
     // Console.log('Executing DSL script with schemas:', schemas);
     const context = new DSLContext(schemas);
     const sampleRate = options.sampleRate ?? 48_000;
-    const workspaceRoot = options.workspaceRoot ?? null;
 
     // Create the execution environment with all DSL functions
     // Remove _clock from user-facing namespace (it's internal, used only for ROOT_CLOCK)
@@ -171,15 +169,12 @@ export function executePatchScript(
     };
 
     const $buffer = (
-        bufferPath: string,
+        name: string,
         lengthSeconds: number,
         channels: number = 1,
     ): Buffer => {
-        if (typeof bufferPath !== 'string' || bufferPath.trim().length === 0) {
-            throw new Error('$buffer() path must be a non-empty string');
-        }
-        if (path.isAbsolute(bufferPath)) {
-            throw new Error('$buffer() path must be workspace-relative');
+        if (typeof name !== 'string' || name.trim().length === 0) {
+            throw new Error('$buffer() name must be a non-empty string');
         }
         if (
             typeof lengthSeconds !== 'number' ||
@@ -197,30 +192,12 @@ export function executePatchScript(
                 `$buffer() channels must be an integer between 1 and 16, got ${channels}`,
             );
         }
-        if (!workspaceRoot) {
-            throw new Error('$buffer() requires an open workspace');
-        }
-
-        const trimmedPath = bufferPath.trim();
-        const normalizedPath = path.extname(trimmedPath)
-            ? trimmedPath
-            : `${trimmedPath}.wav`;
-        const tmpRoot = path.resolve(workspaceRoot, 'tmp');
-        const resolvedPath = path.resolve(tmpRoot, normalizedPath);
-        if (
-            resolvedPath !== tmpRoot &&
-            !resolvedPath.startsWith(`${tmpRoot}${path.sep}`)
-        ) {
-            throw new Error(
-                '$buffer() path must stay within the workspace tmp directory',
-            );
-        }
 
         const frameCount = Math.max(1, Math.ceil(lengthSeconds * sampleRate));
         return {
             channels,
             frameCount,
-            path: resolvedPath,
+            name: name.trim(),
             type: 'buffer',
         };
     };
