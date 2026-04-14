@@ -55,14 +55,12 @@ impl Sampleable for DummySampleable {
         &self.module_type
     }
 
-    fn apply_deserialized_params(
-        &self,
-        _deserialized: modular_core::params::DeserializedParams,
-    ) -> Result<()> {
-        Ok(())
-    }
     fn connect(&self, _patch: &Patch) {
         println!("Connecting DummySampleable {}", self.id);
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

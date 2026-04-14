@@ -1,7 +1,6 @@
 #![deny(clippy::all)]
 
 mod audio;
-mod buffer;
 mod commands;
 mod midi;
 mod params_cache;
@@ -640,8 +639,8 @@ impl Synthesizer {
     }
   }
 
-  /// Lightweight single-module param update. Bypasses full patch rebuild —
-  /// only for modules already in the patch.
+  /// Lightweight single-module param update. Constructs a new module on the main
+  /// thread and sends it to the audio thread for state-transfer + replacement.
   #[napi]
   pub fn set_module_param(
     &self,
@@ -656,9 +655,22 @@ impl Synthesizer {
         module_type, e
       ))
     })?;
-    self.state.send_command(GraphCommand::SingleParamUpdate {
+
+    // Construct the module on the main thread
+    let constructors = modular_core::dsp::get_constructors();
+    let constructor = constructors.get(&module_type).ok_or_else(|| {
+      napi::Error::from_reason(format!("Unknown module type: {}", module_type))
+    })?;
+    let module = constructor(&module_id, self.sample_rate, deserialized).map_err(|e| {
+      napi::Error::from_reason(format!(
+        "Failed to create module {}: {}",
+        module_id, e
+      ))
+    })?;
+
+    self.state.send_command(GraphCommand::SingleModuleUpdate {
       module_id,
-      params: deserialized,
+      module,
     })
   }
 

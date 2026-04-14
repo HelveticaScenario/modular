@@ -35,19 +35,16 @@ impl Sampleable for AudioIn {
         WellKnownModule::HiddenAudioIn.id()
     }
 
-    fn apply_deserialized_params(
-        &self,
-        _deserialized: crate::params::DeserializedParams,
-    ) -> Result<()> {
-        Ok(())
-    }
-
     fn connect(&self, _patch: &crate::Patch) {}
 
     fn on_patch_update(&self) {}
 
     fn get_state(&self) -> Option<serde_json::Value> {
         None
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

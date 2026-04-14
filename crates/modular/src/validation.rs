@@ -1,6 +1,6 @@
 use modular_core::params::ARGUMENT_SPANS_KEY;
 use modular_core::types::{
-  BufferSpec, ModuleSchema, ModuleState, PatchGraph, Signal, WellKnownModule,
+  ModuleSchema, ModuleState, PatchGraph, Signal, WellKnownModule,
 };
 use napi_derive::napi;
 use schemars::Schema;
@@ -241,6 +241,28 @@ fn validate_signals_in_json_value(
     return;
   }
 
+  // Validate buffer_ref targets: the referenced module must exist in the patch.
+  if let Some(obj) = value.as_object()
+    && let Some(tag) = obj.get("type").and_then(|v| v.as_str())
+    && tag == "buffer_ref"
+  {
+    if let Some(module_id) = obj.get("module").and_then(|v| v.as_str()) {
+      if !module_by_id.contains_key(module_id) {
+        errors.push(ValidationError {
+          field: field.to_string(),
+          message: format!(
+            "buffer_ref references module '{}' which does not exist in the patch",
+            module_id
+          ),
+          location: Some(location.to_string()),
+          expected_type: None,
+          actual_value: None,
+        });
+      }
+    }
+    return;
+  }
+
   match value {
     serde_json::Value::Array(arr) => {
       for v in arr {
@@ -298,7 +320,6 @@ pub fn validate_patch(
   // === Schema helpers ===
   // The runtime patch stores parameter values as JSON (`ModuleState.params`), but
   // the authoritative set of valid parameter names/types lives in the module schema.
-  let mut buffer_specs_by_name: HashMap<String, BufferSpec> = HashMap::new();
 
   // === Module validation ===
   // Validate each module instance in the patch.
@@ -350,32 +371,6 @@ pub fn validate_patch(
       }
 
       let field = format!("params.{}", param_name);
-      let mut buffer_specs = Vec::new();
-      modular_core::types::collect_buffer_specs_in_json_value(param_value, &mut buffer_specs);
-      for spec in buffer_specs {
-        match buffer_specs_by_name.get(&spec.name) {
-          Some(existing) if existing.same_shape(&spec) => {}
-          Some(existing) => {
-            errors.push(ValidationError {
-              field: field.clone(),
-              message: format!(
-                "Buffer '{}' is used with conflicting shapes (existing: {} channels × {} frames, got: {} channels × {} frames)",
-                spec.name,
-                existing.channels,
-                existing.frame_count,
-                spec.channels,
-                spec.frame_count
-              ),
-              location: Some(location_str.clone()),
-              expected_type: None,
-              actual_value: Some(truncate_json(param_value)),
-            });
-          }
-          None => {
-            buffer_specs_by_name.insert(spec.name.clone(), spec);
-          }
-        }
-      }
 
       // Skip unknown param names — deserr now handles this via deny_unknown_fields.
       let Some(param_schema_node) = param_schemas.get(param_name) else {
@@ -735,84 +730,4 @@ mod tests {
     assert!(validate_patch(&patch, &schemas).is_ok());
   }
 
-  #[test]
-  fn test_buffer_path_conflict_is_rejected() {
-    let schemas = schemas();
-    let patch = PatchGraph {
-      modules: vec![
-        ModuleState {
-          id: "one".to_string(),
-          module_type: "$noise".to_string(),
-          id_is_explicit: None,
-          params: json!({
-              "buffer": {
-                "type": "buffer",
-                "name": "shared",
-                "channels": 1,
-                "frameCount": 48000
-              }
-          }),
-        },
-        ModuleState {
-          id: "two".to_string(),
-          module_type: "$noise".to_string(),
-          id_is_explicit: None,
-          params: json!({
-              "buffer": {
-                "type": "buffer",
-                "name": "shared",
-                "channels": 2,
-                "frameCount": 96000
-              }
-          }),
-        },
-      ],
-      module_id_remaps: None,
-      scopes: vec![],
-    };
-
-    let result = validate_patch(&patch, &schemas);
-    assert!(result.is_err());
-    let errors = result.unwrap_err();
-    assert!(errors.iter().any(|error| error.message.contains("conflicting shapes")));
-  }
-
-  #[test]
-  fn test_buffer_path_shared_shape_is_allowed() {
-    let schemas = schemas();
-    let patch = PatchGraph {
-      modules: vec![
-        ModuleState {
-          id: "one".to_string(),
-          module_type: "$noise".to_string(),
-          id_is_explicit: None,
-          params: json!({
-              "buffer": {
-                "type": "buffer",
-                "name": "shared",
-                "channels": 1,
-                "frameCount": 48000
-              }
-          }),
-        },
-        ModuleState {
-          id: "two".to_string(),
-          module_type: "$noise".to_string(),
-          id_is_explicit: None,
-          params: json!({
-              "buffer": {
-                "type": "buffer",
-                "name": "shared",
-                "channels": 1,
-                "frameCount": 48000
-              }
-          }),
-        },
-      ],
-      module_id_remaps: None,
-      scopes: vec![],
-    };
-
-    assert!(validate_patch(&patch, &schemas).is_ok());
-  }
 }

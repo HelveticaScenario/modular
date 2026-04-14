@@ -1,13 +1,15 @@
 import type { ModuleSchema, PatchGraph } from '@modular/core';
+import { deriveChannelCount } from '@modular/core';
 import {
     DSLContext,
     hz,
     note,
     setActiveSpanRegistry,
     setDSLWrapperLineOffset,
+    captureSourceLocation,
 } from './factories';
 import type {
-    Buffer,
+    BufferOutputRef,
     Signal,
     SourceLocation,
     Collection,
@@ -21,6 +23,7 @@ import {
     DeferredModuleOutput,
     DeferredCollection,
     Bus,
+    replaceSignals,
 } from './GraphBuilder';
 import { analyzeSourceSpans } from './analyzeSource';
 import type { CallSiteSpanRegistry } from './analyzeSource';
@@ -169,13 +172,10 @@ export function executePatchScript(
     };
 
     const $buffer = (
-        name: string,
+        input: ModuleOutput | Collection | number,
         lengthSeconds: number,
-        channels: number = 1,
-    ): Buffer => {
-        if (typeof name !== 'string' || name.trim().length === 0) {
-            throw new Error('$buffer() name must be a non-empty string');
-        }
+        config?: { id?: string },
+    ): BufferOutputRef => {
         if (
             typeof lengthSeconds !== 'number' ||
             !Number.isFinite(lengthSeconds)
@@ -187,18 +187,46 @@ export function executePatchScript(
                 `$buffer() lengthSeconds must be greater than 0, got ${lengthSeconds}`,
             );
         }
-        if (!Number.isInteger(channels) || channels < 1 || channels > 16) {
-            throw new Error(
-                `$buffer() channels must be an integer between 1 and 16, got ${channels}`,
-            );
+
+        const sourceLocation = captureSourceLocation();
+
+        // Create a $buffer module in the graph
+        const node = builder.addModule('$buffer', config?.id, sourceLocation);
+
+        // Resolve the input signal and set params
+        const resolvedInput = replaceSignals(input);
+        node._setParam('input', resolvedInput);
+        node._setParam('length', lengthSeconds);
+
+        // Derive channel count from the input signal
+        const deriveResult = deriveChannelCount(
+            '$buffer',
+            node.getParamsSnapshot(),
+        );
+
+        if (deriveResult.errors && deriveResult.errors.length > 0) {
+            const messages = deriveResult.errors
+                .map((e: { message: string }) => e.message)
+                .join('; ');
+            const loc = sourceLocation ? ` at line ${sourceLocation.line}` : '';
+            throw new Error(`$buffer${loc}: ${messages}`);
+        }
+
+        const channels =
+            deriveResult.channelCount != null ? deriveResult.channelCount : 1;
+
+        if (deriveResult.channelCount != null) {
+            node._setDerivedChannelCount(deriveResult.channelCount);
         }
 
         const frameCount = Math.max(1, Math.ceil(lengthSeconds * sampleRate));
+
         return {
+            type: 'buffer_ref',
+            module: node.id,
+            port: 'buffer',
             channels,
             frameCount,
-            name: name.trim(),
-            type: 'buffer',
         };
     };
 

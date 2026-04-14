@@ -5,12 +5,10 @@
 
 use std::sync::Arc;
 
-use modular_core::params::DeserializedParams;
 use modular_core::types::{Message, ModuleIdRemap, Sampleable, ScopeBufferKey};
 use napi_derive::napi;
 
 use crate::audio::ScopeBuffer;
-use crate::buffer::RuntimeBuffer;
 
 /// When a queued patch update should be applied.
 #[napi(string_enum)]
@@ -41,15 +39,6 @@ pub struct PatchUpdate {
   /// ID remappings (applied before inserts/deletes)
   pub remaps: Vec<ModuleIdRemap>,
 
-  /// Pre-deserialized param updates for existing modules (module_id, deserialized_params)
-  pub param_updates: Vec<(String, DeserializedParams)>,
-
-  /// Buffer resources to add or replace (constructed on main thread)
-  pub buffer_adds: Vec<RuntimeBuffer>,
-
-  /// Set of desired buffer names after this update is applied.
-  pub desired_buffer_names: std::collections::HashSet<String>,
-
   /// Pre-built scope buffers to add (constructed on main thread)
   pub scope_adds: Vec<(ScopeBufferKey, ScopeBuffer)>,
 
@@ -68,9 +57,6 @@ impl PatchUpdate {
       inserts: Vec::new(),
       desired_ids: std::collections::HashSet::new(),
       remaps: Vec::new(),
-      param_updates: Vec::new(),
-      buffer_adds: Vec::new(),
-      desired_buffer_names: std::collections::HashSet::new(),
       scope_adds: Vec::new(),
       scope_removes: Vec::new(),
       sample_rate,
@@ -82,9 +68,6 @@ impl PatchUpdate {
     self.inserts.is_empty()
       && self.desired_ids.is_empty()
       && self.remaps.is_empty()
-      && self.param_updates.is_empty()
-      && self.buffer_adds.is_empty()
-      && self.desired_buffer_names.is_empty()
       && self.scope_adds.is_empty()
       && self.scope_removes.is_empty()
   }
@@ -100,11 +83,12 @@ pub enum GraphCommand {
     trigger: QueuedTrigger,
   },
 
-  /// Lightweight param-only update for a single module (e.g., slider changes).
-  /// Skips insert/retain/remap/scope/connect logic — only calls apply_deserialized_params.
-  SingleParamUpdate {
+  /// Lightweight single-module update (e.g., slider changes).
+  /// The module is pre-constructed on the main thread; the audio thread
+  /// does state transfer + replacement, then reconnects.
+  SingleModuleUpdate {
     module_id: String,
-    params: DeserializedParams,
+    module: Arc<Box<dyn Sampleable>>,
   },
 
   /// MIDI/control messages (can be sent individually)
@@ -170,8 +154,6 @@ pub const ERROR_QUEUE_CAPACITY: usize = 256;
 pub enum GarbageItem {
   /// A module removed from the patch
   Module(Arc<Box<dyn Sampleable>>),
-  /// A buffer resource removed from the patch
-  Buffer(RuntimeBuffer),
   /// A scope buffer removed from the collection
   Scope(ScopeBuffer),
   /// A queued patch update that was superseded by a newer update before it fired

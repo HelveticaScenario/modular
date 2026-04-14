@@ -173,14 +173,14 @@ describe('getEnumVariants', () => {
         ]);
     });
 
-    test('schemaToTypeExpr resolves Buffer refs to Buffer', () => {
+    test('schemaToTypeExpr resolves Buffer refs to BufferOutputRef', () => {
         const rootSchema = {
             $defs: {
                 Buffer: { title: 'Buffer' },
             },
         };
         expect(schemaToTypeExpr({ $ref: '#/$defs/Buffer' }, rootSchema)).toBe(
-            'Buffer',
+            'BufferOutputRef',
         );
     });
 });

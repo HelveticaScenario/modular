@@ -299,15 +299,13 @@ type Poly<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
 type Mono<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
 
 /**
- * A named audio buffer resource shared across modules.
- *
- * Buffers are mutable channel × frame arrays stored in memory.
- * Buffers with the same name share data across modules and survive
- * patch re-evaluations when the name and shape remain the same.
+ * A buffer output reference — returned by \`$buffer()\`, passed to readers
+ * (like \`$bufRead\`, \`$delayRead\`) as their \`buffer\` param.
  */
-type Buffer = {
-  readonly type: "buffer";
-  readonly name: string;
+type BufferOutputRef = {
+  readonly type: "buffer_ref";
+  readonly module: string;
+  readonly port: string;
   readonly channels: number;
   readonly frameCount: number;
 };
@@ -1302,8 +1300,10 @@ function renderTree(node: NamespaceNode, indentLevel: number = 0): string[] {
 }
 
 export function generateDSL(schemas: Schemas): string {
-    // Filter out _clock from user-facing type declarations (it's internal only)
-    const userFacingSchemas = schemas.filter((s) => s.name !== '_clock');
+    // Filter out _clock (internal only) and $buffer (has a custom declaration below)
+    const userFacingSchemas = schemas.filter(
+        (s) => s.name !== '_clock' && s.name !== '$buffer',
+    );
     const tree = buildTreeFromSchemas(userFacingSchemas);
     const lines = renderTree(tree, 0);
 
@@ -1333,9 +1333,11 @@ export function generateDSL(schemas: Schemas): string {
     }
 
     lines.push('');
-    lines.push('/** Create or reuse a named in-memory audio buffer. */');
     lines.push(
-        'export function $buffer(name: string, lengthSeconds: number, channels?: number): Buffer;',
+        '/** Create a buffer module that captures an input signal into a circular audio buffer. */',
+    );
+    lines.push(
+        'export function $buffer(input: ModuleOutput | Collection | number, lengthSeconds: number, config?: { id?: string }): BufferOutputRef;',
     );
 
     return lines.join('\n') + '\n';

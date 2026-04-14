@@ -275,17 +275,14 @@ fn minimal_params(module_type: &str) -> serde_json::Value {
         "$signal" => json!({ "source": 0.0 }),
         "$scaleAndShift" => json!({ "input": 0.0 }),
         "$cheby" | "$fold" | "$segment" => json!({ "input": 0.0, "amount": 0.0 }),
-        "$bufWrite" => {
-            json!({ "buffer": { "type": "buffer", "name": "test", "channels": 1, "frameCount": 100 }, "frame": 0.0, "input": 0.0 })
+        "$buffer" => {
+            json!({ "input": 0.0 })
         }
         "$bufRead" => {
-            json!({ "buffer": { "type": "buffer", "name": "test", "channels": 1, "frameCount": 100 }, "frame": 0.0 })
-        }
-        "$delayWrite" => {
-            json!({ "buffer": { "type": "buffer", "name": "test", "channels": 1, "frameCount": 100 }, "input": 0.0 })
+            json!({ "buffer": { "type": "buffer_ref", "module": "test-module", "port": "buffer", "channels": 1 }, "frame": 0.0 })
         }
         "$delayRead" => {
-            json!({ "buffer": { "type": "buffer", "name": "test", "channels": 1, "frameCount": 100 }, "time": 0.1, "sync": 0.0 })
+            json!({ "buffer": { "type": "buffer_ref", "module": "test-module", "port": "buffer", "channels": 1 }, "time": 0.1 })
         }
         "$remap" => {
             json!({ "input": 0.0, "inMin": 0.0, "inMax": 5.0, "outMin": 0.0, "outMax": 5.0 })
@@ -733,5 +730,110 @@ fn curve_exp_zero_step_function() {
     assert!(
         approx_eq(sample, 5.0, 0.1),
         "exp=0 nonzero input should → 5V, got {sample}"
+    );
+}
+
+// ─── Buffer + DelayRead pipeline ─────────────────────────────────────────────
+
+#[test]
+fn buffer_and_delay_read_pipeline() {
+    // Feed a constant signal into $buffer, then read it back via $delayRead.
+    // After the buffer fills past the delay time, every position holds the same
+    // constant value, so the delayed read should converge to that value.
+    //
+    // Signal chain: $scaleAndShift(input=2, scale=5, shift=0) → $buffer → $delayRead
+    // scale=5.0 means 1× gain, so output = 2.0 * 1.0 + 0.0 = 2.0
+    let graph = make_graph(vec![
+        (
+            "sig",
+            "$scaleAndShift",
+            json!({ "input": 2.0, "scale": 5.0, "shift": 0.0 }),
+        ),
+        (
+            "buf",
+            "$buffer",
+            json!({
+                "input": { "type": "cable", "module": "sig", "port": "output", "channel": 0 },
+                "length": 0.1
+            }),
+        ),
+        (
+            "delay",
+            "$delayRead",
+            json!({
+                "buffer": { "type": "buffer_ref", "module": "buf", "port": "buffer", "channels": 1 },
+                "time": 0.001
+            }),
+        ),
+    ]);
+    let patch = Patch::from_graph(&graph, SAMPLE_RATE).expect("from_graph failed");
+
+    // 0.001s delay at 48 kHz = 48 frames.
+    // Process 500 frames so param smoothing converges and the buffer is well-filled.
+    for _ in 0..500 {
+        process_frame(&patch);
+    }
+
+    let delay_module = patch.sampleables.get("delay").unwrap();
+    let sample = delay_module.get_poly_sample(DEFAULT_PORT).unwrap().get(0);
+
+    assert!(
+        (sample - 2.0).abs() < 0.1,
+        "delay read should output ~2.0 (constant input after filling), got {sample}"
+    );
+}
+
+#[test]
+fn delay_read_output_lags_behind_buffer_passthrough() {
+    // Use a ramp signal (via $saw at a moderate frequency) as input to $buffer.
+    // Compare the $buffer passthrough output to the $delayRead output.
+    // Because $delayRead reads with a time offset, the two should differ on a
+    // frame-by-frame basis when the input is changing.
+    let graph = make_graph(vec![
+        ("osc", "$saw", json!({ "freq": 0.0 })), // C4 ≈ 261 Hz — changes quickly
+        (
+            "buf",
+            "$buffer",
+            json!({
+                "input": { "type": "cable", "module": "osc", "port": "output", "channel": 0 },
+                "length": 0.1
+            }),
+        ),
+        (
+            "delay",
+            "$delayRead",
+            json!({
+                "buffer": { "type": "buffer_ref", "module": "buf", "port": "buffer", "channels": 1 },
+                "time": 0.005
+            }),
+        ),
+    ]);
+    let patch = Patch::from_graph(&graph, SAMPLE_RATE).expect("from_graph failed");
+
+    // Let oscillator and buffer settle for 500 frames
+    for _ in 0..500 {
+        process_frame(&patch);
+    }
+
+    let buf_module = patch.sampleables.get("buf").unwrap();
+    let delay_module = patch.sampleables.get("delay").unwrap();
+
+    // Collect samples from both and count how many differ
+    let mut differences = 0;
+    let sample_count = 500;
+    for _ in 0..sample_count {
+        process_frame(&patch);
+        let buf_sample = buf_module.get_poly_sample(DEFAULT_PORT).unwrap().get(0);
+        let delay_sample = delay_module.get_poly_sample(DEFAULT_PORT).unwrap().get(0);
+        if (buf_sample - delay_sample).abs() > 0.01 {
+            differences += 1;
+        }
+    }
+
+    // With a fast-changing signal and 0.005s delay (240 frames at 48kHz),
+    // the delayed output should differ from the passthrough on most frames.
+    assert!(
+        differences > sample_count / 2,
+        "delay read should lag behind buffer passthrough — only {differences}/{sample_count} samples differed"
     );
 }

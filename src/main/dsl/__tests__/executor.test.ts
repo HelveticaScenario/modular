@@ -449,16 +449,10 @@ describe('utilities', () => {
 
     test('$bufRead', () => {
         const patch = execPatch(
-            'const buffer = $buffer("loops/read-test", 0.25, 2)\n$bufRead(buffer, 0).out()',
+            'const buf = $buffer($sine("C4"), 0.25)\n$bufRead(buf, 0).out()',
         );
         expect(findModules(patch, '$bufRead').length).toBe(1);
-    });
-
-    test('$bufWrite', () => {
-        const patch = execPatch(
-            'const buffer = $buffer("loops/write-test", 0.25, 2)\n$bufWrite(buffer, 0, $sine("C4")).out()',
-        );
-        expect(findModules(patch, '$bufWrite').length).toBe(1);
+        expect(findModules(patch, '$buffer').length).toBe(1);
     });
 });
 
@@ -677,41 +671,82 @@ describe('pipe vs direct call', () => {
 });
 
 describe('$buffer()', () => {
-    test('creates a buffer with name and computed frame count', () => {
+    test('creates a buffer module and returns a buffer_ref', () => {
         expect(() =>
             exec(`
-                const buffer = $buffer('kick', 0.5, 2);
-                if (buffer.name !== 'kick') {
-                    throw new Error('expected name "kick", got ' + buffer.name);
+                const buf = $buffer($sine("C4"), 0.5);
+                if (buf.type !== 'buffer_ref') {
+                    throw new Error('expected type "buffer_ref", got ' + buf.type);
                 }
-                if (buffer.frameCount !== 24000) {
-                    throw new Error(String(buffer.frameCount));
+                if (buf.frameCount !== 24000) {
+                    throw new Error('expected frameCount 24000, got ' + String(buf.frameCount));
                 }
-                if (buffer.channels !== 2) {
-                    throw new Error(String(buffer.channels));
+                if (buf.port !== 'buffer') {
+                    throw new Error('expected port "buffer", got ' + buf.port);
                 }
             `),
         ).not.toThrow();
     });
 
-    test('trims whitespace from name', () => {
-        expect(() =>
-            exec(`
-                const buffer = $buffer('  padded  ', 1);
-                if (buffer.name !== 'padded') {
-                    throw new Error('expected trimmed name, got "' + buffer.name + '"');
-                }
-            `),
-        ).not.toThrow();
+    test('creates $buffer module in the patch graph', () => {
+        const patch = execPatch(
+            'const buf = $buffer($sine("C4"), 1)\n$bufRead(buf, 0).out()',
+        );
+        expect(findModules(patch, '$buffer').length).toBe(1);
     });
 
-    test('rejects empty name', () => {
+    test('rejects non-positive lengthSeconds', () => {
         expect(() =>
             executePatchScript(
-                '$buffer("", 1)',
+                '$buffer($sine("C4"), 0)',
                 schemas,
                 DEFAULT_EXECUTION_OPTIONS,
             ),
-        ).toThrow(/name must be a non-empty string/);
+        ).toThrow(/lengthSeconds must be greater than 0/);
+    });
+
+    test('passes config.id to the $buffer module', () => {
+        const patch = execPatch(
+            'const buf = $buffer($sine("C4"), 0.5, { id: "myBuf" })\n$bufRead(buf, 0).out()',
+        );
+        const buffers = findModules(patch, '$buffer');
+        expect(buffers.length).toBe(1);
+        expect(buffers[0].id).toBe('myBuf');
+    });
+
+    test('handles polyphonic input', () => {
+        const patch = execPatch(
+            'const buf = $buffer($sine(["C4", "E4"]), 0.5)\n$bufRead(buf, 0).out()',
+        );
+        expect(findModules(patch, '$buffer').length).toBe(1);
+        expect(findModules(patch, '$bufRead').length).toBe(1);
+    });
+
+    test('rejects NaN lengthSeconds', () => {
+        expect(() => execPatch('$buffer($sine("C4"), NaN)')).toThrow(
+            /lengthSeconds must be a finite number/,
+        );
+    });
+
+    test('rejects Infinity lengthSeconds', () => {
+        expect(() => execPatch('$buffer($sine("C4"), Infinity)')).toThrow(
+            /lengthSeconds must be a finite number/,
+        );
+    });
+
+    test('$buffer with $delayRead creates both modules', () => {
+        const patch = execPatch(
+            'const buf = $buffer($sine("C4"), 0.5)\n$delayRead(buf, 0.1).out()',
+        );
+        expect(findModules(patch, '$buffer').length).toBe(1);
+        expect(findModules(patch, '$delayRead').length).toBe(1);
+    });
+
+    test('sets length param on the $buffer module', () => {
+        const patch = execPatch(
+            'const buf = $buffer($sine("C4"), 0.25)\n$bufRead(buf, 0).out()',
+        );
+        const buffers = findModules(patch, '$buffer');
+        expect(buffers[0].params.length).toBe(0.25);
     });
 });

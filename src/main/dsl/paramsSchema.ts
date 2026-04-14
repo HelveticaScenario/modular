@@ -335,26 +335,26 @@ function isBufferParamSchema(root: JsonSchema, schema: JsonSchema): boolean {
         return false;
     }
 
+    // Heuristic: check for the buffer_ref shape { type: "buffer_ref", module, port, channels }
     const typeSchema = resolved.properties?.type
         ? resolveAndMerge(root, resolved.properties.type)
         : null;
-    const nameSchema = resolved.properties?.name
-        ? resolveAndMerge(root, resolved.properties.name)
+    const moduleSchema = resolved.properties?.module
+        ? resolveAndMerge(root, resolved.properties.module)
+        : null;
+    const portSchema = resolved.properties?.port
+        ? resolveAndMerge(root, resolved.properties.port)
         : null;
     const channelsSchema = resolved.properties?.channels
         ? resolveAndMerge(root, resolved.properties.channels)
         : null;
-    const frameCountSchema = resolved.properties?.frameCount
-        ? resolveAndMerge(root, resolved.properties.frameCount)
-        : null;
 
     return (
-        extractTypeTag(typeSchema ?? {}) === 'buffer' &&
-        nameSchema?.type === 'string' &&
+        extractTypeTag(typeSchema ?? {}) === 'buffer_ref' &&
+        moduleSchema?.type === 'string' &&
+        portSchema?.type === 'string' &&
         (channelsSchema?.type === 'integer' ||
-            channelsSchema?.type === 'number') &&
-        (frameCountSchema?.type === 'integer' ||
-            frameCountSchema?.type === 'number')
+            channelsSchema?.type === 'number')
     );
 }
 

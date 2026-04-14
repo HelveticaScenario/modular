@@ -277,7 +277,7 @@ export function schemaToTypeExpr(
             return 'Mono<Signal>';
         }
         if (resolved === 'Buffer') {
-            return 'Buffer';
+            return 'BufferOutputRef';
         }
         return schemaToTypeExpr(resolved, rootSchema);
     }

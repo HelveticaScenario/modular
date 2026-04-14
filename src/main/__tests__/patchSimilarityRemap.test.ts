@@ -235,4 +235,275 @@ describe('reconcilePatchBySimilarity', () => {
         expect(moduleIdRemap[`a${N - 1}`]).toBe(`s${perm(N - 1)}`);
         expect(moduleIdRemap[`ga${N - 1}`]).toBe(`g${perm(N - 1)}`);
     });
+
+    describe('buffer_ref support', () => {
+        test('matches modules connected via buffer_ref when ids differ', () => {
+            const current = graph({
+                modules: [
+                    {
+                        id: 'buf-1',
+                        moduleType: '$buffer',
+                        params: { input: 0.0, length: 0.5 },
+                    },
+                    {
+                        id: 'delay-1',
+                        moduleType: '$delayRead',
+                        params: {
+                            buffer: {
+                                type: 'buffer_ref',
+                                module: 'buf-1',
+                                port: 'buffer',
+                                channels: 1,
+                                frameCount: 24000,
+                            },
+                            time: 0.1,
+                        },
+                    },
+                ],
+            });
+            const desired = graph({
+                modules: [
+                    {
+                        id: 'buf-2',
+                        moduleType: '$buffer',
+                        params: { input: 0.0, length: 0.5 },
+                    },
+                    {
+                        id: 'delay-2',
+                        moduleType: '$delayRead',
+                        params: {
+                            buffer: {
+                                type: 'buffer_ref',
+                                module: 'buf-2',
+                                port: 'buffer',
+                                channels: 1,
+                                frameCount: 24000,
+                            },
+                            time: 0.1,
+                        },
+                    },
+                ],
+            });
+
+            const { moduleIdRemap } = reconcilePatchBySimilarity(
+                desired,
+                current,
+                {
+                    matchThreshold: 0.8,
+                    ambiguityMargin: 0.05,
+                },
+            );
+
+            expect(moduleIdRemap['buf-1']).toBe('buf-2');
+            expect(moduleIdRemap['delay-1']).toBe('delay-2');
+        });
+
+        test('buffer_ref downstream usage disambiguates identical $buffer modules', () => {
+            // Two $buffer modules with identical params, but different downstream consumers
+            const current = graph({
+                modules: [
+                    {
+                        id: 'buf-a',
+                        moduleType: '$buffer',
+                        params: { input: 0.0, length: 0.5 },
+                    },
+                    {
+                        id: 'buf-b',
+                        moduleType: '$buffer',
+                        params: { input: 0.0, length: 0.5 },
+                    },
+                    {
+                        id: 'delay-1',
+                        moduleType: '$delayRead',
+                        params: {
+                            buffer: {
+                                type: 'buffer_ref',
+                                module: 'buf-a',
+                                port: 'buffer',
+                                channels: 1,
+                                frameCount: 24000,
+                            },
+                            time: 0.1,
+                        },
+                    },
+                ],
+            });
+            const desired = graph({
+                modules: [
+                    {
+                        id: 'buf-x',
+                        moduleType: '$buffer',
+                        params: { input: 0.0, length: 0.5 },
+                    },
+                    {
+                        id: 'buf-y',
+                        moduleType: '$buffer',
+                        params: { input: 0.0, length: 0.5 },
+                    },
+                    {
+                        id: 'delay-2',
+                        moduleType: '$delayRead',
+                        params: {
+                            buffer: {
+                                type: 'buffer_ref',
+                                module: 'buf-x',
+                                port: 'buffer',
+                                channels: 1,
+                                frameCount: 24000,
+                            },
+                            time: 0.1,
+                        },
+                    },
+                ],
+            });
+
+            const { moduleIdRemap } = reconcilePatchBySimilarity(
+                desired,
+                current,
+                {
+                    matchThreshold: 0.8,
+                    ambiguityMargin: 0.05,
+                },
+            );
+
+            // buf-a should map to buf-x (both have downstream delayRead consumer)
+            expect(moduleIdRemap['buf-a']).toBe('buf-x');
+            // buf-b should map to buf-y (both have no downstream consumer)
+            expect(moduleIdRemap['buf-b']).toBe('buf-y');
+        });
+
+        test('does not match buffer_ref modules across different types', () => {
+            const current = graph({
+                modules: [
+                    {
+                        id: 'buf-1',
+                        moduleType: '$buffer',
+                        params: { input: 0.0, length: 0.5 },
+                    },
+                ],
+            });
+            const desired = graph({
+                modules: [
+                    {
+                        id: 'other-1',
+                        moduleType: '$sine',
+                        params: { freq: 440 },
+                    },
+                ],
+            });
+
+            const { moduleIdRemap } = reconcilePatchBySimilarity(
+                desired,
+                current,
+                {
+                    matchThreshold: 0.1,
+                },
+            );
+
+            expect(moduleIdRemap).toEqual({});
+        });
+
+        test('buffer_ref with different frameCount produces different features', () => {
+            // Two $delayRead modules with different buffer specs should not be ambiguous
+            const current = graph({
+                modules: [
+                    {
+                        id: 'buf-short',
+                        moduleType: '$buffer',
+                        params: { input: 0.0, length: 0.1 },
+                    },
+                    {
+                        id: 'buf-long',
+                        moduleType: '$buffer',
+                        params: { input: 0.0, length: 2.0 },
+                    },
+                    {
+                        id: 'dr-1',
+                        moduleType: '$delayRead',
+                        params: {
+                            buffer: {
+                                type: 'buffer_ref',
+                                module: 'buf-short',
+                                port: 'buffer',
+                                channels: 1,
+                                frameCount: 4800,
+                            },
+                            time: 0.05,
+                        },
+                    },
+                    {
+                        id: 'dr-2',
+                        moduleType: '$delayRead',
+                        params: {
+                            buffer: {
+                                type: 'buffer_ref',
+                                module: 'buf-long',
+                                port: 'buffer',
+                                channels: 1,
+                                frameCount: 96000,
+                            },
+                            time: 1.0,
+                        },
+                    },
+                ],
+            });
+            const desired = graph({
+                modules: [
+                    {
+                        id: 'buf-s',
+                        moduleType: '$buffer',
+                        params: { input: 0.0, length: 0.1 },
+                    },
+                    {
+                        id: 'buf-l',
+                        moduleType: '$buffer',
+                        params: { input: 0.0, length: 2.0 },
+                    },
+                    {
+                        id: 'dr-a',
+                        moduleType: '$delayRead',
+                        params: {
+                            buffer: {
+                                type: 'buffer_ref',
+                                module: 'buf-s',
+                                port: 'buffer',
+                                channels: 1,
+                                frameCount: 4800,
+                            },
+                            time: 0.05,
+                        },
+                    },
+                    {
+                        id: 'dr-b',
+                        moduleType: '$delayRead',
+                        params: {
+                            buffer: {
+                                type: 'buffer_ref',
+                                module: 'buf-l',
+                                port: 'buffer',
+                                channels: 1,
+                                frameCount: 96000,
+                            },
+                            time: 1.0,
+                        },
+                    },
+                ],
+            });
+
+            const { moduleIdRemap } = reconcilePatchBySimilarity(
+                desired,
+                current,
+                {
+                    matchThreshold: 0.8,
+                    ambiguityMargin: 0.05,
+                },
+            );
+
+            // Short buffer matched to short, long to long
+            expect(moduleIdRemap['buf-short']).toBe('buf-s');
+            expect(moduleIdRemap['buf-long']).toBe('buf-l');
+            expect(moduleIdRemap['dr-1']).toBe('dr-a');
+            expect(moduleIdRemap['dr-2']).toBe('dr-b');
+        });
+    });
 });

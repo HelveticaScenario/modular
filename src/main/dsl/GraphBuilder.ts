@@ -47,9 +47,15 @@ export type ResolvedModuleOutput = z.infer<typeof ResolvedModuleOutput>;
 export type OrArray<T> = T | T[];
 export type Signal = number | string | ModuleOutput;
 export type PolySignal = OrArray<Signal> | Iterable<ModuleOutput>;
-export type Buffer = {
-    type: 'buffer';
-    name: string;
+
+/**
+ * A buffer output reference — returned by `$buffer()`, passed to readers
+ * (like `$bufRead`, `$delayRead`) as their `buffer` param.
+ */
+export type BufferOutputRef = {
+    type: 'buffer_ref';
+    module: string;
+    port: string;
     channels: number;
     frameCount: number;
 };

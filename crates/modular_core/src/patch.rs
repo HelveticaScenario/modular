@@ -8,8 +8,7 @@ use parking_lot::Mutex;
 
 use crate::dsp::core::audio_in::AudioIn;
 use crate::types::{
-    BufferData, Message, MessageTag, Sampleable, SampleableMap, WellKnownModule, ROOT_ID,
-    ROOT_OUTPUT_PORT,
+    Message, MessageTag, Sampleable, SampleableMap, WellKnownModule, ROOT_ID, ROOT_OUTPUT_PORT,
 };
 use crate::PolyOutput;
 
@@ -26,7 +25,6 @@ struct MessageListenerRef {
 pub struct Patch {
     pub audio_in: Arc<Mutex<PolyOutput>>,
     pub sampleables: SampleableMap,
-    pub buffers: HashMap<String, Arc<BufferData>>,
     message_listeners: HashMap<MessageTag, Vec<MessageListenerRef>>,
 }
 
@@ -45,7 +43,6 @@ impl Patch {
         let mut patch = Patch {
             audio_in,
             sampleables,
-            buffers: HashMap::new(),
             message_listeners: HashMap::new(),
         };
         patch.rebuild_message_listeners();
@@ -158,31 +155,6 @@ impl Patch {
         let params_deserializers = get_params_deserializers();
         let mut patch = Patch::new();
 
-        let mut buffer_specs_by_path: HashMap<String, crate::types::BufferSpec> = HashMap::new();
-        for module_state in &graph.modules {
-            let mut specs = Vec::new();
-            crate::types::collect_buffer_specs_in_json_value(&module_state.params, &mut specs);
-
-            for spec in specs {
-                match buffer_specs_by_path.get(&spec.name) {
-                    Some(existing) if existing.same_shape(&spec) => {}
-                    Some(_) => {
-                        return Err(format!(
-                            "Conflicting Buffer specs found for path '{}'",
-                            spec.name
-                        ));
-                    }
-                    None => {
-                        patch.buffers.insert(
-                            spec.name.clone(),
-                            Arc::new(BufferData::new_zeroed(spec.channels, spec.frame_count)),
-                        );
-                        buffer_specs_by_path.insert(spec.name.clone(), spec);
-                    }
-                }
-            }
-        }
-
         // 1. Instantiate all modules with their deserialized params
         for module_state in &graph.modules {
             let constructor = constructors
@@ -276,14 +248,11 @@ mod tests {
             "dummy"
         }
 
-        fn apply_deserialized_params(
-            &self,
-            _deserialized: crate::params::DeserializedParams,
-        ) -> Result<()> {
-            Ok(())
-        }
-
         fn connect(&self, _patch: &Patch) {}
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
     }
 
     impl MessageHandler for DummyMessageSampleable {

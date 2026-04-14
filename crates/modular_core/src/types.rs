@@ -157,9 +157,6 @@ pub trait Sampleable: MessageHandler + Send + Sync {
     /// Get polyphonic sample output for a port.
     fn get_poly_sample(&self, port: &str) -> Result<PolyOutput>;
     fn get_module_type(&self) -> &str;
-    /// Apply pre-deserialized params on the audio thread.
-    /// The params have already been deserialized on the main thread.
-    fn apply_deserialized_params(&self, deserialized: crate::params::DeserializedParams) -> Result<()>;
     fn connect(&self, patch: &Patch);
     /// Called after the patch is updated and all modules are connected.
     /// Modules can override this to refresh caches or perform other post-update work.
@@ -167,6 +164,31 @@ pub trait Sampleable: MessageHandler + Send + Sync {
     fn get_state(&self) -> Option<serde_json::Value> {
         None
     }
+    /// Get a buffer output by port name. Only modules that own buffers (like `$buffer`)
+    /// override this. Default: no buffer outputs.
+    ///
+    /// # Safety contract
+    ///
+    /// Returns a reference into `UnsafeCell` internals. Safe only because callers
+    /// respect phase separation: `connect()` phase (resolves pointers) and `process`
+    /// phase (reads samples) never overlap. The returned `&Arc<BufferData>` must not
+    /// be held across a `connect()` or `transfer_state_from()` call.
+    fn get_buffer_output(&self, _port: &str) -> Option<&Arc<BufferData>> {
+        None
+    }
+    /// Downcast to concrete type for state transfer.
+    fn as_any(&self) -> &dyn std::any::Any;
+    /// Transfer runtime state from an old module to this newly-constructed module.
+    ///
+    /// Called on the audio thread during the command-processing phase (between
+    /// `tick()` cycles), before any `update()` calls. The implementation uses
+    /// `UnsafeCell` to mutate through `&self` — this is safe because:
+    ///
+    /// 1. It runs only from the command-queue consumer, never during `process()`.
+    /// 2. The proc macro guards against self-aliasing (`ptr::eq` check).
+    /// 3. `old` is removed from `patch.sampleables` before this call, so no
+    ///    concurrent `update()` can be in flight on it.
+    fn transfer_state_from(&self, _old: &dyn Sampleable) {}
 }
 
 pub trait Module {
@@ -541,11 +563,25 @@ fn parse_signal_string(s: &str) -> StdResult<f32, String> {
     Err("Invalid signal format".to_string())
 }
 
+/// Audio buffer with interior mutability for single-thread access.
+///
+/// # Safety
+///
+/// Uses `UnsafeCell` for `samples` and `write_index` to allow mutation through
+/// `&self` on the audio thread. This is safe because:
+///
+/// 1. After construction (main thread), all access is from the audio thread only.
+/// 2. The owning module's `update()` writes; readers on the same thread read.
+///    Demand-driven ordering (`ensure_source_updated`) guarantees the writer
+///    finishes before any reader accesses the data within the same tick.
+/// 3. `Send + Sync` is implemented manually — cross-thread transfer happens only
+///    via the command queue (construction → audio thread), never concurrent access.
 #[derive(Debug)]
 pub struct BufferData {
     channels: usize,
     frame_count: usize,
     samples: UnsafeCell<Vec<Vec<f32>>>,
+    write_index: UnsafeCell<usize>,
 }
 
 unsafe impl Send for BufferData {}
@@ -557,6 +593,7 @@ impl BufferData {
             channels,
             frame_count,
             samples: UnsafeCell::new(vec![vec![0.0; frame_count]; channels]),
+            write_index: UnsafeCell::new(0),
         }
     }
 
@@ -568,7 +605,20 @@ impl BufferData {
             channels,
             frame_count,
             samples: UnsafeCell::new(samples),
+            write_index: UnsafeCell::new(0),
         }
+    }
+
+    /// Read the current write position. Audio-thread only.
+    /// Safe: single-thread access guaranteed by audio thread ownership model.
+    pub fn read_write_index(&self) -> usize {
+        unsafe { *self.write_index.get() }
+    }
+
+    /// Set the write position. Audio-thread only.
+    /// Safe: single-thread access guaranteed by audio thread ownership model.
+    pub fn set_write_index(&self, index: usize) {
+        unsafe { *self.write_index.get() = index }
     }
 
     pub fn channel_count(&self) -> usize {
@@ -617,6 +667,7 @@ impl BufferData {
                 }
             });
         });
+        self.set_write_index(other.read_write_index());
     }
 
     pub fn snapshot(&self) -> Vec<Vec<f32>> {
@@ -632,112 +683,83 @@ impl BufferData {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Deserr, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-#[deserr(rename_all = camelCase, deny_unknown_fields)]
-pub struct BufferSpec {
-    pub name: String,
-    pub channels: usize,
-    pub frame_count: usize,
-}
-
-impl BufferSpec {
-    pub fn new(name: String, channels: usize, frame_count: usize) -> StdResult<Self, String> {
-        let spec = Self {
-            name,
-            channels,
-            frame_count,
-        };
-        spec.validate()?;
-        Ok(spec)
-    }
-
-    pub fn same_shape(&self, other: &Self) -> bool {
-        self.channels == other.channels && self.frame_count == other.frame_count
-    }
-
-    pub fn validate(&self) -> StdResult<(), String> {
-        if self.name.trim().is_empty() {
-            return Err("Buffer name must not be empty".to_string());
-        }
-
-        if !(1..=crate::poly::PORT_MAX_CHANNELS).contains(&self.channels) {
-            return Err(format!(
-                "Buffer channels must be between 1 and {}, got {}",
-                crate::poly::PORT_MAX_CHANNELS,
-                self.channels
-            ));
-        }
-
-        if self.frame_count == 0 {
-            return Err("Buffer frameCount must be greater than 0".to_string());
-        }
-
-        Ok(())
-    }
-}
-
 #[derive(Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
-enum BufferSerde {
-    Buffer {
-        name: String,
-        channels: usize,
-        frame_count: usize,
-    },
+#[serde(rename_all = "camelCase")]
+#[serde(tag = "type", rename = "buffer_ref")]
+struct BufferSerde {
+    module: String,
+    port: String,
+    channels: usize,
 }
 
-#[derive(JsonSchema)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
-#[allow(dead_code)]
-enum BufferSchema {
-    Buffer {
-        name: String,
-        channels: usize,
-        frame_count: usize,
-    },
-}
-
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Buffer {
-    spec: BufferSpec,
-    buffer_ptr: sync::Weak<BufferData>,
+    /// Source module ID
+    source_module: String,
+    /// Source port name
+    source_port: String,
+    /// Cached strong reference to the source module, populated during `connect()`.
+    cached_source_module: Option<Arc<Box<dyn Sampleable>>>,
+    /// Cached strong reference to the buffer data, populated during `connect()`.
+    cached_buffer: Option<Arc<BufferData>>,
+    /// Channel count (used for channel derivation at deserialization time)
+    channels: usize,
 }
 
 impl Buffer {
-    pub fn new(spec: BufferSpec) -> Self {
+    /// Create a new buffer reference pointing to a module's buffer output.
+    pub fn new(source_module: String, source_port: String, channels: usize) -> Self {
         Self {
-            spec,
-            buffer_ptr: sync::Weak::new(),
+            source_module,
+            source_port,
+            cached_source_module: None,
+            cached_buffer: None,
+            channels,
         }
     }
 
-    pub fn spec(&self) -> &BufferSpec {
-        &self.spec
+    pub fn source_module(&self) -> &str {
+        &self.source_module
     }
 
-    pub fn into_spec(self) -> BufferSpec {
-        self.spec
-    }
-
-    pub fn name(&self) -> &str {
-        &self.spec.name
+    pub fn source_port(&self) -> &str {
+        &self.source_port
     }
 
     pub fn channel_count(&self) -> usize {
-        self.spec.channels
+        self.channels
     }
 
     pub fn frame_count(&self) -> usize {
-        self.spec.frame_count
+        self.cached_buffer
+            .as_ref()
+            .map(|b| b.frame_count())
+            .unwrap_or(0)
     }
 
     pub fn is_connected(&self) -> bool {
-        self.buffer_ptr.upgrade().is_some()
+        self.cached_buffer.is_some()
+    }
+
+    /// Ensure the source module has been updated this tick (demand-driven ordering).
+    /// This triggers the $buffer module's `update()` which writes the current sample
+    /// and increments write_index. Must be called before reading the buffer.
+    pub fn ensure_source_updated(&self) {
+        if let Some(module) = &self.cached_source_module {
+            module.update();
+        }
+    }
+
+    /// Read the current write_index from the buffer.
+    pub fn read_write_index(&self) -> usize {
+        self.cached_buffer
+            .as_ref()
+            .map(|b| b.read_write_index())
+            .unwrap_or(0)
     }
 
     pub fn fill(&self, value: f32) {
-        if let Some(buffer) = self.buffer_ptr.upgrade() {
+        if let Some(buffer) = &self.cached_buffer {
             buffer.fill(value);
         }
     }
@@ -747,24 +769,24 @@ impl Buffer {
     }
 
     pub fn read(&self, channel: usize, frame: usize) -> f32 {
-        self.buffer_ptr
-            .upgrade()
+        self.cached_buffer
+            .as_ref()
             .map(|buffer| buffer.read(channel, frame))
             .unwrap_or(0.0)
     }
 
     pub fn write(&self, channel: usize, frame: usize, value: f32) {
-        if let Some(buffer) = self.buffer_ptr.upgrade() {
+        if let Some(buffer) = &self.cached_buffer {
             buffer.write(channel, frame, value);
         }
     }
 
     pub fn with_data<R>(&self, f: impl FnOnce(&Vec<Vec<f32>>) -> R) -> Option<R> {
-        self.buffer_ptr.upgrade().map(|buffer| buffer.with_data(f))
+        self.cached_buffer.as_ref().map(|buffer| buffer.with_data(f))
     }
 
     pub fn with_data_mut<R>(&self, f: impl FnOnce(&mut Vec<Vec<f32>>) -> R) -> Option<R> {
-        self.buffer_ptr.upgrade().map(|buffer| buffer.with_data_mut(f))
+        self.cached_buffer.as_ref().map(|buffer| buffer.with_data_mut(f))
     }
 }
 
@@ -773,15 +795,8 @@ impl<'de> Deserialize<'de> for Buffer {
     where
         D: serde::Deserializer<'de>,
     {
-        let tagged = BufferSerde::deserialize(deserializer)?;
-        let spec = match tagged {
-            BufferSerde::Buffer {
-                name,
-                channels,
-                frame_count,
-            } => BufferSpec::new(name, channels, frame_count).map_err(serde::de::Error::custom)?,
-        };
-        Ok(Buffer::new(spec))
+        let data = BufferSerde::deserialize(deserializer)?;
+        Ok(Buffer::new(data.module, data.port, data.channels))
     }
 }
 
@@ -790,10 +805,10 @@ impl Serialize for Buffer {
     where
         S: serde::Serializer,
     {
-        BufferSerde::Buffer {
-            name: self.spec.name.clone(),
-            channels: self.spec.channels,
-            frame_count: self.spec.frame_count,
+        BufferSerde {
+            module: self.source_module.clone(),
+            port: self.source_port.clone(),
+            channels: self.channels,
         }
         .serialize(serializer)
     }
@@ -806,71 +821,41 @@ impl<E: DeserializeError> deserr::Deserr<E> for Buffer {
     ) -> std::result::Result<Self, E> {
         match value {
             deserr::Value::Map(mut map) => {
-                let type_val = map.remove("type").and_then(|v| match v.into_value() {
+                let module = map.remove("module").and_then(|v| match v.into_value() {
                     deserr::Value::String(s) => Some(s),
                     _ => None,
                 });
-
-                let name = map.remove("name").and_then(|v| match v.into_value() {
+                let port = map.remove("port").and_then(|v| match v.into_value() {
                     deserr::Value::String(s) => Some(s),
                     _ => None,
                 });
-
                 let channels = map.remove("channels").and_then(|v| match v.into_value() {
                     deserr::Value::Integer(n) => Some(n as usize),
                     _ => None,
                 });
 
-                let frame_count = map.remove("frameCount").and_then(|v| match v.into_value() {
-                    deserr::Value::Integer(n) => Some(n as usize),
-                    _ => None,
-                });
-
-                match type_val.as_deref() {
-                    Some("buffer") => {
-                        let name = name.ok_or_else(|| {
-                            deserr::take_cf_content(E::error::<V>(
-                                None,
-                                ErrorKind::MissingField { field: "name" },
-                                location,
-                            ))
-                        })?;
-                        let channels = channels.ok_or_else(|| {
-                            deserr::take_cf_content(E::error::<V>(
-                                None,
-                                ErrorKind::MissingField { field: "channels" },
-                                location,
-                            ))
-                        })?;
-                        let frame_count = frame_count.ok_or_else(|| {
-                            deserr::take_cf_content(E::error::<V>(
-                                None,
-                                ErrorKind::MissingField { field: "frameCount" },
-                                location,
-                            ))
-                        })?;
-                        let spec = BufferSpec::new(name, channels, frame_count).map_err(|msg| {
-                            deserr::take_cf_content(E::error::<V>(
-                                None,
-                                ErrorKind::Unexpected { msg },
-                                location,
-                            ))
-                        })?;
-                        Ok(Buffer::new(spec))
-                    }
-                    Some(other) => Err(deserr::take_cf_content(E::error::<V>(
+                let module = module.ok_or_else(|| {
+                    deserr::take_cf_content(E::error::<V>(
                         None,
-                        ErrorKind::Unexpected {
-                            msg: format!("unknown buffer type: {}", other),
-                        },
+                        ErrorKind::MissingField { field: "module" },
                         location,
-                    ))),
-                    None => Err(deserr::take_cf_content(E::error::<V>(
+                    ))
+                })?;
+                let port = port.ok_or_else(|| {
+                    deserr::take_cf_content(E::error::<V>(
                         None,
-                        ErrorKind::MissingField { field: "type" },
+                        ErrorKind::MissingField { field: "port" },
                         location,
-                    ))),
-                }
+                    ))
+                })?;
+                let channels = channels.ok_or_else(|| {
+                    deserr::take_cf_content(E::error::<V>(
+                        None,
+                        ErrorKind::MissingField { field: "channels" },
+                        location,
+                    ))
+                })?;
+                Ok(Buffer::new(module, port, channels))
             }
             _ => Err(deserr::take_cf_content(E::error::<V>(
                 None,
@@ -888,54 +873,78 @@ impl JsonSchema for Buffer {
         Cow::Borrowed("Buffer")
     }
 
-    fn json_schema(r#gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        BufferSchema::json_schema(r#gen)
+    fn json_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        serde_json::from_value(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "const": "buffer_ref"
+                },
+                "module": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "string"
+                },
+                "channels": {
+                    "type": "integer",
+                    "format": "uint",
+                    "minimum": 0
+                }
+            },
+            "required": ["type", "module", "port", "channels"]
+        }))
+        .expect("Buffer schema is valid JSON Schema")
     }
 }
 
 impl Connect for Buffer {
     fn connect(&mut self, patch: &Patch) {
-        if let Some(buffer) = patch.buffers.get(&self.spec.name) {
-            self.buffer_ptr = Arc::downgrade(buffer);
+        // Resolve source module and get its buffer output
+        if let Some(module) = patch.sampleables.get(&self.source_module) {
+            self.cached_source_module = Some(Arc::clone(module));
+            if let Some(buffer_data) = module.get_buffer_output(&self.source_port) {
+                self.cached_buffer = Some(Arc::clone(buffer_data));
+            } else {
+                eprintln!(
+                    "[Buffer] module '{}' has no buffer output on port '{}'",
+                    self.source_module, self.source_port
+                );
+                self.cached_buffer = None;
+            }
         } else {
-            self.buffer_ptr = sync::Weak::new();
+            eprintln!(
+                "[Buffer] source module '{}' not found in patch",
+                self.source_module
+            );
+            self.cached_source_module = None;
+            self.cached_buffer = None;
         }
+    }
+}
+
+impl std::fmt::Debug for Buffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Buffer")
+            .field("source_module", &self.source_module)
+            .field("source_port", &self.source_port)
+            .field("channels", &self.channels)
+            .field("connected", &self.cached_buffer.is_some())
+            .finish()
     }
 }
 
 impl PartialEq for Buffer {
     fn eq(&self, other: &Self) -> bool {
-        self.spec == other.spec
-            && match (self.buffer_ptr.upgrade(), other.buffer_ptr.upgrade()) {
-                (Some(left), Some(right)) => Arc::ptr_eq(&left, &right),
+        self.source_module == other.source_module
+            && self.source_port == other.source_port
+            && self.channels == other.channels
+            && match (&self.cached_buffer, &other.cached_buffer) {
+                (Some(left), Some(right)) => Arc::ptr_eq(left, right),
                 (None, None) => true,
                 _ => false,
             }
-    }
-}
-
-pub fn collect_buffer_specs_in_json_value(value: &Value, out: &mut Vec<BufferSpec>) {
-    if let Some(obj) = value.as_object()
-        && obj.get("type").and_then(|v| v.as_str()) == Some("buffer")
-    {
-        if let Ok(buffer) = serde_json::from_value::<Buffer>(value.clone()) {
-            out.push(buffer.into_spec());
-            return;
-        }
-    }
-
-    match value {
-        Value::Array(arr) => {
-            for item in arr {
-                collect_buffer_specs_in_json_value(item, out);
-            }
-        }
-        Value::Object(map) => {
-            for item in map.values() {
-                collect_buffer_specs_in_json_value(item, out);
-            }
-        }
-        _ => {}
     }
 }
 
@@ -1375,6 +1384,13 @@ pub trait OutputStruct: Default + Send + Sync + 'static {
     fn schemas() -> Vec<OutputSchema>
     where
         Self: Sized;
+    /// Transfer buffer data from old outputs to new outputs during always-reconstruct.
+    /// Default: no-op. Modules with buffer outputs override this.
+    fn transfer_buffers_from(&mut self, _old: &mut Self) {}
+    /// Get a buffer output by port name. Default: no buffer outputs.
+    fn get_buffer_output(&self, _port: &str) -> Option<&Arc<BufferData>> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

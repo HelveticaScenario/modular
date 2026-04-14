@@ -62,6 +62,24 @@ function isCableRef(
     );
 }
 
+function isBufferRef(value: unknown): value is {
+    type: 'buffer_ref';
+    module: string;
+    port: string;
+    channels: number;
+    frameCount: number;
+} {
+    if (!isPlainObject(value)) {
+        return false;
+    }
+    return (
+        value.type === 'buffer_ref' &&
+        typeof value.module === 'string' &&
+        typeof value.port === 'string' &&
+        typeof value.frameCount === 'number'
+    );
+}
+
 function walkValues(
     value: unknown,
     visit: (value: unknown, path: string) => void,
@@ -93,6 +111,7 @@ type FeatureKind =
     | 'string'
     | 'null'
     | 'cableRef'
+    | 'bufferRef'
     | 'unknown';
 
 interface Feature {
@@ -105,6 +124,7 @@ interface Feature {
 function kindWeight(kind: FeatureKind): number {
     switch (kind) {
         case 'cableRef':
+        case 'bufferRef':
             return 2.0;
         case 'number':
             return 1.0;
@@ -140,6 +160,17 @@ function _canonicalizeForFingerprint(
         return { port: value.port, type: 'cable', upstreamType };
     }
 
+    if (isBufferRef(value)) {
+        const upstreamType = ctx.typeById.get(value.module) ?? 'unknown';
+        return {
+            channels: value.channels,
+            frameCount: value.frameCount,
+            port: value.port,
+            type: 'buffer_ref',
+            upstreamType,
+        };
+    }
+
     if (Array.isArray(value)) {
         return value.map((v) => _canonicalizeForFingerprint(v, ctx));
     }
@@ -171,6 +202,18 @@ function extractFeatures(
                 kind: 'cableRef',
                 value: canonical,
                 weight: kindWeight('cableRef'),
+            });
+            return; // Treat as leaf
+        }
+
+        if (isBufferRef(v)) {
+            const upstreamType = ctx.typeById.get(v.module) ?? 'unknown';
+            const canonical = `${upstreamType}:${v.port}:${v.channels}:${v.frameCount}`;
+            features.set(key, {
+                key,
+                kind: 'bufferRef',
+                value: canonical,
+                weight: kindWeight('bufferRef'),
             });
             return; // Treat as leaf
         }
@@ -269,12 +312,18 @@ function computeDownstreamUsage(
 
     for (const consumer of graph.modules) {
         walkValues(consumer.params, (v, path) => {
-            if (!isCableRef(v)) {
+            if (isCableRef(v)) {
+                const consumerType = consumer.moduleType;
+                const token = `${consumerType}:${path}:${v.port}`;
+                record(v.module, token);
                 return;
             }
-            const consumerType = consumer.moduleType;
-            const token = `${consumerType}:${path}:${v.port}`;
-            record(v.module, token);
+            if (isBufferRef(v)) {
+                const consumerType = consumer.moduleType;
+                const token = `${consumerType}:${path}:${v.port}`;
+                record(v.module, token);
+                return;
+            }
         });
     }
 
@@ -312,6 +361,7 @@ function featureSimilarity(
         case 'string':
         case 'null':
         case 'cableRef':
+        case 'bufferRef':
             return { score: a.value === b.value ? 1 : 0, weight: w };
         default:
             return {
@@ -492,6 +542,14 @@ function remapModuleIdsInValue(
     idMap: Map<string, string>,
 ): unknown {
     if (isCableRef(value)) {
+        const remapped = idMap.get(value.module);
+        if (!remapped) {
+            return value;
+        }
+        return { ...value, module: remapped };
+    }
+
+    if (isBufferRef(value)) {
         const remapped = idMap.get(value.module);
         if (!remapped) {
             return value;

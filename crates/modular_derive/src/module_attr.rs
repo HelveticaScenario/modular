@@ -208,7 +208,7 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // Inject `_channel_count: usize` field into the struct so that
     // `self.channel_count()` can return a precomputed value set by the
-    // main thread via `apply_deserialized_params`.
+    // main thread via the constructor.
     if let Data::Struct(ref mut data_struct) = ast.data {
         if let Fields::Named(ref mut fields) = data_struct.fields {
             let field: syn::Field = syn::parse_quote! {
@@ -282,82 +282,90 @@ fn impl_module_macro_attr(
 
     // The module struct must contain a field named `outputs`.
     // Also collect all fields for per-field initialization in the constructor.
-    let (outputs_ty, module_field_inits): (Type, Vec<TokenStream2>) = match ast.data {
-        Data::Struct(ref data) => match data.fields {
-            Fields::Named(ref fields) => {
-                // Disallow legacy per-field #[output] annotations on the module struct.
-                if fields
-                    .named
-                    .iter()
-                    .any(|f| unwrap_attr(&f.attrs, "output").is_some())
-                {
-                    return Err(syn::Error::new(
+    let (outputs_ty, module_field_inits, has_state_field): (Type, Vec<TokenStream2>, bool) =
+        match ast.data {
+            Data::Struct(ref data) => match data.fields {
+                Fields::Named(ref fields) => {
+                    // Disallow legacy per-field #[output] annotations on the module struct.
+                    if fields
+                        .named
+                        .iter()
+                        .any(|f| unwrap_attr(&f.attrs, "output").is_some())
+                    {
+                        return Err(syn::Error::new(
                         Span::call_site(),
                         "#[module] expects an `outputs` field (a struct that derives Outputs); do not annotate module fields with #[output(...)]",
                     ));
-                }
+                    }
 
-                let outputs_field = fields
-                    .named
-                    .iter()
-                    .find(|f| f.ident.as_ref().map(|i| i == "outputs").unwrap_or(false));
+                    let outputs_field = fields
+                        .named
+                        .iter()
+                        .find(|f| f.ident.as_ref().map(|i| i == "outputs").unwrap_or(false));
 
-                let outputs_ty = match outputs_field {
-                    Some(f) => f.ty.clone(),
-                    None => {
-                        return Err(syn::Error::new(
+                    let outputs_ty = match outputs_field {
+                        Some(f) => f.ty.clone(),
+                        None => {
+                            return Err(syn::Error::new(
                             Span::call_site(),
                             "#[module] requires a field named `outputs` whose type derives Outputs",
                         ));
-                    }
-                };
-
-                // Generate per-field initialization for the inner module struct.
-                // - `params` → use deserialized params
-                // - `_channel_count` → use deserialized channel count
-                // - `outputs` and `state` → use Default::default()
-                // - other fields → error
-                let field_inits: Vec<TokenStream2> = fields
-                    .named
-                    .iter()
-                    .map(|f| {
-                        let field_name = f.ident.as_ref().unwrap();
-                        let field_name_str = field_name.to_string();
-                        match field_name_str.as_str() {
-                            "params" => Ok(quote! { params: *concrete_params }),
-                            "_channel_count" => {
-                                Ok(quote! { _channel_count: deserialized.channel_count })
-                            }
-                            "outputs" | "state" => Ok(quote! { #field_name: Default::default() }),
-                            other => Err(syn::Error::new(
-                                field_name.span(),
-                                format!(
-                                    "Module struct field `{other}` is not allowed. \
-                                     Only `state`, `outputs`, and `params` fields are permitted.",
-                                ),
-                            )),
                         }
-                    })
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into_iter()
-                    .collect();
+                    };
 
-                (outputs_ty, field_inits)
-            }
-            Fields::Unnamed(_) | Fields::Unit => {
+                    let has_state = fields
+                        .named
+                        .iter()
+                        .any(|f| f.ident.as_ref().map(|i| i == "state").unwrap_or(false));
+
+                    // Generate per-field initialization for the inner module struct.
+                    // - `params` → use deserialized params
+                    // - `_channel_count` → use deserialized channel count
+                    // - `outputs` and `state` → use Default::default()
+                    // - other fields → error
+                    let field_inits: Vec<TokenStream2> = fields
+                        .named
+                        .iter()
+                        .map(|f| {
+                            let field_name = f.ident.as_ref().unwrap();
+                            let field_name_str = field_name.to_string();
+                            match field_name_str.as_str() {
+                                "params" => Ok(quote! { params: *concrete_params }),
+                                "_channel_count" => {
+                                    Ok(quote! { _channel_count: deserialized.channel_count })
+                                }
+                                "outputs" | "state" => {
+                                    Ok(quote! { #field_name: Default::default() })
+                                }
+                                other => Err(syn::Error::new(
+                                    field_name.span(),
+                                    format!(
+                                        "Module struct field `{other}` is not allowed. \
+                                     Only `state`, `outputs`, and `params` fields are permitted.",
+                                    ),
+                                )),
+                            }
+                        })
+                        .collect::<Result<Vec<_>, _>>()?
+                        .into_iter()
+                        .collect();
+
+                    (outputs_ty, field_inits, has_state)
+                }
+                Fields::Unnamed(_) | Fields::Unit => {
+                    return Err(syn::Error::new(
+                        Span::call_site(),
+                        "#[module] can only be applied to structs with named fields",
+                    ));
+                }
+            },
+            Data::Enum(_) | Data::Union(_) => {
                 return Err(syn::Error::new(
                     Span::call_site(),
-                    "#[module] can only be applied to structs with named fields",
+                    "#[module] can only be applied to structs",
                 ));
             }
-        },
-        Data::Enum(_) | Data::Union(_) => {
-            return Err(syn::Error::new(
-                Span::call_site(),
-                "#[module] can only be applied to structs",
-            ));
-        }
-    };
+        };
 
     let struct_name = format_ident!("{}Sampleable", name);
     let constructor_name = format_ident!("{}Constructor", name)
@@ -486,6 +494,16 @@ fn impl_module_macro_attr(
         }
     };
 
+    // Generate transfer_state_from body - only swap state if the module has a `state` field
+    let transfer_state_body = if has_state_field {
+        quote! {
+            std::mem::swap(&mut new_inner.state, &mut old_inner.state);
+        }
+    } else {
+        // No state field, nothing to transfer (buffer transfer handled below)
+        quote! {}
+    };
+
     // Generate the channel count derivation function name
     let channel_count_fn_name = format_ident!(
         "__{}_derive_channel_count",
@@ -563,7 +581,7 @@ fn impl_module_macro_attr(
         #channel_count_fn_impl
 
         impl #impl_generics #name #ty_generics #where_clause {
-            /// Returns the precomputed channel count injected by `apply_deserialized_params`.
+            /// Returns the precomputed channel count set during construction.
             #[inline]
             pub fn channel_count(&self) -> usize {
                 self._channel_count
@@ -648,22 +666,6 @@ fn impl_module_macro_attr(
                 #module_name
             }
 
-            fn apply_deserialized_params(&self, deserialized: crate::params::DeserializedParams) -> napi::Result<()> {
-                let module = unsafe { &mut *self.module.get() };
-                let argument_spans = unsafe { &mut *self.argument_spans.get() };
-
-                let concrete_params = deserialized.params.into_any()
-                    .downcast::<#params_struct_name>()
-                    .map_err(|_| napi::Error::from_reason(
-                        format!("Failed to downcast params for module type {}", #module_name)
-                    ))?;
-                module.params = *concrete_params;
-                *argument_spans = deserialized.argument_spans;
-                module._channel_count = deserialized.channel_count;
-                crate::types::OutputStruct::set_all_channels(&mut module.outputs, deserialized.channel_count);
-                Ok(())
-            }
-
             fn get_id(&self) -> &str {
                 &self.id
             }
@@ -677,6 +679,33 @@ fn impl_module_macro_attr(
 
             fn get_state(&self) -> Option<serde_json::Value> {
                 #get_state_impl
+            }
+
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+
+            fn get_buffer_output(&self, port: &str) -> Option<&std::sync::Arc<crate::BufferData>> {
+                let module = unsafe { &*self.module.get() };
+                crate::types::OutputStruct::get_buffer_output(&module.outputs, port)
+            }
+
+            fn transfer_state_from(&self, old: &dyn crate::types::Sampleable) {
+                if let Some(old_typed) = old.as_any().downcast_ref::<Self>() {
+                    // Guard against self-aliasing: if old and new are the same Arc,
+                    // creating two &mut refs to the same UnsafeCell contents is UB.
+                    if std::ptr::eq(self as *const Self, old_typed as *const Self) {
+                        return;
+                    }
+                    let new_inner = unsafe { &mut *self.module.get() };
+                    let old_inner = unsafe { &mut *old_typed.module.get() };
+                    #transfer_state_body
+                    // Transfer buffer data (no-op for modules without buffer outputs)
+                    crate::types::OutputStruct::transfer_buffers_from(
+                        &mut new_inner.outputs,
+                        &mut old_inner.outputs,
+                    );
+                }
             }
         }
 

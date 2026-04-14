@@ -15,8 +15,8 @@ export declare class Synthesizer {
   getScopes(): Array<[ScopeBufferKey, Float32Array, ScopeStats]>
   updatePatch(patch: PatchGraph, trigger?: QueuedTrigger | undefined | null): PatchUpdateResult
   /**
-   * Lightweight single-module param update. Bypasses full patch rebuild —
-   * only for modules already in the patch.
+   * Lightweight single-module param update. Constructs a new module on the main
+   * thread and sends it to the audio thread for state-transfer + replacement.
    */
   setModuleParam(moduleId: string, moduleType: string, params: any): void
   startRecording(path?: string | undefined | null): string
