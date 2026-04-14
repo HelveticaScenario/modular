@@ -656,18 +656,94 @@ impl BufferData {
         });
     }
 
+    /// Copy the most recent `min(old_size, new_size)` frames from `other` into `self`,
+    /// placing each frame at the correct circular position for the new buffer size.
+    /// Preserves the monotonic write index so that `$delayRead`'s offset math continues
+    /// working after a resize.
+    ///
+    /// Runs on the audio thread — no heap allocation. Uses at most 4 `copy_from_slice`
+    /// (memcpy) calls per channel (2 source segments × 2 possible destination wraps)
+    /// by decomposing the circular regions into contiguous segments.
     pub fn copy_overlap_from(&self, other: &Self) {
+        let write_idx = other.read_write_index();
+
         self.with_data_mut(|dst| {
             other.with_data(|src| {
                 let channel_count = dst.len().min(src.len());
+                if channel_count == 0 {
+                    return;
+                }
+
+                let old_size = src[0].len();
+                let new_size = dst[0].len();
+                if old_size == 0 || new_size == 0 {
+                    return;
+                }
+
+                let frames_to_copy = old_size.min(new_size).min(write_idx.saturating_add(1));
+
+                let newest_pos = write_idx % old_size;
+                let oldest_pos = write_idx.wrapping_sub(frames_to_copy - 1) % old_size;
+                debug_assert!(oldest_pos < old_size);
+                debug_assert!(newest_pos < old_size);
+
+                // Decompose source into at most 2 contiguous segments (oldest-first).
+                // Each entry: (src_start, len, age_of_chronologically_oldest_frame)
+                let (segments, seg_count): ([(usize, usize, usize); 2], usize) =
+                    if oldest_pos <= newest_pos {
+                        // No wrap: one contiguous run
+                        (
+                            [
+                                (oldest_pos, frames_to_copy, frames_to_copy - 1),
+                                (0, 0, 0),
+                            ],
+                            1,
+                        )
+                    } else {
+                        // Wraps: two segments
+                        let seg1_len = old_size - oldest_pos;
+                        let seg2_len = newest_pos + 1;
+                        (
+                            [
+                                (oldest_pos, seg1_len, frames_to_copy - 1),
+                                (0, seg2_len, seg2_len - 1),
+                            ],
+                            2,
+                        )
+                    };
+
                 for channel_idx in 0..channel_count {
-                    let frame_count = dst[channel_idx].len().min(src[channel_idx].len());
-                    dst[channel_idx][..frame_count]
-                        .copy_from_slice(&src[channel_idx][..frame_count]);
+                    let dst_ch = &mut dst[channel_idx];
+                    let src_ch = &src[channel_idx];
+
+                    for &(src_start, len, age_of_first) in &segments[..seg_count] {
+                        debug_assert!(len <= age_of_first + 1);
+
+                        let dst_start = write_idx.wrapping_sub(age_of_first) % new_size;
+                        let dst_end_inclusive =
+                            write_idx.wrapping_sub(age_of_first + 1 - len) % new_size;
+
+                        if dst_start <= dst_end_inclusive {
+                            // No wrap in destination — single memcpy
+                            dst_ch[dst_start..dst_start + len]
+                                .copy_from_slice(&src_ch[src_start..src_start + len]);
+                        } else {
+                            // Wraps in destination — two memcpys
+                            let first_len = new_size - dst_start;
+                            let second_len = len - first_len;
+
+                            dst_ch[dst_start..dst_start + first_len]
+                                .copy_from_slice(&src_ch[src_start..src_start + first_len]);
+                            dst_ch[..second_len].copy_from_slice(
+                                &src_ch[src_start + first_len..src_start + first_len + second_len],
+                            );
+                        }
+                    }
                 }
             });
         });
-        self.set_write_index(other.read_write_index());
+
+        self.set_write_index(write_idx);
     }
 
     pub fn snapshot(&self) -> Vec<Vec<f32>> {
@@ -1814,5 +1890,263 @@ mod tests {
     fn test_signal_deserialization_errors() {
         assert!(from_str::<Signal>("\"invalid\"").is_err());
         assert!(from_str::<Signal>("\"-10hz\"").is_err());
+    }
+
+    /// Fill a buffer with sequential values where the value at age `a` (frames ago
+    /// from write_idx) is `(a + 1) as f32`. Only fills frames that would actually
+    /// have been written (ages 0..min(frame_count, write_idx+1)), mirroring how
+    /// the real audio thread advances the write head from 0.
+    fn fill_buffer_sequential(buf: &BufferData, write_idx: usize) {
+        let frame_count = buf.frame_count();
+        buf.set_write_index(write_idx);
+        let frames_written = frame_count.min(write_idx.saturating_add(1));
+        for age in 0..frames_written {
+            let pos = write_idx.wrapping_sub(age) % frame_count;
+            for ch in 0..buf.channel_count() {
+                buf.write(ch, pos, (age + 1) as f32 + ch as f32 * 1000.0);
+            }
+        }
+    }
+
+    /// Verify that a delay read at `age` frames ago from `write_idx` returns the
+    /// expected value. Mirrors how $delayRead computes positions.
+    fn read_at_age(buf: &BufferData, channel: usize, write_idx: usize, age: usize) -> f32 {
+        let pos = write_idx.wrapping_sub(age) % buf.frame_count();
+        buf.read(channel, pos)
+    }
+
+    #[test]
+    fn test_copy_overlap_shrink_mid_buffer_write_head() {
+        // Old: 8 frames, write_idx=42 (42%8=2, so most recent write at frame 2)
+        // New: 5 frames
+        // Should preserve the 5 most recent frames (ages 0..4)
+        let old = BufferData::new_zeroed(1, 8);
+        fill_buffer_sequential(&old, 42);
+
+        let new = BufferData::new_zeroed(1, 5);
+        new.copy_overlap_from(&old);
+
+        assert_eq!(new.read_write_index(), 42);
+        for age in 0..5 {
+            let val = read_at_age(&new, 0, 42, age);
+            assert_eq!(val, (age + 1) as f32, "age {} should be {}", age, age + 1);
+        }
+    }
+
+    #[test]
+    fn test_copy_overlap_grow() {
+        // Old: 5 frames, write_idx=42
+        // New: 8 frames
+        // All 5 old frames should be present; remaining 3 should be zero
+        let old = BufferData::new_zeroed(1, 5);
+        fill_buffer_sequential(&old, 42);
+
+        let new = BufferData::new_zeroed(1, 8);
+        new.copy_overlap_from(&old);
+
+        assert_eq!(new.read_write_index(), 42);
+        // Ages 0..4 should have data
+        for age in 0..5 {
+            let val = read_at_age(&new, 0, 42, age);
+            assert_eq!(val, (age + 1) as f32, "age {} should be {}", age, age + 1);
+        }
+        // Ages 5..7 should be zero (unwritten)
+        for age in 5..8 {
+            let val = read_at_age(&new, 0, 42, age);
+            assert_eq!(val, 0.0, "age {} should be zero", age);
+        }
+    }
+
+    #[test]
+    fn test_copy_overlap_same_size() {
+        let old = BufferData::new_zeroed(1, 8);
+        fill_buffer_sequential(&old, 42);
+
+        let new = BufferData::new_zeroed(1, 8);
+        new.copy_overlap_from(&old);
+
+        assert_eq!(new.read_write_index(), 42);
+        for age in 0..8 {
+            let val = read_at_age(&new, 0, 42, age);
+            assert_eq!(val, (age + 1) as f32, "age {} should be {}", age, age + 1);
+        }
+    }
+
+    #[test]
+    fn test_copy_overlap_write_head_at_zero() {
+        // write_idx=0 means only 1 frame has been written (at position 0).
+        // Only that single frame should be copied; the rest stays zero.
+        let old = BufferData::new_zeroed(1, 8);
+        fill_buffer_sequential(&old, 0);
+
+        let new = BufferData::new_zeroed(1, 5);
+        new.copy_overlap_from(&old);
+
+        assert_eq!(new.read_write_index(), 0);
+        // Age 0 (the one frame written) should be preserved
+        let val = read_at_age(&new, 0, 0, 0);
+        assert_eq!(val, 1.0, "age 0 should be 1.0");
+        // All other positions should be zero
+        for frame in 1..5 {
+            assert_eq!(new.read(0, frame), 0.0, "frame {} should be zero", frame);
+        }
+    }
+
+    #[test]
+    fn test_copy_overlap_large_monotonic_counter() {
+        // write_idx near usize::MAX to test wrapping_sub correctness.
+        // This relies on wrapping arithmetic matching modular arithmetic for
+        // power-of-two-friendly buffer sizes. The test is valid on both 32-bit
+        // and 64-bit targets, but the specific overflow boundary differs.
+        let write_idx = usize::MAX - 3;
+        let old = BufferData::new_zeroed(1, 8);
+        fill_buffer_sequential(&old, write_idx);
+
+        let new = BufferData::new_zeroed(1, 5);
+        new.copy_overlap_from(&old);
+
+        assert_eq!(new.read_write_index(), write_idx);
+        for age in 0..5 {
+            let val = read_at_age(&new, 0, write_idx, age);
+            assert_eq!(val, (age + 1) as f32, "age {} should be {}", age, age + 1);
+        }
+    }
+
+    #[test]
+    fn test_copy_overlap_multi_channel() {
+        let old = BufferData::new_zeroed(3, 8);
+        fill_buffer_sequential(&old, 42);
+
+        let new = BufferData::new_zeroed(3, 5);
+        new.copy_overlap_from(&old);
+
+        assert_eq!(new.read_write_index(), 42);
+        for ch in 0..3 {
+            for age in 0..5 {
+                let val = read_at_age(&new, ch, 42, age);
+                let expected = (age + 1) as f32 + ch as f32 * 1000.0;
+                assert_eq!(val, expected, "ch {} age {} should be {}", ch, age, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn test_copy_overlap_zero_size_old() {
+        let old = BufferData::new_zeroed(1, 0);
+        let new = BufferData::new_zeroed(1, 5);
+        new.copy_overlap_from(&old);
+        // Should not panic, write index should be 0
+        assert_eq!(new.read_write_index(), 0);
+    }
+
+    #[test]
+    fn test_copy_overlap_zero_size_new() {
+        let old = BufferData::new_zeroed(1, 8);
+        fill_buffer_sequential(&old, 42);
+        let new = BufferData::new_zeroed(1, 0);
+        new.copy_overlap_from(&old);
+        // Should not panic, write index preserved
+        assert_eq!(new.read_write_index(), 42);
+    }
+
+    /// Exhaustive same-size test: for every write_idx position within the buffer,
+    /// verify that copy_overlap_from produces a byte-identical copy. This simulates
+    /// what happens during a forced patch update when buffer length doesn't change.
+    #[test]
+    fn test_copy_overlap_same_size_every_write_position() {
+        let buf_size = 64;
+        // Test write_idx values that produce every possible (write_idx % buf_size)
+        for offset in 0..buf_size {
+            // Use a large base to simulate a realistic monotonic counter
+            let write_idx = 100_000 + offset;
+            let old = BufferData::new_zeroed(2, buf_size);
+            fill_buffer_sequential(&old, write_idx);
+
+            let new = BufferData::new_zeroed(2, buf_size);
+            new.copy_overlap_from(&old);
+
+            assert_eq!(new.read_write_index(), write_idx, "offset={}", offset);
+
+            // Every frame at every age should match the original
+            for ch in 0..2 {
+                for age in 0..buf_size {
+                    let old_val = read_at_age(&old, ch, write_idx, age);
+                    let new_val = read_at_age(&new, ch, write_idx, age);
+                    assert_eq!(
+                        old_val, new_val,
+                        "Mismatch: ch={} age={} write_idx={} (offset={})",
+                        ch, age, write_idx, offset
+                    );
+                }
+            }
+        }
+    }
+
+    /// Exhaustive shrink test: for every write_idx position, verify that the
+    /// most recent frames are preserved when shrinking the buffer.
+    #[test]
+    fn test_copy_overlap_shrink_every_write_position() {
+        let old_size = 64;
+        let new_size = 40;
+        for offset in 0..old_size {
+            let write_idx = 100_000 + offset;
+            let old = BufferData::new_zeroed(1, old_size);
+            fill_buffer_sequential(&old, write_idx);
+
+            let new = BufferData::new_zeroed(1, new_size);
+            new.copy_overlap_from(&old);
+
+            assert_eq!(new.read_write_index(), write_idx, "offset={}", offset);
+
+            // The most recent new_size frames should match
+            for age in 0..new_size {
+                let old_val = read_at_age(&old, 0, write_idx, age);
+                let new_val = read_at_age(&new, 0, write_idx, age);
+                assert_eq!(
+                    old_val, new_val,
+                    "Mismatch: age={} write_idx={} (offset={})",
+                    age, write_idx, offset
+                );
+            }
+        }
+    }
+
+    /// Exhaustive grow test: for every write_idx position, verify that all
+    /// old frames are preserved and extra positions are zero.
+    #[test]
+    fn test_copy_overlap_grow_every_write_position() {
+        let old_size = 40;
+        let new_size = 64;
+        for offset in 0..old_size {
+            let write_idx = 100_000 + offset;
+            let old = BufferData::new_zeroed(1, old_size);
+            fill_buffer_sequential(&old, write_idx);
+
+            let new = BufferData::new_zeroed(1, new_size);
+            new.copy_overlap_from(&old);
+
+            assert_eq!(new.read_write_index(), write_idx, "offset={}", offset);
+
+            // The most recent old_size frames should match
+            for age in 0..old_size {
+                let old_val = read_at_age(&old, 0, write_idx, age);
+                let new_val = read_at_age(&new, 0, write_idx, age);
+                assert_eq!(
+                    old_val, new_val,
+                    "Mismatch: age={} write_idx={} (offset={})",
+                    age, write_idx, offset
+                );
+            }
+
+            // Older positions (ages old_size..new_size) should be zero
+            for age in old_size..new_size {
+                let val = read_at_age(&new, 0, write_idx, age);
+                assert_eq!(
+                    val, 0.0,
+                    "Expected zero at age={} write_idx={} (offset={})",
+                    age, write_idx, offset
+                );
+            }
+        }
     }
 }
