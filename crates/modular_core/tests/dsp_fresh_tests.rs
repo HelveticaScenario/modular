@@ -837,3 +837,250 @@ fn delay_read_output_lags_behind_buffer_passthrough() {
         "delay read should lag behind buffer passthrough — only {differences}/{sample_count} samples differed"
     );
 }
+
+// ─── transfer_state_from wrapper output tests ────────────────────────────────
+
+#[test]
+fn transfer_state_from_preserves_wrapper_outputs_for_feedback_cycles() {
+    // Bug: After transfer_state_from, the new module's wrapper outputs are
+    // Default (zeros). In a feedback cycle, the module whose update() is
+    // entered second reads the first module's wrapper outputs via
+    // get_poly_sample(). If those are zeros instead of the previous frame's
+    // values, a one-sample discontinuity is injected into the feedback loop.
+    //
+    // Setup: Two $scaleAndShift modules wired in a feedback cycle:
+    //   A reads from B, B reads from A.
+    // After running for several frames, we transfer state to new modules
+    // and check that running one frame doesn't inject a zero discontinuity.
+    //
+    // Without the fix, whichever module is second in the cycle reads zeros
+    // from the first module's wrapper on the transfer frame, producing an
+    // output of `shift` instead of the correct feedback value.
+
+    // Use $scaleAndShift: output = input * (scale / 5.0) + shift
+    // A: input=B.output, scale=5.0 (gain=1.0), shift=1.0
+    // B: input=A.output, scale=5.0 (gain=1.0), shift=0.0
+    //
+    // Steady state:
+    //   A_out = B_out * 1.0 + 1.0
+    //   B_out = A_out * 1.0 + 0.0 = A_out
+    // So A_out = A_out + 1.0 diverges, but with the one-frame delay from the
+    // cycle break it converges to a fixed-point quickly (the $scaleAndShift
+    // just passes through with gain=1, so the cycle adds 1.0 per frame from
+    // A's shift, growing until it clips).
+    //
+    // After ~100 frames, both outputs are large and non-zero. If the wrapper
+    // outputs are not transferred, the cycle partner reads 0.0 on the first
+    // frame, producing shift (1.0 or 0.0) instead of the previous large value.
+    // We detect this by checking the output doesn't drop to near shift.
+
+    let graph = make_graph(vec![
+        (
+            "a",
+            "$scaleAndShift",
+            json!({
+                "input": { "type": "cable", "module": "b", "port": "output", "channel": 0 },
+                "scale": 2.5,  // gain = 2.5/5.0 = 0.5 so it converges
+                "shift": 1.0
+            }),
+        ),
+        (
+            "b",
+            "$scaleAndShift",
+            json!({
+                "input": { "type": "cable", "module": "a", "port": "output", "channel": 0 },
+                "scale": 2.5,  // gain = 0.5
+                "shift": 0.0
+            }),
+        ),
+    ]);
+
+    let old_patch = Patch::from_graph(&graph, SAMPLE_RATE).expect("from_graph failed");
+
+    // Run 200 frames to reach steady state
+    // With gain=0.5 and shift=1.0:
+    //   A_out = 0.5 * B_out + 1.0
+    //   B_out = 0.5 * A_out(prev_frame)
+    // Steady state: A=2.0, B=1.0
+    for _ in 0..200 {
+        process_frame(&old_patch);
+    }
+
+    let old_a_output = old_patch
+        .sampleables
+        .get("a")
+        .unwrap()
+        .get_poly_sample(DEFAULT_PORT)
+        .unwrap()
+        .get(0);
+    let old_b_output = old_patch
+        .sampleables
+        .get("b")
+        .unwrap()
+        .get_poly_sample(DEFAULT_PORT)
+        .unwrap()
+        .get(0);
+
+    // Verify we're at steady state with non-zero values
+    assert!(
+        old_a_output.abs() > 0.5,
+        "module A should have substantial output at steady state, got {old_a_output}"
+    );
+    assert!(
+        old_b_output.abs() > 0.1,
+        "module B should have non-zero output at steady state, got {old_b_output}"
+    );
+
+    // Build a new patch with identical graph and transfer state
+    let new_patch = Patch::from_graph(&graph, SAMPLE_RATE).expect("from_graph failed");
+
+    // Transfer state from old modules to new modules
+    for (id, new_module) in &new_patch.sampleables {
+        if let Some(old_module) = old_patch.sampleables.get(id) {
+            new_module.transfer_state_from(old_module.as_ref().as_ref());
+        }
+    }
+
+    // Reconnect (as apply_patch_update does)
+    for module in new_patch.sampleables.values() {
+        module.connect(&new_patch);
+    }
+
+    // Run ONE frame on the new patch — this is the transfer frame
+    process_frame(&new_patch);
+
+    let new_a_output = new_patch
+        .sampleables
+        .get("a")
+        .unwrap()
+        .get_poly_sample(DEFAULT_PORT)
+        .unwrap()
+        .get(0);
+    let new_b_output = new_patch
+        .sampleables
+        .get("b")
+        .unwrap()
+        .get_poly_sample(DEFAULT_PORT)
+        .unwrap()
+        .get(0);
+
+    // The outputs should be close to the old steady-state values.
+    // Without the fix, one module reads zeros from the other's wrapper,
+    // producing a value near its shift (1.0 for A, 0.0 for B) instead of
+    // the correct feedback value.
+    let a_delta = (new_a_output - old_a_output).abs();
+    let b_delta = (new_b_output - old_b_output).abs();
+
+    // Allow some tolerance for the one-frame evolution, but not a drop to
+    // shift values. At steady state A≈2.0, B≈1.0. Without fix, one of them
+    // drops to near its shift value (a jump of ~1.0).
+    assert!(
+        a_delta < 0.1,
+        "module A output should be continuous across transfer.\n\
+         Before: {old_a_output}, after: {new_a_output}, delta: {a_delta}\n\
+         (large delta suggests wrapper outputs were not transferred)"
+    );
+    assert!(
+        b_delta < 0.1,
+        "module B output should be continuous across transfer.\n\
+         Before: {old_b_output}, after: {new_b_output}, delta: {b_delta}\n\
+         (large delta suggests wrapper outputs were not transferred)"
+    );
+}
+
+// ─── IntervalSeq CV hold during rest after state transfer ────────────────────
+
+#[test]
+fn interval_seq_cv_holds_during_rest_after_state_transfer() {
+    // Bug: After patch update (state transfer), $iCycle CV output drops to 0V
+    // during rest periods. The sequencer only writes CV when a voice is active.
+    // After reconstruction, the inner outputs default to 0.0. During a rest
+    // cycle, no voice is active, so CV is never written and stays at 0.0 instead
+    // of holding the last active note's voltage.
+    //
+    // Setup: $iCycle with pattern '<0 ~>' in d#(min) — alternates between
+    // degree 0 (D#4 = 0.25V) and rest every cycle. Connect to a ROOT_CLOCK
+    // with a high tempo so we can advance cycles quickly.
+    //
+    // At 48000 BPM with 4/4 time: one bar = 240 samples at 48kHz.
+    //   Cycle 0 (samples 0-239): degree 0, CV = 0.25V (D#4)
+    //   Cycle 1 (samples 240-479): rest, CV should HOLD at 0.25V
+    //
+    // Transfer state during cycle 1 (rest period), run one frame, verify CV != 0.
+
+    let graph = make_graph(vec![
+        (
+            "ROOT_CLOCK",
+            "_clock",
+            json!({ "tempo": 48000.0, "numerator": 4, "denominator": 4 }),
+        ),
+        (
+            "seq",
+            "$iCycle",
+            json!({ "patterns": "<0 ~>", "scale": "d#(min)" }),
+        ),
+    ]);
+
+    let old_patch = Patch::from_graph(&graph, SAMPLE_RATE).expect("from_graph failed");
+
+    // Advance through cycle 0 (degree 0) into the start of cycle 1 (rest).
+    // One bar = 240 samples. Process 260 samples to be well into cycle 1.
+    for _ in 0..260 {
+        process_frame(&old_patch);
+    }
+
+    // Check that the CV output holds the last active voltage (not zero).
+    // D#4 in V/Oct: (63 - 60) / 12 = 0.25V
+    let expected_voltage = 0.25f32;
+
+    let old_cv = old_patch
+        .sampleables
+        .get("seq")
+        .unwrap()
+        .get_poly_sample("cv")
+        .unwrap()
+        .get(0);
+
+    // During rest, the old module should still hold the last active voltage.
+    // (This verifies the test setup is correct — the old module works fine.)
+    assert!(
+        (old_cv - expected_voltage).abs() < 0.01,
+        "old module CV should hold {expected_voltage}V during rest, got {old_cv}"
+    );
+
+    // Now simulate a force update: build new patch, transfer state, connect.
+    let new_patch = Patch::from_graph(&graph, SAMPLE_RATE).expect("from_graph failed");
+
+    for (id, new_module) in &new_patch.sampleables {
+        if let Some(old_module) = old_patch.sampleables.get(id) {
+            new_module.transfer_state_from(old_module.as_ref().as_ref());
+        }
+    }
+
+    for module in new_patch.sampleables.values() {
+        module.connect(&new_patch);
+    }
+
+    // Call on_patch_update (as apply_patch_update does)
+    for module in new_patch.sampleables.values() {
+        module.on_patch_update();
+    }
+
+    // Run ONE frame on the new patch — still in the rest period.
+    process_frame(&new_patch);
+
+    let new_cv = new_patch
+        .sampleables
+        .get("seq")
+        .unwrap()
+        .get_poly_sample("cv")
+        .unwrap()
+        .get(0);
+
+    // The CV should still hold the previous active voltage, not drop to 0.
+    assert!(
+        (new_cv - expected_voltage).abs() < 0.01,
+        "after state transfer during rest, CV should hold {expected_voltage}V, got {new_cv}\n\
+         (0.0 means inner outputs were not preserved across state transfer)"
+    );
+}

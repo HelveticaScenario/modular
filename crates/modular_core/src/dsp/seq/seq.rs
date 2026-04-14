@@ -351,6 +351,8 @@ struct SeqState {
     /// Module-level cache for cycles >= 1000 (element 0 = cycle 1000).
     /// Only accumulates, never clears except on patch update.
     module_cache: Vec<Option<Arc<Vec<DspHap<SeqValue>>>>>,
+    /// Last CV voltage per channel — holds through rest periods and state transfers
+    last_cv: [f32; PORT_MAX_CHANNELS],
 }
 
 impl Default for SeqState {
@@ -361,6 +363,7 @@ impl Default for SeqState {
             current_cycle: None,
             current_cycle_haps: None,
             module_cache: Vec::new(),
+            last_cv: [0.0; PORT_MAX_CHANNELS],
         }
     }
 }
@@ -530,8 +533,9 @@ impl Seq {
             if let Some(ref cached) = voice.cached_hap
                 && let Some(cv) = cached.get_cv()
             {
-                self.outputs.cv.set(ch, cv as f32);
+                state.last_cv[ch] = cv as f32;
             }
+            self.outputs.cv.set(ch, state.last_cv[ch]);
 
             self.outputs.gate.set(ch, voice.gate.process());
             self.outputs.trig.set(ch, voice.trigger.process());

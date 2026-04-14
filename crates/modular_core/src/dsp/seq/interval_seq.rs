@@ -708,6 +708,8 @@ struct IntervalSeqState {
     scale_intervals: ArrayVec<i8, CAP>,
     /// Base MIDI note for degree 0 (includes root pitch class + octave)
     base_midi: i32,
+    /// Last CV voltage per channel — holds through rest periods and state transfers
+    last_cv: [f32; PORT_MAX_CHANNELS],
 }
 
 impl Default for IntervalSeqState {
@@ -720,6 +722,7 @@ impl Default for IntervalSeqState {
             module_cache: Vec::new(),
             scale_intervals: [0, 2, 4, 5, 7, 9, 11].into_iter().collect(), // Default major scale
             base_midi: 60,                                                 // C4
+            last_cv: [0.0; PORT_MAX_CHANNELS],
         }
     }
 }
@@ -946,8 +949,9 @@ impl IntervalSeq {
             let voice = &mut self.state.voices[ch];
 
             if voice.active {
-                self.outputs.cv.set(ch, voice.cached_voltage as f32);
+                self.state.last_cv[ch] = voice.cached_voltage as f32;
             }
+            self.outputs.cv.set(ch, self.state.last_cv[ch]);
 
             self.outputs.gate.set(ch, voice.gate.process());
             self.outputs.trig.set(ch, voice.trigger.process());

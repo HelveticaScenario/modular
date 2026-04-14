@@ -705,6 +705,16 @@ fn impl_module_macro_attr(
                         &mut new_inner.outputs,
                         &mut old_inner.outputs,
                     );
+                    // Transfer wrapper outputs so feedback cycles read previous-frame
+                    // values instead of zeros on the patch-update frame. Without this,
+                    // the module that is "second" in a cycle reads Default outputs
+                    // (all zeros) from the "first" module's wrapper, injecting a
+                    // one-sample discontinuity into the feedback loop.
+                    unsafe {
+                        let new_outputs = &mut *self.outputs.get();
+                        let old_outputs = &mut *old_typed.outputs.get();
+                        std::mem::swap(new_outputs, old_outputs);
+                    }
                 }
             }
         }
