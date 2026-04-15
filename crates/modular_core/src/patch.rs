@@ -8,7 +8,8 @@ use parking_lot::Mutex;
 
 use crate::dsp::core::audio_in::AudioIn;
 use crate::types::{
-    Message, MessageTag, Sampleable, SampleableMap, WellKnownModule, ROOT_ID, ROOT_OUTPUT_PORT,
+    Message, MessageTag, Sampleable, SampleableMap, WavData, WellKnownModule, ROOT_ID,
+    ROOT_OUTPUT_PORT,
 };
 use crate::PolyOutput;
 
@@ -25,6 +26,7 @@ struct MessageListenerRef {
 pub struct Patch {
     pub audio_in: Arc<Mutex<PolyOutput>>,
     pub sampleables: SampleableMap,
+    pub wav_data: HashMap<String, Arc<WavData>>,
     message_listeners: HashMap<MessageTag, Vec<MessageListenerRef>>,
 }
 
@@ -43,6 +45,7 @@ impl Patch {
         let mut patch = Patch {
             audio_in,
             sampleables,
+            wav_data: HashMap::new(),
             message_listeners: HashMap::new(),
         };
         patch.rebuild_message_listeners();

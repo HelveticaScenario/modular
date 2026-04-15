@@ -644,6 +644,209 @@ impl SampleBuffer {
 }
 
 // ============================================================================
+// WavData — immutable loaded WAV sample data
+// ============================================================================
+
+/// Immutable loaded WAV sample data. No interior mutability — naturally Send + Sync.
+/// Wrapped in `Arc<WavData>` for shared ownership between cache and audio thread.
+#[derive(Debug, Clone)]
+pub struct WavData {
+    buffer: SampleBuffer,
+    sample_rate: f32,
+}
+
+impl WavData {
+    pub fn new(buffer: SampleBuffer, sample_rate: f32) -> Self {
+        Self { buffer, sample_rate }
+    }
+
+    pub fn channel_count(&self) -> usize {
+        self.buffer.channel_count()
+    }
+
+    pub fn frame_count(&self) -> usize {
+        self.buffer.frame_count()
+    }
+
+    pub fn sample_rate(&self) -> f32 {
+        self.sample_rate
+    }
+
+    pub fn read(&self, channel: usize, frame: usize) -> f32 {
+        self.buffer.read(channel, frame)
+    }
+
+    pub fn with_data<R>(&self, f: impl FnOnce(&Vec<Vec<f32>>) -> R) -> R {
+        self.buffer.with_data(f)
+    }
+}
+
+// ============================================================================
+// Wav — connection handle for WAV sample data (two-phase pattern)
+// ============================================================================
+
+/// Connection handle for WAV sample data. Follows the `Buffer` two-phase pattern:
+/// 1. Deserialization: parse `path` and `channels` from JSON, `cached_data` starts `None`.
+/// 2. Connect: look up `path` in `patch.wav_data` and cache the `Arc<WavData>`.
+#[derive(Clone)]
+pub struct Wav {
+    path: String,
+    channels: usize,
+    cached_data: Option<Arc<WavData>>,
+}
+
+impl Wav {
+    pub fn new(path: String, channels: usize) -> Self {
+        Self {
+            path,
+            channels,
+            cached_data: None,
+        }
+    }
+
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    pub fn channel_count(&self) -> usize {
+        self.channels
+    }
+
+    pub fn frame_count(&self) -> usize {
+        self.cached_data
+            .as_ref()
+            .map(|d| d.frame_count())
+            .unwrap_or(0)
+    }
+
+    pub fn is_loaded(&self) -> bool {
+        self.cached_data.is_some()
+    }
+
+    pub fn read(&self, channel: usize, frame: usize) -> f32 {
+        self.cached_data
+            .as_ref()
+            .map(|d| d.read(channel, frame))
+            .unwrap_or(0.0)
+    }
+}
+
+impl Connect for Wav {
+    fn connect(&mut self, patch: &Patch) {
+        if let Some(data) = patch.wav_data.get(&self.path) {
+            self.cached_data = Some(Arc::clone(data));
+        } else {
+            self.cached_data = None;
+        }
+    }
+}
+
+impl std::fmt::Debug for Wav {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Wav")
+            .field("path", &self.path)
+            .field("channels", &self.channels)
+            .field("loaded", &self.cached_data.is_some())
+            .finish()
+    }
+}
+
+impl PartialEq for Wav {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path && self.channels == other.channels
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WavSerde {
+    path: String,
+    channels: usize,
+}
+
+impl Serialize for Wav {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> StdResult<S::Ok, S::Error> {
+        WavSerde {
+            path: self.path.clone(),
+            channels: self.channels,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Wav {
+    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let data = WavSerde::deserialize(deserializer)?;
+        Ok(Wav::new(data.path, data.channels))
+    }
+}
+
+impl<E: DeserializeError> deserr::Deserr<E> for Wav {
+    fn deserialize_from_value<V: IntoValue>(
+        value: deserr::Value<V>,
+        location: ValuePointerRef<'_>,
+    ) -> StdResult<Self, E> {
+        match value {
+            deserr::Value::Map(mut map) => {
+                let path = map.remove("path").and_then(|v| match v.into_value() {
+                    deserr::Value::String(s) => Some(s),
+                    _ => None,
+                });
+                let channels = map.remove("channels").and_then(|v| match v.into_value() {
+                    deserr::Value::Integer(n) => Some(n as usize),
+                    _ => None,
+                });
+
+                let path = path.ok_or_else(|| {
+                    deserr::take_cf_content(E::error::<V>(
+                        None,
+                        ErrorKind::MissingField { field: "path" },
+                        location,
+                    ))
+                })?;
+                let channels = channels.ok_or_else(|| {
+                    deserr::take_cf_content(E::error::<V>(
+                        None,
+                        ErrorKind::MissingField { field: "channels" },
+                        location,
+                    ))
+                })?;
+                Ok(Wav::new(path, channels))
+            }
+            _ => Err(deserr::take_cf_content(E::error::<V>(
+                None,
+                ErrorKind::Unexpected {
+                    msg: "Invalid wav format".to_string(),
+                },
+                location,
+            ))),
+        }
+    }
+}
+
+impl JsonSchema for Wav {
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("Wav")
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        serde_json::from_value(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "type": { "type": "string", "const": "wav_ref" },
+                "path": { "type": "string" },
+                "channels": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["type", "path", "channels"]
+        }))
+        .expect("Wav schema is valid JSON Schema")
+    }
+}
+
+// ============================================================================
 // BufferData — audio thread circular buffer with interior mutability
 // ============================================================================
 
@@ -2291,5 +2494,66 @@ mod sample_buffer_tests {
         let buf = SampleBuffer::from_samples(vec![vec![10.0, 20.0]]);
         let sum: f32 = buf.with_data(|data| data[0].iter().sum());
         assert_eq!(sum, 30.0);
+    }
+}
+
+#[cfg(test)]
+mod wav_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn wav_data_from_samples() {
+        let samples = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
+        let wav = WavData::new(SampleBuffer::from_samples(samples), 44100.0);
+        assert_eq!(wav.channel_count(), 2);
+        assert_eq!(wav.frame_count(), 3);
+        assert_eq!(wav.sample_rate(), 44100.0);
+        assert_eq!(wav.read(0, 1), 2.0);
+        assert_eq!(wav.read(1, 2), 6.0);
+    }
+
+    #[test]
+    fn wav_data_is_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<WavData>();
+        assert_send_sync::<Arc<WavData>>();
+    }
+
+    #[test]
+    fn wav_param_unconnected_returns_zeros() {
+        let wav = Wav::new("test/kick".to_string(), 2);
+        assert_eq!(wav.channel_count(), 2);
+        assert_eq!(wav.frame_count(), 0);
+        assert!(!wav.is_loaded());
+        assert_eq!(wav.read(0, 0), 0.0);
+    }
+
+    #[test]
+    fn wav_param_connect_resolves_data() {
+        let samples = vec![vec![1.0, 2.0], vec![3.0, 4.0]];
+        let wav_data = Arc::new(WavData::new(
+            SampleBuffer::from_samples(samples),
+            48000.0,
+        ));
+
+        let mut patch = Patch::new();
+        patch.wav_data.insert("test/kick".to_string(), wav_data);
+
+        let mut wav = Wav::new("test/kick".to_string(), 2);
+        wav.connect(&patch);
+
+        assert!(wav.is_loaded());
+        assert_eq!(wav.frame_count(), 2);
+        assert_eq!(wav.read(0, 0), 1.0);
+        assert_eq!(wav.read(1, 1), 4.0);
+    }
+
+    #[test]
+    fn wav_param_connect_missing_path_stays_unloaded() {
+        let patch = Patch::new();
+        let mut wav = Wav::new("nonexistent".to_string(), 1);
+        wav.connect(&patch);
+        assert!(!wav.is_loaded());
     }
 }
