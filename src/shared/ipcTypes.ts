@@ -305,6 +305,9 @@ export const IPC_CHANNELS = {
     // Main process logging
     MAIN_LOG: 'modular:main:log',
 
+    // WAV operations
+    WAVS_ON_CHANGE: 'modular:wavs:on-change',
+
     // Update operations
     UPDATE_CHECK: 'modular:update:check',
     UPDATE_DOWNLOAD: 'modular:update:download',
@@ -451,6 +454,9 @@ export interface IPCHandlers {
 
     // Main process logging
     [IPC_CHANNELS.MAIN_LOG]: (entry: MainLogEntry) => void;
+
+    // WAV operations
+    [IPC_CHANNELS.WAVS_ON_CHANGE]: () => void;
 
     // Update operations (invokable)
     [IPC_CHANNELS.UPDATE_CHECK]: () => void;
