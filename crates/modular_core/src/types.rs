@@ -567,6 +567,86 @@ fn parse_signal_string(s: &str) -> StdResult<f32, String> {
 ///
 /// # Safety
 ///
+// ============================================================================
+// SampleBuffer — plain sample storage
+// ============================================================================
+
+/// Plain sample storage — no interior mutability, no unsafe.
+/// Used by `WavData` (immutable loaded samples) and could wrap `BufferData`
+/// in the future. Provides basic read/write/fill operations.
+#[derive(Debug, Clone)]
+pub struct SampleBuffer {
+    channels: usize,
+    frame_count: usize,
+    samples: Vec<Vec<f32>>,
+}
+
+impl SampleBuffer {
+    pub fn new_zeroed(channels: usize, frame_count: usize) -> Self {
+        Self {
+            channels,
+            frame_count,
+            samples: vec![vec![0.0; frame_count]; channels],
+        }
+    }
+
+    pub fn from_samples(samples: Vec<Vec<f32>>) -> Self {
+        let channels = samples.len();
+        let frame_count = samples.first().map_or(0, Vec::len);
+        Self {
+            channels,
+            frame_count,
+            samples,
+        }
+    }
+
+    pub fn channel_count(&self) -> usize {
+        self.channels
+    }
+
+    pub fn frame_count(&self) -> usize {
+        self.frame_count
+    }
+
+    pub fn read(&self, channel: usize, frame: usize) -> f32 {
+        self.samples
+            .get(channel)
+            .and_then(|ch| ch.get(frame))
+            .copied()
+            .unwrap_or(0.0)
+    }
+
+    pub fn write(&mut self, channel: usize, frame: usize, value: f32) {
+        if let Some(ch) = self.samples.get_mut(channel) {
+            if let Some(sample) = ch.get_mut(frame) {
+                *sample = value;
+            }
+        }
+    }
+
+    pub fn fill(&mut self, value: f32) {
+        for channel in self.samples.iter_mut() {
+            channel.fill(value);
+        }
+    }
+
+    pub fn snapshot(&self) -> Vec<Vec<f32>> {
+        self.samples.clone()
+    }
+
+    pub fn with_data<R>(&self, f: impl FnOnce(&Vec<Vec<f32>>) -> R) -> R {
+        f(&self.samples)
+    }
+
+    pub fn with_data_mut<R>(&mut self, f: impl FnOnce(&mut Vec<Vec<f32>>) -> R) -> R {
+        f(&mut self.samples)
+    }
+}
+
+// ============================================================================
+// BufferData — audio thread circular buffer with interior mutability
+// ============================================================================
+
 /// Uses `UnsafeCell` for `samples` and `write_index` to allow mutation through
 /// `&self` on the audio thread. This is safe because:
 ///
@@ -2148,5 +2228,68 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod sample_buffer_tests {
+    use super::*;
+
+    #[test]
+    fn sample_buffer_new_zeroed() {
+        let buf = SampleBuffer::new_zeroed(2, 100);
+        assert_eq!(buf.channel_count(), 2);
+        assert_eq!(buf.frame_count(), 100);
+        assert_eq!(buf.read(0, 0), 0.0);
+        assert_eq!(buf.read(1, 99), 0.0);
+    }
+
+    #[test]
+    fn sample_buffer_from_samples() {
+        let samples = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
+        let buf = SampleBuffer::from_samples(samples);
+        assert_eq!(buf.channel_count(), 2);
+        assert_eq!(buf.frame_count(), 3);
+        assert_eq!(buf.read(0, 1), 2.0);
+        assert_eq!(buf.read(1, 2), 6.0);
+    }
+
+    #[test]
+    fn sample_buffer_write_and_read() {
+        let mut buf = SampleBuffer::new_zeroed(1, 10);
+        buf.write(0, 5, 42.0);
+        assert_eq!(buf.read(0, 5), 42.0);
+    }
+
+    #[test]
+    fn sample_buffer_read_out_of_bounds_returns_zero() {
+        let buf = SampleBuffer::new_zeroed(1, 5);
+        assert_eq!(buf.read(0, 10), 0.0); // frame out of range
+        assert_eq!(buf.read(5, 0), 0.0); // channel out of range
+    }
+
+    #[test]
+    fn sample_buffer_fill() {
+        let mut buf = SampleBuffer::new_zeroed(2, 3);
+        buf.fill(7.0);
+        for ch in 0..2 {
+            for frame in 0..3 {
+                assert_eq!(buf.read(ch, frame), 7.0);
+            }
+        }
+    }
+
+    #[test]
+    fn sample_buffer_snapshot() {
+        let samples = vec![vec![1.0, 2.0], vec![3.0, 4.0]];
+        let buf = SampleBuffer::from_samples(samples.clone());
+        assert_eq!(buf.snapshot(), samples);
+    }
+
+    #[test]
+    fn sample_buffer_with_data() {
+        let buf = SampleBuffer::from_samples(vec![vec![10.0, 20.0]]);
+        let sum: f32 = buf.with_data(|data| data[0].iter().sum());
+        assert_eq!(sum, 30.0);
     }
 }
