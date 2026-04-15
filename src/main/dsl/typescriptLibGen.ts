@@ -942,7 +942,7 @@ function generateWavsTypeDeclaration(tree: WavsFolderNode | null): string {
                 lines.push(`${indent}  readonly ${safeName}: WavHandle;`);
             } else {
                 lines.push(
-                    `${indent}  readonly ${safeName}: ${renderNode(value as WavsFolderNode, indent + '  ')}`,
+                    `${indent}  readonly ${safeName}: ${renderNode(value, indent + '  ')}`,
                 );
             }
         }
