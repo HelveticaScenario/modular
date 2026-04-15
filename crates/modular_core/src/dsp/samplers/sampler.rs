@@ -269,4 +269,51 @@ mod tests {
         let out = module.get_poly_sample("output").unwrap();
         assert_eq!(out.get(0), 0.0, "should be silent after sample ends");
     }
+
+    #[test]
+    fn sampler_plays_stereo_wav() {
+        // 3-frame stereo WAV: L=[1.0, 2.0, 3.0], R=[4.0, 5.0, 6.0]
+        let wav_data = make_test_wav(vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]]);
+        let module = make_module(
+            "$sampler",
+            "s4",
+            serde_json::json!({
+                "wav": { "type": "wav_ref", "path": "stereo", "channels": 2 },
+                "gate": 5.0,
+                "speed": 1.0,
+            }),
+        );
+
+        let mut patch = Patch::new();
+        patch.wav_data.insert("stereo".to_string(), wav_data);
+        module.connect(&patch);
+
+        // First tick: gate rises, plays frame 0
+        step(&**module);
+        let out = module.get_poly_sample("output").unwrap();
+        assert!(
+            (out.get(0) - 1.0).abs() < 1e-6,
+            "L ch should be 1.0, got {}",
+            out.get(0)
+        );
+        assert!(
+            (out.get(1) - 4.0).abs() < 1e-6,
+            "R ch should be 4.0, got {}",
+            out.get(1)
+        );
+
+        // Second tick: frame 1
+        step(&**module);
+        let out = module.get_poly_sample("output").unwrap();
+        assert!(
+            (out.get(0) - 2.0).abs() < 1e-6,
+            "L ch should be 2.0, got {}",
+            out.get(0)
+        );
+        assert!(
+            (out.get(1) - 5.0).abs() < 1e-6,
+            "R ch should be 5.0, got {}",
+            out.get(1)
+        );
+    }
 }

@@ -803,4 +803,52 @@ describe('$wavs() and $sampler', () => {
             }),
         ).toThrow(/no wavs\/ folder/);
     });
+
+    test('$sampler with speed param produces correct patch', () => {
+        const result = execWithWavs(
+            '$sampler($wavs().kick, $pulse("4hz"), { speed: 0.5 }).out()',
+        );
+        const sampler = findModules(result.patch, '$sampler');
+        expect(sampler.length).toBe(1);
+        expect(sampler[0].params.wav).toEqual({
+            type: 'wav_ref',
+            path: 'kick',
+            channels: 1,
+        });
+        // speed param should be present
+        expect(sampler[0].params.speed).toBe(0.5);
+    });
+
+    test('$sampler with stereo wav sets correct channel count', () => {
+        const result = execWithWavs(
+            '$sampler($wavs().tables.boom, $pulse("2hz")).out()',
+        );
+        const sampler = findModules(result.patch, '$sampler');
+        expect(sampler.length).toBe(1);
+        // tables/boom is a 2-channel file
+        expect(sampler[0].params.wav.channels).toBe(2);
+    });
+
+    test('$sampler chained with amplitude and scope', () => {
+        const result = execWithWavs(
+            '$sampler($wavs().kick, $pulse("4hz")).amplitude(0.5).scope().out()',
+        );
+        const sampler = findModules(result.patch, '$sampler');
+        expect(sampler.length).toBe(1);
+        expect(result.patch.scopes.length).toBeGreaterThan(0);
+    });
+
+    test('$wavs() loadWav is called during execution', () => {
+        const calls: string[] = [];
+        const trackingLoadWav = (path: string) => {
+            calls.push(path);
+            return { channels: 1, frameCount: 500, path };
+        };
+        executePatchScript('$sampler($wavs().kick, 5).out()', schemas, {
+            ...DEFAULT_EXECUTION_OPTIONS,
+            wavsFolderTree: wavsFolderTree as any,
+            loadWav: trackingLoadWav,
+        });
+        expect(calls).toContain('kick');
+    });
 });
