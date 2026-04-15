@@ -28,6 +28,9 @@ use crate::audio::{
 use crate::commands::{GraphCommand, QueuedTrigger};
 use crate::midi::MidiInputManager;
 
+use std::path::PathBuf;
+use std::time::SystemTime;
+
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../reserved_output_names.rs"));
 
 /// Returns the list of reserved output names that cannot be used as module output port names.
@@ -35,6 +38,156 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../reserved_output_names.rs"));
 #[napi]
 pub fn get_reserved_output_names() -> Vec<String> {
     RESERVED_OUTPUT_NAMES.iter().map(|s| s.to_string()).collect()
+}
+
+// ============================================================================
+// WAV Cache
+// ============================================================================
+
+struct WavCacheEntry {
+    data: Arc<modular_core::types::WavData>,
+    mtime: SystemTime,
+}
+
+struct WavCache {
+    entries: HashMap<String, WavCacheEntry>,
+    workspace_path: PathBuf,
+}
+
+impl WavCache {
+    fn new(workspace_path: PathBuf) -> Self {
+        Self {
+            entries: HashMap::new(),
+            workspace_path,
+        }
+    }
+
+    fn set_workspace_path(&mut self, path: PathBuf) {
+        if self.workspace_path != path {
+            self.entries.clear();
+            self.workspace_path = path;
+        }
+    }
+
+    /// Snapshot all cached WAV data as Arc clones (cheap) for PatchUpdate.
+    fn snapshot(&self) -> HashMap<String, Arc<modular_core::types::WavData>> {
+        self.entries
+            .iter()
+            .map(|(k, v)| (k.clone(), Arc::clone(&v.data)))
+            .collect()
+    }
+
+    /// Load a WAV file, returning cached data if mtime hasn't changed.
+    fn load(&mut self, rel_path: &str, engine_sample_rate: f32) -> Result<WavLoadInfo> {
+        let full_path = self.workspace_path.join("wavs").join(format!("{}.wav", rel_path));
+
+        let metadata = std::fs::metadata(&full_path).map_err(|e| {
+            napi::Error::from_reason(format!(
+                "WAV file not found: {} ({})",
+                full_path.display(),
+                e
+            ))
+        })?;
+        let mtime = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+
+        // Cache hit — mtime matches
+        if let Some(entry) = self.entries.get(rel_path) {
+            if entry.mtime == mtime {
+                return Ok(WavLoadInfo {
+                    channels: entry.data.channel_count() as u32,
+                    frame_count: entry.data.frame_count() as u32,
+                    path: rel_path.to_string(),
+                });
+            }
+        }
+
+        // Cache miss or stale — decode
+        let reader = hound::WavReader::open(&full_path).map_err(|e| {
+            napi::Error::from_reason(format!(
+                "Failed to read WAV file {}: {}",
+                full_path.display(),
+                e
+            ))
+        })?;
+
+        let spec = reader.spec();
+        let file_sample_rate = spec.sample_rate as f32;
+        let num_channels = spec.channels as usize;
+
+        // Decode all samples into interleaved f32
+        let raw_samples: Vec<f32> = match spec.sample_format {
+            hound::SampleFormat::Int => {
+                let bits = spec.bits_per_sample;
+                let max_val = (1u32 << (bits - 1)) as f32;
+                reader
+                    .into_samples::<i32>()
+                    .map(|s| s.unwrap_or(0) as f32 / max_val)
+                    .collect()
+            }
+            hound::SampleFormat::Float => reader
+                .into_samples::<f32>()
+                .map(|s| s.unwrap_or(0.0))
+                .collect(),
+        };
+
+        // Deinterleave into per-channel vectors
+        let total_frames = raw_samples.len() / num_channels.max(1);
+        let mut channels: Vec<Vec<f32>> = vec![Vec::with_capacity(total_frames); num_channels];
+        for (i, sample) in raw_samples.iter().enumerate() {
+            let ch = i % num_channels;
+            channels[ch].push(*sample);
+        }
+
+        // Resample to engine sample rate if needed (linear interpolation)
+        if (file_sample_rate - engine_sample_rate).abs() > 0.5 {
+            let ratio = engine_sample_rate / file_sample_rate;
+            let new_len = (total_frames as f32 * ratio).ceil() as usize;
+            channels = channels
+                .into_iter()
+                .map(|ch| {
+                    let mut resampled = Vec::with_capacity(new_len);
+                    for i in 0..new_len {
+                        let src_pos = i as f32 / ratio;
+                        let idx = src_pos.floor() as usize;
+                        let frac = src_pos - idx as f32;
+                        let s0 = ch.get(idx).copied().unwrap_or(0.0);
+                        let s1 = ch.get(idx + 1).copied().unwrap_or(s0);
+                        resampled.push(s0 + (s1 - s0) * frac);
+                    }
+                    resampled
+                })
+                .collect();
+        }
+
+        let frame_count = channels.first().map_or(0, Vec::len);
+        let wav_data = Arc::new(modular_core::types::WavData::new(
+            modular_core::types::SampleBuffer::from_samples(channels),
+            file_sample_rate,
+        ));
+
+        let info = WavLoadInfo {
+            channels: num_channels as u32,
+            frame_count: frame_count as u32,
+            path: rel_path.to_string(),
+        };
+
+        self.entries.insert(
+            rel_path.to_string(),
+            WavCacheEntry {
+                data: wav_data,
+                mtime,
+            },
+        );
+
+        Ok(info)
+    }
+}
+
+#[napi(object)]
+pub struct WavLoadInfo {
+    pub channels: u32,
+    pub frame_count: u32,
+    pub path: String,
 }
 
 /// Information about a MIDI input port (for N-API)
@@ -80,6 +233,7 @@ pub struct Synthesizer {
   device_cache: AudioDeviceCache,
   fallback_warning: Option<String>,
   next_update_id: u64,
+  wav_cache: WavCache,
 }
 
 /// Resolve devices from config, falling back to defaults if not found
@@ -555,6 +709,7 @@ impl Synthesizer {
       device_cache,
       fallback_warning,
       next_update_id: 0,
+      wav_cache: WavCache::new(PathBuf::new()),
     })
   }
 
@@ -629,14 +784,33 @@ impl Synthesizer {
         .write_tempo(bpm, numerator, denominator);
     }
 
+    let wav_data_snapshot = self.wav_cache.snapshot();
     let errors = self
       .state
-      .handle_set_patch(patch, self.sample_rate, trigger, update_id);
+      .handle_set_patch(patch, self.sample_rate, trigger, update_id, wav_data_snapshot);
 
     PatchUpdateResult {
       errors,
       update_id: update_id as f64,
     }
+  }
+
+  /// Load a WAV file into the cache, returning metadata about the loaded sample.
+  #[napi]
+  pub fn load_wav(&mut self, path: String) -> Result<WavLoadInfo> {
+    self.wav_cache.load(&path, self.sample_rate)
+  }
+
+  /// Set the workspace root directory for WAV file loading.
+  #[napi]
+  pub fn set_wav_workspace(&mut self, workspace_path: String) {
+    self.wav_cache.set_workspace_path(PathBuf::from(workspace_path));
+  }
+
+  /// Get the list of currently cached WAV file paths.
+  #[napi]
+  pub fn get_wav_cache_snapshot(&self) -> Vec<String> {
+    self.wav_cache.entries.keys().cloned().collect()
   }
 
   /// Lightweight single-module param update. Constructs a new module on the main

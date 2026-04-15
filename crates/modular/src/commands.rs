@@ -3,9 +3,10 @@
 //! This module defines the commands sent from the main thread to the audio thread,
 //! and the errors reported back from the audio thread.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
-use modular_core::types::{Message, ModuleIdRemap, Sampleable, ScopeBufferKey};
+use modular_core::types::{Message, ModuleIdRemap, Sampleable, ScopeBufferKey, WavData};
 use napi_derive::napi;
 
 use crate::audio::ScopeBuffer;
@@ -45,6 +46,10 @@ pub struct PatchUpdate {
   /// Scopes to remove
   pub scope_removes: Vec<ScopeBufferKey>,
 
+  /// WAV data cache — cloned Arc<WavData> entries from the main-thread WavCache.
+  /// Swapped into the Patch on the audio thread so Wav params can resolve during connect().
+  pub wav_data: HashMap<String, Arc<WavData>>,
+
   /// Sample rate for new modules
   pub sample_rate: f32,
 }
@@ -59,6 +64,7 @@ impl PatchUpdate {
       remaps: Vec::new(),
       scope_adds: Vec::new(),
       scope_removes: Vec::new(),
+      wav_data: HashMap::new(),
       sample_rate,
     }
   }

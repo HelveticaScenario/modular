@@ -1007,6 +1007,7 @@ impl AudioState {
     sample_rate: f32,
     trigger: QueuedTrigger,
     update_id: u64,
+    wav_data: HashMap<String, Arc<modular_core::types::WavData>>,
   ) -> Result<()> {
     let PatchGraph {
       modules,
@@ -1097,6 +1098,9 @@ impl AudioState {
     // Pre-compute desired IDs on main thread to avoid HashSet allocation on audio thread
     update.desired_ids = update.inserts.iter().map(|(id, _)| id.clone()).collect();
 
+    // Populate wav_data from the cache snapshot
+    update.wav_data = wav_data;
+
     // Send the update to audio thread
     self.send_command(GraphCommand::QueuedPatchUpdate { update, trigger })
   }
@@ -1107,6 +1111,7 @@ impl AudioState {
     sample_rate: f32,
     trigger: QueuedTrigger,
     update_id: u64,
+    wav_data: HashMap<String, Arc<modular_core::types::WavData>>,
   ) -> Vec<ApplyPatchError> {
     // Validate patch
     let schemas = schema();
@@ -1127,7 +1132,7 @@ impl AudioState {
     }
 
     // Apply patch
-    if let Err(e) = self.apply_patch(patch_graph, sample_rate, trigger, update_id) {
+    if let Err(e) = self.apply_patch(patch_graph, sample_rate, trigger, update_id, wav_data) {
       return vec![ApplyPatchError {
         message: format!("Failed to apply patch: {}", e),
         errors: None,
@@ -1318,6 +1323,7 @@ impl AudioProcessor {
       desired_ids,
       scope_adds,
       scope_removes,
+      wav_data,
       ..
     } = update;
 
@@ -1388,6 +1394,14 @@ impl AudioProcessor {
       if let Some(sampleable) = self.patch.sampleables.get(id).cloned() {
         self.patch.add_message_listeners_for_module(id, &sampleable);
       }
+    }
+
+    // Swap wav_data into the patch (cheap — just moving Arc clones).
+    // Old Arc<WavData> refs just decrement refcount — no audio data freed
+    // because the main-thread WavCache still holds references.
+    if !wav_data.is_empty() || !self.patch.wav_data.is_empty() {
+      let old_wav_data = std::mem::replace(&mut self.patch.wav_data, wav_data);
+      drop(old_wav_data);
     }
 
     // Connect all modules
