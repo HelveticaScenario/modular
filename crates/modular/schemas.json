@@ -4738,7 +4738,7 @@
         },
         "time": {
           "description": "Delay time in seconds (e.g. 0.5 for 500ms)",
-          "$ref": "#/$defs/MonoSignal"
+          "$ref": "#/$defs/PolySignal"
         }
       },
       "required": [
@@ -4772,7 +4772,7 @@
             "channels"
           ]
         },
-        "MonoSignal": {
+        "PolySignal": {
           "anyOf": [
             {
               "$ref": "#/$defs/Signal"
