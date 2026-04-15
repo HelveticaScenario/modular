@@ -14,6 +14,12 @@ export declare class Synthesizer {
   inputChannels(): number
   getScopes(): Array<[ScopeBufferKey, Float32Array, ScopeStats]>
   updatePatch(patch: PatchGraph, trigger?: QueuedTrigger | undefined | null): PatchUpdateResult
+  /** Load a WAV file into the cache, returning metadata about the loaded sample. */
+  loadWav(path: string): WavLoadInfo
+  /** Set the workspace root directory for WAV file loading. */
+  setWavWorkspace(workspacePath: string): void
+  /** Get the list of currently cached WAV file paths. */
+  getWavCacheSnapshot(): Array<string>
   /**
    * Lightweight single-module param update. Constructs a new module on the main
    * thread and sends it to the audio thread for state-transfer + replacement.
@@ -266,6 +272,12 @@ export interface ValidationError {
   expectedType?: string
   /** JSON snippet of the actual value that failed */
   actualValue?: string
+}
+
+export interface WavLoadInfo {
+  channels: number
+  frameCount: number
+  path: string
 }
 /**
  * Represents a character span in source code, used for argument highlighting.

@@ -750,3 +750,57 @@ describe('$buffer()', () => {
         expect(buffers[0].params.length).toBe(0.25);
     });
 });
+
+// ─── $wavs / $sampler ────────────────────────────────────────────────────────
+
+describe('$wavs() and $sampler', () => {
+    const wavsFolderTree = { kick: 'file', tables: { boom: 'file' } } as const;
+    const loadWav = (path: string) => ({
+        channels: path === 'kick' ? 1 : 2,
+        frameCount: 1000,
+        path,
+    });
+
+    function execWithWavs(source: string) {
+        return executePatchScript(source, schemas, {
+            ...DEFAULT_EXECUTION_OPTIONS,
+            wavsFolderTree: wavsFolderTree as any,
+            loadWav,
+        });
+    }
+
+    test('$wavs() returns wav_ref for known files', () => {
+        const result = execWithWavs('$sampler($wavs().kick, 5).out()');
+        const sampler = findModules(result.patch, '$sampler');
+        expect(sampler.length).toBe(1);
+        expect(sampler[0].params.wav).toEqual({
+            type: 'wav_ref',
+            path: 'kick',
+            channels: 1,
+        });
+    });
+
+    test('$wavs() traverses nested directories', () => {
+        const result = execWithWavs('$sampler($wavs().tables.boom, 5).out()');
+        const sampler = findModules(result.patch, '$sampler');
+        expect(sampler.length).toBe(1);
+        expect(sampler[0].params.wav).toEqual({
+            type: 'wav_ref',
+            path: 'tables/boom',
+            channels: 2,
+        });
+    });
+
+    test('$wavs() throws for missing files', () => {
+        expect(() => execWithWavs('$wavs().snare')).toThrow(/not found/);
+    });
+
+    test('$wavs() throws when no wavs/ folder', () => {
+        expect(() =>
+            executePatchScript('$wavs().kick', schemas, {
+                ...DEFAULT_EXECUTION_OPTIONS,
+                wavsFolderTree: null,
+            }),
+        ).toThrow(/no wavs\/ folder/);
+    });
+});

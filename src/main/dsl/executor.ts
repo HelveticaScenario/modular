@@ -54,9 +54,19 @@ export interface DSLExecutionResult {
     callSiteSpans: CallSiteSpanRegistry;
 }
 
+export interface WavsFolderNode {
+    [name: string]: WavsFolderNode | 'file';
+}
+
 export interface DSLExecutionOptions {
     sampleRate?: number;
     workspaceRoot?: string | null;
+    wavsFolderTree?: WavsFolderNode | null;
+    loadWav?: (path: string) => {
+        channels: number;
+        frameCount: number;
+        path: string;
+    };
 }
 
 // Install pipe() on Array.prototype so arrays in the DSL can use it.
@@ -278,6 +288,70 @@ export function executePatchScript(
         return result;
     };
 
+    /**
+     * Load WAV samples from the wavs/ folder.
+     * Returns a proxy tree matching the folder structure; leaf nodes trigger
+     * loadWav() and return `{ type: 'wav_ref', path, channels }` objects.
+     */
+    const $wavs = (): unknown => {
+        const tree = options.wavsFolderTree;
+        if (!tree) {
+            return new Proxy(
+                {},
+                {
+                    get(_target, prop) {
+                        throw new Error(
+                            `$wavs().${String(prop)}: no wavs/ folder found in workspace`,
+                        );
+                    },
+                },
+            );
+        }
+
+        function makeProxy(node: WavsFolderNode, pathParts: string[]): unknown {
+            return new Proxy(
+                {},
+                {
+                    get(_target, prop) {
+                        if (typeof prop !== 'string') return undefined;
+
+                        const child = node[prop];
+                        if (child === undefined) {
+                            const fullPath = [...pathParts, prop].join('/');
+                            throw new Error(
+                                `$wavs(): "${fullPath}" not found. Available: ${Object.keys(node).join(', ') || '(empty)'}`,
+                            );
+                        }
+
+                        if (child === 'file') {
+                            // Leaf node — load the WAV
+                            const relPath = [...pathParts, prop].join('/');
+                            if (!options.loadWav) {
+                                throw new Error(
+                                    '$wavs(): loadWav function not provided',
+                                );
+                            }
+                            const info = options.loadWav(relPath);
+                            return {
+                                type: 'wav_ref',
+                                path: relPath,
+                                channels: info.channels,
+                            };
+                        }
+
+                        // Directory node — return nested proxy
+                        return makeProxy(child as WavsFolderNode, [
+                            ...pathParts,
+                            prop,
+                        ]);
+                    },
+                },
+            );
+        }
+
+        return makeProxy(tree, []);
+    };
+
     const dslGlobals = {
         // Prefixed namespace tree (modules and namespaces, minus _clock)
         ...userNamespaceTree,
@@ -300,6 +374,8 @@ export function executePatchScript(
         $setTimeSignature,
         $setEndOfChainCb,
         $buffer,
+        // WAV sample loading
+        $wavs,
         // Built-in modules
         $clock,
         $input: rootInput,

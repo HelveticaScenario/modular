@@ -7393,5 +7393,152 @@
     ],
     "signalParams": [],
     "positionalArgs": []
+  },
+  {
+    "name": "$sampler",
+    "documentation": "One-shot sample player. Plays a loaded WAV file from the beginning on each\ngate rising edge. Speed control allows pitch-shifting and reverse playback.\n\n```js\n$sampler($wavs().kick, $pulse('4hz'))\n$sampler($wavs().tables.pad, $clock.beat, { speed: 0.5 })\n```",
+    "paramsSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "SamplerParams",
+      "type": "object",
+      "properties": {
+        "gate": {
+          "description": "Gate input — rising edge starts playback from the beginning.",
+          "$ref": "#/$defs/MonoSignal"
+        },
+        "speed": {
+          "description": "Playback speed. 1.0 = normal, 2.0 = double speed, negative = reverse.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MonoSignal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "wav": {
+          "$ref": "#/$defs/Wav"
+        }
+      },
+      "required": [
+        "wav",
+        "gate"
+      ],
+      "$defs": {
+        "MonoSignal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Signal"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Signal"
+              }
+            }
+          ]
+        },
+        "Signal": {
+          "anyOf": [
+            {
+              "type": "number",
+              "format": "double"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/SignalTaggedSchema"
+            }
+          ]
+        },
+        "SignalTaggedSchema": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "channel": {
+                  "type": "integer",
+                  "format": "uint",
+                  "default": 0,
+                  "minimum": 0
+                },
+                "module": {
+                  "type": "string"
+                },
+                "port": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "const": "cable"
+                }
+              },
+              "required": [
+                "type",
+                "module",
+                "port"
+              ]
+            }
+          ]
+        },
+        "Wav": {
+          "type": "object",
+          "properties": {
+            "channels": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "path": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "wav_ref"
+            }
+          },
+          "required": [
+            "type",
+            "path",
+            "channels"
+          ]
+        }
+      }
+    },
+    "outputs": [
+      {
+        "name": "output",
+        "description": "sample playback output",
+        "polyphonic": true,
+        "default": true
+      }
+    ],
+    "signalParams": [
+      {
+        "name": "gate",
+        "description": "Gate input — rising edge starts playback from the beginning.",
+        "signalType": "gate",
+        "defaultValue": 0.0,
+        "minValue": 0.0,
+        "maxValue": 5.0
+      },
+      {
+        "name": "speed",
+        "description": "Playback speed. 1.0 = normal, 2.0 = double speed, negative = reverse.",
+        "signalType": "control",
+        "defaultValue": 1.0,
+        "minValue": -4.0,
+        "maxValue": 4.0
+      }
+    ],
+    "positionalArgs": [
+      {
+        "name": "wav"
+      },
+      {
+        "name": "gate"
+      }
+    ]
   }
 ]
