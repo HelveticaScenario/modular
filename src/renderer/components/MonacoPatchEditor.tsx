@@ -56,6 +56,17 @@ export function MonacoPatchEditor({
         electronAPI.getSchemas().then(setSchemas).catch(console.error);
     }, []);
 
+    // Re-fetch DSL lib source when wavs folder changes so Monaco picks up new $wavs() types
+    useEffect(() => {
+        const unsubscribe = electronAPI.onWavsChange(() => {
+            electronAPI
+                .getDslLibSource()
+                .then(setLibSource)
+                .catch(console.error);
+        });
+        return unsubscribe;
+    }, []);
+
     const monaco = useCustomMonaco();
     const [editor, setEditor] = useState<editor.IStandaloneCodeEditor | null>(
         null,
