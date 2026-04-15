@@ -8,6 +8,8 @@ import {
     schemaToTypeExpr,
     getEnumVariants,
 } from '../../shared/dsl/schemaTypeResolver';
+import type { WavsFolderNode } from './executor';
+export type { WavsFolderNode } from './executor';
 
 const BASE_LIB_SOURCE = `
 /** The **\`console\`** object provides access to the debugging console (e.g., the Web console in Firefox). */
@@ -308,6 +310,15 @@ type BufferOutputRef = {
   readonly port: string;
   readonly channels: number;
   readonly frameCount: number;
+};
+
+/**
+ * A loaded WAV sample handle — returned by \`$wavs()\`, passed to \`$sampler()\` as the \`wav\` param.
+ */
+type WavHandle = {
+  readonly type: 'wav_ref';
+  readonly path: string;
+  readonly channels: number;
 };
 
 /**
@@ -914,10 +925,42 @@ function $setEndOfChainCb(cb: (mixed: Collection) => ModuleOutput | Collection |
 function $cartesian<A extends unknown[][]>(...arrays: A): ElementsOf<A>[];
 `;
 
-export function buildLibSource(schemas: Schemas): string {
-    // console.log('buildLibSource schemas:', schemas);
+function generateWavsTypeDeclaration(tree: WavsFolderNode | null): string {
+    if (!tree || Object.keys(tree).length === 0) {
+        return '/** Load WAV samples from the wavs/ folder. */\nexport function $wavs(): Record<string, never>;\n';
+    }
+
+    function renderNode(node: WavsFolderNode, indent: string): string {
+        const lines: string[] = ['{'];
+        for (const [key, value] of Object.entries(node).sort(([a], [b]) =>
+            a.localeCompare(b),
+        )) {
+            const safeName = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key)
+                ? key
+                : `'${key}'`;
+            if (value === 'file') {
+                lines.push(`${indent}  readonly ${safeName}: WavHandle;`);
+            } else {
+                lines.push(
+                    `${indent}  readonly ${safeName}: ${renderNode(value as WavsFolderNode, indent + '  ')}`,
+                );
+            }
+        }
+        lines.push(`${indent}}`);
+        return lines.join('\n');
+    }
+
+    const treeType = renderNode(tree, '');
+    return `/** Load WAV samples from the wavs/ folder. */\nexport function $wavs(): ${treeType};\n`;
+}
+
+export function buildLibSource(
+    schemas: Schemas,
+    wavsFolderTree?: WavsFolderNode | null,
+): string {
     const schemaLib = generateDSL(schemas);
-    return `declare global {\n${BASE_LIB_SOURCE}\n\n${schemaLib} \n}\n\n export {};\n`;
+    const wavsDecl = generateWavsTypeDeclaration(wavsFolderTree ?? null);
+    return `declare global {\n${BASE_LIB_SOURCE}\n\n${schemaLib}\n\n${wavsDecl}\n}\n\nexport {};\n`;
 }
 
 interface NamespaceNode {
