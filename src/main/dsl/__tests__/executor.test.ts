@@ -851,4 +851,40 @@ describe('$wavs() and $sampler', () => {
         });
         expect(calls).toContain('kick');
     });
+
+    test('$wavs() root is enumerable with Object.keys()', () => {
+        // Use Object.keys() to discover available wavs and access by dynamic key
+        // wavsFolderTree = { kick: 'file', tables: { boom: 'file' } }
+        const result = execWithWavs(
+            `
+            const w = $wavs();
+            const keys = Object.keys(w);
+            // keys should include both 'kick' (file) and 'tables' (dir)
+            if (keys.length !== 2) throw new Error('expected 2 keys, got ' + keys.length);
+            if (!keys.includes('kick')) throw new Error('missing kick');
+            if (!keys.includes('tables')) throw new Error('missing tables');
+            // Access a file by dynamic key
+            $sampler(w.kick, 5).out();
+            `,
+        );
+        const samplers = findModules(result.patch, '$sampler');
+        expect(samplers.length).toBe(1);
+        expect(samplers[0].params.wav.path).toBe('kick');
+    });
+
+    test('$wavs() nested directories are enumerable', () => {
+        // Enumerate keys of a subdirectory
+        const result = execWithWavs(
+            `
+            const t = $wavs().tables;
+            const keys = Object.keys(t);
+            for (const k of keys) {
+                $sampler(t[k], 5).out();
+            }
+            `,
+        );
+        const samplers = findModules(result.patch, '$sampler');
+        expect(samplers.length).toBe(1);
+        expect(samplers[0].params.wav.path).toBe('tables/boom');
+    });
 });

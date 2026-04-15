@@ -71,26 +71,27 @@ function TreeNode({
     };
 
     const handleSingleClick = () => {
-        if (!isRenaming) {
+        if (!isRenaming && entry.fileType !== 'wav') {
             onOpenFile(entry.path, { preview: true });
         }
     };
 
     const handleDoubleClick = () => {
-        if (!isRenaming) {
+        if (!isRenaming && entry.fileType !== 'wav') {
             onOpenFile(entry.path, { preview: false });
         }
     };
 
     if (entry.type === 'file') {
+        const isWav = entry.fileType === 'wav';
         return (
             <li
-                className="tree-file"
+                className={`tree-file${isWav ? ' tree-file-wav' : ''}`}
                 onClick={handleSingleClick}
                 onDoubleClick={handleDoubleClick}
-                onContextMenu={(e) => onContextMenu(e, entry)}
+                onContextMenu={(e) => !isWav && onContextMenu(e, entry)}
             >
-                <span className="file-icon">📄</span>
+                <span className="file-icon">{isWav ? '🔊' : '📄'}</span>
                 {isRenaming ? (
                     <input
                         ref={inputRef}
@@ -380,7 +381,7 @@ export function FileExplorer({
                         <div className="file-tree">
                             {fileTree.length === 0 ? (
                                 <div className="empty-message">
-                                    No .js files found
+                                    No files found
                                 </div>
                             ) : (
                                 <ul className="tree-root">

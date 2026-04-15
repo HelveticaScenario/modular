@@ -61,7 +61,13 @@ impl Sampler {
         // Detect gate rising edge
         let gate_val = self.params.gate.get_value();
         if self.state.gate_trigger.process(gate_val) {
-            self.state.position = 0.0;
+            let speed = self.params.speed.value_or(1.0) as f64;
+            // Start from the appropriate end based on playback direction
+            if speed < 0.0 && frame_count > 0 {
+                self.state.position = (frame_count - 1) as f64;
+            } else {
+                self.state.position = 0.0;
+            }
             self.state.playing = true;
         }
 
@@ -268,6 +274,68 @@ mod tests {
 
         let out = module.get_poly_sample("output").unwrap();
         assert_eq!(out.get(0), 0.0, "should be silent after sample ends");
+    }
+
+    #[test]
+    fn sampler_plays_reverse_with_negative_speed() {
+        // 4-frame mono WAV: [1.0, 2.0, 3.0, 4.0]
+        let wav_data = make_test_wav(vec![vec![1.0, 2.0, 3.0, 4.0]]);
+        let module = make_module(
+            "$sampler",
+            "s_rev",
+            serde_json::json!({
+                "wav": { "type": "wav_ref", "path": "test", "channels": 1 },
+                "gate": 5.0,
+                "speed": -1.0,
+            }),
+        );
+
+        let mut patch = Patch::new();
+        patch.wav_data.insert("test".to_string(), wav_data);
+        module.connect(&patch);
+
+        // With negative speed, gate trigger should start from end of sample.
+        // Frame 3 = 4.0, frame 2 = 3.0, frame 1 = 2.0, frame 0 = 1.0
+        step(&**module); // trigger + play from end: frame 3
+        let out = module.get_poly_sample("output").unwrap();
+        assert!(
+            (out.get(0) - 4.0).abs() < 1e-6,
+            "reverse frame 0: expected 4.0, got {}",
+            out.get(0)
+        );
+
+        step(&**module); // frame 2
+        let out = module.get_poly_sample("output").unwrap();
+        assert!(
+            (out.get(0) - 3.0).abs() < 1e-6,
+            "reverse frame 1: expected 3.0, got {}",
+            out.get(0)
+        );
+
+        step(&**module); // frame 1
+        let out = module.get_poly_sample("output").unwrap();
+        assert!(
+            (out.get(0) - 2.0).abs() < 1e-6,
+            "reverse frame 2: expected 2.0, got {}",
+            out.get(0)
+        );
+
+        step(&**module); // frame 0
+        let out = module.get_poly_sample("output").unwrap();
+        assert!(
+            (out.get(0) - 1.0).abs() < 1e-6,
+            "reverse frame 3: expected 1.0, got {}",
+            out.get(0)
+        );
+
+        // After passing frame 0, should be silent
+        step(&**module);
+        let out = module.get_poly_sample("output").unwrap();
+        assert_eq!(
+            out.get(0),
+            0.0,
+            "should be silent after reverse playback ends"
+        );
     }
 
     #[test]

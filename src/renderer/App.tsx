@@ -228,6 +228,14 @@ function App() {
             });
     }, [refreshFileTree]);
 
+    // Refresh file tree when wavs/ folder changes
+    useEffect(() => {
+        const unsubscribe = electronAPI.onWavsChange(() => {
+            void refreshFileTree();
+        });
+        return unsubscribe;
+    }, [refreshFileTree]);
+
     const selectWorkspaceFolder = useCallback(async () => {
         // Check for dirty file-backed buffers before switching
         const dirtyFileBuffers = buffers.filter(

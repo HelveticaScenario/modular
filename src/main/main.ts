@@ -609,25 +609,42 @@ function startWavsWatcher(workspaceRoot: string) {
     // Tell the Rust side where to find WAVs
     synth.setWavWorkspace(workspaceRoot);
 
+    // Debounce watcher events — fs.watch fires multiple rapid events for a
+    // single rename/move operation.  Coalescing with a short delay avoids
+    // race conditions where we scan mid-rename (directory exists under old
+    // name, files already moved) and either throw ENOENT or capture a
+    // transient snapshot that masks the real change.
+    const DEBOUNCE_MS = 150;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function handleWavsChange() {
+        let newTree: WavsFolderNode | null;
+        try {
+            newTree = scanWavsFolder(workspaceRoot);
+        } catch {
+            // Scan can fail if the directory is mid-rename — schedule a
+            // retry after the filesystem has settled.
+            setTimeout(handleWavsChange, DEBOUNCE_MS);
+            return;
+        }
+        const treeChanged =
+            JSON.stringify(newTree) !== JSON.stringify(currentWavsFolderTree);
+        if (treeChanged) {
+            currentWavsFolderTree = newTree;
+            cachedLibSource = null; // Invalidate cached lib source
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send(IPC_CHANNELS.WAVS_ON_CHANGE);
+            }
+        }
+    }
+
     try {
         wavsWatcher = fs.watch(
             wavsDir,
             { recursive: true },
             (_eventType, _filename) => {
-                // Rescan and update types
-                const newTree = scanWavsFolder(workspaceRoot);
-                const treeChanged =
-                    JSON.stringify(newTree) !==
-                    JSON.stringify(currentWavsFolderTree);
-                if (treeChanged) {
-                    currentWavsFolderTree = newTree;
-                    cachedLibSource = null; // Invalidate cached lib source
-                    if (mainWindow && !mainWindow.isDestroyed()) {
-                        mainWindow.webContents.send(
-                            IPC_CHANNELS.WAVS_ON_CHANGE,
-                        );
-                    }
-                }
+                if (debounceTimer) clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(handleWavsChange, DEBOUNCE_MS);
             },
         );
     } catch {
@@ -669,10 +686,18 @@ function validatePathInWorkspace(filePath: string): string | null {
 }
 
 /**
- * Check if a file should be included (only .js and .mjs files)
+ * Check if a file should be included (JS/MJS patches or WAV samples)
  */
 function isJavaScriptFile(filename: string): boolean {
     return filename.endsWith('.js') || filename.endsWith('.mjs');
+}
+
+function isWavFile(filename: string): boolean {
+    return filename.toLowerCase().endsWith('.wav');
+}
+
+function isSupportedFile(filename: string): boolean {
+    return isJavaScriptFile(filename) || isWavFile(filename);
 }
 
 /**
@@ -711,8 +736,9 @@ function buildFileTree(
                         type: 'directory',
                     });
                 }
-            } else if (item.isFile() && isJavaScriptFile(item.name)) {
+            } else if (item.isFile() && isSupportedFile(item.name)) {
                 entries.push({
+                    fileType: isWavFile(item.name) ? 'wav' : 'js',
                     name: item.name,
                     path: itemRelativePath,
                     type: 'file',

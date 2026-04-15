@@ -340,10 +340,20 @@ export function executePatchScript(
                         }
 
                         // Directory node — return nested proxy
-                        return makeProxy(child as WavsFolderNode, [
-                            ...pathParts,
-                            prop,
-                        ]);
+                        return makeProxy(child, [...pathParts, prop]);
+                    },
+                    ownKeys() {
+                        return Object.keys(node);
+                    },
+                    getOwnPropertyDescriptor(_target, prop) {
+                        if (typeof prop === 'string' && prop in node) {
+                            return {
+                                configurable: true,
+                                enumerable: true,
+                                writable: false,
+                            };
+                        }
+                        return undefined;
                     },
                 },
             );
