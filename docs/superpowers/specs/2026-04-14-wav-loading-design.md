@@ -111,9 +111,13 @@ Called synchronously from JS during DSL execution when a `$wavs()` property is a
 
 ### Patch integration
 
-Before the patch is sent to the audio thread, the N-API layer clones the relevant `Arc<WavData>` entries from the cache into a `HashMap<String, Arc<WavData>>` and attaches it to the `Patch`.
+The `Patch` struct gets a new field: `wav_data: HashMap<String, Arc<WavData>>`.
 
-When the old `Patch` is replaced on the audio thread, it goes to the garbage channel for main-thread drop. The `Arc`s in the old `wav_data` map decrement their refcount — no data is freed because the cache still holds references.
+The `PatchUpdate` struct (incremental diff sent to audio thread via command queue) also gets a `wav_data: HashMap<String, Arc<WavData>>` field. Before building the update on the main thread, the N-API layer clones the entire `WavCache` entries map into this field. This is cheap — it's just cloning `Arc`s.
+
+During `apply_patch_update` on the audio thread, the old `wav_data` map on the `Patch` is swapped out for the new one. The old map is sent to the garbage channel for main-thread drop. The `Arc`s in the old map just decrement their refcount — no actual data is freed because the `WavCache` still holds references. This is a cheap operation: swapping a `HashMap` of `Arc`s involves no audio data copying.
+
+After the swap, `connect()` runs on all modules. `Wav::connect()` looks up its path in `patch.wav_data` and caches the `Arc<WavData>`.
 
 ## DSL Integration
 
