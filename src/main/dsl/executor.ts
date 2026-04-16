@@ -66,6 +66,16 @@ export interface DSLExecutionOptions {
         channels: number;
         frameCount: number;
         path: string;
+        sampleRate: number;
+        duration: number;
+        bitDepth: number;
+        pitch?: number | null;
+        playback?: string | null;
+        bpm?: number | null;
+        beats?: number | null;
+        timeSignature?: { num: number; den: number } | null;
+        loops: Array<{ loopType: string; start: number; end: number }>;
+        cuePoints: Array<{ position: number; label: string }>;
     };
 }
 
@@ -333,9 +343,52 @@ export function executePatchScript(
                             }
                             const info = options.loadWav(relPath);
                             return {
-                                type: 'wav_ref',
+                                type: 'wav_ref' as const,
                                 path: relPath,
                                 channels: info.channels,
+                                sampleRate: info.sampleRate,
+                                frameCount: info.frameCount,
+                                duration: info.duration,
+                                bitDepth: info.bitDepth,
+                                ...(info.pitch != null && {
+                                    pitch: info.pitch,
+                                }),
+                                ...(info.playback != null && {
+                                    playback: info.playback,
+                                }),
+                                ...(info.bpm != null && { bpm: info.bpm }),
+                                ...(info.beats != null && {
+                                    beats: info.beats,
+                                }),
+                                ...(info.timeSignature != null && {
+                                    timeSignature: {
+                                        num: info.timeSignature.num,
+                                        den: info.timeSignature.den,
+                                    },
+                                }),
+                                loops: info.loops.map(
+                                    (l: {
+                                        loopType: string;
+                                        start: number;
+                                        end: number;
+                                    }) => ({
+                                        type: l.loopType as
+                                            | 'forward'
+                                            | 'pingpong'
+                                            | 'backward',
+                                        start: l.start,
+                                        end: l.end,
+                                    }),
+                                ),
+                                cuePoints: info.cuePoints.map(
+                                    (c: {
+                                        position: number;
+                                        label: string;
+                                    }) => ({
+                                        position: c.position,
+                                        label: c.label,
+                                    }),
+                                ),
                             };
                         }
 

@@ -319,6 +319,27 @@ type WavHandle = {
   readonly type: 'wav_ref';
   readonly path: string;
   readonly channels: number;
+  readonly sampleRate: number;
+  readonly frameCount: number;
+  readonly duration: number;
+  readonly bitDepth: number;
+  readonly pitch?: number;
+  readonly playback?: 'one-shot' | 'loop';
+  readonly bpm?: number;
+  readonly beats?: number;
+  readonly timeSignature?: {
+    readonly num: number;
+    readonly den: number;
+  };
+  readonly loops: ReadonlyArray<{
+    readonly type: 'forward' | 'pingpong' | 'backward';
+    readonly start: number;
+    readonly end: number;
+  }>;
+  readonly cuePoints: ReadonlyArray<{
+    readonly position: number;
+    readonly label: string;
+  }>;
 };
 
 /**

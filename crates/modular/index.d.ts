@@ -274,10 +274,36 @@ export interface ValidationError {
   actualValue?: string
 }
 
+export interface WavCuePointInfo {
+  position: number
+  label: string
+}
+
 export interface WavLoadInfo {
   channels: number
   frameCount: number
   path: string
+  sampleRate: number
+  duration: number
+  bitDepth: number
+  pitch?: number
+  playback?: string
+  bpm?: number
+  beats?: number
+  timeSignature?: WavTimeSignature
+  loops: Array<WavLoopInfo>
+  cuePoints: Array<WavCuePointInfo>
+}
+
+export interface WavLoopInfo {
+  loopType: string
+  start: number
+  end: number
+}
+
+export interface WavTimeSignature {
+  num: number
+  den: number
 }
 /**
  * Represents a character span in source code, used for argument highlighting.

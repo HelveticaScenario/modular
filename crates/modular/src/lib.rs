@@ -5,6 +5,7 @@ mod commands;
 mod midi;
 mod params_cache;
 mod validation;
+mod wav_metadata;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use napi::bindgen_prelude::Float32Array;
@@ -47,11 +48,47 @@ pub fn get_reserved_output_names() -> Vec<String> {
 struct WavCacheEntry {
     data: Arc<modular_core::types::WavData>,
     mtime: SystemTime,
+    metadata: wav_metadata::WavMetadata,
 }
 
 struct WavCache {
     entries: HashMap<String, WavCacheEntry>,
     workspace_path: PathBuf,
+}
+
+fn build_wav_load_info(rel_path: &str, num_channels: u32, frame_count: u32, meta: &wav_metadata::WavMetadata) -> WavLoadInfo {
+    WavLoadInfo {
+        channels: num_channels,
+        frame_count,
+        path: rel_path.to_string(),
+        sample_rate: meta.sample_rate,
+        duration: meta.frame_count as f64 / meta.sample_rate as f64,
+        bit_depth: meta.bit_depth as u32,
+        pitch: meta.pitch,
+        playback: meta.playback.as_ref().map(|p| match p {
+            wav_metadata::PlaybackMode::OneShot => "one-shot".to_string(),
+            wav_metadata::PlaybackMode::Loop => "loop".to_string(),
+        }),
+        bpm: meta.bpm,
+        beats: meta.beats,
+        time_signature: meta.time_signature.map(|(num, den)| WavTimeSignature {
+            num: num as u32,
+            den: den as u32,
+        }),
+        loops: meta.loops.iter().map(|l| WavLoopInfo {
+            loop_type: match l.loop_type {
+                wav_metadata::LoopType::Forward => "forward".to_string(),
+                wav_metadata::LoopType::PingPong => "pingpong".to_string(),
+                wav_metadata::LoopType::Backward => "backward".to_string(),
+            },
+            start: l.start_seconds,
+            end: l.end_seconds,
+        }).collect(),
+        cue_points: meta.cue_points.iter().map(|c| WavCuePointInfo {
+            position: c.position_seconds,
+            label: c.label.clone(),
+        }).collect(),
+    }
 }
 
 impl WavCache {
@@ -93,11 +130,12 @@ impl WavCache {
         // Cache hit — mtime matches
         if let Some(entry) = self.entries.get(rel_path) {
             if entry.mtime == mtime {
-                return Ok(WavLoadInfo {
-                    channels: entry.data.channel_count() as u32,
-                    frame_count: entry.data.frame_count() as u32,
-                    path: rel_path.to_string(),
-                });
+                return Ok(build_wav_load_info(
+                    rel_path,
+                    entry.data.channel_count() as u32,
+                    entry.data.frame_count() as u32,
+                    &entry.metadata,
+                ));
             }
         }
 
@@ -165,17 +203,21 @@ impl WavCache {
             file_sample_rate,
         ));
 
-        let info = WavLoadInfo {
-            channels: num_channels as u32,
-            frame_count: frame_count as u32,
-            path: rel_path.to_string(),
-        };
+        // Extract RIFF metadata (re-open file for a clean read)
+        let mut riff_file = std::fs::File::open(&full_path).map_err(|e| {
+            napi::Error::from_reason(format!("Failed to open WAV for metadata: {} ({})", full_path.display(), e))
+        })?;
+        let metadata = wav_metadata::extract(&mut riff_file, total_frames as u64)
+            .map_err(|e| napi::Error::from_reason(format!("Failed to extract WAV metadata from {}: {}", full_path.display(), e)))?;
+
+        let info = build_wav_load_info(rel_path, num_channels as u32, frame_count as u32, &metadata);
 
         self.entries.insert(
             rel_path.to_string(),
             WavCacheEntry {
                 data: wav_data,
                 mtime,
+                metadata,
             },
         );
 
@@ -184,10 +226,39 @@ impl WavCache {
 }
 
 #[napi(object)]
+pub struct WavLoopInfo {
+    pub loop_type: String,
+    pub start: f64,
+    pub end: f64,
+}
+
+#[napi(object)]
+pub struct WavCuePointInfo {
+    pub position: f64,
+    pub label: String,
+}
+
+#[napi(object)]
+pub struct WavTimeSignature {
+    pub num: u32,
+    pub den: u32,
+}
+
+#[napi(object)]
 pub struct WavLoadInfo {
     pub channels: u32,
     pub frame_count: u32,
     pub path: String,
+    pub sample_rate: u32,
+    pub duration: f64,
+    pub bit_depth: u32,
+    pub pitch: Option<f64>,
+    pub playback: Option<String>,
+    pub bpm: Option<f64>,
+    pub beats: Option<u32>,
+    pub time_signature: Option<WavTimeSignature>,
+    pub loops: Vec<WavLoopInfo>,
+    pub cue_points: Vec<WavCuePointInfo>,
 }
 
 /// Information about a MIDI input port (for N-API)

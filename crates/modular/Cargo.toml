@@ -15,6 +15,7 @@ tracy = ["modular_core/tracy", "tracy-client", "profiling/profile-with-tracy"]
 [dependencies]
 napi-derive = "3.4.1"
 hound = "3.5"
+riff = "2"
 profiling = { workspace = true }
 parking_lot = "0.12.5"
 schemars = "1.1.0"

@@ -1097,6 +1097,7 @@ dependencies = [
  "napi-derive",
  "parking_lot",
  "profiling",
+ "riff",
  "ringbuf",
  "rtrb",
  "schemars",
@@ -1677,6 +1678,12 @@ name = "regex-syntax"
 version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
+
+[[package]]
+name = "riff"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c601484456988d75017d86700d3743b949c21cdc7399f940c75e34680d185c5"
 
 [[package]]
 name = "ringbuf"

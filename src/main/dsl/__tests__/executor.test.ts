@@ -759,6 +759,16 @@ describe('$wavs() and $sampler', () => {
         channels: path === 'kick' ? 1 : 2,
         frameCount: 1000,
         path,
+        sampleRate: 44100,
+        duration: 1000 / 44100,
+        bitDepth: 16,
+        pitch: path === 'kick' ? 0.0 : null,
+        playback: path === 'kick' ? 'one-shot' : null,
+        bpm: null,
+        beats: null,
+        timeSignature: null,
+        loops: [],
+        cuePoints: [],
     });
 
     function execWithWavs(source: string) {
@@ -773,21 +783,29 @@ describe('$wavs() and $sampler', () => {
         const result = execWithWavs('$sampler($wavs().kick, 5).out()');
         const sampler = findModules(result.patch, '$sampler');
         expect(sampler.length).toBe(1);
-        expect(sampler[0].params.wav).toEqual({
+        expect(sampler[0].params.wav).toMatchObject({
             type: 'wav_ref',
             path: 'kick',
             channels: 1,
+            sampleRate: 44100,
+            frameCount: 1000,
+            bitDepth: 16,
+            pitch: 0.0,
+            playback: 'one-shot',
         });
+        expect(sampler[0].params.wav.loops).toEqual([]);
+        expect(sampler[0].params.wav.cuePoints).toEqual([]);
     });
 
     test('$wavs() traverses nested directories', () => {
         const result = execWithWavs('$sampler($wavs().tables.boom, 5).out()');
         const sampler = findModules(result.patch, '$sampler');
         expect(sampler.length).toBe(1);
-        expect(sampler[0].params.wav).toEqual({
+        expect(sampler[0].params.wav).toMatchObject({
             type: 'wav_ref',
             path: 'tables/boom',
             channels: 2,
+            sampleRate: 44100,
         });
     });
 
@@ -810,7 +828,7 @@ describe('$wavs() and $sampler', () => {
         );
         const sampler = findModules(result.patch, '$sampler');
         expect(sampler.length).toBe(1);
-        expect(sampler[0].params.wav).toEqual({
+        expect(sampler[0].params.wav).toMatchObject({
             type: 'wav_ref',
             path: 'kick',
             channels: 1,
@@ -842,7 +860,21 @@ describe('$wavs() and $sampler', () => {
         const calls: string[] = [];
         const trackingLoadWav = (path: string) => {
             calls.push(path);
-            return { channels: 1, frameCount: 500, path };
+            return {
+                channels: 1,
+                frameCount: 500,
+                path,
+                sampleRate: 44100,
+                duration: 500 / 44100,
+                bitDepth: 16,
+                pitch: null,
+                playback: null,
+                bpm: null,
+                beats: null,
+                timeSignature: null,
+                loops: [],
+                cuePoints: [],
+            };
         };
         executePatchScript('$sampler($wavs().kick, 5).out()', schemas, {
             ...DEFAULT_EXECUTION_OPTIONS,
@@ -886,5 +918,58 @@ describe('$wavs() and $sampler', () => {
         const samplers = findModules(result.patch, '$sampler');
         expect(samplers.length).toBe(1);
         expect(samplers[0].params.wav.path).toBe('tables/boom');
+    });
+
+    test('$wavs() exposes metadata with loops and cue points', () => {
+        const metadataLoadWav = (path: string) => ({
+            channels: 1,
+            frameCount: 44100,
+            path,
+            sampleRate: 44100,
+            duration: 1.0,
+            bitDepth: 24,
+            pitch: 0.75,
+            playback: 'loop' as const,
+            bpm: 120.0,
+            beats: 4,
+            timeSignature: { num: 4, den: 4 },
+            loops: [
+                { loopType: 'forward', start: 0.0, end: 0.5 },
+                { loopType: 'pingpong', start: 0.25, end: 0.75 },
+            ],
+            cuePoints: [
+                { position: 0.0, label: 'Start' },
+                { position: 0.5, label: 'Middle' },
+            ],
+        });
+
+        const result = executePatchScript(
+            '$sampler($wavs().kick, 5).out()',
+            schemas,
+            {
+                ...DEFAULT_EXECUTION_OPTIONS,
+                wavsFolderTree: wavsFolderTree as any,
+                loadWav: metadataLoadWav,
+            },
+        );
+        const sampler = findModules(result.patch, '$sampler');
+        const wav = sampler[0].params.wav;
+
+        expect(wav.sampleRate).toBe(44100);
+        expect(wav.duration).toBe(1.0);
+        expect(wav.bitDepth).toBe(24);
+        expect(wav.pitch).toBe(0.75);
+        expect(wav.playback).toBe('loop');
+        expect(wav.bpm).toBe(120.0);
+        expect(wav.beats).toBe(4);
+        expect(wav.timeSignature).toEqual({ num: 4, den: 4 });
+        expect(wav.loops).toEqual([
+            { type: 'forward', start: 0.0, end: 0.5 },
+            { type: 'pingpong', start: 0.25, end: 0.75 },
+        ]);
+        expect(wav.cuePoints).toEqual([
+            { position: 0.0, label: 'Start' },
+            { position: 0.5, label: 'Middle' },
+        ]);
     });
 });
