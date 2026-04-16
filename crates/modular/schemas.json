@@ -1169,6 +1169,424 @@
     ]
   },
   {
+    "name": "$dattorro",
+    "documentation": "Stereo plate reverb based on the Dattorro algorithm.\n\nImplements Jon Dattorro's plate reverberator with input diffusion,\na cross-coupled stereo tank, and multi-tap output. Even input\nchannels are summed to the left input, odd channels to the right.\nOutput is always 100% wet.\n\n```js\n$dattorro($saw('c3'), { decay: 3, damping: 1, size: 2 }).out()\n```",
+    "paramsSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "DattorroParams",
+      "type": "object",
+      "properties": {
+        "damping": {
+          "description": "high-frequency damping in the reverb tank (-5 to 5, default 0)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MonoSignal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decay": {
+          "description": "reverb decay time (-5 to 5, default 0)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MonoSignal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "diffusion": {
+          "description": "input diffusion amount (0 to 5, default 3.5)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MonoSignal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "input": {
+          "description": "audio input (even channels → left, odd channels → right)",
+          "$ref": "#/$defs/PolySignal"
+        },
+        "modulation": {
+          "description": "external tank modulation signal (-5 to 5, default 0, not clamped)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MonoSignal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "predelay": {
+          "description": "predelay time in seconds (0 to 0.5, default 0)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MonoSignal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "size": {
+          "description": "room size — scales all delay line lengths (-5 to 5, default 0)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MonoSignal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "input"
+      ],
+      "$defs": {
+        "MonoSignal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Signal"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Signal"
+              }
+            }
+          ]
+        },
+        "PolySignal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Signal"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Signal"
+              }
+            }
+          ]
+        },
+        "Signal": {
+          "anyOf": [
+            {
+              "type": "number",
+              "format": "double"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/SignalTaggedSchema"
+            }
+          ]
+        },
+        "SignalTaggedSchema": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "channel": {
+                  "type": "integer",
+                  "format": "uint",
+                  "default": 0,
+                  "minimum": 0
+                },
+                "module": {
+                  "type": "string"
+                },
+                "port": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "const": "cable"
+                }
+              },
+              "required": [
+                "type",
+                "module",
+                "port"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "outputs": [
+      {
+        "name": "output",
+        "description": "stereo reverb output (ch0=left, ch1=right)",
+        "polyphonic": true,
+        "default": true
+      }
+    ],
+    "signalParams": [
+      {
+        "name": "input",
+        "description": "audio input (even channels → left, odd channels → right)",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": -5.0,
+        "maxValue": 5.0
+      },
+      {
+        "name": "decay",
+        "description": "reverb decay time (-5 to 5, default 0)",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": -5.0,
+        "maxValue": 5.0
+      },
+      {
+        "name": "damping",
+        "description": "high-frequency damping in the reverb tank (-5 to 5, default 0)",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": -5.0,
+        "maxValue": 5.0
+      },
+      {
+        "name": "size",
+        "description": "room size — scales all delay line lengths (-5 to 5, default 0)",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": -5.0,
+        "maxValue": 5.0
+      },
+      {
+        "name": "predelay",
+        "description": "predelay time in seconds (0 to 0.5, default 0)",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": 0.0,
+        "maxValue": 0.5
+      },
+      {
+        "name": "diffusion",
+        "description": "input diffusion amount (0 to 5, default 3.5)",
+        "signalType": "control",
+        "defaultValue": 3.5,
+        "minValue": 0.0,
+        "maxValue": 5.0
+      },
+      {
+        "name": "modulation",
+        "description": "external tank modulation signal (-5 to 5, default 0, not clamped)",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": -5.0,
+        "maxValue": 5.0
+      }
+    ],
+    "positionalArgs": [
+      {
+        "name": "input"
+      }
+    ],
+    "channels": 2
+  },
+  {
+    "name": "$plate",
+    "documentation": "Stereo plate reverb with a dense Glicol-inspired feedback network.\n\nUses a longer feedback path with distributed damping and more allpass\nstages than the standard Dattorro algorithm, producing a thicker,\nwarmer reverb tail. Always 100% wet — use `.send()` or `$mix` for\ndry/wet blending.\n\n```js\n$plate($saw('c3')).out()\n$plate($saw('c3'), { decay: 2, bandwidth: 3 }).out()\n$plate($saw('c3'), { modulation: $sine('0.1hz') }).out()\n```",
+    "paramsSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "PlateParams",
+      "type": "object",
+      "properties": {
+        "bandwidth": {
+          "description": "input bandwidth — controls high-frequency content entering the tank.\ndefault 2.02V → coeff 0.7 (maps -5V..5V to 0.005..0.9999, clamped)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MonoSignal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "damping": {
+          "description": "tank damping — higher values absorb more high frequencies per recirculation.\ndefault 4.09V → coeff 0.1 (maps -5V..5V to 0.9999..0.005, inverted, clamped)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MonoSignal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decay": {
+          "description": "feedback decay — controls how long the reverb tail sustains.\ndefault -2.0V → coeff 0.3 (maps -5V..5V to 0.0..0.9999, clamped)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MonoSignal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "input": {
+          "description": "audio input (even channels → left, odd channels → right)",
+          "$ref": "#/$defs/PolySignal"
+        },
+        "modulation": {
+          "description": "external tank modulation signal.\ndefault 0.0V → no modulation (±5V maps to ±5.5 samples excursion at 48kHz)",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MonoSignal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "input"
+      ],
+      "$defs": {
+        "MonoSignal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Signal"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Signal"
+              }
+            }
+          ]
+        },
+        "PolySignal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Signal"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Signal"
+              }
+            }
+          ]
+        },
+        "Signal": {
+          "anyOf": [
+            {
+              "type": "number",
+              "format": "double"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/SignalTaggedSchema"
+            }
+          ]
+        },
+        "SignalTaggedSchema": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "channel": {
+                  "type": "integer",
+                  "format": "uint",
+                  "default": 0,
+                  "minimum": 0
+                },
+                "module": {
+                  "type": "string"
+                },
+                "port": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "const": "cable"
+                }
+              },
+              "required": [
+                "type",
+                "module",
+                "port"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "outputs": [
+      {
+        "name": "output",
+        "description": "stereo reverb output (ch0=left, ch1=right)",
+        "polyphonic": true,
+        "default": true
+      }
+    ],
+    "signalParams": [
+      {
+        "name": "input",
+        "description": "audio input (even channels → left, odd channels → right)",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": -5.0,
+        "maxValue": 5.0
+      },
+      {
+        "name": "bandwidth",
+        "description": "input bandwidth — controls high-frequency content entering the tank.\ndefault 2.02V → coeff 0.7 (maps -5V..5V to 0.005..0.9999, clamped)",
+        "signalType": "control",
+        "defaultValue": 2.02,
+        "minValue": -5.0,
+        "maxValue": 5.0
+      },
+      {
+        "name": "damping",
+        "description": "tank damping — higher values absorb more high frequencies per recirculation.\ndefault 4.09V → coeff 0.1 (maps -5V..5V to 0.9999..0.005, inverted, clamped)",
+        "signalType": "control",
+        "defaultValue": 4.09,
+        "minValue": -5.0,
+        "maxValue": 5.0
+      },
+      {
+        "name": "decay",
+        "description": "feedback decay — controls how long the reverb tail sustains.\ndefault -2.0V → coeff 0.3 (maps -5V..5V to 0.0..0.9999, clamped)",
+        "signalType": "control",
+        "defaultValue": -2.0,
+        "minValue": -5.0,
+        "maxValue": 5.0
+      },
+      {
+        "name": "modulation",
+        "description": "external tank modulation signal.\ndefault 0.0V → no modulation (±5V maps to ±5.5 samples excursion at 48kHz)",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": -5.0,
+        "maxValue": 5.0
+      }
+    ],
+    "positionalArgs": [
+      {
+        "name": "input"
+      }
+    ],
+    "channels": 2
+  },
+  {
     "name": "$segment",
     "documentation": "Waveshaper that morphs through 8 distinct tonal shapes as you sweep the\namount control. Low settings pass the signal cleanly; mid settings compress\nand square it off; high settings introduce stepped, ripple-like overtone\npatterns. Works best on simple waveforms like sines or triangles.",
     "paramsSchema": {
@@ -7542,3 +7960,4 @@
     ]
   }
 ]
+          "$ref": "#/$

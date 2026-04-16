@@ -1,3 +1,6 @@
+pub mod delay_line;
+pub mod one_pole;
+
 use crate::dsp::consts::{LUT_PITCH_RATIO_HIGH, LUT_PITCH_RATIO_LOW};
 
 // ============ Gate/Trigger Voltage Standards ============

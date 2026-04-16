@@ -296,6 +296,8 @@ fn minimal_params(module_type: &str) -> serde_json::Value {
         "$clockDivider" => json!({ "division": 2, "input": 0.0 }),
         "$sah" => json!({ "input": 0.0, "trigger": 0.0 }),
         "$tah" => json!({ "input": 0.0, "gate": 0.0 }),
+        "$dattorro" => json!({ "input": 0.0 }),
+        "$plate" => json!({ "input": 0.0 }),
         "$step" => json!({ "steps": [0.0], "next": 0.0 }),
         "$midiCC" => json!({ "cc": 1 }),
         "_clock" => json!({ "tempo": 120.0, "numerator": 4, "denominator": 4 }),
