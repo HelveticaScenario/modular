@@ -84,6 +84,9 @@ export interface ElectronAPI {
         getTransportState: Promisify<
             IPCHandlers[typeof IPC_CHANNELS.SYNTH_GET_TRANSPORT_STATE]
         >;
+        enableLink: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.SYNTH_ENABLE_LINK]
+        >;
     };
     // Audio device operations
     audio: {
@@ -279,6 +282,8 @@ const electronAPI: ElectronAPI = {
 
         getTransportState: (...args) =>
             invokeIPC('SYNTH_GET_TRANSPORT_STATE', ...args),
+
+        enableLink: (...args) => invokeIPC('SYNTH_ENABLE_LINK', ...args),
 
         isRecording: (...args) => invokeIPC('SYNTH_IS_RECORDING', ...args),
 
