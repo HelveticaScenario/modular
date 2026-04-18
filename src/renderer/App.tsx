@@ -438,118 +438,125 @@ function App() {
     }, [isClockRunning]);
 
     useEffect(() => {
-        if (isClockRunningRef.current) {
-            const tick = () => {
-                Promise.all([
-                    electronAPI.synthesizer.getScopes(),
-                    electronAPI.synthesizer.getTransportState(),
-                ])
-                    .then(([scopeData, transport]) => {
-                        // Build a map of buffer key → (Float32Array, ScopeStats)
-                        const bufferMap = new Map<
-                            string,
-                            {
-                                data: Float32Array;
-                                stats: {
-                                    min: number;
-                                    max: number;
-                                    peakToPeak: number;
-                                    readOffset: number;
-                                };
-                            }
-                        >();
-                        for (const [bufferKey, data, stats] of scopeData) {
-                            const key = scopeBufferKeyToString(bufferKey);
-                            bufferMap.set(key, { data, stats });
+        if (!isClockRunningRef.current) {
+            return;
+        }
+
+        let cancelled = false;
+        const tick = () => {
+            if (cancelled) return;
+            Promise.all([
+                electronAPI.synthesizer.getScopes(),
+                electronAPI.synthesizer.getTransportState(),
+            ])
+                .then(([scopeData, transport]) => {
+                    if (cancelled) return;
+                    // Build a map of buffer key → (Float32Array, ScopeStats)
+                    const bufferMap = new Map<
+                        string,
+                        {
+                            data: Float32Array;
+                            stats: {
+                                min: number;
+                                max: number;
+                                peakToPeak: number;
+                                readOffset: number;
+                            };
+                        }
+                    >();
+                    for (const [bufferKey, data, stats] of scopeData) {
+                        const key = scopeBufferKeyToString(bufferKey);
+                        bufferMap.set(key, { data, stats });
+                    }
+
+                    // For each scope canvas, collect its channels' data and draw
+                    for (const [
+                        ,
+                        canvas,
+                    ] of scopeCanvasMapRef.current.entries()) {
+                        const rangeMin = parseFloat(
+                            canvas.dataset.scopeRangeMin || '-5',
+                        );
+                        const rangeMax = parseFloat(
+                            canvas.dataset.scopeRangeMax || '5',
+                        );
+                        const channelKeysStr = canvas.dataset.scopeChannelKeys;
+                        if (!channelKeysStr) {
+                            continue;
                         }
 
-                        // For each scope canvas, collect its channels' data and draw
-                        for (const [
-                            ,
-                            canvas,
-                        ] of scopeCanvasMapRef.current.entries()) {
-                            const rangeMin = parseFloat(
-                                canvas.dataset.scopeRangeMin || '-5',
-                            );
-                            const rangeMax = parseFloat(
-                                canvas.dataset.scopeRangeMax || '5',
-                            );
-                            const channelKeysStr =
-                                canvas.dataset.scopeChannelKeys;
-                            if (!channelKeysStr) {
-                                continue;
-                            }
+                        const channelKeys = JSON.parse(
+                            channelKeysStr,
+                        ) as string[];
+                        const channels: Float32Array[] = [];
+                        const readOffsets: number[] = [];
+                        let globalMin = Infinity;
+                        let globalMax = -Infinity;
 
-                            const channelKeys = JSON.parse(
-                                channelKeysStr,
-                            ) as string[];
-                            const channels: Float32Array[] = [];
-                            const readOffsets: number[] = [];
-                            let globalMin = Infinity;
-                            let globalMax = -Infinity;
-
-                            for (const chKey of channelKeys) {
-                                const entry = bufferMap.get(chKey);
-                                if (entry) {
-                                    channels.push(entry.data);
-                                    readOffsets.push(entry.stats.readOffset);
-                                    if (entry.stats.min < globalMin) {
-                                        globalMin = entry.stats.min;
-                                    }
-                                    if (entry.stats.max > globalMax) {
-                                        globalMax = entry.stats.max;
-                                    }
+                        for (const chKey of channelKeys) {
+                            const entry = bufferMap.get(chKey);
+                            if (entry) {
+                                channels.push(entry.data);
+                                readOffsets.push(entry.stats.readOffset);
+                                if (entry.stats.min < globalMin) {
+                                    globalMin = entry.stats.min;
+                                }
+                                if (entry.stats.max > globalMax) {
+                                    globalMax = entry.stats.max;
                                 }
                             }
-
-                            if (channels.length > 0) {
-                                drawOscilloscope(channels, canvas, {
-                                    range: [rangeMin, rangeMax],
-                                    stats: {
-                                        max: globalMax,
-                                        min: globalMin,
-                                        peakToPeak: globalMax - globalMin,
-                                        readOffset: readOffsets,
-                                    },
-                                });
-                            }
                         }
 
-                        setTransportState(transport);
+                        if (channels.length > 0) {
+                            drawOscilloscope(channels, canvas, {
+                                range: [rangeMin, rangeMax],
+                                stats: {
+                                    max: globalMax,
+                                    min: globalMin,
+                                    peakToPeak: globalMax - globalMin,
+                                    readOffset: readOffsets,
+                                },
+                            });
+                        }
+                    }
 
-                        // Check if a pending UI state should be committed
-                        const pending = pendingUIStateRef.current;
-                        if (
-                            pending &&
-                            transport.lastAppliedUpdateId >= pending.updateId
-                        ) {
-                            pendingUIStateRef.current = null;
-                            // Swap decoration collections: dispose old, activate pending
-                            scopeDecorationsRef.current?.clear();
-                            scopeDecorationsRef.current =
-                                pending.scopeDecorations;
-                            setScopeViews(pending.scopeViews);
-                            setSliderDefs(pending.sliderDefs);
-                            if (pending.interpolationResolutions) {
-                                setActiveInterpolationResolutions(
-                                    pending.interpolationResolutions,
-                                );
-                            }
-                        }
+                    setTransportState(transport);
 
-                        if (isClockRunningRef.current) {
-                            requestAnimationFrame(tick);
+                    // Check if a pending UI state should be committed
+                    const pending = pendingUIStateRef.current;
+                    if (
+                        pending &&
+                        transport.lastAppliedUpdateId >= pending.updateId
+                    ) {
+                        pendingUIStateRef.current = null;
+                        // Swap decoration collections: dispose old, activate pending
+                        scopeDecorationsRef.current?.clear();
+                        scopeDecorationsRef.current = pending.scopeDecorations;
+                        setScopeViews(pending.scopeViews);
+                        setSliderDefs(pending.sliderDefs);
+                        if (pending.interpolationResolutions) {
+                            setActiveInterpolationResolutions(
+                                pending.interpolationResolutions,
+                            );
                         }
-                    })
-                    .catch((err) => {
-                        console.error('Failed to get scopes:', err);
-                        if (isClockRunningRef.current) {
-                            requestAnimationFrame(tick);
-                        }
-                    });
-            };
-            requestAnimationFrame(tick);
-        }
+                    }
+
+                    if (isClockRunningRef.current && !cancelled) {
+                        requestAnimationFrame(tick);
+                    }
+                })
+                .catch((err) => {
+                    console.error('Failed to get scopes:', err);
+                    if (isClockRunningRef.current && !cancelled) {
+                        requestAnimationFrame(tick);
+                    }
+                });
+        };
+        requestAnimationFrame(tick);
+
+        return () => {
+            cancelled = true;
+        };
     }, [isClockRunning]);
 
     const handleSaveFile = useCallback(

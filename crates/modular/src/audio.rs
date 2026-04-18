@@ -630,6 +630,27 @@ const AUDIO_OUTPUT_ATTENUATION: f32 = 0.2;
 /// the [-5, 5] volt range used by DSP modules (inverse of AUDIO_OUTPUT_ATTENUATION).
 const AUDIO_INPUT_GAIN: f32 = 1.0 / AUDIO_OUTPUT_ATTENUATION;
 
+/// Safety soft clipper: linear below the knee, tanh saturation above.
+/// Prevents output from ever reaching ±1.0 to protect speakers and hearing.
+const SAFETY_CLIP_KNEE: f32 = 0.9;
+const SAFETY_CLIP_HEADROOM: f32 = 1.0 - SAFETY_CLIP_KNEE;
+
+#[inline(always)]
+fn safety_soft_clip(x: f32) -> f32 {
+  if !x.is_finite() {
+    return 0.0;
+  }
+  if x.abs() <= SAFETY_CLIP_KNEE {
+    x
+  } else {
+    let sign = x.signum();
+    let excess = x.abs() - SAFETY_CLIP_KNEE;
+    let clipped = SAFETY_CLIP_KNEE + SAFETY_CLIP_HEADROOM * (excess / SAFETY_CLIP_HEADROOM).tanh();
+    // tanh asymptotically approaches 1.0 but f32 can round to exactly 1.0 for large inputs
+    sign * clipped.min(SAFETY_CLIP_KNEE + SAFETY_CLIP_HEADROOM * 0.9999)
+  }
+}
+
 const SCOPE_CAPACITY: u32 = 1024;
 
 use modular_core::types::ScopeStats;
@@ -1845,7 +1866,7 @@ impl FinalStateProcessor {
     let mut any_audible = false;
     for ch in 0..num_channels.min(PORT_MAX_CHANNELS) {
       let sample = raw_output[ch] * self.attenuation_factor;
-      output[ch] = sample;
+      output[ch] = safety_soft_clip(sample);
       if sample.abs() >= 0.0005 {
         any_audible = true;
       }
@@ -2312,5 +2333,49 @@ mod tests {
       "my-vca",
       "module should be at new ID"
     );
+  }
+
+  // ============================================================================
+  // Safety soft clip tests
+  // ============================================================================
+
+  #[test]
+  fn test_safety_soft_clip_linear_below_knee() {
+    for &val in &[0.0, 0.1, -0.1, 0.5, -0.5, 0.89, -0.89, 0.9, -0.9] {
+      assert_eq!(safety_soft_clip(val), val, "expected linear passthrough for {val}");
+    }
+  }
+
+  #[test]
+  fn test_safety_soft_clip_saturates_above_knee() {
+    for &val in &[1.0, 2.0, 5.0, 10.0, 100.0] {
+      let out = safety_soft_clip(val);
+      assert!(out > SAFETY_CLIP_KNEE, "output {out} should be above knee for input {val}");
+      assert!(out < 1.0, "output {out} should be below 1.0 for input {val}");
+    }
+    for &val in &[-1.0, -2.0, -5.0, -10.0, -100.0] {
+      let out = safety_soft_clip(val);
+      assert!(out < -SAFETY_CLIP_KNEE, "output {out} should be below -knee for input {val}");
+      assert!(out > -1.0, "output {out} should be above -1.0 for input {val}");
+    }
+  }
+
+  #[test]
+  fn test_safety_soft_clip_monotonic() {
+    let mut prev = safety_soft_clip(-100.0);
+    let mut x = -100.0;
+    while x <= 100.0 {
+      let out = safety_soft_clip(x);
+      assert!(out >= prev, "not monotonic at {x}: {prev} -> {out}");
+      prev = out;
+      x += 0.1;
+    }
+  }
+
+  #[test]
+  fn test_safety_soft_clip_nan_inf() {
+    assert_eq!(safety_soft_clip(f32::NAN), 0.0);
+    assert_eq!(safety_soft_clip(f32::INFINITY), 0.0);
+    assert_eq!(safety_soft_clip(f32::NEG_INFINITY), 0.0);
   }
 }
