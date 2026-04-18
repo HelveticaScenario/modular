@@ -34,6 +34,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::OnceLock;
+use std::sync::atomic::AtomicU32;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -1759,6 +1760,11 @@ where
         audio_processor.current_link_state = audio_processor.capture_link_state();
         audio_processor.frame_in_buffer = 0;
 
+        // Write Link state to transport meter for UI visibility
+        if let Some(ref link) = audio_processor.link {
+          audio_processor.transport_meter.write_link_state(true, link.num_peers() as u32);
+        }
+
         let num_frames = output.len() / num_channels;
 
         {
@@ -2106,6 +2112,10 @@ pub struct TransportMeter {
   has_queued_update: AtomicBool,
   /// The update_id of the most recently applied patch update
   last_applied_update_id: AtomicU64,
+  /// Whether Ableton Link is currently enabled
+  link_enabled: AtomicBool,
+  /// Number of Link peers in the session
+  link_peers: AtomicU32,
 }
 
 impl Default for TransportMeter {
@@ -2120,6 +2130,8 @@ impl Default for TransportMeter {
       is_playing: AtomicBool::new(false),
       has_queued_update: AtomicBool::new(false),
       last_applied_update_id: AtomicU64::new(0),
+      link_enabled: AtomicBool::new(false),
+      link_peers: AtomicU32::new(0),
     }
   }
 }
@@ -2169,6 +2181,13 @@ impl TransportMeter {
       .store(update_id, Ordering::Relaxed);
   }
 
+  /// Write Link enabled state and peer count (called from audio thread or main thread).
+  #[inline]
+  pub fn write_link_state(&self, enabled: bool, peers: u32) {
+    self.link_enabled.store(enabled, Ordering::Relaxed);
+    self.link_peers.store(peers, Ordering::Relaxed);
+  }
+
   /// Read transport snapshot from the main thread.
   pub fn snapshot(&self) -> TransportSnapshot {
     TransportSnapshot {
@@ -2181,6 +2200,8 @@ impl TransportMeter {
       is_playing: self.is_playing.load(Ordering::Relaxed),
       has_queued_update: self.has_queued_update.load(Ordering::Relaxed),
       last_applied_update_id: self.last_applied_update_id.load(Ordering::Relaxed) as f64,
+      link_enabled: self.link_enabled.load(Ordering::Relaxed),
+      link_peers: self.link_peers.load(Ordering::Relaxed),
     }
   }
 }
@@ -2206,6 +2227,10 @@ pub struct TransportSnapshot {
   pub has_queued_update: bool,
   /// The update_id of the most recently applied patch update (as f64 for N-API compatibility)
   pub last_applied_update_id: f64,
+  /// Whether Ableton Link is currently enabled
+  pub link_enabled: bool,
+  /// Number of Link peers in the session
+  pub link_peers: u32,
 }
 
 #[cfg(test)]

@@ -998,6 +998,13 @@ impl Synthesizer {
     self.state.get_transport_state()
   }
 
+  #[napi]
+  pub fn enable_link(&self, enabled: bool) -> Result<()> {
+    self.state.send_command(GraphCommand::EnableLink(enabled))?;
+    self.state.transport_meter.write_link_state(enabled, 0);
+    Ok(())
+  }
+
   // =========================================================================
   // Audio Device Management
   // =========================================================================
