@@ -1587,7 +1587,6 @@ dependencies = [
  "proc-macro2",
  "syn 2.0.111",
 ]
-]
 
 [[package]]
 name = "proc-macro-crate"

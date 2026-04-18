@@ -871,7 +871,7 @@ function App() {
                 <TransportDisplay
                     transport={transportState}
                     onToggleLink={(enabled) => {
-                        electronAPI.synthesizer.enableLink(enabled);
+                        void electronAPI.synthesizer.enableLink(enabled);
                         // Optimistically update UI — polling only runs while playing
                         setTransportState((prev) =>
                             prev
@@ -885,7 +885,7 @@ function App() {
                         if (!enabled) {
                             setFollowMode(false);
                             setFollowQueued(false);
-                            electronAPI.synthesizer.setFollowMode(false);
+                            void electronAPI.synthesizer.setFollowMode(false);
                         }
                     }}
                     followMode={followMode}
@@ -895,7 +895,7 @@ function App() {
                         if (!enabled) {
                             setFollowQueued(false);
                         }
-                        electronAPI.synthesizer.setFollowMode(enabled);
+                        void electronAPI.synthesizer.setFollowMode(enabled);
                     }}
                 />
                 <AudioControls
