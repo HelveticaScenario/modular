@@ -161,7 +161,11 @@ impl Clock {
             // Detect beat boundary crossing
             let old_beat = (old_phase / beat_period).floor();
             let new_beat = (sync.bar_phase / beat_period).floor();
-            if new_beat != old_beat || (sync.bar_phase < old_phase && old_phase > 0.5) {
+            let first_sync_frame = old_phase == 0.0 && self.state.loop_index == 0;
+            if new_beat != old_beat
+                || (sync.bar_phase < old_phase && old_phase > 0.5)
+                || first_sync_frame
+            {
                 self.state
                     .beat_gate
                     .set_state(TempGateState::High, TempGateState::Low, hold);
@@ -619,6 +623,61 @@ mod tests {
             (c.state.phase - 0.75).abs() < 0.01,
             "Phase should be near 0.75 after external sync, got {}",
             c.state.phase
+        );
+    }
+
+    #[test]
+    fn clock_external_sync_generates_beat_triggers() {
+        let mut c = Clock::default();
+        let sr = 48_000.0;
+
+        // Simulate Link driving the clock through one full bar
+        // 120 BPM, 4/4 time = 96000 samples per bar
+        let samples_per_bar = 96_000;
+        let mut beat_triggers = 0;
+        let mut was_high = false;
+
+        for i in 0..samples_per_bar {
+            let bar_phase = i as f64 / samples_per_bar as f64;
+            c.sync_external_clock(bar_phase, 120.0, true);
+            c.update(sr);
+
+            let is_high = c.outputs.beat_trigger == 5.0;
+            if is_high && !was_high {
+                beat_triggers += 1;
+            }
+            was_high = is_high;
+        }
+
+        assert_eq!(
+            beat_triggers, 4,
+            "External sync should generate 4 beat triggers per bar in 4/4, got {}",
+            beat_triggers
+        );
+    }
+
+    #[test]
+    fn clock_external_sync_transport_stop_clears_triggers() {
+        let mut c = Clock::default();
+        let sr = 48_000.0;
+
+        // Run a few frames synced
+        for i in 0..100 {
+            c.sync_external_clock(i as f64 / 96000.0, 120.0, true);
+            c.update(sr);
+        }
+
+        // Stop transport
+        c.sync_external_clock(0.0, 120.0, false);
+        c.update(sr);
+
+        assert_eq!(
+            c.outputs.bar_trigger, 0.0,
+            "Triggers should be 0 when stopped"
+        );
+        assert_eq!(
+            c.outputs.beat_trigger, 0.0,
+            "Beat trigger should be 0 when stopped"
         );
     }
 
