@@ -833,7 +833,12 @@ function App() {
     return (
         <div className="app">
             <header className="app-header">
-                <TransportDisplay transport={transportState} />
+                <TransportDisplay
+                    transport={transportState}
+                    onToggleLink={(enabled) =>
+                        electronAPI.synthesizer.enableLink(enabled)
+                    }
+                />
                 <AudioControls
                     isRunning={isClockRunning}
                     isRecording={isRecording}

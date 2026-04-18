@@ -2,9 +2,13 @@ import type { TransportSnapshot } from '../../shared/ipcTypes';
 
 interface TransportDisplayProps {
     transport: TransportSnapshot | null;
+    onToggleLink?: (enabled: boolean) => void;
 }
 
-export function TransportDisplay({ transport }: TransportDisplayProps) {
+export function TransportDisplay({
+    transport,
+    onToggleLink,
+}: TransportDisplayProps) {
     if (!transport) {
         return (
             <div className="transport-display">
@@ -62,6 +66,24 @@ export function TransportDisplay({ transport }: TransportDisplayProps) {
                     />
                 ))}
             </span>
+
+            {/* Link toggle */}
+            <button
+                className={`transport-link${transport.linkEnabled ? ' active' : ''}`}
+                onClick={() => onToggleLink?.(!transport.linkEnabled)}
+                title={
+                    transport.linkEnabled
+                        ? `Link active (${transport.linkPeers} peer${transport.linkPeers !== 1 ? 's' : ''})`
+                        : 'Enable Ableton Link'
+                }
+            >
+                Link
+                {transport.linkEnabled && transport.linkPeers > 0 && (
+                    <span className="transport-link-peers">
+                        {transport.linkPeers}
+                    </span>
+                )}
+            </button>
 
             {/* Queued update indicator */}
             {hasQueuedUpdate && (

@@ -375,3 +375,27 @@
     border-radius: 2px;
     line-height: 1.4;
 }
+
+.transport-link {
+    font-size: 10px;
+    padding: 2px 6px;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted, #888);
+    cursor: pointer;
+    margin-left: 8px;
+    font-family: var(--font-mono);
+}
+
+.transport-link.active {
+    background: var(--accent-primary, #ff764d);
+    color: var(--text-primary, #fff);
+    border-color: var(--accent-primary, #ff764d);
+}
+
+.transport-link-peers {
+    margin-left: 4px;
+    font-size: 9px;
+    opacity: 0.8;
+}
