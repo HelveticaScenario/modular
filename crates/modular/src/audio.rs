@@ -1218,6 +1218,8 @@ struct AudioProcessor {
   current_link_state: Option<LinkBufferState>,
   /// Frame index within current buffer (for per-frame host time calculation)
   frame_in_buffer: usize,
+  /// Pending quantized start — waiting for bar boundary before actually starting
+  link_pending_start: bool,
 }
 
 impl AudioProcessor {
@@ -1247,6 +1249,7 @@ impl AudioProcessor {
       last_link_tempo: 120.0,
       current_link_state: None,
       frame_in_buffer: 0,
+      link_pending_start: false,
     }
   }
 
@@ -1316,16 +1319,34 @@ impl AudioProcessor {
           }
         }
         GraphCommand::Start => {
-          let msg = Message::Clock(ClockMessages::Start);
-          let _ = self.patch.dispatch_message(&msg);
-          // Propagate start to Link session
-          if let Some(ref link) = self.link {
-            if let Some(ref mut ss) = self.link_session_state {
-              link.capture_audio_session_state(ss);
-              let time = link.clock_micros();
-              ss.set_is_playing_and_request_beat_at_time(true, time, 0.0, 4.0);
-              link.commit_audio_session_state(ss);
+          if self.link.is_some() {
+            // With Link: request quantized start — don't start Operator yet.
+            // The buffer-level code will start when phase reaches bar boundary.
+            if let Some(ref link) = self.link {
+              if let Some(ref mut ss) = self.link_session_state {
+                link.capture_audio_session_state(ss);
+                let time = link.clock_micros();
+                if link.num_peers() == 0 {
+                  // Solo: force beat 0 at now and start immediately
+                  ss.set_is_playing(true, time);
+                  ss.force_beat_at_time(0.0, time, 4.0);
+                  link.commit_audio_session_state(ss);
+                  // Start Operator immediately — main thread already set stopped=false
+                  let msg = Message::Clock(ClockMessages::Start);
+                  let _ = self.patch.dispatch_message(&msg);
+                } else {
+                  // Peers present: quantized launch — wait for bar boundary
+                  // Main thread already set stopped=false; re-stop until bar boundary
+                  self.stopped.store(true, std::sync::atomic::Ordering::SeqCst);
+                  ss.set_is_playing_and_request_beat_at_time(true, time, 0.0, 4.0);
+                  link.commit_audio_session_state(ss);
+                  self.link_pending_start = true;
+                }
+              }
             }
+          } else {
+            let msg = Message::Clock(ClockMessages::Start);
+            let _ = self.patch.dispatch_message(&msg);
           }
         }
         GraphCommand::Stop => {
@@ -1520,10 +1541,7 @@ impl AudioProcessor {
     link.capture_audio_session_state(ss);
     let quantum = 4.0;
     let tempo = ss.tempo();
-    // Only report playing once the quantized start time has actually arrived.
-    // is_playing() returns true immediately after set_is_playing_and_request_beat_at_time,
-    // but the actual start is deferred to time_for_is_playing() for quantized launch.
-    let playing = ss.is_playing() && host_time_micros >= ss.time_for_is_playing();
+    let playing = ss.is_playing();
     let micros_per_sample = 1_000_000.0 / self.sample_rate as f64;
 
     Some(LinkBufferState {
@@ -1768,8 +1786,24 @@ where
         if let Some(ref link_state) = audio_processor.current_link_state {
           let link_playing = link_state.playing;
           let op_stopped = audio_processor.is_stopped();
-          if link_playing && op_stopped {
-            // Link session started — start Operator transport
+
+          // Handle pending quantized start: wait for phase near bar boundary
+          if audio_processor.link_pending_start {
+            // Check if phase is near 0 (start of bar)
+            if let Some(ref ss) = audio_processor.link_session_state {
+              let time = link_state.host_time_micros;
+              let phase = ss.phase_at_time(time, link_state.quantum);
+              // Start when phase is in the first beat (near bar boundary)
+              // Use a window of ~1 buffer duration to avoid missing the boundary
+              if phase < 0.5 {
+                audio_processor.link_pending_start = false;
+                audio_processor.stopped.store(false, std::sync::atomic::Ordering::SeqCst);
+                let msg = modular_core::types::Message::Clock(ClockMessages::Start);
+                let _ = audio_processor.patch.dispatch_message(&msg);
+              }
+            }
+          } else if link_playing && op_stopped {
+            // External start from a Link peer
             audio_processor.stopped.store(false, std::sync::atomic::Ordering::SeqCst);
             let msg = modular_core::types::Message::Clock(ClockMessages::Start);
             let _ = audio_processor.patch.dispatch_message(&msg);
