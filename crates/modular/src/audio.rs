@@ -1168,6 +1168,16 @@ fn chrono_simple_timestamp() -> String {
 // AudioProcessor - Audio thread side
 // ============================================================================
 
+/// Per-buffer Link session state capture.
+/// Captured once per audio callback to avoid repeated FFI calls per frame.
+struct LinkBufferState {
+  host_time_micros: i64,
+  quantum: f64,
+  tempo: f64,
+  playing: bool,
+  micros_per_sample: f64,
+}
+
 /// Audio processor that runs on the audio thread.
 /// Owns the Patch directly and processes commands from the main thread.
 struct AudioProcessor {
@@ -1191,6 +1201,22 @@ struct AudioProcessor {
   queued_update: Option<(PatchUpdate, QueuedTrigger)>,
   /// Transport state meter - written each frame, read by main thread
   transport_meter: Arc<TransportMeter>,
+  /// Sample rate of the audio stream
+  sample_rate: f32,
+  /// Ableton Link instance (None when not enabled)
+  link: Option<rusty_link::AblLink>,
+  /// Host time filter for accurate timestamps with cpal
+  host_time_filter: Option<rusty_link::HostTimeFilter>,
+  /// Pre-allocated SessionState for RT-safe capture (allocated when Link is enabled)
+  link_session_state: Option<rusty_link::SessionState>,
+  /// Running sample count for HostTimeFilter
+  link_sample_count: u64,
+  /// Last known tempo for Link (for detecting local tempo changes)
+  last_link_tempo: f64,
+  /// Per-buffer Link state capture
+  current_link_state: Option<LinkBufferState>,
+  /// Frame index within current buffer (for per-frame host time calculation)
+  frame_in_buffer: usize,
 }
 
 impl AudioProcessor {
@@ -1199,6 +1225,7 @@ impl AudioProcessor {
     error_tx: ErrorProducer,
     garbage_tx: GarbageProducer,
     shared: AudioSharedState,
+    sample_rate: f32,
   ) -> Self {
     Self {
       patch: Patch::new(),
@@ -1211,6 +1238,14 @@ impl AudioProcessor {
       midi_manager: shared.midi_manager,
       queued_update: None,
       transport_meter: shared.transport_meter,
+      sample_rate,
+      link: None,
+      host_time_filter: None,
+      link_session_state: None,
+      link_sample_count: 0,
+      last_link_tempo: 120.0,
+      current_link_state: None,
+      frame_in_buffer: 0,
     }
   }
 
@@ -1282,9 +1317,27 @@ impl AudioProcessor {
         GraphCommand::Start => {
           let msg = Message::Clock(ClockMessages::Start);
           let _ = self.patch.dispatch_message(&msg);
+          // Propagate start to Link session
+          if let Some(ref link) = self.link {
+            if let Some(ref mut ss) = self.link_session_state {
+              link.capture_audio_session_state(ss);
+              let time = link.clock_micros();
+              ss.set_is_playing_and_request_beat_at_time(true, time, 0.0, 4.0);
+              link.commit_audio_session_state(ss);
+            }
+          }
         }
         GraphCommand::Stop => {
           // Stop is handled via the stopped flag
+          // Propagate stop to Link session
+          if let Some(ref link) = self.link {
+            if let Some(ref mut ss) = self.link_session_state {
+              link.capture_audio_session_state(ss);
+              let time = link.clock_micros();
+              ss.set_is_playing(false, time);
+              link.commit_audio_session_state(ss);
+            }
+          }
         }
         GraphCommand::ClearPatch => {
           // Discard any pending queued update
@@ -1310,6 +1363,28 @@ impl AudioProcessor {
           }
           self.patch.insert_audio_in();
           self.patch.rebuild_message_listeners();
+        }
+        GraphCommand::EnableLink(enabled) => {
+          if enabled {
+            let bpm = self.last_link_tempo;
+            let link = rusty_link::AblLink::new(bpm);
+            link.enable(true);
+            link.enable_start_stop_sync(true);
+            self.host_time_filter = Some(rusty_link::HostTimeFilter::new());
+            self.link_session_state = Some(rusty_link::SessionState::new());
+            self.link_sample_count = 0;
+            self.link = Some(link);
+          } else {
+            // Clear external sync on ROOT_CLOCK before dropping Link
+            use modular_core::types::ROOT_CLOCK_ID;
+            if let Some(root_clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
+              root_clock.clear_external_sync();
+            }
+            self.link = None;
+            self.host_time_filter = None;
+            self.link_session_state = None;
+            self.current_link_state = None;
+          }
         }
       }
     }
@@ -1432,6 +1507,30 @@ impl AudioProcessor {
     }
   }
 
+  /// Capture Link session state once per audio buffer.
+  /// Returns None if Link is not active.
+  fn capture_link_state(&mut self) -> Option<LinkBufferState> {
+    let link = self.link.as_ref()?;
+    let htf = self.host_time_filter.as_mut()?;
+    let ss = self.link_session_state.as_mut()?;
+
+    let clock_micros = link.clock_micros();
+    let host_time_micros = htf.sample_time_to_host_time(clock_micros, self.link_sample_count);
+    link.capture_audio_session_state(ss);
+    let quantum = 4.0;
+    let tempo = ss.tempo();
+    let playing = ss.is_playing();
+    let micros_per_sample = 1_000_000.0 / self.sample_rate as f64;
+
+    Some(LinkBufferState {
+      host_time_micros,
+      quantum,
+      tempo,
+      playing,
+      micros_per_sample,
+    })
+  }
+
   /// Process a single frame, returning multi-channel output
   fn process_frame(&mut self, num_channels: usize) -> [f32; PORT_MAX_CHANNELS] {
     use modular_core::types::{ROOT_CLOCK_ID, ROOT_ID};
@@ -1443,7 +1542,23 @@ impl AudioProcessor {
       return output; // Skip processing when stopped
     }
 
-    // 1. Update ROOT_CLOCK first so its trigger outputs are available this frame
+    // 1. Sync Link state to ROOT_CLOCK, then update ROOT_CLOCK
+    if let Some(ref link_state) = self.current_link_state {
+      if let Some(ref ss) = self.link_session_state {
+        if let Some(root_clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
+          // Compute per-frame host time by offsetting from buffer start
+          let frame_offset_micros = (self.frame_in_buffer as f64 * link_state.micros_per_sample) as i64;
+          let frame_host_time = link_state.host_time_micros + frame_offset_micros;
+          let phase = ss.phase_at_time(frame_host_time, link_state.quantum);
+          // Convert phase to bar_phase (0..1) by dividing by quantum
+          let bar_phase = phase / link_state.quantum;
+          root_clock.sync_external_clock(bar_phase, link_state.tempo, link_state.playing);
+        }
+      }
+      self.frame_in_buffer += 1;
+    }
+
+    // 2. Update ROOT_CLOCK so its trigger outputs are available this frame
     if let Some(root_clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
       root_clock.update();
     }
@@ -1621,7 +1736,8 @@ where
   let audio_budget_meter = shared.audio_budget_meter.clone();
 
   // Create the audio processor that owns the patch
-  let mut audio_processor = AudioProcessor::new(command_rx, error_tx, garbage_tx, shared);
+  let sample_rate = config.sample_rate as f32;
+  let mut audio_processor = AudioProcessor::new(command_rx, error_tx, garbage_tx, shared, sample_rate);
 
   let mut final_state_processor = FinalStateProcessor::new(num_channels);
 
@@ -1638,6 +1754,12 @@ where
           profiling::scope!("process_commands");
           audio_processor.process_commands();
         }
+
+        // Capture Link session state once per buffer (before frame loop)
+        audio_processor.current_link_state = audio_processor.capture_link_state();
+        audio_processor.frame_in_buffer = 0;
+
+        let num_frames = output.len() / num_channels;
 
         {
           profiling::scope!("process_frames");
@@ -1676,6 +1798,9 @@ where
             }
           }
         }
+
+        // Increment Link sample count for HostTimeFilter
+        audio_processor.link_sample_count += num_frames as u64;
 
         // Collect module states for UI (e.g., seq step highlighting)
         // Done once per buffer, not per frame, to minimize overhead
@@ -2141,7 +2266,7 @@ mod tests {
       transport_meter: Arc::new(TransportMeter::default()),
     };
 
-    let processor = AudioProcessor::new(cmd_consumer, err_producer, garbage_producer, shared);
+    let processor = AudioProcessor::new(cmd_consumer, err_producer, garbage_producer, shared, 44100.0);
 
     // Processor starts with empty patch (may have hidden audio_in)
     assert!(processor.patch.sampleables.is_empty() || processor.patch.sampleables.len() == 1);
@@ -2206,7 +2331,7 @@ mod tests {
       transport_meter: Arc::new(TransportMeter::default()),
     };
 
-    AudioProcessor::new(cmd_consumer, err_producer, garbage_producer, shared)
+    AudioProcessor::new(cmd_consumer, err_producer, garbage_producer, shared, 44100.0)
   }
 
   #[test]

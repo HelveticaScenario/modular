@@ -108,6 +108,9 @@ pub enum GraphCommand {
 
   /// Clear the entire patch (used when stopped to reset state)
   ClearPatch,
+
+  /// Enable or disable Ableton Link synchronization
+  EnableLink(bool),
 }
 
 /// Error types that can be reported from the audio thread back to the main thread.
