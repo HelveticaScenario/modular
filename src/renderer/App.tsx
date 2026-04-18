@@ -117,6 +117,8 @@ function App() {
 
     // Audio state
     const [isClockRunning, setIsClockRunning] = useState(true);
+    const [followMode, setFollowMode] = useState(false);
+    const [followQueued, setFollowQueued] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -522,6 +524,11 @@ function App() {
 
                     setTransportState(transport);
 
+                    // If Link stopped playback externally, stop Operator UI
+                    if (transport.linkEnabled && !transport.isPlaying) {
+                        setIsClockRunning(false);
+                    }
+
                     // Check if a pending UI state should be committed
                     const pending = pendingUIStateRef.current;
                     if (
@@ -558,6 +565,22 @@ function App() {
             cancelled = true;
         };
     }, [isClockRunning]);
+
+    // When Link is enabled but Operator is stopped, poll transport state
+    // so we can detect when a Link peer starts playback.
+    const linkEnabled = transportState?.linkEnabled ?? false;
+    useEffect(() => {
+        if (!linkEnabled || isClockRunning) return;
+        const interval = setInterval(async () => {
+            const transport = await electronAPI.synthesizer.getTransportState();
+            setTransportState(transport);
+            if (transport.isPlaying) {
+                setIsClockRunning(true);
+                setFollowQueued(false);
+            }
+        }, 100);
+        return () => clearInterval(interval);
+    }, [linkEnabled, isClockRunning]);
 
     const handleSaveFile = useCallback(
         async (id?: string) => {
@@ -632,7 +655,11 @@ function App() {
                     return;
                 }
 
-                setIsClockRunning(true);
+                if (!followMode) {
+                    setIsClockRunning(true);
+                } else if (!isClockRunningRef.current) {
+                    setFollowQueued(true);
+                }
                 setRunningBufferId(activeBufferId);
                 setError(null);
                 setValidationErrors(null);
@@ -774,6 +801,7 @@ function App() {
         handleStopRef.current = async () => {
             await electronAPI.synthesizer.stop();
             setIsClockRunning(false);
+            setFollowQueued(false);
         };
     }, []);
     const handleStop = useCallback(() => handleStopRef.current(), []);
@@ -840,7 +868,36 @@ function App() {
     return (
         <div className="app">
             <header className="app-header">
-                <TransportDisplay transport={transportState} />
+                <TransportDisplay
+                    transport={transportState}
+                    onToggleLink={(enabled) => {
+                        electronAPI.synthesizer.enableLink(enabled);
+                        // Optimistically update UI — polling only runs while playing
+                        setTransportState((prev) =>
+                            prev
+                                ? {
+                                      ...prev,
+                                      linkEnabled: enabled,
+                                      linkPeers: enabled ? prev.linkPeers : 0,
+                                  }
+                                : prev,
+                        );
+                        if (!enabled) {
+                            setFollowMode(false);
+                            setFollowQueued(false);
+                            electronAPI.synthesizer.setFollowMode(false);
+                        }
+                    }}
+                    followMode={followMode}
+                    followQueued={followQueued}
+                    onToggleFollowMode={(enabled) => {
+                        setFollowMode(enabled);
+                        if (!enabled) {
+                            setFollowQueued(false);
+                        }
+                        electronAPI.synthesizer.setFollowMode(enabled);
+                    }}
+                />
                 <AudioControls
                     isRunning={isClockRunning}
                     isRecording={isRecording}

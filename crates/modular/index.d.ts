@@ -31,6 +31,8 @@ export declare class Synthesizer {
   getHealth(): AudioBudgetSnapshot
   getModuleStates(): Record<string, any>
   getTransportState(): TransportSnapshot
+  enableLink(enabled: boolean): void
+  setFollowMode(enabled: boolean): void
   /** Refresh the device cache (re-enumerates all hosts and devices) */
   refreshDeviceCache(): void
   /** Get the full device cache snapshot */
@@ -253,6 +255,12 @@ export interface TransportSnapshot {
   hasQueuedUpdate: boolean
   /** The update_id of the most recently applied patch update (as f64 for N-API compatibility) */
   lastAppliedUpdateId: number
+  /** Whether Ableton Link is currently enabled */
+  linkEnabled: boolean
+  /** Number of Link peers in the session */
+  linkPeers: number
+  /** Free-running Link bar phase (0..1), always updated when Link is enabled */
+  linkPhase: number
 }
 
 /**

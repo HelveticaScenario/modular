@@ -52,6 +52,9 @@ pub struct PatchUpdate {
 
   /// Sample rate for new modules
   pub sample_rate: f32,
+
+  /// Whether the DSL explicitly called $setTempo (don't push default 120 to Link)
+  pub tempo_override: Option<f64>,
 }
 
 impl PatchUpdate {
@@ -66,6 +69,7 @@ impl PatchUpdate {
       scope_removes: Vec::new(),
       wav_data: HashMap::new(),
       sample_rate,
+      tempo_override: None,
     }
   }
 
@@ -108,6 +112,9 @@ pub enum GraphCommand {
 
   /// Clear the entire patch (used when stopped to reset state)
   ClearPatch,
+
+  /// Enable or disable Ableton Link synchronization
+  EnableLink(bool),
 }
 
 /// Error types that can be reported from the audio thread back to the main thread.
