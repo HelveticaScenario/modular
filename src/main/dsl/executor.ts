@@ -428,28 +428,43 @@ export function executePatchScript(
      * ModuleOutputs / Collections are converted to the same wire format used
      * for module-factory params. This matches the existing mechanism used by
      * `_setParam` in GraphBuilder.
+     *
+     * Tables are composable: each returned descriptor has a `.pipe(next)` method
+     * that feeds this table's output phase into `next`. The optional second
+     * argument to each helper is a shorthand for `.pipe(next)`.
      */
+    function wrapTable(descriptor: Record<string, unknown>): Record<string, unknown> & { pipe: <T>(fn: (self: Record<string, unknown>) => T) => T } {
+        const t = { ...descriptor } as Record<string, unknown> & { pipe: <T>(fn: (self: Record<string, unknown>) => T) => T };
+        Object.defineProperty(t, 'pipe', {
+            value: <T>(fn: (self: typeof t) => T): T => fn(t),
+            enumerable: false,
+            writable: false,
+            configurable: false,
+        });
+        return t;
+    }
+
     const $table = {
-        mirror: (amount: unknown) => ({
-            type: 'mirror',
-            amount: replaceSignals(amount),
-        }),
-        bend: (amount: unknown) => ({
-            type: 'bend',
-            amount: replaceSignals(amount),
-        }),
-        sync: (ratio: unknown) => ({
-            type: 'sync',
-            ratio: replaceSignals(ratio),
-        }),
-        fold: (amount: unknown) => ({
-            type: 'fold',
-            amount: replaceSignals(amount),
-        }),
-        pwm: (width: unknown) => ({
-            type: 'pwm',
-            width: replaceSignals(width),
-        }),
+        mirror: (amount: unknown, next?: unknown) => {
+            const t = wrapTable({ type: 'mirror', amount: replaceSignals(amount) });
+            return next !== undefined ? wrapTable({ type: 'pipe', first: t, second: next }) : t;
+        },
+        bend: (amount: unknown, next?: unknown) => {
+            const t = wrapTable({ type: 'bend', amount: replaceSignals(amount) });
+            return next !== undefined ? wrapTable({ type: 'pipe', first: t, second: next }) : t;
+        },
+        sync: (ratio: unknown, next?: unknown) => {
+            const t = wrapTable({ type: 'sync', ratio: replaceSignals(ratio) });
+            return next !== undefined ? wrapTable({ type: 'pipe', first: t, second: next }) : t;
+        },
+        fold: (amount: unknown, next?: unknown) => {
+            const t = wrapTable({ type: 'fold', amount: replaceSignals(amount) });
+            return next !== undefined ? wrapTable({ type: 'pipe', first: t, second: next }) : t;
+        },
+        pwm: (width: unknown, next?: unknown) => {
+            const t = wrapTable({ type: 'pwm', width: replaceSignals(width) });
+            return next !== undefined ? wrapTable({ type: 'pipe', first: t, second: next }) : t;
+        },
     };
 
     const dslGlobals = {

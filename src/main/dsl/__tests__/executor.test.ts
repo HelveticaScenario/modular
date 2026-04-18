@@ -1052,4 +1052,62 @@ describe('$table helpers', () => {
             ]),
         );
     });
+
+    test('optional second param composes two tables into a pipe descriptor', () => {
+        const patch = execWithWavs(
+            `$wavetable($wavs().wt, 0, 0, {
+                phase: $table.mirror(0.5, $table.bend(0.3))
+            }).out()`,
+        ).patch;
+        const wt = findModules(patch, '$wavetable');
+        expect(wt.length).toBe(1);
+        expect(wt[0].params.phase).toEqual({
+            type: 'pipe',
+            first: { type: 'mirror', amount: 0.5 },
+            second: { type: 'bend', amount: 0.3 },
+        });
+    });
+
+    test('second param chains left-to-right: mirror -> bend -> fold', () => {
+        const patch = execWithWavs(
+            `$wavetable($wavs().wt, 0, 0, {
+                phase: $table.mirror(0.5, $table.bend(0.3, $table.fold(0.2)))
+            }).out()`,
+        ).patch;
+        const wt = findModules(patch, '$wavetable');
+        expect(wt[0].params.phase).toEqual({
+            type: 'pipe',
+            first: { type: 'mirror', amount: 0.5 },
+            second: {
+                type: 'pipe',
+                first: { type: 'bend', amount: 0.3 },
+                second: { type: 'fold', amount: 0.2 },
+            },
+        });
+    });
+
+    test('.pipe passes table to closure and returns result', () => {
+        const patch = execWithWavs(
+            `$wavetable($wavs().wt, 0, 0, {
+                phase: $table.mirror(0.5).pipe(t => t)
+            }).out()`,
+        ).patch;
+        const wt = findModules(patch, '$wavetable');
+        expect(wt[0].params.phase).toEqual({ type: 'mirror', amount: 0.5 });
+    });
+
+    test('.pipe closure can build a pipe descriptor', () => {
+        const patch = execWithWavs(
+            `$wavetable($wavs().wt, 0, 0, {
+                phase: $table.mirror(0.5).pipe(t => $table.bend(0.3, t))
+            }).out()`,
+        ).patch;
+        const wt = findModules(patch, '$wavetable');
+        // t is mirror; $table.bend(0.3, t) = pipe(bend, mirror) — bend feeds into mirror
+        expect(wt[0].params.phase).toEqual({
+            type: 'pipe',
+            first: { type: 'bend', amount: 0.3 },
+            second: { type: 'mirror', amount: 0.5 },
+        });
+    });
 });

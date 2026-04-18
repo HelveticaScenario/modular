@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::{
-    dsp::{oscillators::wavetable_prep::PreparedWavetable, utils::voct_to_hz},
+    dsp::oscillators::{apply_fm, wavetable_prep::PreparedWavetable, FmMode},
     poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
     types::{Connect, Table, Wav, WavData},
 };
@@ -38,6 +38,13 @@ pub(crate) struct WavetableOscParams {
     #[signal(range = (0.0, 5.0))]
     #[deserr(default)]
     pub(crate) position: Option<PolySignal>,
+    /// FM input signal (pre-scaled by user).
+    #[deserr(default)]
+    pub(crate) fm: Option<PolySignal>,
+    /// FM mode: throughZero (default), lin, or exp.
+    #[serde(default)]
+    #[deserr(default)]
+    pub(crate) fm_mode: FmMode,
     /// Optional phase-warp table applied before sampling.
     #[deserr(default)]
     pub(crate) phase: Option<Table>,
@@ -86,7 +93,9 @@ struct WavetableOscState {
 pub fn wavetable_derive_channel_count(params: &WavetableOscParams) -> usize {
     let pitch_ch = params.pitch.channels();
     let pos_ch = params.position.as_ref().map(|p| p.channels()).unwrap_or(0);
-    pitch_ch.max(pos_ch).clamp(1, PORT_MAX_CHANNELS)
+    let fm_ch = params.fm.as_ref().map(|f| f.channels()).unwrap_or(0);
+    let phase_ch = params.phase.as_ref().map(|t| t.channels()).unwrap_or(0);
+    pitch_ch.max(pos_ch).max(fm_ch).max(phase_ch).clamp(1, PORT_MAX_CHANNELS)
 }
 
 /// A band-limited wavetable oscillator.
@@ -143,9 +152,9 @@ impl WavetableOsc {
         for ch in 0..channels {
             let state = &mut self.state.channels[ch];
 
-            // V/Oct → Hz (C4 = 0V → 261.63 Hz). voct_to_hz encodes that.
             let pitch_v = self.params.pitch.get_value(ch);
-            let freq = voct_to_hz(pitch_v);
+            let fm = self.params.fm.value_or(ch, 0.0);
+            let freq = apply_fm(pitch_v, fm, self.params.fm_mode);
 
             // Frame index: 0–5V → 0..=frame_count-1.
             let pos_v = self.params.position.value_or(ch, 0.0).clamp(0.0, 5.0);
@@ -246,6 +255,8 @@ mod tests {
             wav: Wav::new("test.wav".to_string(), 1),
             pitch: PolySignal::mono(Signal::Volts(0.0)),
             position: None,
+            fm: None,
+            fm_mode: FmMode::default(),
             phase: None,
             prepared: None,
         }

@@ -309,14 +309,24 @@ type Mono<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
  *
  * Create one with \`$table.mirror\`, \`$table.bend\`, \`$table.sync\`,
  * \`$table.fold\`, or \`$table.pwm\` — do not construct directly.
+ *
+ * Tables are composable: \`table.pipe(next)\` feeds this table's output
+ * phase into \`next\` as its input phase. Equivalent to passing \`next\`
+ * as the optional second argument to any \`$table.*\` helper.
  */
-type Table =
+type TableDescriptor =
   | { readonly type: "mirror"; readonly amount: Signal }
   | { readonly type: "bend"; readonly amount: Signal }
   | { readonly type: "sync"; readonly ratio: Signal }
   | { readonly type: "fold"; readonly amount: Signal }
   | { readonly type: "pwm"; readonly width: Signal }
-  | { readonly type: "identity" };
+  | { readonly type: "identity" }
+  | { readonly type: "pipe"; readonly first: Table; readonly second: Table };
+
+type Table = TableDescriptor & {
+  /** Pass this table to \`pipeFn\` and return the result. Mirrors \`Collection.pipe\`. */
+  pipe<T>(pipeFn: (self: Table) => T): T;
+};
 
 /**
  * A buffer output reference — returned by \`$buffer()\`, passed to readers
@@ -972,23 +982,31 @@ function $cartesian<A extends unknown[][]>(...arrays: A): ElementsOf<A>[];
  * Each helper returns a {@link Table} whose inner signal-valued field
  * accepts a constant, a module output, or any other {@link Signal}.
  *
+ * Tables compose via the optional second argument. \`.pipe(fn)\` passes
+ * the table to \`fn\` and returns the result — same API as \`Collection.pipe\`.
+ *
  * @example
- * // Symmetric mirror warp driven by an LFO
- * $wavetable(\\$wavs().mywavs.mytable, 'c4', {
- *   phase: $table.mirror($lfo.sine('1hz')),
- * }).out();
+ * // Compose two tables (mirror feeds into bend):
+ * $table.mirror(0.5, $table.bend(0.3))
+ *
+ * // Compose three tables left-to-right:
+ * $table.mirror(0.5, $table.bend(0.3, $table.fold(0.2)))
+ *
+ * // Generic function application via .pipe:
+ * const addBend = (t) => $table.bend(0.3, t)
+ * $table.mirror(0.5).pipe(addBend)
  */
 declare const $table: {
     /** Reflect the phase around its midpoint by \`amount\` (0..1). */
-    mirror(amount: Signal): Table;
+    mirror(amount: Poly<Signal>, next?: Table): Table;
     /** Bend the phase curve by \`amount\` (0..1 = linear..extreme). */
-    bend(amount: Signal): Table;
+    bend(amount: Poly<Signal>, next?: Table): Table;
     /** Hard-sync: restart the phase every \`ratio\` of a cycle. */
-    sync(ratio: Signal): Table;
+    sync(ratio: Poly<Signal>, next?: Table): Table;
     /** Fold the phase back on itself by \`amount\`. */
-    fold(amount: Signal): Table;
+    fold(amount: Poly<Signal>, next?: Table): Table;
     /** Pulse-width modulation warp with duty cycle \`width\` (0..1). */
-    pwm(width: Signal): Table;
+    pwm(width: Poly<Signal>, next?: Table): Table;
 };
 `;
 

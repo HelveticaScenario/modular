@@ -3265,6 +3265,22 @@
       "title": "WavetableOscParams",
       "type": "object",
       "properties": {
+        "fm": {
+          "description": "FM input signal (pre-scaled by user).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PolySignal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fmMode": {
+          "description": "FM mode: throughZero (default), lin, or exp.",
+          "$ref": "#/$defs/FmMode",
+          "default": "throughZero"
+        },
         "phase": {
           "description": "Optional phase-warp table applied before sampling.",
           "anyOf": [
@@ -3301,6 +3317,26 @@
         "pitch"
       ],
       "$defs": {
+        "FmMode": {
+          "description": "FM synthesis mode for oscillators.",
+          "oneOf": [
+            {
+              "description": "Through-zero FM: frequency can go negative (phase runs backward)",
+              "type": "string",
+              "const": "throughZero"
+            },
+            {
+              "description": "Linear FM: like through-zero but frequency clamped to >= 0",
+              "type": "string",
+              "const": "lin"
+            },
+            {
+              "description": "Exponential FM: modulator added to pitch in V/Oct space",
+              "type": "string",
+              "const": "exp"
+            }
+          ]
+        },
         "PolySignal": {
           "anyOf": [
             {
@@ -3451,6 +3487,26 @@
                 "type",
                 "width"
               ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "first": {
+                  "$ref": "#/$defs/Table"
+                },
+                "second": {
+                  "$ref": "#/$defs/Table"
+                },
+                "type": {
+                  "type": "string",
+                  "const": "pipe"
+                }
+              },
+              "required": [
+                "type",
+                "first",
+                "second"
+              ]
             }
           ]
         },
@@ -3505,6 +3561,14 @@
         "signalType": "control",
         "defaultValue": 0.0,
         "minValue": 0.0,
+        "maxValue": 5.0
+      },
+      {
+        "name": "fm",
+        "description": "FM input signal (pre-scaled by user).",
+        "signalType": "control",
+        "defaultValue": 0.0,
+        "minValue": -5.0,
         "maxValue": 5.0
       }
     ],

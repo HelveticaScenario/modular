@@ -1487,6 +1487,7 @@ impl PartialEq for Buffer {
 /// { "type": "sync",   "ratio":  <signal> }
 /// { "type": "fold",   "amount": <signal> }
 /// { "type": "pwm",    "width":  <signal> }
+/// { "type": "pipe",   "first":  <table>, "second": <table> }
 /// ```
 #[derive(Clone, Debug)]
 pub enum Table {
@@ -1496,6 +1497,8 @@ pub enum Table {
     Sync { ratio: PolySignal },
     Fold { amount: PolySignal },
     Pwm { width: PolySignal },
+    /// Compose two tables: output phase of `first` becomes input phase of `second`.
+    Pipe { first: Box<Table>, second: Box<Table> },
 }
 
 impl Table {
@@ -1511,6 +1514,19 @@ impl Table {
             Table::Sync { ratio } => warp::sync(x, ratio.get_value(channel)),
             Table::Fold { amount } => warp::fold(x, amount.get_value(channel)),
             Table::Pwm { width } => warp::pwm(x, width.get_value(channel)),
+            Table::Pipe { first, second } => second.evaluate(first.evaluate(x, channel), channel),
+        }
+    }
+
+    pub fn channels(&self) -> usize {
+        match self {
+            Table::Identity => 0,
+            Table::Mirror { amount } => amount.channels(),
+            Table::Bend { amount } => amount.channels(),
+            Table::Sync { ratio } => ratio.channels(),
+            Table::Fold { amount } => amount.channels(),
+            Table::Pwm { width } => width.channels(),
+            Table::Pipe { first, second } => first.channels().max(second.channels()),
         }
     }
 }
@@ -1524,6 +1540,10 @@ impl Connect for Table {
             Table::Sync { ratio } => ratio.connect(patch),
             Table::Fold { amount } => amount.connect(patch),
             Table::Pwm { width } => width.connect(patch),
+            Table::Pipe { first, second } => {
+                first.connect(patch);
+                second.connect(patch);
+            }
         }
     }
 }
@@ -1539,6 +1559,7 @@ enum TableSerde {
     Sync { ratio: PolySignal },
     Fold { amount: PolySignal },
     Pwm { width: PolySignal },
+    Pipe { first: Box<TableSerde>, second: Box<TableSerde> },
 }
 
 impl From<TableSerde> for Table {
@@ -1550,6 +1571,10 @@ impl From<TableSerde> for Table {
             TableSerde::Sync { ratio } => Table::Sync { ratio },
             TableSerde::Fold { amount } => Table::Fold { amount },
             TableSerde::Pwm { width } => Table::Pwm { width },
+            TableSerde::Pipe { first, second } => Table::Pipe {
+                first: Box::new(Table::from(*first)),
+                second: Box::new(Table::from(*second)),
+            },
         }
     }
 }
@@ -1563,6 +1588,10 @@ impl<'a> From<&'a Table> for TableSerdeRef<'a> {
             Table::Sync { ratio } => TableSerdeRef::Sync { ratio },
             Table::Fold { amount } => TableSerdeRef::Fold { amount },
             Table::Pwm { width } => TableSerdeRef::Pwm { width },
+            Table::Pipe { first, second } => TableSerdeRef::Pipe {
+                first: Box::new(TableSerdeRef::from(first.as_ref())),
+                second: Box::new(TableSerdeRef::from(second.as_ref())),
+            },
         }
     }
 }
@@ -1576,6 +1605,7 @@ enum TableSerdeRef<'a> {
     Sync { ratio: &'a PolySignal },
     Fold { amount: &'a PolySignal },
     Pwm { width: &'a PolySignal },
+    Pipe { first: Box<TableSerdeRef<'a>>, second: Box<TableSerdeRef<'a>> },
 }
 
 impl<'de> Deserialize<'de> for Table {
@@ -1667,6 +1697,27 @@ impl<E: DeserializeError> deserr::Deserr<E> for Table {
                 let width = take_signal::<E, V>(&mut map, "width", location)?;
                 Ok(Table::Pwm { width })
             }
+            "pipe" => {
+                let first_raw = map.remove("first").ok_or_else(|| {
+                    deserr::take_cf_content(E::error::<V>(
+                        None,
+                        ErrorKind::MissingField { field: "first" },
+                        location,
+                    ))
+                })?;
+                let second_raw = map.remove("second").ok_or_else(|| {
+                    deserr::take_cf_content(E::error::<V>(
+                        None,
+                        ErrorKind::MissingField { field: "second" },
+                        location,
+                    ))
+                })?;
+                let first =
+                    Table::deserialize_from_value(first_raw.into_value(), location)?;
+                let second =
+                    Table::deserialize_from_value(second_raw.into_value(), location)?;
+                Ok(Table::Pipe { first: Box::new(first), second: Box::new(second) })
+            }
             other => Err(deserr::take_cf_content(E::error::<V>(
                 None,
                 ErrorKind::Unexpected {
@@ -1695,6 +1746,7 @@ impl JsonSchema for Table {
             Sync { ratio: PolySignal },
             Fold { amount: PolySignal },
             Pwm { width: PolySignal },
+            Pipe { first: Box<Table>, second: Box<Table> },
         }
         TableSchema::json_schema(r#gen)
     }
@@ -3210,5 +3262,65 @@ mod table_tests {
         let value: serde_json::Value = serde_json::from_str(r#"{"type":"bogus"}"#).unwrap();
         let res: StdResult<Table, deserr::errors::JsonError> = deserialize(value);
         assert!(res.is_err());
+    }
+
+    // ---------- Pipe composition ----------
+
+    #[test]
+    fn pipe_chains_evaluate_first_then_second() {
+        // mirror(0.5) at x=0.5 → reflected to 1.0 (full mirror).
+        // Then bend(0.0) at 1.0 → 1.0 (identity at amount=0).
+        let t = Table::Pipe {
+            first: Box::new(Table::Mirror { amount: constant(1.0) }),
+            second: Box::new(Table::Bend { amount: constant(0.0) }),
+        };
+        // At x=0.5, mirror with amount=1 maps 0.5→1.0; bend with 0 maps 1.0→1.0.
+        let out = t.evaluate(0.5, 0);
+        assert!((out - 1.0).abs() < 1e-4, "expected ~1.0 got {out}");
+    }
+
+    #[test]
+    fn pipe_channels_is_max_of_both() {
+        let t = Table::Pipe {
+            first: Box::new(Table::Mirror { amount: constant(0.5) }),
+            second: Box::new(Table::Identity),
+        };
+        assert_eq!(t.channels(), 1); // Mirror has 1, Identity has 0
+    }
+
+    #[test]
+    fn pipe_serializes_and_deserializes_via_serde() {
+        let t = Table::Pipe {
+            first: Box::new(Table::Mirror { amount: constant(0.5) }),
+            second: Box::new(Table::Bend { amount: constant(0.3) }),
+        };
+        let json = serde_json::to_string(&t).unwrap();
+        assert!(json.contains("\"type\":\"pipe\""), "missing pipe tag: {json}");
+        assert!(json.contains("\"type\":\"mirror\""), "missing first: {json}");
+        assert!(json.contains("\"type\":\"bend\""), "missing second: {json}");
+        let back: Table = serde_json::from_str(&json).unwrap();
+        match back {
+            Table::Pipe { first, second } => {
+                assert!(matches!(*first, Table::Mirror { .. }));
+                assert!(matches!(*second, Table::Bend { .. }));
+            }
+            _ => panic!("expected Pipe"),
+        }
+    }
+
+    #[test]
+    fn pipe_parses_via_deserr() {
+        use deserr::deserialize;
+        let value: serde_json::Value = serde_json::from_str(
+            r#"{"type":"pipe","first":{"type":"mirror","amount":0.5},"second":{"type":"fold","amount":0.2}}"#,
+        ).unwrap();
+        let t: Table = deserialize::<Table, _, deserr::errors::JsonError>(value).unwrap();
+        match t {
+            Table::Pipe { first, second } => {
+                assert!(matches!(*first, Table::Mirror { .. }));
+                assert!(matches!(*second, Table::Fold { .. }));
+            }
+            _ => panic!("expected Pipe"),
+        }
     }
 }
