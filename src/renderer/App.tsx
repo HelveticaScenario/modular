@@ -517,6 +517,11 @@ function App() {
 
                         setTransportState(transport);
 
+                        // If Link stopped playback externally, stop Operator UI
+                        if (transport.linkEnabled && !transport.isPlaying) {
+                            setIsClockRunning(false);
+                        }
+
                         // Check if a pending UI state should be committed
                         const pending = pendingUIStateRef.current;
                         if (
@@ -551,6 +556,21 @@ function App() {
             requestAnimationFrame(tick);
         }
     }, [isClockRunning]);
+
+    // When Link is enabled but Operator is stopped, poll transport state
+    // so we can detect when a Link peer starts playback.
+    const linkEnabled = transportState?.linkEnabled ?? false;
+    useEffect(() => {
+        if (!linkEnabled || isClockRunning) return;
+        const interval = setInterval(async () => {
+            const transport = await electronAPI.synthesizer.getTransportState();
+            setTransportState(transport);
+            if (transport.isPlaying) {
+                setIsClockRunning(true);
+            }
+        }, 100);
+        return () => clearInterval(interval);
+    }, [linkEnabled, isClockRunning]);
 
     const handleSaveFile = useCallback(
         async (id?: string) => {
@@ -835,9 +855,19 @@ function App() {
             <header className="app-header">
                 <TransportDisplay
                     transport={transportState}
-                    onToggleLink={(enabled) =>
-                        electronAPI.synthesizer.enableLink(enabled)
-                    }
+                    onToggleLink={(enabled) => {
+                        electronAPI.synthesizer.enableLink(enabled);
+                        // Optimistically update UI — polling only runs while playing
+                        setTransportState((prev) =>
+                            prev
+                                ? {
+                                      ...prev,
+                                      linkEnabled: enabled,
+                                      linkPeers: enabled ? prev.linkPeers : 0,
+                                  }
+                                : prev,
+                        );
+                    }}
                 />
                 <AudioControls
                     isRunning={isClockRunning}

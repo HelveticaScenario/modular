@@ -1520,7 +1520,10 @@ impl AudioProcessor {
     link.capture_audio_session_state(ss);
     let quantum = 4.0;
     let tempo = ss.tempo();
-    let playing = ss.is_playing();
+    // Only report playing once the quantized start time has actually arrived.
+    // is_playing() returns true immediately after set_is_playing_and_request_beat_at_time,
+    // but the actual start is deferred to time_for_is_playing() for quantized launch.
+    let playing = ss.is_playing() && host_time_micros >= ss.time_for_is_playing();
     let micros_per_sample = 1_000_000.0 / self.sample_rate as f64;
 
     Some(LinkBufferState {
