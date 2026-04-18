@@ -1760,6 +1760,22 @@ where
         audio_processor.current_link_state = audio_processor.capture_link_state();
         audio_processor.frame_in_buffer = 0;
 
+        // Propagate Link start/stop → Operator transport
+        // This must happen before the frame loop (which guards on is_stopped()).
+        if let Some(ref link_state) = audio_processor.current_link_state {
+          let link_playing = link_state.playing;
+          let op_stopped = audio_processor.is_stopped();
+          if link_playing && op_stopped {
+            // Link session started — start Operator transport
+            audio_processor.stopped.store(false, std::sync::atomic::Ordering::SeqCst);
+            let msg = modular_core::types::Message::Clock(ClockMessages::Start);
+            let _ = audio_processor.patch.dispatch_message(&msg);
+          } else if !link_playing && !op_stopped {
+            // Link session stopped — stop Operator transport
+            audio_processor.stopped.store(true, std::sync::atomic::Ordering::SeqCst);
+          }
+        }
+
         // Write Link state to transport meter for UI visibility
         if let Some(ref link) = audio_processor.link {
           audio_processor.transport_meter.write_link_state(true, link.num_peers() as u32);
