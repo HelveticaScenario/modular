@@ -13,6 +13,7 @@ pub mod oscillators;
 pub mod phase;
 pub mod samplers;
 pub mod seq;
+pub mod tables;
 pub mod utilities;
 pub mod utils;
 

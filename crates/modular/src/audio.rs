@@ -1119,6 +1119,13 @@ impl AudioState {
     // Pre-compute desired IDs on main thread to avoid HashSet allocation on audio thread
     update.desired_ids = update.inserts.iter().map(|(id, _)| id.clone()).collect();
 
+    // Run main-thread resource preparation (e.g. FFT-based mipmap generation for
+    // wavetable oscillators). Called here because allocation and file-backed
+    // data access must not happen on the audio thread.
+    for (_id, module) in update.inserts.iter() {
+      module.prepare_resources(&wav_data);
+    }
+
     // Populate wav_data from the cache snapshot
     update.wav_data = wav_data;
 

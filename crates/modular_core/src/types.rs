@@ -51,9 +51,10 @@ use std::{
     sync::{self, Arc},
 };
 
+use crate::dsp::tables::warp;
 use crate::dsp::utils::{hz_to_voct, midi_to_voct};
 use crate::patch::Patch;
-use crate::poly::PolyOutput;
+use crate::poly::{PolyOutput, PolySignal};
 
 // ============================================================================
 // Well-known module IDs and ports
@@ -175,6 +176,18 @@ pub trait Sampleable: MessageHandler + Send + Sync {
     /// be held across a `connect()` or `transfer_state_from()` call.
     fn get_buffer_output(&self, _port: &str) -> Option<&Arc<BufferData>> {
         None
+    }
+    /// Called on the main thread after construction and before the module
+    /// is shipped to the audio thread. Lets the module allocate freely and
+    /// do file I/O / heavy prep from the WAV data cache.
+    ///
+    /// Default: no-op. Modules that need wav preparation should use the
+    /// `has_prepare_resources` flag in their `#[module(...)]` attribute to
+    /// delegate to `prepare_resources_impl` on the inner module struct.
+    fn prepare_resources(
+        &self,
+        _wav_data: &std::collections::HashMap<String, std::sync::Arc<WavData>>,
+    ) {
     }
     /// Downcast to concrete type for state transfer.
     fn as_any(&self) -> &dyn std::any::Any;
@@ -572,31 +585,37 @@ fn parse_signal_string(s: &str) -> StdResult<f32, String> {
 // ============================================================================
 
 /// Plain sample storage — no interior mutability, no unsafe.
-/// Used by `WavData` (immutable loaded samples) and could wrap `BufferData`
-/// in the future. Provides basic read/write/fill operations.
+/// Used by `WavData` (immutable loaded samples) and internally by `BufferData`
+/// (audio-thread circular buffer). Provides basic read/write/fill operations
+/// plus Hermite (4-point cubic) interpolation for fractional-frame reads.
 #[derive(Debug, Clone)]
 pub struct SampleBuffer {
     channels: usize,
     frame_count: usize,
     samples: Vec<Vec<f32>>,
+    /// Sample rate of the stored data. For loaded WAVs this is the original
+    /// file sample rate; for real-time buffers it's the engine sample rate.
+    sample_rate: f32,
 }
 
 impl SampleBuffer {
-    pub fn new_zeroed(channels: usize, frame_count: usize) -> Self {
+    pub fn new_zeroed(channels: usize, frame_count: usize, sample_rate: f32) -> Self {
         Self {
             channels,
             frame_count,
             samples: vec![vec![0.0; frame_count]; channels],
+            sample_rate,
         }
     }
 
-    pub fn from_samples(samples: Vec<Vec<f32>>) -> Self {
+    pub fn from_samples(samples: Vec<Vec<f32>>, sample_rate: f32) -> Self {
         let channels = samples.len();
         let frame_count = samples.first().map_or(0, Vec::len);
         Self {
             channels,
             frame_count,
             samples,
+            sample_rate,
         }
     }
 
@@ -606,6 +625,10 @@ impl SampleBuffer {
 
     pub fn frame_count(&self) -> usize {
         self.frame_count
+    }
+
+    pub fn sample_rate(&self) -> f32 {
+        self.sample_rate
     }
 
     pub fn read(&self, channel: usize, frame: usize) -> f32 {
@@ -641,6 +664,81 @@ impl SampleBuffer {
     pub fn with_data_mut<R>(&mut self, f: impl FnOnce(&mut Vec<Vec<f32>>) -> R) -> R {
         f(&mut self.samples)
     }
+
+    /// Hermite (4-point cubic) interpolation at a fractional frame position.
+    /// Out-of-bounds indices are clamped — suitable for one-shot sample playback.
+    /// Allocation-free; safe for the audio thread.
+    #[inline]
+    pub fn read_hermite_clamped(&self, channel: usize, frame: f32) -> f32 {
+        if !frame.is_finite() || self.frame_count == 0 {
+            return 0.0;
+        }
+
+        let max_frame = (self.frame_count - 1) as f32;
+        if frame < 0.0 || frame > max_frame {
+            return 0.0;
+        }
+
+        let left = frame.floor() as usize;
+        let frac = frame - left as f32;
+        if frac <= f32::EPSILON {
+            return self.read(channel, left);
+        }
+
+        let i0 = left.saturating_sub(1);
+        let i1 = left;
+        let i2 = (left + 1).min(self.frame_count - 1);
+        let i3 = (left + 2).min(self.frame_count - 1);
+
+        let y0 = self.read(channel, i0);
+        let y1 = self.read(channel, i1);
+        let y2 = self.read(channel, i2);
+        let y3 = self.read(channel, i3);
+
+        hermite4(y0, y1, y2, y3, frac)
+    }
+
+    /// Hermite (4-point cubic) interpolation at a fractional frame position
+    /// with wrapping — suitable for circular buffers and looped playback.
+    /// Allocation-free; safe for the audio thread.
+    #[inline]
+    pub fn read_hermite_wrapped(&self, channel: usize, frame: f32) -> f32 {
+        if !frame.is_finite() || self.frame_count == 0 {
+            return 0.0;
+        }
+
+        let wrapped = frame.rem_euclid(self.frame_count as f32);
+        let left = wrapped.floor() as usize;
+        let frac = wrapped - left as f32;
+        if frac <= f32::EPSILON {
+            return self.read(channel, left);
+        }
+
+        let n = self.frame_count;
+        let i0 = (left + n - 1) % n;
+        let i1 = left;
+        let i2 = (left + 1) % n;
+        let i3 = (left + 2) % n;
+
+        let y0 = self.read(channel, i0);
+        let y1 = self.read(channel, i1);
+        let y2 = self.read(channel, i2);
+        let y3 = self.read(channel, i3);
+
+        hermite4(y0, y1, y2, y3, frac)
+    }
+}
+
+/// 4-point Hermite interpolation kernel.
+/// Given samples y0, y1, y2, y3 at integer positions and a fractional offset
+/// `frac` in `[0, 1)` between y1 and y2, returns the interpolated value.
+#[inline]
+fn hermite4(y0: f32, y1: f32, y2: f32, y3: f32, frac: f32) -> f32 {
+    let c0 = y1;
+    let c1 = 0.5 * (y2 - y0);
+    let c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
+    let c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+    ((c3 * frac + c2) * frac + c1) * frac + c0
 }
 
 // ============================================================================
@@ -649,15 +747,28 @@ impl SampleBuffer {
 
 /// Immutable loaded WAV sample data. No interior mutability — naturally Send + Sync.
 /// Wrapped in `Arc<WavData>` for shared ownership between cache and audio thread.
+///
+/// Sample data is stored at the **original file sample rate** — no resampling is
+/// applied at load time. Consumers that need engine-rate data (e.g. the sampler)
+/// should compensate their read position by `buffer_sample_rate / engine_sample_rate`.
 #[derive(Debug, Clone)]
 pub struct WavData {
     buffer: SampleBuffer,
-    sample_rate: f32,
+    /// Detected wavetable frame size (in samples per frame, single-channel), parsed
+    /// from vendor-specific RIFF chunks (Serum `clm `, u-he Hive `uhWT`, Surge `srge`).
+    /// `None` when no wavetable metadata was present.
+    pub detected_frame_size: Option<usize>,
 }
 
 impl WavData {
-    pub fn new(buffer: SampleBuffer, sample_rate: f32) -> Self {
-        Self { buffer, sample_rate }
+    pub fn new(
+        buffer: SampleBuffer,
+        detected_frame_size: Option<usize>,
+    ) -> Self {
+        Self {
+            buffer,
+            detected_frame_size,
+        }
     }
 
     pub fn channel_count(&self) -> usize {
@@ -669,11 +780,17 @@ impl WavData {
     }
 
     pub fn sample_rate(&self) -> f32 {
-        self.sample_rate
+        self.buffer.sample_rate()
     }
 
     pub fn read(&self, channel: usize, frame: usize) -> f32 {
         self.buffer.read(channel, frame)
+    }
+
+    /// Hermite-interpolated read with clamping (for one-shot sample playback).
+    #[inline]
+    pub fn read_hermite_clamped(&self, channel: usize, frame: f32) -> f32 {
+        self.buffer.read_hermite_clamped(channel, frame)
     }
 
     pub fn with_data<R>(&self, f: impl FnOnce(&Vec<Vec<f32>>) -> R) -> R {
@@ -692,6 +809,11 @@ impl WavData {
 pub struct Wav {
     path: String,
     channels: usize,
+    /// File modification time, epoch milliseconds. Set by the N-API loader as a
+    /// cache-key hint so the DSL params cache can invalidate when the underlying
+    /// WAV changes on disk. Optional from the DSL side for backward compatibility
+    /// with patches that don't carry mtime.
+    mtime: Option<f64>,
     cached_data: Option<Arc<WavData>>,
 }
 
@@ -700,6 +822,7 @@ impl Wav {
         Self {
             path,
             channels,
+            mtime: None,
             cached_data: None,
         }
     }
@@ -710,6 +833,10 @@ impl Wav {
 
     pub fn channel_count(&self) -> usize {
         self.channels
+    }
+
+    pub fn mtime(&self) -> Option<f64> {
+        self.mtime
     }
 
     pub fn frame_count(&self) -> usize {
@@ -727,6 +854,20 @@ impl Wav {
         self.cached_data
             .as_ref()
             .map(|d| d.read(channel, frame))
+            .unwrap_or(0.0)
+    }
+
+    pub fn read_hermite_clamped(&self, channel: usize, frame: f32) -> f32 {
+        self.cached_data
+            .as_ref()
+            .map(|d| d.read_hermite_clamped(channel, frame))
+            .unwrap_or(0.0)
+    }
+
+    pub fn sample_rate(&self) -> f32 {
+        self.cached_data
+            .as_ref()
+            .map(|d| d.sample_rate())
             .unwrap_or(0.0)
     }
 }
@@ -751,9 +892,13 @@ impl std::fmt::Debug for Wav {
     }
 }
 
+/// `mtime` participates in equality so the DSL params cache treats a rewritten
+/// wav file as a distinct value and reconstructs dependent modules. Path+channels
+/// alone are insufficient because the data on disk can change without the path
+/// changing.
 impl PartialEq for Wav {
     fn eq(&self, other: &Self) -> bool {
-        self.path == other.path && self.channels == other.channels
+        self.path == other.path && self.channels == other.channels && self.mtime == other.mtime
     }
 }
 
@@ -762,6 +907,8 @@ impl PartialEq for Wav {
 struct WavSerde {
     path: String,
     channels: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mtime: Option<f64>,
 }
 
 impl Serialize for Wav {
@@ -769,6 +916,7 @@ impl Serialize for Wav {
         WavSerde {
             path: self.path.clone(),
             channels: self.channels,
+            mtime: self.mtime,
         }
         .serialize(serializer)
     }
@@ -780,7 +928,9 @@ impl<'de> Deserialize<'de> for Wav {
         D: serde::Deserializer<'de>,
     {
         let data = WavSerde::deserialize(deserializer)?;
-        Ok(Wav::new(data.path, data.channels))
+        let mut wav = Wav::new(data.path, data.channels);
+        wav.mtime = data.mtime;
+        Ok(wav)
     }
 }
 
@@ -799,6 +949,11 @@ impl<E: DeserializeError> deserr::Deserr<E> for Wav {
                     deserr::Value::Integer(n) => Some(n as usize),
                     _ => None,
                 });
+                let mtime = map.remove("mtime").and_then(|v| match v.into_value() {
+                    deserr::Value::Integer(n) => Some(n as f64),
+                    deserr::Value::Float(f) => Some(f),
+                    _ => None,
+                });
 
                 let path = path.ok_or_else(|| {
                     deserr::take_cf_content(E::error::<V>(
@@ -814,7 +969,9 @@ impl<E: DeserializeError> deserr::Deserr<E> for Wav {
                         location,
                     ))
                 })?;
-                Ok(Wav::new(path, channels))
+                let mut wav = Wav::new(path, channels);
+                wav.mtime = mtime;
+                Ok(wav)
             }
             _ => Err(deserr::take_cf_content(E::error::<V>(
                 None,
@@ -838,7 +995,8 @@ impl JsonSchema for Wav {
             "properties": {
                 "type": { "type": "string", "const": "wav_ref" },
                 "path": { "type": "string" },
-                "channels": { "type": "integer", "minimum": 1 }
+                "channels": { "type": "integer", "minimum": 1 },
+                "mtime": { "type": "number" }
             },
             "required": ["type", "path", "channels"]
         }))
@@ -850,8 +1008,8 @@ impl JsonSchema for Wav {
 // BufferData — audio thread circular buffer with interior mutability
 // ============================================================================
 
-/// Uses `UnsafeCell` for `samples` and `write_index` to allow mutation through
-/// `&self` on the audio thread. This is safe because:
+/// Uses `UnsafeCell` for the inner `SampleBuffer` and `write_index` to allow
+/// mutation through `&self` on the audio thread. This is safe because:
 ///
 /// 1. After construction (main thread), all access is from the audio thread only.
 /// 2. The owning module's `update()` writes; readers on the same thread read.
@@ -861,9 +1019,7 @@ impl JsonSchema for Wav {
 ///    via the command queue (construction → audio thread), never concurrent access.
 #[derive(Debug)]
 pub struct BufferData {
-    channels: usize,
-    frame_count: usize,
-    samples: UnsafeCell<Vec<Vec<f32>>>,
+    inner: UnsafeCell<SampleBuffer>,
     write_index: UnsafeCell<usize>,
 }
 
@@ -873,21 +1029,14 @@ unsafe impl Sync for BufferData {}
 impl BufferData {
     pub fn new_zeroed(channels: usize, frame_count: usize) -> Self {
         Self {
-            channels,
-            frame_count,
-            samples: UnsafeCell::new(vec![vec![0.0; frame_count]; channels]),
+            inner: UnsafeCell::new(SampleBuffer::new_zeroed(channels, frame_count, 0.0)),
             write_index: UnsafeCell::new(0),
         }
     }
 
     pub fn from_samples(samples: Vec<Vec<f32>>) -> Self {
-        let channels = samples.len();
-        let frame_count = samples.first().map_or(0, Vec::len);
-
         Self {
-            channels,
-            frame_count,
-            samples: UnsafeCell::new(samples),
+            inner: UnsafeCell::new(SampleBuffer::from_samples(samples, 0.0)),
             write_index: UnsafeCell::new(0),
         }
     }
@@ -905,38 +1054,30 @@ impl BufferData {
     }
 
     pub fn channel_count(&self) -> usize {
-        self.channels
+        self.with_buffer(|b| b.channel_count())
     }
 
     pub fn frame_count(&self) -> usize {
-        self.frame_count
+        self.with_buffer(|b| b.frame_count())
     }
 
     pub fn fill(&self, value: f32) {
-        self.with_data_mut(|data| {
-            for channel in data.iter_mut() {
-                channel.fill(value);
-            }
-        });
+        self.with_buffer_mut(|b| b.fill(value));
     }
 
     pub fn read(&self, channel: usize, frame: usize) -> f32 {
-        self.with_data(|data| {
-            data.get(channel)
-                .and_then(|channel_data| channel_data.get(frame))
-                .copied()
-                .unwrap_or(0.0)
-        })
+        self.with_buffer(|b| b.read(channel, frame))
     }
 
     pub fn write(&self, channel: usize, frame: usize, value: f32) {
-        self.with_data_mut(|data| {
-            if let Some(channel_data) = data.get_mut(channel)
-                && let Some(sample) = channel_data.get_mut(frame)
-            {
-                *sample = value;
-            }
-        });
+        self.with_buffer_mut(|b| b.write(channel, frame, value));
+    }
+
+    /// Hermite interpolation with wrapping, delegated to the inner `SampleBuffer`.
+    /// Audio-thread safe.
+    #[inline]
+    pub fn read_hermite_wrapped(&self, channel: usize, frame: f32) -> f32 {
+        self.with_buffer(|b| b.read_hermite_wrapped(channel, frame))
     }
 
     /// Copy the most recent `min(old_size, new_size)` frames from `other` into `self`,
@@ -1033,12 +1174,27 @@ impl BufferData {
         self.with_data(Clone::clone)
     }
 
+    /// Access the raw `Vec<Vec<f32>>` for reading. Prefer `read()` or
+    /// `read_hermite_wrapped()` for normal use; this is for bulk operations
+    /// like `copy_overlap_from`.
     pub fn with_data<R>(&self, f: impl FnOnce(&Vec<Vec<f32>>) -> R) -> R {
-        unsafe { f(&*self.samples.get()) }
+        self.with_buffer(|b| b.with_data(f))
     }
 
+    /// Access the raw `Vec<Vec<f32>>` for writing. Prefer `write()` for normal
+    /// use; this is for bulk operations like `copy_overlap_from`.
     pub fn with_data_mut<R>(&self, f: impl FnOnce(&mut Vec<Vec<f32>>) -> R) -> R {
-        unsafe { f(&mut *self.samples.get()) }
+        self.with_buffer_mut(|b| b.with_data_mut(f))
+    }
+
+    /// Read-only access to the inner `SampleBuffer`.
+    fn with_buffer<R>(&self, f: impl FnOnce(&SampleBuffer) -> R) -> R {
+        unsafe { f(&*self.inner.get()) }
+    }
+
+    /// Mutable access to the inner `SampleBuffer`. Audio-thread only.
+    fn with_buffer_mut<R>(&self, f: impl FnOnce(&mut SampleBuffer) -> R) -> R {
+        unsafe { f(&mut *self.inner.get()) }
     }
 }
 
@@ -1146,6 +1302,13 @@ impl Buffer {
 
     pub fn with_data_mut<R>(&self, f: impl FnOnce(&mut Vec<Vec<f32>>) -> R) -> Option<R> {
         self.cached_buffer.as_ref().map(|buffer| buffer.with_data_mut(f))
+    }
+
+    pub fn read_hermite_wrapped(&self, channel: usize, frame: f32) -> f32 {
+        self.cached_buffer
+            .as_ref()
+            .map(|buffer| buffer.read_hermite_wrapped(channel, frame))
+            .unwrap_or(0.0)
     }
 }
 
@@ -1304,6 +1467,236 @@ impl PartialEq for Buffer {
                 (None, None) => true,
                 _ => false,
             }
+    }
+}
+
+// ============================================================================
+// Table — function-object param type for phase warping
+// ============================================================================
+
+/// A function-object param type used by modules (e.g., `$wavetable`) that need a
+/// parameterized phase-warp. Each variant holds `PolySignal` fields for dynamic
+/// parameters; the consuming module resolves signals via `connect()` and calls
+/// `evaluate(x, channel)` per-sample.
+///
+/// JSON shape (serialized/deserialized):
+/// ```json
+/// { "type": "identity" }
+/// { "type": "mirror", "amount": <signal> }
+/// { "type": "bend",   "amount": <signal> }
+/// { "type": "sync",   "ratio":  <signal> }
+/// { "type": "fold",   "amount": <signal> }
+/// { "type": "pwm",    "width":  <signal> }
+/// ```
+#[derive(Clone, Debug)]
+pub enum Table {
+    Identity,
+    Mirror { amount: PolySignal },
+    Bend { amount: PolySignal },
+    Sync { ratio: PolySignal },
+    Fold { amount: PolySignal },
+    Pwm { width: PolySignal },
+}
+
+impl Table {
+    /// Evaluate the table warp at position `x` for the given channel.
+    ///
+    /// Must be cheap and allocation-free — called per-sample on the audio thread.
+    #[inline]
+    pub fn evaluate(&self, x: f32, channel: usize) -> f32 {
+        match self {
+            Table::Identity => x,
+            Table::Mirror { amount } => warp::mirror(x, amount.get_value(channel)),
+            Table::Bend { amount } => warp::bend(x, amount.get_value(channel)),
+            Table::Sync { ratio } => warp::sync(x, ratio.get_value(channel)),
+            Table::Fold { amount } => warp::fold(x, amount.get_value(channel)),
+            Table::Pwm { width } => warp::pwm(x, width.get_value(channel)),
+        }
+    }
+}
+
+impl Connect for Table {
+    fn connect(&mut self, patch: &Patch) {
+        match self {
+            Table::Identity => {}
+            Table::Mirror { amount } => amount.connect(patch),
+            Table::Bend { amount } => amount.connect(patch),
+            Table::Sync { ratio } => ratio.connect(patch),
+            Table::Fold { amount } => amount.connect(patch),
+            Table::Pwm { width } => width.connect(patch),
+        }
+    }
+}
+
+// --- Serde Serialize / Deserialize (internally-tagged on "type") ---
+
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum TableSerde {
+    Identity,
+    Mirror { amount: PolySignal },
+    Bend { amount: PolySignal },
+    Sync { ratio: PolySignal },
+    Fold { amount: PolySignal },
+    Pwm { width: PolySignal },
+}
+
+impl From<TableSerde> for Table {
+    fn from(s: TableSerde) -> Self {
+        match s {
+            TableSerde::Identity => Table::Identity,
+            TableSerde::Mirror { amount } => Table::Mirror { amount },
+            TableSerde::Bend { amount } => Table::Bend { amount },
+            TableSerde::Sync { ratio } => Table::Sync { ratio },
+            TableSerde::Fold { amount } => Table::Fold { amount },
+            TableSerde::Pwm { width } => Table::Pwm { width },
+        }
+    }
+}
+
+impl<'a> From<&'a Table> for TableSerdeRef<'a> {
+    fn from(t: &'a Table) -> Self {
+        match t {
+            Table::Identity => TableSerdeRef::Identity,
+            Table::Mirror { amount } => TableSerdeRef::Mirror { amount },
+            Table::Bend { amount } => TableSerdeRef::Bend { amount },
+            Table::Sync { ratio } => TableSerdeRef::Sync { ratio },
+            Table::Fold { amount } => TableSerdeRef::Fold { amount },
+            Table::Pwm { width } => TableSerdeRef::Pwm { width },
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum TableSerdeRef<'a> {
+    Identity,
+    Mirror { amount: &'a PolySignal },
+    Bend { amount: &'a PolySignal },
+    Sync { ratio: &'a PolySignal },
+    Fold { amount: &'a PolySignal },
+    Pwm { width: &'a PolySignal },
+}
+
+impl<'de> Deserialize<'de> for Table {
+    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        TableSerde::deserialize(deserializer).map(Table::from)
+    }
+}
+
+impl Serialize for Table {
+    fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        TableSerdeRef::from(self).serialize(serializer)
+    }
+}
+
+// --- deserr impl (mirrors the serde shape: object with "type" discriminant) ---
+
+impl<E: DeserializeError> deserr::Deserr<E> for Table {
+    fn deserialize_from_value<V: IntoValue>(
+        value: deserr::Value<V>,
+        location: ValuePointerRef<'_>,
+    ) -> StdResult<Self, E> {
+        let mut map = match value {
+            deserr::Value::Map(m) => m,
+            _ => {
+                return Err(deserr::take_cf_content(E::error::<V>(
+                    None,
+                    ErrorKind::Unexpected {
+                        msg: "Table must be an object with a \"type\" field".to_string(),
+                    },
+                    location,
+                )));
+            }
+        };
+
+        let type_val = map.remove("type").and_then(|v| match v.into_value() {
+            deserr::Value::String(s) => Some(s),
+            _ => None,
+        });
+
+        let type_str = type_val.ok_or_else(|| {
+            deserr::take_cf_content(E::error::<V>(
+                None,
+                ErrorKind::MissingField { field: "type" },
+                location,
+            ))
+        })?;
+
+        // Helper: pull a named PolySignal field out of the remaining map.
+        fn take_signal<E2: DeserializeError, V2: IntoValue>(
+            map: &mut impl DeserrMap<Value = V2>,
+            field: &'static str,
+            location: ValuePointerRef<'_>,
+        ) -> StdResult<PolySignal, E2> {
+            let raw = map.remove(field).ok_or_else(|| {
+                deserr::take_cf_content(E2::error::<V2>(
+                    None,
+                    ErrorKind::MissingField { field },
+                    location,
+                ))
+            })?;
+            PolySignal::deserialize_from_value(raw.into_value(), location)
+        }
+
+        match type_str.as_str() {
+            "identity" => Ok(Table::Identity),
+            "mirror" => {
+                let amount = take_signal::<E, V>(&mut map, "amount", location)?;
+                Ok(Table::Mirror { amount })
+            }
+            "bend" => {
+                let amount = take_signal::<E, V>(&mut map, "amount", location)?;
+                Ok(Table::Bend { amount })
+            }
+            "sync" => {
+                let ratio = take_signal::<E, V>(&mut map, "ratio", location)?;
+                Ok(Table::Sync { ratio })
+            }
+            "fold" => {
+                let amount = take_signal::<E, V>(&mut map, "amount", location)?;
+                Ok(Table::Fold { amount })
+            }
+            "pwm" => {
+                let width = take_signal::<E, V>(&mut map, "width", location)?;
+                Ok(Table::Pwm { width })
+            }
+            other => Err(deserr::take_cf_content(E::error::<V>(
+                None,
+                ErrorKind::Unexpected {
+                    msg: format!("unknown table type: {}", other),
+                },
+                location,
+            ))),
+        }
+    }
+}
+
+impl JsonSchema for Table {
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("Table")
+    }
+
+    fn json_schema(r#gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        // Schema matches the serialized form: internally-tagged on "type", camelCase.
+        #[derive(JsonSchema)]
+        #[serde(tag = "type", rename_all = "camelCase")]
+        #[allow(dead_code)]
+        enum TableSchema {
+            Identity,
+            Mirror { amount: PolySignal },
+            Bend { amount: PolySignal },
+            Sync { ratio: PolySignal },
+            Fold { amount: PolySignal },
+            Pwm { width: PolySignal },
+        }
+        TableSchema::json_schema(r#gen)
     }
 }
 
@@ -2440,7 +2833,7 @@ mod sample_buffer_tests {
 
     #[test]
     fn sample_buffer_new_zeroed() {
-        let buf = SampleBuffer::new_zeroed(2, 100);
+        let buf = SampleBuffer::new_zeroed(2, 100, 48000.0);
         assert_eq!(buf.channel_count(), 2);
         assert_eq!(buf.frame_count(), 100);
         assert_eq!(buf.read(0, 0), 0.0);
@@ -2450,7 +2843,7 @@ mod sample_buffer_tests {
     #[test]
     fn sample_buffer_from_samples() {
         let samples = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
-        let buf = SampleBuffer::from_samples(samples);
+        let buf = SampleBuffer::from_samples(samples, 48000.0);
         assert_eq!(buf.channel_count(), 2);
         assert_eq!(buf.frame_count(), 3);
         assert_eq!(buf.read(0, 1), 2.0);
@@ -2459,21 +2852,21 @@ mod sample_buffer_tests {
 
     #[test]
     fn sample_buffer_write_and_read() {
-        let mut buf = SampleBuffer::new_zeroed(1, 10);
+        let mut buf = SampleBuffer::new_zeroed(1, 10, 48000.0);
         buf.write(0, 5, 42.0);
         assert_eq!(buf.read(0, 5), 42.0);
     }
 
     #[test]
     fn sample_buffer_read_out_of_bounds_returns_zero() {
-        let buf = SampleBuffer::new_zeroed(1, 5);
+        let buf = SampleBuffer::new_zeroed(1, 5, 48000.0);
         assert_eq!(buf.read(0, 10), 0.0); // frame out of range
         assert_eq!(buf.read(5, 0), 0.0); // channel out of range
     }
 
     #[test]
     fn sample_buffer_fill() {
-        let mut buf = SampleBuffer::new_zeroed(2, 3);
+        let mut buf = SampleBuffer::new_zeroed(2, 3, 48000.0);
         buf.fill(7.0);
         for ch in 0..2 {
             for frame in 0..3 {
@@ -2485,13 +2878,13 @@ mod sample_buffer_tests {
     #[test]
     fn sample_buffer_snapshot() {
         let samples = vec![vec![1.0, 2.0], vec![3.0, 4.0]];
-        let buf = SampleBuffer::from_samples(samples.clone());
+        let buf = SampleBuffer::from_samples(samples.clone(), 48000.0);
         assert_eq!(buf.snapshot(), samples);
     }
 
     #[test]
     fn sample_buffer_with_data() {
-        let buf = SampleBuffer::from_samples(vec![vec![10.0, 20.0]]);
+        let buf = SampleBuffer::from_samples(vec![vec![10.0, 20.0]], 48000.0);
         let sum: f32 = buf.with_data(|data| data[0].iter().sum());
         assert_eq!(sum, 30.0);
     }
@@ -2505,7 +2898,7 @@ mod wav_tests {
     #[test]
     fn wav_data_from_samples() {
         let samples = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
-        let wav = WavData::new(SampleBuffer::from_samples(samples), 44100.0);
+        let wav = WavData::new(SampleBuffer::from_samples(samples, 44100.0), None);
         assert_eq!(wav.channel_count(), 2);
         assert_eq!(wav.frame_count(), 3);
         assert_eq!(wav.sample_rate(), 44100.0);
@@ -2533,8 +2926,8 @@ mod wav_tests {
     fn wav_param_connect_resolves_data() {
         let samples = vec![vec![1.0, 2.0], vec![3.0, 4.0]];
         let wav_data = Arc::new(WavData::new(
-            SampleBuffer::from_samples(samples),
-            48000.0,
+            SampleBuffer::from_samples(samples, 48000.0),
+            None,
         ));
 
         let mut patch = Patch::new();
@@ -2555,5 +2948,267 @@ mod wav_tests {
         let mut wav = Wav::new("nonexistent".to_string(), 1);
         wav.connect(&patch);
         assert!(!wav.is_loaded());
+    }
+
+    #[test]
+    fn wav_deserializes_without_mtime_via_serde() {
+        let w: Wav =
+            serde_json::from_str(r#"{"type":"wav_ref","path":"kick","channels":2}"#).unwrap();
+        assert_eq!(w.path(), "kick");
+        assert_eq!(w.channel_count(), 2);
+        assert_eq!(w.mtime(), None);
+    }
+
+    #[test]
+    fn wav_deserializes_with_mtime_via_serde() {
+        let w: Wav = serde_json::from_str(
+            r#"{"type":"wav_ref","path":"kick","channels":2,"mtime":123.0}"#,
+        )
+        .unwrap();
+        assert_eq!(w.mtime(), Some(123.0));
+        // round-trip: serialize back out and confirm mtime preserved
+        let out = serde_json::to_string(&w).unwrap();
+        assert!(out.contains("\"mtime\":123"), "mtime not in output: {out}");
+    }
+
+    #[test]
+    fn wav_serializes_without_mtime_when_absent() {
+        let w: Wav =
+            serde_json::from_str(r#"{"type":"wav_ref","path":"kick","channels":2}"#).unwrap();
+        let out = serde_json::to_string(&w).unwrap();
+        assert!(
+            !out.contains("mtime"),
+            "mtime should be omitted when None, got: {out}"
+        );
+    }
+
+    #[test]
+    fn wav_deserializes_without_mtime_via_deserr() {
+        let v: serde_json::Value =
+            serde_json::from_str(r#"{"type":"wav_ref","path":"kick","channels":2}"#).unwrap();
+        let w: Wav = deserr::deserialize::<Wav, _, deserr::errors::JsonError>(v).unwrap();
+        assert_eq!(w.path(), "kick");
+        assert_eq!(w.channel_count(), 2);
+        assert_eq!(w.mtime(), None);
+    }
+}
+
+#[cfg(test)]
+mod table_tests {
+    use super::*;
+    use crate::poly::PolySignal;
+
+    fn constant(v: f32) -> PolySignal {
+        PolySignal::mono(Signal::Volts(v))
+    }
+
+    // ---------- evaluate() ----------
+
+    #[test]
+    fn identity_evaluates_as_passthrough() {
+        let t = Table::Identity;
+        for i in 0..=10 {
+            let x = i as f32 / 10.0;
+            assert!((t.evaluate(x, 0) - x).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn mirror_evaluates_with_constant_signal() {
+        let t = Table::Mirror { amount: constant(0.0) };
+        // amount=0 => identity.
+        for i in 0..=10 {
+            let x = i as f32 / 10.0;
+            assert!((t.evaluate(x, 0) - x).abs() < 1e-6);
+        }
+        // amount=1 at midpoint => 1.0.
+        let t = Table::Mirror { amount: constant(1.0) };
+        assert!((t.evaluate(0.5, 0) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn bend_evaluates_with_constant_signal() {
+        let t = Table::Bend { amount: constant(0.0) };
+        for i in 0..=10 {
+            let x = i as f32 / 10.0;
+            assert!((t.evaluate(x, 0) - x).abs() < 1e-6);
+        }
+        // Endpoints preserved even under bend.
+        let t = Table::Bend { amount: constant(0.7) };
+        assert!(t.evaluate(0.0, 0).abs() < 1e-6);
+        assert!((t.evaluate(1.0, 0) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn sync_evaluates_with_constant_signal() {
+        // ratio=0 => 1x (identity on [0, 1)).
+        let t = Table::Sync { ratio: constant(0.0) };
+        for i in 0..100 {
+            let x = i as f32 / 100.0;
+            assert!((t.evaluate(x, 0) - x).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn fold_evaluates_with_constant_signal() {
+        // amount=0 => identity.
+        let t = Table::Fold { amount: constant(0.0) };
+        for i in 0..=10 {
+            let x = i as f32 / 10.0;
+            assert!((t.evaluate(x, 0) - x).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn pwm_evaluates_with_constant_signal() {
+        let t = Table::Pwm { width: constant(0.5) };
+        assert!(t.evaluate(0.0, 0).abs() < 1e-6);
+        assert!((t.evaluate(1.0, 0) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn evaluate_output_in_range_across_sweep() {
+        let cases: Vec<Table> = vec![
+            Table::Identity,
+            Table::Mirror { amount: constant(0.5) },
+            Table::Bend { amount: constant(0.5) },
+            Table::Sync { ratio: constant(0.5) },
+            Table::Fold { amount: constant(0.5) },
+            Table::Pwm { width: constant(0.3) },
+        ];
+        for t in &cases {
+            for i in 0..=100 {
+                let x = i as f32 / 100.0;
+                let y = t.evaluate(x, 0);
+                assert!(
+                    (0.0..=1.0).contains(&y),
+                    "table variant output {} out of range for x={}",
+                    y,
+                    x
+                );
+            }
+        }
+    }
+
+    // ---------- connect() ----------
+
+    #[test]
+    fn connect_identity_is_noop() {
+        let patch = Patch::new();
+        let mut t = Table::Identity;
+        t.connect(&patch);
+        assert!(matches!(t, Table::Identity));
+    }
+
+    #[test]
+    fn connect_resolves_polysignal_for_every_variant() {
+        // With PolySignal::mono(Signal::Volts(x)), `connect()` is a no-op on Volts,
+        // so we mostly assert that it runs without panic and evaluates sensibly.
+        let patch = Patch::new();
+
+        let mut mirror = Table::Mirror { amount: constant(0.25) };
+        mirror.connect(&patch);
+        // At x=0.5 the reflection is 1.0; interpolated at amount=0.25: 0.5 + 0.5*0.25 = 0.625.
+        assert!((mirror.evaluate(0.5, 0) - 0.625).abs() < 1e-4);
+
+        let mut bend = Table::Bend { amount: constant(0.0) };
+        bend.connect(&patch);
+        assert!((bend.evaluate(0.5, 0) - 0.5).abs() < 1e-6);
+
+        let mut sync = Table::Sync { ratio: constant(0.0) };
+        sync.connect(&patch);
+        assert!((sync.evaluate(0.25, 0) - 0.25).abs() < 1e-6);
+
+        let mut fold = Table::Fold { amount: constant(0.0) };
+        fold.connect(&patch);
+        assert!((fold.evaluate(0.5, 0) - 0.5).abs() < 1e-6);
+
+        let mut pwm = Table::Pwm { width: constant(0.5) };
+        pwm.connect(&patch);
+        assert!((pwm.evaluate(0.5, 0) - 0.5).abs() < 1e-6);
+    }
+
+    // ---------- (de)serialization round trip ----------
+
+    #[test]
+    fn table_deserializes_identity() {
+        let t: Table = serde_json::from_str(r#"{"type":"identity"}"#).unwrap();
+        assert!(matches!(t, Table::Identity));
+    }
+
+    #[test]
+    fn table_deserializes_mirror_with_scalar_signal() {
+        let t: Table =
+            serde_json::from_str(r#"{"type":"mirror","amount":0.5}"#).unwrap();
+        match t {
+            Table::Mirror { amount } => {
+                assert!((amount.get_value(0) - 0.5).abs() < 1e-6);
+            }
+            _ => panic!("expected Mirror"),
+        }
+    }
+
+    #[test]
+    fn table_deserializes_pwm_with_scalar_signal() {
+        let t: Table = serde_json::from_str(r#"{"type":"pwm","width":0.25}"#).unwrap();
+        match t {
+            Table::Pwm { width } => {
+                assert!((width.get_value(0) - 0.25).abs() < 1e-6);
+            }
+            _ => panic!("expected Pwm"),
+        }
+    }
+
+    #[test]
+    fn table_roundtrips_identity() {
+        let t = Table::Identity;
+        let json = serde_json::to_string(&t).unwrap();
+        assert_eq!(json, r#"{"type":"identity"}"#);
+    }
+
+    #[test]
+    fn table_roundtrips_sync() {
+        let t = Table::Sync { ratio: constant(0.75) };
+        let json = serde_json::to_string(&t).unwrap();
+        let back: Table = serde_json::from_str(&json).unwrap();
+        match back {
+            Table::Sync { ratio } => {
+                assert!((ratio.get_value(0) - 0.75).abs() < 1e-6);
+            }
+            _ => panic!("expected Sync"),
+        }
+    }
+
+    // ---------- deserr parity ----------
+
+    #[test]
+    fn table_deserr_parses_mirror() {
+        use deserr::deserialize;
+
+        let value: serde_json::Value =
+            serde_json::from_str(r#"{"type":"mirror","amount":0.5}"#).unwrap();
+        let t: Table = deserialize::<Table, _, deserr::errors::JsonError>(value).unwrap();
+        match t {
+            Table::Mirror { amount } => {
+                assert!((amount.get_value(0) - 0.5).abs() < 1e-6);
+            }
+            _ => panic!("expected Mirror"),
+        }
+    }
+
+    #[test]
+    fn table_deserr_parses_identity() {
+        use deserr::deserialize;
+        let value: serde_json::Value = serde_json::from_str(r#"{"type":"identity"}"#).unwrap();
+        let t: Table = deserialize::<Table, _, deserr::errors::JsonError>(value).unwrap();
+        assert!(matches!(t, Table::Identity));
+    }
+
+    #[test]
+    fn table_deserr_rejects_unknown_type() {
+        use deserr::deserialize;
+        let value: serde_json::Value = serde_json::from_str(r#"{"type":"bogus"}"#).unwrap();
+        let res: StdResult<Table, deserr::errors::JsonError> = deserialize(value);
+        assert!(res.is_err());
     }
 }

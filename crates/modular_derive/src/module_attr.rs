@@ -53,6 +53,7 @@ pub struct ModuleAttrArgs {
     stateful: bool,
     patch_update: bool,
     has_init: bool,
+    has_prepare_resources: bool,
 }
 
 impl syn::parse::Parse for ModuleAttrArgs {
@@ -67,6 +68,7 @@ impl syn::parse::Parse for ModuleAttrArgs {
         let mut stateful = false;
         let mut patch_update = false;
         let mut has_init = false;
+        let mut has_prepare_resources = false;
 
         while !input.is_empty() {
             let ident: Ident = input.parse()?;
@@ -119,6 +121,9 @@ impl syn::parse::Parse for ModuleAttrArgs {
                 "has_init" => {
                     has_init = true;
                 }
+                "has_prepare_resources" => {
+                    has_prepare_resources = true;
+                }
                 other => {
                     return Err(syn::Error::new(
                         ident.span(),
@@ -126,7 +131,7 @@ impl syn::parse::Parse for ModuleAttrArgs {
                             "Unknown module attribute '{other}'. Expected one of: \
                              name, channels, channels_param, \
                              channels_param_default, channels_derive, args, \
-                             stateful, patch_update, has_init"
+                             stateful, patch_update, has_init, has_prepare_resources"
                         ),
                     ));
                 }
@@ -156,6 +161,7 @@ impl syn::parse::Parse for ModuleAttrArgs {
             stateful,
             patch_update,
             has_init,
+            has_prepare_resources,
         })
     }
 }
@@ -204,6 +210,7 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
             && !a.path().is_ident("stateful")
             && !a.path().is_ident("patch_update")
             && !a.path().is_ident("has_init")
+            && !a.path().is_ident("has_prepare_resources")
     });
 
     // Inject `_channel_count: usize` field into the struct so that
@@ -478,6 +485,24 @@ fn impl_module_macro_attr(
         quote! {}
     };
 
+    // Check for has_prepare_resources flag
+    let prepare_resources_impl = if attr_args.has_prepare_resources {
+        quote! {
+            fn prepare_resources(
+                &self,
+                wav_data: &std::collections::HashMap<String, std::sync::Arc<crate::types::WavData>>,
+            ) {
+                // SAFETY: Called on the main thread between construction and
+                // queueing the module for the audio thread. No other
+                // references to `self.module` exist at this point.
+                let module = unsafe { &mut *self.module.get() };
+                module.prepare_resources_impl(wav_data, self.sample_rate);
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     // Check for patch_update flag
     let on_patch_update_impl = if attr_args.patch_update {
         quote! {
@@ -676,6 +701,8 @@ fn impl_module_macro_attr(
             }
 
             #on_patch_update_impl
+
+            #prepare_resources_impl
 
             fn get_state(&self) -> Option<serde_json::Value> {
                 #get_state_impl

@@ -301,6 +301,24 @@ type Poly<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
 type Mono<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
 
 /**
+ * A phase-warp table descriptor produced by the \`$table.*\` helpers.
+ *
+ * Passed to modules that accept a \`Table\`-typed param (e.g. the
+ * \`phase\` config field on \`$wavetable\`) to reshape a raw phase signal
+ * before it is used to read a wavetable.
+ *
+ * Create one with \`$table.mirror\`, \`$table.bend\`, \`$table.sync\`,
+ * \`$table.fold\`, or \`$table.pwm\` — do not construct directly.
+ */
+type Table =
+  | { readonly type: "mirror"; readonly amount: Signal }
+  | { readonly type: "bend"; readonly amount: Signal }
+  | { readonly type: "sync"; readonly ratio: Signal }
+  | { readonly type: "fold"; readonly amount: Signal }
+  | { readonly type: "pwm"; readonly width: Signal }
+  | { readonly type: "identity" };
+
+/**
  * A buffer output reference — returned by \`$buffer()\`, passed to readers
  * (like \`$bufRead\`, \`$delayRead\`) as their \`buffer\` param.
  */
@@ -323,6 +341,8 @@ type WavHandle = {
   readonly frameCount: number;
   readonly duration: number;
   readonly bitDepth: number;
+  /** File modification time (epoch ms). Cache-key hint — changes when the WAV is edited on disk. */
+  readonly mtime: number;
   readonly pitch?: number;
   readonly playback?: 'one-shot' | 'loop';
   readonly bpm?: number;
@@ -944,6 +964,32 @@ function $setEndOfChainCb(cb: (mixed: Collection) => ModuleOutput | Collection |
  * // → [[1,'a'], [1,'b'], [2,'a'], [2,'b']]
  */
 function $cartesian<A extends unknown[][]>(...arrays: A): ElementsOf<A>[];
+
+/**
+ * Phase-warp table descriptors for modules that accept a {@link Table}
+ * (e.g. the \`phase\` config field on \`$wavetable\`).
+ *
+ * Each helper returns a {@link Table} whose inner signal-valued field
+ * accepts a constant, a module output, or any other {@link Signal}.
+ *
+ * @example
+ * // Symmetric mirror warp driven by an LFO
+ * $wavetable(\\$wavs().mywavs.mytable, 'c4', {
+ *   phase: $table.mirror($lfo.sine('1hz')),
+ * }).out();
+ */
+declare const $table: {
+    /** Reflect the phase around its midpoint by \`amount\` (0..1). */
+    mirror(amount: Signal): Table;
+    /** Bend the phase curve by \`amount\` (0..1 = linear..extreme). */
+    bend(amount: Signal): Table;
+    /** Hard-sync: restart the phase every \`ratio\` of a cycle. */
+    sync(ratio: Signal): Table;
+    /** Fold the phase back on itself by \`amount\`. */
+    fold(amount: Signal): Table;
+    /** Pulse-width modulation warp with duty cycle \`width\` (0..1). */
+    pwm(width: Signal): Table;
+};
 `;
 
 function generateWavsTypeDeclaration(tree: WavsFolderNode | null): string {
@@ -958,7 +1004,7 @@ function generateWavsTypeDeclaration(tree: WavsFolderNode | null): string {
         )) {
             const safeName = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key)
                 ? key
-                : `'${key}'`;
+                : `'${key.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
             if (value === 'file') {
                 lines.push(`${indent}  readonly ${safeName}: WavHandle;`);
             } else {

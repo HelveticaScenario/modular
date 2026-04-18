@@ -293,6 +293,12 @@ export interface WavLoadInfo {
   timeSignature?: WavTimeSignature
   loops: Array<WavLoopInfo>
   cuePoints: Array<WavCuePointInfo>
+  /**
+   * File modification time, epoch milliseconds. Used as a cache-key hint so the
+   * DSL executor can invalidate params caches when the underlying WAV changes
+   * on disk. Falls back to 0.0 when the mtime can't be read.
+   */
+  mtime: number
 }
 
 export interface WavLoopInfo {

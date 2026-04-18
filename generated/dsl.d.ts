@@ -289,6 +289,24 @@ type Poly<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
 type Mono<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
 
 /**
+ * A phase-warp table descriptor produced by the `$table.*` helpers.
+ *
+ * Passed to modules that accept a `Table`-typed param (e.g. the
+ * `phase` config field on `$wavetable`) to reshape a raw phase signal
+ * before it is used to read a wavetable.
+ *
+ * Create one with `$table.mirror`, `$table.bend`, `$table.sync`,
+ * `$table.fold`, or `$table.pwm` — do not construct directly.
+ */
+type Table =
+  | { readonly type: "mirror"; readonly amount: Signal }
+  | { readonly type: "bend"; readonly amount: Signal }
+  | { readonly type: "sync"; readonly ratio: Signal }
+  | { readonly type: "fold"; readonly amount: Signal }
+  | { readonly type: "pwm"; readonly width: Signal }
+  | { readonly type: "identity" };
+
+/**
  * A buffer output reference — returned by `$buffer()`, passed to readers
  * (like `$bufRead`, `$delayRead`) as their `buffer` param.
  */
@@ -298,6 +316,38 @@ type BufferOutputRef = {
   readonly port: string;
   readonly channels: number;
   readonly frameCount: number;
+};
+
+/**
+ * A loaded WAV sample handle — returned by `$wavs()`, passed to `$sampler()` as the `wav` param.
+ */
+type WavHandle = {
+  readonly type: 'wav_ref';
+  readonly path: string;
+  readonly channels: number;
+  readonly sampleRate: number;
+  readonly frameCount: number;
+  readonly duration: number;
+  readonly bitDepth: number;
+  /** File modification time (epoch ms). Cache-key hint — changes when the WAV is edited on disk. */
+  readonly mtime: number;
+  readonly pitch?: number;
+  readonly playback?: 'one-shot' | 'loop';
+  readonly bpm?: number;
+  readonly beats?: number;
+  readonly timeSignature?: {
+    readonly num: number;
+    readonly den: number;
+  };
+  readonly loops: ReadonlyArray<{
+    readonly type: 'forward' | 'pingpong' | 'backward';
+    readonly start: number;
+    readonly end: number;
+  }>;
+  readonly cuePoints: ReadonlyArray<{
+    readonly position: number;
+    readonly label: string;
+  }>;
 };
 
 /**
@@ -903,6 +953,32 @@ function $setEndOfChainCb(cb: (mixed: Collection) => ModuleOutput | Collection |
  */
 function $cartesian<A extends unknown[][]>(...arrays: A): ElementsOf<A>[];
 
+/**
+ * Phase-warp table descriptors for modules that accept a {@link Table}
+ * (e.g. the `phase` config field on `$wavetable`).
+ *
+ * Each helper returns a {@link Table} whose inner signal-valued field
+ * accepts a constant, a module output, or any other {@link Signal}.
+ *
+ * @example
+ * // Symmetric mirror warp driven by an LFO
+ * $wavetable(\$wavs().mywavs.mytable, 'c4', {
+ *   phase: $table.mirror($lfo.sine('1hz')),
+ * }).out();
+ */
+declare const $table: {
+    /** Reflect the phase around its midpoint by `amount` (0..1). */
+    mirror(amount: Signal): Table;
+    /** Bend the phase curve by `amount` (0..1 = linear..extreme). */
+    bend(amount: Signal): Table;
+    /** Hard-sync: restart the phase every `ratio` of a cycle. */
+    sync(ratio: Signal): Table;
+    /** Fold the phase back on itself by `amount`. */
+    fold(amount: Signal): Table;
+    /** Pulse-width modulation warp with duty cycle `width` (0..1). */
+    pwm(width: Signal): Table;
+};
+
 
 /**
  * Utility module for routing, naming, and exposing signals in a patch.
@@ -1090,10 +1166,10 @@ export function $dattorro(input: Poly<Signal>, config?: { damping?: Mono<Signal>
  * ```
  * @param input - audio input (even channels → left, odd channels → right)
  * @param config - Configuration object
- *   - bandwidth - input bandwidth — controls high-frequency content entering the tank
- *   - damping - tank damping — higher values absorb more high frequencies per recirculation
- *   - decay - feedback decay — controls how long the reverb tail sustains
- *   - modulation - external tank modulation signal
+ *   - bandwidth - input bandwidth — controls high-frequency content entering the tank.
+ *   - damping - tank damping — higher values absorb more high frequencies per recirculation.
+ *   - decay - feedback decay — controls how long the reverb tail sustains.
+ *   - modulation - external tank modulation signal.
  */
 export function $plate(input: Poly<Signal>, config?: { bandwidth?: Mono<Signal>; damping?: Mono<Signal>; decay?: Mono<Signal>; modulation?: Mono<Signal>; id?: string }): Collection;
 
@@ -1366,6 +1442,29 @@ export function $macro(freq: Poly<Signal>, engine: "vaVcf" | "phaseDistortion" |
  *   - voices - number of supersaw voices (1–16)
  */
 export function $supersaw(freq: Poly<Signal>, config?: { detune?: Poly<Signal>; fm?: Poly<Signal>; fmMode?: "throughZero" | "lin" | "exp"; voices?: number; id?: string }): CollectionWithRange;
+
+/**
+ * A band-limited wavetable oscillator.
+ * 
+ * Reads a pre-built mipmap pyramid (FFT-filtered frame copies) and
+ * selects a level appropriate for the playback frequency to suppress
+ * aliasing. Frame position can be swept across multi-frame tables for
+ * classic wavetable timbral sweeps, and an optional phase-warp `Table`
+ * reshapes the read phase before sampling.
+ * 
+ * ## Example
+ * 
+ * ```js
+ * $wavetable($wavs().tables.pad, 'c4').out()
+ * $wavetable(wav, 'c2', { position: lfo }).out()
+ * ```
+ * @param wav - Loaded WAV reference containing the wavetable data.
+ * @param pitch - Pitch in V/Oct (0V = C4).
+ * @param position - Frame position as a signal. 0V maps to the first frame, 5V maps to
+ * @param config - Configuration object
+ *   - phase - Optional phase-warp table applied before sampling.
+ */
+export function $wavetable(wav: { channels: number; mtime?: number; path: string; type: string }, pitch: Poly<Signal>, position?: Poly<Signal>, config?: { phase?: Table; id?: string }): CollectionWithRange;
 
 /**
  * Lowpass filter that attenuates frequencies above the cutoff point.
@@ -1652,7 +1751,7 @@ export function $curve(input: Poly<Signal>, exp: Poly<Signal>, config?: { id?: s
  * @param time - Delay time in seconds (e.g. 0.5 for 500ms)
  * @param config - Configuration object
  */
-export function $delayRead(buffer: BufferOutputRef, time: Mono<Signal>, config?: { id?: string }): Collection;
+export function $delayRead(buffer: BufferOutputRef, time: Poly<Signal>, config?: { id?: string }): Collection;
 
 /**
  * Slew limiter that smooths abrupt voltage changes.
@@ -2293,6 +2392,21 @@ export function $midiCV(config?: { channel?: number; channels?: number; device?:
 export function $midiCC(config: { cc: number; channel?: number; device?: string; highResolution?: boolean; smoothingMs?: number; id?: string }): ModuleOutputWithRange;
 
 /**
+ * One-shot sample player. Plays a loaded WAV file from the beginning on each
+ * gate rising edge. Speed control allows pitch-shifting and reverse playback.
+ * 
+ * ```js
+ * $sampler($wavs().kick, $pulse('4hz'))
+ * $sampler($wavs().tables.pad, $clock.beat, { speed: 0.5 })
+ * ```
+ * @param wav
+ * @param gate - Gate input — rising edge starts playback from the beginning.
+ * @param config - Configuration object
+ *   - speed - Playback speed. 1.0 = normal, 2.0 = double speed, negative = reverse.
+ */
+export function $sampler(wav: { channels: number; mtime?: number; path: string; type: string }, gate: Mono<Signal>, config?: { speed?: Mono<Signal>; id?: string }): Collection;
+
+/**
  * Output type for _clock module.
  * Extends Collection (default output: playhead)
  */
@@ -2317,7 +2431,11 @@ export const $input: Readonly<Collection>;
 
 /** Create a buffer module that captures an input signal into a circular audio buffer. */
 export function $buffer(input: ModuleOutput | Collection | number, lengthSeconds: number, config?: { id?: string }): BufferOutputRef;
- 
+
+
+/** Load WAV samples from the wavs/ folder. */
+export function $wavs(): Record<string, never>;
+
 }
 
- export {};
+export {};

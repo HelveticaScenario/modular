@@ -76,6 +76,7 @@ export interface DSLExecutionOptions {
         timeSignature?: { num: number; den: number } | null;
         loops: Array<{ loopType: string; start: number; end: number }>;
         cuePoints: Array<{ position: number; label: string }>;
+        mtime: number;
     };
 }
 
@@ -350,6 +351,7 @@ export function executePatchScript(
                                 frameCount: info.frameCount,
                                 duration: info.duration,
                                 bitDepth: info.bitDepth,
+                                mtime: info.mtime,
                                 ...(info.pitch != null && {
                                     pitch: info.pitch,
                                 }),
@@ -415,12 +417,49 @@ export function executePatchScript(
         return makeProxy(tree, []);
     };
 
+    /**
+     * $table.* DSL helpers produce phase-warp table descriptors for the
+     * `$wavetable` oscillator (and any future modules that accept a `Table`).
+     *
+     * Each helper returns a plain JSON object whose shape matches the Rust
+     * `Table` enum deserializer (`#[serde(tag = "type", rename_all = "camelCase")]`).
+     *
+     * Inner signal-valued fields are passed through `replaceSignals` so that
+     * ModuleOutputs / Collections are converted to the same wire format used
+     * for module-factory params. This matches the existing mechanism used by
+     * `_setParam` in GraphBuilder.
+     */
+    const $table = {
+        mirror: (amount: unknown) => ({
+            type: 'mirror',
+            amount: replaceSignals(amount),
+        }),
+        bend: (amount: unknown) => ({
+            type: 'bend',
+            amount: replaceSignals(amount),
+        }),
+        sync: (ratio: unknown) => ({
+            type: 'sync',
+            ratio: replaceSignals(ratio),
+        }),
+        fold: (amount: unknown) => ({
+            type: 'fold',
+            amount: replaceSignals(amount),
+        }),
+        pwm: (width: unknown) => ({
+            type: 'pwm',
+            width: replaceSignals(width),
+        }),
+    };
+
     const dslGlobals = {
         // Prefixed namespace tree (modules and namespaces, minus _clock)
         ...userNamespaceTree,
         // Helper functions with $ prefix
         $hz: hz,
         $note: note,
+        // Phase-warp table descriptors for $wavetable
+        $table,
         // Collection helpers
         $c,
         $r,

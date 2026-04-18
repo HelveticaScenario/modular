@@ -769,6 +769,7 @@ describe('$wavs() and $sampler', () => {
         timeSignature: null,
         loops: [],
         cuePoints: [],
+        mtime: 1_700_000_000_000,
     });
 
     function execWithWavs(source: string) {
@@ -874,6 +875,7 @@ describe('$wavs() and $sampler', () => {
                 timeSignature: null,
                 loops: [],
                 cuePoints: [],
+                mtime: 1_700_000_000_000,
             };
         };
         executePatchScript('$sampler($wavs().kick, 5).out()', schemas, {
@@ -941,6 +943,7 @@ describe('$wavs() and $sampler', () => {
                 { position: 0.0, label: 'Start' },
                 { position: 0.5, label: 'Middle' },
             ],
+            mtime: 1_700_000_000_000,
         });
 
         const result = executePatchScript(
@@ -971,5 +974,82 @@ describe('$wavs() and $sampler', () => {
             { position: 0.0, label: 'Start' },
             { position: 0.5, label: 'Middle' },
         ]);
+    });
+});
+
+// ─── $table DSL helpers ──────────────────────────────────────────────────────
+
+describe('$table helpers', () => {
+    const wavsFolderTree = { wt: 'file' } as const;
+    const loadWav = (path: string) => ({
+        channels: 1,
+        frameCount: 2048,
+        path,
+        sampleRate: 48000,
+        duration: 2048 / 48000,
+        bitDepth: 16,
+        pitch: null,
+        playback: null,
+        bpm: null,
+        beats: null,
+        timeSignature: null,
+        loops: [],
+        cuePoints: [],
+        mtime: 1_700_000_000_000,
+    });
+
+    function execWithWavs(source: string) {
+        return executePatchScript(source, schemas, {
+            ...DEFAULT_EXECUTION_OPTIONS,
+            wavsFolderTree: wavsFolderTree as any,
+            loadWav,
+        });
+    }
+
+    test('$table.mirror serializes a numeric amount', () => {
+        const patch = execWithWavs(
+            '$wavetable($wavs().wt, 0, 0, { phase: $table.mirror(0.5) }).out()',
+        ).patch;
+        const wt = findModules(patch, '$wavetable');
+        expect(wt.length).toBe(1);
+        expect(wt[0].params.phase).toEqual({ type: 'mirror', amount: 0.5 });
+    });
+
+    test('$table.bend serializes a ModuleOutput as a cable reference', () => {
+        const patch = execWithWavs(
+            'const lfo = $sine(0)\n$wavetable($wavs().wt, 0, 0, { phase: $table.bend(lfo) }).out()',
+        ).patch;
+        const wt = findModules(patch, '$wavetable');
+        expect(wt.length).toBe(1);
+        const phase = wt[0].params.phase as {
+            type: string;
+            amount: unknown;
+        };
+        expect(phase.type).toBe('bend');
+        const cables = Array.isArray(phase.amount)
+            ? phase.amount
+            : [phase.amount];
+        expect(cables[0]).toMatchObject({
+            type: 'cable',
+            port: 'output',
+        });
+    });
+
+    test('$table variants use camelCase tags matching Rust deserializer', () => {
+        const patch = execWithWavs(
+            `const a = $wavetable($wavs().wt, 0, 0, { phase: $table.sync(1) }).out()
+             const b = $wavetable($wavs().wt, 0, 0, { phase: $table.fold(0.2) }).out()
+             const c = $wavetable($wavs().wt, 0, 0, { phase: $table.pwm(0.5) }).out()`,
+        ).patch;
+        const tables = findModules(patch, '$wavetable').map(
+            (m) => m.params.phase,
+        );
+        expect(tables).toEqual(
+            expect.arrayContaining([
+                { type: 'sync', ratio: 1 },
+                { type: 'fold', amount: 0.2 },
+                { type: 'pwm', width: 0.5 },
+            ]),
+        );
     });
 });

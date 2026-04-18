@@ -29,7 +29,7 @@ use crate::audio::{
 use crate::commands::{GraphCommand, QueuedTrigger};
 use crate::midi::MidiInputManager;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../reserved_output_names.rs"));
@@ -45,6 +45,132 @@ pub fn get_reserved_output_names() -> Vec<String> {
 // WAV Cache
 // ============================================================================
 
+/// Parse raw RIFF chunks to detect wavetable frame boundaries before hound decodes
+/// the audio. Looks for vendor-specific chunks:
+/// - `clm ` (Serum): ASCII payload starting with `<!>` then frame-size digits.
+/// - `uhWT` (u-he Hive): presence implies frame size of 2048 (format undocumented).
+/// - `srge` (Surge): `[i32 version][i32 frame_size]`, version must be 1.
+///
+/// Returns `None` for non-WAV files, missing/unknown metadata, or any I/O errors.
+/// Never panics. Runs on the main thread.
+fn detect_wavetable_frame_size(file_path: &Path) -> Option<usize> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let mut file = std::fs::File::open(file_path).ok()?;
+
+    // RIFF header: "RIFF" <u32 size> "WAVE"
+    let mut header = [0u8; 12];
+    file.read_exact(&mut header).ok()?;
+    if &header[0..4] != b"RIFF" || &header[8..12] != b"WAVE" {
+        return None;
+    }
+
+    // Walk chunks: 4-byte id + 4-byte LE size + payload (padded to even length).
+    loop {
+        let mut chunk_header = [0u8; 8];
+        match file.read_exact(&mut chunk_header) {
+            Ok(()) => {}
+            Err(_) => return None, // EOF or truncated — no metadata found
+        }
+
+        let id = [chunk_header[0], chunk_header[1], chunk_header[2], chunk_header[3]];
+        let size = u32::from_le_bytes([
+            chunk_header[4],
+            chunk_header[5],
+            chunk_header[6],
+            chunk_header[7],
+        ]) as u64;
+
+        match &id {
+            b"clm " => {
+                // Serum: ASCII like "<!>2048 10000000 wavetable Foo"
+                let read_len = size.min(256) as usize;
+                let mut buf = vec![0u8; read_len];
+                if file.read_exact(&mut buf).is_err() {
+                    return None;
+                }
+                // Skip remaining payload + padding to stay aligned in case we continue
+                let remaining = size - read_len as u64;
+                let padding = if size % 2 == 1 { 1 } else { 0 };
+                if remaining + padding > 0
+                    && file.seek(SeekFrom::Current((remaining + padding) as i64)).is_err()
+                {
+                    // best-effort: return what we found below
+                }
+                if let Some(stripped) = buf.strip_prefix(b"<!>") {
+                    let digits: Vec<u8> = stripped
+                        .iter()
+                        .copied()
+                        .take_while(|b| b.is_ascii_digit())
+                        .collect();
+                    // Only parse if we saw a non-digit terminator within the buffer;
+                    // otherwise the number may have been truncated by the 256-byte read cap.
+                    if !digits.is_empty() && digits.len() < stripped.len() {
+                        if let Ok(s) = std::str::from_utf8(&digits) {
+                            if let Ok(n) = s.parse::<usize>() {
+                                if n > 0 {
+                                    return Some(n);
+                                }
+                            }
+                        }
+                    }
+                }
+                // No parseable frame size — keep scanning
+            }
+            b"uhWT" => {
+                // u-he Hive: format undocumented; presence implies 2048.
+                return Some(2048);
+            }
+            b"srge" => {
+                // Surge: [i32 version][i32 frame_size], version must be 1.
+                if size >= 8 {
+                    let mut payload = [0u8; 8];
+                    if file.read_exact(&mut payload).is_err() {
+                        return None;
+                    }
+                    let version =
+                        i32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]);
+                    let frame_size =
+                        i32::from_le_bytes([payload[4], payload[5], payload[6], payload[7]]);
+                    // Skip rest of payload + padding
+                    let remaining = size - 8;
+                    let padding = if size % 2 == 1 { 1 } else { 0 };
+                    if remaining + padding > 0
+                        && file
+                            .seek(SeekFrom::Current((remaining + padding) as i64))
+                            .is_err()
+                    {
+                        return None;
+                    }
+                    if version == 1 && frame_size > 0 {
+                        return Some(frame_size as usize);
+                    }
+                    // Version mismatch — keep scanning (another chunk might match)
+                } else {
+                    // Malformed srge — skip it
+                    let padding = if size % 2 == 1 { 1 } else { 0 };
+                    if file
+                        .seek(SeekFrom::Current((size + padding) as i64))
+                        .is_err()
+                    {
+                        return None;
+                    }
+                }
+            }
+            _ => {
+                // Skip unknown chunk payload + padding byte if size is odd.
+                let padding = if size % 2 == 1 { 1 } else { 0 };
+                if file
+                    .seek(SeekFrom::Current((size + padding) as i64))
+                    .is_err()
+                {
+                    return None;
+                }
+            }
+        }
+    }
+}
+
 struct WavCacheEntry {
     data: Arc<modular_core::types::WavData>,
     mtime: SystemTime,
@@ -56,7 +182,13 @@ struct WavCache {
     workspace_path: PathBuf,
 }
 
-fn build_wav_load_info(rel_path: &str, num_channels: u32, frame_count: u32, meta: &wav_metadata::WavMetadata) -> WavLoadInfo {
+fn build_wav_load_info(
+    rel_path: &str,
+    num_channels: u32,
+    frame_count: u32,
+    meta: &wav_metadata::WavMetadata,
+    mtime: f64,
+) -> WavLoadInfo {
     WavLoadInfo {
         channels: num_channels,
         frame_count,
@@ -88,7 +220,19 @@ fn build_wav_load_info(rel_path: &str, num_channels: u32, frame_count: u32, meta
             position: c.position_seconds,
             label: c.label.clone(),
         }).collect(),
+        mtime,
     }
+}
+
+/// Convert a `SystemTime` to epoch milliseconds as f64. Returns 0.0 if the time
+/// predates the UNIX epoch or the conversion fails — this is a cache-key hint,
+/// not a correctness constraint.
+fn mtime_to_epoch_millis(mtime: SystemTime) -> f64 {
+    mtime
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_millis() as f64)
+        .unwrap_or(0.0)
 }
 
 impl WavCache {
@@ -135,6 +279,7 @@ impl WavCache {
                     entry.data.channel_count() as u32,
                     entry.data.frame_count() as u32,
                     &entry.metadata,
+                    mtime_to_epoch_millis(mtime),
                 ));
             }
         }
@@ -176,31 +321,14 @@ impl WavCache {
             channels[ch].push(*sample);
         }
 
-        // Resample to engine sample rate if needed (linear interpolation)
-        if (file_sample_rate - engine_sample_rate).abs() > 0.5 {
-            let ratio = engine_sample_rate / file_sample_rate;
-            let new_len = (total_frames as f32 * ratio).ceil() as usize;
-            channels = channels
-                .into_iter()
-                .map(|ch| {
-                    let mut resampled = Vec::with_capacity(new_len);
-                    for i in 0..new_len {
-                        let src_pos = i as f32 / ratio;
-                        let idx = src_pos.floor() as usize;
-                        let frac = src_pos - idx as f32;
-                        let s0 = ch.get(idx).copied().unwrap_or(0.0);
-                        let s1 = ch.get(idx + 1).copied().unwrap_or(s0);
-                        resampled.push(s0 + (s1 - s0) * frac);
-                    }
-                    resampled
-                })
-                .collect();
-        }
-
         let frame_count = channels.first().map_or(0, Vec::len);
+
+        // Detect wavetable frame size from vendor-specific RIFF chunks (pre-decode probe).
+        let detected_frame_size = detect_wavetable_frame_size(&full_path);
+
         let wav_data = Arc::new(modular_core::types::WavData::new(
-            modular_core::types::SampleBuffer::from_samples(channels),
-            file_sample_rate,
+            modular_core::types::SampleBuffer::from_samples(channels, file_sample_rate),
+            detected_frame_size,
         ));
 
         // Extract RIFF metadata (re-open file for a clean read)
@@ -210,7 +338,13 @@ impl WavCache {
         let metadata = wav_metadata::extract(&mut riff_file, total_frames as u64)
             .map_err(|e| napi::Error::from_reason(format!("Failed to extract WAV metadata from {}: {}", full_path.display(), e)))?;
 
-        let info = build_wav_load_info(rel_path, num_channels as u32, frame_count as u32, &metadata);
+        let info = build_wav_load_info(
+            rel_path,
+            num_channels as u32,
+            frame_count as u32,
+            &metadata,
+            mtime_to_epoch_millis(mtime),
+        );
 
         self.entries.insert(
             rel_path.to_string(),
@@ -259,6 +393,10 @@ pub struct WavLoadInfo {
     pub time_signature: Option<WavTimeSignature>,
     pub loops: Vec<WavLoopInfo>,
     pub cue_points: Vec<WavCuePointInfo>,
+    /// File modification time, epoch milliseconds. Used as a cache-key hint so the
+    /// DSL executor can invalidate params caches when the underlying WAV changes
+    /// on disk. Falls back to 0.0 when the mtime can't be read.
+    pub mtime: f64,
 }
 
 /// Information about a MIDI input port (for N-API)
@@ -1481,4 +1619,306 @@ pub fn get_pattern_polyphony(source: String) -> Result<u32> {
   );
 
   Ok(max_simultaneous.max(1)) // At least 1 channel
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod detect_wavetable_tests {
+    use super::detect_wavetable_frame_size;
+    use std::io::Write;
+    use std::path::PathBuf;
+
+    fn write_u32_le(buf: &mut Vec<u8>, val: u32) {
+        buf.extend_from_slice(&val.to_le_bytes());
+    }
+
+    fn write_i32_le(buf: &mut Vec<u8>, val: i32) {
+        buf.extend_from_slice(&val.to_le_bytes());
+    }
+
+    /// Build a minimal WAV-like RIFF header. Chunks are appended by callers.
+    fn riff_header() -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"RIFF");
+        write_u32_le(&mut buf, 0); // placeholder size (detector doesn't use it)
+        buf.extend_from_slice(b"WAVE");
+        buf
+    }
+
+    /// Append a chunk with the given 4-byte id and payload. Pads to even length.
+    fn append_chunk(buf: &mut Vec<u8>, id: &[u8; 4], payload: &[u8]) {
+        buf.extend_from_slice(id);
+        write_u32_le(buf, payload.len() as u32);
+        buf.extend_from_slice(payload);
+        if payload.len() % 2 == 1 {
+            buf.push(0);
+        }
+    }
+
+    /// Fill in the RIFF size field with the actual byte count.
+    fn fix_riff_size(buf: &mut [u8]) {
+        let riff_size = (buf.len() - 8) as u32;
+        buf[4..8].copy_from_slice(&riff_size.to_le_bytes());
+    }
+
+    /// Write bytes to a unique temp file and return the path (test helper).
+    fn write_temp_file(name: &str, bytes: &[u8]) -> PathBuf {
+        let mut path = std::env::temp_dir();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        path.push(format!(
+            "modular_detect_wavetable_{}_{}_{}.wav",
+            name,
+            std::process::id(),
+            nanos
+        ));
+        let mut f = std::fs::File::create(&path).expect("create temp file");
+        f.write_all(bytes).expect("write temp file");
+        f.flush().expect("flush temp file");
+        path
+    }
+
+    /// Append a minimal fmt chunk so a hypothetical decoder could still open the file.
+    fn append_fmt(buf: &mut Vec<u8>) {
+        let mut payload = Vec::new();
+        // PCM format, 1 channel, 44100 Hz, byte_rate, block_align, 16 bits
+        payload.extend_from_slice(&1u16.to_le_bytes()); // audio format
+        payload.extend_from_slice(&1u16.to_le_bytes()); // channels
+        payload.extend_from_slice(&44100u32.to_le_bytes()); // sample rate
+        payload.extend_from_slice(&(44100u32 * 2).to_le_bytes()); // byte rate
+        payload.extend_from_slice(&2u16.to_le_bytes()); // block align
+        payload.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+        append_chunk(buf, b"fmt ", &payload);
+    }
+
+    #[test]
+    fn clm_chunk_detected() {
+        let mut buf = riff_header();
+        append_fmt(&mut buf);
+        append_chunk(&mut buf, b"clm ", b"<!>2048 10000000 wavetable Test");
+        fix_riff_size(&mut buf);
+
+        let path = write_temp_file("clm", &buf);
+        let result = detect_wavetable_frame_size(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result, Some(2048));
+    }
+
+    #[test]
+    fn clm_chunk_odd_size_padded() {
+        // Payload length is odd (31 bytes) to exercise the padding branch.
+        let payload = b"<!>512 foo bar baz wavetable!!"; // 30 bytes
+        assert_eq!(payload.len(), 30);
+        let mut odd_payload = payload.to_vec();
+        odd_payload.push(b'x'); // now 31 bytes
+        let mut buf = riff_header();
+        append_chunk(&mut buf, b"clm ", &odd_payload);
+        fix_riff_size(&mut buf);
+
+        let path = write_temp_file("clm_odd", &buf);
+        let result = detect_wavetable_frame_size(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result, Some(512));
+    }
+
+    #[test]
+    fn uhwt_chunk_detected() {
+        let mut buf = riff_header();
+        append_fmt(&mut buf);
+        append_chunk(&mut buf, b"uhWT", &[0xDE, 0xAD, 0xBE, 0xEF]);
+        fix_riff_size(&mut buf);
+
+        let path = write_temp_file("uhwt", &buf);
+        let result = detect_wavetable_frame_size(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result, Some(2048));
+    }
+
+    #[test]
+    fn srge_chunk_version1_detected() {
+        let mut payload = Vec::new();
+        write_i32_le(&mut payload, 1); // version
+        write_i32_le(&mut payload, 1024); // frame_size
+        let mut buf = riff_header();
+        append_fmt(&mut buf);
+        append_chunk(&mut buf, b"srge", &payload);
+        fix_riff_size(&mut buf);
+
+        let path = write_temp_file("srge_v1", &buf);
+        let result = detect_wavetable_frame_size(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result, Some(1024));
+    }
+
+    #[test]
+    fn srge_chunk_version2_keeps_scanning_and_returns_none_if_no_other_match() {
+        let mut payload = Vec::new();
+        write_i32_le(&mut payload, 2); // version != 1 → skip
+        write_i32_le(&mut payload, 1024);
+        let mut buf = riff_header();
+        append_fmt(&mut buf);
+        append_chunk(&mut buf, b"srge", &payload);
+        fix_riff_size(&mut buf);
+
+        let path = write_temp_file("srge_v2", &buf);
+        let result = detect_wavetable_frame_size(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn srge_v2_followed_by_clm_keeps_scanning_and_finds_clm() {
+        let mut payload = Vec::new();
+        write_i32_le(&mut payload, 2); // version != 1 → skip
+        write_i32_le(&mut payload, 999);
+        let mut buf = riff_header();
+        append_fmt(&mut buf);
+        append_chunk(&mut buf, b"srge", &payload);
+        append_chunk(&mut buf, b"clm ", b"<!>4096 extra stuff");
+        fix_riff_size(&mut buf);
+
+        let path = write_temp_file("srge_then_clm", &buf);
+        let result = detect_wavetable_frame_size(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result, Some(4096));
+    }
+
+    #[test]
+    fn no_known_chunks_returns_none() {
+        let mut buf = riff_header();
+        append_fmt(&mut buf);
+        append_chunk(&mut buf, b"data", &[0u8; 16]);
+        fix_riff_size(&mut buf);
+
+        let path = write_temp_file("no_match", &buf);
+        let result = detect_wavetable_frame_size(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn non_wav_file_returns_none() {
+        let path = write_temp_file("not_wav", b"This is not a WAV file at all.");
+        let result = detect_wavetable_frame_size(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn empty_file_returns_none() {
+        let path = write_temp_file("empty", &[]);
+        let result = detect_wavetable_frame_size(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn missing_file_returns_none() {
+        let mut path = std::env::temp_dir();
+        path.push("modular_detect_wavetable_definitely_does_not_exist.wav");
+        assert_eq!(detect_wavetable_frame_size(&path), None);
+    }
+
+    #[test]
+    fn truncated_chunk_header_returns_none() {
+        // RIFF header + partial chunk header (only 4 bytes instead of 8) → EOF mid-walk.
+        let mut buf = riff_header();
+        buf.extend_from_slice(b"clm ");
+        fix_riff_size(&mut buf);
+
+        let path = write_temp_file("truncated", &buf);
+        let result = detect_wavetable_frame_size(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn clm_without_prefix_returns_none() {
+        // Payload doesn't start with "<!>" → no parseable frame size, keep scanning,
+        // no other known chunks → None.
+        let mut buf = riff_header();
+        append_chunk(&mut buf, b"clm ", b"no prefix here");
+        fix_riff_size(&mut buf);
+
+        let path = write_temp_file("clm_no_prefix", &buf);
+        let result = detect_wavetable_frame_size(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn clm_zero_frame_size_keeps_scanning() {
+        // A `clm ` payload with frame_size 0 should be rejected and scanning continue.
+        let mut buf = riff_header();
+        append_fmt(&mut buf);
+        append_chunk(&mut buf, b"clm ", b"<!>0 10000000 wavetable Zero");
+        fix_riff_size(&mut buf);
+
+        let path = write_temp_file("clm_zero", &buf);
+        let result = detect_wavetable_frame_size(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result, None);
+
+        // Same zero-valued `clm ` followed by a valid srge v1 → scanning should continue
+        // and return the srge frame size.
+        let mut srge_payload = Vec::new();
+        write_i32_le(&mut srge_payload, 1);
+        write_i32_le(&mut srge_payload, 1024);
+        let mut buf = riff_header();
+        append_fmt(&mut buf);
+        append_chunk(&mut buf, b"clm ", b"<!>0 10000000 wavetable Zero");
+        append_chunk(&mut buf, b"srge", &srge_payload);
+        fix_riff_size(&mut buf);
+
+        let path = write_temp_file("clm_zero_then_srge", &buf);
+        let result = detect_wavetable_frame_size(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result, Some(1024));
+    }
+
+    #[test]
+    fn clm_truncated_number_keeps_scanning() {
+        // The detector reads at most 256 bytes of the `clm ` payload. If `<!>` is
+        // followed by a digit run that fills the entire 256-byte read (no non-digit
+        // terminator seen), the number may be truncated — the detector must not return
+        // a potentially-wrong value and must keep scanning.
+
+        // Build a payload: "<!>" + 300 ASCII digits. After stripping "<!>", the
+        // first 253 bytes of the 256-byte read window are all digits, so digits.len()
+        // == stripped.len() → possibly-truncated → fall through.
+        let mut long_digits_payload = Vec::new();
+        long_digits_payload.extend_from_slice(b"<!>");
+        long_digits_payload.extend(std::iter::repeat(b'1').take(300));
+
+        let mut buf = riff_header();
+        append_fmt(&mut buf);
+        append_chunk(&mut buf, b"clm ", &long_digits_payload);
+        fix_riff_size(&mut buf);
+
+        let path = write_temp_file("clm_truncated_num", &buf);
+        let result = detect_wavetable_frame_size(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result, None);
+
+        // Same truncated `clm ` followed by a valid srge v1 frame_size=512 → must
+        // keep scanning past the truncated clm and return 512.
+        let mut srge_payload = Vec::new();
+        write_i32_le(&mut srge_payload, 1);
+        write_i32_le(&mut srge_payload, 512);
+        let mut buf = riff_header();
+        append_fmt(&mut buf);
+        append_chunk(&mut buf, b"clm ", &long_digits_payload);
+        append_chunk(&mut buf, b"srge", &srge_payload);
+        fix_riff_size(&mut buf);
+
+        let path = write_temp_file("clm_truncated_num_then_srge", &buf);
+        let result = detect_wavetable_frame_size(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result, Some(512));
+    }
 }

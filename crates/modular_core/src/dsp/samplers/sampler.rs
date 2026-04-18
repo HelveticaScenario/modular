@@ -54,7 +54,7 @@ pub struct Sampler {
 }
 
 impl Sampler {
-    fn update(&mut self, _sample_rate: f32) {
+    fn update(&mut self, sample_rate: f32) {
         let channels = self.channel_count();
         let frame_count = self.params.wav.frame_count();
 
@@ -93,57 +93,22 @@ impl Sampler {
         // Read with Hermite interpolation
         let pos = self.state.position as f32;
         for ch in 0..channels {
-            let value = read_interpolated_wav(&self.params.wav, ch, pos);
+            let value = self.params.wav.read_hermite_clamped(ch, pos);
             self.outputs.sample.set(ch, value);
         }
 
-        // Advance position
-        self.state.position += speed;
+        // Advance position, compensating for sample rate difference
+        let wav_rate = self.params.wav.sample_rate() as f64;
+        let rate_ratio = if wav_rate > 0.0 && sample_rate > 0.0 {
+            wav_rate / sample_rate as f64
+        } else {
+            1.0
+        };
+        self.state.position += speed * rate_ratio;
     }
 }
 
 message_handlers!(impl Sampler {});
-
-/// Hermite (4-point cubic) interpolation for WAV data.
-/// Non-wrapping — returns 0.0 for out-of-bounds positions.
-fn read_interpolated_wav(wav: &Wav, channel: usize, frame: f32) -> f32 {
-    if !frame.is_finite() {
-        return 0.0;
-    }
-
-    let frame_count = wav.frame_count();
-    if frame_count == 0 {
-        return 0.0;
-    }
-
-    let max_frame = (frame_count - 1) as f32;
-    if frame < 0.0 || frame > max_frame {
-        return 0.0;
-    }
-
-    let left = frame.floor() as usize;
-    let frac = frame - left as f32;
-    if frac <= f32::EPSILON {
-        return wav.read(channel, left);
-    }
-
-    let i0 = left.saturating_sub(1);
-    let i1 = left;
-    let i2 = (left + 1).min(frame_count - 1);
-    let i3 = (left + 2).min(frame_count - 1);
-
-    let y0 = wav.read(channel, i0);
-    let y1 = wav.read(channel, i1);
-    let y2 = wav.read(channel, i2);
-    let y3 = wav.read(channel, i3);
-
-    let c0 = y1;
-    let c1 = 0.5 * (y2 - y0);
-    let c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
-    let c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
-
-    ((c3 * frac + c2) * frac + c1) * frac + c0
-}
 
 #[cfg(test)]
 mod tests {
@@ -190,8 +155,8 @@ mod tests {
 
     fn make_test_wav(samples: Vec<Vec<f32>>) -> Arc<WavData> {
         Arc::new(WavData::new(
-            SampleBuffer::from_samples(samples),
-            SAMPLE_RATE,
+            SampleBuffer::from_samples(samples, SAMPLE_RATE),
+            None,
         ))
     }
 
