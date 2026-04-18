@@ -87,6 +87,9 @@ export interface ElectronAPI {
         enableLink: Promisify<
             IPCHandlers[typeof IPC_CHANNELS.SYNTH_ENABLE_LINK]
         >;
+        setFollowMode: Promisify<
+            IPCHandlers[typeof IPC_CHANNELS.SYNTH_SET_FOLLOW_MODE]
+        >;
     };
     // Audio device operations
     audio: {
@@ -284,6 +287,8 @@ const electronAPI: ElectronAPI = {
             invokeIPC('SYNTH_GET_TRANSPORT_STATE', ...args),
 
         enableLink: (...args) => invokeIPC('SYNTH_ENABLE_LINK', ...args),
+
+        setFollowMode: (...args) => invokeIPC('SYNTH_SET_FOLLOW_MODE', ...args),
 
         isRecording: (...args) => invokeIPC('SYNTH_IS_RECORDING', ...args),
 

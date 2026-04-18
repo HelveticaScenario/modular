@@ -3,11 +3,17 @@ import type { TransportSnapshot } from '../../shared/ipcTypes';
 interface TransportDisplayProps {
     transport: TransportSnapshot | null;
     onToggleLink?: (enabled: boolean) => void;
+    followMode?: boolean;
+    followQueued?: boolean;
+    onToggleFollowMode?: (enabled: boolean) => void;
 }
 
 export function TransportDisplay({
     transport,
     onToggleLink,
+    followMode,
+    followQueued,
+    onToggleFollowMode,
 }: TransportDisplayProps) {
     if (!transport) {
         return (
@@ -67,7 +73,7 @@ export function TransportDisplay({
                 ))}
             </span>
 
-            {/* Link toggle */}
+            {/* Link toggle with phase indicator */}
             <button
                 className={`transport-link${transport.linkEnabled ? ' active' : ''}`}
                 onClick={() => onToggleLink?.(!transport.linkEnabled)}
@@ -77,16 +83,83 @@ export function TransportDisplay({
                         : 'Enable Ableton Link'
                 }
             >
-                Link
-                {transport.linkEnabled && transport.linkPeers > 0 && (
-                    <span className="transport-link-peers">
-                        {transport.linkPeers}
-                    </span>
+                {transport.linkEnabled && (
+                    <span
+                        className="transport-link-phase"
+                        style={{
+                            width: `${(transport.linkPhase ?? 0) * 100}%`,
+                        }}
+                    />
+                )}
+                {/* Two layered labels with clip-path masks for split text color */}
+                {transport.linkEnabled ? (
+                    <>
+                        {/* Invisible copy in normal flow to maintain button size */}
+                        <span
+                            className="transport-link-label"
+                            aria-hidden="true"
+                            style={{ visibility: 'hidden' }}
+                        >
+                            Link
+                            {transport.linkPeers > 0 && (
+                                <span className="transport-link-peers">
+                                    {transport.linkPeers}
+                                </span>
+                            )}
+                        </span>
+                        {/* Dark text over the filled region */}
+                        <span
+                            className="transport-link-label filled"
+                            style={{
+                                clipPath: `inset(0 ${100 - (transport.linkPhase ?? 0) * 100}% 0 0)`,
+                            }}
+                        >
+                            Link
+                            {transport.linkPeers > 0 && (
+                                <span className="transport-link-peers">
+                                    {transport.linkPeers}
+                                </span>
+                            )}
+                        </span>
+                        {/* Accent text over the unfilled region */}
+                        <span
+                            className="transport-link-label unfilled"
+                            style={{
+                                clipPath: `inset(0 0 0 ${(transport.linkPhase ?? 0) * 100}%)`,
+                            }}
+                        >
+                            Link
+                            {transport.linkPeers > 0 && (
+                                <span className="transport-link-peers">
+                                    {transport.linkPeers}
+                                </span>
+                            )}
+                        </span>
+                    </>
+                ) : (
+                    <span className="transport-link-label">Link</span>
                 )}
             </button>
 
+            {/* Follow mode toggle (only when Link is active) */}
+            {transport.linkEnabled && (
+                <button
+                    className={`transport-follow${followMode ? ' active' : ''}`}
+                    onClick={() => onToggleFollowMode?.(!followMode)}
+                    title={
+                        followQueued
+                            ? 'Patch queued — waiting for Link start signal'
+                            : followMode
+                              ? 'Follow mode: waiting for Link start signal'
+                              : 'Enable follow mode (queue patch, wait for Link start)'
+                    }
+                >
+                    Follow
+                </button>
+            )}
+
             {/* Queued update indicator */}
-            {hasQueuedUpdate && (
+            {(hasQueuedUpdate || followQueued) && (
                 <span className="transport-queued" title="Update queued">
                     Q
                 </span>

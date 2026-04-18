@@ -834,6 +834,8 @@ pub struct AudioState {
   midi_manager: Arc<MidiInputManager>,
   /// Transport state meter - written by audio thread, read by main thread
   pub transport_meter: Arc<TransportMeter>,
+  /// Follow mode - when true, don't auto-start on patch apply (wait for Link start)
+  pub follow_mode: Arc<AtomicBool>,
 }
 
 #[derive(Default)]
@@ -871,6 +873,7 @@ impl AudioState {
       module_states: Arc::new(Mutex::new(HashMap::new())),
       midi_manager,
       transport_meter: Arc::new(TransportMeter::default()),
+      follow_mode: Arc::new(AtomicBool::new(false)),
     }
   }
 
@@ -1009,6 +1012,7 @@ impl AudioState {
     trigger: QueuedTrigger,
     update_id: u64,
     wav_data: HashMap<String, Arc<modular_core::types::WavData>>,
+    tempo_override: Option<f64>,
   ) -> Result<()> {
     let PatchGraph {
       modules,
@@ -1102,6 +1106,9 @@ impl AudioState {
     // Populate wav_data from the cache snapshot
     update.wav_data = wav_data;
 
+    // Pass through tempo override for Link integration
+    update.tempo_override = tempo_override;
+
     // Send the update to audio thread
     self.send_command(GraphCommand::QueuedPatchUpdate { update, trigger })
   }
@@ -1113,6 +1120,7 @@ impl AudioState {
     trigger: QueuedTrigger,
     update_id: u64,
     wav_data: HashMap<String, Arc<modular_core::types::WavData>>,
+    tempo_override: Option<f64>,
   ) -> Vec<ApplyPatchError> {
     // Validate patch
     let schemas = schema();
@@ -1129,11 +1137,14 @@ impl AudioState {
       let mut scope_collection = self.scope_collection.lock();
       scope_collection.clear();
       // Auto-unmute on SetPatch to match prior imperative flow
-      self.set_stopped(false);
+      // Only auto-start if not in follow mode (waiting for Link start)
+      if !self.follow_mode.load(std::sync::atomic::Ordering::SeqCst) {
+        self.set_stopped(false);
+      }
     }
 
     // Apply patch
-    if let Err(e) = self.apply_patch(patch_graph, sample_rate, trigger, update_id, wav_data) {
+    if let Err(e) = self.apply_patch(patch_graph, sample_rate, trigger, update_id, wav_data, tempo_override) {
       return vec![ApplyPatchError {
         message: format!("Failed to apply patch: {}", e),
         errors: None,
@@ -1220,6 +1231,8 @@ struct AudioProcessor {
   frame_in_buffer: usize,
   /// Pending quantized start — waiting for bar boundary before actually starting
   link_pending_start: bool,
+  /// Last known Link playing state (for detecting false→true transitions)
+  last_link_playing: bool,
 }
 
 impl AudioProcessor {
@@ -1250,6 +1263,7 @@ impl AudioProcessor {
       current_link_state: None,
       frame_in_buffer: 0,
       link_pending_start: false,
+      last_link_playing: false,
     }
   }
 
@@ -1270,6 +1284,19 @@ impl AudioProcessor {
     while let Ok(cmd) = self.command_rx.pop() {
       match cmd {
         GraphCommand::QueuedPatchUpdate { update, trigger } => {
+          // Push tempo to Link if explicitly set via $setTempo
+          if let Some(tempo) = update.tempo_override {
+            if let Some(ref link) = self.link {
+              if let Some(ref mut ss) = self.link_session_state {
+                link.capture_audio_session_state(ss);
+                let time = link.clock_micros();
+                ss.set_tempo(tempo, time);
+                link.commit_audio_session_state(ss);
+                self.last_link_tempo = tempo;
+              }
+            }
+          }
+
           // If there's already a queued update, discard it and apply the new one
           // immediately. This is intentional: when the user triggers a second
           // update before the first one fires (e.g. pressing Ctrl+Enter twice),
@@ -1320,28 +1347,18 @@ impl AudioProcessor {
         }
         GraphCommand::Start => {
           if self.link.is_some() {
-            // With Link: request quantized start — don't start Operator yet.
-            // The buffer-level code will start when phase reaches bar boundary.
+            // With Link: always quantize start to bar boundary.
+            // We join the shared Link timeline (never reset it with force_beat_at_time).
+            // The buffer-level code will start Operator when phase reaches bar boundary.
             if let Some(ref link) = self.link {
               if let Some(ref mut ss) = self.link_session_state {
                 link.capture_audio_session_state(ss);
                 let time = link.clock_micros();
-                if link.num_peers() == 0 {
-                  // Solo: force beat 0 at now and start immediately
-                  ss.set_is_playing(true, time);
-                  ss.force_beat_at_time(0.0, time, 4.0);
-                  link.commit_audio_session_state(ss);
-                  // Start Operator immediately — main thread already set stopped=false
-                  let msg = Message::Clock(ClockMessages::Start);
-                  let _ = self.patch.dispatch_message(&msg);
-                } else {
-                  // Peers present: quantized launch — wait for bar boundary
-                  // Main thread already set stopped=false; re-stop until bar boundary
-                  self.stopped.store(true, std::sync::atomic::Ordering::SeqCst);
-                  ss.set_is_playing_and_request_beat_at_time(true, time, 0.0, 4.0);
-                  link.commit_audio_session_state(ss);
-                  self.link_pending_start = true;
-                }
+                // Main thread already set stopped=false; re-stop until bar boundary
+                self.stopped.store(true, std::sync::atomic::Ordering::SeqCst);
+                ss.set_is_playing_and_request_beat_at_time(true, time, 0.0, 4.0);
+                link.commit_audio_session_state(ss);
+                self.link_pending_start = true;
               }
             }
           } else {
@@ -1647,11 +1664,16 @@ impl AudioProcessor {
           .get_poly_sample("beatInBar")
           .map(|p| p.get(0) as u32)
           .unwrap_or(0);
+        let is_playing = if self.current_link_state.is_some() {
+          !self.is_stopped() && self.current_link_state.as_ref().map_or(true, |s| s.playing)
+        } else {
+          !self.is_stopped()
+        };
         self.transport_meter.write_from_audio(
           bar_phase,
           bar_count,
           beat_in_bar,
-          !self.is_stopped(),
+          is_playing,
           has_queued,
         );
       } else {
@@ -1786,15 +1808,15 @@ where
         if let Some(ref link_state) = audio_processor.current_link_state {
           let link_playing = link_state.playing;
           let op_stopped = audio_processor.is_stopped();
+          let was_link_playing = audio_processor.last_link_playing;
+          audio_processor.last_link_playing = link_playing;
 
           // Handle pending quantized start: wait for phase near bar boundary
           if audio_processor.link_pending_start {
-            // Check if phase is near 0 (start of bar)
             if let Some(ref ss) = audio_processor.link_session_state {
               let time = link_state.host_time_micros;
               let phase = ss.phase_at_time(time, link_state.quantum);
               // Start when phase is in the first beat (near bar boundary)
-              // Use a window of ~1 buffer duration to avoid missing the boundary
               if phase < 0.5 {
                 audio_processor.link_pending_start = false;
                 audio_processor.stopped.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -1803,8 +1825,12 @@ where
               }
             }
           } else if link_playing && op_stopped {
-            // External start from a Link peer
-            audio_processor.stopped.store(false, std::sync::atomic::Ordering::SeqCst);
+            // External start from a Link peer — also quantize to bar boundary.
+            // Set pending_start so we wait for phase near 0, just like local starts.
+            audio_processor.link_pending_start = true;
+          } else if link_playing && !was_link_playing && !op_stopped {
+            // Link started but Operator was already "running" (from patch apply)
+            // Dispatch Start to give the clock a clean reset
             let msg = modular_core::types::Message::Clock(ClockMessages::Start);
             let _ = audio_processor.patch.dispatch_message(&msg);
           } else if !link_playing && !op_stopped {
@@ -1813,9 +1839,21 @@ where
           }
         }
 
-        // Write Link state to transport meter for UI visibility
+        // Write Link state to transport meter for UI visibility.
+        // Write phase BEFORE the is_stopped() guard so the UI always shows
+        // the free-running Link phase, even when Operator is stopped.
         if let Some(ref link) = audio_processor.link {
           audio_processor.transport_meter.write_link_state(true, link.num_peers() as u32);
+          if let Some(ref link_state) = audio_processor.current_link_state {
+            // Update BPM from Link so the UI reflects external tempo changes
+            audio_processor.transport_meter.write_bpm(link_state.tempo);
+            // Write the free-running Link bar phase for the phase indicator
+            if let Some(ref ss) = audio_processor.link_session_state {
+              let phase = ss.phase_at_time(link_state.host_time_micros, link_state.quantum);
+              let bar_phase = phase / link_state.quantum;
+              audio_processor.transport_meter.write_link_phase(bar_phase);
+            }
+          }
         }
 
         let num_frames = output.len() / num_channels;
@@ -2169,6 +2207,8 @@ pub struct TransportMeter {
   link_enabled: AtomicBool,
   /// Number of Link peers in the session
   link_peers: AtomicU32,
+  /// Free-running Link bar phase (0..1), always updated when Link is enabled
+  link_phase_bits: AtomicU64,
 }
 
 impl Default for TransportMeter {
@@ -2185,6 +2225,7 @@ impl Default for TransportMeter {
       last_applied_update_id: AtomicU64::new(0),
       link_enabled: AtomicBool::new(false),
       link_peers: AtomicU32::new(0),
+      link_phase_bits: AtomicU64::new(0f64.to_bits()),
     }
   }
 }
@@ -2234,11 +2275,23 @@ impl TransportMeter {
       .store(update_id, Ordering::Relaxed);
   }
 
+  /// Write just the BPM (e.g. when Link tempo changes externally).
+  #[inline]
+  pub fn write_bpm(&self, bpm: f64) {
+    self.bpm_bits.store(bpm.to_bits(), Ordering::Relaxed);
+  }
+
   /// Write Link enabled state and peer count (called from audio thread or main thread).
   #[inline]
   pub fn write_link_state(&self, enabled: bool, peers: u32) {
     self.link_enabled.store(enabled, Ordering::Relaxed);
     self.link_peers.store(peers, Ordering::Relaxed);
+  }
+
+  /// Write the free-running Link bar phase (0..1), always updated when Link is enabled.
+  #[inline]
+  pub fn write_link_phase(&self, phase: f64) {
+    self.link_phase_bits.store(phase.to_bits(), Ordering::Relaxed);
   }
 
   /// Read transport snapshot from the main thread.
@@ -2255,6 +2308,7 @@ impl TransportMeter {
       last_applied_update_id: self.last_applied_update_id.load(Ordering::Relaxed) as f64,
       link_enabled: self.link_enabled.load(Ordering::Relaxed),
       link_peers: self.link_peers.load(Ordering::Relaxed),
+      link_phase: f64::from_bits(self.link_phase_bits.load(Ordering::Relaxed)),
     }
   }
 }
@@ -2284,6 +2338,8 @@ pub struct TransportSnapshot {
   pub link_enabled: bool,
   /// Number of Link peers in the session
   pub link_peers: u32,
+  /// Free-running Link bar phase (0..1), always updated when Link is enabled
+  pub link_phase: f64,
 }
 
 #[cfg(test)]

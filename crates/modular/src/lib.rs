@@ -817,7 +817,7 @@ impl Synthesizer {
   #[napi]
   pub fn update_patch(
     &mut self,
-    patch: PatchGraph,
+    mut patch: PatchGraph,
     trigger: Option<QueuedTrigger>,
   ) -> PatchUpdateResult {
     // Extract MIDI device names from MIDI modules and sync connections
@@ -833,7 +833,8 @@ impl Synthesizer {
     let update_id = self.next_update_id;
 
     // Update transport meter with tempo/time signature from ROOT_CLOCK params
-    if let Some(root_clock) = patch.modules.iter().find(|m| m.id == *ROOT_CLOCK_ID) {
+    // Also extract and strip `tempoSet` — it's a DSL-only flag, not a real Clock param
+    let tempo_override = if let Some(root_clock) = patch.modules.iter_mut().find(|m| m.id == *ROOT_CLOCK_ID) {
       let bpm = root_clock
         .params
         .get("tempo")
@@ -853,12 +854,24 @@ impl Synthesizer {
         .state
         .transport_meter
         .write_tempo(bpm, numerator, denominator);
-    }
+
+      // Check if DSL explicitly called $setTempo, then strip the flag
+      // so Rust serde doesn't reject the unknown field on ClockParams
+      let tempo_set = root_clock
+        .params
+        .as_object_mut()
+        .and_then(|obj| obj.remove("tempoSet"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+      if tempo_set { Some(bpm) } else { None }
+    } else {
+      None
+    };
 
     let wav_data_snapshot = self.wav_cache.snapshot();
     let errors = self
       .state
-      .handle_set_patch(patch, self.sample_rate, trigger, update_id, wav_data_snapshot);
+      .handle_set_patch(patch, self.sample_rate, trigger, update_id, wav_data_snapshot, tempo_override);
 
     PatchUpdateResult {
       errors,
@@ -1003,6 +1016,11 @@ impl Synthesizer {
     self.state.send_command(GraphCommand::EnableLink(enabled))?;
     self.state.transport_meter.write_link_state(enabled, 0);
     Ok(())
+  }
+
+  #[napi]
+  pub fn set_follow_mode(&self, enabled: bool) {
+    self.state.follow_mode.store(enabled, std::sync::atomic::Ordering::SeqCst);
   }
 
   // =========================================================================

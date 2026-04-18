@@ -20,6 +20,11 @@ const config: ForgeConfig = {
             unpack: '**/*.node',
         },
         executableName: 'Operator',
+        extendInfo: {
+            NSLocalNetworkUsageDescription:
+                'Operator uses the local network to sync tempo with other music apps via Ableton Link.',
+            NSBonjourServices: ['_SessionStatus._tcp'],
+        },
         osxSign: {
             identity: 'Developer ID Application: Daniel Lewis (HA98TTLCR7)',
             optionsForFile: () => {

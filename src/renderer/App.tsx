@@ -117,6 +117,8 @@ function App() {
 
     // Audio state
     const [isClockRunning, setIsClockRunning] = useState(true);
+    const [followMode, setFollowMode] = useState(false);
+    const [followQueued, setFollowQueued] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -567,6 +569,7 @@ function App() {
             setTransportState(transport);
             if (transport.isPlaying) {
                 setIsClockRunning(true);
+                setFollowQueued(false);
             }
         }, 100);
         return () => clearInterval(interval);
@@ -645,7 +648,11 @@ function App() {
                     return;
                 }
 
-                setIsClockRunning(true);
+                if (!followMode) {
+                    setIsClockRunning(true);
+                } else if (!isClockRunningRef.current) {
+                    setFollowQueued(true);
+                }
                 setRunningBufferId(activeBufferId);
                 setError(null);
                 setValidationErrors(null);
@@ -787,6 +794,7 @@ function App() {
         handleStopRef.current = async () => {
             await electronAPI.synthesizer.stop();
             setIsClockRunning(false);
+            setFollowQueued(false);
         };
     }, []);
     const handleStop = useCallback(() => handleStopRef.current(), []);
@@ -867,6 +875,20 @@ function App() {
                                   }
                                 : prev,
                         );
+                        if (!enabled) {
+                            setFollowMode(false);
+                            setFollowQueued(false);
+                            electronAPI.synthesizer.setFollowMode(false);
+                        }
+                    }}
+                    followMode={followMode}
+                    followQueued={followQueued}
+                    onToggleFollowMode={(enabled) => {
+                        setFollowMode(enabled);
+                        if (!enabled) {
+                            setFollowQueued(false);
+                        }
+                        electronAPI.synthesizer.setFollowMode(enabled);
                     }}
                 />
                 <AudioControls
