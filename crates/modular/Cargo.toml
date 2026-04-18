@@ -45,6 +45,9 @@ features = ["jack"]
 version = "*"
 path = "../modular_core"
 
+[dependencies.rusty_link]
+version = "0.4"
+
 [dependencies.serde]
 version = "1.0"
 features = ["derive"]
