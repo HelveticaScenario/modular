@@ -53,6 +53,7 @@ pub struct ModuleAttrArgs {
     stateful: bool,
     patch_update: bool,
     has_init: bool,
+    clock_sync: bool,
 }
 
 impl syn::parse::Parse for ModuleAttrArgs {
@@ -67,6 +68,7 @@ impl syn::parse::Parse for ModuleAttrArgs {
         let mut stateful = false;
         let mut patch_update = false;
         let mut has_init = false;
+        let mut clock_sync = false;
 
         while !input.is_empty() {
             let ident: Ident = input.parse()?;
@@ -119,14 +121,17 @@ impl syn::parse::Parse for ModuleAttrArgs {
                 "has_init" => {
                     has_init = true;
                 }
+                "clock_sync" => {
+                    clock_sync = true;
+                }
                 other => {
                     return Err(syn::Error::new(
                         ident.span(),
                         format!(
                             "Unknown module attribute '{other}'. Expected one of: \
-                             name, channels, channels_param, \
-                             channels_param_default, channels_derive, args, \
-                             stateful, patch_update, has_init"
+                              name, channels, channels_param, \
+                              channels_param_default, channels_derive, args, \
+                              stateful, patch_update, has_init, clock_sync"
                         ),
                     ));
                 }
@@ -156,6 +161,7 @@ impl syn::parse::Parse for ModuleAttrArgs {
             stateful,
             patch_update,
             has_init,
+            clock_sync,
         })
     }
 }
@@ -494,6 +500,23 @@ fn impl_module_macro_attr(
         }
     };
 
+    // Check for clock_sync flag
+    let clock_sync_impl = if attr_args.clock_sync {
+        quote! {
+            fn sync_external_clock(&self, bar_phase: f64, bpm: f64, playing: bool) {
+                let module = unsafe { &mut *self.module.get() };
+                module.sync_external_clock(bar_phase, bpm, playing);
+            }
+
+            fn clear_external_sync(&self) {
+                let module = unsafe { &mut *self.module.get() };
+                module.clear_external_sync();
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     // Generate transfer_state_from body - only swap state if the module has a `state` field
     let transfer_state_body = if has_state_field {
         quote! {
@@ -676,6 +699,8 @@ fn impl_module_macro_attr(
             }
 
             #on_patch_update_impl
+
+            #clock_sync_impl
 
             fn get_state(&self) -> Option<serde_json::Value> {
                 #get_state_impl

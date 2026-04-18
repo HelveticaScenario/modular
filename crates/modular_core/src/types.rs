@@ -161,6 +161,11 @@ pub trait Sampleable: MessageHandler + Send + Sync {
     /// Called after the patch is updated and all modules are connected.
     /// Modules can override this to refresh caches or perform other post-update work.
     fn on_patch_update(&self) {}
+    /// Provide external clock synchronization data.
+    /// Only ROOT_CLOCK overrides this. Default: no-op.
+    fn sync_external_clock(&self, _bar_phase: f64, _bpm: f64, _playing: bool) {}
+    /// Clear external clock synchronization, returning to free-running mode.
+    fn clear_external_sync(&self) {}
     fn get_state(&self) -> Option<serde_json::Value> {
         None
     }
