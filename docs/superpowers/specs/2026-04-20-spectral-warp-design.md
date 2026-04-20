@@ -191,12 +191,14 @@ const SPECTRAL_BLOCK_SIZE: usize = 32;
 struct SpectralSlot {
     /// Interpolated + warped complex spectrum. Length = frame_size / 2 + 1.
     spectrum: Vec<Complex<f32>>,
-    /// Padded complex buffer for zero-pad oversampling IFFT. Length = table_size.
-    padded: Vec<Complex<f32>>,
-    /// IFFT scratch buffer. Length from `fft_inverse.get_inplace_scratch_len()`.
-    scratch: Vec<Complex<f32>>,
-    /// Rendered mip levels. `warped_levels[k]` has length `table_size`.
-    /// Layout mirrors `PreparedWavetable::levels` but for a single interpolated frame.
+    /// Per-level complex working buffers for the IFFT. Level k has length
+    /// `(table_size >> k)`, halving each level. Pre-allocated; reused each block.
+    padded: Vec<Vec<Complex<f32>>>,
+    /// Per-level IFFT scratch buffers, sized to match each plan's scratch requirement.
+    scratch: Vec<Vec<Complex<f32>>>,
+    /// Rendered mip levels. `warped_levels[k]` has length `table_size >> k`.
+    /// Each level is half the size of the previous, matching the spectral bandwidth
+    /// reduction. Higher pitches need fewer samples to represent one cycle cleanly.
     warped_levels: Vec<Vec<f32>>,
 }
 ```
@@ -207,6 +209,11 @@ Audio thread never allocates.
 
 IFFT plans (one per mip level, sizes `table_size >> k`) are stored in `WavetableOscState`
 as `ifft_plans: Vec<Arc<dyn Fft<f32>>>`, also allocated in `prepare_resources_impl`.
+
+The total samples across all levels is a geometric series:
+`table_size + table_size/2 + table_size/4 + ... = 2 × table_size`
+regardless of mip count. This bounds both memory and CPU to ~2× the cost of a single
+full-size IFFT rather than `mip_count ×`.
 
 ---
 
@@ -232,14 +239,17 @@ if block_counter == 0:
         // 2. Spectral warp (in-place, no alloc)
         spectral.apply(&mut slot.spectrum, ch)
 
-        // 3. Mip pyramid — one IFFT per level
+        // 3. Mip pyramid — one IFFT per level, each half the size of the previous
         for level in 0..mipmap_count:
+            level_table_size = table_size >> level
             cutoff = num_harmonics >> level
-            // copy spectrum into padded, zero above cutoff, zero-pad to table_size
-            build_padded_spectrum(&slot.spectrum, &mut slot.padded, cutoff, table_size)
-            ifft_plans[level].process_with_scratch(&mut slot.padded, &mut slot.scratch)
-            for i in 0..table_size:
-                slot.warped_levels[level][i] = slot.padded[i].re * inv_n
+            // copy spectrum into padded[level], zero above cutoff,
+            // zero-pad to level_table_size (oversampling shrinks with level)
+            build_padded_spectrum(&slot.spectrum, &mut slot.padded[level], cutoff, level_table_size)
+            ifft_plans[level].process_with_scratch(&mut slot.padded[level], &mut slot.scratch[level])
+            inv_n_level = 1.0 / (level_table_size / OVERSAMPLE) as f32
+            for i in 0..level_table_size:
+                slot.warped_levels[level][i] = slot.padded[level][i].re * inv_n_level
 
 block_counter = (block_counter + 1) % SPECTRAL_BLOCK_SIZE
 ```
@@ -252,8 +262,10 @@ level    = prepared.mipmap_level_for_freq(freq)   // per-sample, FM-modulated
 sample   = read_warped_sample(&spectral_slots[slot_idx], level, warped_phase)
 ```
 
-`read_warped_sample` is identical to `PreparedWavetable::read_sample` but reads from
-`slot.warped_levels` (single interpolated frame, so `frame` argument is always 0).
+`read_warped_sample` reads from `slot.warped_levels[level]` using
+`phase * (table_size >> level)` as the index (single interpolated frame, no frame
+crossfade needed). Each level has a different table size so the index scaling is
+level-dependent.
 
 ---
 
@@ -270,9 +282,9 @@ call. Zero overhead for non-spectral use.
 | What | Size |
 |---|---|
 | `freq_frames` added to `PreparedWavetable` | `frame_count × num_harmonics × 8 B` ≈ 2.1 MB for 256 frames |
-| Per `SpectralSlot` (spectrum + padded + warped_levels) | `≈ table_size × mip_count × 4 B` ≈ 720 KB for 2048 frame / 11 levels |
-| Max slots = `PORT_MAX_CHANNELS` (16) | 16 × 720 KB ≈ 11.5 MB worst case |
-| In practice (mono warp, 1 slot) | 720 KB |
+| Per `SpectralSlot` (spectrum + padded + warped_levels) | `2 × table_size × 4 B` ≈ 131 KB for 2048 frame (geometric series) |
+| Max slots = `PORT_MAX_CHANNELS` (16) | 16 × 131 KB ≈ 2.1 MB worst case |
+| In practice (mono warp, 1 slot) | 131 KB |
 
 All allocated on the main thread in `prepare_resources_impl`. Audio thread: zero allocation.
 
@@ -283,16 +295,19 @@ All allocated on the main thread in `prepare_resources_impl`. Audio thread: zero
 | Scenario | Cost per 32-sample block |
 |---|---|
 | No spectral warp | 0 (existing path) |
-| 1 slot (mono position + mono warp) | 1 × ~11 IFFTs of size 16384 ≈ ~60 μs |
-| N voices, same warp amount | 1 slot → same ~60 μs |
-| N voices, poly warp amount | N × ~60 μs |
+| 1 slot (mono position + mono warp) | ~2 × IFFT(16384) equivalent ≈ ~10 μs |
+| N voices, same warp amount | 1 slot → same ~10 μs |
+| N voices, poly warp amount | N × ~10 μs |
 
-Block budget at 44.1 kHz: 32 × 22.7 μs = 726 μs. Single-slot spectral warp costs ~8%.
+Block budget at 44.1 kHz: 32 × 22.7 μs = 726 μs. Single-slot spectral warp costs ~1.4%.
 
-> **Note:** The 11 IFFTs all run at `table_size = 16384` (matching `PreparedWavetable`'s
-> oversampling). If this proves too expensive in profiling, mip levels above a threshold
-> could use halved table sizes; this is a localized change to `SpectralSlot` allocation and
-> `build_padded_spectrum` with no API impact.
+The halved-table-size mip pyramid means the total IFFT work across all 11 levels equals
+~2 × IFFT(16384) due to the geometric series
+`IFFT(16384) + IFFT(8192) + IFFT(4096) + ... ≈ 2 × IFFT(16384)`.
+
+Note that `PreparedWavetable` still uses same-size tables for all mip levels. If that
+pre-bake cost ever matters (it runs once at load time, not at audio rate) it can be
+updated to match independently.
 
 ---
 
