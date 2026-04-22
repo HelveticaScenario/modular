@@ -29,6 +29,12 @@ export declare class Synthesizer {
   stopRecording(): string | null
   isRecording(): boolean
   getHealth(): AudioBudgetSnapshot
+  /**
+   * Drain deferred deallocations from the audio thread. The RT audio thread
+   * cannot free memory itself, so it pushes old resources onto a lock-free
+   * garbage queue. Call this periodically from the main thread to drop them.
+   */
+  drainGarbage(): void
   getModuleStates(): Record<string, any>
   getTransportState(): TransportSnapshot
   enableLink(enabled: boolean): void

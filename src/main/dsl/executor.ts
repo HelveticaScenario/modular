@@ -433,8 +433,14 @@ export function executePatchScript(
      * that feeds this table's output phase into `next`. The optional second
      * argument to each helper is a shorthand for `.pipe(next)`.
      */
-    function wrapTable(descriptor: Record<string, unknown>): Record<string, unknown> & { pipe: <T>(fn: (self: Record<string, unknown>) => T) => T } {
-        const t = { ...descriptor } as Record<string, unknown> & { pipe: <T>(fn: (self: Record<string, unknown>) => T) => T };
+    function wrapTable(
+        descriptor: Record<string, unknown>,
+    ): Record<string, unknown> & {
+        pipe: <T>(fn: (self: Record<string, unknown>) => T) => T;
+    } {
+        const t = { ...descriptor } as Record<string, unknown> & {
+            pipe: <T>(fn: (self: Record<string, unknown>) => T) => T;
+        };
         Object.defineProperty(t, 'pipe', {
             value: <T>(fn: (self: typeof t) => T): T => fn(t),
             enumerable: false,
@@ -446,24 +452,43 @@ export function executePatchScript(
 
     const $table = {
         mirror: (amount: unknown, next?: unknown) => {
-            const t = wrapTable({ type: 'mirror', amount: replaceSignals(amount) });
-            return next !== undefined ? wrapTable({ type: 'pipe', first: t, second: next }) : t;
+            const t = wrapTable({
+                type: 'mirror',
+                amount: replaceSignals(amount),
+            });
+            return next !== undefined
+                ? wrapTable({ type: 'pipe', first: t, second: next })
+                : t;
         },
         bend: (amount: unknown, next?: unknown) => {
-            const t = wrapTable({ type: 'bend', amount: replaceSignals(amount) });
-            return next !== undefined ? wrapTable({ type: 'pipe', first: t, second: next }) : t;
+            const t = wrapTable({
+                type: 'bend',
+                amount: replaceSignals(amount),
+            });
+            return next !== undefined
+                ? wrapTable({ type: 'pipe', first: t, second: next })
+                : t;
         },
         sync: (ratio: unknown, next?: unknown) => {
             const t = wrapTable({ type: 'sync', ratio: replaceSignals(ratio) });
-            return next !== undefined ? wrapTable({ type: 'pipe', first: t, second: next }) : t;
+            return next !== undefined
+                ? wrapTable({ type: 'pipe', first: t, second: next })
+                : t;
         },
         fold: (amount: unknown, next?: unknown) => {
-            const t = wrapTable({ type: 'fold', amount: replaceSignals(amount) });
-            return next !== undefined ? wrapTable({ type: 'pipe', first: t, second: next }) : t;
+            const t = wrapTable({
+                type: 'fold',
+                amount: replaceSignals(amount),
+            });
+            return next !== undefined
+                ? wrapTable({ type: 'pipe', first: t, second: next })
+                : t;
         },
         pwm: (width: unknown, next?: unknown) => {
             const t = wrapTable({ type: 'pwm', width: replaceSignals(width) });
-            return next !== undefined ? wrapTable({ type: 'pipe', first: t, second: next }) : t;
+            return next !== undefined
+                ? wrapTable({ type: 'pipe', first: t, second: next })
+                : t;
         },
     };
 

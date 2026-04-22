@@ -181,6 +181,7 @@ export interface ElectronAPI {
     onMenuCloseBuffer: (callback: () => void) => () => void;
     onMenuToggleRecording: (callback: () => void) => () => void;
     onMenuOpenSettings: (callback: () => void) => () => void;
+    onMenuOpenEngineHealth: (callback: () => void) => () => void;
     /**
      * Trigger a menu action programmatically (e.g., from Monaco keybindings).
      * This emits the same IPC event that the Electron menu would send.
@@ -403,6 +404,7 @@ const electronAPI: ElectronAPI = {
     onMenuCloseBuffer: menuEventHandler(MENU_CHANNELS.CLOSE_BUFFER),
     onMenuToggleRecording: menuEventHandler(MENU_CHANNELS.TOGGLE_RECORDING),
     onMenuOpenSettings: menuEventHandler(MENU_CHANNELS.OPEN_SETTINGS),
+    onMenuOpenEngineHealth: menuEventHandler(MENU_CHANNELS.OPEN_ENGINE_HEALTH),
     // Programmatically trigger a menu action (for Monaco keybindings on Windows)
     triggerMenuAction: (action: keyof typeof MENU_CHANNELS) => {
         const channel = MENU_CHANNELS[action];

@@ -1134,9 +1134,15 @@ impl Synthesizer {
 
   #[napi]
   pub fn get_health(&self) -> AudioBudgetSnapshot {
-    // Drain deferred deallocations from the audio thread (called periodically from JS)
-    self.state.drain_garbage();
     self.state.take_audio_thread_budget_snapshot_and_reset()
+  }
+
+  /// Drain deferred deallocations from the audio thread. The RT audio thread
+  /// cannot free memory itself, so it pushes old resources onto a lock-free
+  /// garbage queue. Call this periodically from the main thread to drop them.
+  #[napi]
+  pub fn drain_garbage(&self) {
+    self.state.drain_garbage();
   }
 
   #[napi]

@@ -510,8 +510,10 @@ function saveAudioConfig() {
 }
 
 setInterval(() => {
-    // Keep the audio thread alive
-    console.log('health:', synth.getHealth());
+    // Drain deferred deallocations from the audio thread. The RT audio thread
+    // cannot free memory itself, so it pushes old resources onto a lock-free
+    // garbage queue. Call periodically from the main thread to drop them.
+    synth.drainGarbage();
 }, 10000);
 
 // Workspace root state
@@ -1738,7 +1740,29 @@ const createMenu = (): void => {
         },
         // View menu
         {
-            role: 'viewMenu',
+            label: 'View',
+            submenu: [
+                { role: 'reload' },
+                { role: 'forceReload' },
+                { role: 'toggleDevTools' },
+                { type: 'separator' },
+                { role: 'resetZoom' },
+                { role: 'zoomIn' },
+                { role: 'zoomOut' },
+                { type: 'separator' },
+                { role: 'togglefullscreen' },
+                { type: 'separator' },
+                {
+                    click: () => {
+                        if (mainWindow && !mainWindow.isDestroyed()) {
+                            mainWindow.webContents.send(
+                                MENU_CHANNELS.OPEN_ENGINE_HEALTH,
+                            );
+                        }
+                    },
+                    label: 'Engine Health...',
+                },
+            ],
         },
         // Run menu
         {

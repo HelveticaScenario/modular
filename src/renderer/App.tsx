@@ -4,6 +4,7 @@ import { AudioControls } from './components/AudioControls';
 import { TransportDisplay } from './components/TransportDisplay';
 import { ErrorDisplay } from './components/ErrorDisplay';
 import { Settings } from './components/Settings';
+import { EngineHealth } from './components/EngineHealth';
 import type { UpdateNotificationState } from './components/UpdateNotification';
 import { UpdateNotification } from './components/UpdateNotification';
 import './App.css';
@@ -121,6 +122,7 @@ function App() {
     const [followQueued, setFollowQueued] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isEngineHealthOpen, setIsEngineHealthOpen] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [validationErrors, setValidationErrors] = useState<
         ValidationError[] | null
@@ -789,6 +791,7 @@ function App() {
             getLastPatchResult: () => lastPatchResultRef.current,
             getScopeData: () => electronAPI.synthesizer.getScopes(),
             isClockRunning: () => isClockRunningRef.current,
+            openEngineHealth: () => setIsEngineHealthOpen(true),
             setEditorValue: (code: string) => editorRef.current?.setValue(code),
         };
         return () => {
@@ -851,6 +854,11 @@ function App() {
         const cleanupOpenSettings = electronAPI.onMenuOpenSettings(() => {
             setIsSettingsOpen(true);
         });
+        const cleanupOpenEngineHealth = electronAPI.onMenuOpenEngineHealth(
+            () => {
+                setIsEngineHealthOpen(true);
+            },
+        );
 
         return () => {
             cleanupNewFile();
@@ -862,6 +870,7 @@ function App() {
             cleanupCloseBuffer();
             cleanupToggleRecording();
             cleanupOpenSettings();
+            cleanupOpenEngineHealth();
         };
     }, [activeBufferId, closeBuffer, isRecording, buffers, createUntitledFile]);
 
@@ -923,6 +932,11 @@ function App() {
             <Settings
                 isOpen={isSettingsOpen}
                 onClose={() => setIsSettingsOpen(false)}
+            />
+
+            <EngineHealth
+                isOpen={isEngineHealthOpen}
+                onClose={() => setIsEngineHealthOpen(false)}
             />
 
             <main className="app-main">
