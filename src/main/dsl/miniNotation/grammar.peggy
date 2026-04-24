@@ -42,6 +42,26 @@
     }
     return ast;
   }
+
+  // Collapse elongation markers (`_`) into the preceding sequence entry's
+  // weight. Entries are tagged `{kind:'element', entry:[ast, weight]}` or
+  // `{kind:'elongation'}`. Returns a plain `[ast, weight]` array suitable for
+  // a `Sequence` / `FastCat` / `SlowCat` node.
+  function applyElongation(entries) {
+    const out = [];
+    for (const entry of entries) {
+      if (entry.kind === 'elongation') {
+        if (out.length === 0) {
+          throw new Error("leading `_` has no element to elongate");
+        }
+        const last = out[out.length - 1];
+        last[1] = (last[1] ?? 1) + 1;
+        continue;
+      }
+      out.push(entry.entry);
+    }
+    return out;
+  }
 }}
 
 {
@@ -71,16 +91,21 @@ StackExpr
       return { Stack: [head, ...tail] };
     }
 
-// Sequence: space-separated elements.
-// If only a single element and no weight is present, the sequence is
-// collapsed to that element so `"c4"` parses to a Pure node directly.
+// Sequence: space-separated elements. Bare `_` tokens after an element act
+// as elongation markers, each bumping the preceding entry's weight by one
+// (so `a _ _` is weight 3, same as `a@3`).
 SequenceExpr
-  = elems:(_ @ElementWithWeight)+ {
-      if (elems.length === 1 && elems[0][1] === null) {
-        return elems[0][0];
+  = elems:(_ @SequenceEntry)+ {
+      const out = applyElongation(elems);
+      if (out.length === 1 && out[0][1] === null) {
+        return out[0][0];
       }
-      return { Sequence: elems };
+      return { Sequence: out };
     }
+
+SequenceEntry
+  = "_" !IdentCont { return { kind: 'elongation' }; }
+  / e:ElementWithWeight { return { kind: 'element', entry: e }; }
 
 // Element with optional @weight and modifier chain. Weight may appear
 // anywhere in the modifier list (matching Rust's grammar.pest), but we
@@ -319,9 +344,13 @@ OperandStackExpr
     }
 
 OperandSequence
-  = elems:(_ @OperandElement)+ {
-      return { asCat: elems };
+  = elems:(_ @OperandSeqEntry)+ {
+      return { asCat: applyElongation(elems) };
     }
+
+OperandSeqEntry
+  = "_" !IdentCont { return { kind: 'elongation' }; }
+  / e:OperandElement { return { kind: 'element', entry: e }; }
 
 OperandElement
   = r:OperandRandomChoice weight:Weight? { return [r, weight]; }
@@ -358,7 +387,11 @@ OperandStackExprF64
     }
 
 OperandSequenceF64
-  = elems:(_ @OperandElementF64)+ { return { asCat: elems }; }
+  = elems:(_ @OperandSeqEntryF64)+ { return { asCat: applyElongation(elems) }; }
+
+OperandSeqEntryF64
+  = "_" !IdentCont { return { kind: 'elongation' }; }
+  / e:OperandElementF64 { return { kind: 'element', entry: e }; }
 
 OperandElementF64
   = r:OperandRandomChoiceF64 weight:Weight? { return [r, weight]; }
@@ -395,7 +428,11 @@ OperandStackExprU32
     }
 
 OperandSequenceU32
-  = elems:(_ @OperandElementU32)+ { return { asCat: elems }; }
+  = elems:(_ @OperandSeqEntryU32)+ { return { asCat: applyElongation(elems) }; }
+
+OperandSeqEntryU32
+  = "_" !IdentCont { return { kind: 'elongation' }; }
+  / e:OperandElementU32 { return { kind: 'element', entry: e }; }
 
 OperandElementU32
   = r:OperandRandomChoiceU32 weight:Weight? { return [r, weight]; }
@@ -438,7 +475,11 @@ OperandStackExprI32
     }
 
 OperandSequenceI32
-  = elems:(_ @OperandElementI32)+ { return { asCat: elems }; }
+  = elems:(_ @OperandSeqEntryI32)+ { return { asCat: applyElongation(elems) }; }
+
+OperandSeqEntryI32
+  = "_" !IdentCont { return { kind: 'elongation' }; }
+  / e:OperandElementI32 { return { kind: 'element', entry: e }; }
 
 OperandElementI32
   = r:OperandRandomChoiceI32 weight:Weight? { return [r, weight]; }
