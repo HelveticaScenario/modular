@@ -44,12 +44,12 @@ impl Sampleable for DummySampleable {
 
     fn tick(&self) {}
 
-    fn update(&self) {}
-
-    fn get_poly_sample(&self, port: &str) -> Result<modular_core::poly::PolyOutput> {
-        Ok(modular_core::poly::PolyOutput::mono(
-            *self.outputs.get(port).unwrap_or(&0.0),
-        ))
+    fn get_value_at(&self, port: &str, ch: usize, _index: usize) -> f32 {
+        if ch == 0 {
+            *self.outputs.get(port).unwrap_or(&0.0)
+        } else {
+            0.0
+        }
     }
 
     fn get_module_type(&self) -> &str {
@@ -304,10 +304,10 @@ fn sampleable_ensure_processed_and_get_value_at() {
         "dummy",
         [("out", 3.0f32)],
     )));
-    // Default impl is a no-op for ensure_processed and returns 0.0 for get_value_at.
+    // ensure_processed is a no-op for DummySampleable; get_value_at returns stored value.
     s.ensure_processed();
-    // DummySampleable uses the default impl (returns 0.0).
-    assert!((s.get_value_at("out", 0, 0) - 0.0).abs() < 1e-6);
+    // DummySampleable overrides get_value_at to return its stored outputs map value.
+    assert!((s.get_value_at("out", 0, 0) - 3.0).abs() < 1e-6);
 }
 
 #[test]

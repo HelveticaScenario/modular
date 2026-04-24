@@ -293,10 +293,6 @@ mod tests {
             &self.id
         }
         fn tick(&self) {}
-        fn update(&self) {}
-        fn get_poly_sample(&self, _port: &str) -> napi::Result<PolyOutput> {
-            Ok(PolyOutput::default())
-        }
         fn get_module_type(&self) -> &str {
             "$buffer"
         }
@@ -429,7 +425,7 @@ mod tests {
 
     fn step(module: &dyn Sampleable) {
         module.tick();
-        module.update();
+        module.ensure_processed();
     }
 
     #[test]
@@ -442,13 +438,11 @@ mod tests {
 
         step(&**module);
 
-        let output = module
-            .get_poly_sample("output")
-            .expect("get_poly_sample failed");
+        let out = module.get_value_at("output", 0, 0);
         assert!(
-            (output.get(0) - 3.0).abs() < 1e-6,
+            (out - 3.0).abs() < 1e-6,
             "expected passthrough of 3.0, got {}",
-            output.get(0)
+            out
         );
     }
 

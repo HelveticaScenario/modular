@@ -55,9 +55,7 @@ impl Patch {
     /// Re-insert the AudioIn module into sampleables.
     /// Called after sampleables.clear() to restore the hidden audio input module.
     pub fn insert_audio_in(&mut self) {
-        let audio_in_sampleable = AudioIn {
-            input: self.audio_in.clone(),
-        };
+        let audio_in_sampleable = AudioIn::with_input(self.audio_in.clone());
         let id = WellKnownModule::HiddenAudioIn.id().to_string();
         self.sampleables
             .insert(id, Arc::new(Box::new(audio_in_sampleable)));
@@ -137,9 +135,7 @@ impl Patch {
     /// Get the output sample from the root module
     pub fn get_output(&self) -> f32 {
         if let Some(root) = self.sampleables.get(&*ROOT_ID) {
-            root.get_poly_sample(&ROOT_OUTPUT_PORT)
-                .map(|p| p.get(0))
-                .unwrap_or_default()
+            root.get_value_at(&ROOT_OUTPUT_PORT, 0, 0)
         } else {
             0.0
         }
@@ -240,12 +236,6 @@ mod tests {
         }
 
         fn tick(&self) {}
-
-        fn update(&self) {}
-
-        fn get_poly_sample(&self, _port: &str) -> Result<crate::poly::PolyOutput> {
-            Ok(crate::poly::PolyOutput::default())
-        }
 
         fn get_module_type(&self) -> &str {
             "dummy"

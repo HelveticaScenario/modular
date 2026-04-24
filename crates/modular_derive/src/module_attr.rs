@@ -789,6 +789,9 @@ fn impl_module_macro_attr(
             }
 
             fn get_value_at(&self, port: &str, ch: usize, index: usize) -> f32 {
+                // Channel cycling: mono source usable by poly consumer.
+                let cc = unsafe { (*self.module.get())._channel_count };
+                let ch = if cc == 0 { 0 } else { ch % cc };
                 // Reentrancy: return 1-sample-delayed value (feedback cycle).
                 if self.computing.get() {
                     let prev = if index == 0 {
@@ -800,31 +803,6 @@ fn impl_module_macro_attr(
                 }
                 self.ensure_processed();
                 unsafe { (*self.block_outputs.get()).get_at(port, ch, index) }
-            }
-
-            // Backward-compat: delegates to ensure_processed.
-            fn update(&self) {
-                self.ensure_processed();
-            }
-
-            // Backward-compat: read from inner module outputs (preserves channel count).
-            fn get_poly_sample(&self, port: &str) -> napi::Result<crate::poly::PolyOutput> {
-                self.ensure_processed();
-                if self.computing.get() {
-                    // Reentrant call: ensure_processed() returned early due to a feedback cycle.
-                    // Read the previous-frame value from block_outputs (swapped in from old module
-                    // by transfer_state_from, or zero-initialised for the very first frame).
-                    let bo = unsafe { &*self.block_outputs.get() };
-                    let slot = self.index.get().saturating_sub(1);
-                    let mut out = crate::poly::PolyOutput::default();
-                    out.set_channels(crate::PORT_MAX_CHANNELS);
-                    for ch in 0..crate::PORT_MAX_CHANNELS {
-                        out.set(ch, bo.get_at(port, ch, slot));
-                    }
-                    return Ok(out);
-                }
-                let module = unsafe { &*self.module.get() };
-                Ok(crate::types::OutputStruct::get_poly_sample(&module.outputs, port).unwrap_or_default())
             }
 
             fn get_module_type(&self) -> &str {

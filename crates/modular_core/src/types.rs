@@ -232,9 +232,6 @@ impl<T: InjectIndexPtr> InjectIndexPtr for Vec<T> {
 pub trait Sampleable: MessageHandler + Send + Sync {
     fn get_id(&self) -> &str;
     fn tick(&self) -> ();
-    fn update(&self) -> ();
-    /// Get polyphonic sample output for a port.
-    fn get_poly_sample(&self, port: &str) -> Result<PolyOutput>;
 
     /// Process outputs up to the current block boundary.
     ///
@@ -267,8 +264,6 @@ pub trait Sampleable: MessageHandler + Send + Sync {
     /// no external sync is active this block.
     /// Only ROOT_CLOCK overrides this. Default: no-op.
     fn sync_external_clock(&self, _states: &[ExternalClockState]) {}
-    /// Clear external clock synchronization, returning to free-running mode.
-    fn clear_external_sync(&self) {}
     fn get_state(&self) -> Option<serde_json::Value> {
         None
     }
@@ -2119,12 +2114,19 @@ impl Signal {
                 module_ptr,
                 port,
                 channel,
-                ..
+                index_ptr,
+                module: _,
             } => match module_ptr.upgrade() {
-                Some(module_ptr) => module_ptr
-                    .get_poly_sample(port)
-                    .map(|p| p.get_cycling(*channel))
-                    .unwrap_or(0.0),
+                Some(module_ptr) => {
+                    let index = if index_ptr.is_null() {
+                        0
+                    } else {
+                        let cell: &std::cell::Cell<usize> = unsafe { &**index_ptr };
+                        cell.get()
+                    };
+                    // Channel cycling is handled inside get_value_at.
+                    module_ptr.get_value_at(port, *channel, index)
+                }
                 None => 0.0,
             },
         }

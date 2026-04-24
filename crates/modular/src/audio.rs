@@ -2465,10 +2465,6 @@ mod tests {
       &self.current_id
     }
     fn tick(&self) {}
-    fn update(&self) {}
-    fn get_poly_sample(&self, _port: &str) -> napi::Result<modular_core::poly::PolyOutput> {
-      Ok(modular_core::poly::PolyOutput::default())
-    }
     fn get_module_type(&self) -> &str {
       &self.label
     }
