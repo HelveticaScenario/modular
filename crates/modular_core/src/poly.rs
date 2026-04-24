@@ -553,6 +553,23 @@ impl MonoSignalExt for Option<MonoSignal> {
     }
 }
 
+// ============================================================================
+// InjectIndexPtr impls for poly signal types
+
+impl crate::types::InjectIndexPtr for PolySignal {
+    fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>) {
+        for sig in self.channels.iter_mut() {
+            sig.inject_index_ptr(ptr);
+        }
+    }
+}
+
+impl crate::types::InjectIndexPtr for MonoSignal {
+    fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>) {
+        self.inner.inject_index_ptr(ptr);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::dsp::utils::hz_to_voct;

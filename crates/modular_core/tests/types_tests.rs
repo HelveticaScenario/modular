@@ -6,9 +6,10 @@ use serde_json::json;
 
 use modular_core::patch::Patch;
 use modular_core::types::{
-    ClockMessages, Connect, Message, MessageHandler, MessageTag, MidiControlChange, MidiNoteOn,
-    Sampleable, Signal, SignalExt,
+    ClockMessages, Connect, ExternalClockState, Message, MessageHandler, MessageTag,
+    MidiControlChange, MidiNoteOn, ProcessingMode, Sampleable, Signal, SignalExt,
 };
+use modular_core::InjectIndexPtr;
 
 // The proc-macro expands to `crate::types::...`; provide that module in this integration test crate.
 mod types {
@@ -237,4 +238,29 @@ fn connect_noop_for_non_cable_and_non_track_signals() {
     let patch = make_empty_patch();
     s.connect(&patch);
     approx_eq(s.get_value(), 1.0, 1e-6);
+}
+
+// ============================================================================
+// Task 2: ProcessingMode, ExternalClockState, InjectIndexPtr tests
+
+#[test]
+fn processing_mode_default_is_block() {
+    assert_eq!(ProcessingMode::default(), ProcessingMode::Block);
+}
+
+#[test]
+fn external_clock_state_default() {
+    let s = ExternalClockState::default();
+    assert!((s.bar_phase - 0.0).abs() < f64::EPSILON);
+    assert!((s.bpm - 0.0).abs() < f64::EPSILON); // default is 0.0, not 120.0
+    assert!(!s.playing);
+}
+
+#[test]
+fn inject_index_ptr_signal_fixed() {
+    use std::cell::Cell;
+    let idx = Cell::new(7usize);
+    let mut sig = Signal::Volts(1.0);
+    sig.inject_index_ptr(&idx as *const _);
+    // Fixed signals ignore inject — no panic
 }

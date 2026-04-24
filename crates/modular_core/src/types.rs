@@ -151,6 +151,83 @@ pub trait PatchUpdateHandler {
     fn on_patch_update(&mut self);
 }
 
+// ============================================================================
+// Block processing types
+
+/// Determines how a module wrapper processes samples.
+///
+/// - `Block`: compute all `block_size` samples in one `ensure_processed()` call.
+/// - `Sample`: compute exactly one sample per `ensure_processed()` call (used for
+///   modules inside feedback cycles and ROOT_CLOCK/HiddenAudioIn which have
+///   external per-sample data injection).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProcessingMode {
+    #[default]
+    Block,
+    Sample,
+}
+
+/// Per-sample external clock state injected into ROOT_CLOCK by the audio callback.
+///
+/// The callback pre-computes one entry per sample in the block by querying the
+/// Link timeline. The ROOT_CLOCK wrapper injects the appropriate entry before
+/// calling inner `Clock::update()` for each sample position.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ExternalClockState {
+    /// Bar phase in [0, 1).
+    pub bar_phase: f64,
+    /// Tempo in BPM.
+    pub bpm: f64,
+    /// Whether the Link session is playing.
+    pub playing: bool,
+}
+
+/// Implemented by signal-bearing types to receive the back-pointer to the
+/// consuming wrapper's `index: Cell<usize>`.
+///
+/// The `Connect` derive macro generates an impl for every params struct,
+/// iterating over each signal field. Base impls for primitive types are
+/// no-ops so the generated code can call `inject_index_ptr` on any field.
+pub trait InjectIndexPtr {
+    /// Store `ptr` (which points to the consuming wrapper's `index` cell) so
+    /// that `Signal::get_value()` can pass the correct sample index upstream.
+    ///
+    /// # Safety
+    /// `ptr` must remain valid for the lifetime of this signal connection
+    /// (i.e., until `connect()` is called again with a new patch).
+    fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>);
+}
+
+/// Blanket no-op impl for types that carry no signals.
+macro_rules! noop_inject {
+    ($($t:ty),*) => {
+        $(impl InjectIndexPtr for $t {
+            #[inline]
+            fn inject_index_ptr(&mut self, _ptr: *const std::cell::Cell<usize>) {}
+        })*
+    };
+}
+
+noop_inject!(f32, f64, i32, i64, u32, u64, usize, bool, String, serde_json::Value);
+
+impl<T: InjectIndexPtr> InjectIndexPtr for Option<T> {
+    #[inline]
+    fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>) {
+        if let Some(inner) = self {
+            inner.inject_index_ptr(ptr);
+        }
+    }
+}
+
+impl<T: InjectIndexPtr> InjectIndexPtr for Vec<T> {
+    #[inline]
+    fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>) {
+        for item in self.iter_mut() {
+            item.inject_index_ptr(ptr);
+        }
+    }
+}
+
 pub trait Sampleable: MessageHandler + Send + Sync {
     fn get_id(&self) -> &str;
     fn tick(&self) -> ();
@@ -2012,6 +2089,15 @@ impl Signal {
                 None => 0.0,
             },
         }
+    }
+}
+
+impl InjectIndexPtr for Signal {
+    fn inject_index_ptr(&mut self, _ptr: *const std::cell::Cell<usize>) {
+        // TODO: Task 3 — uncomment when index_ptr is added to Signal::Cable
+        // if let Signal::Cable { ref mut index_ptr, .. } = self {
+        //     *index_ptr = _ptr;
+        // }
     }
 }
 
