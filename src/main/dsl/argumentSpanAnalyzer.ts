@@ -148,12 +148,10 @@ function buildConstLiteralMap(sourceFile: SourceFile): Map<string, SourceSpan> {
 
         for (const decl of declList.getDeclarations()) {
             const initializer = decl.getInitializer();
-            if (!initializer) continue;
-            const unwrapped = unwrapParsedPatternCall(initializer);
-            if (isTrackableLiteral(unwrapped)) {
+            if (initializer && isTrackableLiteral(initializer)) {
                 map.set(decl.getName(), {
-                    end: unwrapped.getEnd(),
-                    start: unwrapped.getStart(),
+                    end: initializer.getEnd(),
+                    start: initializer.getStart(),
                 });
             }
         }
@@ -181,10 +179,8 @@ function buildConstNodeMap(sourceFile: SourceFile): Map<string, Node> {
 
         for (const decl of declList.getDeclarations()) {
             const initializer = decl.getInitializer();
-            if (!initializer) continue;
-            const unwrapped = unwrapParsedPatternCall(initializer);
-            if (isTrackableLiteral(unwrapped)) {
-                map.set(decl.getName(), unwrapped);
+            if (initializer && isTrackableLiteral(initializer)) {
+                map.set(decl.getName(), initializer);
             }
         }
     }
