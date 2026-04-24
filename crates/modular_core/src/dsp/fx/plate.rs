@@ -467,7 +467,7 @@ message_handlers!(impl Plate {});
 mod tests {
     use crate::dsp::{get_constructors, get_params_deserializers};
     use crate::params::DeserializedParams;
-    use crate::types::Sampleable;
+    use crate::types::{ProcessingMode, Sampleable};
     use serde_json::json;
     use std::sync::Arc;
 
@@ -484,7 +484,9 @@ mod tests {
             argument_spans: Default::default(),
             channel_count: cached.channel_count,
         };
-        constructors.get("$plate").unwrap()(&"test-plate".to_string(), SAMPLE_RATE, deserialized)
+        constructors
+            .get("$plate")
+            .unwrap()(&"test-plate".to_string(), SAMPLE_RATE, deserialized, 1, ProcessingMode::Block)
             .unwrap()
     }
 

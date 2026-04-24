@@ -354,6 +354,7 @@ impl Default for Clock {
             state: ClockState::default(),
             params: ClockParams::default(),
             _channel_count: 2,
+            _block_index: std::cell::Cell::new(0),
         }
     }
 }

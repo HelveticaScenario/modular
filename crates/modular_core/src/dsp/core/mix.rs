@@ -200,6 +200,7 @@ mod tests {
             outputs,
             _channel_count: channels,
             state: MixState::default(),
+            _block_index: std::cell::Cell::new(0),
         }
     }
 

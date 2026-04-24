@@ -7,7 +7,7 @@
 use modular_core::dsp::{get_constructors, get_params_deserializers};
 use modular_core::params::DeserializedParams;
 use modular_core::patch::Patch;
-use modular_core::types::{ModuleState, PatchGraph, Sampleable};
+use modular_core::types::{ModuleState, PatchGraph, ProcessingMode, Sampleable};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -36,6 +36,8 @@ fn make_module(module_type: &str, id: &str, params: serde_json::Value) -> Arc<Bo
         &id.to_string(),
         SAMPLE_RATE,
         deserialized,
+        1,
+        ProcessingMode::Block,
     )
     .unwrap_or_else(|e| panic!("constructor for '{module_type}' failed: {e}"))
 }
@@ -324,7 +326,7 @@ fn all_constructors_produce_valid_modules() {
             argument_spans: Default::default(),
             channel_count: cached.channel_count,
         };
-        let module = constructor(&format!("test-{name}"), SAMPLE_RATE, deserialized);
+        let module = constructor(&format!("test-{name}"), SAMPLE_RATE, deserialized, 1, ProcessingMode::Block);
         assert!(
             module.is_ok(),
             "constructor for '{name}' should succeed, got: {:?}",
@@ -351,7 +353,7 @@ fn all_constructors_can_tick() {
             argument_spans: Default::default(),
             channel_count: cached.channel_count,
         };
-        let module = constructor(&format!("test-{name}"), SAMPLE_RATE, deserialized).unwrap();
+        let module = constructor(&format!("test-{name}"), SAMPLE_RATE, deserialized, 1, ProcessingMode::Block).unwrap();
         // Should not panic with minimal params
         module.tick();
         module.update();

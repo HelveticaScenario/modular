@@ -1067,6 +1067,7 @@ impl Default for IntervalSeq {
             state: IntervalSeqState::default(),
             params: IntervalSeqParams::default(),
             _channel_count: 4,
+            _block_index: std::cell::Cell::new(0),
         }
     }
 }

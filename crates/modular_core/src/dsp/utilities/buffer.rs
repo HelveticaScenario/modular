@@ -116,6 +116,18 @@ impl crate::types::OutputStruct for BufferWriteOutputs {
             _ => None,
         }
     }
+
+    /// Advance the circular buffer write position by `block_size` once per CPAL
+    /// callback. Called from `tick()` — before `update()` fills the block — so
+    /// `read_write_index()` is the base offset for the new block.
+    fn tick_buffers(&mut self, block_size: usize) {
+        let frame_count = self.buffer.frame_count();
+        if frame_count == 0 {
+            return;
+        }
+        let new_index = (self.buffer.read_write_index() + block_size) % frame_count;
+        self.buffer.set_write_index(new_index);
+    }
 }
 
 #[derive(Default)]
@@ -151,9 +163,11 @@ impl BufferWrite {
             return;
         }
 
-        let write_index = self.outputs.buffer.read_write_index().wrapping_add(1);
-        self.outputs.buffer.set_write_index(write_index);
-        let frame = write_index % frame_count;
+        // write_index was advanced by tick_buffers() at the start of the callback.
+        // Use current_block_index() as the per-sample offset within this block.
+        let base = self.outputs.buffer.read_write_index();
+        let offset = self.current_block_index();
+        let frame = (base + offset) % frame_count;
         let buffer_channels = self.outputs.buffer.channel_count();
 
         for channel in 0..channels {
@@ -330,6 +344,7 @@ mod tests {
             params,
             outputs,
             _channel_count: channels,
+            _block_index: std::cell::Cell::new(0),
         }
     }
 
@@ -379,7 +394,7 @@ mod tests {
 
     use crate::dsp::{get_constructors, get_params_deserializers};
     use crate::params::DeserializedParams;
-    use crate::types::Sampleable;
+    use crate::types::{ProcessingMode, Sampleable};
 
     const SAMPLE_RATE: f32 = 48000.0;
 
@@ -406,6 +421,8 @@ mod tests {
             &id.to_string(),
             SAMPLE_RATE,
             deserialized,
+            1,
+            ProcessingMode::Block,
         )
         .unwrap_or_else(|e| panic!("constructor for '{module_type}' failed: {e}"))
     }
@@ -501,11 +518,13 @@ mod tests {
             step(&**module);
         }
 
-        // write_index should keep incrementing past frame_count (no modular reset)
+        // write_index wraps via % frame_count inside tick_buffers, so the expected
+        // value after total_steps ticks is total_steps % frame_count.
         let write_index = buffer.read_write_index();
+        let expected_write_index = total_steps % frame_count;
         assert_eq!(
-            write_index, total_steps,
-            "write_index should be {total_steps}, got {write_index}"
+            write_index, expected_write_index,
+            "write_index should be {expected_write_index}, got {write_index}"
         );
 
         let last_frame = write_index % frame_count;

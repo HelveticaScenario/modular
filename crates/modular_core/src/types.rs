@@ -1363,12 +1363,12 @@ impl Buffer {
         self.cached_buffer.is_some()
     }
 
-    /// Ensure the source module has been updated this tick (demand-driven ordering).
-    /// This triggers the $buffer module's `update()` which writes the current sample
-    /// and increments write_index. Must be called before reading the buffer.
+    /// Ensure the source module has processed the current block (demand-driven ordering).
+    /// Triggers `$buffer`'s `ensure_processed()` which fills block_outputs for all
+    /// samples in the current block. Must be called before reading the buffer.
     pub fn ensure_source_updated(&self) {
         if let Some(module) = &self.cached_source_module {
-            module.update();
+            module.ensure_processed();
         }
     }
 
@@ -2481,8 +2481,15 @@ pub struct ModuleIdRemap {
     pub to: String,
 }
 
-pub type SampleableConstructor =
-    Box<dyn Fn(&String, f32, crate::params::DeserializedParams) -> Result<Arc<Box<dyn Sampleable>>>>;
+pub type SampleableConstructor = Box<
+    dyn Fn(
+        &String,
+        f32,
+        crate::params::DeserializedParams,
+        usize,         // block_size
+        ProcessingMode, // mode
+    ) -> Result<Arc<Box<dyn Sampleable>>>,
+>;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

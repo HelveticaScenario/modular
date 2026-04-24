@@ -117,7 +117,7 @@ mod tests {
     use crate::dsp::{get_constructors, get_params_deserializers};
     use crate::params::DeserializedParams;
     use crate::patch::Patch;
-    use crate::types::{SampleBuffer, Sampleable, WavData};
+    use crate::types::{ProcessingMode, SampleBuffer, Sampleable, WavData};
 
     const SAMPLE_RATE: f32 = 48000.0;
 
@@ -144,6 +144,8 @@ mod tests {
             &id.to_string(),
             SAMPLE_RATE,
             deserialized,
+            1,
+            ProcessingMode::Block,
         )
         .unwrap_or_else(|e| panic!("constructor for '{module_type}' failed: {e}"))
     }

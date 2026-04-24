@@ -183,7 +183,7 @@ impl Patch {
                 argument_spans,
                 channel_count: cached.channel_count,
             };
-            let module = constructor(&module_state.id, sample_rate, deserialized)
+            let module = constructor(&module_state.id, sample_rate, deserialized, 1, crate::types::ProcessingMode::Block)
                 .map_err(|e| format!("Failed to create {}: {}", module_state.id, e))?;
             patch.sampleables.insert(module_state.id.clone(), module);
         }

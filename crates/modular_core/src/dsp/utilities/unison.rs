@@ -120,6 +120,7 @@ mod tests {
             params,
             outputs,
             _channel_count: channels,
+            _block_index: std::cell::Cell::new(0),
         }
     }
 

@@ -431,7 +431,7 @@ message_handlers!(impl Dattorro {});
 mod tests {
     use crate::dsp::{get_constructors, get_params_deserializers};
     use crate::params::DeserializedParams;
-    use crate::types::Sampleable;
+    use crate::types::{ProcessingMode, Sampleable};
     use serde_json::json;
     use std::sync::Arc;
 
@@ -452,6 +452,8 @@ mod tests {
             &"test-dattorro".to_string(),
             SAMPLE_RATE,
             deserialized,
+            1,
+            ProcessingMode::Block,
         )
         .unwrap()
     }

@@ -80,6 +80,7 @@ mod tests {
                 max: PolySignal::mono(Signal::Volts(max)),
             },
             _channel_count: 1,
+            _block_index: std::cell::Cell::new(0),
         };
         module.outputs.sample.set_channels(1);
         module.update(44100.0);
