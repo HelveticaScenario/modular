@@ -235,6 +235,28 @@ pub trait Sampleable: MessageHandler + Send + Sync {
     fn update(&self) -> ();
     /// Get polyphonic sample output for a port.
     fn get_poly_sample(&self, port: &str) -> Result<PolyOutput>;
+
+    /// Process outputs up to the current block boundary.
+    ///
+    /// - `Block` mode: computes all `block_size` samples in one call.
+    /// - `Sample` mode: computes exactly the next uncomputed sample.
+    ///
+    /// Idempotent: safe to call multiple times per block.
+    /// Reentrancy-safe: if called while already computing (feedback cycle),
+    /// returns immediately — callers read the previous block's last value.
+    fn ensure_processed(&self) {}
+
+    /// Read the computed value for `(port, ch)` at sample `index` within the
+    /// current block. Calls `ensure_processed()` internally.
+    ///
+    /// Returns 0.0 for unknown ports or out-of-range indices.
+    fn get_value_at(&self, _port: &str, _ch: usize, _index: usize) -> f32 {
+        0.0
+    }
+
+    /// Pre-fill the audio input block for HiddenAudioIn modules.
+    /// Only the HiddenAudioIn wrapper overrides this. Default: no-op.
+    fn inject_audio_in_block(&self, _block: &[[f32; crate::poly::PORT_MAX_CHANNELS]]) {}
     fn get_module_type(&self) -> &str;
     fn connect(&self, patch: &Patch);
     /// Called after the patch is updated and all modules are connected.
@@ -2302,6 +2324,9 @@ pub trait OutputStruct: Default + Send + Sync + 'static {
     fn get_buffer_output(&self, _port: &str) -> Option<&Arc<BufferData>> {
         None
     }
+    /// Called once per CPAL callback to advance any stateful per-block fields.
+    /// Default: no-op. `BufferWrite` overrides this to advance `write_index` by `block_size`.
+    fn tick_buffers(&mut self, _block_size: usize) {}
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

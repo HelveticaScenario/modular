@@ -293,3 +293,32 @@ fn inject_index_ptr_wires_cable() {
         assert_eq!(unsafe { (*index_ptr).get() }, 3);
     }
 }
+
+// ============================================================================
+// Task 7: ensure_processed / get_value_at / inject_audio_in_block
+
+#[test]
+fn sampleable_ensure_processed_and_get_value_at() {
+    let s: Arc<Box<dyn Sampleable>> = Arc::new(Box::new(DummySampleable::new(
+        "test",
+        "dummy",
+        [("out", 3.0f32)],
+    )));
+    // Default impl is a no-op for ensure_processed and returns 0.0 for get_value_at.
+    s.ensure_processed();
+    // DummySampleable uses the default impl (returns 0.0).
+    assert!((s.get_value_at("out", 0, 0) - 0.0).abs() < 1e-6);
+}
+
+#[test]
+fn sampleable_inject_audio_in_block_default_noop() {
+    use modular_core::poly::PORT_MAX_CHANNELS;
+    let s: Arc<Box<dyn Sampleable>> = Arc::new(Box::new(DummySampleable::new(
+        "audio",
+        "dummy",
+        [("ignored", 0.0f32); 0],
+    )));
+    let block = vec![[0.0f32; PORT_MAX_CHANNELS]; 4];
+    // Default is a no-op — must not panic.
+    s.inject_audio_in_block(&block);
+}
