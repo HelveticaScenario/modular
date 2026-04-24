@@ -25,11 +25,10 @@ use crate::{
 
 use super::seq_value::{SeqPatternParam, SeqValue};
 
-/// Cached hap with pre-sampled values.
+/// Cached hap referencing a slot in the cycle's shared hap vector.
 ///
-/// Instead of cloning the DspHap (which allocates due to String fields in Signal::Cable),
-/// this holds an Arc reference to the cycle's hap vector plus an index into it.
-/// This means cache hits only do an atomic refcount bump (Arc::clone), zero heap allocations.
+/// Holds an Arc to the cycle's hap Vec plus an index; cache hits are just
+/// an `Arc::clone` refcount bump. No heap allocations on the audio thread.
 #[derive(Clone, Debug)]
 struct CachedHap {
     /// Arc reference to the full cycle's hap vector.
@@ -39,10 +38,6 @@ struct CachedHap {
     /// Index of this hap within the cycle_haps vector.
     hap_index: usize,
 
-    /// Pre-sampled voltage for sample-and-hold signals.
-    /// None for continuous signals (read each tick) or non-signal values.
-    sampled_voltage: Option<f64>,
-
     /// The cycle this hap was cached for.
     cached_cycle: i64,
 }
@@ -50,22 +45,9 @@ struct CachedHap {
 impl CachedHap {
     /// Create a new cached hap from a cycle's Arc hap vector.
     fn new(cycle_haps: Arc<Vec<DspHap<SeqValue>>>, hap_index: usize, cached_cycle: i64) -> Self {
-        // Sample S&H signals at creation time
-        let sampled_voltage = match &cycle_haps[hap_index].value {
-            SeqValue::Signal {
-                signal,
-                sample_and_hold: true,
-            } => {
-                // Sample the signal voltage directly
-                Some(signal.get_value() as f64)
-            }
-            _ => None,
-        };
-
         Self {
             cycle_haps,
             hap_index,
-            sampled_voltage,
             cached_cycle,
         }
     }
@@ -86,16 +68,6 @@ impl CachedHap {
     fn get_cv(&self) -> Option<f64> {
         match &self.hap().value {
             SeqValue::Voltage(v) => Some(*v),
-            SeqValue::Signal {
-                signal,
-                sample_and_hold,
-            } => {
-                if *sample_and_hold {
-                    self.sampled_voltage
-                } else {
-                    Some(signal.get_value() as f64)
-                }
-            }
             SeqValue::Rest => None,
         }
     }
@@ -151,11 +123,6 @@ pub struct SeqParams {
     /// Number of polyphonic voices (1-16)
     #[deserr(default)]
     pub channels: Option<usize>,
-    /// The pattern string (used for serialization)
-    #[serde(skip)]
-    #[deserr(skip)]
-    #[schemars(skip)]
-    pub pattern_source: String,
 }
 
 /// Channel count derivation for Seq.

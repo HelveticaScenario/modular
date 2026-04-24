@@ -1409,6 +1409,16 @@ export function replaceValues(input: unknown, replacer: Replacer): unknown {
             return replaced;
         }
 
+        // Opaque payloads (currently just ParsedPattern from $p()) must
+        // be preserved verbatim — walking them would collapse the nulls
+        // in `accidental`/`octave`/weight slots to 0 via valueToSignal.
+        if (
+            !Array.isArray(replaced) &&
+            (replaced as { __kind?: unknown }).__kind === 'ParsedPattern'
+        ) {
+            return replaced;
+        }
+
         if (Array.isArray(replaced)) {
             return replaced
                 .map((v, i) => walk(String(i), v))

@@ -8,8 +8,18 @@ use modular_core::dsp::{get_constructors, get_params_deserializers};
 use modular_core::params::DeserializedParams;
 use modular_core::patch::Patch;
 use modular_core::types::{ModuleState, PatchGraph, Sampleable};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::sync::Arc;
+
+/// Helper — build a mini-notation payload shaped like what `$p(source)`
+/// would emit on the DSL side. Used by integration tests that construct
+/// `$cycle` / `$iCycle` modules directly via `json!(...)` fixtures
+/// without going through the TypeScript DSL.
+fn mini_payload(source: &str) -> Value {
+    let parsed =
+        modular_core::dsp::seq::seq_value::ParsedPatternPayload::parse_for_test(source);
+    serde_json::to_value(&parsed).expect("payload should serialize")
+}
 
 const SAMPLE_RATE: f32 = 48000.0;
 const DEFAULT_PORT: &str = "output";
@@ -265,8 +275,8 @@ fn minimal_params(module_type: &str) -> serde_json::Value {
         "$comp" => json!({ "input": 0.0, "threshold": 0.0 }),
         "$wrap" | "$clamp" => json!({ "input": 0.0, "min": -5.0, "max": 5.0 }),
         "$curve" => json!({ "input": 0.0, "exp": 1.0 }),
-        "$cycle" | "$intervalSeq" => json!({ "pattern": "0" }),
-        "$iCycle" => json!({ "patterns": "0", "scale": "c(major)" }),
+        "$cycle" | "$intervalSeq" => json!({ "pattern": mini_payload("0") }),
+        "$iCycle" => json!({ "patterns": mini_payload("0"), "scale": "c(major)" }),
         "$slew" | "$quantizer" | "$unison" | "$crush" | "$feedback" | "$pulsar" | "$rising"
         | "$falling" | "$stereoMix" => json!({ "input": 0.0 }),
         "$track" => json!({ "keyframes": [] }),
@@ -1025,7 +1035,7 @@ fn interval_seq_cv_holds_during_rest_after_state_transfer() {
         (
             "seq",
             "$iCycle",
-            json!({ "patterns": "<0 ~>", "scale": "d#(min)" }),
+            json!({ "patterns": mini_payload("<0 ~>"), "scale": "d#(min)" }),
         ),
     ]);
 

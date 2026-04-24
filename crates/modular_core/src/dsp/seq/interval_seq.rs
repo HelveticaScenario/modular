@@ -107,18 +107,26 @@ impl crate::pattern_system::mini::convert::FromMiniAtom for IntervalValue {
     fn from_atom(
         atom: &crate::pattern_system::mini::ast::AtomValue,
     ) -> Result<Self, crate::pattern_system::mini::convert::ConvertError> {
+        use crate::pattern_system::mini::ast::AtomValue;
+        use crate::pattern_system::mini::convert::ConvertError;
         match atom {
-            crate::pattern_system::mini::ast::AtomValue::Number(n) => {
+            AtomValue::Number(n) => {
+                // Scale-degree intervals are integers. Reject non-integer
+                // values (0.5, 1.25, ...) to make `$iCycle($p("1.5"))`
+                // fail at patch-graph validation with a clear error.
+                if !n.is_finite() || n.fract() != 0.0 {
+                    return Err(ConvertError::InvalidAtom(format!(
+                        "IntervalValue requires integer scale degrees, got {n}"
+                    )));
+                }
                 Ok(IntervalValue::Degree(*n as i32))
             }
-            crate::pattern_system::mini::ast::AtomValue::Midi(m) => {
-                Ok(IntervalValue::Degree(*m as i32))
-            }
-            _ => Err(
-                crate::pattern_system::mini::convert::ConvertError::InvalidAtom(
-                    "IntervalValue only supports integers".to_string(),
-                ),
-            ),
+            AtomValue::Hz(_) => Err(ConvertError::InvalidAtom(
+                "IntervalValue does not accept Hz atoms (use $cycle for pitched patterns)".into(),
+            )),
+            AtomValue::Note { .. } => Err(ConvertError::InvalidAtom(
+                "IntervalValue does not accept note atoms (use $cycle for pitched patterns)".into(),
+            )),
         }
     }
 
@@ -154,27 +162,28 @@ impl crate::pattern_system::mini::convert::HasRest for IntervalValue {
     }
 }
 
-/// Source representation for interval patterns: either a single pattern
-/// string or an array of strings that get combined via `app_left` addition.
+/// Source representation for interval patterns: either a single parsed
+/// pattern payload or an array of payloads combined via `app_left`
+/// addition.
 #[derive(Clone, Debug, JsonSchema)]
 #[serde(untagged)]
 pub enum IntervalPatternSource {
-    Single(String),
-    Multiple(Vec<String>),
+    Single(crate::dsp::seq::seq_value::ParsedPatternPayload),
+    Multiple(Vec<crate::dsp::seq::seq_value::ParsedPatternPayload>),
 }
 
 impl Default for IntervalPatternSource {
     fn default() -> Self {
-        Self::Single(String::new())
+        Self::Single(crate::dsp::seq::seq_value::ParsedPatternPayload::default())
     }
 }
 
 impl IntervalPatternSource {
-    /// Get the individual source strings.
-    fn sources(&self) -> Vec<&str> {
+    /// Get the individual payloads.
+    fn payloads(&self) -> Vec<&crate::dsp::seq::seq_value::ParsedPatternPayload> {
         match self {
-            Self::Single(s) => vec![s.as_str()],
-            Self::Multiple(v) => v.iter().map(|s| s.as_str()).collect(),
+            Self::Single(p) => vec![p],
+            Self::Multiple(v) => v.iter().collect(),
         }
     }
 }
@@ -224,53 +233,54 @@ impl Default for IntervalPatternParam {
 }
 
 impl IntervalPatternParam {
-    /// Parse a single pattern string into a `Pattern<IntervalValue>` and collect leaf spans.
-    fn parse_one(source: &str) -> Result<(Pattern<IntervalValue>, Vec<(usize, usize)>), String> {
-        let ast = crate::pattern_system::mini::parse_ast(source).map_err(|e| e.to_string())?;
-        let all_spans = crate::pattern_system::mini::collect_leaf_spans(&ast);
-        let pattern = crate::pattern_system::mini::convert::<IntervalValue>(&ast)
-            .map_err(|e| e.to_string())?;
-        Ok((pattern, all_spans))
+    /// Lower a parsed payload to a `Pattern<IntervalValue>`. Span
+    /// collection happens client-side and flows through `payload.all_spans`.
+    fn convert_one(
+        payload: &crate::dsp::seq::seq_value::ParsedPatternPayload,
+    ) -> Result<Pattern<IntervalValue>, String> {
+        crate::pattern_system::mini::convert::<IntervalValue>(&payload.ast)
+            .map_err(|e| e.to_string())
     }
 
-    /// Build from an `IntervalPatternSource`, parsing and combining patterns.
+    /// Build from an `IntervalPatternSource`, lowering and combining patterns.
     fn from_source(source: IntervalPatternSource) -> Result<Self, String> {
-        let sources = source.sources();
+        let payloads = source.payloads();
 
-        // Filter out empty strings
-        let non_empty: Vec<&str> = sources.iter().copied().filter(|s| !s.is_empty()).collect();
+        // Filter out empty sources (source == "")
+        let non_empty: Vec<&crate::dsp::seq::seq_value::ParsedPatternPayload> =
+            payloads.iter().copied().filter(|p| !p.source.is_empty()).collect();
 
         if non_empty.is_empty() {
             return Ok(Self {
-                per_source: sources
+                per_source: payloads
                     .iter()
-                    .map(|s| SourceMeta {
-                        source: s.to_string(),
-                        all_spans: Vec::new(),
+                    .map(|p| SourceMeta {
+                        source: p.source.clone(),
+                        all_spans: p.all_spans.clone(),
                     })
                     .collect(),
-                num_sources: sources.len(),
+                num_sources: payloads.len(),
                 source,
                 combined_pattern: None,
                 cached_haps: Vec::new(),
             });
         }
 
-        // Parse each source string
+        // Lower each payload
         let mut parsed: Vec<Pattern<IntervalValue>> = Vec::new();
         let mut per_source: Vec<SourceMeta> = Vec::new();
 
-        for s in &sources {
-            if s.is_empty() {
+        for p in &payloads {
+            if p.source.is_empty() {
                 per_source.push(SourceMeta {
-                    source: s.to_string(),
-                    all_spans: Vec::new(),
+                    source: p.source.clone(),
+                    all_spans: p.all_spans.clone(),
                 });
             } else {
-                let (pattern, all_spans) = Self::parse_one(s)?;
+                let pattern = Self::convert_one(p)?;
                 per_source.push(SourceMeta {
-                    source: s.to_string(),
-                    all_spans,
+                    source: p.source.clone(),
+                    all_spans: p.all_spans.clone(),
                 });
                 parsed.push(pattern);
             }
@@ -285,7 +295,7 @@ impl IntervalPatternParam {
             combined = combined.app_left(&p.strip_modifier_spans(), add_interval_values);
         }
 
-        let num_sources = sources.len();
+        let num_sources = payloads.len();
 
         // Pre-compute and cache combined haps for cycles 0..999
         let cached_haps: Vec<Arc<Vec<CombinedHap>>> = (0..1000)
@@ -369,19 +379,24 @@ impl<E: deserr::DeserializeError> deserr::Deserr<E> for IntervalPatternSource {
         location: deserr::ValuePointerRef<'_>,
     ) -> std::result::Result<Self, E> {
         match &value {
-            deserr::Value::String(_) => {
-                let s = String::deserialize_from_value(value, location)?;
-                Ok(IntervalPatternSource::Single(s))
+            deserr::Value::Map(_) => {
+                let p = crate::dsp::seq::seq_value::ParsedPatternPayload::deserialize_from_value(
+                    value, location,
+                )?;
+                Ok(IntervalPatternSource::Single(p))
             }
             deserr::Value::Sequence(_) => {
-                let v = Vec::<String>::deserialize_from_value(value, location)?;
+                let v =
+                    Vec::<crate::dsp::seq::seq_value::ParsedPatternPayload>::deserialize_from_value(
+                        value, location,
+                    )?;
                 Ok(IntervalPatternSource::Multiple(v))
             }
             _ => Err(deserr::take_cf_content(E::error::<V>(
                 None,
                 deserr::ErrorKind::IncorrectValueKind {
                     actual: value,
-                    accepted: &[deserr::ValueKind::String, deserr::ValueKind::Sequence],
+                    accepted: &[deserr::ValueKind::Map, deserr::ValueKind::Sequence],
                 },
                 location,
             ))),
@@ -1095,8 +1110,24 @@ mod tests {
         let v = IntervalValue::from_atom(&AtomValue::Number(5.0)).unwrap();
         assert!(matches!(v, IntervalValue::Degree(5)));
 
-        let v = IntervalValue::from_atom(&AtomValue::Midi(3)).unwrap();
-        assert!(matches!(v, IntervalValue::Degree(3)));
+        let v = IntervalValue::from_atom(&AtomValue::Number(-3.0)).unwrap();
+        assert!(matches!(v, IntervalValue::Degree(-3)));
+
+        // Non-integer Number is rejected.
+        assert!(IntervalValue::from_atom(&AtomValue::Number(1.5)).is_err());
+
+        // Hz atom is rejected.
+        assert!(IntervalValue::from_atom(&AtomValue::Hz(440.0)).is_err());
+
+        // Note atom is rejected.
+        assert!(
+            IntervalValue::from_atom(&AtomValue::Note {
+                letter: 'c',
+                accidental: None,
+                octave: Some(4),
+            })
+            .is_err()
+        );
     }
 
     #[test]
@@ -1285,8 +1316,11 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_patterns_from_string() {
-        let json = serde_json::json!({ "patterns": "0 2 4", "scale": "c(major)" });
+    fn test_deserialize_patterns_from_single_payload() {
+        // $p("0 2 4") would emit a payload object; deserialize accepts it.
+        let payload = crate::dsp::seq::seq_value::ParsedPatternPayload::parse_for_test("0 2 4");
+        let payload_json = serde_json::to_value(&payload).unwrap();
+        let json = serde_json::json!({ "patterns": payload_json, "scale": "c(major)" });
         let params: IntervalSeqParams =
             deserr::deserialize::<IntervalSeqParams, _, crate::param_errors::ModuleParamErrors>(
                 json,
@@ -1297,8 +1331,13 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_patterns_from_array() {
-        let json = serde_json::json!({ "patterns": ["0 2 4", "0 3"], "scale": "c(major)" });
+    fn test_deserialize_patterns_from_array_of_payloads() {
+        let p0 = crate::dsp::seq::seq_value::ParsedPatternPayload::parse_for_test("0 2 4");
+        let p1 = crate::dsp::seq::seq_value::ParsedPatternPayload::parse_for_test("0 3");
+        let json = serde_json::json!({
+            "patterns": [serde_json::to_value(&p0).unwrap(), serde_json::to_value(&p1).unwrap()],
+            "scale": "c(major)"
+        });
         let params: IntervalSeqParams =
             deserr::deserialize::<IntervalSeqParams, _, crate::param_errors::ModuleParamErrors>(
                 json,

@@ -30,6 +30,7 @@ import type { CallSiteSpanRegistry } from './analyzeSource';
 import type { InterpolationResolutionMap } from '../../shared/dsl/spanTypes';
 import { setActiveInterpolationResolutions } from '../../shared/dsl/spanTypes';
 import type { SliderDefinition } from '../../shared/dsl/sliderTypes';
+import { $p } from './miniNotation';
 
 // Augment Array.prototype with pipe() for TypeScript
 declare global {
@@ -433,9 +434,10 @@ export function executePatchScript(
      * that feeds this table's output phase into `next`. The optional second
      * argument to each helper is a shorthand for `.pipe(next)`.
      */
-    function wrapTable(
-        descriptor: Record<string, unknown>,
-    ): Record<string, unknown> & {
+    function wrapTable(descriptor: Record<string, unknown>): Record<
+        string,
+        unknown
+    > & {
         pipe: <T>(fn: (self: Record<string, unknown>) => T) => T;
     } {
         const t = { ...descriptor } as Record<string, unknown> & {
@@ -498,6 +500,9 @@ export function executePatchScript(
         // Helper functions with $ prefix
         $hz: hz,
         $note: note,
+        // Mini-notation parser — wraps a string in a ParsedPattern that
+        // $cycle / $iCycle consume as a positional argument.
+        $p,
         // Phase-warp table descriptors for $wavetable
         $table,
         // Collection helpers

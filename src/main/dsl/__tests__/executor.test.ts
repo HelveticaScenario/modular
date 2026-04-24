@@ -377,8 +377,8 @@ describe('modulation routing', () => {
 // ─── Sequencing & patterns ───────────────────────────────────────────────────
 
 describe('sequencing', () => {
-    test('$cycle with pattern string', () => {
-        const patch = execPatch('$cycle("C4 E4 G4 B4").out()');
+    test('$cycle with $p() pattern', () => {
+        const patch = execPatch('$cycle($p("c4 e4 g4 b4")).out()');
         expect(findModules(patch, '$cycle').length).toBe(1);
     });
 
@@ -387,14 +387,45 @@ describe('sequencing', () => {
         expect(findModules(patch, '$track').length).toBe(1);
     });
 
-    test('$iCycle with interval pattern (array)', () => {
-        const patch = execPatch('$iCycle(["0 2 4 5 7"], "C(major)").out()');
+    test('$iCycle with single $p() pattern wrapped in array', () => {
+        const patch = execPatch('$iCycle([$p("0 2 4 5 7")], "C(major)").out()');
         expect(findModules(patch, '$iCycle').length).toBe(1);
     });
 
-    test('$iCycle with interval pattern (string)', () => {
-        const patch = execPatch('$iCycle("0 2 4 5 7", "C(major)").out()');
+    test('$iCycle with single $p() pattern', () => {
+        const patch = execPatch('$iCycle($p("0 2 4 5 7"), "C(major)").out()');
         expect(findModules(patch, '$iCycle').length).toBe(1);
+    });
+
+    test('$iCycle with multiple $p() patterns folded additively', () => {
+        const patch = execPatch(
+            '$iCycle([$p("0 2 4"), $p("0 3")], "C(major)").out()',
+        );
+        expect(findModules(patch, '$iCycle').length).toBe(1);
+    });
+
+    test('$p rejects dropped atom kinds', () => {
+        expect(() => execPatch('$p("m60")')).toThrow();
+        expect(() => execPatch('$p("bd sd")')).toThrow();
+        expect(() => execPatch('$p("module(osc1:out:0)")')).toThrow();
+        expect(() => execPatch('$p("2v")')).toThrow();
+    });
+
+    test('$iCycle rejects non-integer atoms at patch-graph validation', () => {
+        expect(() =>
+            execPatch('$iCycle($p("1.5"), "C(major)").out()'),
+        ).toThrow();
+        expect(() =>
+            execPatch('$iCycle($p("c4"), "C(major)").out()'),
+        ).toThrow();
+        expect(() =>
+            execPatch('$iCycle($p("440hz"), "C(major)").out()'),
+        ).toThrow();
+    });
+
+    test('$cycle accepts mixed numeric, note, and hz atoms', () => {
+        const patch = execPatch('$cycle($p("0.5 c4 440hz -1")).out()');
+        expect(findModules(patch, '$cycle').length).toBe(1);
     });
 });
 
@@ -578,7 +609,7 @@ describe('complex patches', () => {
 
     test('sequenced subtractive synth', () => {
         const source = `
-            const seq = $cycle("C3 E3 G3 B3")
+            const seq = $cycle($p("c3 e3 g3 b3"))
             const osc = $saw(seq)
             const env = $adsr($clock.beatTrigger, { attack: 0.01, decay: 0.2, sustain: 2, release: 0.3 })
             $lpf(osc, env.range("C3", "C6")).out()

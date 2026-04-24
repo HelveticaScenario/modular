@@ -4,7 +4,6 @@
 //! the `FromMiniAtom` trait.
 
 use super::ast::{AtomValue, Located, MiniAST, MiniASTF64, MiniASTI32, MiniASTU32};
-use super::parser::ParseError;
 use crate::pattern_system::{
     Fraction, Pattern,
     combinators::{fastcat, slowcat, stack, timecat},
@@ -70,8 +69,6 @@ pub enum ConvertError {
     ListNotSupported,
     /// Operator error.
     OperatorError(String),
-    /// Parse error.
-    ParseError(ParseError),
     /// Operation requires rest support but pattern type doesn't support rests.
     RestNotSupported(String),
 }
@@ -82,7 +79,6 @@ impl std::fmt::Display for ConvertError {
             ConvertError::InvalidAtom(msg) => write!(f, "Invalid atom: {}", msg),
             ConvertError::ListNotSupported => write!(f, "List syntax not supported for this type"),
             ConvertError::OperatorError(msg) => write!(f, "Operator error: {}", msg),
-            ConvertError::ParseError(err) => write!(f, "Parse error: {}", err),
             ConvertError::RestNotSupported(op) => write!(
                 f,
                 "'{}' requires a pattern type that supports rests. This operation is only available for note/sequence patterns.",
@@ -93,12 +89,6 @@ impl std::fmt::Display for ConvertError {
 }
 
 impl std::error::Error for ConvertError {}
-
-impl From<ParseError> for ConvertError {
-    fn from(err: ParseError) -> Self {
-        ConvertError::ParseError(err)
-    }
-}
 
 // Implement FromMiniAtom for common types
 
@@ -177,49 +167,10 @@ impl FromMiniAtom for i32 {
     // i32 does not support rests - use default supports_rest() -> false
 }
 
-impl FromMiniAtom for String {
-    fn from_atom(atom: &AtomValue) -> Result<Self, ConvertError> {
-        match atom {
-            AtomValue::Identifier(s) => Ok(s.clone()),
-            AtomValue::String(s) => Ok(s.clone()),
-            AtomValue::Number(n) => Ok(n.to_string()),
-            _ => Err(ConvertError::InvalidAtom(
-                "Cannot convert to String".to_string(),
-            )),
-        }
-    }
-
-    fn from_list(atoms: &[AtomValue]) -> Result<Self, ConvertError> {
-        // Join with colons for string lists
-        let strings: Vec<String> = atoms
-            .iter()
-            .map(Self::from_atom)
-            .collect::<Result<_, _>>()?;
-        Ok(strings.join(":"))
-    }
-
-    fn combine_with_head(head_atoms: &[AtomValue], tail: &Self) -> Result<Self, ConvertError> {
-        let mut strings: Vec<String> = head_atoms
-            .iter()
-            .map(Self::from_atom)
-            .collect::<Result<_, _>>()?;
-        strings.push(tail.clone());
-        Ok(strings.join(":"))
-    }
-}
-
 impl FromMiniAtom for bool {
     fn from_atom(atom: &AtomValue) -> Result<Self, ConvertError> {
         match atom {
             AtomValue::Number(n) => Ok(*n != 0.0),
-            AtomValue::Identifier(s) => match s.to_lowercase().as_str() {
-                "true" | "t" | "1" | "yes" => Ok(true),
-                "false" | "f" | "0" | "no" => Ok(false),
-                _ => Err(ConvertError::InvalidAtom(format!(
-                    "Cannot convert '{}' to bool",
-                    s
-                ))),
-            },
             _ => Err(ConvertError::InvalidAtom(
                 "Cannot convert to bool".to_string(),
             )),
@@ -241,6 +192,7 @@ pub fn convert<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertErro
 ///
 /// This recursively evaluates the AST at cycle 0. For complex patterns,
 /// it returns the first value found.
+#[cfg(test)]
 fn eval_f64(ast: &MiniASTF64) -> f64 {
     match ast {
         MiniASTF64::Pure(Located { node, .. }) => *node,
@@ -613,6 +565,7 @@ fn convert_i32_pattern(ast: &MiniASTI32) -> Pattern<i32> {
 }
 
 /// Evaluate a MiniASTU32 to get a single u32 value.
+#[cfg(test)]
 fn eval_u32(ast: &MiniASTU32) -> u32 {
     match ast {
         MiniASTU32::Pure(Located { node, .. }) => *node,
@@ -634,6 +587,7 @@ fn eval_u32(ast: &MiniASTU32) -> u32 {
 }
 
 /// Evaluate a MiniASTI32 to get a single i32 value.
+#[cfg(test)]
 fn eval_i32(ast: &MiniASTI32) -> i32 {
     match ast {
         MiniASTI32::Pure(Located { node, .. }) => *node,
@@ -890,96 +844,11 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
     }
 }
 
-/// Convert an AST back to a string representation.
-fn ast_to_string(ast: &MiniAST) -> String {
-    match ast {
-        MiniAST::Pure(Located { node, .. }) => atom_to_string(node),
-        MiniAST::List(Located { node, .. }) => {
-            node.iter().map(ast_to_string).collect::<Vec<_>>().join(":")
-        }
-        MiniAST::Sequence(elements) => elements
-            .iter()
-            .map(|(a, w)| {
-                let s = ast_to_string(a);
-                match w {
-                    Some(weight) => format!("{}@{}", s, weight),
-                    None => s,
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(" "),
-        MiniAST::FastCat(elements) => {
-            format!(
-                "[{}]",
-                elements
-                    .iter()
-                    .map(|(a, w)| {
-                        let s = ast_to_string(a);
-                        match w {
-                            Some(weight) => format!("{}@{}", s, weight),
-                            None => s,
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            )
-        }
-        MiniAST::SlowCat(patterns) => {
-            format!(
-                "<{}>",
-                patterns
-                    .iter()
-                    .map(|(p, _)| ast_to_string(p))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            )
-        }
-        _ => String::new(),
-    }
-}
-
-fn atom_to_string(atom: &AtomValue) -> String {
-    match atom {
-        AtomValue::Number(n) => n.to_string(),
-        AtomValue::Midi(m) => format!("m{}", m),
-        AtomValue::Hz(h) => format!("{}hz", h),
-        AtomValue::Volts(v) => format!("{}v", v),
-        AtomValue::Note {
-            letter,
-            accidental,
-            octave,
-        } => {
-            let mut s = letter.to_string();
-            if let Some(acc) = accidental {
-                s.push(*acc);
-            }
-            if let Some(oct) = octave {
-                s.push_str(&oct.to_string());
-            }
-            s
-        }
-        AtomValue::Identifier(s) => s.clone(),
-        AtomValue::String(s) => format!("\"{}\"", s),
-        AtomValue::ModuleRef {
-            module_id,
-            port,
-            channel,
-            sample_and_hold,
-        } => {
-            if *sample_and_hold {
-                format!("module({}:{}:{})=", module_id, port, channel)
-            } else {
-                format!("module({}:{}:{})", module_id, port, channel)
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::pattern_system::SourceSpan;
-    use crate::pattern_system::mini::parser::parse;
+    use crate::pattern_system::mini::parse_ast as parse;
 
     #[test]
     fn test_convert_number() {

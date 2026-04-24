@@ -1,0 +1,425 @@
+/*
+ * Mini notation grammar for the Operator DSL.
+ *
+ * Adapted structurally from strudel's packages/mini/krill.pegjs:
+ *   Copyright (C) 2022 Strudel contributors
+ *   https://codeberg.org/uzu/strudel/src/branch/main/packages/mini/krill.pegjs
+ *   SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * This file inherits the AGPL-3.0-or-later license from krill.pegjs. The rest
+ * of the repository is licensed separately.
+ *
+ * Differences from krill.pegjs:
+ *   - Emits the shared `MiniAST` shape directly (no {type_, source_, options_}
+ *     intermediate wrappers).
+ *   - Atom kinds reduced to Number, Hz, Note, Rest. No sample-name identifiers,
+ *     MIDI shorthand, module-reference atoms, string atoms, or voltage atoms.
+ *   - Modifier operands reuse the same AST typing as the Rust parser
+ *     (MiniASTF64 for fast/slow factors and degrade probabilities,
+ *     MiniASTU32 for euclidean pulses/steps, MiniASTI32 for rotation).
+ *   - No polymeter, $-operator chain, struct/target/scale/etc. high-level
+ *     statements, no `cat(...)` / `slow(...)` / `fast(...)` commands.
+ *
+ * Seed assignment for RandomChoice / Degrade nodes is left-to-right,
+ * depth-first: matches Rust's `assign_seeds` pass so equivalent pattern
+ * strings produce identical ASTs across languages.
+ */
+{{
+  function located(node, loc) {
+    return { node: node, span: { start: loc.start.offset, end: loc.end.offset } };
+  }
+
+  function spanOf(loc) {
+    return { start: loc.start.offset, end: loc.end.offset };
+  }
+
+  // Apply a chain of modifier builders to a base AST, threading a seed counter.
+  // Each modifier is a function `(ast, ctx) => ast` where `ctx` exposes `nextSeed()`.
+  function applyMods(base, mods, ctx) {
+    let ast = base;
+    for (const m of mods) {
+      ast = m(ast, ctx);
+    }
+    return ast;
+  }
+}}
+
+{
+  // Seed counter: incremented in source order for `?` (Degrade) and `|`
+  // (RandomChoice) nodes. Matches Rust's assign_seeds behaviour.
+  const seedState = { next: 0 };
+  const ctx = {
+    nextSeed() {
+      const s = seedState.next;
+      seedState.next += 1;
+      return s;
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Top-level
+// ---------------------------------------------------------------------------
+
+Start
+  = _ s:StackExpr _ { return s; }
+
+// Stack: comma-separated patterns play simultaneously.
+StackExpr
+  = head:SequenceExpr tail:(_ "," _ @SequenceExpr)* {
+      if (tail.length === 0) return head;
+      return { Stack: [head, ...tail] };
+    }
+
+// Sequence: space-separated elements.
+// If only a single element and no weight is present, the sequence is
+// collapsed to that element so `"c4"` parses to a Pure node directly.
+SequenceExpr
+  = elems:(_ @ElementWithWeight)+ {
+      if (elems.length === 1 && elems[0][1] === null) {
+        return elems[0][0];
+      }
+      return { Sequence: elems };
+    }
+
+// Element with optional @weight and modifier chain. Weight may appear
+// anywhere in the modifier list (matching Rust's grammar.pest), but we
+// treat it purely as positional metadata on the sequence entry; non-weight
+// modifiers wrap the AST in order.
+ElementWithWeight
+  = base:ElementBase parts:ElementPart* {
+      let ast = base;
+      let weight = null;
+      for (const part of parts) {
+        if (part.kind === 'weight') {
+          // Last-wins if duplicated (matches Rust's single-slot behaviour).
+          weight = part.value;
+        } else {
+          ast = part.apply(ast, ctx);
+        }
+      }
+      return [ast, weight];
+    }
+
+ElementPart
+  = w:Weight { return { kind: 'weight', value: w }; }
+  / m:Modifier { return { kind: 'mod', apply: m }; }
+
+ElementBase
+  = FastSub
+  / SlowSub
+  / Atom
+
+FastSub
+  = "[" _ s:StackExpr _ "]" {
+      // Keep `[...]` as FastCat (explicit fast subsequence) rather than
+      // letting StackExpr flatten. When `s` is a Stack, wrap it as a
+      // single-element FastCat so nesting semantics match the Rust parser.
+      if (s && s.Stack) {
+        return { FastCat: [[s, null]] };
+      }
+      if (s && s.Sequence) {
+        return { FastCat: s.Sequence };
+      }
+      // Single element: wrap in FastCat with one entry.
+      return { FastCat: [[s, null]] };
+    }
+
+SlowSub
+  = "<" _ s:StackExpr _ ">" {
+      if (s && s.Stack) {
+        return { SlowCat: [[s, null]] };
+      }
+      if (s && s.Sequence) {
+        return { SlowCat: s.Sequence };
+      }
+      return { SlowCat: [[s, null]] };
+    }
+
+// Atoms: random-choice group, a rest, or a concrete value.
+Atom
+  = RandomChoice
+  / Rest
+  / Value
+
+// Random choice: a|b|c (at least one `|` present).
+RandomChoice
+  = first:ChoiceElement rest:(_ "|" _ @ChoiceElement)+ {
+      const seed = ctx.nextSeed();
+      return { RandomChoice: [[first, ...rest], seed] };
+    }
+
+ChoiceElement
+  = Rest
+  / Value
+
+Rest
+  = "~" { return { Rest: spanOf(location()) }; }
+
+// ---------------------------------------------------------------------------
+// Values
+// ---------------------------------------------------------------------------
+
+Value
+  = HzValue
+  / NoteValue
+  / NumberValue
+
+HzValue
+  = n:Number "hz"i {
+      return { Pure: located({ Hz: n }, location()) };
+    }
+
+NumberValue
+  = n:Number {
+      return { Pure: located({ Number: n }, location()) };
+    }
+
+// Notes like c4, c#4, cb4, c (no octave).
+// Accidental is one of: # s (sharp) or b f (flat). We only store '#' / 'b'
+// in the AST. The note letter must NOT be followed by another letter or
+// digit that would make it part of an identifier — guarded by negative
+// lookahead on alphanumerics after the note.
+NoteValue
+  = letter:$[a-gA-G] acc:Accidental? oct:Octave? !IdentCont {
+      return {
+        Pure: located(
+          {
+            Note: {
+              letter: letter.toLowerCase(),
+              accidental: acc,
+              octave: oct,
+            },
+          },
+          location()
+        ),
+      };
+    }
+
+Accidental
+  = "#" { return "#"; }
+  / "s" { return "#"; }
+  / "b" &IntOrDigit { return "b"; }
+  / "f" &IntOrDigit { return "b"; }
+
+Octave
+  = sign:"-"? digits:$[0-9]+ {
+      return parseInt((sign || "") + digits, 10);
+    }
+
+// Lookahead used to disambiguate a trailing flat accidental from a bare note
+// followed by whitespace. "cb4" -> c flat 4; "cb" alone -> identifier (not a
+// valid atom in the reduced grammar) so falls through to parse failure.
+IntOrDigit
+  = "-"? [0-9]
+
+// Identifier continuation — any letter/digit/underscore.
+IdentCont
+  = [a-zA-Z0-9_]
+
+// ---------------------------------------------------------------------------
+// Modifiers
+// ---------------------------------------------------------------------------
+
+Modifier
+  = FastMod
+  / SlowMod
+  / Replicate
+  / Degrade
+  / Euclidean
+
+// Weight is captured at ElementWithWeight level as positional metadata
+// on the sequence entry — never mixed into a modifier chain.
+Weight
+  = "@" n:Number? { return n === null ? 1 : n; }
+
+FastMod
+  = "*" op:ModOperandF64 {
+      return (ast, _c) => ({ Fast: [ast, op] });
+    }
+
+SlowMod
+  = "/" op:ModOperand {
+      return (ast, _c) => ({ Slow: [ast, op] });
+    }
+
+Replicate
+  = "!" n:Integer? {
+      const count = n === null ? 2 : n;
+      return (ast, _c) => ({ Replicate: [ast, count] });
+    }
+
+Degrade
+  = "?" p:Number? {
+      return (ast, c) => ({ Degrade: [ast, p, c.nextSeed()] });
+    }
+
+Euclidean
+  = "(" _ pulses:ModOperandU32 _ "," _ steps:ModOperandU32 _ rot:("," _ @ModOperandI32)? _ ")" {
+      return (ast, _c) => ({
+        Euclidean: {
+          pattern: ast,
+          pulses: pulses,
+          steps: steps,
+          rotation: rot,
+        },
+      });
+    }
+
+// Modifier operand is a number, a fast subsequence, or a slow subsequence,
+// each projected into the modifier's expected AST type.
+
+ModOperand
+  = n:Number {
+      return { Pure: located({ Number: n }, location()) };
+    }
+  / "[" _ s:OperandStackExpr _ "]" { return s.fast; }
+  / "<" _ s:OperandStackExpr _ ">" { return s.slow; }
+
+ModOperandF64
+  = n:Number {
+      return { Pure: located(n, location()) };
+    }
+  / "[" _ s:OperandStackExprF64 _ "]" { return s.fast; }
+  / "<" _ s:OperandStackExprF64 _ ">" { return s.slow; }
+
+ModOperandU32
+  = n:Integer {
+      if (n < 0) error("Euclidean pulses/steps must be non-negative integers");
+      return { Pure: located(n, location()) };
+    }
+  / "[" _ s:OperandStackExprU32 _ "]" { return s.fast; }
+  / "<" _ s:OperandStackExprU32 _ ">" { return s.slow; }
+
+ModOperandI32
+  = n:Integer {
+      return { Pure: located(n, location()) };
+    }
+  / "[" _ s:OperandStackExprI32 _ "]" { return s.fast; }
+  / "<" _ s:OperandStackExprI32 _ ">" { return s.slow; }
+
+// Operand subsequence parsing — much simpler than full StackExpr since
+// modifier operands only carry numeric values. Each operand type has its
+// own thin expansion.
+
+OperandStackExpr
+  = first:OperandSequence tail:(_ "," _ @OperandSequence)* {
+      if (tail.length === 0) {
+        return { fast: { FastCat: first.asCat }, slow: { SlowCat: first.asCat } };
+      }
+      const all = [first, ...tail];
+      return {
+        fast: { Stack: all.map(s => ({ FastCat: s.asCat })) },
+        slow: { Stack: all.map(s => ({ SlowCat: s.asCat })) },
+      };
+    }
+
+OperandSequence
+  = elems:(_ @OperandElement)+ {
+      return { asCat: elems };
+    }
+
+OperandElement
+  = base:OperandBase weight:Weight? {
+      return [base, weight];
+    }
+
+OperandBase
+  = "~" { return { Rest: spanOf(location()) }; }
+  / n:Number { return { Pure: located({ Number: n }, location()) }; }
+  / "[" _ s:OperandStackExpr _ "]" { return s.fast; }
+  / "<" _ s:OperandStackExpr _ ">" { return s.slow; }
+
+// ------ f64 operand subtree ------
+
+OperandStackExprF64
+  = first:OperandSequenceF64 tail:(_ "," _ @OperandSequenceF64)* {
+      if (tail.length === 0) {
+        return { fast: { FastCat: first.asCat }, slow: { SlowCat: first.asCat } };
+      }
+      const all = [first, ...tail];
+      return {
+        fast: { Stack: all.map(s => ({ FastCat: s.asCat })) },
+        slow: { Stack: all.map(s => ({ SlowCat: s.asCat })) },
+      };
+    }
+
+OperandSequenceF64
+  = elems:(_ @OperandElementF64)+ { return { asCat: elems }; }
+
+OperandElementF64
+  = base:OperandBaseF64 weight:Weight? { return [base, weight]; }
+
+OperandBaseF64
+  = "~" { return { Rest: spanOf(location()) }; }
+  / n:Number { return { Pure: located(n, location()) }; }
+  / "[" _ s:OperandStackExprF64 _ "]" { return s.fast; }
+  / "<" _ s:OperandStackExprF64 _ ">" { return s.slow; }
+
+// ------ u32 operand subtree ------
+
+OperandStackExprU32
+  = first:OperandSequenceU32 tail:(_ "," _ @OperandSequenceU32)* {
+      if (tail.length === 0) {
+        return { fast: { FastCat: first.asCat }, slow: { SlowCat: first.asCat } };
+      }
+      const all = [first, ...tail];
+      return {
+        fast: { Stack: all.map(s => ({ FastCat: s.asCat })) },
+        slow: { Stack: all.map(s => ({ SlowCat: s.asCat })) },
+      };
+    }
+
+OperandSequenceU32
+  = elems:(_ @OperandElementU32)+ { return { asCat: elems }; }
+
+OperandElementU32
+  = base:OperandBaseU32 weight:Weight? { return [base, weight]; }
+
+OperandBaseU32
+  = "~" { return { Rest: spanOf(location()) }; }
+  / n:Integer {
+      if (n < 0) error("Expected non-negative integer");
+      return { Pure: located(n, location()) };
+    }
+  / "[" _ s:OperandStackExprU32 _ "]" { return s.fast; }
+  / "<" _ s:OperandStackExprU32 _ ">" { return s.slow; }
+
+// ------ i32 operand subtree ------
+
+OperandStackExprI32
+  = first:OperandSequenceI32 tail:(_ "," _ @OperandSequenceI32)* {
+      if (tail.length === 0) {
+        return { fast: { FastCat: first.asCat }, slow: { SlowCat: first.asCat } };
+      }
+      const all = [first, ...tail];
+      return {
+        fast: { Stack: all.map(s => ({ FastCat: s.asCat })) },
+        slow: { Stack: all.map(s => ({ SlowCat: s.asCat })) },
+      };
+    }
+
+OperandSequenceI32
+  = elems:(_ @OperandElementI32)+ { return { asCat: elems }; }
+
+OperandElementI32
+  = base:OperandBaseI32 weight:Weight? { return [base, weight]; }
+
+OperandBaseI32
+  = "~" { return { Rest: spanOf(location()) }; }
+  / n:Integer { return { Pure: located(n, location()) }; }
+  / "[" _ s:OperandStackExprI32 _ "]" { return s.fast; }
+  / "<" _ s:OperandStackExprI32 _ ">" { return s.slow; }
+
+// ---------------------------------------------------------------------------
+// Numbers & whitespace
+// ---------------------------------------------------------------------------
+
+Number "number"
+  = s:$("-"? [0-9]+ ("." [0-9]+)?) { return parseFloat(s); }
+
+Integer "integer"
+  = s:$("-"? [0-9]+) { return parseInt(s, 10); }
+
+_ "whitespace"
+  = [ \t\r\n]*

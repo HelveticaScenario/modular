@@ -341,6 +341,28 @@ type BufferOutputRef = {
 };
 
 /**
+ * A parsed mini-notation pattern — returned by \`$p(source)\`, passed to
+ * \`$cycle\` / \`$iCycle\` as their pattern argument. Opaque to user code;
+ * the shape is \`{ __kind, ast, source, all_spans }\`.
+ */
+type ParsedPattern = {
+  readonly __kind: 'ParsedPattern';
+  readonly ast: unknown;
+  readonly source: string;
+  readonly all_spans: ReadonlyArray<readonly [number, number]>;
+};
+
+/**
+ * Parse a mini-notation source string into a \`ParsedPattern\`.
+ *
+ * Used as the pattern argument to \`$cycle\` and \`$iCycle\`. See the
+ * mini-notation docs on those modules for grammar details.
+ *
+ * @param source - mini-notation source string
+ */
+declare function $p(source: string): ParsedPattern;
+
+/**
  * A loaded WAV sample handle — returned by \`$wavs()\`, passed to \`$sampler()\` as the \`wav\` param.
  */
 type WavHandle = {
@@ -1045,7 +1067,7 @@ export function buildLibSource(
 ): string {
     const schemaLib = generateDSL(schemas);
     const wavsDecl = generateWavsTypeDeclaration(wavsFolderTree ?? null);
-    return `declare global {\n${BASE_LIB_SOURCE}\n\n${schemaLib}\n\n${wavsDecl}\n}\n\nexport {};\n`;
+    return `/* oxlint-disable */\ndeclare global {\n${BASE_LIB_SOURCE}\n\n${schemaLib}\n\n${wavsDecl}\n}\n\nexport {};\n`;
 }
 
 interface NamespaceNode {
