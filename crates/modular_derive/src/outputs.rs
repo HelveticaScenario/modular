@@ -1,7 +1,7 @@
 use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::spanned::Spanned;
 use syn::{Data, DeriveInput, Fields, LitStr, Token, Type};
 
@@ -398,5 +398,99 @@ pub fn impl_outputs_macro(ast: &DeriveInput) -> TokenStream {
         }
     };
 
-    generated.into()
+    // -----------------------------------------------------------------------
+    // Generate {Name}BlockOutputs
+    // -----------------------------------------------------------------------
+    let name_str = name.to_string();
+    let block_outputs_name = if name_str.ends_with("Outputs") {
+        format_ident!("{}BlockOutputs", &name_str[..name_str.len() - 7])
+    } else {
+        format_ident!("{}BlockOutputs", name_str)
+    };
+
+    let block_fields: Vec<_> = outputs
+        .iter()
+        .map(|o| {
+            let field_name = &o.field_name;
+            quote! { pub #field_name: crate::block_port::BlockPort }
+        })
+        .collect();
+
+    let block_new_inits: Vec<_> = outputs
+        .iter()
+        .map(|o| {
+            let field_name = &o.field_name;
+            quote! { #field_name: crate::block_port::BlockPort::new(block_size) }
+        })
+        .collect();
+
+    let get_at_arms: Vec<_> = outputs
+        .iter()
+        .map(|o| {
+            let output_name = &o.output_name;
+            let field_name = &o.field_name;
+            quote! {
+                #output_name => self.#field_name.get(index, ch),
+            }
+        })
+        .collect();
+
+    let copy_inner_stmts: Vec<_> = outputs
+        .iter()
+        .map(|o| {
+            let field_name = &o.field_name;
+            match o.precision {
+                OutputPrecision::F32 => quote! {
+                    self.#field_name.data[slot][0] = inner.#field_name;
+                },
+                OutputPrecision::PolySignal => quote! {
+                    {
+                        let poly = &inner.#field_name;
+                        for ch in 0..crate::poly::PORT_MAX_CHANNELS {
+                            self.#field_name.data[slot][ch] = poly.get(ch);
+                        }
+                    }
+                },
+            }
+        })
+        .collect();
+
+    let block_generated = quote! {
+        /// Generated block-output buffer for #name.
+        /// One `BlockPort` per output port; indexed `data[sample_index][channel]`.
+        pub struct #block_outputs_name {
+            #(#block_fields,)*
+        }
+
+        impl #block_outputs_name {
+            /// Allocate all ports for the given block size. Call only on the main thread.
+            pub fn new(block_size: usize) -> Self {
+                Self {
+                    #(#block_new_inits,)*
+                }
+            }
+
+            /// Read the value at sample `index`, channel `ch` for port `port`.
+            /// Returns 0.0 for unknown ports or out-of-range indices.
+            pub fn get_at(&self, port: &str, ch: usize, index: usize) -> f32 {
+                match port {
+                    #(#get_at_arms)*
+                    _ => 0.0,
+                }
+            }
+
+            /// Copy the inner module's scalar outputs into this block buffer at `slot`.
+            pub fn copy_from_inner(&mut self, inner: &#name, slot: usize) {
+                #(#copy_inner_stmts)*
+            }
+
+            /// Called once per CPAL callback to advance any stateful per-block fields.
+            /// Default is a no-op; specialised impls (e.g. `BufferWrite`) override this.
+            pub fn tick_buffers(&mut self, _block_size: usize) {}
+        }
+    };
+
+    let mut all_generated = quote!(#generated);
+    all_generated.extend(block_generated);
+    all_generated.into()
 }
