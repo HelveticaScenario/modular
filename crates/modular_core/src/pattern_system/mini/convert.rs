@@ -190,9 +190,10 @@ pub fn convert<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertErro
 
 /// Evaluate a MiniASTF64 to get a single f64 value.
 ///
-/// This recursively evaluates the AST at cycle 0. For complex patterns,
-/// it returns the first value found.
-#[cfg(test)]
+/// Used by the polymeter converter for `%n` step-count overrides and by
+/// step-count helpers as a scalar readout. For complex patterns it
+/// returns the first value found (matches strudel's approach of using
+/// `children[0]` for the stepsPerCycle fallback).
 fn eval_f64(ast: &MiniASTF64) -> f64 {
     match ast {
         MiniASTF64::Pure(Located { node, .. }) => *node,
@@ -215,6 +216,87 @@ fn eval_f64(ast: &MiniASTF64) -> f64 {
         MiniASTF64::Replicate(pattern, _) => eval_f64(pattern),
         MiniASTF64::Degrade(pattern, _, _) => eval_f64(pattern),
         MiniASTF64::Euclidean { pattern, .. } => eval_f64(pattern),
+        MiniASTF64::Polymeter { children, .. } => {
+            children.first().map(eval_f64).unwrap_or(0.0)
+        }
+    }
+}
+
+/// Best-effort structural step count of a `MiniAST`. Used to derive the
+/// default `steps_per_cycle` for a `Polymeter` when no `%n` override was
+/// given. Matches strudel's `__weight` fallback in `packages/mini/mini.mjs`:
+/// sequences sum their entry weights, explicit `FastCat`/`SlowCat` behave the
+/// same, and everything else (bare atoms, stacks, choice, polymeters) count
+/// as one step unless the polymeter carried its own `%n`.
+fn step_count_main(ast: &MiniAST) -> f64 {
+    match ast {
+        MiniAST::Sequence(items) | MiniAST::FastCat(items) | MiniAST::SlowCat(items) => {
+            let total: f64 = items.iter().map(|(_, w)| w.unwrap_or(1.0)).sum();
+            if total == 0.0 { 1.0 } else { total }
+        }
+        MiniAST::Replicate(inner, count) => step_count_main(inner) * (*count as f64),
+        MiniAST::Polymeter {
+            children,
+            steps_per_cycle,
+        } => steps_per_cycle
+            .as_deref()
+            .map(eval_f64)
+            .unwrap_or_else(|| children.first().map(step_count_main).unwrap_or(1.0)),
+        _ => 1.0,
+    }
+}
+
+fn step_count_f64(ast: &MiniASTF64) -> f64 {
+    match ast {
+        MiniASTF64::Sequence(items) | MiniASTF64::FastCat(items) | MiniASTF64::SlowCat(items) => {
+            let total: f64 = items.iter().map(|(_, w)| w.unwrap_or(1.0)).sum();
+            if total == 0.0 { 1.0 } else { total }
+        }
+        MiniASTF64::Replicate(inner, count) => step_count_f64(inner) * (*count as f64),
+        MiniASTF64::Polymeter {
+            children,
+            steps_per_cycle,
+        } => steps_per_cycle
+            .as_deref()
+            .map(eval_f64)
+            .unwrap_or_else(|| children.first().map(step_count_f64).unwrap_or(1.0)),
+        _ => 1.0,
+    }
+}
+
+fn step_count_u32(ast: &MiniASTU32) -> f64 {
+    match ast {
+        MiniASTU32::Sequence(items) | MiniASTU32::FastCat(items) | MiniASTU32::SlowCat(items) => {
+            let total: f64 = items.iter().map(|(_, w)| w.unwrap_or(1.0)).sum();
+            if total == 0.0 { 1.0 } else { total }
+        }
+        MiniASTU32::Replicate(inner, count) => step_count_u32(inner) * (*count as f64),
+        MiniASTU32::Polymeter {
+            children,
+            steps_per_cycle,
+        } => steps_per_cycle
+            .as_deref()
+            .map(eval_f64)
+            .unwrap_or_else(|| children.first().map(step_count_u32).unwrap_or(1.0)),
+        _ => 1.0,
+    }
+}
+
+fn step_count_i32(ast: &MiniASTI32) -> f64 {
+    match ast {
+        MiniASTI32::Sequence(items) | MiniASTI32::FastCat(items) | MiniASTI32::SlowCat(items) => {
+            let total: f64 = items.iter().map(|(_, w)| w.unwrap_or(1.0)).sum();
+            if total == 0.0 { 1.0 } else { total }
+        }
+        MiniASTI32::Replicate(inner, count) => step_count_i32(inner) * (*count as f64),
+        MiniASTI32::Polymeter {
+            children,
+            steps_per_cycle,
+        } => steps_per_cycle
+            .as_deref()
+            .map(eval_f64)
+            .unwrap_or_else(|| children.first().map(step_count_i32).unwrap_or(1.0)),
+        _ => 1.0,
     }
 }
 
@@ -340,6 +422,24 @@ fn convert_f64_pattern(ast: &MiniASTF64) -> Pattern<Fraction> {
             // Just return the pattern
             convert_f64_pattern(pattern)
         }
+
+        MiniASTF64::Polymeter {
+            children,
+            steps_per_cycle,
+        } => {
+            let spc = steps_per_cycle
+                .as_deref()
+                .map(eval_f64)
+                .unwrap_or_else(|| children.first().map(step_count_f64).unwrap_or(1.0));
+            let scaled: Vec<Pattern<Fraction>> = children
+                .iter()
+                .map(|c| {
+                    let w = step_count_f64(c).max(1.0);
+                    convert_f64_pattern(c).fast(constructors::pure(Fraction::from(spc / w)))
+                })
+                .collect();
+            stack(scaled)
+        }
     }
 }
 
@@ -452,6 +552,24 @@ fn convert_u32_pattern(ast: &MiniASTU32) -> Pattern<u32> {
         }
 
         MiniASTU32::Euclidean { pattern, .. } => convert_u32_pattern(pattern),
+
+        MiniASTU32::Polymeter {
+            children,
+            steps_per_cycle,
+        } => {
+            let spc = steps_per_cycle
+                .as_deref()
+                .map(eval_f64)
+                .unwrap_or_else(|| children.first().map(step_count_u32).unwrap_or(1.0));
+            let scaled: Vec<Pattern<u32>> = children
+                .iter()
+                .map(|c| {
+                    let w = step_count_u32(c).max(1.0);
+                    convert_u32_pattern(c).fast(constructors::pure(Fraction::from(spc / w)))
+                })
+                .collect();
+            stack(scaled)
+        }
     }
 }
 
@@ -561,6 +679,24 @@ fn convert_i32_pattern(ast: &MiniASTI32) -> Pattern<i32> {
         MiniASTI32::Degrade(pattern, _prob, _seed) => convert_i32_pattern(pattern),
 
         MiniASTI32::Euclidean { pattern, .. } => convert_i32_pattern(pattern),
+
+        MiniASTI32::Polymeter {
+            children,
+            steps_per_cycle,
+        } => {
+            let spc = steps_per_cycle
+                .as_deref()
+                .map(eval_f64)
+                .unwrap_or_else(|| children.first().map(step_count_i32).unwrap_or(1.0));
+            let scaled: Vec<Pattern<i32>> = children
+                .iter()
+                .map(|c| {
+                    let w = step_count_i32(c).max(1.0);
+                    convert_i32_pattern(c).fast(constructors::pure(Fraction::from(spc / w)))
+                })
+                .collect();
+            stack(scaled)
+        }
     }
 }
 
@@ -583,6 +719,9 @@ fn eval_u32(ast: &MiniASTU32) -> u32 {
         MiniASTU32::Replicate(pattern, _count) => eval_u32(pattern),
         MiniASTU32::Degrade(pattern, _, _) => eval_u32(pattern),
         MiniASTU32::Euclidean { pattern, .. } => eval_u32(pattern),
+        MiniASTU32::Polymeter { children, .. } => {
+            children.first().map(eval_u32).unwrap_or(0)
+        }
     }
 }
 
@@ -605,6 +744,9 @@ fn eval_i32(ast: &MiniASTI32) -> i32 {
         MiniASTI32::Replicate(pattern, _count) => eval_i32(pattern),
         MiniASTI32::Degrade(pattern, _, _) => eval_i32(pattern),
         MiniASTI32::Euclidean { pattern, .. } => eval_i32(pattern),
+        MiniASTI32::Polymeter { children, .. } => {
+            children.first().map(eval_i32).unwrap_or(0)
+        }
     }
 }
 
@@ -840,6 +982,28 @@ fn convert_inner<T: FromMiniAtom>(ast: &MiniAST) -> Result<Pattern<T>, ConvertEr
             let rest =
                 T::rest_value().expect("supports_rest() returned true but rest_value() is None");
             Ok(pat.euclid_pat_with_rest(pulses_pat, steps_pat, rotation_pat, rest))
+        }
+
+        MiniAST::Polymeter {
+            children,
+            steps_per_cycle,
+        } => {
+            // Polymeter: stack each child scaled so its step count maps to
+            // `steps_per_cycle`. Default stepsPerCycle is the first child's
+            // own step count — matches strudel's fallback in mini.mjs.
+            let spc = steps_per_cycle
+                .as_deref()
+                .map(eval_f64)
+                .unwrap_or_else(|| children.first().map(step_count_main).unwrap_or(1.0));
+            let scaled: Vec<Pattern<T>> = children
+                .iter()
+                .map(|c| {
+                    let w = step_count_main(c).max(1.0);
+                    let pat = convert_inner(c)?;
+                    Ok(pat.fast(constructors::pure(Fraction::from(spc / w))))
+                })
+                .collect::<Result<_, ConvertError>>()?;
+            Ok(stack(scaled))
         }
     }
 }

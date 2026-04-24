@@ -118,6 +118,12 @@ function walkMini(ast: MiniAST, out: Span[]): void {
         walkU32(pulses, out);
         walkU32(steps, out);
         if (rotation) walkI32(rotation, out);
+        return;
+    }
+    if ('Polymeter' in ast) {
+        const { children, steps_per_cycle } = ast.Polymeter;
+        for (const child of children) walkMini(child, out);
+        if (steps_per_cycle) walkF64(steps_per_cycle, out);
     }
 }
 
@@ -141,6 +147,12 @@ function walkF64(ast: MiniASTF64, out: Span[]): void {
         walkU32(pulses, out);
         walkU32(steps, out);
         if (rotation) walkI32(rotation, out);
+        return;
+    }
+    if ('Polymeter' in ast) {
+        const { children, steps_per_cycle } = ast.Polymeter;
+        for (const child of children) walkF64(child, out);
+        if (steps_per_cycle) walkF64(steps_per_cycle, out);
     }
 }
 
@@ -164,6 +176,12 @@ function walkU32(ast: MiniASTU32, out: Span[]): void {
         walkU32(pulses, out);
         walkU32(steps, out);
         if (rotation) walkI32(rotation, out);
+        return;
+    }
+    if ('Polymeter' in ast) {
+        const { children, steps_per_cycle } = ast.Polymeter;
+        for (const child of children) walkU32(child, out);
+        if (steps_per_cycle) walkF64(steps_per_cycle, out);
     }
 }
 
@@ -187,5 +205,11 @@ function walkI32(ast: MiniASTI32, out: Span[]): void {
         walkU32(pulses, out);
         walkU32(steps, out);
         if (rotation) walkI32(rotation, out);
+        return;
+    }
+    if ('Polymeter' in ast) {
+        const { children, steps_per_cycle } = ast.Polymeter;
+        for (const child of children) walkI32(child, out);
+        if (steps_per_cycle) walkF64(steps_per_cycle, out);
     }
 }

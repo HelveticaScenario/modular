@@ -7868,6 +7868,40 @@
               "required": [
                 "Euclidean"
               ]
+            },
+            {
+              "description": "Polymeter: `{a b, c d e}` with optional `%n` steps-per-cycle override.\nEach child pattern is scaled so its step count maps to\n`steps_per_cycle`; all scaled children are stacked. Default\n`steps_per_cycle` is the step-count of the first child sequence.\nAdapted from strudel's `polymeter` alignment in `packages/mini/mini.mjs`.",
+              "type": "object",
+              "properties": {
+                "Polymeter": {
+                  "type": "object",
+                  "properties": {
+                    "children": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniAST"
+                      }
+                    },
+                    "steps_per_cycle": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTF64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "children"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Polymeter"
+              ]
             }
           ]
         },
@@ -8187,6 +8221,40 @@
               "additionalProperties": false,
               "required": [
                 "Euclidean"
+              ]
+            },
+            {
+              "description": "Polymeter: `{...}` with optional `%n`. See `MiniAST::Polymeter`.",
+              "type": "object",
+              "properties": {
+                "Polymeter": {
+                  "type": "object",
+                  "properties": {
+                    "children": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniASTF64"
+                      }
+                    },
+                    "steps_per_cycle": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTF64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "children"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Polymeter"
               ]
             }
           ]
@@ -8508,6 +8576,40 @@
               "required": [
                 "Euclidean"
               ]
+            },
+            {
+              "description": "Polymeter: `{a b, c d e}` or `{...}%n`. Each child sequence is scaled\nso that all children fit into `steps_per_cycle` steps per cycle, then\nstacked. Default `steps_per_cycle` is the step-count of the first\nchild.",
+              "type": "object",
+              "properties": {
+                "Polymeter": {
+                  "type": "object",
+                  "properties": {
+                    "children": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniASTI32"
+                      }
+                    },
+                    "steps_per_cycle": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTF64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "children"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Polymeter"
+              ]
             }
           ]
         },
@@ -8827,6 +8929,40 @@
               "additionalProperties": false,
               "required": [
                 "Euclidean"
+              ]
+            },
+            {
+              "description": "Polymeter: `{...}` with optional `%n`. See `MiniAST::Polymeter`.",
+              "type": "object",
+              "properties": {
+                "Polymeter": {
+                  "type": "object",
+                  "properties": {
+                    "children": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniASTU32"
+                      }
+                    },
+                    "steps_per_cycle": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTF64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "children"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Polymeter"
               ]
             }
           ]
@@ -9756,6 +9892,40 @@
               "required": [
                 "Euclidean"
               ]
+            },
+            {
+              "description": "Polymeter: `{a b, c d e}` with optional `%n` steps-per-cycle override.\nEach child pattern is scaled so its step count maps to\n`steps_per_cycle`; all scaled children are stacked. Default\n`steps_per_cycle` is the step-count of the first child sequence.\nAdapted from strudel's `polymeter` alignment in `packages/mini/mini.mjs`.",
+              "type": "object",
+              "properties": {
+                "Polymeter": {
+                  "type": "object",
+                  "properties": {
+                    "children": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniAST"
+                      }
+                    },
+                    "steps_per_cycle": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTF64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "children"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Polymeter"
+              ]
             }
           ]
         },
@@ -10075,6 +10245,40 @@
               "additionalProperties": false,
               "required": [
                 "Euclidean"
+              ]
+            },
+            {
+              "description": "Polymeter: `{...}` with optional `%n`. See `MiniAST::Polymeter`.",
+              "type": "object",
+              "properties": {
+                "Polymeter": {
+                  "type": "object",
+                  "properties": {
+                    "children": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniASTF64"
+                      }
+                    },
+                    "steps_per_cycle": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTF64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "children"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Polymeter"
               ]
             }
           ]
@@ -10396,6 +10600,40 @@
               "required": [
                 "Euclidean"
               ]
+            },
+            {
+              "description": "Polymeter: `{a b, c d e}` or `{...}%n`. Each child sequence is scaled\nso that all children fit into `steps_per_cycle` steps per cycle, then\nstacked. Default `steps_per_cycle` is the step-count of the first\nchild.",
+              "type": "object",
+              "properties": {
+                "Polymeter": {
+                  "type": "object",
+                  "properties": {
+                    "children": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniASTI32"
+                      }
+                    },
+                    "steps_per_cycle": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTF64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "children"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Polymeter"
+              ]
             }
           ]
         },
@@ -10715,6 +10953,40 @@
               "additionalProperties": false,
               "required": [
                 "Euclidean"
+              ]
+            },
+            {
+              "description": "Polymeter: `{...}` with optional `%n`. See `MiniAST::Polymeter`.",
+              "type": "object",
+              "properties": {
+                "Polymeter": {
+                  "type": "object",
+                  "properties": {
+                    "children": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniASTU32"
+                      }
+                    },
+                    "steps_per_cycle": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTF64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "children"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Polymeter"
               ]
             }
           ]

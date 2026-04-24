@@ -85,10 +85,20 @@ Start
   = _ s:StackExpr _ { return s; }
 
 // Stack: comma-separated patterns play simultaneously.
+// Each element may itself be a feet-separated chain (`a b . c d`) which
+// fastcats its dot-separated sub-sequences as nested elements.
 StackExpr
-  = head:SequenceExpr tail:(_ "," _ @SequenceExpr)* {
+  = head:FeetExpr tail:(_ "," _ @FeetExpr)* {
       if (tail.length === 0) return head;
       return { Stack: [head, ...tail] };
+    }
+
+// Feet separator: `a b . c d` = sequence of [a b] then [c d], each taking
+// half the cycle. Matches strudel's `dot_tail` → `feet` alignment.
+FeetExpr
+  = head:SequenceExpr tail:(_ "." _ @SequenceExpr)* {
+      if (tail.length === 0) return head;
+      return { Sequence: [head, ...tail].map(s => [s, null]) };
     }
 
 // Sequence: space-separated elements. Bare `_` tokens after an element act
@@ -133,7 +143,20 @@ ElementPart
 ElementBase
   = FastSub
   / SlowSub
+  / Polymeter
   / Atom
+
+// Polymeter: `{a b, c d e}` with optional `%n` steps-per-cycle override.
+// Each comma-separated child sequence gets stacked, scaled so its step
+// count maps to `steps_per_cycle`. Matches strudel's `polymeter`.
+Polymeter
+  = "{" _ head:FeetExpr tail:(_ "," _ @FeetExpr)* _ "}" steps:PolymeterSteps? {
+      const children = [head, ...tail];
+      return { Polymeter: { children, steps_per_cycle: steps } };
+    }
+
+PolymeterSteps
+  = "%" op:ModOperandF64 { return op; }
 
 FastSub
   = "[" _ s:StackExpr _ "]" {

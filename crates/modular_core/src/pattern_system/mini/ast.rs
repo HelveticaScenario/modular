@@ -78,6 +78,15 @@ pub enum MiniASTI32 {
         steps: Box<MiniASTU32>,
         rotation: Option<Box<MiniASTI32>>,
     },
+
+    /// Polymeter: `{a b, c d e}` or `{...}%n`. Each child sequence is scaled
+    /// so that all children fit into `steps_per_cycle` steps per cycle, then
+    /// stacked. Default `steps_per_cycle` is the step-count of the first
+    /// child.
+    Polymeter {
+        children: Vec<MiniASTI32>,
+        steps_per_cycle: Option<Box<MiniASTF64>>,
+    },
 }
 
 /// AST for unsigned integer patterns (used for euclidean pulses/steps).
@@ -128,6 +137,12 @@ pub enum MiniASTU32 {
         steps: Box<MiniASTU32>,
         rotation: Option<Box<MiniASTI32>>,
     },
+
+    /// Polymeter: `{...}` with optional `%n`. See `MiniAST::Polymeter`.
+    Polymeter {
+        children: Vec<MiniASTU32>,
+        steps_per_cycle: Option<Box<MiniASTF64>>,
+    },
 }
 
 /// AST for f64-valued patterns (used for fast/slow factors).
@@ -177,6 +192,12 @@ pub enum MiniASTF64 {
         pulses: Box<MiniASTU32>,
         steps: Box<MiniASTU32>,
         rotation: Option<Box<MiniASTI32>>,
+    },
+
+    /// Polymeter: `{...}` with optional `%n`. See `MiniAST::Polymeter`.
+    Polymeter {
+        children: Vec<MiniASTF64>,
+        steps_per_cycle: Option<Box<MiniASTF64>>,
     },
 }
 
@@ -231,6 +252,16 @@ pub enum MiniAST {
         pulses: Box<MiniASTU32>,
         steps: Box<MiniASTU32>,
         rotation: Option<Box<MiniASTI32>>,
+    },
+
+    /// Polymeter: `{a b, c d e}` with optional `%n` steps-per-cycle override.
+    /// Each child pattern is scaled so its step count maps to
+    /// `steps_per_cycle`; all scaled children are stacked. Default
+    /// `steps_per_cycle` is the step-count of the first child sequence.
+    /// Adapted from strudel's `polymeter` alignment in `packages/mini/mini.mjs`.
+    Polymeter {
+        children: Vec<MiniAST>,
+        steps_per_cycle: Option<Box<MiniASTF64>>,
     },
 }
 
@@ -450,6 +481,17 @@ fn collect_leaf_spans_recursive(ast: &MiniAST, spans: &mut Vec<(usize, usize)>) 
                 collect_i32_spans(rot, spans);
             }
         }
+        MiniAST::Polymeter {
+            children,
+            steps_per_cycle,
+        } => {
+            for child in children {
+                collect_leaf_spans_recursive(child, spans);
+            }
+            if let Some(spc) = steps_per_cycle {
+                collect_f64_spans(spc, spans);
+            }
+        }
     }
 }
 
@@ -507,6 +549,17 @@ fn collect_f64_spans(ast: &MiniASTF64, spans: &mut Vec<(usize, usize)>) {
             collect_u32_spans(steps, spans);
             if let Some(rot) = rotation {
                 collect_i32_spans(rot, spans);
+            }
+        }
+        MiniASTF64::Polymeter {
+            children,
+            steps_per_cycle,
+        } => {
+            for child in children {
+                collect_f64_spans(child, spans);
+            }
+            if let Some(spc) = steps_per_cycle {
+                collect_f64_spans(spc, spans);
             }
         }
     }
@@ -568,6 +621,17 @@ fn collect_u32_spans(ast: &MiniASTU32, spans: &mut Vec<(usize, usize)>) {
                 collect_i32_spans(rot, spans);
             }
         }
+        MiniASTU32::Polymeter {
+            children,
+            steps_per_cycle,
+        } => {
+            for child in children {
+                collect_u32_spans(child, spans);
+            }
+            if let Some(spc) = steps_per_cycle {
+                collect_f64_spans(spc, spans);
+            }
+        }
     }
 }
 
@@ -625,6 +689,17 @@ fn collect_i32_spans(ast: &MiniASTI32, spans: &mut Vec<(usize, usize)>) {
             collect_u32_spans(steps, spans);
             if let Some(rot) = rotation {
                 collect_i32_spans(rot, spans);
+            }
+        }
+        MiniASTI32::Polymeter {
+            children,
+            steps_per_cycle,
+        } => {
+            for child in children {
+                collect_i32_spans(child, spans);
+            }
+            if let Some(spc) = steps_per_cycle {
+                collect_f64_spans(spc, spans);
             }
         }
     }
@@ -773,6 +848,11 @@ pub(crate) fn assign_seeds(ast: &mut MiniAST, counter: &mut u64) {
         }
         MiniAST::Euclidean { pattern, .. } => {
             assign_seeds(pattern, counter);
+        }
+        MiniAST::Polymeter { children, .. } => {
+            for child in children {
+                assign_seeds(child, counter);
+            }
         }
     }
 }

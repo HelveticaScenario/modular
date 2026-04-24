@@ -65,6 +65,12 @@ export type MiniAST =
               steps: MiniASTU32;
               rotation: MiniASTI32 | null;
           };
+      }
+    | {
+          Polymeter: {
+              children: MiniAST[];
+              steps_per_cycle: MiniASTF64 | null;
+          };
       };
 
 /** AST specialized for `f64`-valued modifier arguments (fast/slow factors). */
@@ -87,6 +93,12 @@ export type MiniASTF64 =
               pulses: MiniASTU32;
               steps: MiniASTU32;
               rotation: MiniASTI32 | null;
+          };
+      }
+    | {
+          Polymeter: {
+              children: MiniASTF64[];
+              steps_per_cycle: MiniASTF64 | null;
           };
       };
 
@@ -111,6 +123,12 @@ export type MiniASTU32 =
               steps: MiniASTU32;
               rotation: MiniASTI32 | null;
           };
+      }
+    | {
+          Polymeter: {
+              children: MiniASTU32[];
+              steps_per_cycle: MiniASTF64 | null;
+          };
       };
 
 /** AST specialized for `i32`-valued modifier arguments (euclidean rotation). */
@@ -133,6 +151,12 @@ export type MiniASTI32 =
               pulses: MiniASTU32;
               steps: MiniASTU32;
               rotation: MiniASTI32 | null;
+          };
+      }
+    | {
+          Polymeter: {
+              children: MiniASTI32[];
+              steps_per_cycle: MiniASTF64 | null;
           };
       };
 
