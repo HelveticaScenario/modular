@@ -132,6 +132,7 @@ fn signal_deserialize_tagged_variants_still_work() {
             port,
             module_ptr,
             channel,
+            ..
         } => {
             assert_eq!(module, "m1");
             assert_eq!(port, "out");
@@ -156,6 +157,7 @@ fn signal_cable_connect_and_read() {
         module_ptr: Weak::new(),
         port: "out".to_string(),
         channel: 0,
+        index_ptr: std::ptr::null(),
     };
 
     // Before connect, cable reads 0.0 (module_ptr doesn't resolve).
@@ -263,4 +265,31 @@ fn inject_index_ptr_signal_fixed() {
     let mut sig = Signal::Volts(1.0);
     sig.inject_index_ptr(&idx as *const _);
     // Fixed signals ignore inject — no panic
+}
+
+// ============================================================================
+// Task 3: Signal::Cable index_ptr tests
+
+#[test]
+fn signal_cable_index_ptr_null_by_default() {
+    use modular_core::types::WellKnownModule;
+    let sig = WellKnownModule::RootClock.to_cable(0, "barTrigger");
+    if let Signal::Cable { index_ptr, .. } = sig {
+        assert!(index_ptr.is_null());
+    } else {
+        panic!("expected Cable");
+    }
+}
+
+#[test]
+fn inject_index_ptr_wires_cable() {
+    use modular_core::types::WellKnownModule;
+    use std::cell::Cell;
+    let idx = Cell::new(3usize);
+    let mut sig = WellKnownModule::RootClock.to_cable(0, "barTrigger");
+    sig.inject_index_ptr(&idx as *const _);
+    if let Signal::Cable { index_ptr, .. } = sig {
+        assert!(!index_ptr.is_null());
+        assert_eq!(unsafe { (*index_ptr).get() }, 3);
+    }
 }

@@ -102,6 +102,7 @@ impl WellKnownModule {
             module_ptr: std::sync::Weak::new(),
             port: port.into(),
             channel,
+            index_ptr: std::ptr::null(),
         }
     }
 
@@ -1849,8 +1850,20 @@ pub enum Signal {
         port: String,
         /// Which channel of the output to read (0-indexed)
         channel: usize,
+        /// Back-pointer to the consuming wrapper's `index: Cell<usize>`.
+        /// Null until `inject_index_ptr` is called during `connect()`.
+        /// Raw pointer is safe because the wrapper owns the `Cell` and outlives
+        /// all `Signal`s that reference it.
+        index_ptr: *const std::cell::Cell<usize>,
     },
 }
+
+// SAFETY: `index_ptr` is null during construction and transport; it is only
+// written/read on the audio thread after `inject_index_ptr` is called during
+// `connect()`. The wrapper that owns the pointed-to `Cell` also upholds
+// `unsafe impl Send + Sync`.
+unsafe impl Send for Signal {}
+unsafe impl Sync for Signal {}
 
 // Custom serde deserialization to allow a bare number as shorthand for volts.
 //
@@ -1903,6 +1916,7 @@ impl<'de> Deserialize<'de> for Signal {
                     module_ptr: sync::Weak::new(),
                     port,
                     channel,
+                    index_ptr: std::ptr::null(),
                 },
             }),
         }
@@ -2007,6 +2021,7 @@ impl<E: DeserializeError> deserr::Deserr<E> for Signal {
                             module_ptr: sync::Weak::new(),
                             port,
                             channel,
+                            index_ptr: std::ptr::null(),
                         })
                     }
                     Some(other) => Err(deserr::take_cf_content(E::error::<V>(
@@ -2093,11 +2108,10 @@ impl Signal {
 }
 
 impl InjectIndexPtr for Signal {
-    fn inject_index_ptr(&mut self, _ptr: *const std::cell::Cell<usize>) {
-        // TODO: Task 3 — uncomment when index_ptr is added to Signal::Cable
-        // if let Signal::Cable { ref mut index_ptr, .. } = self {
-        //     *index_ptr = _ptr;
-        // }
+    fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>) {
+        if let Signal::Cable { index_ptr, .. } = self {
+            *index_ptr = ptr;
+        }
     }
 }
 
@@ -2164,12 +2178,14 @@ impl PartialEq for Signal {
                     module_ptr: module_ptr_1,
                     port: port_1,
                     channel: channel_1,
+                    ..
                 },
                 Signal::Cable {
                     module: module_2,
                     module_ptr: module_ptr_2,
                     port: port_2,
                     channel: channel_2,
+                    ..
                 },
             ) => {
                 module_ptr_1.upgrade() == module_ptr_2.upgrade()

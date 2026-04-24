@@ -159,6 +159,7 @@ impl FromMiniAtom for SeqValue {
                     module_ptr: std::sync::Weak::new(),
                     port: port.clone(),
                     channel: *channel,
+                    index_ptr: std::ptr::null(),
                 },
                 sample_and_hold: *sample_and_hold,
             }),
@@ -257,6 +258,7 @@ fn parse_module_ref(s: &str) -> Option<SeqValue> {
             module_ptr: std::sync::Weak::new(),
             port,
             channel,
+            index_ptr: std::ptr::null(),
         },
         sample_and_hold,
     })

@@ -58,6 +58,7 @@ impl MathExpressionParam {
                 module_ptr: Weak::default(),
                 port,
                 channel,
+                index_ptr: std::ptr::null(),
             });
             format!("module{}", signals.len() - 1)
         });

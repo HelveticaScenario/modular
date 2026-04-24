@@ -497,6 +497,7 @@ mod tests {
             module_ptr: Weak::new(),
             port: "output".into(),
             channel: 0,
+            index_ptr: std::ptr::null(),
         };
 
         let sig2 = Signal::Cable {
@@ -504,6 +505,7 @@ mod tests {
             module_ptr: Weak::new(),
             port: "output".into(),
             channel: 0,
+            index_ptr: std::ptr::null(),
         };
 
         let pat = slowcat(
