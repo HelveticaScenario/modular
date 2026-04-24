@@ -42,7 +42,6 @@ use modular_core::patch::Patch;
 use modular_core::types::{ROOT_OUTPUT_PORT, ScopeBufferKey};
 use std::time::Instant;
 
-
 use crate::commands::{
   AudioError, COMMAND_QUEUE_CAPACITY, ERROR_QUEUE_CAPACITY, GARBAGE_QUEUE_CAPACITY, GarbageItem,
   GraphCommand, PatchUpdate, QueuedTrigger,
@@ -855,8 +854,6 @@ pub struct AudioState {
   midi_manager: Arc<MidiInputManager>,
   /// Transport state meter - written by audio thread, read by main thread
   pub transport_meter: Arc<TransportMeter>,
-  /// Follow mode - when true, don't auto-start on patch apply (wait for Link start)
-  pub follow_mode: Arc<AtomicBool>,
 }
 
 #[derive(Default)]
@@ -894,7 +891,6 @@ impl AudioState {
       module_states: Arc::new(Mutex::new(HashMap::new())),
       midi_manager,
       transport_meter: Arc::new(TransportMeter::default()),
-      follow_mode: Arc::new(AtomicBool::new(false)),
     }
   }
 
@@ -931,15 +927,21 @@ impl AudioState {
       .take_snapshot(self.sample_rate as f64, self.channels as f64)
   }
 
-  pub fn set_stopped(&self, stopped: bool) {
-    self.stopped.store(stopped, Ordering::SeqCst);
-    // Also send command so audio thread sees it immediately
-    let cmd = if stopped {
-      GraphCommand::Stop
-    } else {
-      GraphCommand::Start
-    };
-    let _ = self.send_command(cmd);
+  /// Stop transport. Flips the atomic immediately (stop is synchronous by
+  /// design — no quantize) and notifies the audio thread so it can tear down
+  /// pending_start and propagate to Link.
+  pub fn request_stop(&self) {
+    self.stopped.store(true, Ordering::SeqCst);
+    let _ = self.send_command(GraphCommand::Stop);
+  }
+
+  /// Request transport start. Does NOT flip the atomic — the audio thread's
+  /// Start handler owns that, immediately in free-run and at the next bar
+  /// boundary when Link is enabled. This avoids a one-buffer leak window
+  /// where the main thread's flip could be observed before the Start handler
+  /// re-armed the quantize.
+  pub fn request_start(&self) {
+    let _ = self.send_command(GraphCommand::Start);
   }
 
   pub fn is_stopped(&self) -> bool {
@@ -1050,7 +1052,8 @@ impl AudioState {
     update.remaps = module_id_remaps.unwrap_or_default();
 
     // Build maps for efficient lookup
-    let desired_modules: HashMap<String, _> = modules.into_iter().map(|m| (m.id.clone(), m)).collect();
+    let desired_modules: HashMap<String, _> =
+      modules.into_iter().map(|m| (m.id.clone(), m)).collect();
 
     // Compute scopes to add/remove (no updates — key includes config)
     {
@@ -1072,10 +1075,7 @@ impl AudioState {
         .collect();
 
       // Scopes to remove
-      update.scope_removes = current_keys
-        .difference(&desired_keys)
-        .cloned()
-        .collect();
+      update.scope_removes = current_keys.difference(&desired_keys).cloned().collect();
 
       // Scopes to add (pre-build ScopeBuffers on main thread)
       update.scope_adds = desired_keys
@@ -1093,13 +1093,9 @@ impl AudioState {
     for (id, module_state) in desired_modules {
       // Deserialize params FIRST (before construction)
       let deserialized =
-        crate::deserialize_params(&module_state.module_type, module_state.params, true)
-          .map_err(|e| {
-            napi::Error::from_reason(format!(
-              "Failed to deserialize params for {}: {}",
-              id, e
-            ))
-          })?;
+        crate::deserialize_params(&module_state.module_type, module_state.params, true).map_err(
+          |e| napi::Error::from_reason(format!("Failed to deserialize params for {}: {}", id, e)),
+        )?;
 
       if let Some(constructor) = constructors.get(&module_state.module_type) {
         match constructor(&id, sample_rate, deserialized) {
@@ -1159,20 +1155,25 @@ impl AudioState {
       }];
     }
 
-    // If stopped, send clear command first to reset state
+    // If stopped, clear audio-thread state and request a start. The audio
+    // thread's Start handler flips `stopped`: immediately when free-running,
+    // at the next bar boundary when Link is enabled (the quantize also
+    // surfaces in the UI via `link_pending_start`).
     if self.is_stopped() {
       let _ = self.send_command(GraphCommand::ClearPatch);
-      let mut scope_collection = self.scope_collection.lock();
-      scope_collection.clear();
-      // Auto-unmute on SetPatch to match prior imperative flow
-      // Only auto-start if not in follow mode (waiting for Link start)
-      if !self.follow_mode.load(std::sync::atomic::Ordering::SeqCst) {
-        self.set_stopped(false);
-      }
+      self.scope_collection.lock().clear();
+      self.request_start();
     }
 
     // Apply patch
-    if let Err(e) = self.apply_patch(patch_graph, sample_rate, trigger, update_id, wav_data, tempo_override) {
+    if let Err(e) = self.apply_patch(
+      patch_graph,
+      sample_rate,
+      trigger,
+      update_id,
+      wav_data,
+      tempo_override,
+    ) {
       return vec![ApplyPatchError {
         message: format!("Failed to apply patch: {}", e),
         errors: None,
@@ -1259,8 +1260,6 @@ struct AudioProcessor {
   frame_in_buffer: usize,
   /// Pending quantized start — waiting for bar boundary before actually starting
   link_pending_start: bool,
-  /// Last known Link playing state (for detecting false→true transitions)
-  last_link_playing: bool,
 }
 
 impl AudioProcessor {
@@ -1291,7 +1290,6 @@ impl AudioProcessor {
       current_link_state: None,
       frame_in_buffer: 0,
       link_pending_start: false,
-      last_link_playing: false,
     }
   }
 
@@ -1350,8 +1348,11 @@ impl AudioProcessor {
           if let Some(old_module) = self.patch.sampleables.remove(&module_id) {
             new_module.transfer_state_from(old_module.as_ref().as_ref());
             self.patch.remove_message_listeners_for_module(&module_id);
-            if self.garbage_tx.push(GarbageItem::Module(old_module)).is_err() {
-            }
+            if self
+              .garbage_tx
+              .push(GarbageItem::Module(old_module))
+              .is_err()
+            {}
           }
           self
             .patch
@@ -1374,28 +1375,35 @@ impl AudioProcessor {
           }
         }
         GraphCommand::Start => {
-          if self.link.is_some() {
-            // With Link: always quantize start to bar boundary.
-            // We join the shared Link timeline (never reset it with force_beat_at_time).
-            // The buffer-level code will start Operator when phase reaches bar boundary.
-            if let Some(ref link) = self.link {
-              if let Some(ref mut ss) = self.link_session_state {
-                link.capture_audio_session_state(ss);
-                let time = link.clock_micros();
-                // Main thread already set stopped=false; re-stop until bar boundary
-                self.stopped.store(true, std::sync::atomic::Ordering::SeqCst);
-                ss.set_is_playing_and_request_beat_at_time(true, time, 0.0, 4.0);
-                link.commit_audio_session_state(ss);
-                self.link_pending_start = true;
-              }
+          if let Some(ref link) = self.link {
+            // With Link: keep `stopped=true` and arm a pending start.
+            // The buffer-level phase check releases `stopped` when the
+            // shared Link timeline reaches a bar boundary.
+            if let Some(ref mut ss) = self.link_session_state {
+              link.capture_audio_session_state(ss);
+              let time = link.clock_micros();
+              self
+                .stopped
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+              ss.set_is_playing_and_request_beat_at_time(true, time, 0.0, 4.0);
+              link.commit_audio_session_state(ss);
+              self.link_pending_start = true;
             }
           } else {
-            let msg = Message::Clock(ClockMessages::Start);
-            let _ = self.patch.dispatch_message(&msg);
+            // Free-run: flip immediately and reset the clock.
+            self
+              .stopped
+              .store(false, std::sync::atomic::Ordering::SeqCst);
+            let _ = self
+              .patch
+              .dispatch_message(&Message::Clock(ClockMessages::Start));
           }
         }
         GraphCommand::Stop => {
-          // Stop is handled via the stopped flag
+          // Stop is handled via the stopped flag.
+          // Also clear any pending start so a later peer-start does not
+          // resurrect a cancelled patch.
+          self.link_pending_start = false;
           // Propagate stop to Link session
           if let Some(ref link) = self.link {
             if let Some(ref mut ss) = self.link_session_state {
@@ -1417,12 +1425,7 @@ impl AudioProcessor {
             } // If queue is full, old update will be dropped here as fallback (not ideal but safe)
           }
           // Defer deallocation of all non-reserved modules to main thread
-          let ids_to_remove: Vec<String> = self
-            .patch
-            .sampleables
-            .keys()
-            .cloned()
-            .collect();
+          let ids_to_remove: Vec<String> = self.patch.sampleables.keys().cloned().collect();
           for id in ids_to_remove {
             if let Some(module) = self.patch.sampleables.remove(&id) {
               let _ = self.garbage_tx.push(GarbageItem::Module(module));
@@ -1451,6 +1454,7 @@ impl AudioProcessor {
             self.host_time_filter = None;
             self.link_session_state = None;
             self.current_link_state = None;
+            self.link_pending_start = false;
           }
         }
       }
@@ -1505,8 +1509,11 @@ impl AudioProcessor {
       if let Some(old_module) = self.patch.sampleables.remove(&id) {
         new_module.transfer_state_from(old_module.as_ref().as_ref());
         self.patch.remove_message_listeners_for_module(&id);
-        if self.garbage_tx.push(GarbageItem::Module(old_module)).is_err() {
-        }
+        if self
+          .garbage_tx
+          .push(GarbageItem::Module(old_module))
+          .is_err()
+        {}
       }
       newly_inserted_ids.push(id.clone());
       self.patch.sampleables.insert(id, new_module);
@@ -1525,8 +1532,7 @@ impl AudioProcessor {
     for id in stale_ids {
       if let Some(module) = self.patch.sampleables.remove(&id) {
         self.patch.remove_message_listeners_for_module(&id);
-        if self.garbage_tx.push(GarbageItem::Module(module)).is_err() {
-        }
+        if self.garbage_tx.push(GarbageItem::Module(module)).is_err() {}
       }
     }
 
@@ -1614,12 +1620,13 @@ impl AudioProcessor {
       if let Some(ref ss) = self.link_session_state {
         if let Some(root_clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
           // Compute per-frame host time by offsetting from buffer start
-          let frame_offset_micros = (self.frame_in_buffer as f64 * link_state.micros_per_sample) as i64;
+          let frame_offset_micros =
+            (self.frame_in_buffer as f64 * link_state.micros_per_sample) as i64;
           let frame_host_time = link_state.host_time_micros + frame_offset_micros;
           let phase = ss.phase_at_time(frame_host_time, link_state.quantum);
           // Convert phase to bar_phase (0..1) by dividing by quantum
           let bar_phase = phase / link_state.quantum;
-          root_clock.sync_external_clock(bar_phase, link_state.tempo, link_state.playing);
+          root_clock.sync_external_clock(bar_phase, link_state.tempo);
         }
       }
       self.frame_in_buffer += 1;
@@ -1692,11 +1699,7 @@ impl AudioProcessor {
           .get_poly_sample("beatInBar")
           .map(|p| p.get(0) as u32)
           .unwrap_or(0);
-        let is_playing = if self.current_link_state.is_some() {
-          !self.is_stopped() && self.current_link_state.as_ref().map_or(true, |s| s.playing)
-        } else {
-          !self.is_stopped()
-        };
+        let is_playing = !self.is_stopped();
         self.transport_meter.write_from_audio(
           bar_phase,
           bar_count,
@@ -1809,7 +1812,8 @@ where
 
   // Create the audio processor that owns the patch
   let sample_rate = config.sample_rate as f32;
-  let mut audio_processor = AudioProcessor::new(command_rx, error_tx, garbage_tx, shared, sample_rate);
+  let mut audio_processor =
+    AudioProcessor::new(command_rx, error_tx, garbage_tx, shared, sample_rate);
 
   let mut final_state_processor = FinalStateProcessor::new(num_channels);
 
@@ -1831,39 +1835,24 @@ where
         audio_processor.current_link_state = audio_processor.capture_link_state();
         audio_processor.frame_in_buffer = 0;
 
-        // Propagate Link start/stop → Operator transport
-        // This must happen before the frame loop (which guards on is_stopped()).
+        // Operator transport is decoupled from Link peer transport:
+        // peers never start or stop Operator. The only Link-driven transport
+        // action is releasing a locally-initiated quantized start when the
+        // shared timeline reaches a bar boundary.
         if let Some(ref link_state) = audio_processor.current_link_state {
-          let link_playing = link_state.playing;
-          let op_stopped = audio_processor.is_stopped();
-          let was_link_playing = audio_processor.last_link_playing;
-          audio_processor.last_link_playing = link_playing;
-
-          // Handle pending quantized start: wait for phase near bar boundary
           if audio_processor.link_pending_start {
             if let Some(ref ss) = audio_processor.link_session_state {
               let time = link_state.host_time_micros;
               let phase = ss.phase_at_time(time, link_state.quantum);
-              // Start when phase is in the first beat (near bar boundary)
               if phase < 0.5 {
                 audio_processor.link_pending_start = false;
-                audio_processor.stopped.store(false, std::sync::atomic::Ordering::SeqCst);
+                audio_processor
+                  .stopped
+                  .store(false, std::sync::atomic::Ordering::SeqCst);
                 let msg = modular_core::types::Message::Clock(ClockMessages::Start);
                 let _ = audio_processor.patch.dispatch_message(&msg);
               }
             }
-          } else if link_playing && op_stopped {
-            // External start from a Link peer — also quantize to bar boundary.
-            // Set pending_start so we wait for phase near 0, just like local starts.
-            audio_processor.link_pending_start = true;
-          } else if link_playing && !was_link_playing && !op_stopped {
-            // Link started but Operator was already "running" (from patch apply)
-            // Dispatch Start to give the clock a clean reset
-            let msg = modular_core::types::Message::Clock(ClockMessages::Start);
-            let _ = audio_processor.patch.dispatch_message(&msg);
-          } else if !link_playing && !op_stopped {
-            // Link session stopped — stop Operator transport
-            audio_processor.stopped.store(true, std::sync::atomic::Ordering::SeqCst);
           }
         }
 
@@ -1871,7 +1860,9 @@ where
         // Write phase BEFORE the is_stopped() guard so the UI always shows
         // the free-running Link phase, even when Operator is stopped.
         if let Some(ref link) = audio_processor.link {
-          audio_processor.transport_meter.write_link_state(true, link.num_peers() as u32);
+          audio_processor
+            .transport_meter
+            .write_link_state(true, link.num_peers() as u32);
           if let Some(ref link_state) = audio_processor.current_link_state {
             // Update BPM from Link so the UI reflects external tempo changes
             audio_processor.transport_meter.write_bpm(link_state.tempo);
@@ -1882,6 +1873,13 @@ where
               audio_processor.transport_meter.write_link_phase(bar_phase);
             }
           }
+          audio_processor
+            .transport_meter
+            .write_link_pending_start(audio_processor.link_pending_start);
+        } else {
+          audio_processor
+            .transport_meter
+            .write_link_pending_start(false);
         }
 
         let num_frames = output.len() / num_channels;
@@ -2237,6 +2235,9 @@ pub struct TransportMeter {
   link_peers: AtomicU32,
   /// Free-running Link bar phase (0..1), always updated when Link is enabled
   link_phase_bits: AtomicU64,
+  /// Armed for a quantized start — waiting for a Link bar boundary before
+  /// playback actually begins. While true, `is_playing` is still false.
+  link_pending_start: AtomicBool,
 }
 
 impl Default for TransportMeter {
@@ -2254,6 +2255,7 @@ impl Default for TransportMeter {
       link_enabled: AtomicBool::new(false),
       link_peers: AtomicU32::new(0),
       link_phase_bits: AtomicU64::new(0f64.to_bits()),
+      link_pending_start: AtomicBool::new(false),
     }
   }
 }
@@ -2319,7 +2321,15 @@ impl TransportMeter {
   /// Write the free-running Link bar phase (0..1), always updated when Link is enabled.
   #[inline]
   pub fn write_link_phase(&self, phase: f64) {
-    self.link_phase_bits.store(phase.to_bits(), Ordering::Relaxed);
+    self
+      .link_phase_bits
+      .store(phase.to_bits(), Ordering::Relaxed);
+  }
+
+  /// Write the pending-start flag (armed, waiting for bar boundary).
+  #[inline]
+  pub fn write_link_pending_start(&self, armed: bool) {
+    self.link_pending_start.store(armed, Ordering::Relaxed);
   }
 
   /// Read transport snapshot from the main thread.
@@ -2337,6 +2347,7 @@ impl TransportMeter {
       link_enabled: self.link_enabled.load(Ordering::Relaxed),
       link_peers: self.link_peers.load(Ordering::Relaxed),
       link_phase: f64::from_bits(self.link_phase_bits.load(Ordering::Relaxed)),
+      link_pending_start: self.link_pending_start.load(Ordering::Relaxed),
     }
   }
 }
@@ -2368,6 +2379,10 @@ pub struct TransportSnapshot {
   pub link_peers: u32,
   /// Free-running Link bar phase (0..1), always updated when Link is enabled
   pub link_phase: f64,
+  /// Armed for a quantized start — a start has been requested and the audio
+  /// thread is waiting for the next Link bar boundary before actually
+  /// flipping `is_playing`. Only meaningful when `link_enabled` is true.
+  pub link_pending_start: bool,
 }
 
 #[cfg(test)]
@@ -2428,7 +2443,13 @@ mod tests {
       transport_meter: Arc::new(TransportMeter::default()),
     };
 
-    let processor = AudioProcessor::new(cmd_consumer, err_producer, garbage_producer, shared, 44100.0);
+    let processor = AudioProcessor::new(
+      cmd_consumer,
+      err_producer,
+      garbage_producer,
+      shared,
+      44100.0,
+    );
 
     // Processor starts with empty patch (may have hidden audio_in)
     assert!(processor.patch.sampleables.is_empty() || processor.patch.sampleables.len() == 1);
@@ -2493,7 +2514,13 @@ mod tests {
       transport_meter: Arc::new(TransportMeter::default()),
     };
 
-    AudioProcessor::new(cmd_consumer, err_producer, garbage_producer, shared, 44100.0)
+    AudioProcessor::new(
+      cmd_consumer,
+      err_producer,
+      garbage_producer,
+      shared,
+      44100.0,
+    )
   }
 
   #[test]
@@ -2504,14 +2531,26 @@ mod tests {
     let mut processor = create_test_processor();
 
     // Set up initial state: cycle-2 (shift), cycle-3 (thirds)
-    processor.patch.sampleables.insert("cycle-2".into(), MockModule::new("shift"));
-    processor.patch.sampleables.insert("cycle-3".into(), MockModule::new("thirds"));
+    processor
+      .patch
+      .sampleables
+      .insert("cycle-2".into(), MockModule::new("shift"));
+    processor
+      .patch
+      .sampleables
+      .insert("cycle-3".into(), MockModule::new("thirds"));
 
     // Remap chain: cycle-2→cycle-3, cycle-3→cycle-4
     let mut update = PatchUpdate::new(48000.0);
     update.remaps = vec![
-      ModuleIdRemap { from: "cycle-2".into(), to: "cycle-3".into() },
-      ModuleIdRemap { from: "cycle-3".into(), to: "cycle-4".into() },
+      ModuleIdRemap {
+        from: "cycle-2".into(),
+        to: "cycle-3".into(),
+      },
+      ModuleIdRemap {
+        from: "cycle-3".into(),
+        to: "cycle-4".into(),
+      },
     ];
     // Both new IDs are desired (won't be garbage-collected)
     update.desired_ids.insert("cycle-3".into());
@@ -2529,12 +2568,22 @@ mod tests {
       "cycle-4 should exist after remap"
     );
     assert_eq!(
-      processor.patch.sampleables.get("cycle-3").unwrap().get_module_type(),
+      processor
+        .patch
+        .sampleables
+        .get("cycle-3")
+        .unwrap()
+        .get_module_type(),
       "shift",
       "cycle-3 should contain the shift module"
     );
     assert_eq!(
-      processor.patch.sampleables.get("cycle-4").unwrap().get_module_type(),
+      processor
+        .patch
+        .sampleables
+        .get("cycle-4")
+        .unwrap()
+        .get_module_type(),
       "thirds",
       "cycle-4 should contain the thirds module"
     );
@@ -2550,13 +2599,25 @@ mod tests {
     // Test swap: A→B and B→A simultaneously
     let mut processor = create_test_processor();
 
-    processor.patch.sampleables.insert("osc-1".into(), MockModule::new("alpha"));
-    processor.patch.sampleables.insert("osc-2".into(), MockModule::new("beta"));
+    processor
+      .patch
+      .sampleables
+      .insert("osc-1".into(), MockModule::new("alpha"));
+    processor
+      .patch
+      .sampleables
+      .insert("osc-2".into(), MockModule::new("beta"));
 
     let mut update = PatchUpdate::new(48000.0);
     update.remaps = vec![
-      ModuleIdRemap { from: "osc-1".into(), to: "osc-2".into() },
-      ModuleIdRemap { from: "osc-2".into(), to: "osc-1".into() },
+      ModuleIdRemap {
+        from: "osc-1".into(),
+        to: "osc-2".into(),
+      },
+      ModuleIdRemap {
+        from: "osc-2".into(),
+        to: "osc-1".into(),
+      },
     ];
     update.desired_ids.insert("osc-1".into());
     update.desired_ids.insert("osc-2".into());
@@ -2564,12 +2625,22 @@ mod tests {
     processor.apply_patch_update(update);
 
     assert_eq!(
-      processor.patch.sampleables.get("osc-1").unwrap().get_module_type(),
+      processor
+        .patch
+        .sampleables
+        .get("osc-1")
+        .unwrap()
+        .get_module_type(),
       "beta",
       "osc-1 should now contain beta (swapped)"
     );
     assert_eq!(
-      processor.patch.sampleables.get("osc-2").unwrap().get_module_type(),
+      processor
+        .patch
+        .sampleables
+        .get("osc-2")
+        .unwrap()
+        .get_module_type(),
       "alpha",
       "osc-2 should now contain alpha (swapped)"
     );
@@ -2580,12 +2651,16 @@ mod tests {
     // Simple case: single remap, no chain
     let mut processor = create_test_processor();
 
-    processor.patch.sampleables.insert("vca-1".into(), MockModule::new("my-vca"));
+    processor
+      .patch
+      .sampleables
+      .insert("vca-1".into(), MockModule::new("my-vca"));
 
     let mut update = PatchUpdate::new(48000.0);
-    update.remaps = vec![
-      ModuleIdRemap { from: "vca-1".into(), to: "vca-2".into() },
-    ];
+    update.remaps = vec![ModuleIdRemap {
+      from: "vca-1".into(),
+      to: "vca-2".into(),
+    }];
     update.desired_ids.insert("vca-2".into());
 
     processor.apply_patch_update(update);
@@ -2595,7 +2670,12 @@ mod tests {
       "old ID should be gone"
     );
     assert_eq!(
-      processor.patch.sampleables.get("vca-2").unwrap().get_module_type(),
+      processor
+        .patch
+        .sampleables
+        .get("vca-2")
+        .unwrap()
+        .get_module_type(),
       "my-vca",
       "module should be at new ID"
     );
@@ -2608,7 +2688,11 @@ mod tests {
   #[test]
   fn test_safety_soft_clip_linear_below_knee() {
     for &val in &[0.0, 0.1, -0.1, 0.5, -0.5, 0.89, -0.89, 0.9, -0.9] {
-      assert_eq!(safety_soft_clip(val), val, "expected linear passthrough for {val}");
+      assert_eq!(
+        safety_soft_clip(val),
+        val,
+        "expected linear passthrough for {val}"
+      );
     }
   }
 
@@ -2616,13 +2700,25 @@ mod tests {
   fn test_safety_soft_clip_saturates_above_knee() {
     for &val in &[1.0, 2.0, 5.0, 10.0, 100.0] {
       let out = safety_soft_clip(val);
-      assert!(out > SAFETY_CLIP_KNEE, "output {out} should be above knee for input {val}");
-      assert!(out < 1.0, "output {out} should be below 1.0 for input {val}");
+      assert!(
+        out > SAFETY_CLIP_KNEE,
+        "output {out} should be above knee for input {val}"
+      );
+      assert!(
+        out < 1.0,
+        "output {out} should be below 1.0 for input {val}"
+      );
     }
     for &val in &[-1.0, -2.0, -5.0, -10.0, -100.0] {
       let out = safety_soft_clip(val);
-      assert!(out < -SAFETY_CLIP_KNEE, "output {out} should be below -knee for input {val}");
-      assert!(out > -1.0, "output {out} should be above -1.0 for input {val}");
+      assert!(
+        out < -SAFETY_CLIP_KNEE,
+        "output {out} should be below -knee for input {val}"
+      );
+      assert!(
+        out > -1.0,
+        "output {out} should be above -1.0 for input {val}"
+      );
     }
   }
 

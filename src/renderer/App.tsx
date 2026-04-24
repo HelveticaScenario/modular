@@ -118,8 +118,6 @@ function App() {
 
     // Audio state
     const [isClockRunning, setIsClockRunning] = useState(true);
-    const [followMode, setFollowMode] = useState(false);
-    const [followQueued, setFollowQueued] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isEngineHealthOpen, setIsEngineHealthOpen] = useState(false);
@@ -526,11 +524,6 @@ function App() {
 
                     setTransportState(transport);
 
-                    // If Link stopped playback externally, stop Operator UI
-                    if (transport.linkEnabled && !transport.isPlaying) {
-                        setIsClockRunning(false);
-                    }
-
                     // Check if a pending UI state should be committed
                     const pending = pendingUIStateRef.current;
                     if (
@@ -568,21 +561,28 @@ function App() {
         };
     }, [isClockRunning]);
 
-    // When Link is enabled but Operator is stopped, poll transport state
-    // so we can detect when a Link peer starts playback.
-    const linkEnabled = transportState?.linkEnabled ?? false;
+    // Keep Link phase indicator live while Link is enabled but Operator is stopped.
+    // The main tick loop only runs when isClockRunning; this fills the gap so
+    // the phase indicator stays animated even before the user presses play.
     useEffect(() => {
+        const linkEnabled = transportState?.linkEnabled ?? false;
         if (!linkEnabled || isClockRunning) return;
-        const interval = setInterval(async () => {
-            const transport = await electronAPI.synthesizer.getTransportState();
-            setTransportState(transport);
-            if (transport.isPlaying) {
-                setIsClockRunning(true);
-                setFollowQueued(false);
-            }
-        }, 100);
-        return () => clearInterval(interval);
-    }, [linkEnabled, isClockRunning]);
+        let cancelled = false;
+        let rafId = 0;
+        const tick = () => {
+            if (cancelled) return;
+            void electronAPI.synthesizer.getTransportState().then((t) => {
+                if (cancelled) return;
+                setTransportState(t);
+                rafId = requestAnimationFrame(tick);
+            });
+        };
+        rafId = requestAnimationFrame(tick);
+        return () => {
+            cancelled = true;
+            cancelAnimationFrame(rafId);
+        };
+    }, [transportState?.linkEnabled, isClockRunning]);
 
     const handleSaveFile = useCallback(
         async (id?: string) => {
@@ -657,11 +657,7 @@ function App() {
                     return;
                 }
 
-                if (!followMode) {
-                    setIsClockRunning(true);
-                } else if (!isClockRunningRef.current) {
-                    setFollowQueued(true);
-                }
+                setIsClockRunning(true);
                 setRunningBufferId(activeBufferId);
                 setError(null);
                 setValidationErrors(null);
@@ -804,7 +800,7 @@ function App() {
         handleStopRef.current = async () => {
             await electronAPI.synthesizer.stop();
             setIsClockRunning(false);
-            setFollowQueued(false);
+            setRunningBufferId(null);
         };
     }, []);
     const handleStop = useCallback(() => handleStopRef.current(), []);
@@ -813,6 +809,13 @@ function App() {
         setError(null);
         setValidationErrors(null);
     }, []);
+
+    const handleCloseBuffer = useCallback(
+        async (id: string) => {
+            await closeBuffer(id);
+        },
+        [closeBuffer],
+    );
 
     useEffect(() => {
         const cleanupNewFile = electronAPI.onMenuNewFile(() => {
@@ -837,7 +840,7 @@ function App() {
         });
         const cleanupCloseBuffer = electronAPI.onMenuCloseBuffer(() => {
             if (activeBufferId) {
-                void closeBuffer(activeBufferId);
+                void handleCloseBuffer(activeBufferId);
             }
         });
         const cleanupToggleRecording = electronAPI.onMenuToggleRecording(() => {
@@ -872,7 +875,13 @@ function App() {
             cleanupOpenSettings();
             cleanupOpenEngineHealth();
         };
-    }, [activeBufferId, closeBuffer, isRecording, buffers, createUntitledFile]);
+    }, [
+        activeBufferId,
+        handleCloseBuffer,
+        isRecording,
+        buffers,
+        createUntitledFile,
+    ]);
 
     return (
         <div className="app">
@@ -891,20 +900,6 @@ function App() {
                                   }
                                 : prev,
                         );
-                        if (!enabled) {
-                            setFollowMode(false);
-                            setFollowQueued(false);
-                            void electronAPI.synthesizer.setFollowMode(false);
-                        }
-                    }}
-                    followMode={followMode}
-                    followQueued={followQueued}
-                    onToggleFollowMode={(enabled) => {
-                        setFollowMode(enabled);
-                        if (!enabled) {
-                            setFollowQueued(false);
-                        }
-                        void electronAPI.synthesizer.setFollowMode(enabled);
                     }}
                 />
                 <AudioControls
@@ -986,7 +981,7 @@ function App() {
                                     onSaveFile={handleSaveFileStable}
                                     onRenameFile={renameFile}
                                     onDeleteFile={handleDeleteFile}
-                                    onCloseBuffer={closeBuffer}
+                                    onCloseBuffer={handleCloseBuffer}
                                     onSelectWorkspace={selectWorkspaceFolder}
                                     onRefreshTree={refreshFileTree}
                                     onRenameCommit={handleRenameCommitSafe}

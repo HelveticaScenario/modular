@@ -376,6 +376,27 @@
     line-height: 1.4;
 }
 
+.transport-armed {
+    color: var(--accent-secondary, #61afef);
+    font-weight: 600;
+    font-size: 0.9em;
+    padding: 0 4px;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    line-height: 1.4;
+    animation: transport-armed-pulse 1s ease-in-out infinite;
+}
+
+@keyframes transport-armed-pulse {
+    0%,
+    100% {
+        opacity: 0.55;
+    }
+    50% {
+        opacity: 1;
+    }
+}
+
 .transport-link {
     font-size: 10px;
     padding: 2px 6px;
@@ -436,22 +457,4 @@
     margin-left: 4px;
     font-size: 9px;
     opacity: 0.8;
-}
-
-.transport-follow {
-    font-size: 10px;
-    padding: 2px 6px;
-    border: 1px solid var(--border-color, #555);
-    border-radius: 3px;
-    background: transparent;
-    color: var(--text-muted, #888);
-    cursor: pointer;
-    margin-left: 4px;
-    font-family: var(--font-mono);
-}
-
-.transport-follow.active {
-    background: var(--accent-secondary, #61afef);
-    color: var(--bg-primary, #1a1a1a);
-    border-color: var(--accent-secondary, #61afef);
 }

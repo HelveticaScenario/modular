@@ -924,7 +924,7 @@ impl Synthesizer {
 
   #[napi]
   pub fn stop(&mut self) {
-    self.state.set_stopped(true);
+    self.state.request_stop();
   }
 
   #[napi]
@@ -1160,11 +1160,6 @@ impl Synthesizer {
     self.state.send_command(GraphCommand::EnableLink(enabled))?;
     self.state.transport_meter.write_link_state(enabled, 0);
     Ok(())
-  }
-
-  #[napi]
-  pub fn set_follow_mode(&self, enabled: bool) {
-    self.state.follow_mode.store(enabled, std::sync::atomic::Ordering::SeqCst);
   }
 
   // =========================================================================
