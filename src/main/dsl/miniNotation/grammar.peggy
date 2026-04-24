@@ -270,21 +270,24 @@ Euclidean
 // each projected into the modifier's expected AST type.
 
 ModOperand
-  = n:Number {
+  = r:OperandRandomChoice { return r; }
+  / n:Number {
       return { Pure: located({ Number: n }, location()) };
     }
   / "[" _ s:OperandStackExpr _ "]" { return s.fast; }
   / "<" _ s:OperandStackExpr _ ">" { return s.slow; }
 
 ModOperandF64
-  = n:Number {
+  = r:OperandRandomChoiceF64 { return r; }
+  / n:Number {
       return { Pure: located(n, location()) };
     }
   / "[" _ s:OperandStackExprF64 _ "]" { return s.fast; }
   / "<" _ s:OperandStackExprF64 _ ">" { return s.slow; }
 
 ModOperandU32
-  = n:Integer {
+  = r:OperandRandomChoiceU32 { return r; }
+  / n:Integer {
       if (n < 0) error("Euclidean pulses/steps must be non-negative integers");
       return { Pure: located(n, location()) };
     }
@@ -292,7 +295,8 @@ ModOperandU32
   / "<" _ s:OperandStackExprU32 _ ">" { return s.slow; }
 
 ModOperandI32
-  = n:Integer {
+  = r:OperandRandomChoiceI32 { return r; }
+  / n:Integer {
       return { Pure: located(n, location()) };
     }
   / "[" _ s:OperandStackExprI32 _ "]" { return s.fast; }
@@ -320,9 +324,18 @@ OperandSequence
     }
 
 OperandElement
-  = base:OperandBase weight:Weight? {
-      return [base, weight];
+  = r:OperandRandomChoice weight:Weight? { return [r, weight]; }
+  / base:OperandBase weight:Weight? { return [base, weight]; }
+
+OperandRandomChoice
+  = first:OperandChoice rest:(_ "|" _ @OperandChoice)+ {
+      const seed = ctx.nextSeed();
+      return { RandomChoice: [[first, ...rest], seed] };
     }
+
+OperandChoice
+  = "~" { return { Rest: spanOf(location()) }; }
+  / n:Number { return { Pure: located({ Number: n }, location()) }; }
 
 OperandBase
   = "~" { return { Rest: spanOf(location()) }; }
@@ -348,7 +361,18 @@ OperandSequenceF64
   = elems:(_ @OperandElementF64)+ { return { asCat: elems }; }
 
 OperandElementF64
-  = base:OperandBaseF64 weight:Weight? { return [base, weight]; }
+  = r:OperandRandomChoiceF64 weight:Weight? { return [r, weight]; }
+  / base:OperandBaseF64 weight:Weight? { return [base, weight]; }
+
+OperandRandomChoiceF64
+  = first:OperandChoiceF64 rest:(_ "|" _ @OperandChoiceF64)+ {
+      const seed = ctx.nextSeed();
+      return { RandomChoice: [[first, ...rest], seed] };
+    }
+
+OperandChoiceF64
+  = "~" { return { Rest: spanOf(location()) }; }
+  / n:Number { return { Pure: located(n, location()) }; }
 
 OperandBaseF64
   = "~" { return { Rest: spanOf(location()) }; }
@@ -374,7 +398,21 @@ OperandSequenceU32
   = elems:(_ @OperandElementU32)+ { return { asCat: elems }; }
 
 OperandElementU32
-  = base:OperandBaseU32 weight:Weight? { return [base, weight]; }
+  = r:OperandRandomChoiceU32 weight:Weight? { return [r, weight]; }
+  / base:OperandBaseU32 weight:Weight? { return [base, weight]; }
+
+OperandRandomChoiceU32
+  = first:OperandChoiceU32 rest:(_ "|" _ @OperandChoiceU32)+ {
+      const seed = ctx.nextSeed();
+      return { RandomChoice: [[first, ...rest], seed] };
+    }
+
+OperandChoiceU32
+  = "~" { return { Rest: spanOf(location()) }; }
+  / n:Integer {
+      if (n < 0) error("Expected non-negative integer");
+      return { Pure: located(n, location()) };
+    }
 
 OperandBaseU32
   = "~" { return { Rest: spanOf(location()) }; }
@@ -403,7 +441,18 @@ OperandSequenceI32
   = elems:(_ @OperandElementI32)+ { return { asCat: elems }; }
 
 OperandElementI32
-  = base:OperandBaseI32 weight:Weight? { return [base, weight]; }
+  = r:OperandRandomChoiceI32 weight:Weight? { return [r, weight]; }
+  / base:OperandBaseI32 weight:Weight? { return [base, weight]; }
+
+OperandRandomChoiceI32
+  = first:OperandChoiceI32 rest:(_ "|" _ @OperandChoiceI32)+ {
+      const seed = ctx.nextSeed();
+      return { RandomChoice: [[first, ...rest], seed] };
+    }
+
+OperandChoiceI32
+  = "~" { return { Rest: spanOf(location()) }; }
+  / n:Integer { return { Pure: located(n, location()) }; }
 
 OperandBaseI32
   = "~" { return { Rest: spanOf(location()) }; }

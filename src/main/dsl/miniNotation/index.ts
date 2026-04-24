@@ -12,6 +12,8 @@
 import type { MiniAST, ParsedPattern } from './ast';
 import { collectLeafSpans } from './collectLeafSpans';
 import { MiniParseError, parseMini } from './parser';
+import { captureSourceLocation } from '../captureSourceLocation';
+import { lookupArgumentSpan } from '../factories';
 
 export type { MiniAST, ParsedPattern } from './ast';
 export { MiniParseError } from './parser';
@@ -32,12 +34,18 @@ export function $p(source: string): ParsedPattern {
     }
     const ast: MiniAST = parseMini(source);
     const all_spans = collectLeafSpans(ast);
-    return {
+    const sourceLocation = captureSourceLocation();
+    const argument_span = lookupArgumentSpan(sourceLocation, 'source');
+    const pattern: ParsedPattern = {
         __kind: 'ParsedPattern',
         ast,
         source,
         all_spans,
     };
+    if (argument_span) {
+        pattern.argument_span = argument_span;
+    }
+    return pattern;
 }
 
 /** Type guard for runtime `ParsedPattern` checks. */

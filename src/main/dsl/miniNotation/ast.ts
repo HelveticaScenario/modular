@@ -142,4 +142,13 @@ export interface ParsedPattern {
     ast: MiniAST;
     source: string;
     all_spans: [number, number][];
+    /**
+     * Document span of the literal `$p()` parsed (outer quotes included).
+     * Module factories receiving this `ParsedPattern` use this span as the
+     * `argument_spans` entry for whatever param the pattern was passed as,
+     * so pattern highlighting stays attached to the original `$p(...)` call
+     * site regardless of how many `const` indirections sit between the two.
+     * `undefined` when `$p()` was called outside a tracked DSL source file.
+     */
+    argument_span?: { start: number; end: number };
 }

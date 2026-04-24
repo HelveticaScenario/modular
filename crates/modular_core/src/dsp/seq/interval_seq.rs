@@ -122,10 +122,10 @@ impl crate::pattern_system::mini::convert::FromMiniAtom for IntervalValue {
                 Ok(IntervalValue::Degree(*n as i32))
             }
             AtomValue::Hz(_) => Err(ConvertError::InvalidAtom(
-                "IntervalValue does not accept Hz atoms (use $cycle for pitched patterns)".into(),
+                "IntervalValue does not accept Hz atoms; $iCycle interprets atoms as scale-degree integers (use $cycle for unquantized pitch)".into(),
             )),
             AtomValue::Note { .. } => Err(ConvertError::InvalidAtom(
-                "IntervalValue does not accept note atoms (use $cycle for pitched patterns)".into(),
+                "IntervalValue does not accept note atoms; $iCycle interprets atoms as scale-degree integers (use $cycle for unquantized pitch)".into(),
             )),
         }
     }
