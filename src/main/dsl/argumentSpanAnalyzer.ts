@@ -363,27 +363,6 @@ function resolveInterpolations(
 }
 
 /**
- * If the node is a `$p(literal)` call expression, return the inner literal node.
- * This lets the argument-span tracker treat `$cycle($p("bd sd"))` the same as
- * `$cycle("bd sd")` did before — the span points at the mini-notation source
- * string, not the `$p(...)` call itself.
- */
-function unwrapParsedPatternCall(node: Node): Node {
-    if (!Node.isCallExpression(node)) {
-        return node;
-    }
-    const expr = node.getExpression();
-    if (!Node.isIdentifier(expr) || expr.getText() !== '$p') {
-        return node;
-    }
-    const args = node.getArguments();
-    if (args.length === 0) {
-        return node;
-    }
-    return args[0];
-}
-
-/**
  * Get a trackable span from a node, either directly (if it's a literal)
  * or by resolving a const variable reference to its literal initializer.
  */
@@ -391,14 +370,13 @@ function getTrackableSpan(
     node: Node,
     constMap: Map<string, SourceSpan>,
 ): SourceSpan | null {
-    const unwrapped = unwrapParsedPatternCall(node);
-    if (isTrackableLiteral(unwrapped)) {
-        return { end: unwrapped.getEnd(), start: unwrapped.getStart() };
+    if (isTrackableLiteral(node)) {
+        return { end: node.getEnd(), start: node.getStart() };
     }
 
     // Try resolving const variable reference
-    if (Node.isIdentifier(unwrapped)) {
-        return constMap.get(unwrapped.getText()) ?? null;
+    if (Node.isIdentifier(node)) {
+        return constMap.get(node.getText()) ?? null;
     }
 
     return null;
@@ -413,13 +391,12 @@ function getTrackableNode(
     node: Node,
     constNodeMap: Map<string, Node>,
 ): Node | null {
-    const unwrapped = unwrapParsedPatternCall(node);
-    if (isTrackableLiteral(unwrapped)) {
-        return unwrapped;
+    if (isTrackableLiteral(node)) {
+        return node;
     }
 
-    if (Node.isIdentifier(unwrapped)) {
-        return constNodeMap.get(unwrapped.getText()) ?? null;
+    if (Node.isIdentifier(node)) {
+        return constNodeMap.get(node.getText()) ?? null;
     }
 
     return null;
