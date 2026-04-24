@@ -2,10 +2,13 @@
 
 mod audio;
 mod commands;
+mod graph_analysis;
 mod midi;
 mod params_cache;
 mod validation;
 mod wav_metadata;
+
+pub use graph_analysis::classify_modules;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use napi::bindgen_prelude::Float32Array;
