@@ -17,6 +17,12 @@ impl crate::types::Connect for SignalParams {
     }
 }
 
+impl crate::types::InjectIndexPtr for SignalParams {
+    fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>) {
+        crate::types::InjectIndexPtr::inject_index_ptr(&mut self.source, ptr);
+    }
+}
+
 #[derive(Outputs, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct SignalOutputs {

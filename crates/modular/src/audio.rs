@@ -1442,10 +1442,11 @@ impl AudioProcessor {
             self.link_sample_count = 0;
             self.link = Some(link);
           } else {
-            // Clear external sync on ROOT_CLOCK before dropping Link
+            // Clear external sync on ROOT_CLOCK before dropping Link —
+            // pass an empty states slice so the clock reverts to free-running.
             use modular_core::types::ROOT_CLOCK_ID;
             if let Some(root_clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
-              root_clock.clear_external_sync();
+              root_clock.sync_external_clock(&[]);
             }
             self.link = None;
             self.host_time_filter = None;
@@ -1619,7 +1620,12 @@ impl AudioProcessor {
           let phase = ss.phase_at_time(frame_host_time, link_state.quantum);
           // Convert phase to bar_phase (0..1) by dividing by quantum
           let bar_phase = phase / link_state.quantum;
-          root_clock.sync_external_clock(bar_phase, link_state.tempo, link_state.playing);
+          // Wrap in a 1-element slice; Task 11 will pre-fill the full block at once.
+          root_clock.sync_external_clock(&[modular_core::types::ExternalClockState {
+            bar_phase,
+            bpm: link_state.tempo,
+            playing: link_state.playing,
+          }]);
         }
       }
       self.frame_in_buffer += 1;

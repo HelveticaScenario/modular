@@ -25,6 +25,35 @@ fn default_buffer_length() -> f64 {
     1.0
 }
 
+/// Block-output buffer for BufferWrite.
+/// One `BlockPort` for the `sample`/`output` port; the `buffer` port is not
+/// exposed as a block output — readers access it via `get_buffer_output` directly.
+pub struct BufferWriteBlockOutputs {
+    pub sample: crate::block_port::BlockPort,
+}
+
+impl BufferWriteBlockOutputs {
+    pub fn new(block_size: usize) -> Self {
+        Self {
+            sample: crate::block_port::BlockPort::new(block_size),
+        }
+    }
+
+    pub fn get_at(&self, port: &str, ch: usize, index: usize) -> f32 {
+        match port {
+            "output" => self.sample.get(index, ch),
+            _ => 0.0,
+        }
+    }
+
+    pub fn copy_from_inner(&mut self, inner: &BufferWriteOutputs, slot: usize) {
+        let poly = &inner.sample;
+        for ch in 0..crate::poly::PORT_MAX_CHANNELS {
+            self.sample.data[slot][ch] = poly.get(ch);
+        }
+    }
+}
+
 /// Outputs for the $buffer module.
 /// Manually implements OutputStruct because the buffer field is `Arc<BufferData>`,
 /// not the usual `PolyOutput` / `f32` that `#[derive(Outputs)]` handles.

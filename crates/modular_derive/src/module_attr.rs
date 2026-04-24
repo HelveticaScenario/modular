@@ -231,6 +231,17 @@ pub fn module_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     }
 
+    // Inject `_block_index: Cell<usize>` so inner DSP can read the current
+    // sample position within the block via `self.current_block_index()`.
+    if let Data::Struct(ref mut data_struct) = ast.data {
+        if let Fields::Named(ref mut fields) = data_struct.fields {
+            let field: syn::Field = syn::parse_quote! {
+                pub _block_index: std::cell::Cell<usize>
+            };
+            fields.named.push(field);
+        }
+    }
+
     match impl_module_macro_attr(&ast, &attr_args) {
         Ok(generated) => {
             let mut output = quote!(#ast);
@@ -342,22 +353,25 @@ fn impl_module_macro_attr(
                         .map(|f| {
                             let field_name = f.ident.as_ref().unwrap();
                             let field_name_str = field_name.to_string();
-                            match field_name_str.as_str() {
-                                "params" => Ok(quote! { params: *concrete_params }),
-                                "_channel_count" => {
-                                    Ok(quote! { _channel_count: deserialized.channel_count })
-                                }
-                                "outputs" | "state" => {
-                                    Ok(quote! { #field_name: Default::default() })
-                                }
-                                other => Err(syn::Error::new(
-                                    field_name.span(),
-                                    format!(
-                                        "Module struct field `{other}` is not allowed. \
-                                     Only `state`, `outputs`, and `params` fields are permitted.",
-                                    ),
-                                )),
-                            }
+                                match field_name_str.as_str() {
+                                                "params" => Ok(quote! { params: *concrete_params }),
+                                                "_channel_count" => {
+                                                    Ok(quote! { _channel_count: deserialized.channel_count })
+                                                }
+                                                "_block_index" => {
+                                                    Ok(quote! { _block_index: Default::default() })
+                                                }
+                                                "outputs" | "state" => {
+                                                    Ok(quote! { #field_name: Default::default() })
+                                                }
+                                                other => Err(syn::Error::new(
+                                                    field_name.span(),
+                                                    format!(
+                                                        "Module struct field `{other}` is not allowed. \
+                                                     Only `state`, `outputs`, and `params` fields are permitted.",
+                                                    ),
+                                                )),
+                                            }
                         })
                         .collect::<Result<Vec<_>, _>>()?
                         .into_iter()
@@ -386,6 +400,27 @@ fn impl_module_macro_attr(
         .to_case(Case::Snake);
     let constructor_name = Ident::new(&constructor_name, Span::call_site());
     let params_struct_name = format_ident!("{}Params", name);
+
+    // Derive the BlockOutputs type name from the outputs type.
+    // Convention: {Name}Outputs → {Name}BlockOutputs
+    let block_outputs_ty_name = match &outputs_ty {
+        syn::Type::Path(tp) => {
+            let last = tp.path.segments.last().unwrap();
+            let s = last.ident.to_string();
+            let base = if s.ends_with("Outputs") {
+                &s[..s.len() - 7]
+            } else {
+                &s[..]
+            };
+            format_ident!("{}BlockOutputs", base)
+        }
+        _ => {
+            return Err(syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "outputs type must be a simple path",
+            ))
+        }
+    };
 
     // Extract generics for proper impl blocks
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
@@ -525,17 +560,38 @@ fn impl_module_macro_attr(
         }
     };
 
-    // Check for clock_sync flag
-    let clock_sync_impl = if attr_args.clock_sync {
-        quote! {
-            fn sync_external_clock(&self, bar_phase: f64, bpm: f64, playing: bool) {
-                let module = unsafe { &mut *self.module.get() };
-                module.sync_external_clock(bar_phase, bpm, playing);
+    // Check for clock_sync flag — generates ExternalClockState block injection.
+    // The wrapper holds a pre-allocated `clock_state_block` filled by
+    // `sync_external_clock` and drained sample-by-sample in `ensure_processed`.
+    let (clock_state_field, clock_state_field_init, clock_sync_impl) = if attr_args.clock_sync {
+        let field = quote! {
+            clock_state_block: std::cell::UnsafeCell<Box<[crate::types::ExternalClockState]>>,
+        };
+        let field_init = quote! {
+            clock_state_block: std::cell::UnsafeCell::new(
+                vec![crate::types::ExternalClockState::default(); block_size]
+                    .into_boxed_slice()
+            ),
+        };
+        let impl_code = quote! {
+            fn sync_external_clock(&self, states: &[crate::types::ExternalClockState]) {
+                let block = unsafe { &mut *self.clock_state_block.get() };
+                let n = states.len().min(block.len());
+                block[..n].copy_from_slice(&states[..n]);
             }
+        };
+        (field, field_init, impl_code)
+    } else {
+        (quote! {}, quote! {}, quote! {})
+    };
 
-            fn clear_external_sync(&self) {
-                let module = unsafe { &mut *self.module.get() };
-                module.clear_external_sync();
+    let clock_inject_in_loop = if attr_args.clock_sync {
+        quote! {
+            {
+                let clock_block = unsafe { &*self.clock_state_block.get() };
+                if let Some(state) = clock_block.get(i) {
+                    module.sync_external_clock_impl(*state);
+                }
             }
         }
     } else {
@@ -634,6 +690,13 @@ fn impl_module_macro_attr(
             pub fn channel_count(&self) -> usize {
                 self._channel_count
             }
+
+            /// Returns the current sample index within the block being processed.
+            /// Only valid to call from within `update()`.
+            #[inline]
+            pub fn current_block_index(&self) -> usize {
+                self._block_index.get()
+            }
         }
 
         /// Generated wrapper struct for audio-thread-only module access.
@@ -663,11 +726,17 @@ fn impl_module_macro_attr(
         /// Violating these invariants will cause undefined behavior (data races).
         struct #struct_name {
             id: String,
-            outputs: std::cell::UnsafeCell<#outputs_ty>,
+            block_outputs: std::cell::UnsafeCell<#block_outputs_ty_name>,
             module: std::cell::UnsafeCell<#name #static_ty_generics>,
-            processed: core::sync::atomic::AtomicBool,
+            /// Next sample slot to write into block_outputs. Resets to 0 on tick().
+            index: std::cell::Cell<usize>,
+            /// True while ensure_processed() is executing. Guards against reentrant calls.
+            computing: std::cell::Cell<bool>,
+            mode: crate::types::ProcessingMode,
+            block_size: usize,
             sample_rate: f32,
             argument_spans: std::cell::UnsafeCell<std::collections::HashMap<String, crate::params::ArgumentSpan>>,
+            #clock_state_field
         }
 
         // SAFETY: This type is only accessed from the audio thread after construction.
@@ -676,38 +745,75 @@ fn impl_module_macro_attr(
 
         impl crate::types::Sampleable for #struct_name {
             fn tick(&self) {
-                self.processed.store(false, core::sync::atomic::Ordering::Release);
-            }
-
-            fn update(&self) {
-                if let Ok(_) = self.processed.compare_exchange(
-                    false,
-                    true,
-                    core::sync::atomic::Ordering::Acquire,
-                    core::sync::atomic::Ordering::Relaxed,
-                ) {
-                    unsafe {
-                        let module = &mut *self.module.get();
-                        module.update(self.sample_rate);
-                        let outputs = &mut *self.outputs.get();
-                        crate::types::OutputStruct::copy_from(outputs, &module.outputs);
-                    }
+                self.index.set(0);
+                // Let buffer modules advance their write position once per callback.
+                unsafe {
+                    crate::types::OutputStruct::tick_buffers(
+                        &mut (*self.module.get()).outputs,
+                        self.block_size,
+                    );
                 }
             }
 
+            fn ensure_processed(&self) {
+                // Already computed full block?
+                if self.index.get() >= self.block_size {
+                    return;
+                }
+                // Reentrancy guard — feedback cycle detected at runtime.
+                if self.computing.get() {
+                    return;
+                }
+                self.computing.set(true);
+
+                let target = match self.mode {
+                    crate::types::ProcessingMode::Block => self.block_size,
+                    crate::types::ProcessingMode::Sample => self.index.get() + 1,
+                };
+
+                while self.index.get() < target {
+                    let i = self.index.get();
+                    unsafe {
+                        let module = &mut *self.module.get();
+                        // Set current block index so inner DSP can call current_block_index()
+                        module._block_index.set(i);
+                        #clock_inject_in_loop
+                        module.update(self.sample_rate);
+                        // Copy inner outputs to block buffer at slot i
+                        (*self.block_outputs.get()).copy_from_inner(&module.outputs, i);
+                    }
+                    self.index.set(i + 1);
+                }
+
+                self.computing.set(false);
+            }
+
+            fn get_value_at(&self, port: &str, ch: usize, index: usize) -> f32 {
+                // Reentrancy: return 1-sample-delayed value (feedback cycle).
+                if self.computing.get() {
+                    let prev = if index == 0 {
+                        self.block_size.saturating_sub(1)
+                    } else {
+                        index - 1
+                    };
+                    return unsafe { (*self.block_outputs.get()).get_at(port, ch, prev) };
+                }
+                self.ensure_processed();
+                unsafe { (*self.block_outputs.get()).get_at(port, ch, index) }
+            }
+
+            // Backward-compat: delegates to ensure_processed.
+            fn update(&self) {
+                self.ensure_processed();
+            }
+
+            // Backward-compat: mono sample from last computed slot.
             fn get_poly_sample(&self, port: &str) -> napi::Result<crate::poly::PolyOutput> {
-                self.update();
-                let outputs = unsafe { &*self.outputs.get() };
-                crate::types::OutputStruct::get_poly_sample(outputs, port).ok_or_else(|| {
-                    napi::Error::from_reason(
-                        format!(
-                            "{} with id {} does not have port {}",
-                            #module_name,
-                            &self.id,
-                            port
-                        )
-                    )
-                })
+                self.ensure_processed();
+                let idx = self.index.get().saturating_sub(1);
+                let block_outputs = unsafe { &*self.block_outputs.get() };
+                let value = block_outputs.get_at(port, 0, idx);
+                Ok(crate::poly::PolyOutput::mono(value))
             }
 
             fn get_module_type(&self) -> &str {
@@ -721,6 +827,12 @@ fn impl_module_macro_attr(
             fn connect(&self, patch: &crate::Patch) {
                 let module = unsafe { &mut *self.module.get() };
                 crate::types::Connect::connect(&mut module.params, patch);
+                // Wire index back-pointer into all Signal fields so upstream modules
+                // serve the correct sample position.
+                crate::types::InjectIndexPtr::inject_index_ptr(
+                    &mut module.params,
+                    &self.index as *const std::cell::Cell<usize>,
+                );
             }
 
             #on_patch_update_impl
@@ -757,21 +869,23 @@ fn impl_module_macro_attr(
                         &mut new_inner.outputs,
                         &mut old_inner.outputs,
                     );
-                    // Transfer wrapper outputs so feedback cycles read previous-frame
-                    // values instead of zeros on the patch-update frame. Without this,
-                    // the module that is "second" in a cycle reads Default outputs
-                    // (all zeros) from the "first" module's wrapper, injecting a
-                    // one-sample discontinuity into the feedback loop.
+                    // Swap block outputs so feedback cycles read previous-frame values.
                     unsafe {
-                        let new_outputs = &mut *self.outputs.get();
-                        let old_outputs = &mut *old_typed.outputs.get();
-                        std::mem::swap(new_outputs, old_outputs);
+                        let new_bo = &mut *self.block_outputs.get();
+                        let old_bo = &mut *old_typed.block_outputs.get();
+                        std::mem::swap(new_bo, old_bo);
                     }
                 }
             }
         }
 
-        fn #constructor_name(id: &String, sample_rate: f32, deserialized: crate::params::DeserializedParams) -> napi::Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
+        fn #constructor_name(
+            id: &String,
+            sample_rate: f32,
+            deserialized: crate::params::DeserializedParams,
+            block_size: usize,
+            mode: crate::types::ProcessingMode,
+        ) -> napi::Result<std::sync::Arc<Box<dyn crate::types::Sampleable>>> {
             let concrete_params = deserialized.params.into_any()
                 .downcast::<#params_struct_name>()
                 .map_err(|_| napi::Error::from_reason(
@@ -789,10 +903,14 @@ fn impl_module_macro_attr(
             let sampleable = #struct_name {
                 id: id.clone(),
                 sample_rate,
-                outputs: std::cell::UnsafeCell::new(Default::default()),
+                block_outputs: std::cell::UnsafeCell::new(#block_outputs_ty_name::new(block_size)),
                 module: std::cell::UnsafeCell::new(inner),
-                processed: core::sync::atomic::AtomicBool::new(false),
+                index: std::cell::Cell::new(0),
+                computing: std::cell::Cell::new(false),
+                mode,
+                block_size,
                 argument_spans: std::cell::UnsafeCell::new(deserialized.argument_spans),
+                #clock_state_field_init
             };
 
             #has_init_call
@@ -801,7 +919,17 @@ fn impl_module_macro_attr(
 
         impl #impl_generics crate::types::Module for #name #ty_generics #where_clause {
             fn install_constructor(map: &mut std::collections::HashMap<String, crate::types::SampleableConstructor>) {
-                map.insert(#module_name.into(), Box::new(#constructor_name));
+                // Temporary wrapper: passes block_size=1 and mode=Block until Task 11
+                // wires the real values from graph analysis + CPAL config.
+                map.insert(#module_name.into(), Box::new(|id, sample_rate, deserialized| {
+                    #constructor_name(
+                        id,
+                        sample_rate,
+                        deserialized,
+                        1,
+                        crate::types::ProcessingMode::Block,
+                    )
+                }));
             }
 
             fn install_params_deserializer(map: &mut std::collections::HashMap<String, crate::params::ParamsDeserializer>) {

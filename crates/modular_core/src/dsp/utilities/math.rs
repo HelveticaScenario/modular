@@ -105,6 +105,13 @@ impl Connect for MathExpressionParam {
     }
 }
 
+impl crate::types::InjectIndexPtr for MathExpressionParam {
+    fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>) {
+        // Vec<Signal>: InjectIndexPtr forwards to each Signal element.
+        crate::types::InjectIndexPtr::inject_index_ptr(&mut self.signals, ptr);
+    }
+}
+
 #[derive(Clone, Deserr, JsonSchema, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
 #[deserr(rename_all = camelCase, deny_unknown_fields)]
@@ -134,6 +141,16 @@ impl Connect for MathParams {
         if let Some(ref mut z) = self.z {
             Connect::connect(z, patch);
         }
+    }
+}
+
+impl crate::types::InjectIndexPtr for MathParams {
+    fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>) {
+        crate::types::InjectIndexPtr::inject_index_ptr(&mut self.expression, ptr);
+        // Option<MonoSignal>: InjectIndexPtr forwards to the inner MonoSignal if Some.
+        crate::types::InjectIndexPtr::inject_index_ptr(&mut self.x, ptr);
+        crate::types::InjectIndexPtr::inject_index_ptr(&mut self.y, ptr);
+        crate::types::InjectIndexPtr::inject_index_ptr(&mut self.z, ptr);
     }
 }
 
