@@ -13,9 +13,8 @@
 //! through unchanged into Monaco pattern-span highlighting.
 //!
 //! `SeqValue` variants:
-//! - `Voltage(f64)` — pre-converted V/Oct pitch. Bare numbers in
-//!   mini-notation are interpreted as MIDI note numbers and converted
-//!   here. Hz and note atoms also convert to voltage.
+//! - `Voltage(f64)` — V/Oct CV. Bare numbers pass through directly as
+//!   voltages. Hz and note atoms convert to voltage via MIDI.
 //! - `Rest` — silence / gate-low event.
 //!
 //! The previous `Signal { .. }` variant (backing the `module(id:port:ch)`
@@ -95,10 +94,9 @@ impl FromMiniAtom for SeqValue {
     fn from_atom(atom: &AtomValue) -> Result<Self, ConvertError> {
         match atom {
             AtomValue::Number(n) => {
-                // Treat bare number as MIDI note, convert to voltage at
-                // parse time. Matches the historical behaviour before the
-                // grammar shrink (when the Rust parser produced Midi(i)).
-                Ok(SeqValue::Voltage(midi_to_voct_f64(*n)))
+                // Bare numbers are voltages directly (1V/oct CV).
+                // Notes / Hz are the only paths that go through MIDI.
+                Ok(SeqValue::Voltage(*n))
             }
             AtomValue::Hz(hz) => {
                 // Convert Hz to MIDI then to voltage.
@@ -403,11 +401,12 @@ mod tests {
     }
 
     #[test]
-    fn test_from_atom_number_to_voltage() {
-        // Number is treated as MIDI and converted to voltage (1V/oct from C4).
-        let n = SeqValue::from_atom(&AtomValue::Number(60.0)).unwrap();
-        let expected_voltage = midi_to_voct_f64(60.0);
-        assert!(matches!(n, SeqValue::Voltage(v) if (v - expected_voltage).abs() < 0.001));
+    fn test_from_atom_number_is_voltage_passthrough() {
+        // Bare numbers are voltages directly — no MIDI conversion.
+        let n = SeqValue::from_atom(&AtomValue::Number(1.5)).unwrap();
+        assert!(matches!(n, SeqValue::Voltage(v) if (v - 1.5).abs() < 0.001));
+        let neg = SeqValue::from_atom(&AtomValue::Number(-2.0)).unwrap();
+        assert!(matches!(neg, SeqValue::Voltage(v) if (v - -2.0).abs() < 0.001));
     }
 
     #[test]
