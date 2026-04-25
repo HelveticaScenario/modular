@@ -814,6 +814,129 @@ describe('$wavs() and $sampler', () => {
         expect(() => execWithWavs('$wavs().snare')).toThrow(/not found/);
     });
 
+    test('$wavs() numeric index returns lex-sorted file', () => {
+        // Tree adds two top-level files alongside `kick` so the lex order is
+        // deterministic: a, kick, z (subfolder `tables` excluded from index).
+        const tree = {
+            a: 'file',
+            kick: 'file',
+            z: 'file',
+            tables: { boom: 'file' },
+        } as const;
+        const run = (src: string) =>
+            executePatchScript(src, schemas, {
+                ...DEFAULT_EXECUTION_OPTIONS,
+                wavsFolderTree: tree as any,
+                loadWav,
+            });
+        const r0 = run('$sampler($wavs()[0], 5).out()');
+        expect(findModules(r0.patch, '$sampler')[0].params.wav.path).toBe('a');
+        const r1 = run('$sampler($wavs()[1], 5).out()');
+        expect(findModules(r1.patch, '$sampler')[0].params.wav.path).toBe(
+            'kick',
+        );
+        const r2 = run('$sampler($wavs()[2], 5).out()');
+        expect(findModules(r2.patch, '$sampler')[0].params.wav.path).toBe('z');
+    });
+
+    test('$wavs() numeric index wraps modulo file count', () => {
+        const tree = { a: 'file', b: 'file', c: 'file' } as const;
+        const run = (src: string) =>
+            executePatchScript(src, schemas, {
+                ...DEFAULT_EXECUTION_OPTIONS,
+                wavsFolderTree: tree as any,
+                loadWav,
+            });
+        // 3 files: positive wrap
+        expect(
+            findModules(
+                run('$sampler($wavs()[3], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('a');
+        expect(
+            findModules(
+                run('$sampler($wavs()[4], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('b');
+        expect(
+            findModules(
+                run('$sampler($wavs()[5], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('c');
+        // negative wrap
+        expect(
+            findModules(
+                run('$sampler($wavs()[-1], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('c');
+        expect(
+            findModules(
+                run('$sampler($wavs()[-2], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('b');
+        expect(
+            findModules(
+                run('$sampler($wavs()[-3], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('a');
+        expect(
+            findModules(
+                run('$sampler($wavs()[-4], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('c');
+    });
+
+    test('$wavs() numeric index works on subfolders', () => {
+        const tree = {
+            kick: 'file',
+            drums: { hat: 'file', snare: 'file' },
+        } as const;
+        const run = (src: string) =>
+            executePatchScript(src, schemas, {
+                ...DEFAULT_EXECUTION_OPTIONS,
+                wavsFolderTree: tree as any,
+                loadWav,
+            });
+        expect(
+            findModules(
+                run('$sampler($wavs().drums[0], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('drums/hat');
+        expect(
+            findModules(
+                run('$sampler($wavs().drums[1], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('drums/snare');
+        expect(
+            findModules(
+                run('$sampler($wavs().drums[2], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('drums/hat');
+    });
+
+    test('$wavs() numeric index throws on folder with no direct files', () => {
+        // `parent` has only a subfolder, no direct files — numeric index has
+        // nothing to wrap into and must throw.
+        const tree = { parent: { sub: { kick: 'file' } } } as const;
+        const run = () =>
+            executePatchScript('$wavs().parent[0]', schemas, {
+                ...DEFAULT_EXECUTION_OPTIONS,
+                wavsFolderTree: tree as any,
+                loadWav,
+            });
+        expect(run).toThrow(/no wav files/);
+    });
+
     test('$wavs() throws when no wavs/ folder', () => {
         expect(() =>
             executePatchScript('$wavs().kick', schemas, {
