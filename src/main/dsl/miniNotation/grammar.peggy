@@ -202,7 +202,7 @@ ChoiceElement
   / Value
 
 Rest
-  = "~" { return { Rest: spanOf(location()) }; }
+  = ("~" / "-" ![0-9]) { return { Rest: spanOf(location()) }; }
 
 // ---------------------------------------------------------------------------
 // Values
@@ -386,11 +386,11 @@ OperandRandomChoice
     }
 
 OperandChoice
-  = "~" { return { Rest: spanOf(location()) }; }
+  = ("~" / "-" ![0-9]) { return { Rest: spanOf(location()) }; }
   / n:Number { return { Pure: located({ Number: n }, location()) }; }
 
 OperandBase
-  = "~" { return { Rest: spanOf(location()) }; }
+  = ("~" / "-" ![0-9]) { return { Rest: spanOf(location()) }; }
   / n:Number { return { Pure: located({ Number: n }, location()) }; }
   / "[" _ s:OperandStackExpr _ "]" { return s.fast; }
   / "<" _ s:OperandStackExpr _ ">" { return s.slow; }
@@ -427,11 +427,11 @@ OperandRandomChoiceF64
     }
 
 OperandChoiceF64
-  = "~" { return { Rest: spanOf(location()) }; }
+  = ("~" / "-" ![0-9]) { return { Rest: spanOf(location()) }; }
   / n:Number { return { Pure: located(n, location()) }; }
 
 OperandBaseF64
-  = "~" { return { Rest: spanOf(location()) }; }
+  = ("~" / "-" ![0-9]) { return { Rest: spanOf(location()) }; }
   / n:Number { return { Pure: located(n, location()) }; }
   / "[" _ s:OperandStackExprF64 _ "]" { return s.fast; }
   / "<" _ s:OperandStackExprF64 _ ">" { return s.slow; }
@@ -468,14 +468,14 @@ OperandRandomChoiceU32
     }
 
 OperandChoiceU32
-  = "~" { return { Rest: spanOf(location()) }; }
+  = ("~" / "-" ![0-9]) { return { Rest: spanOf(location()) }; }
   / n:Integer {
       if (n < 0) error("Expected non-negative integer");
       return { Pure: located(n, location()) };
     }
 
 OperandBaseU32
-  = "~" { return { Rest: spanOf(location()) }; }
+  = ("~" / "-" ![0-9]) { return { Rest: spanOf(location()) }; }
   / n:Integer {
       if (n < 0) error("Expected non-negative integer");
       return { Pure: located(n, location()) };
@@ -515,11 +515,11 @@ OperandRandomChoiceI32
     }
 
 OperandChoiceI32
-  = "~" { return { Rest: spanOf(location()) }; }
+  = ("~" / "-" ![0-9]) { return { Rest: spanOf(location()) }; }
   / n:Integer { return { Pure: located(n, location()) }; }
 
 OperandBaseI32
-  = "~" { return { Rest: spanOf(location()) }; }
+  = ("~" / "-" ![0-9]) { return { Rest: spanOf(location()) }; }
   / n:Integer { return { Pure: located(n, location()) }; }
   / "[" _ s:OperandStackExprI32 _ "]" { return s.fast; }
   / "<" _ s:OperandStackExprI32 _ ">" { return s.slow; }
