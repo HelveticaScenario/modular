@@ -1038,10 +1038,19 @@ function generateWavsTypeDeclaration(tree: WavsFolderNode | null): string {
     }
 
     function renderNode(node: WavsFolderNode, indent: string): string {
-        const lines: string[] = ['{'];
-        for (const [key, value] of Object.entries(node).sort(([a], [b]) =>
+        const sorted = Object.entries(node).sort(([a], [b]) =>
             a.localeCompare(b),
-        )) {
+        );
+        const hasFiles = sorted.some(([, v]) => v === 'file');
+        const lines: string[] = ['{'];
+        // Numeric index signature (wraps modulo file count) when this folder
+        // has at least one direct file. Out-of-range integers are valid at
+        // runtime since access wraps; folders with zero files omit the
+        // signature so `$wavs().emptyDir[0]` is a static type error.
+        if (hasFiles) {
+            lines.push(`${indent}  readonly [index: number]: WavHandle;`);
+        }
+        for (const [key, value] of sorted) {
             const safeName = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key)
                 ? key
                 : `'${key.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
