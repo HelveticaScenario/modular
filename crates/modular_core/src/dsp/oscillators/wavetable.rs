@@ -18,8 +18,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::{
-    dsp::oscillators::{apply_fm, wavetable_prep::PreparedWavetable, FmMode},
-    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
+    dsp::oscillators::{FmMode, apply_fm, wavetable_prep::PreparedWavetable},
+    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
     types::{Connect, Table, Wav, WavData},
 };
 
@@ -95,7 +95,11 @@ pub fn wavetable_derive_channel_count(params: &WavetableOscParams) -> usize {
     let pos_ch = params.position.as_ref().map(|p| p.channels()).unwrap_or(0);
     let fm_ch = params.fm.as_ref().map(|f| f.channels()).unwrap_or(0);
     let phase_ch = params.phase.as_ref().map(|t| t.channels()).unwrap_or(0);
-    pitch_ch.max(pos_ch).max(fm_ch).max(phase_ch).clamp(1, PORT_MAX_CHANNELS)
+    pitch_ch
+        .max(pos_ch)
+        .max(fm_ch)
+        .max(phase_ch)
+        .clamp(1, PORT_MAX_CHANNELS)
 }
 
 /// A band-limited wavetable oscillator.

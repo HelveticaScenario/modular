@@ -2,9 +2,9 @@ use deserr::Deserr;
 use schemars::JsonSchema;
 
 use crate::{
+    Wav,
     dsp::utils::SchmittTrigger,
     poly::{MonoSignal, MonoSignalExt, PolyOutput},
-    Wav,
 };
 
 fn sampler_derive_channel_count(params: &SamplerParams) -> usize {

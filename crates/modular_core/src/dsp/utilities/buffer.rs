@@ -3,8 +3,8 @@ use schemars::JsonSchema;
 use std::sync::Arc;
 
 use crate::{
-    poly::{PolyOutput, PolySignal},
     Buffer, BufferData, MonoSignal,
+    poly::{PolyOutput, PolySignal},
 };
 
 // ─── $buffer (BufferWrite) ────────────────────────────────────────────────────
@@ -228,8 +228,8 @@ mod tests {
     use std::sync::Arc;
 
     use crate::{
-        types::{Connect, OutputStruct, Signal},
         BufferData, Patch,
+        types::{Connect, OutputStruct, Signal},
     };
 
     fn mono(value: f32) -> MonoSignal {

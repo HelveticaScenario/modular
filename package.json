@@ -115,15 +115,15 @@
             "prettier --write"
         ],
         "crates/modular/*.rs": [
-            "cargo fmt -- --check --manifest-path crates/modular/Cargo.toml",
+            "cargo fmt --check --manifest-path crates/modular/Cargo.toml",
             "cargo fmt --allow-staged --manifest-path crates/modular/Cargo.toml"
         ],
         "crates/modular_core/*.rs": [
-            "cargo fmt -- --check --manifest-path crates/modular_core/Cargo.toml",
+            "cargo fmt --check --manifest-path crates/modular_core/Cargo.toml",
             "cargo fmt --allow-staged --manifest-path crates/modular_core/Cargo.toml"
         ],
         "crates/modular_derive/*.rs": [
-            "cargo fmt -- --check --manifest-path crates/modular_derive/Cargo.toml",
+            "cargo fmt --check --manifest-path crates/modular_derive/Cargo.toml",
             "cargo fmt --allow-staged --manifest-path crates/modular_derive/Cargo.toml"
         ]
     },
