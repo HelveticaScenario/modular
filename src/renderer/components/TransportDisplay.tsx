@@ -3,17 +3,11 @@ import type { TransportSnapshot } from '../../shared/ipcTypes';
 interface TransportDisplayProps {
     transport: TransportSnapshot | null;
     onToggleLink?: (enabled: boolean) => void;
-    followMode?: boolean;
-    followQueued?: boolean;
-    onToggleFollowMode?: (enabled: boolean) => void;
 }
 
 export function TransportDisplay({
     transport,
     onToggleLink,
-    followMode,
-    followQueued,
-    onToggleFollowMode,
 }: TransportDisplayProps) {
     if (!transport) {
         return (
@@ -30,6 +24,7 @@ export function TransportDisplay({
         bar,
         beatInBar,
         hasQueuedUpdate,
+        linkPendingStart,
     } = transport;
 
     // Display bar as 1-indexed
@@ -141,25 +136,18 @@ export function TransportDisplay({
                 )}
             </button>
 
-            {/* Follow mode toggle (only when Link is active) */}
-            {transport.linkEnabled && (
-                <button
-                    className={`transport-follow${followMode ? ' active' : ''}`}
-                    onClick={() => onToggleFollowMode?.(!followMode)}
-                    title={
-                        followQueued
-                            ? 'Patch queued — waiting for Link start signal'
-                            : followMode
-                              ? 'Follow mode: waiting for Link start signal'
-                              : 'Enable follow mode (queue patch, wait for Link start)'
-                    }
+            {/* Armed-start indicator: start requested, waiting for next Link bar */}
+            {linkPendingStart && (
+                <span
+                    className="transport-armed"
+                    title="Waiting for Link bar boundary to start"
                 >
-                    Follow
-                </button>
+                    ⧗
+                </span>
             )}
 
             {/* Queued update indicator */}
-            {(hasQueuedUpdate || followQueued) && (
+            {hasQueuedUpdate && (
                 <span className="transport-queued" title="Update queued">
                     Q
                 </span>

@@ -119,7 +119,7 @@ impl Clock {
     }
 
     fn update(&mut self, sample_rate: f32) {
-        // External clock sync: override free-running clock with Link data
+        // External clock sync: override free-running clock with Link data.
         if let Some(sync) = self.state.external_sync.take() {
             if !sync.playing {
                 self.state.running = false;

@@ -1039,10 +1039,6 @@ registerIPCHandler('SYNTH_ENABLE_LINK', (enabled: boolean) => {
     synth.enableLink(enabled);
 });
 
-registerIPCHandler('SYNTH_SET_FOLLOW_MODE', (enabled: boolean) => {
-    synth.setFollowMode(enabled);
-});
-
 // Audio device operations - new API
 registerIPCHandler('AUDIO_REFRESH_DEVICE_CACHE', () => {
     synth.refreshDeviceCache();

@@ -27,10 +27,7 @@ export function EngineHealth({ isOpen, onClose }: EngineHealthProps) {
     const panelRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        if (!isOpen) {
-            setSnapshot(null);
-            return;
-        }
+        if (!isOpen) return;
 
         let cancelled = false;
 
@@ -49,6 +46,8 @@ export function EngineHealth({ isOpen, onClose }: EngineHealthProps) {
         return () => {
             cancelled = true;
             clearInterval(intervalId);
+            // Reset snapshot so next open shows "Loading…" instead of stale data.
+            setSnapshot(null);
         };
     }, [isOpen]);
 

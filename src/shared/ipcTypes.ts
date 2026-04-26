@@ -251,7 +251,6 @@ export const IPC_CHANNELS = {
     SYNTH_SET_MODULE_PARAM: 'modular:synth:set-module-param',
     SYNTH_GET_TRANSPORT_STATE: 'modular:synth:get-transport-state',
     SYNTH_ENABLE_LINK: 'modular:synth:enable-link',
-    SYNTH_SET_FOLLOW_MODE: 'modular:synth:set-follow-mode',
 
     // Audio device operations
     AUDIO_REFRESH_DEVICE_CACHE: 'modular:audio:refresh-device-cache',
@@ -387,8 +386,6 @@ export interface IPCHandlers {
     [IPC_CHANNELS.SYNTH_GET_TRANSPORT_STATE]: typeof Synthesizer.prototype.getTransportState;
 
     [IPC_CHANNELS.SYNTH_ENABLE_LINK]: typeof Synthesizer.prototype.enableLink;
-
-    [IPC_CHANNELS.SYNTH_SET_FOLLOW_MODE]: typeof Synthesizer.prototype.setFollowMode;
 
     // Audio device operations
     [IPC_CHANNELS.AUDIO_REFRESH_DEVICE_CACHE]: typeof Synthesizer.prototype.refreshDeviceCache;
