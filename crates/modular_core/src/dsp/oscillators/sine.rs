@@ -1,7 +1,7 @@
 use crate::{
     dsp::{
         consts::{LUT_SINE, LUT_SINE_SIZE},
-        oscillators::{apply_fm, FmMode},
+        oscillators::{FmMode, apply_fm},
         utils::interpolate,
     },
     poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
@@ -62,16 +62,18 @@ pub struct SineOscillator {
 impl SineOscillator {
     fn update(&mut self, sample_rate: f32) {
         let num_channels = self.channel_count();
+        // Hoist `1.0 / sample_rate` so the inner loop uses a multiply.
+        let inv_sr = 1.0 / sample_rate;
+        let mode = self.params.fm_mode;
 
         for ch in 0..num_channels {
             let state = &mut self.state.channels[ch];
-
             let pitch = self.params.freq.get_value(ch);
             let fm = self.params.fm.value_or(ch, 0.0);
-            let frequency = apply_fm(pitch, fm, self.params.fm_mode) / sample_rate;
+            let frequency = apply_fm(pitch, fm, mode) * inv_sr;
             state.phase += frequency;
             // Wrap phase to [0, 1) — supports negative increments (through-zero FM)
-            state.phase = state.phase.rem_euclid(1.0);
+            state.phase -= state.phase.floor();
             let sine = interpolate(LUT_SINE, state.phase, LUT_SINE_SIZE);
             self.outputs.sample.set(ch, sine * 5.0);
         }
