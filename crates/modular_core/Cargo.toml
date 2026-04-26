@@ -40,3 +40,6 @@ rustfft = "6.2"
 [dependencies.napi]
 version = "3.7.1"
 features = ["serde", "serde-json"]
+
+[dev-dependencies]
+trybuild = "1.0"

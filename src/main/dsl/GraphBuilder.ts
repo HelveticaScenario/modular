@@ -1270,7 +1270,7 @@ export class ModuleOutput {
     }
 
     toString(): string {
-        return `module(${this.moduleId}:${this.portName}:${this.channel})`;
+        return `<ModuleOutput ${this.moduleId}:${this.portName}:${this.channel}>`;
     }
 }
 

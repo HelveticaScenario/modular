@@ -282,7 +282,7 @@ mod tests {
         };
         patch
             .sampleables
-            .insert(MOCK_BUFFER_MODULE_ID.to_string(), Arc::new(Box::new(owner)));
+            .insert(MOCK_BUFFER_MODULE_ID.to_string(), Box::new(owner));
 
         let mut buffer = Buffer::new(
             MOCK_BUFFER_MODULE_ID.to_string(),
@@ -358,7 +358,7 @@ mod tests {
         module_type: &str,
         id: &str,
         params: serde_json::Value,
-    ) -> Arc<Box<dyn Sampleable>> {
+    ) -> Box<dyn Sampleable> {
         let constructors = get_constructors();
         let deserializers = get_params_deserializers();
         let deserializer = deserializers
@@ -394,7 +394,7 @@ mod tests {
             serde_json::json!({ "input": 3.0, "length": 0.01 }),
         );
 
-        step(&**module);
+        step(module.as_ref());
 
         let output = module
             .get_poly_sample("output")
@@ -416,7 +416,7 @@ mod tests {
 
         let n = 10;
         for _ in 0..n {
-            step(&**module);
+            step(module.as_ref());
         }
 
         let buffer = module
@@ -438,7 +438,7 @@ mod tests {
             serde_json::json!({ "input": input_val, "length": 0.01 }),
         );
 
-        step(&**module);
+        step(module.as_ref());
 
         let buffer = module
             .get_buffer_output("buffer")
@@ -469,7 +469,7 @@ mod tests {
         // Step more than frame_count times to force wrapping
         let total_steps = frame_count + 3;
         for _ in 0..total_steps {
-            step(&**module);
+            step(module.as_ref());
         }
 
         // write_index should keep incrementing past frame_count (no modular reset)
