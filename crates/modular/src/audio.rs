@@ -1438,6 +1438,10 @@ impl AudioProcessor {
               }
             }
           } else {
+            // Free-run: flip the atomic now (no quantize) and reset the clock.
+            self
+              .stopped
+              .store(false, std::sync::atomic::Ordering::SeqCst);
             let msg = Message::Clock(ClockMessages::Start);
             let _ = self.patch.dispatch_message(&msg);
           }
