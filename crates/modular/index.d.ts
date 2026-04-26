@@ -267,6 +267,12 @@ export interface TransportSnapshot {
   linkPeers: number
   /** Free-running Link bar phase (0..1), always updated when Link is enabled */
   linkPhase: number
+  /**
+   * Armed for a quantized start — a start has been requested and the audio
+   * thread is waiting for the next Link bar boundary before actually
+   * flipping `is_playing`. Only meaningful when `link_enabled` is true.
+   */
+  linkPendingStart: boolean
 }
 
 /**
