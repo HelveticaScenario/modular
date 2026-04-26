@@ -71,7 +71,7 @@ impl<E: deserr::DeserializeError> deserr::Deserr<E> for IntervalScaleParam {
 }
 
 impl Connect for IntervalScaleParam {
-    fn connect(&mut self, _patch: &Patch) {}
+    fn connect(&mut self, _patch: &Patch, _index_ptr: *const std::cell::Cell<usize>) {}
 }
 
 impl std::ops::Deref for IntervalScaleParam {
@@ -358,7 +358,7 @@ impl JsonSchema for IntervalPatternParam {
 }
 
 impl Connect for IntervalPatternParam {
-    fn connect(&mut self, _patch: &Patch) {
+    fn connect(&mut self, _patch: &Patch, _index_ptr: *const std::cell::Cell<usize>) {
         // IntervalPatternParam has no signals to connect
     }
 }

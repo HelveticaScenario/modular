@@ -98,17 +98,12 @@ impl<E: DeserializeError> deserr::Deserr<E> for MathExpressionParam {
 }
 
 impl Connect for MathExpressionParam {
-    fn connect(&mut self, patch: &crate::Patch) {
+    fn connect(&mut self, patch: &crate::Patch, index_ptr: *const std::cell::Cell<usize>) {
+        // Vec<Signal>: forwards cable resolution + index_ptr injection to each
+        // Signal element via the blanket Vec<T> Connect impl.
         for signal in &mut self.signals {
-            signal.connect(patch);
+            signal.connect(patch, index_ptr);
         }
-    }
-}
-
-impl crate::types::InjectIndexPtr for MathExpressionParam {
-    fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>) {
-        // Vec<Signal>: InjectIndexPtr forwards to each Signal element.
-        crate::types::InjectIndexPtr::inject_index_ptr(&mut self.signals, ptr);
     }
 }
 
@@ -130,27 +125,17 @@ struct MathParams {
 }
 
 impl Connect for MathParams {
-    fn connect(&mut self, patch: &crate::Patch) {
-        Connect::connect(&mut self.expression, patch);
+    fn connect(&mut self, patch: &crate::Patch, index_ptr: *const std::cell::Cell<usize>) {
+        Connect::connect(&mut self.expression, patch, index_ptr);
         if let Some(ref mut x) = self.x {
-            Connect::connect(x, patch);
+            Connect::connect(x, patch, index_ptr);
         }
         if let Some(ref mut y) = self.y {
-            Connect::connect(y, patch);
+            Connect::connect(y, patch, index_ptr);
         }
         if let Some(ref mut z) = self.z {
-            Connect::connect(z, patch);
+            Connect::connect(z, patch, index_ptr);
         }
-    }
-}
-
-impl crate::types::InjectIndexPtr for MathParams {
-    fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>) {
-        crate::types::InjectIndexPtr::inject_index_ptr(&mut self.expression, ptr);
-        // Option<MonoSignal>: InjectIndexPtr forwards to the inner MonoSignal if Some.
-        crate::types::InjectIndexPtr::inject_index_ptr(&mut self.x, ptr);
-        crate::types::InjectIndexPtr::inject_index_ptr(&mut self.y, ptr);
-        crate::types::InjectIndexPtr::inject_index_ptr(&mut self.z, ptr);
     }
 }
 

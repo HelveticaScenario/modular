@@ -235,8 +235,6 @@ mod tests {
             &self.id
         }
 
-        fn tick(&self) {}
-
         fn get_module_type(&self) -> &str {
             "dummy"
         }

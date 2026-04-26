@@ -183,68 +183,34 @@ pub struct ExternalClockState {
     pub playing: bool,
 }
 
-/// Implemented by signal-bearing types to receive the back-pointer to the
-/// consuming wrapper's `index: Cell<usize>`.
-///
-/// The `Connect` derive macro generates an impl for every params struct,
-/// iterating over each signal field. Base impls for primitive types are
-/// no-ops so the generated code can call `inject_index_ptr` on any field.
-pub trait InjectIndexPtr {
-    /// Store `ptr` (which points to the consuming wrapper's `index` cell) so
-    /// that `Signal::get_value()` can pass the correct sample index upstream.
-    ///
-    /// # Safety
-    /// `ptr` must remain valid for the lifetime of this signal connection
-    /// (i.e., until `connect()` is called again with a new patch).
-    fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>);
-}
-
-/// Blanket no-op impl for types that carry no signals.
-macro_rules! noop_inject {
-    ($($t:ty),*) => {
-        $(impl InjectIndexPtr for $t {
-            #[inline]
-            fn inject_index_ptr(&mut self, _ptr: *const std::cell::Cell<usize>) {}
-        })*
-    };
-}
-
-noop_inject!(f32, f64, i32, i64, u32, u64, usize, bool, String, serde_json::Value);
-
-impl<T: InjectIndexPtr> InjectIndexPtr for Option<T> {
-    #[inline]
-    fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>) {
-        if let Some(inner) = self {
-            inner.inject_index_ptr(ptr);
-        }
-    }
-}
-
-impl<T: InjectIndexPtr> InjectIndexPtr for Vec<T> {
-    #[inline]
-    fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>) {
-        for item in self.iter_mut() {
-            item.inject_index_ptr(ptr);
-        }
-    }
-}
-
 pub trait Sampleable: MessageHandler + Send + Sync {
     fn get_id(&self) -> &str;
-    fn tick(&self) -> ();
 
-    /// Process outputs up to the current block boundary.
+    /// Reset the wrapper's per-sample cursor to 0 at the start of an internal
+    /// `block_size` block. Cache slots from the previous block remain readable
+    /// for SCC reentrancy until they are overwritten by the new block's
+    /// processing.
+    fn start_block(&self) {}
+
+    /// Process outputs up to (but not including) sample `target` within the
+    /// current internal block. Wrapper clamps `target` to `block_size`.
     ///
-    /// - `Block` mode: computes all `block_size` samples in one call.
-    /// - `Sample` mode: computes exactly the next uncomputed sample.
+    /// Incremental: each call advances the per-sample cursor by 0+ samples,
+    /// stopping at min(target, block_size). Cursor persists across calls and
+    /// across CPAL callbacks; only `start_block()` resets it.
     ///
-    /// Idempotent: safe to call multiple times per block.
     /// Reentrancy-safe: if called while already computing (feedback cycle),
-    /// returns immediately — callers read the previous block's last value.
-    fn ensure_processed(&self) {}
+    /// returns immediately — callers read the previous-block / previous-sample
+    /// value via the cache.
+    fn ensure_processed_to(&self, _target: usize) {}
+
+    /// Initialise the wrapper's per-sample cursor to a specific in-block index.
+    /// Used at mid-block patch swaps so newly inserted modules align with
+    /// surviving modules. Default: no-op.
+    fn set_initial_index(&self, _idx: usize) {}
 
     /// Read the computed value for `(port, ch)` at sample `index` within the
-    /// current block. Calls `ensure_processed()` internally.
+    /// current block. Calls `ensure_processed_to(index + 1)` internally.
     ///
     /// Returns 0.0 for unknown ports or out-of-range indices.
     fn get_value_at(&self, _port: &str, _ch: usize, _index: usize) -> f32 {
@@ -259,11 +225,13 @@ pub trait Sampleable: MessageHandler + Send + Sync {
     /// Called after the patch is updated and all modules are connected.
     /// Modules can override this to refresh caches or perform other post-update work.
     fn on_patch_update(&self) {}
-    /// Provide external clock synchronization data for the current block.
-    /// `states` has one entry per sample in the block; an empty slice means
-    /// no external sync is active this block.
+    /// Inject external clock synchronization data for the next sample to be
+    /// processed. Called by the audio callback's eager-fill loop once per
+    /// sample, immediately before the matching `ensure_processed_to` call.
     /// Only ROOT_CLOCK overrides this. Default: no-op.
-    fn sync_external_clock(&self, _states: &[ExternalClockState]) {}
+    fn sync_external_clock(&self, _state: ExternalClockState) {}
+    /// Clear any external clock sync state. Default: no-op.
+    fn clear_external_clock(&self) {}
     fn get_state(&self) -> Option<serde_json::Value> {
         None
     }
@@ -438,8 +406,22 @@ impl Div for Clickless {
     }
 }
 
+/// Resolves cable bindings for a value derived from a params struct.
+///
+/// Walks the value's signal-bearing fields and, for each `Signal::Cable`:
+/// 1. Resolves `module_ptr` from the patch (Weak<Module>).
+/// 2. Stores `index_ptr` — a back-pointer to the consuming wrapper's per-sample
+///    `index` cell — so the cable can read upstream at the consumer's current
+///    in-block sample index.
+///
+/// Both must run together. Without (1) the cable returns 0 (no upstream).
+/// Without (2) the cable always reads slot 0 of upstream → DC output. Earlier
+/// the two operations lived in separate traits (`Connect` + `InjectIndexPtr`)
+/// with separate type detectors in the proc-macro; the detectors silently
+/// drifted (`Vec<PolySignal>` was missed by the inject side) producing DC
+/// output for `$mix`. Combining into a single trait removes the failure mode.
 pub trait Connect {
-    fn connect(&mut self, patch: &Patch);
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>);
 }
 
 // ============================================================================
@@ -449,13 +431,27 @@ pub trait Connect {
 macro_rules! impl_connect_noop {
     ($($t:ty),*) => {
         $(impl Connect for $t {
-            fn connect(&mut self, _patch: &Patch) {}
+            fn connect(&mut self, _patch: &Patch, _index_ptr: *const std::cell::Cell<usize>) {}
         })*
     };
 }
 
 impl_connect_noop!(
-    f32, f64, i8, i16, i32, i64, u8, u16, u32, u64, usize, isize, bool, String
+    f32,
+    f64,
+    i8,
+    i16,
+    i32,
+    i64,
+    u8,
+    u16,
+    u32,
+    u64,
+    usize,
+    isize,
+    bool,
+    String,
+    serde_json::Value
 );
 
 // ============================================================================
@@ -463,91 +459,91 @@ impl_connect_noop!(
 // ============================================================================
 
 impl<T: Connect> Connect for Vec<T> {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
         for item in self {
-            item.connect(patch);
+            item.connect(patch, index_ptr);
         }
     }
 }
 
 impl<T: Connect> Connect for Option<T> {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
         if let Some(inner) = self {
-            inner.connect(patch);
+            inner.connect(patch, index_ptr);
         }
     }
 }
 
 impl<T: Connect> Connect for Box<T> {
-    fn connect(&mut self, patch: &Patch) {
-        (**self).connect(patch);
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
+        (**self).connect(patch, index_ptr);
     }
 }
 
 impl<T: Connect, const N: usize> Connect for [T; N] {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
         for item in self {
-            item.connect(patch);
+            item.connect(patch, index_ptr);
         }
     }
 }
 
 impl<V: Connect> Connect for std::collections::HashMap<String, V> {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
         for v in self.values_mut() {
-            v.connect(patch);
+            v.connect(patch, index_ptr);
         }
     }
 }
 
 impl<V: Connect> Connect for std::collections::BTreeMap<String, V> {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
         for v in self.values_mut() {
-            v.connect(patch);
+            v.connect(patch, index_ptr);
         }
     }
 }
 
 // Tuples (arity 1-5)
 impl<T1: Connect> Connect for (T1,) {
-    fn connect(&mut self, patch: &Patch) {
-        self.0.connect(patch);
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
+        self.0.connect(patch, index_ptr);
     }
 }
 
 impl<T1: Connect, T2: Connect> Connect for (T1, T2) {
-    fn connect(&mut self, patch: &Patch) {
-        self.0.connect(patch);
-        self.1.connect(patch);
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
+        self.0.connect(patch, index_ptr);
+        self.1.connect(patch, index_ptr);
     }
 }
 
 impl<T1: Connect, T2: Connect, T3: Connect> Connect for (T1, T2, T3) {
-    fn connect(&mut self, patch: &Patch) {
-        self.0.connect(patch);
-        self.1.connect(patch);
-        self.2.connect(patch);
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
+        self.0.connect(patch, index_ptr);
+        self.1.connect(patch, index_ptr);
+        self.2.connect(patch, index_ptr);
     }
 }
 
 impl<T1: Connect, T2: Connect, T3: Connect, T4: Connect> Connect for (T1, T2, T3, T4) {
-    fn connect(&mut self, patch: &Patch) {
-        self.0.connect(patch);
-        self.1.connect(patch);
-        self.2.connect(patch);
-        self.3.connect(patch);
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
+        self.0.connect(patch, index_ptr);
+        self.1.connect(patch, index_ptr);
+        self.2.connect(patch, index_ptr);
+        self.3.connect(patch, index_ptr);
     }
 }
 
 impl<T1: Connect, T2: Connect, T3: Connect, T4: Connect, T5: Connect> Connect
     for (T1, T2, T3, T4, T5)
 {
-    fn connect(&mut self, patch: &Patch) {
-        self.0.connect(patch);
-        self.1.connect(patch);
-        self.2.connect(patch);
-        self.3.connect(patch);
-        self.4.connect(patch);
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
+        self.0.connect(patch, index_ptr);
+        self.1.connect(patch, index_ptr);
+        self.2.connect(patch, index_ptr);
+        self.3.connect(patch, index_ptr);
+        self.4.connect(patch, index_ptr);
     }
 }
 
@@ -975,7 +971,7 @@ impl Wav {
 }
 
 impl Connect for Wav {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, _index_ptr: *const std::cell::Cell<usize>) {
         if let Some(data) = patch.wav_data.get(&self.path) {
             self.cached_data = Some(Arc::clone(data));
         } else {
@@ -1359,11 +1355,12 @@ impl Buffer {
     }
 
     /// Ensure the source module has processed the current block (demand-driven ordering).
-    /// Triggers `$buffer`'s `ensure_processed()` which fills block_outputs for all
-    /// samples in the current block. Must be called before reading the buffer.
+    /// Triggers `$buffer`'s `ensure_processed_to(usize::MAX)` which fills
+    /// block_outputs for all samples in the current block (wrapper clamps to
+    /// `block_size`). Must be called before reading the buffer.
     pub fn ensure_source_updated(&self) {
         if let Some(module) = &self.cached_source_module {
-            module.ensure_processed();
+            module.ensure_processed_to(usize::MAX);
         }
     }
 
@@ -1524,7 +1521,7 @@ impl JsonSchema for Buffer {
 }
 
 impl Connect for Buffer {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, _index_ptr: *const std::cell::Cell<usize>) {
         // Resolve source module and get its buffer output
         if let Some(module) = patch.sampleables.get(&self.source_module) {
             self.cached_source_module = Some(Arc::clone(module));
@@ -1634,17 +1631,17 @@ impl Table {
 }
 
 impl Connect for Table {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
         match self {
             Table::Identity => {}
-            Table::Mirror { amount } => amount.connect(patch),
-            Table::Bend { amount } => amount.connect(patch),
-            Table::Sync { ratio } => ratio.connect(patch),
-            Table::Fold { amount } => amount.connect(patch),
-            Table::Pwm { width } => width.connect(patch),
+            Table::Mirror { amount } => amount.connect(patch, index_ptr),
+            Table::Bend { amount } => amount.connect(patch, index_ptr),
+            Table::Sync { ratio } => ratio.connect(patch, index_ptr),
+            Table::Fold { amount } => amount.connect(patch, index_ptr),
+            Table::Pwm { width } => width.connect(patch, index_ptr),
             Table::Pipe { first, second } => {
-                first.connect(patch);
-                second.connect(patch);
+                first.connect(patch, index_ptr);
+                second.connect(patch, index_ptr);
             }
         }
     }
@@ -2133,13 +2130,6 @@ impl Signal {
     }
 }
 
-impl InjectIndexPtr for Signal {
-    fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>) {
-        if let Signal::Cable { index_ptr, .. } = self {
-            *index_ptr = ptr;
-        }
-    }
-}
 
 /// Extension trait for normalling pattern on optional signals.
 pub trait SignalExt {
@@ -2177,13 +2167,23 @@ impl SignalExt for Option<Signal> {
 }
 
 impl Connect for Signal {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
         if let Signal::Cable {
-            module, module_ptr, ..
+            module,
+            module_ptr,
+            index_ptr: cable_index_ptr,
+            ..
         } = self
-            && let Some(sampleable) = patch.sampleables.get(module)
         {
-            *module_ptr = Arc::downgrade(sampleable);
+            // Resolve module_ptr from patch (cable lookup).
+            if let Some(sampleable) = patch.sampleables.get(module) {
+                *module_ptr = Arc::downgrade(sampleable);
+            }
+            // Wire the back-pointer to the consumer wrapper's `index` cell so
+            // the cable can read upstream at the consumer's current sample
+            // position. Both ops together match what was previously split
+            // across Connect + InjectIndexPtr.
+            *cable_index_ptr = index_ptr;
         }
     }
 }
@@ -2272,7 +2272,7 @@ pub enum InterpolationType {
 }
 
 impl Connect for InterpolationType {
-    fn connect(&mut self, _patch: &Patch) {}
+    fn connect(&mut self, _patch: &Patch, _index_ptr: *const std::cell::Cell<usize>) {}
 }
 
 pub enum Seq {
@@ -3129,7 +3129,7 @@ mod wav_tests {
         patch.wav_data.insert("test/kick".to_string(), wav_data);
 
         let mut wav = Wav::new("test/kick".to_string(), 2);
-        wav.connect(&patch);
+        wav.connect(&patch, std::ptr::null());
 
         assert!(wav.is_loaded());
         assert_eq!(wav.frame_count(), 2);
@@ -3141,7 +3141,7 @@ mod wav_tests {
     fn wav_param_connect_missing_path_stays_unloaded() {
         let patch = Patch::new();
         let mut wav = Wav::new("nonexistent".to_string(), 1);
-        wav.connect(&patch);
+        wav.connect(&patch, std::ptr::null());
         assert!(!wav.is_loaded());
     }
 
@@ -3291,7 +3291,7 @@ mod table_tests {
     fn connect_identity_is_noop() {
         let patch = Patch::new();
         let mut t = Table::Identity;
-        t.connect(&patch);
+        t.connect(&patch, std::ptr::null());
         assert!(matches!(t, Table::Identity));
     }
 
@@ -3302,24 +3302,24 @@ mod table_tests {
         let patch = Patch::new();
 
         let mut mirror = Table::Mirror { amount: constant(0.25) };
-        mirror.connect(&patch);
+        mirror.connect(&patch, std::ptr::null());
         // At x=0.5 the reflection is 1.0; interpolated at amount=0.25: 0.5 + 0.5*0.25 = 0.625.
         assert!((mirror.evaluate(0.5, 0) - 0.625).abs() < 1e-4);
 
         let mut bend = Table::Bend { amount: constant(0.0) };
-        bend.connect(&patch);
+        bend.connect(&patch, std::ptr::null());
         assert!((bend.evaluate(0.5, 0) - 0.5).abs() < 1e-6);
 
         let mut sync = Table::Sync { ratio: constant(0.0) };
-        sync.connect(&patch);
+        sync.connect(&patch, std::ptr::null());
         assert!((sync.evaluate(0.25, 0) - 0.25).abs() < 1e-6);
 
         let mut fold = Table::Fold { amount: constant(0.0) };
-        fold.connect(&patch);
+        fold.connect(&patch, std::ptr::null());
         assert!((fold.evaluate(0.5, 0) - 0.5).abs() < 1e-6);
 
         let mut pwm = Table::Pwm { width: constant(0.5) };
-        pwm.connect(&patch);
+        pwm.connect(&patch, std::ptr::null());
         assert!((pwm.evaluate(0.5, 0) - 0.5).abs() < 1e-6);
     }
 

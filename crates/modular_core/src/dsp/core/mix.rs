@@ -23,7 +23,7 @@ pub enum MixMode {
 }
 
 impl crate::types::Connect for MixMode {
-    fn connect(&mut self, _patch: &crate::Patch) {}
+    fn connect(&mut self, _patch: &crate::Patch, _index_ptr: *const std::cell::Cell<usize>) {}
 }
 
 #[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]

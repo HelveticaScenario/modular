@@ -260,9 +260,9 @@ impl From<MonoSignal> for PolySignal {
 // === Connect implementation for PolySignal ===
 
 impl crate::types::Connect for PolySignal {
-    fn connect(&mut self, patch: &crate::Patch) {
+    fn connect(&mut self, patch: &crate::Patch, index_ptr: *const std::cell::Cell<usize>) {
         for signal in self.channels.iter_mut() {
-            signal.connect(patch);
+            signal.connect(patch, index_ptr);
         }
     }
 }
@@ -425,8 +425,8 @@ impl From<PolySignal> for MonoSignal {
 // === Connect implementation for MonoSignal ===
 
 impl crate::types::Connect for MonoSignal {
-    fn connect(&mut self, patch: &crate::Patch) {
-        self.inner.connect(patch);
+    fn connect(&mut self, patch: &crate::Patch, index_ptr: *const std::cell::Cell<usize>) {
+        self.inner.connect(patch, index_ptr);
     }
 }
 
@@ -553,22 +553,8 @@ impl MonoSignalExt for Option<MonoSignal> {
     }
 }
 
-// ============================================================================
-// InjectIndexPtr impls for poly signal types
-
-impl crate::types::InjectIndexPtr for PolySignal {
-    fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>) {
-        for sig in self.channels.iter_mut() {
-            sig.inject_index_ptr(ptr);
-        }
-    }
-}
-
-impl crate::types::InjectIndexPtr for MonoSignal {
-    fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>) {
-        self.inner.inject_index_ptr(ptr);
-    }
-}
+// (Connect impls above run cable-resolution + index_ptr injection in one
+// pass. The previous `InjectIndexPtr` trait was folded into `Connect`.)
 
 #[cfg(test)]
 mod tests {

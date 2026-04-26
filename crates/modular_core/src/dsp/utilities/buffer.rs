@@ -292,7 +292,6 @@ mod tests {
         fn get_id(&self) -> &str {
             &self.id
         }
-        fn tick(&self) {}
         fn get_module_type(&self) -> &str {
             "$buffer"
         }
@@ -328,7 +327,7 @@ mod tests {
             MOCK_BUFFER_PORT.to_string(),
             channels,
         );
-        buffer.connect(&patch);
+        buffer.connect(&patch, std::ptr::null());
         (patch, buffer)
     }
 
@@ -424,8 +423,8 @@ mod tests {
     }
 
     fn step(module: &dyn Sampleable) {
-        module.tick();
-        module.ensure_processed();
+        module.start_block();
+        module.ensure_processed_to(usize::MAX);
     }
 
     #[test]

@@ -151,8 +151,8 @@ mod tests {
     }
 
     fn step(module: &dyn Sampleable) {
-        module.tick();
-        module.ensure_processed();
+        module.start_block();
+        module.ensure_processed_to(usize::MAX);
     }
 
     fn make_test_wav(samples: Vec<Vec<f32>>) -> Arc<WavData> {

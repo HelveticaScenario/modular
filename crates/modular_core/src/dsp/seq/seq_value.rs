@@ -390,12 +390,12 @@ impl<E: DeserializeError> deserr::Deserr<E> for SeqPatternParam {
 }
 
 impl Connect for SeqPatternParam {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
         // Connect all collected signals
         for signal_ptr in &mut self.signals {
             // SAFETY: Pointers are valid as long as pattern exists
             unsafe {
-                (**signal_ptr).connect(patch);
+                (**signal_ptr).connect(patch, index_ptr);
             }
         }
     }

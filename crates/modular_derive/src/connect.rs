@@ -6,7 +6,7 @@ use syn::{punctuated::Punctuated, Attribute, Data, DeriveInput, Fields, LitStr, 
 
 use crate::utils::{
     is_mono_signal_type, is_option_mono_signal_type, is_option_poly_signal_type,
-    is_option_signal_type, is_poly_signal_type, is_signal_type,
+    is_option_signal_type, is_poly_signal_type,
 };
 
 /// Parsed `#[default_connection(...)]` attribute data
@@ -74,12 +74,11 @@ fn parse_default_connection_attr(attr: &Attribute) -> syn::Result<DefaultConnect
 pub fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
     let name = &ast.ident;
 
-    let (default_connection_stmts, connect_body, inject_stmts) = match &ast.data {
+    let (default_connection_stmts, connect_body) = match &ast.data {
         Data::Struct(data) => match &data.fields {
             Fields::Named(fields) => {
                 let mut default_stmts = TokenStream2::new();
                 let mut connect_stmts = TokenStream2::new();
-                let mut inject_stmts = TokenStream2::new();
 
                 for field in fields.named.iter() {
                     let Some(field_ident) = &field.ident else {
@@ -164,27 +163,18 @@ pub fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
                         }
                     }
 
-                    // Always call connect on every field (no-op impls handle primitives)
+                    // Always call connect on every field (no-op impls handle
+                    // primitives + non-signal types). The unified Connect
+                    // trait runs cable-resolution + index_ptr injection in a
+                    // single call — see the trait doc on `crate::types::Connect`
+                    // for why this used to be split and was unsafe to leave that
+                    // way.
                     connect_stmts.extend(quote_spanned! {field.span()=>
-                        crate::types::Connect::connect(&mut self.#field_ident, patch);
+                        crate::types::Connect::connect(&mut self.#field_ident, patch, index_ptr);
                     });
-
-                    // Only call inject_index_ptr for fields that can contain signals.
-                    // Non-signal fields (enums, f32, u8, …) don't need it.
-                    let is_signal_capable = is_signal_type(&field.ty)
-                        || is_poly_signal_type(&field.ty)
-                        || is_mono_signal_type(&field.ty)
-                        || is_option_signal_type(&field.ty)
-                        || is_option_poly_signal_type(&field.ty)
-                        || is_option_mono_signal_type(&field.ty);
-                    if is_signal_capable {
-                        inject_stmts.extend(quote_spanned! {field.span()=>
-                            crate::types::InjectIndexPtr::inject_index_ptr(&mut self.#field_ident, ptr);
-                        });
-                    }
                 }
 
-                (default_stmts, connect_stmts, inject_stmts)
+                (default_stmts, connect_stmts)
             }
             Fields::Unnamed(_) | Fields::Unit => {
                 return syn::Error::new(
@@ -204,17 +194,15 @@ pub fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
 
     let generated = quote! {
         impl crate::types::Connect for #name {
-            fn connect(&mut self, patch: &crate::Patch) {
+            fn connect(
+                &mut self,
+                patch: &crate::Patch,
+                index_ptr: *const std::cell::Cell<usize>,
+            ) {
                 // Apply default connections for disconnected inputs
                 #default_connection_stmts
                 // Connect all fields
                 #connect_body
-            }
-        }
-
-        impl crate::types::InjectIndexPtr for #name {
-            fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>) {
-                #inject_stmts
             }
         }
     };

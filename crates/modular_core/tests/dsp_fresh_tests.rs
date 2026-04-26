@@ -42,10 +42,41 @@ fn make_module(module_type: &str, id: &str, params: serde_json::Value) -> Arc<Bo
     .unwrap_or_else(|e| panic!("constructor for '{module_type}' failed: {e}"))
 }
 
-/// Advance one sample: tick then ensure_processed.
+/// Create a module with a specific block size.
+fn make_module_bs(
+    module_type: &str,
+    id: &str,
+    params: serde_json::Value,
+    block_size: usize,
+) -> Arc<Box<dyn Sampleable>> {
+    let constructors = get_constructors();
+    let deserializers = get_params_deserializers();
+    let deserializer = deserializers
+        .get(module_type)
+        .unwrap_or_else(|| panic!("no params deserializer for '{module_type}'"));
+    let cached = deserializer(params)
+        .unwrap_or_else(|e| panic!("params deserialization for '{module_type}' failed: {e}"));
+    let deserialized = DeserializedParams {
+        params: cached.params,
+        argument_spans: Default::default(),
+        channel_count: cached.channel_count,
+    };
+    constructors
+        .get(module_type)
+        .unwrap_or_else(|| panic!("no constructor for '{module_type}'"))(
+        &id.to_string(),
+        SAMPLE_RATE,
+        deserialized,
+        block_size,
+        ProcessingMode::Block,
+    )
+    .unwrap_or_else(|e| panic!("constructor for '{module_type}' failed: {e}"))
+}
+
+/// Advance one sample: start_block then ensure_processed_to (block_size=1 in tests).
 fn step(module: &dyn Sampleable) {
-    module.tick();
-    module.ensure_processed();
+    module.start_block();
+    module.ensure_processed_to(usize::MAX);
 }
 
 /// Advance N samples and collect the first channel of `output`.
@@ -346,8 +377,8 @@ fn all_constructors_can_tick() {
         };
         let module = constructor(&format!("test-{name}"), SAMPLE_RATE, deserialized, 1, ProcessingMode::Block).unwrap();
         // Should not panic with minimal params
-        module.tick();
-        module.ensure_processed();
+        module.start_block();
+        module.ensure_processed_to(usize::MAX);
         let _ = module.get_value_at(DEFAULT_PORT, 0, 0);
     }
 }
@@ -383,13 +414,13 @@ fn schemas_have_non_empty_documentation() {
 
 // ─── Patch-level helpers ─────────────────────────────────────────────────────
 
-/// Process one frame of the entire patch (tick all, then ensure_processed all).
+/// Process one frame of the entire patch (start_block all, then ensure_processed_to all).
 fn process_frame(patch: &Patch) {
     for module in patch.sampleables.values() {
-        module.tick();
+        module.start_block();
     }
     for module in patch.sampleables.values() {
-        module.ensure_processed();
+        module.ensure_processed_to(usize::MAX);
     }
 }
 
@@ -1071,4 +1102,533 @@ fn interval_seq_cv_holds_during_rest_after_state_transfer() {
         "after state transfer during rest, CV should hold {expected_voltage}V, got {new_cv}\n\
          (0.0 means inner outputs were not preserved across state transfer)"
     );
+}
+
+// ─── Block-mode regression tests ─────────────────────────────────────────────
+
+/// Verify that block mode (block_size > 1) produces distinct output values for
+/// consecutive sample indices within a single block.  The staircase bug would
+/// cause all indices to return the same (first-sample) value.
+#[test]
+fn block_sine_produces_distinct_samples_within_block() {
+    let block_size = 512;
+    // C4 = 0V → ~261.63 Hz.  At 48 kHz that's ~184 samples per cycle, so
+    // consecutive samples should differ noticeably.
+    let osc = make_module_bs("$sine", "osc", json!({ "freq": 0.0 }), block_size);
+
+    osc.start_block(); // reset index to 0
+
+    // Each get_value_at(i) triggers ensure_processed_to(i+1).
+    let samples: Vec<f32> = (0..20)
+        .map(|i| osc.get_value_at("output", 0, i))
+        .collect();
+
+    eprintln!("[block_sine_test] first 20 samples: {:.4?}", samples);
+
+    // Sanity: none should be NaN/Inf
+    for (i, &v) in samples.iter().enumerate() {
+        assert!(v.is_finite(), "sample[{i}] is not finite: {v}");
+    }
+
+    // Each consecutive pair must differ — a staircase would make them identical.
+    let mut all_same = true;
+    for i in 0..19 {
+        if (samples[i] - samples[i + 1]).abs() > 1e-6 {
+            all_same = false;
+            break;
+        }
+    }
+    assert!(
+        !all_same,
+        "All 20 consecutive samples are identical ({:.5}) — staircase bug in block mode!",
+        samples[0]
+    );
+}
+
+/// Full-chain block-mode test: $sine → $signal connected via Cable.
+///
+/// Simulates what the CPAL callback does: tick all modules, then read
+/// `get_value_at(port, ch, i)` for i=0..19 from the ROOT ($signal) module.
+/// The staircase bug would return the same value for all indices.
+#[test]
+fn block_chain_signal_routes_distinct_samples() {
+    let block_size = 512;
+
+    // Build both modules with block_size=512
+    let osc = make_module_bs("$sine", "osc", json!({ "freq": 0.0 }), block_size);
+    let sig = make_module_bs(
+        "$signal",
+        "sig",
+        json!({
+            "source": { "type": "cable", "module": "osc", "port": "output", "channel": 0 }
+        }),
+        block_size,
+    );
+
+    // Insert into a Patch so connect() can resolve the Cable Weak pointer
+    let mut patch = Patch::new();
+    patch.sampleables.insert("osc".to_string(), osc);
+    patch.sampleables.insert("sig".to_string(), sig);
+
+    // Wire up Cable pointers and inject index_ptrs
+    for module in patch.sampleables.values() {
+        module.connect(&patch);
+    }
+
+    // Simulate one CPAL callback: start_block all, then read ROOT output per frame
+    for module in patch.sampleables.values() {
+        module.start_block();
+    }
+
+    let sig_module = patch.sampleables.get("sig").unwrap();
+    let samples: Vec<f32> = (0..20)
+        .map(|i| sig_module.get_value_at("output", 0, i))
+        .collect();
+
+    eprintln!("[block_chain_test] $signal output, first 20 frames: {:.4?}", samples);
+
+    for (i, &v) in samples.iter().enumerate() {
+        assert!(v.is_finite(), "sample[{i}] is not finite: {v}");
+    }
+
+    // Consecutive samples must differ — staircase bug returns same value for all i
+    let mut all_same = true;
+    for i in 0..19 {
+        if (samples[i] - samples[i + 1]).abs() > 1e-6 {
+            all_same = false;
+            break;
+        }
+    }
+    assert!(
+        !all_same,
+        "All 20 consecutive $signal outputs are identical ({:.5}) — staircase bug in block mode chain!",
+        samples[0]
+    );
+}
+
+/// Full realistic chain mirroring `$sine('c4').out()`:
+/// sine → stereoMix → scaleAndShift → signal
+#[test]
+fn block_full_out_chain_produces_distinct_samples() {
+    let block_size = 512;
+
+    let osc = make_module_bs("$sine", "osc", json!({ "freq": 0.0 }), block_size);
+    let smix = make_module_bs(
+        "$stereoMix",
+        "smix",
+        json!({
+            "input": { "type": "cable", "module": "osc", "port": "output", "channel": 0 }
+        }),
+        block_size,
+    );
+    let sas = make_module_bs(
+        "$scaleAndShift",
+        "sas",
+        json!({
+            "input": { "type": "cable", "module": "smix", "port": "output", "channel": 0 },
+            "scale": 5.0,
+            "shift": 0.0
+        }),
+        block_size,
+    );
+    let sig = make_module_bs(
+        "$signal",
+        "ROOT_OUTPUT",
+        json!({
+            "source": { "type": "cable", "module": "sas", "port": "output", "channel": 0 }
+        }),
+        block_size,
+    );
+
+    let mut patch = Patch::new();
+    patch.sampleables.insert("osc".to_string(), osc);
+    patch.sampleables.insert("smix".to_string(), smix);
+    patch.sampleables.insert("sas".to_string(), sas);
+    patch.sampleables.insert("ROOT_OUTPUT".to_string(), sig);
+
+    for module in patch.sampleables.values() {
+        module.connect(&patch);
+    }
+    for module in patch.sampleables.values() {
+        module.start_block();
+    }
+
+    let sig_module = patch.sampleables.get("ROOT_OUTPUT").unwrap();
+
+    // Collect full block: mimic what playback loop does (read every i).
+    let samples: Vec<f32> = (0..block_size)
+        .map(|i| sig_module.get_value_at("output", 0, i))
+        .collect();
+
+    eprintln!("[block_full_out_chain] first 20: {:.4?}", &samples[..20]);
+    eprintln!("[block_full_out_chain] samples[0..8]={:?}", &samples[..8]);
+
+    // Consecutive samples must differ
+    let mut plateaus = Vec::new();
+    let mut run_start = 0;
+    for i in 1..block_size {
+        if (samples[i] - samples[i - 1]).abs() < 1e-9 {
+            continue;
+        }
+        let run_len = i - run_start;
+        if run_len > 1 {
+            plateaus.push((run_start, run_len, samples[run_start]));
+        }
+        run_start = i;
+    }
+    eprintln!("[block_full_out_chain] plateaus (start, len, val): {:?}", plateaus);
+
+    let max_run = plateaus.iter().map(|(_, l, _)| *l).max().unwrap_or(0);
+    assert!(
+        max_run < 4,
+        "stair-step: some value repeats for {} consecutive samples",
+        max_run
+    );
+}
+
+/// Regression: cross-callback cursor carry-over.
+///
+/// The internal block_size is now stable; the audio callback may consume only
+/// `num_frames` samples from a block and leave the cursor mid-block. Next
+/// callback resumes without resetting. To emulate this in a test, drive only
+/// `num_frames` `get_value_at` calls per "callback" between `start_block`s.
+#[test]
+fn cursor_carries_across_callbacks_within_block() {
+    let block_size = 512;
+    let num_frames = 128;
+    let osc = make_module_bs("$sine", "osc", json!({ "freq": 0.0 }), block_size);
+
+    // Callback 1: pull samples 0..num_frames (block boundary work happened once).
+    osc.start_block();
+    let cb1: Vec<f32> = (0..num_frames)
+        .map(|i| osc.get_value_at("output", 0, i))
+        .collect();
+
+    // Callback 2: NO start_block — cursor is at num_frames. Pull next num_frames.
+    let cb2: Vec<f32> = (num_frames..2 * num_frames)
+        .map(|i| osc.get_value_at("output", 0, i))
+        .collect();
+
+    // Reference: one continuous run of 2*num_frames samples in a single block.
+    let osc_ref = make_module_bs("$sine", "osc", json!({ "freq": 0.0 }), 2 * num_frames);
+    osc_ref.start_block();
+    let reference: Vec<f32> = (0..2 * num_frames)
+        .map(|i| osc_ref.get_value_at("output", 0, i))
+        .collect();
+
+    for i in 0..num_frames {
+        assert!(
+            (cb1[i] - reference[i]).abs() < 1e-4,
+            "cb1[{i}]={} != reference[{i}]={} — phase diverged",
+            cb1[i],
+            reference[i]
+        );
+    }
+    for i in 0..num_frames {
+        assert!(
+            (cb2[i] - reference[num_frames + i]).abs() < 1e-4,
+            "cb2[{i}]={} != reference[{}]={} — cross-callback cursor carry-over broken",
+            cb2[i],
+            num_frames + i,
+            reference[num_frames + i]
+        );
+    }
+}
+
+// ─── Block-aligned processing: cross-callback cursor + mid-block swap ─────
+
+/// 64 single-sample callbacks should produce the same output as one 64-sample
+/// callback, when both use block_size=64. Cursor carries across each tiny
+/// callback inside the same internal block.
+#[test]
+fn many_sub_block_callbacks_match_single_full_block() {
+    let block_size = 64;
+    let osc_chunked = make_module_bs("$sine", "osc", json!({ "freq": 0.0 }), block_size);
+    let osc_full = make_module_bs("$sine", "osc", json!({ "freq": 0.0 }), block_size);
+
+    // 64 "callbacks" of 1 frame each — start_block once, then read sample-by-sample
+    // simulating a CPAL callback that consumes only 1 frame at a time.
+    osc_chunked.start_block();
+    let chunked: Vec<f32> = (0..block_size)
+        .map(|i| osc_chunked.get_value_at("output", 0, i))
+        .collect();
+
+    // 1 "callback" of 64 frames
+    osc_full.start_block();
+    let full: Vec<f32> = (0..block_size)
+        .map(|i| osc_full.get_value_at("output", 0, i))
+        .collect();
+
+    for i in 0..block_size {
+        assert!(
+            (chunked[i] - full[i]).abs() < 1e-6,
+            "sample {i}: chunked={} full={} — incremental ensure_processed_to diverges",
+            chunked[i],
+            full[i],
+        );
+    }
+}
+
+/// Mixed callback sizes summing to 195 against a single 195-frame run.
+/// Verifies cursor carry across both within-block and across-block boundaries.
+#[test]
+fn mixed_callback_sizes_match_continuous_run() {
+    let block_size = 64;
+    let total = 195;
+    let osc_split = make_module_bs("$sine", "osc", json!({ "freq": 0.0 }), block_size);
+    let osc_full = make_module_bs("$sine", "osc", json!({ "freq": 0.0 }), 256);
+
+    // Simulate (20, 30, 80, 65) frame callbacks summing to 195.
+    // Internal block is 64 samples, so the global frame timeline crosses
+    // boundaries at 64, 128, 192. We mimic the audio callback's logic: each
+    // "callback" consumes N frames; whenever block_pos hits block_size we
+    // start_block and continue reading.
+    let mut split: Vec<f32> = Vec::with_capacity(total);
+    let mut block_pos: usize = block_size; // force boundary on first iter
+    let mut started = false;
+    for &cb_frames in &[20usize, 30, 80, 65] {
+        let mut written_in_cb = 0;
+        while written_in_cb < cb_frames {
+            if block_pos >= block_size {
+                osc_split.start_block();
+                started = true;
+                block_pos = 0;
+            }
+            let _ = started;
+            let take = (cb_frames - written_in_cb).min(block_size - block_pos);
+            for i in block_pos..(block_pos + take) {
+                split.push(osc_split.get_value_at("output", 0, i));
+            }
+            block_pos += take;
+            written_in_cb += take;
+        }
+    }
+
+    // Continuous reference: one 256-sample block (only first 195 read).
+    osc_full.start_block();
+    let full: Vec<f32> = (0..total)
+        .map(|i| osc_full.get_value_at("output", 0, i % 256))
+        .collect();
+
+    for i in 0..total {
+        assert!(
+            (split[i] - full[i]).abs() < 1e-4,
+            "sample {i}: split={} full={} — block-aligned cursor diverged",
+            split[i],
+            full[i],
+        );
+    }
+}
+
+/// Full audio-callback simulation: Patch with ROOT_CLOCK + osc + ROOT_OUTPUT.
+/// Runs the new audio.rs callback algorithm (boundary work + eager-fill clock
+/// + lazy pull through ROOT) and asserts non-zero, oscillating output.
+#[test]
+fn audio_callback_simulation_produces_output() {
+    use modular_core::types::{ProcessingMode, ROOT_CLOCK_ID, Sampleable};
+    let block_size = 64;
+    let constructors = get_constructors();
+    let deserializers = get_params_deserializers();
+
+    let make_with_mode = |module_type: &str, id: &str, params: serde_json::Value, mode: ProcessingMode| -> Arc<Box<dyn Sampleable>> {
+        let cached = deserializers.get(module_type).unwrap()(params).unwrap();
+        let deserialized = DeserializedParams {
+            params: cached.params,
+            argument_spans: Default::default(),
+            channel_count: cached.channel_count,
+        };
+        constructors.get(module_type).unwrap()(
+            &id.to_string(),
+            SAMPLE_RATE,
+            deserialized,
+            block_size,
+            mode,
+        ).unwrap()
+    };
+
+    // Simulate a typical patch: ROOT_CLOCK, $sine osc, ROOT_OUTPUT signal.
+    let mut patch = Patch::new();
+    let clock = make_with_mode("_clock", &*ROOT_CLOCK_ID, json!({
+        "tempo": 120.0,
+        "numerator": 4,
+        "denominator": 4,
+    }), ProcessingMode::Sample);
+    let osc = make_with_mode("$sine", "osc", json!({ "freq": 0.0 }), ProcessingMode::Block);
+    let root = make_with_mode("$signal", "ROOT_OUTPUT", json!({
+        "source": { "type": "cable", "module": "osc", "port": "output", "channel": 0 }
+    }), ProcessingMode::Block);
+
+    patch.sampleables.insert(ROOT_CLOCK_ID.clone(), clock);
+    patch.sampleables.insert("osc".to_string(), osc);
+    patch.sampleables.insert("ROOT_OUTPUT".to_string(), root);
+
+    for module in patch.sampleables.values() {
+        module.connect(&patch);
+    }
+
+    // Simulate three back-to-back CPAL callbacks of `block_size` frames each.
+    let mut all_samples: Vec<f32> = Vec::new();
+    for _ in 0..3 {
+        // Boundary work.
+        for module in patch.sampleables.values() {
+            module.start_block();
+        }
+        // Eager-fill ROOT_CLOCK across the block (no Link → free-running).
+        let root_clock = patch.sampleables.get(&*ROOT_CLOCK_ID).unwrap();
+        for i in 0..block_size {
+            root_clock.ensure_processed_to(i + 1);
+        }
+        // Pull ROOT_OUTPUT samples (the audio callback's per-sample emission).
+        let root = patch.sampleables.get("ROOT_OUTPUT").unwrap();
+        for i in 0..block_size {
+            all_samples.push(root.get_value_at("output", 0, i));
+        }
+    }
+
+    let (mn, mx) = min_max(&all_samples);
+    assert!(mx > 0.5, "ROOT output should produce audible signal, peak={mx}");
+    assert!(mn < -0.5, "ROOT output should oscillate, trough={mn}");
+    let mut all_zero = true;
+    for &s in &all_samples {
+        if s.abs() > 1e-6 { all_zero = false; break; }
+    }
+    assert!(!all_zero, "all samples are zero — callback simulation produced silence");
+}
+
+/// Eager-fill a ROOT_CLOCK wrapper across a full block under simulated Link
+/// data, then scan its `barTrigger` cache for the trigger sample. The
+/// returned index must be the first sample where the bar phase wraps.
+#[test]
+fn clock_eager_fill_then_trigger_scan() {
+    use modular_core::types::{ExternalClockState, Sampleable};
+
+    let block_size = 64;
+    let constructors = get_constructors();
+    let deserializers = get_params_deserializers();
+    let cached = deserializers.get("_clock").unwrap()(json!({
+        "tempo": 120.0,
+        "numerator": 4,
+        "denominator": 4,
+    })).unwrap();
+    let deserialized = DeserializedParams {
+        params: cached.params,
+        argument_spans: Default::default(),
+        channel_count: cached.channel_count,
+    };
+    // ROOT_CLOCK runs in Sample mode so the wrapper's per-sample loop drives
+    // sync + update interleaved.
+    let clock: Arc<Box<dyn Sampleable>> = constructors.get("_clock").unwrap()(
+        &"clock".to_string(),
+        SAMPLE_RATE,
+        deserialized,
+        block_size,
+        modular_core::types::ProcessingMode::Sample,
+    ).unwrap();
+
+    // Simulate the audio callback's eager-fill loop: per-sample bar_phase
+    // that wraps from ~0.99 back to ~0 at sample 32, signalling a bar boundary.
+    clock.start_block();
+    let bar_boundary_at = 32;
+    for i in 0..block_size {
+        // Construct a bar_phase that crosses zero at `bar_boundary_at`.
+        // Before: phase ramps up toward 1.0; at boundary it wraps.
+        let bar_phase = if i < bar_boundary_at {
+            // 0.95..1.0
+            0.95 + (i as f64 / bar_boundary_at as f64) * 0.05
+        } else {
+            // wrap: 0..small
+            ((i - bar_boundary_at) as f64) / 1000.0
+        };
+        clock.sync_external_clock(ExternalClockState {
+            bar_phase,
+            bpm: 120.0,
+            playing: true,
+        });
+        clock.ensure_processed_to(i + 1);
+    }
+
+    // Scan barTrigger from 0 to block_size — first sample where it goes high.
+    let mut first_high = None;
+    for i in 0..block_size {
+        if clock.get_value_at("barTrigger", 0, i) >= 1.0 {
+            first_high = Some(i);
+            break;
+        }
+    }
+    let detected = first_high.expect("barTrigger should fire somewhere in the block");
+    // The clock's Schmitt-trigger logic detects the wrap on the same sample
+    // it lands. Allow a tolerance of ±1 sample for the gate's hold duration.
+    assert!(
+        (detected as i32 - bar_boundary_at as i32).abs() <= 1,
+        "barTrigger fired at sample {detected}, expected near {bar_boundary_at}",
+    );
+}
+
+/// Mid-block swap: a fresh module inserted at block_pos=N produces its
+/// FIRST sample (phase 0 — fresh DSP state) at slot N of its block_outputs.
+/// This is intentional — newly inserted modules don't inherit phase from
+/// nothing; they just need to advance in lockstep with surviving modules
+/// from N forward. The `set_initial_index` mechanism only governs cache
+/// slot alignment, not initial phase.
+#[test]
+fn mid_block_inserted_module_emits_first_sample_at_swap_slot() {
+    let block_size = 64;
+    let mid = 47;
+
+    // Reference: a freshly-constructed osc, queried at slot 0 — yields its
+    // first-sample value (sine phase 0).
+    let ref_osc = make_module_bs("$sine", "osc", json!({ "freq": 0.0 }), block_size);
+    let ref_at_zero = ref_osc.get_value_at("output", 0, 0);
+
+    // New module: set_initial_index(mid), then query at slot mid. Because
+    // the cursor jumps to mid, the first call to update() lands in slot mid
+    // — the value should match the reference's first sample (slot 0).
+    let new_osc = make_module_bs("$sine", "osc", json!({ "freq": 0.0 }), block_size);
+    new_osc.set_initial_index(mid);
+    let new_at_mid = new_osc.get_value_at("output", 0, mid);
+
+    assert!(
+        (new_at_mid - ref_at_zero).abs() < 1e-6,
+        "mid-block insert: new_at_{mid}={} != ref_at_0={}",
+        new_at_mid,
+        ref_at_zero,
+    );
+}
+
+/// `set_initial_index(N)` skips pre-swap samples: the wrapper does NOT
+/// process samples 0..N when queried at M >= N. We verify this by checking
+/// that two oscillators — one with set_initial_index(N) and one without —
+/// produce exactly N samples of difference in their internal phase progression.
+///
+/// For a $sine oscillator, the k-th update call yields a deterministic value
+/// based on phase = k * (freq/sample_rate). So tail[0] (slot N of skipped osc)
+/// should equal ref[0] (slot 0 of fresh osc), not ref[N].
+#[test]
+fn set_initial_index_does_not_process_skipped_samples() {
+    let block_size = 64;
+    let init_idx = 30;
+
+    let skipped = make_module_bs("$sine", "osc", json!({ "freq": 0.0 }), block_size);
+    skipped.set_initial_index(init_idx);
+    let tail: Vec<f32> = (init_idx..block_size)
+        .map(|i| skipped.get_value_at("output", 0, i))
+        .collect();
+
+    let fresh = make_module_bs("$sine", "osc", json!({ "freq": 0.0 }), block_size);
+    fresh.start_block();
+    let head: Vec<f32> = (0..(block_size - init_idx))
+        .map(|i| fresh.get_value_at("output", 0, i))
+        .collect();
+
+    // tail[i] should equal head[i] — both are the i-th update() call of a
+    // fresh osc, just stored in different cache slots.
+    for i in 0..(block_size - init_idx) {
+        assert!(
+            (tail[i] - head[i]).abs() < 1e-6,
+            "tail[{i}] (block slot {})={} != head[{i}]={} — set_initial_index ran extra updates",
+            i + init_idx,
+            tail[i],
+            head[i],
+        );
+    }
 }

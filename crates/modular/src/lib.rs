@@ -712,11 +712,11 @@ fn setup_streams(params: StreamSetupParams) -> Result<StreamSetupResult> {
   // pre-allocate per-block output buffers of the right length.
   let block_size = params.buffer_size.unwrap_or(512) as usize;
 
-  // Build stream config
-  let stream_buffer_size = params
-    .buffer_size
-    .map(cpal::BufferSize::Fixed)
-    .unwrap_or(cpal::BufferSize::Default);
+  // Always use a fixed buffer size equal to block_size so that the CPAL callback
+  // always delivers exactly `block_size` frames.  Using `BufferSize::Default`
+  // lets CoreAudio choose its own value (often 512, but not guaranteed), which
+  // would make `num_frames != block_size` and cause phase / pitch artifacts.
+  let stream_buffer_size = cpal::BufferSize::Fixed(block_size as u32);
 
   let stream_config = cpal::StreamConfig {
     channels,

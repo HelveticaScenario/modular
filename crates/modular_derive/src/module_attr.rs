@@ -560,38 +560,21 @@ fn impl_module_macro_attr(
         }
     };
 
-    // Check for clock_sync flag — generates ExternalClockState block injection.
-    // The wrapper holds a pre-allocated `clock_state_block` filled by
-    // `sync_external_clock` and drained sample-by-sample in `ensure_processed`.
-    let (clock_state_field, clock_state_field_init, clock_sync_impl) = if attr_args.clock_sync {
-        let field = quote! {
-            clock_state_block: std::cell::UnsafeCell<Box<[crate::types::ExternalClockState]>>,
-        };
-        let field_init = quote! {
-            clock_state_block: std::cell::UnsafeCell::new(
-                vec![crate::types::ExternalClockState::default(); block_size]
-                    .into_boxed_slice()
-            ),
-        };
-        let impl_code = quote! {
-            fn sync_external_clock(&self, states: &[crate::types::ExternalClockState]) {
-                let block = unsafe { &mut *self.clock_state_block.get() };
-                let n = states.len().min(block.len());
-                block[..n].copy_from_slice(&states[..n]);
-            }
-        };
-        (field, field_init, impl_code)
-    } else {
-        (quote! {}, quote! {}, quote! {})
-    };
-
-    let clock_inject_in_loop = if attr_args.clock_sync {
+    // Check for clock_sync flag — wrapper forwards single-sample
+    // sync_external_clock / clear_external_clock calls directly to the inner
+    // module's `sync_external_clock_impl` / `clear_external_sync`. No buffering
+    // — the audio callback's eager-fill loop interleaves a per-sample sync()
+    // call with each ensure_processed_to() advance.
+    let clock_sync_impl = if attr_args.clock_sync {
         quote! {
-            {
-                let clock_block = unsafe { &*self.clock_state_block.get() };
-                if let Some(state) = clock_block.get(i) {
-                    module.sync_external_clock_impl(*state);
-                }
+            fn sync_external_clock(&self, state: crate::types::ExternalClockState) {
+                let module = unsafe { &mut *self.module.get() };
+                module.sync_external_clock_impl(state);
+            }
+
+            fn clear_external_clock(&self) {
+                let module = unsafe { &mut *self.module.get() };
+                module.clear_external_sync();
             }
         }
     } else {
@@ -728,15 +711,16 @@ fn impl_module_macro_attr(
             id: String,
             block_outputs: std::cell::UnsafeCell<#block_outputs_ty_name>,
             module: std::cell::UnsafeCell<#name #static_ty_generics>,
-            /// Next sample slot to write into block_outputs. Resets to 0 on tick().
+            /// Next sample slot to write into block_outputs. Resets to 0 on
+            /// `start_block()`. Persists across CPAL callbacks until reset.
             index: std::cell::Cell<usize>,
-            /// True while ensure_processed() is executing. Guards against reentrant calls.
+            /// True while ensure_processed_to() is executing. Guards reentrancy.
             computing: std::cell::Cell<bool>,
             mode: crate::types::ProcessingMode,
+            /// Allocated block capacity. Never changes after construction.
             block_size: usize,
             sample_rate: f32,
             argument_spans: std::cell::UnsafeCell<std::collections::HashMap<String, crate::params::ArgumentSpan>>,
-            #clock_state_field
         }
 
         // SAFETY: This type is only accessed from the audio thread after construction.
@@ -744,9 +728,13 @@ fn impl_module_macro_attr(
         unsafe impl Sync for #struct_name {}
 
         impl crate::types::Sampleable for #struct_name {
-            fn tick(&self) {
+            fn start_block(&self) {
                 self.index.set(0);
-                // Let buffer modules advance their write position once per callback.
+                // Let buffer modules advance their write position once per
+                // internal block. Note: cache slots in `block_outputs` are NOT
+                // cleared — they keep the previous block's values until
+                // overwritten by this block's processing. This preserves SCC
+                // reentrancy semantics across the boundary.
                 unsafe {
                     crate::types::OutputStruct::tick_buffers(
                         &mut (*self.module.get()).outputs,
@@ -755,9 +743,14 @@ fn impl_module_macro_attr(
                 }
             }
 
-            fn ensure_processed(&self) {
-                // Already computed full block?
-                if self.index.get() >= self.block_size {
+            fn set_initial_index(&self, idx: usize) {
+                let n = idx.min(self.block_size);
+                self.index.set(n);
+            }
+
+            fn ensure_processed_to(&self, target: usize) {
+                let target = target.min(self.block_size);
+                if self.index.get() >= target {
                     return;
                 }
                 // Reentrancy guard — feedback cycle detected at runtime.
@@ -766,18 +759,12 @@ fn impl_module_macro_attr(
                 }
                 self.computing.set(true);
 
-                let target = match self.mode {
-                    crate::types::ProcessingMode::Block => self.block_size,
-                    crate::types::ProcessingMode::Sample => self.index.get() + 1,
-                };
-
                 while self.index.get() < target {
                     let i = self.index.get();
                     unsafe {
                         let module = &mut *self.module.get();
                         // Set current block index so inner DSP can call current_block_index()
                         module._block_index.set(i);
-                        #clock_inject_in_loop
                         module.update(self.sample_rate);
                         // Copy inner outputs to block buffer at slot i
                         (*self.block_outputs.get()).copy_from_inner(&module.outputs, i);
@@ -793,6 +780,8 @@ fn impl_module_macro_attr(
                 let cc = unsafe { (*self.module.get())._channel_count };
                 let ch = if cc == 0 { 0 } else { ch % cc };
                 // Reentrancy: return 1-sample-delayed value (feedback cycle).
+                // For index == 0 we read the previous block's last sample
+                // (block_outputs is not cleared on start_block).
                 if self.computing.get() {
                     let prev = if index == 0 {
                         self.block_size.saturating_sub(1)
@@ -801,7 +790,7 @@ fn impl_module_macro_attr(
                     };
                     return unsafe { (*self.block_outputs.get()).get_at(port, ch, prev) };
                 }
-                self.ensure_processed();
+                self.ensure_processed_to(index + 1);
                 unsafe { (*self.block_outputs.get()).get_at(port, ch, index) }
             }
 
@@ -815,11 +804,12 @@ fn impl_module_macro_attr(
 
             fn connect(&self, patch: &crate::Patch) {
                 let module = unsafe { &mut *self.module.get() };
-                crate::types::Connect::connect(&mut module.params, patch);
-                // Wire index back-pointer into all Signal fields so upstream modules
-                // serve the correct sample position.
-                crate::types::InjectIndexPtr::inject_index_ptr(
+                // Connect resolves cable module_ptrs AND wires each cable's
+                // index_ptr to this wrapper's `index` cell in one pass —
+                // see `crate::types::Connect` for the rationale.
+                crate::types::Connect::connect(
                     &mut module.params,
+                    patch,
                     &self.index as *const std::cell::Cell<usize>,
                 );
             }
@@ -899,7 +889,6 @@ fn impl_module_macro_attr(
                 mode,
                 block_size,
                 argument_spans: std::cell::UnsafeCell::new(deserialized.argument_spans),
-                #clock_state_field_init
             };
 
             #has_init_call

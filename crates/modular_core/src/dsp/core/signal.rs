@@ -12,14 +12,8 @@ struct SignalParams {
 }
 
 impl crate::types::Connect for SignalParams {
-    fn connect(&mut self, patch: &crate::Patch) {
-        self.source.connect(patch);
-    }
-}
-
-impl crate::types::InjectIndexPtr for SignalParams {
-    fn inject_index_ptr(&mut self, ptr: *const std::cell::Cell<usize>) {
-        crate::types::InjectIndexPtr::inject_index_ptr(&mut self.source, ptr);
+    fn connect(&mut self, patch: &crate::Patch, index_ptr: *const std::cell::Cell<usize>) {
+        self.source.connect(patch, index_ptr);
     }
 }
 

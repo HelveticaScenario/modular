@@ -9,7 +9,6 @@ use modular_core::types::{
     ClockMessages, Connect, ExternalClockState, Message, MessageHandler, MessageTag,
     MidiControlChange, MidiNoteOn, ProcessingMode, Sampleable, Signal, SignalExt,
 };
-use modular_core::InjectIndexPtr;
 
 // The proc-macro expands to `crate::types::...`; provide that module in this integration test crate.
 mod types {
@@ -41,8 +40,6 @@ impl Sampleable for DummySampleable {
     fn get_id(&self) -> &str {
         &self.id
     }
-
-    fn tick(&self) {}
 
     fn get_value_at(&self, port: &str, ch: usize, _index: usize) -> f32 {
         if ch == 0 {
@@ -163,7 +160,7 @@ fn signal_cable_connect_and_read() {
     // Before connect, cable reads 0.0 (module_ptr doesn't resolve).
     approx_eq(s.get_value(), 0.0, 1e-6);
 
-    s.connect(&patch);
+    s.connect(&patch, std::ptr::null());
     approx_eq(s.get_value(), 3.5, 1e-6);
 }
 
@@ -238,12 +235,12 @@ fn message_listener_macro_infers_tags_from_match() {
 fn connect_noop_for_non_cable_and_non_track_signals() {
     let mut s = Signal::Volts(1.0);
     let patch = make_empty_patch();
-    s.connect(&patch);
+    s.connect(&patch, std::ptr::null());
     approx_eq(s.get_value(), 1.0, 1e-6);
 }
 
 // ============================================================================
-// Task 2: ProcessingMode, ExternalClockState, InjectIndexPtr tests
+// Task 2: ProcessingMode, ExternalClockState tests
 
 #[test]
 fn processing_mode_default_is_block() {
@@ -259,12 +256,13 @@ fn external_clock_state_default() {
 }
 
 #[test]
-fn inject_index_ptr_signal_fixed() {
+fn connect_volts_signal_no_index_ptr_change() {
     use std::cell::Cell;
     let idx = Cell::new(7usize);
     let mut sig = Signal::Volts(1.0);
-    sig.inject_index_ptr(&idx as *const _);
-    // Fixed signals ignore inject — no panic
+    let patch = make_empty_patch();
+    // Volts signals ignore the index_ptr — must not panic.
+    sig.connect(&patch, &idx as *const _);
 }
 
 // ============================================================================
@@ -282,12 +280,13 @@ fn signal_cable_index_ptr_null_by_default() {
 }
 
 #[test]
-fn inject_index_ptr_wires_cable() {
+fn connect_wires_cable_index_ptr() {
     use modular_core::types::WellKnownModule;
     use std::cell::Cell;
     let idx = Cell::new(3usize);
     let mut sig = WellKnownModule::RootClock.to_cable(0, "barTrigger");
-    sig.inject_index_ptr(&idx as *const _);
+    let patch = make_empty_patch();
+    sig.connect(&patch, &idx as *const _);
     if let Signal::Cable { index_ptr, .. } = sig {
         assert!(!index_ptr.is_null());
         assert_eq!(unsafe { (*index_ptr).get() }, 3);
@@ -304,8 +303,8 @@ fn sampleable_ensure_processed_and_get_value_at() {
         "dummy",
         [("out", 3.0f32)],
     )));
-    // ensure_processed is a no-op for DummySampleable; get_value_at returns stored value.
-    s.ensure_processed();
+    // ensure_processed_to is a no-op for DummySampleable; get_value_at returns stored value.
+    s.ensure_processed_to(usize::MAX);
     // DummySampleable overrides get_value_at to return its stored outputs map value.
     assert!((s.get_value_at("out", 0, 0) - 3.0).abs() < 1e-6);
 }

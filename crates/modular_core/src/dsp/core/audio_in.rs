@@ -13,6 +13,8 @@ use crate::{
     Sampleable,
 };
 
+const AUDIO_IN_MAX_BLOCK: usize = 4096;
+
 pub struct AudioIn {
     /// Shared with `Patch::audio_in`; kept for `insert_audio_in()` reconstruction.
     pub input: Arc<Mutex<PolyOutput>>,
@@ -20,22 +22,32 @@ pub struct AudioIn {
     /// One slot per sample; each slot holds all channels.
     /// Layout mirrors `BlockPort`: `block[sample_index][channel_index]`.
     ///
+    /// Heap-allocated (`Box<[_]>`) so that constructing `AudioIn` does not
+    /// push a 256 KB array through the stack. `insert_audio_in()` runs on
+    /// the CoreAudio IO thread (stack ≈ 512 KB), and a stack-resident
+    /// `[[f32; 16]; 4096]` temp during `with_input` overflows the guard
+    /// page → SIGBUS.
+    ///
     /// # Safety
     ///
     /// Accessed only from the audio thread:
     ///   - Written during `inject_audio_in_block` (§2, before any processing).
     ///   - Read during `get_value_at` (§7, inside module processing).
     /// These phases are serialised on the same thread — no concurrent access.
-    block: UnsafeCell<[[f32; PORT_MAX_CHANNELS]; 4096]>,
+    block: UnsafeCell<Box<[[f32; PORT_MAX_CHANNELS]]>>,
     /// Number of valid samples in `block` (= current CPAL block size).
     block_len: UnsafeCell<usize>,
+}
+
+fn make_empty_block() -> Box<[[f32; PORT_MAX_CHANNELS]]> {
+    vec![[0.0f32; PORT_MAX_CHANNELS]; AUDIO_IN_MAX_BLOCK].into_boxed_slice()
 }
 
 impl Default for AudioIn {
     fn default() -> Self {
         Self {
             input: Arc::new(Mutex::new(PolyOutput::default())),
-            block: UnsafeCell::new([[0.0f32; PORT_MAX_CHANNELS]; 4096]),
+            block: UnsafeCell::new(make_empty_block()),
             block_len: UnsafeCell::new(0),
         }
     }
@@ -46,7 +58,7 @@ impl AudioIn {
     pub fn with_input(input: Arc<Mutex<PolyOutput>>) -> Self {
         Self {
             input,
-            block: UnsafeCell::new([[0.0f32; PORT_MAX_CHANNELS]; 4096]),
+            block: UnsafeCell::new(make_empty_block()),
             block_len: UnsafeCell::new(0),
         }
     }
@@ -60,11 +72,9 @@ impl Sampleable for AudioIn {
         WellKnownModule::HiddenAudioIn.id()
     }
 
-    fn tick(&self) {}
-
     /// Store the full input block so `get_value_at` can serve per-sample values.
     fn inject_audio_in_block(&self, block: &[[f32; PORT_MAX_CHANNELS]]) {
-        let len = block.len().min(4096);
+        let len = block.len().min(AUDIO_IN_MAX_BLOCK);
         unsafe {
             let stored = &mut *self.block.get();
             for (i, slot) in block.iter().take(len).enumerate() {

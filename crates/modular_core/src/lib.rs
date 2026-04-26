@@ -39,7 +39,7 @@ pub use params::{
 };
 
 pub use types::{
-    Buffer, BufferData, ExternalClockState, InjectIndexPtr, Module, ModuleSchema, ModuleState,
-    PatchGraph, ProcessingMode, ROOT_ID, ROOT_OUTPUT_PORT, SampleBuffer, Sampleable,
-    SampleableConstructor, SampleableMap, Signal, SignalExt, SignalParamSchema, Wav, WavData,
+    Buffer, BufferData, ExternalClockState, Module, ModuleSchema, ModuleState, PatchGraph,
+    ProcessingMode, ROOT_ID, ROOT_OUTPUT_PORT, SampleBuffer, Sampleable, SampleableConstructor,
+    SampleableMap, Signal, SignalExt, SignalParamSchema, Wav, WavData,
 };

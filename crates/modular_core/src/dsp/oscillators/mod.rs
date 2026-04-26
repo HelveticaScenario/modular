@@ -24,7 +24,7 @@ pub enum FmMode {
 }
 
 impl Connect for FmMode {
-    fn connect(&mut self, _patch: &Patch) {}
+    fn connect(&mut self, _patch: &Patch, _index_ptr: *const std::cell::Cell<usize>) {}
 }
 
 /// Calculate frequency with FM modulation applied.

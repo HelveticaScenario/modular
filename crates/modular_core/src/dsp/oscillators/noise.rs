@@ -27,7 +27,7 @@ enum NoiseKind {
 }
 
 impl crate::types::Connect for NoiseKind {
-    fn connect(&mut self, _patch: &crate::Patch) {}
+    fn connect(&mut self, _patch: &crate::Patch, _index_ptr: *const std::cell::Cell<usize>) {}
 }
 
 #[derive(Default)]
