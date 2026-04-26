@@ -2,9 +2,9 @@ use deserr::Deserr;
 use schemars::JsonSchema;
 
 use crate::{
+    Wav,
     dsp::utils::SchmittTrigger,
     poly::{MonoSignal, MonoSignalExt, PolyOutput},
-    Wav,
 };
 
 fn sampler_derive_channel_count(params: &SamplerParams) -> usize {
@@ -209,11 +209,7 @@ mod tests {
         // First tick: gate is high, Schmitt trigger detects rising edge, position resets to 0
         step(&**module);
         let out0 = module.get_value_at("output", 0, 0);
-        assert!(
-            (out0 - 1.0).abs() < 1e-6,
-            "expected 1.0, got {}",
-            out0
-        );
+        assert!((out0 - 1.0).abs() < 1e-6, "expected 1.0, got {}", out0);
     }
 
     #[test]
@@ -238,7 +234,11 @@ mod tests {
         step(&**module); // frame 1 -> output 2.0
         step(&**module); // frame 2 -> past end -> silence
 
-        assert_eq!(module.get_value_at("output", 0, 0), 0.0, "should be silent after sample ends");
+        assert_eq!(
+            module.get_value_at("output", 0, 0),
+            0.0,
+            "should be silent after sample ends"
+        );
     }
 
     #[test]

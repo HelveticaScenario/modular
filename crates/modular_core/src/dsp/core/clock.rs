@@ -2,9 +2,9 @@ use deserr::Deserr;
 use napi::Result;
 use schemars::JsonSchema;
 
-use crate::dsp::utils::{min_gate_samples, SchmittTrigger, TempGate, TempGateState};
-use crate::types::{ClockMessages, ExternalClockState};
 use crate::PolyOutput;
+use crate::dsp::utils::{SchmittTrigger, TempGate, TempGateState, min_gate_samples};
+use crate::types::{ClockMessages, ExternalClockState};
 
 #[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
@@ -618,7 +618,11 @@ mod tests {
         assert!(free_phase > 0.0);
 
         // Now sync to a specific phase externally
-        c.sync_external_clock_impl(ExternalClockState { bar_phase: 0.75, bpm: 140.0, playing: true });
+        c.sync_external_clock_impl(ExternalClockState {
+            bar_phase: 0.75,
+            bpm: 140.0,
+            playing: true,
+        });
         c.update(sr);
 
         // Phase should be near 0.75 (the externally-set value), not free-running
@@ -642,7 +646,11 @@ mod tests {
 
         for i in 0..samples_per_bar {
             let bar_phase = i as f64 / samples_per_bar as f64;
-            c.sync_external_clock_impl(ExternalClockState { bar_phase, bpm: 120.0, playing: true });
+            c.sync_external_clock_impl(ExternalClockState {
+                bar_phase,
+                bpm: 120.0,
+                playing: true,
+            });
             c.update(sr);
 
             let is_high = c.outputs.beat_trigger == 5.0;
@@ -666,12 +674,20 @@ mod tests {
 
         // Run a few frames synced
         for i in 0..100 {
-            c.sync_external_clock_impl(ExternalClockState { bar_phase: i as f64 / 96000.0, bpm: 120.0, playing: true });
+            c.sync_external_clock_impl(ExternalClockState {
+                bar_phase: i as f64 / 96000.0,
+                bpm: 120.0,
+                playing: true,
+            });
             c.update(sr);
         }
 
         // Stop transport
-        c.sync_external_clock_impl(ExternalClockState { bar_phase: 0.0, bpm: 120.0, playing: false });
+        c.sync_external_clock_impl(ExternalClockState {
+            bar_phase: 0.0,
+            bpm: 120.0,
+            playing: false,
+        });
         c.update(sr);
 
         assert_eq!(
@@ -690,7 +706,11 @@ mod tests {
         let sr = 48_000.0;
 
         // Sync externally
-        c.sync_external_clock_impl(ExternalClockState { bar_phase: 0.5, bpm: 120.0, playing: true });
+        c.sync_external_clock_impl(ExternalClockState {
+            bar_phase: 0.5,
+            bpm: 120.0,
+            playing: true,
+        });
         c.update(sr);
 
         // Clear external sync

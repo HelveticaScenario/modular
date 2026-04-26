@@ -1,7 +1,7 @@
 use deserr::Deserr;
 use schemars::JsonSchema;
 
-use crate::{poly::PolyOutput, Buffer, PolySignal};
+use crate::{Buffer, PolySignal, poly::PolyOutput};
 
 fn delay_read_derive_channel_count(params: &DelayReadParams) -> usize {
     params.buffer.channel_count().max(params.time.channels())

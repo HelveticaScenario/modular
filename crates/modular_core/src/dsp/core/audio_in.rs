@@ -8,9 +8,9 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 use crate::{
-    poly::{PolyOutput, PORT_MAX_CHANNELS},
-    types::{MessageHandler, WellKnownModule},
     Sampleable,
+    poly::{PORT_MAX_CHANNELS, PolyOutput},
+    types::{MessageHandler, WellKnownModule},
 };
 
 const AUDIO_IN_MAX_BLOCK: usize = 4096;

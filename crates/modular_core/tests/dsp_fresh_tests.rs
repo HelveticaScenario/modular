@@ -348,7 +348,13 @@ fn all_constructors_produce_valid_modules() {
             argument_spans: Default::default(),
             channel_count: cached.channel_count,
         };
-        let module = constructor(&format!("test-{name}"), SAMPLE_RATE, deserialized, 1, ProcessingMode::Block);
+        let module = constructor(
+            &format!("test-{name}"),
+            SAMPLE_RATE,
+            deserialized,
+            1,
+            ProcessingMode::Block,
+        );
         assert!(
             module.is_ok(),
             "constructor for '{name}' should succeed, got: {:?}",
@@ -375,7 +381,14 @@ fn all_constructors_can_tick() {
             argument_spans: Default::default(),
             channel_count: cached.channel_count,
         };
-        let module = constructor(&format!("test-{name}"), SAMPLE_RATE, deserialized, 1, ProcessingMode::Block).unwrap();
+        let module = constructor(
+            &format!("test-{name}"),
+            SAMPLE_RATE,
+            deserialized,
+            1,
+            ProcessingMode::Block,
+        )
+        .unwrap();
         // Should not panic with minimal params
         module.start_block();
         module.ensure_processed_to(usize::MAX);
@@ -1119,9 +1132,7 @@ fn block_sine_produces_distinct_samples_within_block() {
     osc.start_block(); // reset index to 0
 
     // Each get_value_at(i) triggers ensure_processed_to(i+1).
-    let samples: Vec<f32> = (0..20)
-        .map(|i| osc.get_value_at("output", 0, i))
-        .collect();
+    let samples: Vec<f32> = (0..20).map(|i| osc.get_value_at("output", 0, i)).collect();
 
     eprintln!("[block_sine_test] first 20 samples: {:.4?}", samples);
 
@@ -1185,7 +1196,10 @@ fn block_chain_signal_routes_distinct_samples() {
         .map(|i| sig_module.get_value_at("output", 0, i))
         .collect();
 
-    eprintln!("[block_chain_test] $signal output, first 20 frames: {:.4?}", samples);
+    eprintln!(
+        "[block_chain_test] $signal output, first 20 frames: {:.4?}",
+        samples
+    );
 
     for (i, &v) in samples.iter().enumerate() {
         assert!(v.is_finite(), "sample[{i}] is not finite: {v}");
@@ -1276,7 +1290,10 @@ fn block_full_out_chain_produces_distinct_samples() {
         }
         run_start = i;
     }
-    eprintln!("[block_full_out_chain] plateaus (start, len, val): {:?}", plateaus);
+    eprintln!(
+        "[block_full_out_chain] plateaus (start, len, val): {:?}",
+        plateaus
+    );
 
     let max_run = plateaus.iter().map(|(_, l, _)| *l).max().unwrap_or(0);
     assert!(
@@ -1430,7 +1447,11 @@ fn audio_callback_simulation_produces_output() {
     let constructors = get_constructors();
     let deserializers = get_params_deserializers();
 
-    let make_with_mode = |module_type: &str, id: &str, params: serde_json::Value, mode: ProcessingMode| -> Arc<Box<dyn Sampleable>> {
+    let make_with_mode = |module_type: &str,
+                          id: &str,
+                          params: serde_json::Value,
+                          mode: ProcessingMode|
+     -> Arc<Box<dyn Sampleable>> {
         let cached = deserializers.get(module_type).unwrap()(params).unwrap();
         let deserialized = DeserializedParams {
             params: cached.params,
@@ -1443,20 +1464,36 @@ fn audio_callback_simulation_produces_output() {
             deserialized,
             block_size,
             mode,
-        ).unwrap()
+        )
+        .unwrap()
     };
 
     // Simulate a typical patch: ROOT_CLOCK, $sine osc, ROOT_OUTPUT signal.
     let mut patch = Patch::new();
-    let clock = make_with_mode("_clock", &*ROOT_CLOCK_ID, json!({
-        "tempo": 120.0,
-        "numerator": 4,
-        "denominator": 4,
-    }), ProcessingMode::Sample);
-    let osc = make_with_mode("$sine", "osc", json!({ "freq": 0.0 }), ProcessingMode::Block);
-    let root = make_with_mode("$signal", "ROOT_OUTPUT", json!({
-        "source": { "type": "cable", "module": "osc", "port": "output", "channel": 0 }
-    }), ProcessingMode::Block);
+    let clock = make_with_mode(
+        "_clock",
+        &*ROOT_CLOCK_ID,
+        json!({
+            "tempo": 120.0,
+            "numerator": 4,
+            "denominator": 4,
+        }),
+        ProcessingMode::Sample,
+    );
+    let osc = make_with_mode(
+        "$sine",
+        "osc",
+        json!({ "freq": 0.0 }),
+        ProcessingMode::Block,
+    );
+    let root = make_with_mode(
+        "$signal",
+        "ROOT_OUTPUT",
+        json!({
+            "source": { "type": "cable", "module": "osc", "port": "output", "channel": 0 }
+        }),
+        ProcessingMode::Block,
+    );
 
     patch.sampleables.insert(ROOT_CLOCK_ID.clone(), clock);
     patch.sampleables.insert("osc".to_string(), osc);
@@ -1486,13 +1523,22 @@ fn audio_callback_simulation_produces_output() {
     }
 
     let (mn, mx) = min_max(&all_samples);
-    assert!(mx > 0.5, "ROOT output should produce audible signal, peak={mx}");
+    assert!(
+        mx > 0.5,
+        "ROOT output should produce audible signal, peak={mx}"
+    );
     assert!(mn < -0.5, "ROOT output should oscillate, trough={mn}");
     let mut all_zero = true;
     for &s in &all_samples {
-        if s.abs() > 1e-6 { all_zero = false; break; }
+        if s.abs() > 1e-6 {
+            all_zero = false;
+            break;
+        }
     }
-    assert!(!all_zero, "all samples are zero — callback simulation produced silence");
+    assert!(
+        !all_zero,
+        "all samples are zero — callback simulation produced silence"
+    );
 }
 
 /// Eager-fill a ROOT_CLOCK wrapper across a full block under simulated Link
@@ -1509,7 +1555,8 @@ fn clock_eager_fill_then_trigger_scan() {
         "tempo": 120.0,
         "numerator": 4,
         "denominator": 4,
-    })).unwrap();
+    }))
+    .unwrap();
     let deserialized = DeserializedParams {
         params: cached.params,
         argument_spans: Default::default(),
@@ -1523,7 +1570,8 @@ fn clock_eager_fill_then_trigger_scan() {
         deserialized,
         block_size,
         modular_core::types::ProcessingMode::Sample,
-    ).unwrap();
+    )
+    .unwrap();
 
     // Simulate the audio callback's eager-fill loop: per-sample bar_phase
     // that wraps from ~0.99 back to ~0 at sample 32, signalling a bar boundary.

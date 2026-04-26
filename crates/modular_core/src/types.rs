@@ -30,6 +30,7 @@
 //! buffer is legitimately shared between the audio input callback and the audio processing
 //! thread. This is the only module that requires a mutex.
 
+use deserr::{DeserializeError, Deserr, ErrorKind, IntoValue, Map as DeserrMap, ValuePointerRef};
 use napi::Env;
 use napi::Result;
 use napi::bindgen_prelude::{FromNapiValue, Object, ToNapiValue};
@@ -37,7 +38,6 @@ use napi_derive::napi;
 use regex::Regex;
 use rust_music_theory::note::{Notes, Pitch};
 use rust_music_theory::scale::Scale;
-use deserr::{DeserializeError, Deserr, ErrorKind, IntoValue, Map as DeserrMap, ValuePointerRef};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -859,10 +859,7 @@ pub struct WavData {
 }
 
 impl WavData {
-    pub fn new(
-        buffer: SampleBuffer,
-        detected_frame_size: Option<usize>,
-    ) -> Self {
+    pub fn new(buffer: SampleBuffer, detected_frame_size: Option<usize>) -> Self {
         Self {
             buffer,
             detected_frame_size,
@@ -1215,10 +1212,7 @@ impl BufferData {
                     if oldest_pos <= newest_pos {
                         // No wrap: one contiguous run
                         (
-                            [
-                                (oldest_pos, frames_to_copy, frames_to_copy - 1),
-                                (0, 0, 0),
-                            ],
+                            [(oldest_pos, frames_to_copy, frames_to_copy - 1), (0, 0, 0)],
                             1,
                         )
                     } else {
@@ -1396,11 +1390,15 @@ impl Buffer {
     }
 
     pub fn with_data<R>(&self, f: impl FnOnce(&Vec<Vec<f32>>) -> R) -> Option<R> {
-        self.cached_buffer.as_ref().map(|buffer| buffer.with_data(f))
+        self.cached_buffer
+            .as_ref()
+            .map(|buffer| buffer.with_data(f))
     }
 
     pub fn with_data_mut<R>(&self, f: impl FnOnce(&mut Vec<Vec<f32>>) -> R) -> Option<R> {
-        self.cached_buffer.as_ref().map(|buffer| buffer.with_data_mut(f))
+        self.cached_buffer
+            .as_ref()
+            .map(|buffer| buffer.with_data_mut(f))
     }
 
     pub fn read_hermite_wrapped(&self, channel: usize, frame: f32) -> f32 {
@@ -1591,13 +1589,26 @@ impl PartialEq for Buffer {
 #[derive(Clone, Debug)]
 pub enum Table {
     Identity,
-    Mirror { amount: PolySignal },
-    Bend { amount: PolySignal },
-    Sync { ratio: PolySignal },
-    Fold { amount: PolySignal },
-    Pwm { width: PolySignal },
+    Mirror {
+        amount: PolySignal,
+    },
+    Bend {
+        amount: PolySignal,
+    },
+    Sync {
+        ratio: PolySignal,
+    },
+    Fold {
+        amount: PolySignal,
+    },
+    Pwm {
+        width: PolySignal,
+    },
     /// Compose two tables: output phase of `first` becomes input phase of `second`.
-    Pipe { first: Box<Table>, second: Box<Table> },
+    Pipe {
+        first: Box<Table>,
+        second: Box<Table>,
+    },
 }
 
 impl Table {
@@ -1653,12 +1664,25 @@ impl Connect for Table {
 #[serde(tag = "type", rename_all = "camelCase")]
 enum TableSerde {
     Identity,
-    Mirror { amount: PolySignal },
-    Bend { amount: PolySignal },
-    Sync { ratio: PolySignal },
-    Fold { amount: PolySignal },
-    Pwm { width: PolySignal },
-    Pipe { first: Box<TableSerde>, second: Box<TableSerde> },
+    Mirror {
+        amount: PolySignal,
+    },
+    Bend {
+        amount: PolySignal,
+    },
+    Sync {
+        ratio: PolySignal,
+    },
+    Fold {
+        amount: PolySignal,
+    },
+    Pwm {
+        width: PolySignal,
+    },
+    Pipe {
+        first: Box<TableSerde>,
+        second: Box<TableSerde>,
+    },
 }
 
 impl From<TableSerde> for Table {
@@ -1699,12 +1723,25 @@ impl<'a> From<&'a Table> for TableSerdeRef<'a> {
 #[serde(tag = "type", rename_all = "camelCase")]
 enum TableSerdeRef<'a> {
     Identity,
-    Mirror { amount: &'a PolySignal },
-    Bend { amount: &'a PolySignal },
-    Sync { ratio: &'a PolySignal },
-    Fold { amount: &'a PolySignal },
-    Pwm { width: &'a PolySignal },
-    Pipe { first: Box<TableSerdeRef<'a>>, second: Box<TableSerdeRef<'a>> },
+    Mirror {
+        amount: &'a PolySignal,
+    },
+    Bend {
+        amount: &'a PolySignal,
+    },
+    Sync {
+        ratio: &'a PolySignal,
+    },
+    Fold {
+        amount: &'a PolySignal,
+    },
+    Pwm {
+        width: &'a PolySignal,
+    },
+    Pipe {
+        first: Box<TableSerdeRef<'a>>,
+        second: Box<TableSerdeRef<'a>>,
+    },
 }
 
 impl<'de> Deserialize<'de> for Table {
@@ -1811,11 +1848,12 @@ impl<E: DeserializeError> deserr::Deserr<E> for Table {
                         location,
                     ))
                 })?;
-                let first =
-                    Table::deserialize_from_value(first_raw.into_value(), location)?;
-                let second =
-                    Table::deserialize_from_value(second_raw.into_value(), location)?;
-                Ok(Table::Pipe { first: Box::new(first), second: Box::new(second) })
+                let first = Table::deserialize_from_value(first_raw.into_value(), location)?;
+                let second = Table::deserialize_from_value(second_raw.into_value(), location)?;
+                Ok(Table::Pipe {
+                    first: Box::new(first),
+                    second: Box::new(second),
+                })
             }
             other => Err(deserr::take_cf_content(E::error::<V>(
                 None,
@@ -1840,12 +1878,25 @@ impl JsonSchema for Table {
         #[allow(dead_code)]
         enum TableSchema {
             Identity,
-            Mirror { amount: PolySignal },
-            Bend { amount: PolySignal },
-            Sync { ratio: PolySignal },
-            Fold { amount: PolySignal },
-            Pwm { width: PolySignal },
-            Pipe { first: Box<Table>, second: Box<Table> },
+            Mirror {
+                amount: PolySignal,
+            },
+            Bend {
+                amount: PolySignal,
+            },
+            Sync {
+                ratio: PolySignal,
+            },
+            Fold {
+                amount: PolySignal,
+            },
+            Pwm {
+                width: PolySignal,
+            },
+            Pipe {
+                first: Box<Table>,
+                second: Box<Table>,
+            },
         }
         TableSchema::json_schema(r#gen)
     }
@@ -1987,26 +2038,20 @@ impl<E: DeserializeError> deserr::Deserr<E> for Signal {
                 ))
             }),
             deserr::Value::Map(mut map) => {
-                let type_val = map
-                    .remove("type")
-                    .and_then(|v| match v.into_value() {
-                        deserr::Value::String(s) => Some(s),
-                        _ => None,
-                    });
+                let type_val = map.remove("type").and_then(|v| match v.into_value() {
+                    deserr::Value::String(s) => Some(s),
+                    _ => None,
+                });
 
-                let module = map
-                    .remove("module")
-                    .and_then(|v| match v.into_value() {
-                        deserr::Value::String(s) => Some(s),
-                        _ => None,
-                    });
+                let module = map.remove("module").and_then(|v| match v.into_value() {
+                    deserr::Value::String(s) => Some(s),
+                    _ => None,
+                });
 
-                let port = map
-                    .remove("port")
-                    .and_then(|v| match v.into_value() {
-                        deserr::Value::String(s) => Some(s),
-                        _ => None,
-                    });
+                let port = map.remove("port").and_then(|v| match v.into_value() {
+                    deserr::Value::String(s) => Some(s),
+                    _ => None,
+                });
 
                 let channel = map
                     .remove("channel")
@@ -2129,7 +2174,6 @@ impl Signal {
         }
     }
 }
-
 
 /// Extension trait for normalling pattern on optional signals.
 pub trait SignalExt {
@@ -2488,7 +2532,7 @@ pub type SampleableConstructor = Box<
         &String,
         f32,
         crate::params::DeserializedParams,
-        usize,         // block_size
+        usize,          // block_size
         ProcessingMode, // mode
     ) -> Result<Arc<Box<dyn Sampleable>>>,
 >;
@@ -2896,7 +2940,11 @@ mod tests {
             for age in 0..5 {
                 let val = read_at_age(&new, ch, 42, age);
                 let expected = (age + 1) as f32 + ch as f32 * 1000.0;
-                assert_eq!(val, expected, "ch {} age {} should be {}", ch, age, expected);
+                assert_eq!(
+                    val, expected,
+                    "ch {} age {} should be {}",
+                    ch, age, expected
+                );
             }
         }
     }
@@ -3156,10 +3204,9 @@ mod wav_tests {
 
     #[test]
     fn wav_deserializes_with_mtime_via_serde() {
-        let w: Wav = serde_json::from_str(
-            r#"{"type":"wav_ref","path":"kick","channels":2,"mtime":123.0}"#,
-        )
-        .unwrap();
+        let w: Wav =
+            serde_json::from_str(r#"{"type":"wav_ref","path":"kick","channels":2,"mtime":123.0}"#)
+                .unwrap();
         assert_eq!(w.mtime(), Some(123.0));
         // round-trip: serialize back out and confirm mtime preserved
         let out = serde_json::to_string(&w).unwrap();
@@ -3210,26 +3257,34 @@ mod table_tests {
 
     #[test]
     fn mirror_evaluates_with_constant_signal() {
-        let t = Table::Mirror { amount: constant(0.0) };
+        let t = Table::Mirror {
+            amount: constant(0.0),
+        };
         // amount=0 => identity.
         for i in 0..=10 {
             let x = i as f32 / 10.0;
             assert!((t.evaluate(x, 0) - x).abs() < 1e-6);
         }
         // amount=1 at midpoint => 1.0.
-        let t = Table::Mirror { amount: constant(1.0) };
+        let t = Table::Mirror {
+            amount: constant(1.0),
+        };
         assert!((t.evaluate(0.5, 0) - 1.0).abs() < 1e-6);
     }
 
     #[test]
     fn bend_evaluates_with_constant_signal() {
-        let t = Table::Bend { amount: constant(0.0) };
+        let t = Table::Bend {
+            amount: constant(0.0),
+        };
         for i in 0..=10 {
             let x = i as f32 / 10.0;
             assert!((t.evaluate(x, 0) - x).abs() < 1e-6);
         }
         // Endpoints preserved even under bend.
-        let t = Table::Bend { amount: constant(0.7) };
+        let t = Table::Bend {
+            amount: constant(0.7),
+        };
         assert!(t.evaluate(0.0, 0).abs() < 1e-6);
         assert!((t.evaluate(1.0, 0) - 1.0).abs() < 1e-6);
     }
@@ -3237,7 +3292,9 @@ mod table_tests {
     #[test]
     fn sync_evaluates_with_constant_signal() {
         // ratio=0 => 1x (identity on [0, 1)).
-        let t = Table::Sync { ratio: constant(0.0) };
+        let t = Table::Sync {
+            ratio: constant(0.0),
+        };
         for i in 0..100 {
             let x = i as f32 / 100.0;
             assert!((t.evaluate(x, 0) - x).abs() < 1e-6);
@@ -3247,7 +3304,9 @@ mod table_tests {
     #[test]
     fn fold_evaluates_with_constant_signal() {
         // amount=0 => identity.
-        let t = Table::Fold { amount: constant(0.0) };
+        let t = Table::Fold {
+            amount: constant(0.0),
+        };
         for i in 0..=10 {
             let x = i as f32 / 10.0;
             assert!((t.evaluate(x, 0) - x).abs() < 1e-6);
@@ -3256,7 +3315,9 @@ mod table_tests {
 
     #[test]
     fn pwm_evaluates_with_constant_signal() {
-        let t = Table::Pwm { width: constant(0.5) };
+        let t = Table::Pwm {
+            width: constant(0.5),
+        };
         assert!(t.evaluate(0.0, 0).abs() < 1e-6);
         assert!((t.evaluate(1.0, 0) - 1.0).abs() < 1e-6);
     }
@@ -3265,11 +3326,21 @@ mod table_tests {
     fn evaluate_output_in_range_across_sweep() {
         let cases: Vec<Table> = vec![
             Table::Identity,
-            Table::Mirror { amount: constant(0.5) },
-            Table::Bend { amount: constant(0.5) },
-            Table::Sync { ratio: constant(0.5) },
-            Table::Fold { amount: constant(0.5) },
-            Table::Pwm { width: constant(0.3) },
+            Table::Mirror {
+                amount: constant(0.5),
+            },
+            Table::Bend {
+                amount: constant(0.5),
+            },
+            Table::Sync {
+                ratio: constant(0.5),
+            },
+            Table::Fold {
+                amount: constant(0.5),
+            },
+            Table::Pwm {
+                width: constant(0.3),
+            },
         ];
         for t in &cases {
             for i in 0..=100 {
@@ -3301,24 +3372,34 @@ mod table_tests {
         // so we mostly assert that it runs without panic and evaluates sensibly.
         let patch = Patch::new();
 
-        let mut mirror = Table::Mirror { amount: constant(0.25) };
+        let mut mirror = Table::Mirror {
+            amount: constant(0.25),
+        };
         mirror.connect(&patch, std::ptr::null());
         // At x=0.5 the reflection is 1.0; interpolated at amount=0.25: 0.5 + 0.5*0.25 = 0.625.
         assert!((mirror.evaluate(0.5, 0) - 0.625).abs() < 1e-4);
 
-        let mut bend = Table::Bend { amount: constant(0.0) };
+        let mut bend = Table::Bend {
+            amount: constant(0.0),
+        };
         bend.connect(&patch, std::ptr::null());
         assert!((bend.evaluate(0.5, 0) - 0.5).abs() < 1e-6);
 
-        let mut sync = Table::Sync { ratio: constant(0.0) };
+        let mut sync = Table::Sync {
+            ratio: constant(0.0),
+        };
         sync.connect(&patch, std::ptr::null());
         assert!((sync.evaluate(0.25, 0) - 0.25).abs() < 1e-6);
 
-        let mut fold = Table::Fold { amount: constant(0.0) };
+        let mut fold = Table::Fold {
+            amount: constant(0.0),
+        };
         fold.connect(&patch, std::ptr::null());
         assert!((fold.evaluate(0.5, 0) - 0.5).abs() < 1e-6);
 
-        let mut pwm = Table::Pwm { width: constant(0.5) };
+        let mut pwm = Table::Pwm {
+            width: constant(0.5),
+        };
         pwm.connect(&patch, std::ptr::null());
         assert!((pwm.evaluate(0.5, 0) - 0.5).abs() < 1e-6);
     }
@@ -3333,8 +3414,7 @@ mod table_tests {
 
     #[test]
     fn table_deserializes_mirror_with_scalar_signal() {
-        let t: Table =
-            serde_json::from_str(r#"{"type":"mirror","amount":0.5}"#).unwrap();
+        let t: Table = serde_json::from_str(r#"{"type":"mirror","amount":0.5}"#).unwrap();
         match t {
             Table::Mirror { amount } => {
                 assert!((amount.get_value(0) - 0.5).abs() < 1e-6);
@@ -3363,7 +3443,9 @@ mod table_tests {
 
     #[test]
     fn table_roundtrips_sync() {
-        let t = Table::Sync { ratio: constant(0.75) };
+        let t = Table::Sync {
+            ratio: constant(0.75),
+        };
         let json = serde_json::to_string(&t).unwrap();
         let back: Table = serde_json::from_str(&json).unwrap();
         match back {
@@ -3414,8 +3496,12 @@ mod table_tests {
         // mirror(0.5) at x=0.5 → reflected to 1.0 (full mirror).
         // Then bend(0.0) at 1.0 → 1.0 (identity at amount=0).
         let t = Table::Pipe {
-            first: Box::new(Table::Mirror { amount: constant(1.0) }),
-            second: Box::new(Table::Bend { amount: constant(0.0) }),
+            first: Box::new(Table::Mirror {
+                amount: constant(1.0),
+            }),
+            second: Box::new(Table::Bend {
+                amount: constant(0.0),
+            }),
         };
         // At x=0.5, mirror with amount=1 maps 0.5→1.0; bend with 0 maps 1.0→1.0.
         let out = t.evaluate(0.5, 0);
@@ -3425,7 +3511,9 @@ mod table_tests {
     #[test]
     fn pipe_channels_is_max_of_both() {
         let t = Table::Pipe {
-            first: Box::new(Table::Mirror { amount: constant(0.5) }),
+            first: Box::new(Table::Mirror {
+                amount: constant(0.5),
+            }),
             second: Box::new(Table::Identity),
         };
         assert_eq!(t.channels(), 1); // Mirror has 1, Identity has 0
@@ -3434,12 +3522,22 @@ mod table_tests {
     #[test]
     fn pipe_serializes_and_deserializes_via_serde() {
         let t = Table::Pipe {
-            first: Box::new(Table::Mirror { amount: constant(0.5) }),
-            second: Box::new(Table::Bend { amount: constant(0.3) }),
+            first: Box::new(Table::Mirror {
+                amount: constant(0.5),
+            }),
+            second: Box::new(Table::Bend {
+                amount: constant(0.3),
+            }),
         };
         let json = serde_json::to_string(&t).unwrap();
-        assert!(json.contains("\"type\":\"pipe\""), "missing pipe tag: {json}");
-        assert!(json.contains("\"type\":\"mirror\""), "missing first: {json}");
+        assert!(
+            json.contains("\"type\":\"pipe\""),
+            "missing pipe tag: {json}"
+        );
+        assert!(
+            json.contains("\"type\":\"mirror\""),
+            "missing first: {json}"
+        );
         assert!(json.contains("\"type\":\"bend\""), "missing second: {json}");
         let back: Table = serde_json::from_str(&json).unwrap();
         match back {

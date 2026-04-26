@@ -13,8 +13,8 @@
 //! [`read_sample`]: PreparedWavetable::read_sample
 //! [`mipmap_level_for_freq`]: PreparedWavetable::mipmap_level_for_freq
 
-use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
+use rustfft::num_complex::Complex;
 
 use crate::types::WavData;
 

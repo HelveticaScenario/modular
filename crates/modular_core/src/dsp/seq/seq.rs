@@ -188,8 +188,8 @@ pub fn seq_derive_channel_count(params: &SeqParams) -> usize {
             if hap.value.is_rest() {
                 continue;
             }
-            events.push((hap.part_begin, 1));  // +1 at start
-            events.push((hap.part_end, -1));   // -1 at end
+            events.push((hap.part_begin, 1)); // +1 at start
+            events.push((hap.part_end, -1)); // -1 at end
         }
     }
 
@@ -411,7 +411,10 @@ impl Seq {
             cached.get(cycle as usize)
         } else {
             let module_idx = (cycle - 1000) as usize;
-            self.state.module_cache.get(module_idx).and_then(|opt| opt.as_ref())
+            self.state
+                .module_cache
+                .get(module_idx)
+                .and_then(|opt| opt.as_ref())
         }
     }
 
@@ -464,7 +467,9 @@ impl Seq {
             for ch in 0..num_channels {
                 self.outputs.cv.set(ch, 0.0);
                 self.outputs.gate.set(ch, state.voices[ch].gate.process());
-                self.outputs.trig.set(ch, state.voices[ch].trigger.process());
+                self.outputs
+                    .trig
+                    .set(ch, state.voices[ch].trigger.process());
             }
             return;
         }
@@ -483,8 +488,7 @@ impl Seq {
                 // Check if this exact hap instance is already assigned to a voice
                 let already_assigned = (0..num_channels).any(|i| {
                     if let Some(ref existing) = state.voices[i].cached_hap {
-                        existing.hap_index == hap_index
-                            && existing.cached_cycle == current_cycle
+                        existing.hap_index == hap_index && existing.cached_cycle == current_cycle
                     } else {
                         false
                     }
@@ -521,8 +525,12 @@ impl Seq {
                 let voice = &mut state.voices[voice_idx];
                 voice.cached_hap = Some(cached);
                 voice.active = true;
-                voice.gate.set_state(TempGateState::Low, TempGateState::High, hold);
-                voice.trigger.set_state(TempGateState::High, TempGateState::Low, hold);
+                voice
+                    .gate
+                    .set_state(TempGateState::Low, TempGateState::High, hold);
+                voice
+                    .trigger
+                    .set_state(TempGateState::High, TempGateState::Low, hold);
             }
         }
 

@@ -3,7 +3,7 @@ use schemars::JsonSchema;
 
 use crate::{
     PORT_MAX_CHANNELS,
-    dsp::oscillators::{apply_fm, FmMode},
+    dsp::oscillators::{FmMode, apply_fm},
     poly::{PolyOutput, PolySignal, PolySignalExt},
     types::Clickless,
 };

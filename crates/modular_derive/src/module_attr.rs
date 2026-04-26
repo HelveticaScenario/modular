@@ -2,7 +2,7 @@ use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
-use syn::{punctuated::Punctuated, Data, DeriveInput, Fields, LitStr, Token, Type};
+use syn::{Data, DeriveInput, Fields, LitStr, Token, Type, punctuated::Punctuated};
 
 use crate::utils::{extract_doc_comments, unwrap_attr};
 
@@ -317,9 +317,9 @@ fn impl_module_macro_attr(
                         .any(|f| unwrap_attr(&f.attrs, "output").is_some())
                     {
                         return Err(syn::Error::new(
-                        Span::call_site(),
-                        "#[module] expects an `outputs` field (a struct that derives Outputs); do not annotate module fields with #[output(...)]",
-                    ));
+                            Span::call_site(),
+                            "#[module] expects an `outputs` field (a struct that derives Outputs); do not annotate module fields with #[output(...)]",
+                        ));
                     }
 
                     let outputs_field = fields
@@ -331,9 +331,9 @@ fn impl_module_macro_attr(
                         Some(f) => f.ty.clone(),
                         None => {
                             return Err(syn::Error::new(
-                            Span::call_site(),
-                            "#[module] requires a field named `outputs` whose type derives Outputs",
-                        ));
+                                Span::call_site(),
+                                "#[module] requires a field named `outputs` whose type derives Outputs",
+                            ));
                         }
                     };
 
@@ -418,7 +418,7 @@ fn impl_module_macro_attr(
             return Err(syn::Error::new(
                 proc_macro2::Span::call_site(),
                 "outputs type must be a simple path",
-            ))
+            ));
         }
     };
 

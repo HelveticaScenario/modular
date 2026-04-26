@@ -7,7 +7,7 @@ use deserr::Deserr;
 use schemars::JsonSchema;
 
 use crate::dsp::utils::sanitize;
-use crate::poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS};
+use crate::poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt};
 
 // Gain voltage scaling: maps [-5, 5] volts to [-24, 24] dB (4.8 dB per volt)
 const DB_PER_VOLT: f32 = 4.8;

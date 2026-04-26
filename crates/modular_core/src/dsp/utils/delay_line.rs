@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn wrapping_works() {
         let mut dl = DelayLine::new(4); // buffer size = 8
-                                        // Write more samples than buffer size
+        // Write more samples than buffer size
         for i in 0..20 {
             dl.write(i as f32);
         }

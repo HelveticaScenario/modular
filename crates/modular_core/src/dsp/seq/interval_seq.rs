@@ -18,14 +18,14 @@ use deserr::Deserr;
 use schemars::JsonSchema;
 
 use crate::{
+    MonoSignal, Patch,
     dsp::{
         utilities::quantizer::ScaleParam,
-        utils::{midi_to_voct_f64, min_gate_samples, TempGate, TempGateState},
+        utils::{TempGate, TempGateState, midi_to_voct_f64, min_gate_samples},
     },
     pattern_system::Pattern,
-    poly::{MonoSignalExt, PolyOutput, PORT_MAX_CHANNELS},
+    poly::{MonoSignalExt, PORT_MAX_CHANNELS, PolyOutput},
     types::Connect,
-    MonoSignal, Patch,
 };
 
 /// Scale parameter for IntervalSeq that supports an optional octave in the root.
@@ -1223,7 +1223,7 @@ mod tests {
 
         // D3 root
         seq.state.base_midi = 50; // D3
-                                  // Degree 0 = D3 = MIDI 50 = -10/12 V
+        // Degree 0 = D3 = MIDI 50 = -10/12 V
         let v0 = seq.degree_to_voltage(0);
         assert!((v0 - (-10.0 / 12.0)).abs() < 0.001);
     }

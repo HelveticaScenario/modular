@@ -9,10 +9,10 @@ use schemars::JsonSchema;
 use serde::Serialize;
 
 use crate::dsp::utils::{
-    min_gate_samples, TempGate, TempGateState, GATE_HIGH_VOLTAGE, GATE_LOW_VOLTAGE,
+    GATE_HIGH_VOLTAGE, GATE_LOW_VOLTAGE, TempGate, TempGateState, min_gate_samples,
 };
 use crate::patch::Patch;
-use crate::poly::{PolyOutput, PORT_MAX_CHANNELS};
+use crate::poly::{PORT_MAX_CHANNELS, PolyOutput};
 use crate::types::{
     Connect, MidiChannelPressure, MidiControlChange, MidiNoteOff, MidiNoteOn, MidiPitchBend,
     MidiPolyPressure,

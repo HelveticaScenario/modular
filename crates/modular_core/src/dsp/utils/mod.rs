@@ -34,11 +34,7 @@ pub fn changed(a: f32, b: f32) -> bool {
 /// sticky corruption of recursive filter state.
 #[inline]
 pub fn sanitize(x: f32) -> f32 {
-    if x.is_finite() {
-        x
-    } else {
-        0.0
-    }
+    if x.is_finite() { x } else { 0.0 }
 }
 
 /// Map a value from one range to another. If the input range is degenerate, returns `y0`.
@@ -759,7 +755,7 @@ mod tests {
     #[test]
     fn schmitt_full_cycle_low_high_low() {
         let mut st = SchmittTrigger::default(); // 0.1, 1.0
-                                                // Start from uninitialized with low input
+        // Start from uninitialized with low input
         let (_, e) = st.process_with_edge(0.0);
         assert_eq!(e, EdgeEvent::Falling);
         assert_eq!(st.state(), SchmittState::Low);
