@@ -58,6 +58,7 @@ impl MathExpressionParam {
                 module_ptr: Weak::default(),
                 port,
                 channel,
+                index_ptr: std::ptr::null(),
             });
             format!("module{}", signals.len() - 1)
         });
@@ -97,9 +98,11 @@ impl<E: DeserializeError> deserr::Deserr<E> for MathExpressionParam {
 }
 
 impl Connect for MathExpressionParam {
-    fn connect(&mut self, patch: &crate::Patch) {
+    fn connect(&mut self, patch: &crate::Patch, index_ptr: *const std::cell::Cell<usize>) {
+        // Vec<Signal>: forwards cable resolution + index_ptr injection to each
+        // Signal element via the blanket Vec<T> Connect impl.
         for signal in &mut self.signals {
-            signal.connect(patch);
+            signal.connect(patch, index_ptr);
         }
     }
 }
@@ -122,16 +125,16 @@ struct MathParams {
 }
 
 impl Connect for MathParams {
-    fn connect(&mut self, patch: &crate::Patch) {
-        Connect::connect(&mut self.expression, patch);
+    fn connect(&mut self, patch: &crate::Patch, index_ptr: *const std::cell::Cell<usize>) {
+        Connect::connect(&mut self.expression, patch, index_ptr);
         if let Some(ref mut x) = self.x {
-            Connect::connect(x, patch);
+            Connect::connect(x, patch, index_ptr);
         }
         if let Some(ref mut y) = self.y {
-            Connect::connect(y, patch);
+            Connect::connect(y, patch, index_ptr);
         }
         if let Some(ref mut z) = self.z {
-            Connect::connect(z, patch);
+            Connect::connect(z, patch, index_ptr);
         }
     }
 }

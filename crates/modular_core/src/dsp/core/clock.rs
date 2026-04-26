@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 
 use crate::PolyOutput;
 use crate::dsp::utils::{SchmittTrigger, TempGate, TempGateState, min_gate_samples};
-use crate::types::ClockMessages;
+use crate::types::{ClockMessages, ExternalClockState};
 
 #[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
@@ -22,6 +22,7 @@ struct ClockParams {
 struct ExternalClockSync {
     bar_phase: f64,
     bpm: f64,
+    playing: bool,
 }
 
 struct ClockState {
@@ -103,8 +104,14 @@ message_handlers!(impl Clock {
 });
 
 impl Clock {
-    pub fn sync_external_clock(&mut self, bar_phase: f64, bpm: f64) {
-        self.state.external_sync = Some(ExternalClockSync { bar_phase, bpm });
+    /// Called by the generated wrapper's `ensure_processed` loop once per sample
+    /// to inject the external clock state for that sample position.
+    pub fn sync_external_clock_impl(&mut self, state: ExternalClockState) {
+        self.state.external_sync = Some(ExternalClockSync {
+            bar_phase: state.bar_phase,
+            bpm: state.bpm,
+            playing: state.playing,
+        });
     }
 
     pub fn clear_external_sync(&mut self) {
@@ -113,9 +120,15 @@ impl Clock {
 
     fn update(&mut self, sample_rate: f32) {
         // External clock sync: override free-running clock with Link data.
-        // Whether the clock produces output is gated by the enclosing
-        // Operator `stopped` flag, not by the peer's playing state.
         if let Some(sync) = self.state.external_sync.take() {
+            if !sync.playing {
+                self.state.running = false;
+                self.outputs.bar_trigger = 0.0;
+                self.outputs.beat_trigger = 0.0;
+                self.outputs.ppq_trigger = 0.0;
+                return;
+            }
+
             self.state.running = true;
             self.params.tempo = sync.bpm;
 
@@ -341,6 +354,7 @@ impl Default for Clock {
             state: ClockState::default(),
             params: ClockParams::default(),
             _channel_count: 2,
+            _block_index: std::cell::Cell::new(0),
         }
     }
 }
@@ -604,7 +618,11 @@ mod tests {
         assert!(free_phase > 0.0);
 
         // Now sync to a specific phase externally
-        c.sync_external_clock(0.75, 140.0);
+        c.sync_external_clock_impl(ExternalClockState {
+            bar_phase: 0.75,
+            bpm: 140.0,
+            playing: true,
+        });
         c.update(sr);
 
         // Phase should be near 0.75 (the externally-set value), not free-running
@@ -628,7 +646,11 @@ mod tests {
 
         for i in 0..samples_per_bar {
             let bar_phase = i as f64 / samples_per_bar as f64;
-            c.sync_external_clock(bar_phase, 120.0);
+            c.sync_external_clock_impl(ExternalClockState {
+                bar_phase,
+                bpm: 120.0,
+                playing: true,
+            });
             c.update(sr);
 
             let is_high = c.outputs.beat_trigger == 5.0;
@@ -646,12 +668,49 @@ mod tests {
     }
 
     #[test]
+    fn clock_external_sync_transport_stop_clears_triggers() {
+        let mut c = Clock::default();
+        let sr = 48_000.0;
+
+        // Run a few frames synced
+        for i in 0..100 {
+            c.sync_external_clock_impl(ExternalClockState {
+                bar_phase: i as f64 / 96000.0,
+                bpm: 120.0,
+                playing: true,
+            });
+            c.update(sr);
+        }
+
+        // Stop transport
+        c.sync_external_clock_impl(ExternalClockState {
+            bar_phase: 0.0,
+            bpm: 120.0,
+            playing: false,
+        });
+        c.update(sr);
+
+        assert_eq!(
+            c.outputs.bar_trigger, 0.0,
+            "Triggers should be 0 when stopped"
+        );
+        assert_eq!(
+            c.outputs.beat_trigger, 0.0,
+            "Beat trigger should be 0 when stopped"
+        );
+    }
+
+    #[test]
     fn clock_external_sync_clears_on_none() {
         let mut c = Clock::default();
         let sr = 48_000.0;
 
         // Sync externally
-        c.sync_external_clock(0.5, 120.0);
+        c.sync_external_clock_impl(ExternalClockState {
+            bar_phase: 0.5,
+            bpm: 120.0,
+            playing: true,
+        });
         c.update(sr);
 
         // Clear external sync

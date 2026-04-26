@@ -6,8 +6,8 @@ use serde_json::json;
 
 use modular_core::patch::Patch;
 use modular_core::types::{
-    ClockMessages, Connect, Message, MessageHandler, MessageTag, MidiControlChange, MidiNoteOn,
-    Sampleable, Signal, SignalExt,
+    ClockMessages, Connect, ExternalClockState, Message, MessageHandler, MessageTag,
+    MidiControlChange, MidiNoteOn, ProcessingMode, Sampleable, Signal, SignalExt,
 };
 
 // The proc-macro expands to `crate::types::...`; provide that module in this integration test crate.
@@ -41,14 +41,12 @@ impl Sampleable for DummySampleable {
         &self.id
     }
 
-    fn tick(&self) {}
-
-    fn update(&self) {}
-
-    fn get_poly_sample(&self, port: &str) -> Result<modular_core::poly::PolyOutput> {
-        Ok(modular_core::poly::PolyOutput::mono(
-            *self.outputs.get(port).unwrap_or(&0.0),
-        ))
+    fn get_value_at(&self, port: &str, ch: usize, _index: usize) -> f32 {
+        if ch == 0 {
+            *self.outputs.get(port).unwrap_or(&0.0)
+        } else {
+            0.0
+        }
     }
 
     fn get_module_type(&self) -> &str {
@@ -131,6 +129,7 @@ fn signal_deserialize_tagged_variants_still_work() {
             port,
             module_ptr,
             channel,
+            ..
         } => {
             assert_eq!(module, "m1");
             assert_eq!(port, "out");
@@ -155,12 +154,13 @@ fn signal_cable_connect_and_read() {
         module_ptr: Weak::new(),
         port: "out".to_string(),
         channel: 0,
+        index_ptr: std::ptr::null(),
     };
 
     // Before connect, cable reads 0.0 (module_ptr doesn't resolve).
     approx_eq(s.get_value(), 0.0, 1e-6);
 
-    s.connect(&patch);
+    s.connect(&patch, std::ptr::null());
     approx_eq(s.get_value(), 3.5, 1e-6);
 }
 
@@ -235,6 +235,89 @@ fn message_listener_macro_infers_tags_from_match() {
 fn connect_noop_for_non_cable_and_non_track_signals() {
     let mut s = Signal::Volts(1.0);
     let patch = make_empty_patch();
-    s.connect(&patch);
+    s.connect(&patch, std::ptr::null());
     approx_eq(s.get_value(), 1.0, 1e-6);
+}
+
+// ============================================================================
+// Task 2: ProcessingMode, ExternalClockState tests
+
+#[test]
+fn processing_mode_default_is_block() {
+    assert_eq!(ProcessingMode::default(), ProcessingMode::Block);
+}
+
+#[test]
+fn external_clock_state_default() {
+    let s = ExternalClockState::default();
+    assert!((s.bar_phase - 0.0).abs() < f64::EPSILON);
+    assert!((s.bpm - 0.0).abs() < f64::EPSILON); // default is 0.0, not 120.0
+    assert!(!s.playing);
+}
+
+#[test]
+fn connect_volts_signal_no_index_ptr_change() {
+    use std::cell::Cell;
+    let idx = Cell::new(7usize);
+    let mut sig = Signal::Volts(1.0);
+    let patch = make_empty_patch();
+    // Volts signals ignore the index_ptr — must not panic.
+    sig.connect(&patch, &idx as *const _);
+}
+
+// ============================================================================
+// Task 3: Signal::Cable index_ptr tests
+
+#[test]
+fn signal_cable_index_ptr_null_by_default() {
+    use modular_core::types::WellKnownModule;
+    let sig = WellKnownModule::RootClock.to_cable(0, "barTrigger");
+    if let Signal::Cable { index_ptr, .. } = sig {
+        assert!(index_ptr.is_null());
+    } else {
+        panic!("expected Cable");
+    }
+}
+
+#[test]
+fn connect_wires_cable_index_ptr() {
+    use modular_core::types::WellKnownModule;
+    use std::cell::Cell;
+    let idx = Cell::new(3usize);
+    let mut sig = WellKnownModule::RootClock.to_cable(0, "barTrigger");
+    let patch = make_empty_patch();
+    sig.connect(&patch, &idx as *const _);
+    if let Signal::Cable { index_ptr, .. } = sig {
+        assert!(!index_ptr.is_null());
+        assert_eq!(unsafe { (*index_ptr).get() }, 3);
+    }
+}
+
+// ============================================================================
+// Task 7: ensure_processed / get_value_at / inject_audio_in_block
+
+#[test]
+fn sampleable_ensure_processed_and_get_value_at() {
+    let s: Arc<Box<dyn Sampleable>> = Arc::new(Box::new(DummySampleable::new(
+        "test",
+        "dummy",
+        [("out", 3.0f32)],
+    )));
+    // ensure_processed_to is a no-op for DummySampleable; get_value_at returns stored value.
+    s.ensure_processed_to(usize::MAX);
+    // DummySampleable overrides get_value_at to return its stored outputs map value.
+    assert!((s.get_value_at("out", 0, 0) - 3.0).abs() < 1e-6);
+}
+
+#[test]
+fn sampleable_inject_audio_in_block_default_noop() {
+    use modular_core::poly::PORT_MAX_CHANNELS;
+    let s: Arc<Box<dyn Sampleable>> = Arc::new(Box::new(DummySampleable::new(
+        "audio",
+        "dummy",
+        [("ignored", 0.0f32); 0],
+    )));
+    let block = vec![[0.0f32; PORT_MAX_CHANNELS]; 4];
+    // Default is a no-op — must not panic.
+    s.inject_audio_in_block(&block);
 }

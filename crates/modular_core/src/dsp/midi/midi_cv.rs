@@ -35,7 +35,7 @@ pub enum PolyMode {
 }
 
 impl Connect for PolyMode {
-    fn connect(&mut self, _patch: &Patch) {}
+    fn connect(&mut self, _patch: &Patch, _index_ptr: *const std::cell::Cell<usize>) {}
 }
 
 /// Note priority for monophonic operation
@@ -55,7 +55,7 @@ pub enum MonoMode {
 }
 
 impl Connect for MonoMode {
-    fn connect(&mut self, _patch: &Patch) {}
+    fn connect(&mut self, _patch: &Patch, _index_ptr: *const std::cell::Cell<usize>) {}
 }
 
 /// State for a single voice

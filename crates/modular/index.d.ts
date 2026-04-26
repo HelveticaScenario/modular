@@ -38,6 +38,7 @@ export declare class Synthesizer {
   getModuleStates(): Record<string, any>
   getTransportState(): TransportSnapshot
   enableLink(enabled: boolean): void
+  setFollowMode(enabled: boolean): void
   /** Refresh the device cache (re-enumerates all hosts and devices) */
   refreshDeviceCache(): void
   /** Get the full device cache snapshot */

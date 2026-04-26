@@ -431,7 +431,7 @@ message_handlers!(impl Dattorro {});
 mod tests {
     use crate::dsp::{get_constructors, get_params_deserializers};
     use crate::params::DeserializedParams;
-    use crate::types::Sampleable;
+    use crate::types::{ProcessingMode, Sampleable};
     use serde_json::json;
     use std::sync::Arc;
 
@@ -452,13 +452,15 @@ mod tests {
             &"test-dattorro".to_string(),
             SAMPLE_RATE,
             deserialized,
+            1,
+            ProcessingMode::Block,
         )
         .unwrap()
     }
 
     fn step(module: &dyn Sampleable) {
-        module.tick();
-        module.update();
+        module.start_block();
+        module.ensure_processed_to(usize::MAX);
     }
 
     fn collect_stereo(module: &dyn Sampleable, n: usize) -> (Vec<f32>, Vec<f32>) {
@@ -466,9 +468,8 @@ mod tests {
         let mut right = Vec::with_capacity(n);
         for _ in 0..n {
             step(module);
-            let poly = module.get_poly_sample(DEFAULT_PORT).unwrap();
-            left.push(poly.get(0));
-            right.push(poly.get(1));
+            left.push(module.get_value_at(DEFAULT_PORT, 0, 0));
+            right.push(module.get_value_at(DEFAULT_PORT, 1, 0));
         }
         (left, right)
     }
@@ -590,10 +591,14 @@ mod tests {
 
     #[test]
     fn output_is_two_channels() {
-        let dattorro = make_dattorro(dattorro_params(json!({})));
-        step(&**dattorro);
-        let poly = dattorro.get_poly_sample(DEFAULT_PORT).unwrap();
-        assert_eq!(poly.channels(), 2, "output should be stereo (2 channels)");
+        // Dattorro always outputs stereo; verify both channels carry signal.
+        let dattorro = make_dattorro(dattorro_params(json!({ "input": 1.0, "decay": 3.0 })));
+        // Run enough samples for the stereo reverb to produce output on both channels.
+        let (left, right) = collect_stereo(&**dattorro, 1000);
+        let left_energy: f32 = left.iter().map(|s| s * s).sum();
+        let right_energy: f32 = right.iter().map(|s| s * s).sum();
+        assert!(left_energy > 0.0, "left channel (ch0) should have output");
+        assert!(right_energy > 0.0, "right channel (ch1) should have output");
     }
 
     #[test]

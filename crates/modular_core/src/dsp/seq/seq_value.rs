@@ -159,6 +159,7 @@ impl FromMiniAtom for SeqValue {
                     module_ptr: std::sync::Weak::new(),
                     port: port.clone(),
                     channel: *channel,
+                    index_ptr: std::ptr::null(),
                 },
                 sample_and_hold: *sample_and_hold,
             }),
@@ -257,6 +258,7 @@ fn parse_module_ref(s: &str) -> Option<SeqValue> {
             module_ptr: std::sync::Weak::new(),
             port,
             channel,
+            index_ptr: std::ptr::null(),
         },
         sample_and_hold,
     })
@@ -388,12 +390,12 @@ impl<E: DeserializeError> deserr::Deserr<E> for SeqPatternParam {
 }
 
 impl Connect for SeqPatternParam {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
         // Connect all collected signals
         for signal_ptr in &mut self.signals {
             // SAFETY: Pointers are valid as long as pattern exists
             unsafe {
-                (**signal_ptr).connect(patch);
+                (**signal_ptr).connect(patch, index_ptr);
             }
         }
     }

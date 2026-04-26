@@ -2,10 +2,13 @@
 
 mod audio;
 mod commands;
+mod graph_analysis;
 mod midi;
 mod params_cache;
 mod validation;
 mod wav_metadata;
+
+pub use graph_analysis::classify_modules;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use napi::bindgen_prelude::Float32Array;
@@ -14,7 +17,7 @@ use std::{collections::HashMap, sync::Arc};
 use modular_core::{
   PatchGraph,
   dsp::schema,
-  types::{ROOT_CLOCK_ID, ScopeBufferKey, ScopeStats},
+  types::{ProcessingMode, ROOT_CLOCK_ID, ScopeBufferKey, ScopeStats},
 };
 use napi::Result;
 use napi_derive::napi;
@@ -639,6 +642,7 @@ fn build_output_stream(
   garbage_tx: GarbageProducer,
   shared: AudioSharedState,
   input_reader: InputBufferReader,
+  block_size: usize,
 ) -> Result<cpal::Stream> {
   match sample_format {
     cpal::SampleFormat::I8 => make_stream::<i8>(
@@ -649,6 +653,7 @@ fn build_output_stream(
       garbage_tx,
       shared,
       input_reader,
+      block_size,
     ),
     cpal::SampleFormat::I16 => make_stream::<i16>(
       device,
@@ -658,6 +663,7 @@ fn build_output_stream(
       garbage_tx,
       shared,
       input_reader,
+      block_size,
     ),
     cpal::SampleFormat::I32 => make_stream::<i32>(
       device,
@@ -667,6 +673,7 @@ fn build_output_stream(
       garbage_tx,
       shared,
       input_reader,
+      block_size,
     ),
     cpal::SampleFormat::F32 => make_stream::<f32>(
       device,
@@ -676,6 +683,7 @@ fn build_output_stream(
       garbage_tx,
       shared,
       input_reader,
+      block_size,
     ),
     _ => Err(napi::Error::from_reason(format!(
       "Unsupported output sample format: {:?}",
@@ -731,11 +739,16 @@ struct StreamSetupParams<'a> {
 fn setup_streams(params: StreamSetupParams) -> Result<StreamSetupResult> {
   let channels = params.output_config.channels();
 
-  // Build stream config
-  let stream_buffer_size = params
-    .buffer_size
-    .map(cpal::BufferSize::Fixed)
-    .unwrap_or(cpal::BufferSize::Default);
+  // Block size: use the explicitly-requested buffer size when set, else fall back to 512.
+  // This is stored on AudioState and AudioProcessor so module constructors can
+  // pre-allocate per-block output buffers of the right length.
+  let block_size = params.buffer_size.unwrap_or(512) as usize;
+
+  // Always use a fixed buffer size equal to block_size so that the CPAL callback
+  // always delivers exactly `block_size` frames.  Using `BufferSize::Default`
+  // lets CoreAudio choose its own value (often 512, but not guaranteed), which
+  // would make `num_frames != block_size` and cause phase / pitch artifacts.
+  let stream_buffer_size = cpal::BufferSize::Fixed(block_size as u32);
 
   let stream_config = cpal::StreamConfig {
     channels,
@@ -755,6 +768,7 @@ fn setup_streams(params: StreamSetupParams) -> Result<StreamSetupResult> {
     params.sample_rate as f32,
     channels,
     params.midi_manager.clone(),
+    block_size,
   ));
 
   // Get shared state for audio processor
@@ -780,6 +794,7 @@ fn setup_streams(params: StreamSetupParams) -> Result<StreamSetupResult> {
     garbage_tx,
     shared,
     input_reader,
+    block_size,
   )?;
 
   output_stream
@@ -1097,7 +1112,14 @@ impl Synthesizer {
     let constructor = constructors
       .get(&module_type)
       .ok_or_else(|| napi::Error::from_reason(format!("Unknown module type: {}", module_type)))?;
-    let module = constructor(&module_id, self.sample_rate, deserialized).map_err(|e| {
+    let module = constructor(
+      &module_id,
+      self.sample_rate,
+      deserialized,
+      self.state.block_size,
+      ProcessingMode::Block,
+    )
+    .map_err(|e| {
       napi::Error::from_reason(format!("Failed to create module {}: {}", module_id, e))
     })?;
 
@@ -1196,6 +1218,14 @@ impl Synthesizer {
     self.state.send_command(GraphCommand::EnableLink(enabled))?;
     self.state.transport_meter.write_link_state(enabled, 0);
     Ok(())
+  }
+
+  #[napi]
+  pub fn set_follow_mode(&self, enabled: bool) {
+    self
+      .state
+      .follow_mode
+      .store(enabled, std::sync::atomic::Ordering::SeqCst);
   }
 
   // =========================================================================

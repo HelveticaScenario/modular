@@ -12,8 +12,8 @@ struct SignalParams {
 }
 
 impl crate::types::Connect for SignalParams {
-    fn connect(&mut self, patch: &crate::Patch) {
-        self.source.connect(patch);
+    fn connect(&mut self, patch: &crate::Patch, index_ptr: *const std::cell::Cell<usize>) {
+        self.source.connect(patch, index_ptr);
     }
 }
 

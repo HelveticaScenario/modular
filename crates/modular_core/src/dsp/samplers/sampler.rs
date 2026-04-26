@@ -117,7 +117,7 @@ mod tests {
     use crate::dsp::{get_constructors, get_params_deserializers};
     use crate::params::DeserializedParams;
     use crate::patch::Patch;
-    use crate::types::{SampleBuffer, Sampleable, WavData};
+    use crate::types::{ProcessingMode, SampleBuffer, Sampleable, WavData};
 
     const SAMPLE_RATE: f32 = 48000.0;
 
@@ -144,13 +144,15 @@ mod tests {
             &id.to_string(),
             SAMPLE_RATE,
             deserialized,
+            1,
+            ProcessingMode::Block,
         )
         .unwrap_or_else(|e| panic!("constructor for '{module_type}' failed: {e}"))
     }
 
     fn step(module: &dyn Sampleable) {
-        module.tick();
-        module.update();
+        module.start_block();
+        module.ensure_processed_to(usize::MAX);
     }
 
     fn make_test_wav(samples: Vec<Vec<f32>>) -> Arc<WavData> {
@@ -183,8 +185,7 @@ mod tests {
             step(&**module);
         }
 
-        let output = module.get_poly_sample("output").unwrap();
-        assert_eq!(output.get(0), 0.0);
+        assert_eq!(module.get_value_at("output", 0, 0), 0.0);
     }
 
     #[test]
@@ -207,12 +208,8 @@ mod tests {
 
         // First tick: gate is high, Schmitt trigger detects rising edge, position resets to 0
         step(&**module);
-        let out = module.get_poly_sample("output").unwrap();
-        assert!(
-            (out.get(0) - 1.0).abs() < 1e-6,
-            "expected 1.0, got {}",
-            out.get(0)
-        );
+        let out0 = module.get_value_at("output", 0, 0);
+        assert!((out0 - 1.0).abs() < 1e-6, "expected 1.0, got {}", out0);
     }
 
     #[test]
@@ -237,8 +234,11 @@ mod tests {
         step(&**module); // frame 1 -> output 2.0
         step(&**module); // frame 2 -> past end -> silence
 
-        let out = module.get_poly_sample("output").unwrap();
-        assert_eq!(out.get(0), 0.0, "should be silent after sample ends");
+        assert_eq!(
+            module.get_value_at("output", 0, 0),
+            0.0,
+            "should be silent after sample ends"
+        );
     }
 
     #[test]
@@ -262,42 +262,41 @@ mod tests {
         // With negative speed, gate trigger should start from end of sample.
         // Frame 3 = 4.0, frame 2 = 3.0, frame 1 = 2.0, frame 0 = 1.0
         step(&**module); // trigger + play from end: frame 3
-        let out = module.get_poly_sample("output").unwrap();
+        let v = module.get_value_at("output", 0, 0);
         assert!(
-            (out.get(0) - 4.0).abs() < 1e-6,
+            (v - 4.0).abs() < 1e-6,
             "reverse frame 0: expected 4.0, got {}",
-            out.get(0)
+            v
         );
 
         step(&**module); // frame 2
-        let out = module.get_poly_sample("output").unwrap();
+        let v = module.get_value_at("output", 0, 0);
         assert!(
-            (out.get(0) - 3.0).abs() < 1e-6,
+            (v - 3.0).abs() < 1e-6,
             "reverse frame 1: expected 3.0, got {}",
-            out.get(0)
+            v
         );
 
         step(&**module); // frame 1
-        let out = module.get_poly_sample("output").unwrap();
+        let v = module.get_value_at("output", 0, 0);
         assert!(
-            (out.get(0) - 2.0).abs() < 1e-6,
+            (v - 2.0).abs() < 1e-6,
             "reverse frame 2: expected 2.0, got {}",
-            out.get(0)
+            v
         );
 
         step(&**module); // frame 0
-        let out = module.get_poly_sample("output").unwrap();
+        let v = module.get_value_at("output", 0, 0);
         assert!(
-            (out.get(0) - 1.0).abs() < 1e-6,
+            (v - 1.0).abs() < 1e-6,
             "reverse frame 3: expected 1.0, got {}",
-            out.get(0)
+            v
         );
 
         // After passing frame 0, should be silent
         step(&**module);
-        let out = module.get_poly_sample("output").unwrap();
         assert_eq!(
-            out.get(0),
+            module.get_value_at("output", 0, 0),
             0.0,
             "should be silent after reverse playback ends"
         );
@@ -323,30 +322,28 @@ mod tests {
 
         // First tick: gate rises, plays frame 0
         step(&**module);
-        let out = module.get_poly_sample("output").unwrap();
         assert!(
-            (out.get(0) - 1.0).abs() < 1e-6,
+            (module.get_value_at("output", 0, 0) - 1.0).abs() < 1e-6,
             "L ch should be 1.0, got {}",
-            out.get(0)
+            module.get_value_at("output", 0, 0)
         );
         assert!(
-            (out.get(1) - 4.0).abs() < 1e-6,
+            (module.get_value_at("output", 1, 0) - 4.0).abs() < 1e-6,
             "R ch should be 4.0, got {}",
-            out.get(1)
+            module.get_value_at("output", 1, 0)
         );
 
         // Second tick: frame 1
         step(&**module);
-        let out = module.get_poly_sample("output").unwrap();
         assert!(
-            (out.get(0) - 2.0).abs() < 1e-6,
+            (module.get_value_at("output", 0, 0) - 2.0).abs() < 1e-6,
             "L ch should be 2.0, got {}",
-            out.get(0)
+            module.get_value_at("output", 0, 0)
         );
         assert!(
-            (out.get(1) - 5.0).abs() < 1e-6,
+            (module.get_value_at("output", 1, 0) - 5.0).abs() < 1e-6,
             "R ch should be 5.0, got {}",
-            out.get(1)
+            module.get_value_at("output", 1, 0)
         );
     }
 }

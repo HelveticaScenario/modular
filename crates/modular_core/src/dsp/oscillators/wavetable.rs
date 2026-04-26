@@ -59,7 +59,7 @@ pub(crate) struct WavetableOscParams {
 /// `Connect` for `PreparedWavetable` is a no-op — the prepared data is
 /// populated via `prepare_resources`, not through the patch graph.
 impl Connect for PreparedWavetable {
-    fn connect(&mut self, _patch: &crate::Patch) {}
+    fn connect(&mut self, _patch: &crate::Patch, _index_ptr: *const std::cell::Cell<usize>) {}
 }
 
 #[derive(Outputs, JsonSchema)]
@@ -251,6 +251,7 @@ mod tests {
             outputs,
             state: WavetableOscState::default(),
             _channel_count: channels,
+            _block_index: std::cell::Cell::new(0),
         }
     }
 

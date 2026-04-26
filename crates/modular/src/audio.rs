@@ -39,13 +39,14 @@ use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use modular_core::patch::Patch;
-use modular_core::types::{ROOT_OUTPUT_PORT, ScopeBufferKey};
+use modular_core::types::{ProcessingMode, ROOT_OUTPUT_PORT, ScopeBufferKey};
 use std::time::Instant;
 
 use crate::commands::{
   AudioError, COMMAND_QUEUE_CAPACITY, ERROR_QUEUE_CAPACITY, GARBAGE_QUEUE_CAPACITY, GarbageItem,
   GraphCommand, PatchUpdate, QueuedTrigger,
 };
+use crate::graph_analysis::classify_modules;
 use crate::midi::MidiInputManager;
 
 // ============================================================================
@@ -854,6 +855,10 @@ pub struct AudioState {
   midi_manager: Arc<MidiInputManager>,
   /// Transport state meter - written by audio thread, read by main thread
   pub transport_meter: Arc<TransportMeter>,
+  /// Follow mode - when true, don't auto-start on patch apply (wait for Link start)
+  pub follow_mode: Arc<AtomicBool>,
+  /// Block size used for module construction (matches CPAL callback buffer size)
+  pub block_size: usize,
 }
 
 #[derive(Default)]
@@ -876,6 +881,7 @@ impl AudioState {
     sample_rate: f32,
     channels: u16,
     midi_manager: Arc<MidiInputManager>,
+    block_size: usize,
   ) -> Self {
     Self {
       command_tx: Mutex::new(command_tx),
@@ -891,6 +897,8 @@ impl AudioState {
       module_states: Arc::new(Mutex::new(HashMap::new())),
       midi_manager,
       transport_meter: Arc::new(TransportMeter::default()),
+      follow_mode: Arc::new(AtomicBool::new(false)),
+      block_size,
     }
   }
 
@@ -963,6 +971,7 @@ impl AudioState {
       module_states: self.module_states.clone(),
       midi_manager: self.midi_manager.clone(),
       transport_meter: self.transport_meter.clone(),
+      follow_mode: self.follow_mode.clone(),
     }
   }
 
@@ -1037,6 +1046,10 @@ impl AudioState {
     wav_data: HashMap<String, Arc<modular_core::types::WavData>>,
     tempo_override: Option<f64>,
   ) -> Result<()> {
+    // Classify modules for block vs sample processing BEFORE destructuring
+    let mode_map = classify_modules(&desired_graph);
+    let block_size = self.block_size;
+
     let PatchGraph {
       modules,
       module_id_remaps,
@@ -1098,7 +1111,16 @@ impl AudioState {
         )?;
 
       if let Some(constructor) = constructors.get(&module_state.module_type) {
-        match constructor(&id, sample_rate, deserialized) {
+        // ROOT_CLOCK is always Sample mode: it's eager-filled per sample by the
+        // audio callback's eager-fill loop, with a fresh per-sample Link state
+        // injected immediately before each update. Other modules default to
+        // Block, with Tarjan SCC analysis upgrading SCC participants to Sample.
+        let mode = if id == *modular_core::types::ROOT_CLOCK_ID {
+          ProcessingMode::Sample
+        } else {
+          mode_map.get(&id).copied().unwrap_or(ProcessingMode::Block)
+        };
+        match constructor(&id, sample_rate, deserialized, block_size, mode) {
           Ok(module) => {
             update.inserts.push((id.clone(), module));
           }
@@ -1158,11 +1180,14 @@ impl AudioState {
     // If stopped, clear audio-thread state and request a start. The audio
     // thread's Start handler flips `stopped`: immediately when free-running,
     // at the next bar boundary when Link is enabled (the quantize also
-    // surfaces in the UI via `link_pending_start`).
+    // surfaces in the UI via `link_pending_start`). In follow mode we leave
+    // Operator stopped — peer Link transport will arm the start.
     if self.is_stopped() {
       let _ = self.send_command(GraphCommand::ClearPatch);
       self.scope_collection.lock().clear();
-      self.request_start();
+      if !self.follow_mode.load(Ordering::SeqCst) {
+        self.request_start();
+      }
     }
 
     // Apply patch
@@ -1197,6 +1222,8 @@ pub struct AudioSharedState {
   pub midi_manager: Arc<MidiInputManager>,
   /// Transport state meter - written by audio thread, read by main thread
   pub transport_meter: Arc<TransportMeter>,
+  /// Follow mode flag — see `AudioProcessor::follow_mode`
+  pub follow_mode: Arc<AtomicBool>,
 }
 
 fn chrono_simple_timestamp() -> String {
@@ -1244,6 +1271,13 @@ struct AudioProcessor {
   transport_meter: Arc<TransportMeter>,
   /// Sample rate of the audio stream
   sample_rate: f32,
+  /// Block size used for module construction (the internal per-sample
+  /// processing block; CPAL may deliver any number of frames per callback).
+  block_size: usize,
+  /// Position within the current internal block. Persists across CPAL
+  /// callbacks. Initialised to `block_size` so the first callback triggers
+  /// block-boundary work immediately.
+  block_pos: usize,
   /// Ableton Link instance (None when not enabled)
   link: Option<rusty_link::AblLink>,
   /// Host time filter for accurate timestamps with cpal
@@ -1256,10 +1290,20 @@ struct AudioProcessor {
   last_link_tempo: f64,
   /// Per-buffer Link state capture
   current_link_state: Option<LinkBufferState>,
-  /// Frame index within current buffer (for per-frame host time calculation)
-  frame_in_buffer: usize,
   /// Pending quantized start — waiting for bar boundary before actually starting
   link_pending_start: bool,
+  /// Last known Link playing state (for detecting false→true transitions)
+  last_link_playing: bool,
+  /// Follow mode — when true, peer-driven Link transport propagates to
+  /// Operator (peer Start arms a quantized start; peer Stop stops Operator).
+  /// When false, master semantics: Operator transport is decoupled from
+  /// peers and the only Link-driven action is releasing a locally-initiated
+  /// quantized start at the next bar boundary.
+  follow_mode: Arc<AtomicBool>,
+  /// Pre-allocated scratch buffer for per-block audio input. Sized to
+  /// `block_size` in `new()` and reused every block boundary so the audio
+  /// thread never allocates.
+  input_block_scratch: Vec<[f32; PORT_MAX_CHANNELS]>,
 }
 
 impl AudioProcessor {
@@ -1269,6 +1313,7 @@ impl AudioProcessor {
     garbage_tx: GarbageProducer,
     shared: AudioSharedState,
     sample_rate: f32,
+    block_size: usize,
   ) -> Self {
     Self {
       patch: Patch::new(),
@@ -1282,14 +1327,18 @@ impl AudioProcessor {
       queued_update: None,
       transport_meter: shared.transport_meter,
       sample_rate,
+      block_size,
+      block_pos: block_size,
       link: None,
       host_time_filter: None,
       link_session_state: None,
       link_sample_count: 0,
       last_link_tempo: 120.0,
       current_link_state: None,
-      frame_in_buffer: 0,
       link_pending_start: false,
+      last_link_playing: false,
+      follow_mode: shared.follow_mode,
+      input_block_scratch: vec![[0.0f32; PORT_MAX_CHANNELS]; block_size],
     }
   }
 
@@ -1348,11 +1397,7 @@ impl AudioProcessor {
           if let Some(old_module) = self.patch.sampleables.remove(&module_id) {
             new_module.transfer_state_from(old_module.as_ref().as_ref());
             self.patch.remove_message_listeners_for_module(&module_id);
-            if self
-              .garbage_tx
-              .push(GarbageItem::Module(old_module))
-              .is_err()
-            {}
+            let _ = self.garbage_tx.push(GarbageItem::Module(old_module));
           }
           self
             .patch
@@ -1375,35 +1420,34 @@ impl AudioProcessor {
           }
         }
         GraphCommand::Start => {
-          if let Some(ref link) = self.link {
-            // With Link: keep `stopped=true` and arm a pending start.
-            // The buffer-level phase check releases `stopped` when the
-            // shared Link timeline reaches a bar boundary.
-            if let Some(ref mut ss) = self.link_session_state {
-              link.capture_audio_session_state(ss);
-              let time = link.clock_micros();
-              self
-                .stopped
-                .store(true, std::sync::atomic::Ordering::SeqCst);
-              ss.set_is_playing_and_request_beat_at_time(true, time, 0.0, 4.0);
-              link.commit_audio_session_state(ss);
-              self.link_pending_start = true;
+          if self.link.is_some() {
+            // With Link: always quantize start to bar boundary.
+            // We join the shared Link timeline (never reset it with force_beat_at_time).
+            // The buffer-level code will start Operator when phase reaches bar boundary.
+            if let Some(ref link) = self.link {
+              if let Some(ref mut ss) = self.link_session_state {
+                link.capture_audio_session_state(ss);
+                let time = link.clock_micros();
+                // Main thread already set stopped=false; re-stop until bar boundary
+                self
+                  .stopped
+                  .store(true, std::sync::atomic::Ordering::SeqCst);
+                ss.set_is_playing_and_request_beat_at_time(true, time, 0.0, 4.0);
+                link.commit_audio_session_state(ss);
+                self.link_pending_start = true;
+              }
             }
           } else {
-            // Free-run: flip immediately and reset the clock.
+            // Free-run: flip the atomic now (no quantize) and reset the clock.
             self
               .stopped
               .store(false, std::sync::atomic::Ordering::SeqCst);
-            let _ = self
-              .patch
-              .dispatch_message(&Message::Clock(ClockMessages::Start));
+            let msg = Message::Clock(ClockMessages::Start);
+            let _ = self.patch.dispatch_message(&msg);
           }
         }
         GraphCommand::Stop => {
-          // Stop is handled via the stopped flag.
-          // Also clear any pending start so a later peer-start does not
-          // resurrect a cancelled patch.
-          self.link_pending_start = false;
+          // Stop is handled via the stopped flag
           // Propagate stop to Link session
           if let Some(ref link) = self.link {
             if let Some(ref mut ss) = self.link_session_state {
@@ -1445,24 +1489,27 @@ impl AudioProcessor {
             self.link_sample_count = 0;
             self.link = Some(link);
           } else {
-            // Clear external sync on ROOT_CLOCK before dropping Link
+            // Clear external sync on ROOT_CLOCK before dropping Link so the
+            // clock reverts to free-running.
             use modular_core::types::ROOT_CLOCK_ID;
             if let Some(root_clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
-              root_clock.clear_external_sync();
+              root_clock.clear_external_clock();
             }
             self.link = None;
             self.host_time_filter = None;
             self.link_session_state = None;
             self.current_link_state = None;
-            self.link_pending_start = false;
           }
         }
       }
     }
   }
 
-  /// Apply a patch update command
-  fn apply_patch_update(&mut self, update: PatchUpdate) {
+  /// Apply a patch update command. `block_pos` is the in-internal-block sample
+  /// at which the swap is firing; newly inserted modules have their wrapper
+  /// `index` initialised to this value so they remain aligned with surviving
+  /// modules for the rest of the current block.
+  fn apply_patch_update(&mut self, update: PatchUpdate, block_pos: usize) {
     let PatchUpdate {
       remaps,
       inserts,
@@ -1503,17 +1550,19 @@ impl AudioProcessor {
 
     // Always-replace: insert new modules, transferring state from old ones.
     // Every module is reconstructed on the main thread with fresh params.
-    // State continuity is preserved by transfer_state_from().
+    // State continuity is preserved by transfer_state_from(). When inserting
+    // mid-block (block_pos > 0), align the new module's wrapper cursor with
+    // surviving modules so subsequent get_value_at(idx) calls process from
+    // block_pos forward in lockstep.
     let mut newly_inserted_ids: Vec<String> = Vec::new();
     for (id, new_module) in inserts {
       if let Some(old_module) = self.patch.sampleables.remove(&id) {
         new_module.transfer_state_from(old_module.as_ref().as_ref());
         self.patch.remove_message_listeners_for_module(&id);
-        if self
-          .garbage_tx
-          .push(GarbageItem::Module(old_module))
-          .is_err()
-        {}
+        let _ = self.garbage_tx.push(GarbageItem::Module(old_module));
+      }
+      if block_pos > 0 {
+        new_module.set_initial_index(block_pos);
       }
       newly_inserted_ids.push(id.clone());
       self.patch.sampleables.insert(id, new_module);
@@ -1532,7 +1581,7 @@ impl AudioProcessor {
     for id in stale_ids {
       if let Some(module) = self.patch.sampleables.remove(&id) {
         self.patch.remove_message_listeners_for_module(&id);
-        if self.garbage_tx.push(GarbageItem::Module(module)).is_err() {}
+        let _ = self.garbage_tx.push(GarbageItem::Module(module));
       }
     }
 
@@ -1604,154 +1653,6 @@ impl AudioProcessor {
     })
   }
 
-  /// Process a single frame, returning multi-channel output
-  fn process_frame(&mut self, num_channels: usize) -> [f32; PORT_MAX_CHANNELS] {
-    use modular_core::types::{ROOT_CLOCK_ID, ROOT_ID};
-    profiling::scope!("process_frame");
-
-    let mut output = [0.0f32; PORT_MAX_CHANNELS];
-
-    if self.is_stopped() {
-      return output; // Skip processing when stopped
-    }
-
-    // 1. Sync Link state to ROOT_CLOCK, then update ROOT_CLOCK
-    if let Some(ref link_state) = self.current_link_state {
-      if let Some(ref ss) = self.link_session_state {
-        if let Some(root_clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
-          // Compute per-frame host time by offsetting from buffer start
-          let frame_offset_micros =
-            (self.frame_in_buffer as f64 * link_state.micros_per_sample) as i64;
-          let frame_host_time = link_state.host_time_micros + frame_offset_micros;
-          let phase = ss.phase_at_time(frame_host_time, link_state.quantum);
-          // Convert phase to bar_phase (0..1) by dividing by quantum
-          let bar_phase = phase / link_state.quantum;
-          root_clock.sync_external_clock(bar_phase, link_state.tempo);
-        }
-      }
-      self.frame_in_buffer += 1;
-    }
-
-    // 2. Update ROOT_CLOCK so its trigger outputs are available this frame
-    if let Some(root_clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
-      root_clock.update();
-    }
-
-    // 2. Check queued update trigger against ROOT_CLOCK outputs
-    let should_apply = if let Some((_, trigger)) = self.queued_update.as_ref() {
-      match trigger {
-        QueuedTrigger::Immediate => true,
-        QueuedTrigger::NextBar => {
-          if let Some(clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
-            clock
-              .get_poly_sample("barTrigger")
-              .map(|p| p.get(0) >= 1.0)
-              .unwrap_or(true)
-          } else {
-            true // No clock module = apply immediately
-          }
-        }
-        QueuedTrigger::NextBeat => {
-          if let Some(clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
-            clock
-              .get_poly_sample("beatTrigger")
-              .map(|p| p.get(0) >= 1.0)
-              .unwrap_or(true)
-          } else {
-            true
-          }
-        }
-      }
-    } else {
-      false
-    };
-
-    // 3. If triggered, apply the patch update
-    if should_apply {
-      let (update, _) = self.queued_update.take().unwrap();
-      let applied_id = update.update_id;
-      self.apply_patch_update(update);
-      self.transport_meter.write_applied_update_id(applied_id);
-    }
-
-    // 4. Update all modules (ROOT_CLOCK won't re-run due to CAS guard;
-    //    newly inserted modules participate on this same frame)
-    {
-      profiling::scope!("update_modules");
-      for module in self.patch.sampleables.values() {
-        module.update();
-      }
-    }
-
-    // 4.5 Write transport state from ROOT_CLOCK outputs (CAS guard prevents re-execution)
-    {
-      let has_queued = self.queued_update.is_some();
-      if let Some(clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
-        let bar_phase = clock
-          .get_poly_sample("playhead")
-          .map(|p| p.get(0) as f64)
-          .unwrap_or(0.0);
-        let bar_count = clock
-          .get_poly_sample("playhead")
-          .map(|p| p.get(1) as u64)
-          .unwrap_or(0);
-        let beat_in_bar = clock
-          .get_poly_sample("beatInBar")
-          .map(|p| p.get(0) as u32)
-          .unwrap_or(0);
-        let is_playing = !self.is_stopped();
-        self.transport_meter.write_from_audio(
-          bar_phase,
-          bar_count,
-          beat_in_bar,
-          is_playing,
-          has_queued,
-        );
-      } else {
-        self
-          .transport_meter
-          .write_from_audio(0.0, 0, 0, false, has_queued);
-      }
-    }
-
-    // 5. Tick all modules (reset processed flags)
-    {
-      profiling::scope!("tick_modules");
-      for module in self.patch.sampleables.values() {
-        module.tick();
-      }
-    }
-
-    // Capture audio for scopes
-    {
-      profiling::scope!("capture_scopes");
-      let mut scope_lock = self.scope_collection.lock();
-      for (key, scope_buffer) in scope_lock.iter_mut() {
-        if let Some(module) = self.patch.sampleables.get(&key.module_id)
-          && let Ok(poly) = module.get_poly_sample(&key.port_name)
-        {
-          let sample = if (key.channel as usize) < poly.channels() {
-            poly.get(key.channel as usize)
-          } else {
-            0.0
-          };
-          scope_buffer.push(sample);
-        }
-      }
-    }
-
-    // Get output from root module
-    if let Some(root) = self.patch.sampleables.get(&*ROOT_ID) {
-      if let Ok(poly) = root.get_poly_sample(&ROOT_OUTPUT_PORT) {
-        for ch in 0..num_channels.min(PORT_MAX_CHANNELS) {
-          output[ch] = poly.get(ch) * AUDIO_OUTPUT_ATTENUATION;
-        }
-      }
-    }
-
-    output
-  }
-
   /// Collect states from modules that implement StatefulModule (e.g., Seq).
   /// Uses try_lock to avoid blocking the audio thread if the main thread is reading.
   /// Reuses HashMap entries to avoid repeated String allocation on the audio thread.
@@ -1795,6 +1696,7 @@ pub fn make_stream<T>(
   garbage_tx: GarbageProducer,
   shared: AudioSharedState,
   mut input_reader: InputBufferReader,
+  block_size: usize,
 ) -> Result<cpal::Stream>
 where
   T: SizedSample + FromSample<f32> + hound::Sample,
@@ -1812,10 +1714,16 @@ where
 
   // Create the audio processor that owns the patch
   let sample_rate = config.sample_rate as f32;
-  let mut audio_processor =
-    AudioProcessor::new(command_rx, error_tx, garbage_tx, shared, sample_rate);
+  let mut audio_processor = AudioProcessor::new(
+    command_rx,
+    error_tx,
+    garbage_tx,
+    shared,
+    sample_rate,
+    block_size,
+  );
 
-  let mut final_state_processor = FinalStateProcessor::new(num_channels);
+  let mut final_state_processor = FinalStateProcessor::new();
 
   let stream = device
     .build_output_stream(
@@ -1833,13 +1741,27 @@ where
 
         // Capture Link session state once per buffer (before frame loop)
         audio_processor.current_link_state = audio_processor.capture_link_state();
-        audio_processor.frame_in_buffer = 0;
 
-        // Operator transport is decoupled from Link peer transport:
-        // peers never start or stop Operator. The only Link-driven transport
-        // action is releasing a locally-initiated quantized start when the
-        // shared timeline reaches a bar boundary.
+        // Propagate Link transport. Two regimes:
+        //   - default (follow_mode = false): Operator is decoupled from peer
+        //     transport. Peers never start/stop Operator. The only Link-driven
+        //     transport action is releasing a locally-initiated quantized
+        //     start when the shared timeline reaches a bar boundary.
+        //   - follow_mode = true: peer Link Start arms a quantized start;
+        //     peer Link Stop stops Operator. Used by the UI's "follow" toggle
+        //     so a remote peer can drive Operator transport.
+        // This must happen before the frame loop (which guards on is_stopped()).
         if let Some(ref link_state) = audio_processor.current_link_state {
+          let link_playing = link_state.playing;
+          let op_stopped = audio_processor.is_stopped();
+          let was_link_playing = audio_processor.last_link_playing;
+          audio_processor.last_link_playing = link_playing;
+          let follow = audio_processor
+            .follow_mode
+            .load(std::sync::atomic::Ordering::SeqCst);
+
+          // Handle pending quantized start: wait for phase near bar boundary.
+          // Runs in both regimes — locally-initiated quantize releases here.
           if audio_processor.link_pending_start {
             if let Some(ref ss) = audio_processor.link_session_state {
               let time = link_state.host_time_micros;
@@ -1853,6 +1775,19 @@ where
                 let _ = audio_processor.patch.dispatch_message(&msg);
               }
             }
+          } else if follow && link_playing && op_stopped {
+            // Follow mode: peer-initiated start — quantize to next bar.
+            audio_processor.link_pending_start = true;
+          } else if follow && link_playing && !was_link_playing && !op_stopped {
+            // Follow mode: peer started while Operator was already running —
+            // dispatch Start to give the clock a clean reset.
+            let msg = modular_core::types::Message::Clock(ClockMessages::Start);
+            let _ = audio_processor.patch.dispatch_message(&msg);
+          } else if follow && !link_playing && !op_stopped {
+            // Follow mode: peer stopped — stop Operator.
+            audio_processor
+              .stopped
+              .store(true, std::sync::atomic::Ordering::SeqCst);
           }
         }
 
@@ -1864,9 +1799,7 @@ where
             .transport_meter
             .write_link_state(true, link.num_peers() as u32);
           if let Some(ref link_state) = audio_processor.current_link_state {
-            // Update BPM from Link so the UI reflects external tempo changes
             audio_processor.transport_meter.write_bpm(link_state.tempo);
-            // Write the free-running Link bar phase for the phase indicator
             if let Some(ref ss) = audio_processor.link_session_state {
               let phase = ss.phase_at_time(link_state.host_time_micros, link_state.quantum);
               let bar_phase = phase / link_state.quantum;
@@ -1885,41 +1818,333 @@ where
         let num_frames = output.len() / num_channels;
 
         {
-          profiling::scope!("process_frames");
-          for frame in output.chunks_mut(num_channels) {
-            // Read from the input buffer and update audio_in
-            {
-              let mut audio_in = audio_processor.patch.audio_in.lock();
-              let input_samples = input_reader.read_frame();
+          use modular_core::types::{ExternalClockState, ROOT_CLOCK_ID, ROOT_ID};
 
-              // Set channel count so that get() returns values instead of 0.0
-              audio_in.set_channels(PORT_MAX_CHANNELS);
-              for i in 0..PORT_MAX_CHANNELS {
-                // Apply gain to bring input from [-1, 1] to [-5, 5] volt range
-                audio_in.set(i, input_samples[i] * AUDIO_INPUT_GAIN);
+          // ── per-callback eager-fill of ROOT_CLOCK ────────────────────────
+          //
+          // Drive the entire callback as a single per-sample loop with a
+          // cross-callback `block_pos` cursor. Each iteration pulls one output
+          // sample from ROOT (which lazily cascades ensure_processed_to into
+          // upstream dependencies). Internal block boundaries are stable points
+          // at which we tick all modules + pull input + reset block_pos. Mid-
+          // block patch swaps fire at the exact sample where ROOT_CLOCK's
+          // `barTrigger` / `beatTrigger` goes high.
+          //
+          // ROOT_CLOCK is processed eagerly: at every CPAL callback entry (and
+          // each time we cross an internal block boundary), we run it sample-
+          // by-sample under THIS callback's host_time anchor up to whichever
+          // comes first: the end of the internal block, or the end of the
+          // remaining CPAL buffer. That fills `barTrigger` / `beatTrigger`
+          // outputs ahead of time so the trigger scan is just a cache read.
+
+          // Helper closures (capture audio_processor + Link state). Compute the
+          // ExternalClockState for sample `frame_idx` (global frame counter).
+          let make_clock_state =
+            |frame_idx: usize, audio_processor: &AudioProcessor| -> Option<ExternalClockState> {
+              let link_state = audio_processor.current_link_state.as_ref()?;
+              let ss = audio_processor.link_session_state.as_ref()?;
+              let frame_offset_micros = (frame_idx as f64 * link_state.micros_per_sample) as i64;
+              let frame_host_time = link_state.host_time_micros + frame_offset_micros;
+              let phase = ss.phase_at_time(frame_host_time, link_state.quantum);
+              Some(ExternalClockState {
+                bar_phase: phase / link_state.quantum,
+                bpm: link_state.tempo,
+                playing: link_state.playing,
+              })
+            };
+
+          // Eager-fill ROOT_CLOCK from `from..end` (in-block sample indices).
+          // Callback-frame-index for in-block sample `i` = `written_at_call + (i - from)`
+          // — i.e. the i-th sample we eager-fill is exactly the (written_at_call + (i-from))th
+          // sample of the CPAL callback, anchored on this callback's host_time_micros.
+          let eager_fill_clock =
+            |from: usize, end: usize, written_at_call: usize, audio_processor: &AudioProcessor| {
+              if let Some(root_clock) = audio_processor.patch.sampleables.get(&*ROOT_CLOCK_ID) {
+                for i in from..end {
+                  let cb_frame = written_at_call + (i - from);
+                  if let Some(state) = make_clock_state(cb_frame, audio_processor) {
+                    root_clock.sync_external_clock(state);
+                  }
+                  root_clock.ensure_processed_to(i + 1);
+                }
+              }
+            };
+
+          // Pull one block's worth of audio input into HiddenAudioIn. Uses
+          // the pre-allocated `input_block_scratch` so no allocation happens
+          // on the audio thread.
+          let pull_input_block =
+            |audio_processor: &mut AudioProcessor, input_reader: &mut InputBufferReader| {
+              for slot in audio_processor.input_block_scratch.iter_mut() {
+                let frame_samples = input_reader.read_frame();
+                for (i, s) in slot.iter_mut().enumerate().take(PORT_MAX_CHANNELS) {
+                  *s = frame_samples[i] * AUDIO_INPUT_GAIN;
+                }
+              }
+              if let Some(audio_in_module) = audio_processor
+                .patch
+                .sampleables
+                .get(WellKnownModule::HiddenAudioIn.id())
+              {
+                audio_in_module.inject_audio_in_block(&audio_processor.input_block_scratch);
+              }
+            };
+
+          // Linear scan of a ROOT_CLOCK trigger port for the first sample
+          // where value >= 1.0, within `[from, end)`. Pure cache reads — the
+          // eager-fill loop above already populated the entries.
+          //
+          // **Fallback when ROOT_CLOCK is missing**: matches master's semantics
+          // (`unwrap_or(true)`). After a ClearPatch, the audio thread's patch
+          // contains only HiddenAudioIn — no clock to scan. Without this
+          // fallback, NextBar/NextBeat triggers would NEVER fire (scan always
+          // returns None), the queued update would stick around indefinitely,
+          // and audio would be silent forever. Treating "no clock" as "trigger
+          // fires now" lets the very first patch apply immediately even when
+          // the user requested NextBar.
+          let scan_trigger = |port: &str,
+                              from: usize,
+                              end: usize,
+                              audio_processor: &AudioProcessor|
+           -> Option<usize> {
+            let Some(root_clock) = audio_processor.patch.sampleables.get(&*ROOT_CLOCK_ID) else {
+              return Some(from);
+            };
+            for i in from..end {
+              if root_clock.get_value_at(port, 0, i) >= 1.0 {
+                return Some(i);
+              }
+            }
+            None
+          };
+
+          let mut written: usize = 0;
+
+          // Initial entry into the callback may be either:
+          //   (a) at a block boundary (block_pos == block_size) — first
+          //       callback ever, or we cleanly finished the previous block
+          //   (b) mid-block (block_pos < block_size) — previous callback
+          //       stopped before reaching the boundary
+          // In either case eager-fill ROOT_CLOCK under THIS callback's
+          // host_time anchor for the samples this callback will consume.
+          let block_size = audio_processor.block_size;
+          if audio_processor.block_pos >= block_size {
+            for module in audio_processor.patch.sampleables.values() {
+              module.start_block();
+            }
+            pull_input_block(&mut audio_processor, &mut input_reader);
+            audio_processor.block_pos = 0;
+          }
+
+          {
+            let eager_end = block_size.min(audio_processor.block_pos + num_frames);
+            eager_fill_clock(
+              audio_processor.block_pos,
+              eager_end,
+              written,
+              &audio_processor,
+            );
+          }
+
+          // Per-sample emission loop with mid-block swap support
+          while written < num_frames {
+            // Cross internal block boundary mid-callback
+            if audio_processor.block_pos >= block_size {
+              for module in audio_processor.patch.sampleables.values() {
+                module.start_block();
+              }
+              pull_input_block(&mut audio_processor, &mut input_reader);
+              audio_processor.block_pos = 0;
+              let eager_end = block_size.min(num_frames - written);
+              eager_fill_clock(0, eager_end, written, &audio_processor);
+            }
+
+            let scan_end = block_size.min(audio_processor.block_pos + (num_frames - written));
+
+            // Resolve trigger sample within filled range
+            let trigger_sample: Option<usize> =
+              match audio_processor.queued_update.as_ref().map(|(_, t)| t) {
+                Some(QueuedTrigger::Immediate) => Some(audio_processor.block_pos),
+                Some(QueuedTrigger::NextBar) => scan_trigger(
+                  "barTrigger",
+                  audio_processor.block_pos,
+                  scan_end,
+                  &audio_processor,
+                ),
+                Some(QueuedTrigger::NextBeat) => scan_trigger(
+                  "beatTrigger",
+                  audio_processor.block_pos,
+                  scan_end,
+                  &audio_processor,
+                ),
+                None => None,
+              };
+
+            let end = trigger_sample.map(|n| n.min(scan_end)).unwrap_or(scan_end);
+
+            // Pull samples [block_pos, end) into output buffer. Locks
+            // (scope_collection, recording_writer) are acquired once per
+            // segment and held across the inner per-sample loop — `try_lock`
+            // per sample at audio rate burns atomics for no benefit.
+            {
+              profiling::scope!("process_frames");
+              if end > audio_processor.block_pos {
+                let stop_idx = end;
+                let mut scope_guard = audio_processor.scope_collection.try_lock();
+                let mut writer_guard = recording_writer.try_lock();
+                for i in audio_processor.block_pos..stop_idx {
+                  let is_stopped = audio_processor.is_stopped();
+                  match (final_state_processor.prev_is_stopped, is_stopped) {
+                    (true, false) => {
+                      final_state_processor.volume_change = VolumeChange::None;
+                      final_state_processor.attenuation_factor = 1.0;
+                    }
+                    (false, true) => {
+                      final_state_processor.volume_change = VolumeChange::Decrease;
+                    }
+                    _ => {}
+                  }
+                  final_state_processor.prev_is_stopped = is_stopped;
+                  match final_state_processor.volume_change {
+                    VolumeChange::Decrease => {
+                      final_state_processor.attenuation_factor *= 0.999;
+                      if final_state_processor.attenuation_factor < 0.0001 {
+                        final_state_processor.attenuation_factor = 0.0;
+                        final_state_processor.volume_change = VolumeChange::None;
+                      }
+                    }
+                    VolumeChange::None => {}
+                  }
+
+                  let frame_start = written * num_channels;
+
+                  if final_state_processor.attenuation_factor < f32::EPSILON {
+                    for ch in 0..num_channels {
+                      output[frame_start + ch] = T::from_sample(0.0f32);
+                    }
+                    written += 1;
+                    continue;
+                  }
+
+                  if let Some(root) = audio_processor.patch.sampleables.get(&*ROOT_ID) {
+                    let mut any_audible = false;
+                    let mut samples = [0.0f32; PORT_MAX_CHANNELS];
+                    for ch in 0..num_channels.min(PORT_MAX_CHANNELS) {
+                      let raw =
+                        root.get_value_at(&ROOT_OUTPUT_PORT, ch, i) * AUDIO_OUTPUT_ATTENUATION;
+                      let sample = safety_soft_clip(raw * final_state_processor.attenuation_factor);
+                      samples[ch] = sample;
+                      if sample.abs() >= 0.0005 {
+                        any_audible = true;
+                      }
+                    }
+                    if is_stopped && !any_audible {
+                      final_state_processor.attenuation_factor = 0.0;
+                      final_state_processor.volume_change = VolumeChange::None;
+                      for ch in 0..num_channels {
+                        output[frame_start + ch] = T::from_sample(0.0f32);
+                      }
+                    } else {
+                      for ch in 0..num_channels {
+                        if ch < PORT_MAX_CHANNELS {
+                          output[frame_start + ch] = T::from_sample(samples[ch]);
+                        } else {
+                          output[frame_start + ch] = T::from_sample(0.0f32);
+                        }
+                      }
+                    }
+                    if let Some(writer_lock) = writer_guard.as_mut()
+                      && let Some(writer) = writer_lock.as_mut()
+                    {
+                      let v = root.get_value_at(&ROOT_OUTPUT_PORT, 0, i)
+                        * AUDIO_OUTPUT_ATTENUATION
+                        * final_state_processor.attenuation_factor;
+                      let _ = writer.write_sample(T::from_sample(safety_soft_clip(v)));
+                    }
+                    // Capture scope samples inline — one push per emitted
+                    // sample. Capturing in batch at end-of-callback (over
+                    // 0..block_pos) duplicates samples on CPAL callbacks that
+                    // deliver num_frames < block_size: callback 1 captures
+                    // slots [0,N), callback 2 (resuming mid-block) captures
+                    // [0,2N) — re-pushing the slots from callback 1.
+                    if let Some(scope_lock) = scope_guard.as_mut() {
+                      for (key, scope_buffer) in scope_lock.iter_mut() {
+                        if let Some(module) = audio_processor.patch.sampleables.get(&key.module_id)
+                        {
+                          let s = module.get_value_at(&key.port_name, key.channel as usize, i);
+                          scope_buffer.push(s);
+                        }
+                      }
+                    }
+                  } else {
+                    for ch in 0..num_channels {
+                      output[frame_start + ch] = T::from_sample(0.0f32);
+                    }
+                  }
+
+                  written += 1;
+                }
+                audio_processor.block_pos = stop_idx;
               }
             }
 
-            // Process frame and get multi-channel output
-            let samples = final_state_processor
-              .process_frame_with_processor(&mut audio_processor, num_channels);
-
-            for (ch, s) in frame.iter_mut().enumerate() {
-              if ch < samples.len() {
-                *s = T::from_sample(samples[ch]);
-              } else {
-                *s = T::from_sample(0.0);
-              }
-            }
-
-            // Record if enabled (use try_lock to avoid blocking audio)
-            // For multi-channel, record first channel (mono mix could be added later)
-            if let Some(mut writer_guard) = recording_writer.try_lock()
-              && let Some(ref mut writer) = *writer_guard
+            // Apply queued swap if we stopped exactly at the trigger sample.
+            if trigger_sample == Some(audio_processor.block_pos)
+              && audio_processor.block_pos < block_size
             {
-              let _ = writer.write_sample(T::from_sample(samples[0]));
+              let (update, _) = audio_processor.queued_update.take().unwrap();
+              let applied_id = update.update_id;
+              let swap_pos = audio_processor.block_pos;
+              audio_processor.apply_patch_update(update, swap_pos);
+              audio_processor
+                .transport_meter
+                .write_applied_update_id(applied_id);
+              // ROOT_CLOCK survives the swap (structurally fixed). Its cache
+              // for [swap_pos, block_size) was filled under the OLD params; if
+              // the swap touched its params, refill the rest of the block.
+              // Cheap — clock is fast.
+              if let Some(root_clock) = audio_processor.patch.sampleables.get(&*ROOT_CLOCK_ID) {
+                root_clock.set_initial_index(swap_pos);
+                let eager_end = block_size.min(audio_processor.block_pos + (num_frames - written));
+                for i in swap_pos..eager_end {
+                  let cb_frame = written + (i - swap_pos);
+                  if let Some(state) = make_clock_state(cb_frame, &audio_processor) {
+                    root_clock.sync_external_clock(state);
+                  }
+                  root_clock.ensure_processed_to(i + 1);
+                }
+              }
             }
           }
+
+          // === Transport meter (read ROOT_CLOCK at last consumed sample) ===
+          {
+            let last = audio_processor.block_pos.saturating_sub(1);
+            let has_queued = audio_processor.queued_update.is_some();
+            if let Some(clock) = audio_processor.patch.sampleables.get(&*ROOT_CLOCK_ID) {
+              let bar_phase = clock.get_value_at("playhead", 0, last) as f64;
+              let bar_count = clock.get_value_at("playhead", 1, last) as u64;
+              let beat_in_bar = clock.get_value_at("beatInBar", 0, last) as u32;
+              let is_playing = !audio_processor.is_stopped()
+                && audio_processor
+                  .current_link_state
+                  .as_ref()
+                  .map_or(true, |s| s.playing);
+              audio_processor.transport_meter.write_from_audio(
+                bar_phase,
+                bar_count,
+                beat_in_bar,
+                is_playing,
+                has_queued,
+              );
+            }
+          }
+
+          // Scope capture is inline per-emitted-sample — see the call inside
+          // the per-sample loop above. Capturing at end-of-callback over
+          // 0..block_pos duplicates slots when CPAL delivers
+          // num_frames < block_size and we resume mid-block on the next
+          // callback.
         }
 
         // Increment Link sample count for HostTimeFilter
@@ -2038,75 +2263,15 @@ struct FinalStateProcessor {
   attenuation_factor: f32,
   volume_change: VolumeChange,
   prev_is_stopped: bool,
-  num_channels: usize,
 }
 
 impl FinalStateProcessor {
-  fn new(num_channels: usize) -> Self {
+  fn new() -> Self {
     Self {
       attenuation_factor: 0.0,
       volume_change: VolumeChange::None,
       prev_is_stopped: true,
-      num_channels,
     }
-  }
-
-  /// Process frame using AudioProcessor and return multi-channel output
-  fn process_frame_with_processor(
-    &mut self,
-    processor: &mut AudioProcessor,
-    num_channels: usize,
-  ) -> [f32; PORT_MAX_CHANNELS] {
-    let is_stopped = processor.is_stopped();
-    match (self.prev_is_stopped, is_stopped) {
-      (true, false) => {
-        self.volume_change = VolumeChange::None;
-        self.attenuation_factor = 1.0;
-      }
-      (false, true) => {
-        self.volume_change = VolumeChange::Decrease;
-      }
-      _ => {}
-    }
-    self.prev_is_stopped = is_stopped;
-
-    match self.volume_change {
-      VolumeChange::Decrease => {
-        self.attenuation_factor *= 0.999;
-        if self.attenuation_factor < 0.0001 {
-          self.attenuation_factor = 0.0;
-          self.volume_change = VolumeChange::None;
-        }
-      }
-      VolumeChange::None => {}
-    }
-
-    let mut output = [0.0f32; PORT_MAX_CHANNELS];
-
-    if self.attenuation_factor < f32::EPSILON {
-      return output;
-    }
-
-    let raw_output = processor.process_frame(num_channels);
-
-    // Apply attenuation and soft clipping to all channels
-    let mut any_audible = false;
-    for ch in 0..num_channels.min(PORT_MAX_CHANNELS) {
-      let sample = raw_output[ch] * self.attenuation_factor;
-      output[ch] = safety_soft_clip(sample);
-      if sample.abs() >= 0.0005 {
-        any_audible = true;
-      }
-    }
-
-    // When stopped and all channels are silent, fully mute
-    if is_stopped && !any_audible {
-      self.attenuation_factor = 0.0;
-      self.volume_change = VolumeChange::None;
-      return [0.0f32; PORT_MAX_CHANNELS];
-    }
-
-    output
   }
 }
 
@@ -2441,6 +2606,7 @@ mod tests {
       module_states: Arc::new(Mutex::new(HashMap::new())),
       midi_manager: Arc::new(MidiInputManager::new()),
       transport_meter: Arc::new(TransportMeter::default()),
+      follow_mode: Arc::new(AtomicBool::new(false)),
     };
 
     let processor = AudioProcessor::new(
@@ -2449,6 +2615,7 @@ mod tests {
       garbage_producer,
       shared,
       44100.0,
+      512,
     );
 
     // Processor starts with empty patch (may have hidden audio_in)
@@ -2480,11 +2647,6 @@ mod tests {
     fn get_id(&self) -> &str {
       &self.current_id
     }
-    fn tick(&self) {}
-    fn update(&self) {}
-    fn get_poly_sample(&self, _port: &str) -> napi::Result<modular_core::poly::PolyOutput> {
-      Ok(modular_core::poly::PolyOutput::default())
-    }
     fn get_module_type(&self) -> &str {
       &self.label
     }
@@ -2512,6 +2674,7 @@ mod tests {
       module_states: Arc::new(Mutex::new(HashMap::new())),
       midi_manager: Arc::new(MidiInputManager::new()),
       transport_meter: Arc::new(TransportMeter::default()),
+      follow_mode: Arc::new(AtomicBool::new(false)),
     };
 
     AudioProcessor::new(
@@ -2520,6 +2683,7 @@ mod tests {
       garbage_producer,
       shared,
       44100.0,
+      512,
     )
   }
 
@@ -2556,7 +2720,7 @@ mod tests {
     update.desired_ids.insert("cycle-3".into());
     update.desired_ids.insert("cycle-4".into());
 
-    processor.apply_patch_update(update);
+    processor.apply_patch_update(update, 0);
 
     // Verify: "shift" module should now be at cycle-3, "thirds" at cycle-4
     assert!(
@@ -2622,7 +2786,7 @@ mod tests {
     update.desired_ids.insert("osc-1".into());
     update.desired_ids.insert("osc-2".into());
 
-    processor.apply_patch_update(update);
+    processor.apply_patch_update(update, 0);
 
     assert_eq!(
       processor
@@ -2663,7 +2827,7 @@ mod tests {
     }];
     update.desired_ids.insert("vca-2".into());
 
-    processor.apply_patch_update(update);
+    processor.apply_patch_update(update, 0);
 
     assert!(
       !processor.patch.sampleables.contains_key("vca-1"),

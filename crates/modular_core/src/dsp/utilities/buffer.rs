@@ -25,6 +25,35 @@ fn default_buffer_length() -> f64 {
     1.0
 }
 
+/// Block-output buffer for BufferWrite.
+/// One `BlockPort` for the `sample`/`output` port; the `buffer` port is not
+/// exposed as a block output — readers access it via `get_buffer_output` directly.
+pub struct BufferWriteBlockOutputs {
+    pub sample: crate::block_port::BlockPort,
+}
+
+impl BufferWriteBlockOutputs {
+    pub fn new(block_size: usize) -> Self {
+        Self {
+            sample: crate::block_port::BlockPort::new(block_size),
+        }
+    }
+
+    pub fn get_at(&self, port: &str, ch: usize, index: usize) -> f32 {
+        match port {
+            "output" => self.sample.get(index, ch),
+            _ => 0.0,
+        }
+    }
+
+    pub fn copy_from_inner(&mut self, inner: &BufferWriteOutputs, slot: usize) {
+        let poly = &inner.sample;
+        for ch in 0..crate::poly::PORT_MAX_CHANNELS {
+            self.sample.data[slot][ch] = poly.get(ch);
+        }
+    }
+}
+
 /// Outputs for the $buffer module.
 /// Manually implements OutputStruct because the buffer field is `Arc<BufferData>`,
 /// not the usual `PolyOutput` / `f32` that `#[derive(Outputs)]` handles.
@@ -87,6 +116,18 @@ impl crate::types::OutputStruct for BufferWriteOutputs {
             _ => None,
         }
     }
+
+    /// Advance the circular buffer write position by `block_size` once per CPAL
+    /// callback. Called from `tick()` — before `update()` fills the block — so
+    /// `read_write_index()` is the base offset for the new block.
+    fn tick_buffers(&mut self, block_size: usize) {
+        let frame_count = self.buffer.frame_count();
+        if frame_count == 0 {
+            return;
+        }
+        let new_index = (self.buffer.read_write_index() + block_size) % frame_count;
+        self.buffer.set_write_index(new_index);
+    }
 }
 
 #[derive(Default)]
@@ -122,9 +163,11 @@ impl BufferWrite {
             return;
         }
 
-        let write_index = self.outputs.buffer.read_write_index().wrapping_add(1);
-        self.outputs.buffer.set_write_index(write_index);
-        let frame = write_index % frame_count;
+        // write_index was advanced by tick_buffers() at the start of the callback.
+        // Use current_block_index() as the per-sample offset within this block.
+        let base = self.outputs.buffer.read_write_index();
+        let offset = self.current_block_index();
+        let frame = (base + offset) % frame_count;
         let buffer_channels = self.outputs.buffer.channel_count();
 
         for channel in 0..channels {
@@ -249,11 +292,6 @@ mod tests {
         fn get_id(&self) -> &str {
             &self.id
         }
-        fn tick(&self) {}
-        fn update(&self) {}
-        fn get_poly_sample(&self, _port: &str) -> napi::Result<PolyOutput> {
-            Ok(PolyOutput::default())
-        }
         fn get_module_type(&self) -> &str {
             "$buffer"
         }
@@ -289,7 +327,7 @@ mod tests {
             MOCK_BUFFER_PORT.to_string(),
             channels,
         );
-        buffer.connect(&patch);
+        buffer.connect(&patch, std::ptr::null());
         (patch, buffer)
     }
 
@@ -301,6 +339,7 @@ mod tests {
             params,
             outputs,
             _channel_count: channels,
+            _block_index: std::cell::Cell::new(0),
         }
     }
 
@@ -350,7 +389,7 @@ mod tests {
 
     use crate::dsp::{get_constructors, get_params_deserializers};
     use crate::params::DeserializedParams;
-    use crate::types::Sampleable;
+    use crate::types::{ProcessingMode, Sampleable};
 
     const SAMPLE_RATE: f32 = 48000.0;
 
@@ -377,13 +416,15 @@ mod tests {
             &id.to_string(),
             SAMPLE_RATE,
             deserialized,
+            1,
+            ProcessingMode::Block,
         )
         .unwrap_or_else(|e| panic!("constructor for '{module_type}' failed: {e}"))
     }
 
     fn step(module: &dyn Sampleable) {
-        module.tick();
-        module.update();
+        module.start_block();
+        module.ensure_processed_to(usize::MAX);
     }
 
     #[test]
@@ -396,13 +437,11 @@ mod tests {
 
         step(&**module);
 
-        let output = module
-            .get_poly_sample("output")
-            .expect("get_poly_sample failed");
+        let out = module.get_value_at("output", 0, 0);
         assert!(
-            (output.get(0) - 3.0).abs() < 1e-6,
+            (out - 3.0).abs() < 1e-6,
             "expected passthrough of 3.0, got {}",
-            output.get(0)
+            out
         );
     }
 
@@ -472,11 +511,13 @@ mod tests {
             step(&**module);
         }
 
-        // write_index should keep incrementing past frame_count (no modular reset)
+        // write_index wraps via % frame_count inside tick_buffers, so the expected
+        // value after total_steps ticks is total_steps % frame_count.
         let write_index = buffer.read_write_index();
+        let expected_write_index = total_steps % frame_count;
         assert_eq!(
-            write_index, total_steps,
-            "write_index should be {total_steps}, got {write_index}"
+            write_index, expected_write_index,
+            "write_index should be {expected_write_index}, got {write_index}"
         );
 
         let last_frame = write_index % frame_count;

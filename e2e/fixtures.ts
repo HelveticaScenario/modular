@@ -5,7 +5,7 @@
  * test file and expose the first BrowserWindow as a Playwright Page.
  *
  * Requirements:
- *   - The webpack build must exist (.webpack/main and .webpack/renderer).
+ *   - The Vite build must exist (.vite/build and .vite/renderer).
  *     Run `yarn start` once, or `npx electron-forge build` before running E2E.
  *   - Set E2E_TEST=1 env var so the renderer exposes window.__TEST_API__.
  */
@@ -19,7 +19,7 @@ import * as os from 'os';
 // Resolve paths relative to the project root
 const projectRoot = path.resolve(__dirname, '..');
 const electronBin = path.join(projectRoot, 'node_modules', '.bin', 'electron');
-const mainEntry = path.join(projectRoot, '.webpack', 'main');
+const mainEntry = path.join(projectRoot, '.vite', 'build', 'main.js');
 
 export type TestFixtures = {
     electronApp: ElectronApplication;

@@ -163,9 +163,14 @@ pub fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
                         }
                     }
 
-                    // Always call connect on every field (no-op impls handle primitives)
+                    // Always call connect on every field (no-op impls handle
+                    // primitives + non-signal types). The unified Connect
+                    // trait runs cable-resolution + index_ptr injection in a
+                    // single call — see the trait doc on `crate::types::Connect`
+                    // for why this used to be split and was unsafe to leave that
+                    // way.
                     connect_stmts.extend(quote_spanned! {field.span()=>
-                        crate::types::Connect::connect(&mut self.#field_ident, patch);
+                        crate::types::Connect::connect(&mut self.#field_ident, patch, index_ptr);
                     });
                 }
 
@@ -189,7 +194,11 @@ pub fn impl_connect_macro(ast: &DeriveInput) -> TokenStream {
 
     let generated = quote! {
         impl crate::types::Connect for #name {
-            fn connect(&mut self, patch: &crate::Patch) {
+            fn connect(
+                &mut self,
+                patch: &crate::Patch,
+                index_ptr: *const std::cell::Cell<usize>,
+            ) {
                 // Apply default connections for disconnected inputs
                 #default_connection_stmts
                 // Connect all fields

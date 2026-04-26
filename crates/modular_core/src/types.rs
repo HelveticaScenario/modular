@@ -102,6 +102,7 @@ impl WellKnownModule {
             module_ptr: std::sync::Weak::new(),
             port: port.into(),
             channel,
+            index_ptr: std::ptr::null(),
         }
     }
 
@@ -151,22 +152,86 @@ pub trait PatchUpdateHandler {
     fn on_patch_update(&mut self);
 }
 
+// ============================================================================
+// Block processing types
+
+/// Determines how a module wrapper processes samples.
+///
+/// - `Block`: compute all `block_size` samples in one `ensure_processed()` call.
+/// - `Sample`: compute exactly one sample per `ensure_processed()` call (used for
+///   modules inside feedback cycles and ROOT_CLOCK/HiddenAudioIn which have
+///   external per-sample data injection).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProcessingMode {
+    #[default]
+    Block,
+    Sample,
+}
+
+/// Per-sample external clock state injected into ROOT_CLOCK by the audio callback.
+///
+/// The callback pre-computes one entry per sample in the block by querying the
+/// Link timeline. The ROOT_CLOCK wrapper injects the appropriate entry before
+/// calling inner `Clock::update()` for each sample position.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ExternalClockState {
+    /// Bar phase in [0, 1).
+    pub bar_phase: f64,
+    /// Tempo in BPM.
+    pub bpm: f64,
+    /// Whether the Link session is playing.
+    pub playing: bool,
+}
+
 pub trait Sampleable: MessageHandler + Send + Sync {
     fn get_id(&self) -> &str;
-    fn tick(&self) -> ();
-    fn update(&self) -> ();
-    /// Get polyphonic sample output for a port.
-    fn get_poly_sample(&self, port: &str) -> Result<PolyOutput>;
+
+    /// Reset the wrapper's per-sample cursor to 0 at the start of an internal
+    /// `block_size` block. Cache slots from the previous block remain readable
+    /// for SCC reentrancy until they are overwritten by the new block's
+    /// processing.
+    fn start_block(&self) {}
+
+    /// Process outputs up to (but not including) sample `target` within the
+    /// current internal block. Wrapper clamps `target` to `block_size`.
+    ///
+    /// Incremental: each call advances the per-sample cursor by 0+ samples,
+    /// stopping at min(target, block_size). Cursor persists across calls and
+    /// across CPAL callbacks; only `start_block()` resets it.
+    ///
+    /// Reentrancy-safe: if called while already computing (feedback cycle),
+    /// returns immediately — callers read the previous-block / previous-sample
+    /// value via the cache.
+    fn ensure_processed_to(&self, _target: usize) {}
+
+    /// Initialise the wrapper's per-sample cursor to a specific in-block index.
+    /// Used at mid-block patch swaps so newly inserted modules align with
+    /// surviving modules. Default: no-op.
+    fn set_initial_index(&self, _idx: usize) {}
+
+    /// Read the computed value for `(port, ch)` at sample `index` within the
+    /// current block. Calls `ensure_processed_to(index + 1)` internally.
+    ///
+    /// Returns 0.0 for unknown ports or out-of-range indices.
+    fn get_value_at(&self, _port: &str, _ch: usize, _index: usize) -> f32 {
+        0.0
+    }
+
+    /// Pre-fill the audio input block for HiddenAudioIn modules.
+    /// Only the HiddenAudioIn wrapper overrides this. Default: no-op.
+    fn inject_audio_in_block(&self, _block: &[[f32; crate::poly::PORT_MAX_CHANNELS]]) {}
     fn get_module_type(&self) -> &str;
     fn connect(&self, patch: &Patch);
     /// Called after the patch is updated and all modules are connected.
     /// Modules can override this to refresh caches or perform other post-update work.
     fn on_patch_update(&self) {}
-    /// Provide external clock synchronization data.
+    /// Inject external clock synchronization data for the next sample to be
+    /// processed. Called by the audio callback's eager-fill loop once per
+    /// sample, immediately before the matching `ensure_processed_to` call.
     /// Only ROOT_CLOCK overrides this. Default: no-op.
-    fn sync_external_clock(&self, _bar_phase: f64, _bpm: f64) {}
-    /// Clear external clock synchronization, returning to free-running mode.
-    fn clear_external_sync(&self) {}
+    fn sync_external_clock(&self, _state: ExternalClockState) {}
+    /// Clear any external clock sync state. Default: no-op.
+    fn clear_external_clock(&self) {}
     fn get_state(&self) -> Option<serde_json::Value> {
         None
     }
@@ -341,8 +406,22 @@ impl Div for Clickless {
     }
 }
 
+/// Resolves cable bindings for a value derived from a params struct.
+///
+/// Walks the value's signal-bearing fields and, for each `Signal::Cable`:
+/// 1. Resolves `module_ptr` from the patch (Weak<Module>).
+/// 2. Stores `index_ptr` — a back-pointer to the consuming wrapper's per-sample
+///    `index` cell — so the cable can read upstream at the consumer's current
+///    in-block sample index.
+///
+/// Both must run together. Without (1) the cable returns 0 (no upstream).
+/// Without (2) the cable always reads slot 0 of upstream → DC output. Earlier
+/// the two operations lived in separate traits (`Connect` + `InjectIndexPtr`)
+/// with separate type detectors in the proc-macro; the detectors silently
+/// drifted (`Vec<PolySignal>` was missed by the inject side) producing DC
+/// output for `$mix`. Combining into a single trait removes the failure mode.
 pub trait Connect {
-    fn connect(&mut self, patch: &Patch);
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>);
 }
 
 // ============================================================================
@@ -352,13 +431,27 @@ pub trait Connect {
 macro_rules! impl_connect_noop {
     ($($t:ty),*) => {
         $(impl Connect for $t {
-            fn connect(&mut self, _patch: &Patch) {}
+            fn connect(&mut self, _patch: &Patch, _index_ptr: *const std::cell::Cell<usize>) {}
         })*
     };
 }
 
 impl_connect_noop!(
-    f32, f64, i8, i16, i32, i64, u8, u16, u32, u64, usize, isize, bool, String
+    f32,
+    f64,
+    i8,
+    i16,
+    i32,
+    i64,
+    u8,
+    u16,
+    u32,
+    u64,
+    usize,
+    isize,
+    bool,
+    String,
+    serde_json::Value
 );
 
 // ============================================================================
@@ -366,91 +459,91 @@ impl_connect_noop!(
 // ============================================================================
 
 impl<T: Connect> Connect for Vec<T> {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
         for item in self {
-            item.connect(patch);
+            item.connect(patch, index_ptr);
         }
     }
 }
 
 impl<T: Connect> Connect for Option<T> {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
         if let Some(inner) = self {
-            inner.connect(patch);
+            inner.connect(patch, index_ptr);
         }
     }
 }
 
 impl<T: Connect> Connect for Box<T> {
-    fn connect(&mut self, patch: &Patch) {
-        (**self).connect(patch);
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
+        (**self).connect(patch, index_ptr);
     }
 }
 
 impl<T: Connect, const N: usize> Connect for [T; N] {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
         for item in self {
-            item.connect(patch);
+            item.connect(patch, index_ptr);
         }
     }
 }
 
 impl<V: Connect> Connect for std::collections::HashMap<String, V> {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
         for v in self.values_mut() {
-            v.connect(patch);
+            v.connect(patch, index_ptr);
         }
     }
 }
 
 impl<V: Connect> Connect for std::collections::BTreeMap<String, V> {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
         for v in self.values_mut() {
-            v.connect(patch);
+            v.connect(patch, index_ptr);
         }
     }
 }
 
 // Tuples (arity 1-5)
 impl<T1: Connect> Connect for (T1,) {
-    fn connect(&mut self, patch: &Patch) {
-        self.0.connect(patch);
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
+        self.0.connect(patch, index_ptr);
     }
 }
 
 impl<T1: Connect, T2: Connect> Connect for (T1, T2) {
-    fn connect(&mut self, patch: &Patch) {
-        self.0.connect(patch);
-        self.1.connect(patch);
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
+        self.0.connect(patch, index_ptr);
+        self.1.connect(patch, index_ptr);
     }
 }
 
 impl<T1: Connect, T2: Connect, T3: Connect> Connect for (T1, T2, T3) {
-    fn connect(&mut self, patch: &Patch) {
-        self.0.connect(patch);
-        self.1.connect(patch);
-        self.2.connect(patch);
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
+        self.0.connect(patch, index_ptr);
+        self.1.connect(patch, index_ptr);
+        self.2.connect(patch, index_ptr);
     }
 }
 
 impl<T1: Connect, T2: Connect, T3: Connect, T4: Connect> Connect for (T1, T2, T3, T4) {
-    fn connect(&mut self, patch: &Patch) {
-        self.0.connect(patch);
-        self.1.connect(patch);
-        self.2.connect(patch);
-        self.3.connect(patch);
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
+        self.0.connect(patch, index_ptr);
+        self.1.connect(patch, index_ptr);
+        self.2.connect(patch, index_ptr);
+        self.3.connect(patch, index_ptr);
     }
 }
 
 impl<T1: Connect, T2: Connect, T3: Connect, T4: Connect, T5: Connect> Connect
     for (T1, T2, T3, T4, T5)
 {
-    fn connect(&mut self, patch: &Patch) {
-        self.0.connect(patch);
-        self.1.connect(patch);
-        self.2.connect(patch);
-        self.3.connect(patch);
-        self.4.connect(patch);
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
+        self.0.connect(patch, index_ptr);
+        self.1.connect(patch, index_ptr);
+        self.2.connect(patch, index_ptr);
+        self.3.connect(patch, index_ptr);
+        self.4.connect(patch, index_ptr);
     }
 }
 
@@ -875,7 +968,7 @@ impl Wav {
 }
 
 impl Connect for Wav {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, _index_ptr: *const std::cell::Cell<usize>) {
         if let Some(data) = patch.wav_data.get(&self.path) {
             self.cached_data = Some(Arc::clone(data));
         } else {
@@ -1255,12 +1348,13 @@ impl Buffer {
         self.cached_buffer.is_some()
     }
 
-    /// Ensure the source module has been updated this tick (demand-driven ordering).
-    /// This triggers the $buffer module's `update()` which writes the current sample
-    /// and increments write_index. Must be called before reading the buffer.
+    /// Ensure the source module has processed the current block (demand-driven ordering).
+    /// Triggers `$buffer`'s `ensure_processed_to(usize::MAX)` which fills
+    /// block_outputs for all samples in the current block (wrapper clamps to
+    /// `block_size`). Must be called before reading the buffer.
     pub fn ensure_source_updated(&self) {
         if let Some(module) = &self.cached_source_module {
-            module.update();
+            module.ensure_processed_to(usize::MAX);
         }
     }
 
@@ -1425,7 +1519,7 @@ impl JsonSchema for Buffer {
 }
 
 impl Connect for Buffer {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, _index_ptr: *const std::cell::Cell<usize>) {
         // Resolve source module and get its buffer output
         if let Some(module) = patch.sampleables.get(&self.source_module) {
             self.cached_source_module = Some(Arc::clone(module));
@@ -1548,17 +1642,17 @@ impl Table {
 }
 
 impl Connect for Table {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
         match self {
             Table::Identity => {}
-            Table::Mirror { amount } => amount.connect(patch),
-            Table::Bend { amount } => amount.connect(patch),
-            Table::Sync { ratio } => ratio.connect(patch),
-            Table::Fold { amount } => amount.connect(patch),
-            Table::Pwm { width } => width.connect(patch),
+            Table::Mirror { amount } => amount.connect(patch, index_ptr),
+            Table::Bend { amount } => amount.connect(patch, index_ptr),
+            Table::Sync { ratio } => ratio.connect(patch, index_ptr),
+            Table::Fold { amount } => amount.connect(patch, index_ptr),
+            Table::Pwm { width } => width.connect(patch, index_ptr),
             Table::Pipe { first, second } => {
-                first.connect(patch);
-                second.connect(patch);
+                first.connect(patch, index_ptr);
+                second.connect(patch, index_ptr);
             }
         }
     }
@@ -1823,8 +1917,20 @@ pub enum Signal {
         port: String,
         /// Which channel of the output to read (0-indexed)
         channel: usize,
+        /// Back-pointer to the consuming wrapper's `index: Cell<usize>`.
+        /// Null until `inject_index_ptr` is called during `connect()`.
+        /// Raw pointer is safe because the wrapper owns the `Cell` and outlives
+        /// all `Signal`s that reference it.
+        index_ptr: *const std::cell::Cell<usize>,
     },
 }
+
+// SAFETY: `index_ptr` is null during construction and transport; it is only
+// written/read on the audio thread after `inject_index_ptr` is called during
+// `connect()`. The wrapper that owns the pointed-to `Cell` also upholds
+// `unsafe impl Send + Sync`.
+unsafe impl Send for Signal {}
+unsafe impl Sync for Signal {}
 
 // Custom serde deserialization to allow a bare number as shorthand for volts.
 //
@@ -1877,6 +1983,7 @@ impl<'de> Deserialize<'de> for Signal {
                     module_ptr: sync::Weak::new(),
                     port,
                     channel,
+                    index_ptr: std::ptr::null(),
                 },
             }),
         }
@@ -1975,6 +2082,7 @@ impl<E: DeserializeError> deserr::Deserr<E> for Signal {
                             module_ptr: sync::Weak::new(),
                             port,
                             channel,
+                            index_ptr: std::ptr::null(),
                         })
                     }
                     Some(other) => Err(deserr::take_cf_content(E::error::<V>(
@@ -2048,12 +2156,19 @@ impl Signal {
                 module_ptr,
                 port,
                 channel,
-                ..
+                index_ptr,
+                module: _,
             } => match module_ptr.upgrade() {
-                Some(module_ptr) => module_ptr
-                    .get_poly_sample(port)
-                    .map(|p| p.get_cycling(*channel))
-                    .unwrap_or(0.0),
+                Some(module_ptr) => {
+                    let index = if index_ptr.is_null() {
+                        0
+                    } else {
+                        let cell: &std::cell::Cell<usize> = unsafe { &**index_ptr };
+                        cell.get()
+                    };
+                    // Channel cycling is handled inside get_value_at.
+                    module_ptr.get_value_at(port, *channel, index)
+                }
                 None => 0.0,
             },
         }
@@ -2096,13 +2211,23 @@ impl SignalExt for Option<Signal> {
 }
 
 impl Connect for Signal {
-    fn connect(&mut self, patch: &Patch) {
+    fn connect(&mut self, patch: &Patch, index_ptr: *const std::cell::Cell<usize>) {
         if let Signal::Cable {
-            module, module_ptr, ..
+            module,
+            module_ptr,
+            index_ptr: cable_index_ptr,
+            ..
         } = self
-            && let Some(sampleable) = patch.sampleables.get(module)
         {
-            *module_ptr = Arc::downgrade(sampleable);
+            // Resolve module_ptr from patch (cable lookup).
+            if let Some(sampleable) = patch.sampleables.get(module) {
+                *module_ptr = Arc::downgrade(sampleable);
+            }
+            // Wire the back-pointer to the consumer wrapper's `index` cell so
+            // the cable can read upstream at the consumer's current sample
+            // position. Both ops together match what was previously split
+            // across Connect + InjectIndexPtr.
+            *cable_index_ptr = index_ptr;
         }
     }
 }
@@ -2123,12 +2248,14 @@ impl PartialEq for Signal {
                     module_ptr: module_ptr_1,
                     port: port_1,
                     channel: channel_1,
+                    ..
                 },
                 Signal::Cable {
                     module: module_2,
                     module_ptr: module_ptr_2,
                     port: port_2,
                     channel: channel_2,
+                    ..
                 },
             ) => {
                 module_ptr_1.upgrade() == module_ptr_2.upgrade()
@@ -2189,7 +2316,7 @@ pub enum InterpolationType {
 }
 
 impl Connect for InterpolationType {
-    fn connect(&mut self, _patch: &Patch) {}
+    fn connect(&mut self, _patch: &Patch, _index_ptr: *const std::cell::Cell<usize>) {}
 }
 
 pub enum Seq {
@@ -2245,6 +2372,9 @@ pub trait OutputStruct: Default + Send + Sync + 'static {
     fn get_buffer_output(&self, _port: &str) -> Option<&Arc<BufferData>> {
         None
     }
+    /// Called once per CPAL callback to advance any stateful per-block fields.
+    /// Default: no-op. `BufferWrite` overrides this to advance `write_index` by `block_size`.
+    fn tick_buffers(&mut self, _block_size: usize) {}
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2398,7 +2528,13 @@ pub struct ModuleIdRemap {
 }
 
 pub type SampleableConstructor = Box<
-    dyn Fn(&String, f32, crate::params::DeserializedParams) -> Result<Arc<Box<dyn Sampleable>>>,
+    dyn Fn(
+        &String,
+        f32,
+        crate::params::DeserializedParams,
+        usize,          // block_size
+        ProcessingMode, // mode
+    ) -> Result<Arc<Box<dyn Sampleable>>>,
 >;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -3041,7 +3177,7 @@ mod wav_tests {
         patch.wav_data.insert("test/kick".to_string(), wav_data);
 
         let mut wav = Wav::new("test/kick".to_string(), 2);
-        wav.connect(&patch);
+        wav.connect(&patch, std::ptr::null());
 
         assert!(wav.is_loaded());
         assert_eq!(wav.frame_count(), 2);
@@ -3053,7 +3189,7 @@ mod wav_tests {
     fn wav_param_connect_missing_path_stays_unloaded() {
         let patch = Patch::new();
         let mut wav = Wav::new("nonexistent".to_string(), 1);
-        wav.connect(&patch);
+        wav.connect(&patch, std::ptr::null());
         assert!(!wav.is_loaded());
     }
 
@@ -3226,7 +3362,7 @@ mod table_tests {
     fn connect_identity_is_noop() {
         let patch = Patch::new();
         let mut t = Table::Identity;
-        t.connect(&patch);
+        t.connect(&patch, std::ptr::null());
         assert!(matches!(t, Table::Identity));
     }
 
@@ -3239,32 +3375,32 @@ mod table_tests {
         let mut mirror = Table::Mirror {
             amount: constant(0.25),
         };
-        mirror.connect(&patch);
+        mirror.connect(&patch, std::ptr::null());
         // At x=0.5 the reflection is 1.0; interpolated at amount=0.25: 0.5 + 0.5*0.25 = 0.625.
         assert!((mirror.evaluate(0.5, 0) - 0.625).abs() < 1e-4);
 
         let mut bend = Table::Bend {
             amount: constant(0.0),
         };
-        bend.connect(&patch);
+        bend.connect(&patch, std::ptr::null());
         assert!((bend.evaluate(0.5, 0) - 0.5).abs() < 1e-6);
 
         let mut sync = Table::Sync {
             ratio: constant(0.0),
         };
-        sync.connect(&patch);
+        sync.connect(&patch, std::ptr::null());
         assert!((sync.evaluate(0.25, 0) - 0.25).abs() < 1e-6);
 
         let mut fold = Table::Fold {
             amount: constant(0.0),
         };
-        fold.connect(&patch);
+        fold.connect(&patch, std::ptr::null());
         assert!((fold.evaluate(0.5, 0) - 0.5).abs() < 1e-6);
 
         let mut pwm = Table::Pwm {
             width: constant(0.5),
         };
-        pwm.connect(&patch);
+        pwm.connect(&patch, std::ptr::null());
         assert!((pwm.evaluate(0.5, 0) - 0.5).abs() < 1e-6);
     }
 

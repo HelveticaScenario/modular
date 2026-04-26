@@ -115,7 +115,7 @@ impl PlaitsEngine {
 }
 
 impl Connect for PlaitsEngine {
-    fn connect(&mut self, _patch: &ModularPatch) {}
+    fn connect(&mut self, _patch: &ModularPatch, _index_ptr: *const std::cell::Cell<usize>) {}
 }
 
 #[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]

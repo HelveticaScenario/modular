@@ -33,11 +33,13 @@ pub struct DelayRead {
 
 impl DelayRead {
     fn update(&mut self, sample_rate: f32) {
-        // Ensure the $buffer module has processed this frame first.
-        // This triggers $buffer.update() which writes the sample and increments write_index.
+        // Ensure $buffer has processed the current block before reading.
         self.params.buffer.ensure_source_updated();
 
-        let write_index = self.params.buffer.read_write_index() as f64;
+        // write_index is the block base (advanced by tick_buffers before this block).
+        // Add current_block_index() to get the effective write position for this sample.
+        let write_index =
+            (self.params.buffer.read_write_index() as f64) + (self.current_block_index() as f64);
         let frame_count = self.params.buffer.frame_count();
         let channels = self.channel_count();
 
