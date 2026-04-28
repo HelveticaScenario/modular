@@ -343,7 +343,8 @@ type BufferOutputRef = {
 /**
  * A parsed mini-notation pattern — returned by \`$p(source)\`, passed to
  * \`$cycle\` / \`$iCycle\` as their pattern argument. Opaque to user code;
- * the shape is \`{ __kind, ast, source, all_spans }\`.
+ * the shape is \`{ __kind, ast, source, all_spans }\`. Construct with
+ * \`$p(...)\`; never build one by hand.
  */
 type ParsedPattern = {
   readonly __kind: 'ParsedPattern';
@@ -355,8 +356,27 @@ type ParsedPattern = {
 /**
  * Parse a mini-notation source string into a \`ParsedPattern\`.
  *
- * Used as the pattern argument to \`$cycle\` and \`$iCycle\`. See the
- * mini-notation docs on those modules for grammar details.
+ * \`$p()\` is the entry point for mini-notation in the DSL. The pattern
+ * sequencers (\`$cycle\`, \`$iCycle\`) accept a \`ParsedPattern\` rather than
+ * a raw string, so every mini-notation literal flows through \`$p()\`.
+ *
+ * \`\`\`js
+ * $cycle($p("c4 e4 g4"))                       // single-pattern sequencer
+ * $iCycle([$p("0 2 4"), $p("0,4")], "c4(major)") // folded scale-degree sequencer
+ *
+ * const bass = $p("c2 [c2 g2] c2 e2");         // reuse a parsed pattern
+ * $cycle(bass)
+ * \`\`\`
+ *
+ * Returned object is opaque — pass it through, don't read its fields.
+ * It is JSON-serializable and embeds source + span info so the editor
+ * can highlight individual leaves of the pattern as the audio plays.
+ * Binding the result to a \`const\` (\`const p = $p(...)\`) preserves
+ * highlighting through the indirection.
+ *
+ * Throws if \`source\` is not a string or fails to parse. See \`$cycle\`
+ * for the full grammar (groupings, stacks, modifiers, Euclidean, etc.);
+ * see \`$iCycle\` for the scale-degree-specific value vocabulary.
  *
  * @param source - mini-notation source string
  */

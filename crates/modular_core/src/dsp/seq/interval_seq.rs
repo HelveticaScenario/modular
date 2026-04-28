@@ -680,12 +680,12 @@ const CAP: usize = 12;
 /// ```js
 /// // first pattern: one note per slot
 /// // second pattern: two simultaneous offsets → two voices per slot
-/// $iCycle(["0 2 4", "0,4"], "c4(major)")
+/// $iCycle([$p("0 2 4"), $p("0,4")], "c4(major)")
 /// ```
 ///
 /// ```js
 /// // slow alternation in second pattern shifts the chord each cycle
-/// $iCycle(["0,2,4", "<0 3>"], "c4(major)")
+/// $iCycle([$p("0,2,4"), $p("<0 3>")], "c4(major)")
 /// ```
 ///
 /// ## Outputs

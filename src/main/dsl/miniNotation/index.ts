@@ -21,10 +21,27 @@ export { MiniParseError } from './parser';
 /**
  * Parse a mini-notation string into a `ParsedPattern`.
  *
+ * Entry point for all mini-notation usage in the DSL: `$cycle` and
+ * `$iCycle` accept a `ParsedPattern`, so every mini-notation literal
+ * flows through `$p()`. Examples:
+ *
+ * ```js
+ * $cycle($p("c4 e4 g4"))
+ * $iCycle([$p("0 2 4"), $p("0,4")], "c4(major)")
+ * const bass = $p("c2 [c2 g2] c2 e2");
+ * $cycle(bass)
+ * ```
+ *
  * The returned object is JSON-serializable and structurally compatible
  * with the Rust `{ ast, source, all_spans }` shape expected by
  * `SeqPatternParam` / `IntervalPatternParam` during patch-graph
- * deserialization.
+ * deserialization. It also embeds an `argument_span` captured from the
+ * call site so that editor highlighting follows the pattern through
+ * `const` indirections (`const p = $p(...); $cycle(p)`).
+ *
+ * Throws `MiniParseError` if `source` is not a string or fails to
+ * parse. See the `$cycle` doc comment for the full mini-notation
+ * grammar.
  */
 export function $p(source: string): ParsedPattern {
     if (typeof source !== 'string') {
