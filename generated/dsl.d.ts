@@ -1,3 +1,4 @@
+/* oxlint-disable */
 declare global {
 
 /** The **`console`** object provides access to the debugging console (e.g., the Web console in Firefox). */
@@ -297,14 +298,24 @@ type Mono<T extends Signal = Signal> = OrArray<T> | Iterable<ModuleOutput>;
  *
  * Create one with `$table.mirror`, `$table.bend`, `$table.sync`,
  * `$table.fold`, or `$table.pwm` — do not construct directly.
+ *
+ * Tables are composable: `table.pipe(next)` feeds this table's output
+ * phase into `next` as its input phase. Equivalent to passing `next`
+ * as the optional second argument to any `$table.*` helper.
  */
-type Table =
+type TableDescriptor =
   | { readonly type: "mirror"; readonly amount: Signal }
   | { readonly type: "bend"; readonly amount: Signal }
   | { readonly type: "sync"; readonly ratio: Signal }
   | { readonly type: "fold"; readonly amount: Signal }
   | { readonly type: "pwm"; readonly width: Signal }
-  | { readonly type: "identity" };
+  | { readonly type: "identity" }
+  | { readonly type: "pipe"; readonly first: Table; readonly second: Table };
+
+type Table = TableDescriptor & {
+  /** Pass this table to `pipeFn` and return the result. Mirrors `Collection.pipe`. */
+  pipe<T>(pipeFn: (self: Table) => T): T;
+};
 
 /**
  * A buffer output reference — returned by `$buffer()`, passed to readers
@@ -317,6 +328,28 @@ type BufferOutputRef = {
   readonly channels: number;
   readonly frameCount: number;
 };
+
+/**
+ * A parsed mini-notation pattern — returned by `$p(source)`, passed to
+ * `$cycle` / `$iCycle` as their pattern argument. Opaque to user code;
+ * the shape is `{ __kind, ast, source, all_spans }`.
+ */
+type ParsedPattern = {
+  readonly __kind: 'ParsedPattern';
+  readonly ast: unknown;
+  readonly source: string;
+  readonly all_spans: ReadonlyArray<readonly [number, number]>;
+};
+
+/**
+ * Parse a mini-notation source string into a `ParsedPattern`.
+ *
+ * Used as the pattern argument to `$cycle` and `$iCycle`. See the
+ * mini-notation docs on those modules for grammar details.
+ *
+ * @param source - mini-notation source string
+ */
+declare function $p(source: string): ParsedPattern;
 
 /**
  * A loaded WAV sample handle — returned by `$wavs()`, passed to `$sampler()` as the `wav` param.
@@ -960,23 +993,31 @@ function $cartesian<A extends unknown[][]>(...arrays: A): ElementsOf<A>[];
  * Each helper returns a {@link Table} whose inner signal-valued field
  * accepts a constant, a module output, or any other {@link Signal}.
  *
+ * Tables compose via the optional second argument. `.pipe(fn)` passes
+ * the table to `fn` and returns the result — same API as `Collection.pipe`.
+ *
  * @example
- * // Symmetric mirror warp driven by an LFO
- * $wavetable(\$wavs().mywavs.mytable, 'c4', {
- *   phase: $table.mirror($lfo.sine('1hz')),
- * }).out();
+ * // Compose two tables (mirror feeds into bend):
+ * $table.mirror(0.5, $table.bend(0.3))
+ *
+ * // Compose three tables left-to-right:
+ * $table.mirror(0.5, $table.bend(0.3, $table.fold(0.2)))
+ *
+ * // Generic function application via .pipe:
+ * const addBend = (t) => $table.bend(0.3, t)
+ * $table.mirror(0.5).pipe(addBend)
  */
 declare const $table: {
     /** Reflect the phase around its midpoint by `amount` (0..1). */
-    mirror(amount: Signal): Table;
+    mirror(amount: Poly<Signal>, next?: Table): Table;
     /** Bend the phase curve by `amount` (0..1 = linear..extreme). */
-    bend(amount: Signal): Table;
+    bend(amount: Poly<Signal>, next?: Table): Table;
     /** Hard-sync: restart the phase every `ratio` of a cycle. */
-    sync(ratio: Signal): Table;
+    sync(ratio: Poly<Signal>, next?: Table): Table;
     /** Fold the phase back on itself by `amount`. */
-    fold(amount: Signal): Table;
+    fold(amount: Poly<Signal>, next?: Table): Table;
     /** Pulse-width modulation warp with duty cycle `width` (0..1). */
-    pwm(width: Signal): Table;
+    pwm(width: Poly<Signal>, next?: Table): Table;
 };
 
 
@@ -1462,9 +1503,14 @@ export function $supersaw(freq: Poly<Signal>, config?: { detune?: Poly<Signal>; 
  * @param pitch - Pitch in V/Oct (0V = C4).
  * @param position - Frame position as a signal. 0V maps to the first frame, 5V maps to
  * @param config - Configuration object
+ *   - fm - FM input signal (pre-scaled by user).
+ *   - fmMode - FM mode: throughZero (default), lin, or exp.
+ *   -     - `"throughZero"` — Through-zero FM: frequency can go negative (phase runs backward)
+ *   -     - `"lin"` — Linear FM: like through-zero but frequency clamped to >= 0
+ *   -     - `"exp"` — Exponential FM: modulator added to pitch in V/Oct space
  *   - phase - Optional phase-warp table applied before sampling.
  */
-export function $wavetable(wav: { channels: number; mtime?: number; path: string; type: string }, pitch: Poly<Signal>, position?: Poly<Signal>, config?: { phase?: Table; id?: string }): CollectionWithRange;
+export function $wavetable(wav: { channels: number; mtime?: number; path: string; type: string }, pitch: Poly<Signal>, position?: Poly<Signal>, config?: { fm?: Poly<Signal>; fmMode?: "throughZero" | "lin" | "exp"; phase?: Table; id?: string }): CollectionWithRange;
 
 /**
  * Lowpass filter that attenuates frequencies above the cutoff point.
@@ -2158,7 +2204,7 @@ export interface CycleOutputs extends Collection {
  *   - channels - Number of polyphonic voices (1-16)
  *   - playhead - playhead position (driven by the global clock)
  */
-export function $cycle(pattern: string, config?: { channels?: number; playhead?: Mono<Signal>; id?: string }): CycleOutputs;
+export function $cycle(pattern: ParsedPattern, config?: { channels?: number; playhead?: Mono<Signal>; id?: string }): CycleOutputs;
 
 /**
  * Automation track that interpolates between keyframed values.
@@ -2275,7 +2321,7 @@ export interface ICycleOutputs extends Collection {
  *   - channels - number of polyphonic voices (1–16)
  *   - playhead - playhead position
  */
-export function $iCycle(patterns: string | string[], scale: string, config?: { channels?: number; playhead?: Mono<Signal>; id?: string }): ICycleOutputs;
+export function $iCycle(patterns: ParsedPattern | ParsedPattern[], scale: string, config?: { channels?: number; playhead?: Mono<Signal>; id?: string }): ICycleOutputs;
 
 /**
  * Step sequencer

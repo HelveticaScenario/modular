@@ -377,8 +377,8 @@ describe('modulation routing', () => {
 // ─── Sequencing & patterns ───────────────────────────────────────────────────
 
 describe('sequencing', () => {
-    test('$cycle with pattern string', () => {
-        const patch = execPatch('$cycle("C4 E4 G4 B4").out()');
+    test('$cycle with $p() pattern', () => {
+        const patch = execPatch('$cycle($p("c4 e4 g4 b4")).out()');
         expect(findModules(patch, '$cycle').length).toBe(1);
     });
 
@@ -387,14 +387,45 @@ describe('sequencing', () => {
         expect(findModules(patch, '$track').length).toBe(1);
     });
 
-    test('$iCycle with interval pattern (array)', () => {
-        const patch = execPatch('$iCycle(["0 2 4 5 7"], "C(major)").out()');
+    test('$iCycle with single $p() pattern wrapped in array', () => {
+        const patch = execPatch('$iCycle([$p("0 2 4 5 7")], "C(major)").out()');
         expect(findModules(patch, '$iCycle').length).toBe(1);
     });
 
-    test('$iCycle with interval pattern (string)', () => {
-        const patch = execPatch('$iCycle("0 2 4 5 7", "C(major)").out()');
+    test('$iCycle with single $p() pattern', () => {
+        const patch = execPatch('$iCycle($p("0 2 4 5 7"), "C(major)").out()');
         expect(findModules(patch, '$iCycle').length).toBe(1);
+    });
+
+    test('$iCycle with multiple $p() patterns folded additively', () => {
+        const patch = execPatch(
+            '$iCycle([$p("0 2 4"), $p("0 3")], "C(major)").out()',
+        );
+        expect(findModules(patch, '$iCycle').length).toBe(1);
+    });
+
+    test('$p rejects dropped atom kinds', () => {
+        expect(() => execPatch('$p("m60")')).toThrow();
+        expect(() => execPatch('$p("bd sd")')).toThrow();
+        expect(() => execPatch('$p("module(osc1:out:0)")')).toThrow();
+        expect(() => execPatch('$p("2v")')).toThrow();
+    });
+
+    test('$iCycle rejects non-integer atoms at patch-graph validation', () => {
+        expect(() =>
+            execPatch('$iCycle($p("1.5"), "C(major)").out()'),
+        ).toThrow();
+        expect(() =>
+            execPatch('$iCycle($p("c4"), "C(major)").out()'),
+        ).toThrow();
+        expect(() =>
+            execPatch('$iCycle($p("440hz"), "C(major)").out()'),
+        ).toThrow();
+    });
+
+    test('$cycle accepts mixed numeric, note, and hz atoms', () => {
+        const patch = execPatch('$cycle($p("0.5 c4 440hz -1")).out()');
+        expect(findModules(patch, '$cycle').length).toBe(1);
     });
 });
 
@@ -578,7 +609,7 @@ describe('complex patches', () => {
 
     test('sequenced subtractive synth', () => {
         const source = `
-            const seq = $cycle("C3 E3 G3 B3")
+            const seq = $cycle($p("c3 e3 g3 b3"))
             const osc = $saw(seq)
             const env = $adsr($clock.beatTrigger, { attack: 0.01, decay: 0.2, sustain: 2, release: 0.3 })
             $lpf(osc, env.range("C3", "C6")).out()
@@ -812,6 +843,129 @@ describe('$wavs() and $sampler', () => {
 
     test('$wavs() throws for missing files', () => {
         expect(() => execWithWavs('$wavs().snare')).toThrow(/not found/);
+    });
+
+    test('$wavs() numeric index returns lex-sorted file', () => {
+        // Tree adds two top-level files alongside `kick` so the lex order is
+        // deterministic: a, kick, z (subfolder `tables` excluded from index).
+        const tree = {
+            a: 'file',
+            kick: 'file',
+            z: 'file',
+            tables: { boom: 'file' },
+        } as const;
+        const run = (src: string) =>
+            executePatchScript(src, schemas, {
+                ...DEFAULT_EXECUTION_OPTIONS,
+                wavsFolderTree: tree as any,
+                loadWav,
+            });
+        const r0 = run('$sampler($wavs()[0], 5).out()');
+        expect(findModules(r0.patch, '$sampler')[0].params.wav.path).toBe('a');
+        const r1 = run('$sampler($wavs()[1], 5).out()');
+        expect(findModules(r1.patch, '$sampler')[0].params.wav.path).toBe(
+            'kick',
+        );
+        const r2 = run('$sampler($wavs()[2], 5).out()');
+        expect(findModules(r2.patch, '$sampler')[0].params.wav.path).toBe('z');
+    });
+
+    test('$wavs() numeric index wraps modulo file count', () => {
+        const tree = { a: 'file', b: 'file', c: 'file' } as const;
+        const run = (src: string) =>
+            executePatchScript(src, schemas, {
+                ...DEFAULT_EXECUTION_OPTIONS,
+                wavsFolderTree: tree as any,
+                loadWav,
+            });
+        // 3 files: positive wrap
+        expect(
+            findModules(
+                run('$sampler($wavs()[3], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('a');
+        expect(
+            findModules(
+                run('$sampler($wavs()[4], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('b');
+        expect(
+            findModules(
+                run('$sampler($wavs()[5], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('c');
+        // negative wrap
+        expect(
+            findModules(
+                run('$sampler($wavs()[-1], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('c');
+        expect(
+            findModules(
+                run('$sampler($wavs()[-2], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('b');
+        expect(
+            findModules(
+                run('$sampler($wavs()[-3], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('a');
+        expect(
+            findModules(
+                run('$sampler($wavs()[-4], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('c');
+    });
+
+    test('$wavs() numeric index works on subfolders', () => {
+        const tree = {
+            kick: 'file',
+            drums: { hat: 'file', snare: 'file' },
+        } as const;
+        const run = (src: string) =>
+            executePatchScript(src, schemas, {
+                ...DEFAULT_EXECUTION_OPTIONS,
+                wavsFolderTree: tree as any,
+                loadWav,
+            });
+        expect(
+            findModules(
+                run('$sampler($wavs().drums[0], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('drums/hat');
+        expect(
+            findModules(
+                run('$sampler($wavs().drums[1], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('drums/snare');
+        expect(
+            findModules(
+                run('$sampler($wavs().drums[2], 5).out()').patch,
+                '$sampler',
+            )[0].params.wav.path,
+        ).toBe('drums/hat');
+    });
+
+    test('$wavs() numeric index throws on folder with no direct files', () => {
+        // `parent` has only a subfolder, no direct files — numeric index has
+        // nothing to wrap into and must throw.
+        const tree = { parent: { sub: { kick: 'file' } } } as const;
+        const run = () =>
+            executePatchScript('$wavs().parent[0]', schemas, {
+                ...DEFAULT_EXECUTION_OPTIONS,
+                wavsFolderTree: tree as any,
+                loadWav,
+            });
+        expect(run).toThrow(/no wav files/);
     });
 
     test('$wavs() throws when no wavs/ folder', () => {

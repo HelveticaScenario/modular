@@ -7300,7 +7300,7 @@
   },
   {
     "name": "$cycle",
-    "documentation": "Pattern sequencer using mini-notation strings.\n\nWrite rhythmic and melodic patterns using a compact text syntax ported\nfrom TidalCycles/Strudel. The pattern loops each **cycle** and supports\npolyphony — overlapping notes are automatically allocated to separate\noutput channels.\n\n## Cycles\n\nA **cycle** is one full traversal of the pattern. The playhead position\ndetermines timing: its integer part selects the current cycle number and\nthe fractional part selects the position within that cycle. Space-separated\nvalues divide the cycle into equal time slots.\n\n## Values\n\n| Syntax | Meaning | Example |\n|--------|---------|---------|\n| Note name | Pitch (octave defaults to 3) | `'c4'`, `'a#3'`, `'db5'` |\n| Bare number | MIDI note number | `60`, `72` |\n| `Xhz` | Frequency | `'440hz'` |\n| `Xv` | Explicit voltage | `'0v'`, `'1v'`, `'-0.5v'` |\n| `~` | Rest (gate low, no change in CV) | `'c4 ~ e4 ~'` |\n\nBare numbers are MIDI note numbers (A0 = MIDI 33 = 0 V).\n\n## Grouping\n\n- **`[a b c]`** — fast subsequence: subdivides the parent time slot so all\n  elements play within it.\n- **`<a b c>`** — slow / alternating: plays one element per cycle,\n  advancing each time the pattern loops.\n\n```js\n$cycle(\"c4 [d4 e4]\")   // c4 for half the cycle, d4 & e4 share the other half\n$cycle(\"<c4 g4> e4\")   // cycle 1: c4 e4, cycle 2: g4 e4, …\n```\n\n## Stacks\n\n**`a b, c d`** — comma-separated patterns play **simultaneously** (layered).\nEach sub-pattern has its own independent timing.\n\n```js\n$cycle(\"c4 e4, g4 b4\")   // two patterns layered on top of each other\n$cycle(\"c4 d4 e4, g3\")   // three-note melody over a pedal tone\n```\n\n## Random choice\n\n**`a|b|c`** — randomly selects one option each time the slot is reached.\n\n```js\n$cycle(\"c4|d4|e4 g4\")  // first slot is a random pick each cycle\n```\n\n## Nesting\n\nGrouping, stacks, and random choice nest arbitrarily:\n\n```js\n$cycle(\"<c4 [d4 e4]> [f4|g4 a4]\")  // slow + fast + random combined\n$cycle(\"[c4 e4, g4] a4\")            // stack inside a fast subsequence\n```\n\n## Per-element modifiers\n\nModifiers attach directly to an element (no spaces). Multiple modifiers\ncan be chained in any order.\n\n| Modifier | Syntax | Meaning |\n|----------|--------|---------|\n| Weight | `@n` | Relative duration within a sequence (default 1). `c4@2 e4` gives c4 twice the time. |\n| Speed up | `*n` | Repeat/subdivide `n` times within the slot. `c4*3` plays c4 three times. |\n| Slow down | `/n` | Stretch over `n` cycles. `c4/2` plays every other cycle. |\n| Replicate | `!n` | Duplicate the element `n` times (default 2). `c4!3` is equivalent to `c4 c4 c4`. |\n| Degrade | `?` or `?n` | Randomly drop the element. `c4?` drops ~50 % of the time; `c4?0.8` drops 80 %. |\n| Euclidean | `(k,n)` or `(k,n,offset)` | Distribute `k` pulses over `n` steps using the Bjorklund algorithm. Optional `offset` rotates the pattern. |\n\n```js\n$cycle(\"c4*2 e4 g4\")        // c4 plays twice in its slot\n$cycle(\"c4@3 e4 g4\")        // c4 gets 3/5 of the cycle, e4 and g4 get 1/5 each\n$cycle(\"c4? e4 g4\")         // c4 randomly drops out ~50 % of the time\n$cycle(\"c4(3,8) e4\")        // Euclidean: 3 hits spread over 8 steps\n$cycle(\"[c4 d4 e4 f4](3,8)\") // Euclidean applied to a subpattern\n```\n\nModifier operands can also be subpatterns: `c4*[2 3]` alternates between\ndoubling and tripling each slot.\n\n## Outputs\n\n- **cv** — V/Oct pitch (C4 = 0 V).\n- **gate** — 5 V while a note is active, 0 V otherwise.\n- **trig** — single-sample 5 V pulse at each note onset.",
+    "documentation": "Pattern sequencer using mini-notation strings.\n\nWrite rhythmic and melodic patterns using a compact text syntax ported\nfrom TidalCycles/Strudel. The pattern loops each **cycle** and supports\npolyphony — overlapping notes are automatically allocated to separate\noutput channels.\n\n## Cycles\n\nA **cycle** is one full traversal of the pattern. The playhead position\ndetermines timing: its integer part selects the current cycle number and\nthe fractional part selects the position within that cycle. Space-separated\nvalues divide the cycle into equal time slots.\n\n## Values\n\n| Syntax | Meaning | Example |\n|--------|---------|---------|\n| Note name | Pitch (octave defaults to 3) | `'c4'`, `'a#3'`, `'db5'` |\n| Bare number | MIDI note number | `60`, `72` |\n| `Xhz` | Frequency | `'440hz'` |\n| `Xv` | Explicit voltage | `'0v'`, `'1v'`, `'-0.5v'` |\n| `~` | Rest (gate low, no change in CV) | `'c4 ~ e4 ~'` |\n\nBare numbers are MIDI note numbers (A0 = MIDI 33 = 0 V).\n\n## Grouping\n\n- **`[a b c]`** — fast subsequence: subdivides the parent time slot so all\n  elements play within it.\n- **`<a b c>`** — slow / alternating: plays one element per cycle,\n  advancing each time the pattern loops.\n\n```js\n$cycle($p(\"c4 [d4 e4]\"))   // c4 for half the cycle, d4 & e4 share the other half\n$cycle($p(\"<c4 g4> e4\"))   // cycle 1: c4 e4, cycle 2: g4 e4, …\n```\n\n## Stacks\n\n**`a b, c d`** — comma-separated patterns play **simultaneously** (layered).\nEach sub-pattern has its own independent timing.\n\n```js\n$cycle($p(\"c4 e4, g4 b4\"))   // two patterns layered on top of each other\n$cycle($p(\"c4 d4 e4, g3\"))   // three-note melody over a pedal tone\n```\n\n## Random choice\n\n**`a|b|c`** — randomly selects one option each time the slot is reached.\n\n```js\n$cycle($p(\"c4|d4|e4 g4\"))  // first slot is a random pick each cycle\n```\n\n## Nesting\n\nGrouping, stacks, and random choice nest arbitrarily:\n\n```js\n$cycle($p(\"<c4 [d4 e4]> [f4|g4 a4]\"))  // slow + fast + random combined\n$cycle($p(\"[c4 e4, g4] a4\"))            // stack inside a fast subsequence\n```\n\n## Per-element modifiers\n\nModifiers attach directly to an element (no spaces). Multiple modifiers\ncan be chained in any order.\n\n| Modifier | Syntax | Meaning |\n|----------|--------|---------|\n| Weight | `@n` | Relative duration within a sequence (default 1). `c4@2 e4` gives c4 twice the time. |\n| Speed up | `*n` | Repeat/subdivide `n` times within the slot. `c4*3` plays c4 three times. |\n| Slow down | `/n` | Stretch over `n` cycles. `c4/2` plays every other cycle. |\n| Replicate | `!n` | Duplicate the element `n` times (default 2). `c4!3` is equivalent to `c4 c4 c4`. |\n| Degrade | `?` or `?n` | Randomly drop the element. `c4?` drops ~50 % of the time; `c4?0.8` drops 80 %. |\n| Euclidean | `(k,n)` or `(k,n,offset)` | Distribute `k` pulses over `n` steps using the Bjorklund algorithm. Optional `offset` rotates the pattern. |\n\n```js\n$cycle($p(\"c4*2 e4 g4\"))        // c4 plays twice in its slot\n$cycle($p(\"c4@3 e4 g4\"))        // c4 gets 3/5 of the cycle, e4 and g4 get 1/5 each\n$cycle($p(\"c4? e4 g4\"))         // c4 randomly drops out ~50 % of the time\n$cycle($p(\"c4(3,8) e4\"))        // Euclidean: 3 hits spread over 8 steps\n$cycle($p(\"[c4 d4 e4 f4](3,8)\")) // Euclidean applied to a subpattern\n```\n\nModifier operands can also be subpatterns: `c4*[2 3]` alternates between\ndoubling and tripling each slot.\n\n## Outputs\n\n- **cv** — V/Oct pitch (C4 = 0 V).\n- **gate** — 5 V while a note is active, 0 V otherwise.\n- **trig** — single-sample 5 V pulse at each note onset.",
     "paramsSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "title": "SeqParams",
@@ -7317,7 +7317,7 @@
         },
         "pattern": {
           "description": "pattern string in mini-notation",
-          "$ref": "#/$defs/SeqPatternParam"
+          "$ref": "#/$defs/ParsedPatternPayload"
         },
         "playhead": {
           "description": "playhead position (driven by the global clock)",
@@ -7335,6 +7335,1638 @@
         "pattern"
       ],
       "$defs": {
+        "AtomValue": {
+          "description": "Atomic value types produced by the `$p()` DSL parser.\n\nThe reduced set from strudel's krill grammar: `Number` covers bare\nnumeric atoms, `Hz` covers frequency-tagged numbers (`440hz`), and\n`Note` covers pitched letter-octave atoms (`c4`, `d#3`, `eb5`).\nEvery other atom form (`m60` midi shorthand, sample-name identifiers,\n`2v` voltage, module references, quoted strings) has been removed from\nthe grammar and is not representable here.",
+          "oneOf": [
+            {
+              "description": "Numeric value. Module-level semantics decide the interpretation:\n`$cycle` maps a bare `Number` to volts (1V/oct); `$iCycle` maps it\nto an integer scale degree.",
+              "type": "object",
+              "properties": {
+                "Number": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Number"
+              ]
+            },
+            {
+              "description": "Frequency in Hz.",
+              "type": "object",
+              "properties": {
+                "Hz": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Hz"
+              ]
+            },
+            {
+              "description": "Musical note (e.g., c4, a#3, bb5).",
+              "type": "object",
+              "properties": {
+                "Note": {
+                  "type": "object",
+                  "properties": {
+                    "accidental": {
+                      "description": "Accidental: '#' for sharp, 'b' for flat.",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 1,
+                      "minLength": 1
+                    },
+                    "letter": {
+                      "type": "string",
+                      "maxLength": 1,
+                      "minLength": 1
+                    },
+                    "octave": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "format": "int32"
+                    }
+                  },
+                  "required": [
+                    "letter"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Note"
+              ]
+            }
+          ]
+        },
+        "Located": {
+          "description": "Source location in the original pattern string.\n\nSerialized as `{ \"node\": ..., \"span\": {...} }` to match the TS\n`Located<T>` shape.",
+          "type": "object",
+          "properties": {
+            "node": {
+              "$ref": "#/$defs/AtomValue"
+            },
+            "span": {
+              "$ref": "#/$defs/SourceSpan"
+            }
+          },
+          "required": [
+            "node",
+            "span"
+          ]
+        },
+        "Located2": {
+          "description": "Source location in the original pattern string.\n\nSerialized as `{ \"node\": ..., \"span\": {...} }` to match the TS\n`Located<T>` shape.",
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MiniAST"
+              }
+            },
+            "span": {
+              "$ref": "#/$defs/SourceSpan"
+            }
+          },
+          "required": [
+            "node",
+            "span"
+          ]
+        },
+        "Located3": {
+          "description": "Source location in the original pattern string.\n\nSerialized as `{ \"node\": ..., \"span\": {...} }` to match the TS\n`Located<T>` shape.",
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "number",
+              "format": "double"
+            },
+            "span": {
+              "$ref": "#/$defs/SourceSpan"
+            }
+          },
+          "required": [
+            "node",
+            "span"
+          ]
+        },
+        "Located4": {
+          "description": "Source location in the original pattern string.\n\nSerialized as `{ \"node\": ..., \"span\": {...} }` to match the TS\n`Located<T>` shape.",
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MiniASTF64"
+              }
+            },
+            "span": {
+              "$ref": "#/$defs/SourceSpan"
+            }
+          },
+          "required": [
+            "node",
+            "span"
+          ]
+        },
+        "Located5": {
+          "description": "Source location in the original pattern string.\n\nSerialized as `{ \"node\": ..., \"span\": {...} }` to match the TS\n`Located<T>` shape.",
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "span": {
+              "$ref": "#/$defs/SourceSpan"
+            }
+          },
+          "required": [
+            "node",
+            "span"
+          ]
+        },
+        "Located6": {
+          "description": "Source location in the original pattern string.\n\nSerialized as `{ \"node\": ..., \"span\": {...} }` to match the TS\n`Located<T>` shape.",
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MiniASTU32"
+              }
+            },
+            "span": {
+              "$ref": "#/$defs/SourceSpan"
+            }
+          },
+          "required": [
+            "node",
+            "span"
+          ]
+        },
+        "Located7": {
+          "description": "Source location in the original pattern string.\n\nSerialized as `{ \"node\": ..., \"span\": {...} }` to match the TS\n`Located<T>` shape.",
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "span": {
+              "$ref": "#/$defs/SourceSpan"
+            }
+          },
+          "required": [
+            "node",
+            "span"
+          ]
+        },
+        "Located8": {
+          "description": "Source location in the original pattern string.\n\nSerialized as `{ \"node\": ..., \"span\": {...} }` to match the TS\n`Located<T>` shape.",
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MiniASTI32"
+              }
+            },
+            "span": {
+              "$ref": "#/$defs/SourceSpan"
+            }
+          },
+          "required": [
+            "node",
+            "span"
+          ]
+        },
+        "MiniAST": {
+          "description": "The main AST node type.",
+          "oneOf": [
+            {
+              "description": "A single value atom.",
+              "type": "object",
+              "properties": {
+                "Pure": {
+                  "$ref": "#/$defs/Located"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Pure"
+              ]
+            },
+            {
+              "description": "Rest/silence.",
+              "type": "object",
+              "properties": {
+                "Rest": {
+                  "$ref": "#/$defs/SourceSpan"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Rest"
+              ]
+            },
+            {
+              "description": "A list of patterns (from tail syntax: c:e:g or c:[e f]).\nElements can be atoms or subpatterns.",
+              "type": "object",
+              "properties": {
+                "List": {
+                  "$ref": "#/$defs/Located2"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "List"
+              ]
+            },
+            {
+              "description": "Sequence of patterns (space-separated, played in order).",
+              "type": "object",
+              "properties": {
+                "Sequence": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniAST"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Sequence"
+              ]
+            },
+            {
+              "description": "Fast subsequence from [...] syntax (explicit fastcat).\nUnlike Sequence which is the implicit result of space-separated elements,\nFastCat preserves that this came from explicit [...] grouping.\nThis distinction matters for nesting: `<[c e]>` should be slowcat of one fastcat,\nnot slowcat of two elements.",
+              "type": "object",
+              "properties": {
+                "FastCat": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniAST"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "FastCat"
+              ]
+            },
+            {
+              "description": "Slow subsequence (one item per cycle, with optional @ weight).",
+              "type": "object",
+              "properties": {
+                "SlowCat": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniAST"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "SlowCat"
+              ]
+            },
+            {
+              "description": "Stack: comma-separated patterns play simultaneously.",
+              "type": "object",
+              "properties": {
+                "Stack": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/MiniAST"
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Stack"
+              ]
+            },
+            {
+              "description": "Random choice between values.",
+              "type": "object",
+              "properties": {
+                "RandomChoice": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniAST"
+                      }
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "RandomChoice"
+              ]
+            },
+            {
+              "description": "Fast modifier: pattern * factor.",
+              "type": "object",
+              "properties": {
+                "Fast": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniAST"
+                    },
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Fast"
+              ]
+            },
+            {
+              "description": "Slow modifier: pattern / factor.",
+              "type": "object",
+              "properties": {
+                "Slow": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniAST"
+                    },
+                    {
+                      "$ref": "#/$defs/MiniAST"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Slow"
+              ]
+            },
+            {
+              "description": "Replicate: pattern ! n (repeat n times).\nCount is a plain u32 since Strudel doesn't support patterned replicate counts.",
+              "type": "object",
+              "properties": {
+                "Replicate": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniAST"
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint32",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Replicate"
+              ]
+            },
+            {
+              "description": "Degrade: pattern ? prob (randomly drop with probability).",
+              "type": "object",
+              "properties": {
+                "Degrade": {
+                  "type": "array",
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniAST"
+                    },
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "format": "double"
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Degrade"
+              ]
+            },
+            {
+              "description": "Euclidean rhythm: pattern(pulses, steps, rotation?).",
+              "type": "object",
+              "properties": {
+                "Euclidean": {
+                  "type": "object",
+                  "properties": {
+                    "pattern": {
+                      "$ref": "#/$defs/MiniAST"
+                    },
+                    "pulses": {
+                      "$ref": "#/$defs/MiniASTU32"
+                    },
+                    "rotation": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTI32"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "steps": {
+                      "$ref": "#/$defs/MiniASTU32"
+                    }
+                  },
+                  "required": [
+                    "pattern",
+                    "pulses",
+                    "steps"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Euclidean"
+              ]
+            },
+            {
+              "description": "Polymeter: `{a b, c d e}` with optional `%n` steps-per-cycle override.\nEach child pattern is scaled so its step count maps to\n`steps_per_cycle`; all scaled children are stacked. Default\n`steps_per_cycle` is the step-count of the first child sequence.\nAdapted from strudel's `polymeter` alignment in `packages/mini/mini.mjs`.",
+              "type": "object",
+              "properties": {
+                "Polymeter": {
+                  "type": "object",
+                  "properties": {
+                    "children": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniAST"
+                      }
+                    },
+                    "steps_per_cycle": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTF64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "children"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Polymeter"
+              ]
+            }
+          ]
+        },
+        "MiniASTF64": {
+          "description": "AST for f64-valued patterns (used for fast/slow factors).",
+          "oneOf": [
+            {
+              "description": "A single value atom.",
+              "type": "object",
+              "properties": {
+                "Pure": {
+                  "$ref": "#/$defs/Located3"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Pure"
+              ]
+            },
+            {
+              "description": "Rest/silence.",
+              "type": "object",
+              "properties": {
+                "Rest": {
+                  "$ref": "#/$defs/SourceSpan"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Rest"
+              ]
+            },
+            {
+              "description": "A list of patterns (from tail syntax: c:e:g or c:[e f]).\nElements can be atoms or subpatterns.",
+              "type": "object",
+              "properties": {
+                "List": {
+                  "$ref": "#/$defs/Located4"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "List"
+              ]
+            },
+            {
+              "description": "Sequence of patterns (space-separated, played in order).",
+              "type": "object",
+              "properties": {
+                "Sequence": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniASTF64"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Sequence"
+              ]
+            },
+            {
+              "description": "Fast subsequence from [...] syntax (explicit fastcat).",
+              "type": "object",
+              "properties": {
+                "FastCat": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniASTF64"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "FastCat"
+              ]
+            },
+            {
+              "description": "Slow subsequence (one item per cycle, with optional @ weight).",
+              "type": "object",
+              "properties": {
+                "SlowCat": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniASTF64"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "SlowCat"
+              ]
+            },
+            {
+              "description": "Stack: comma-separated patterns play simultaneously.",
+              "type": "object",
+              "properties": {
+                "Stack": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/MiniASTF64"
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Stack"
+              ]
+            },
+            {
+              "description": "Random choice between values.",
+              "type": "object",
+              "properties": {
+                "RandomChoice": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniASTF64"
+                      }
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "RandomChoice"
+              ]
+            },
+            {
+              "description": "Fast modifier: pattern * factor.",
+              "type": "object",
+              "properties": {
+                "Fast": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    },
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Fast"
+              ]
+            },
+            {
+              "description": "Slow modifier: pattern / factor.",
+              "type": "object",
+              "properties": {
+                "Slow": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    },
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Slow"
+              ]
+            },
+            {
+              "description": "Replicate: pattern ! n (repeat n times).\nCount is a plain u32 since Strudel doesn't support patterned replicate counts.",
+              "type": "object",
+              "properties": {
+                "Replicate": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint32",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Replicate"
+              ]
+            },
+            {
+              "description": "Degrade: pattern ? prob (randomly drop with probability).",
+              "type": "object",
+              "properties": {
+                "Degrade": {
+                  "type": "array",
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    },
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "format": "double"
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Degrade"
+              ]
+            },
+            {
+              "description": "Euclidean rhythm: pattern(pulses, steps, rotation?).",
+              "type": "object",
+              "properties": {
+                "Euclidean": {
+                  "type": "object",
+                  "properties": {
+                    "pattern": {
+                      "$ref": "#/$defs/MiniASTF64"
+                    },
+                    "pulses": {
+                      "$ref": "#/$defs/MiniASTU32"
+                    },
+                    "rotation": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTI32"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "steps": {
+                      "$ref": "#/$defs/MiniASTU32"
+                    }
+                  },
+                  "required": [
+                    "pattern",
+                    "pulses",
+                    "steps"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Euclidean"
+              ]
+            },
+            {
+              "description": "Polymeter: `{...}` with optional `%n`. See `MiniAST::Polymeter`.",
+              "type": "object",
+              "properties": {
+                "Polymeter": {
+                  "type": "object",
+                  "properties": {
+                    "children": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniASTF64"
+                      }
+                    },
+                    "steps_per_cycle": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTF64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "children"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Polymeter"
+              ]
+            }
+          ]
+        },
+        "MiniASTI32": {
+          "description": "AST for signed integer patterns (used for euclidean rotation).",
+          "oneOf": [
+            {
+              "description": "A single value atom.",
+              "type": "object",
+              "properties": {
+                "Pure": {
+                  "$ref": "#/$defs/Located7"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Pure"
+              ]
+            },
+            {
+              "description": "Rest/silence.",
+              "type": "object",
+              "properties": {
+                "Rest": {
+                  "$ref": "#/$defs/SourceSpan"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Rest"
+              ]
+            },
+            {
+              "description": "A list of patterns (from tail syntax).",
+              "type": "object",
+              "properties": {
+                "List": {
+                  "$ref": "#/$defs/Located8"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "List"
+              ]
+            },
+            {
+              "description": "Sequence of patterns (space-separated, played in order).",
+              "type": "object",
+              "properties": {
+                "Sequence": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniASTI32"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Sequence"
+              ]
+            },
+            {
+              "description": "Fast subsequence from [...] syntax (explicit fastcat).",
+              "type": "object",
+              "properties": {
+                "FastCat": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniASTI32"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "FastCat"
+              ]
+            },
+            {
+              "description": "Slow subsequence (one item per cycle, with optional @ weight).",
+              "type": "object",
+              "properties": {
+                "SlowCat": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniASTI32"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "SlowCat"
+              ]
+            },
+            {
+              "description": "Stack: comma-separated patterns play simultaneously.",
+              "type": "object",
+              "properties": {
+                "Stack": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/MiniASTI32"
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Stack"
+              ]
+            },
+            {
+              "description": "Random choice between values.",
+              "type": "object",
+              "properties": {
+                "RandomChoice": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniASTI32"
+                      }
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "RandomChoice"
+              ]
+            },
+            {
+              "description": "Fast modifier: pattern * factor.",
+              "type": "object",
+              "properties": {
+                "Fast": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTI32"
+                    },
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Fast"
+              ]
+            },
+            {
+              "description": "Slow modifier: pattern / factor.",
+              "type": "object",
+              "properties": {
+                "Slow": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTI32"
+                    },
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Slow"
+              ]
+            },
+            {
+              "description": "Replicate: pattern ! n (repeat n times).",
+              "type": "object",
+              "properties": {
+                "Replicate": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTI32"
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint32",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Replicate"
+              ]
+            },
+            {
+              "description": "Degrade: pattern ? prob (randomly drop with probability).",
+              "type": "object",
+              "properties": {
+                "Degrade": {
+                  "type": "array",
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTI32"
+                    },
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "format": "double"
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Degrade"
+              ]
+            },
+            {
+              "description": "Euclidean rhythm: pattern(pulses, steps, rotation?).",
+              "type": "object",
+              "properties": {
+                "Euclidean": {
+                  "type": "object",
+                  "properties": {
+                    "pattern": {
+                      "$ref": "#/$defs/MiniASTI32"
+                    },
+                    "pulses": {
+                      "$ref": "#/$defs/MiniASTU32"
+                    },
+                    "rotation": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTI32"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "steps": {
+                      "$ref": "#/$defs/MiniASTU32"
+                    }
+                  },
+                  "required": [
+                    "pattern",
+                    "pulses",
+                    "steps"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Euclidean"
+              ]
+            },
+            {
+              "description": "Polymeter: `{a b, c d e}` or `{...}%n`. Each child sequence is scaled\nso that all children fit into `steps_per_cycle` steps per cycle, then\nstacked. Default `steps_per_cycle` is the step-count of the first\nchild.",
+              "type": "object",
+              "properties": {
+                "Polymeter": {
+                  "type": "object",
+                  "properties": {
+                    "children": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniASTI32"
+                      }
+                    },
+                    "steps_per_cycle": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTF64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "children"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Polymeter"
+              ]
+            }
+          ]
+        },
+        "MiniASTU32": {
+          "description": "AST for unsigned integer patterns (used for euclidean pulses/steps).",
+          "oneOf": [
+            {
+              "description": "A single value atom.",
+              "type": "object",
+              "properties": {
+                "Pure": {
+                  "$ref": "#/$defs/Located5"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Pure"
+              ]
+            },
+            {
+              "description": "Rest/silence.",
+              "type": "object",
+              "properties": {
+                "Rest": {
+                  "$ref": "#/$defs/SourceSpan"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Rest"
+              ]
+            },
+            {
+              "description": "A list of patterns (from tail syntax: c:e:g or c:[e f]).\nElements can be atoms or subpatterns.",
+              "type": "object",
+              "properties": {
+                "List": {
+                  "$ref": "#/$defs/Located6"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "List"
+              ]
+            },
+            {
+              "description": "Sequence of patterns (space-separated, played in order).",
+              "type": "object",
+              "properties": {
+                "Sequence": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniASTU32"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Sequence"
+              ]
+            },
+            {
+              "description": "Fast subsequence from [...] syntax (explicit fastcat).",
+              "type": "object",
+              "properties": {
+                "FastCat": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniASTU32"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "FastCat"
+              ]
+            },
+            {
+              "description": "Slow subsequence (one item per cycle, with optional @ weight).",
+              "type": "object",
+              "properties": {
+                "SlowCat": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniASTU32"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "SlowCat"
+              ]
+            },
+            {
+              "description": "Stack: comma-separated patterns play simultaneously.",
+              "type": "object",
+              "properties": {
+                "Stack": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/MiniASTU32"
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Stack"
+              ]
+            },
+            {
+              "description": "Random choice between values.",
+              "type": "object",
+              "properties": {
+                "RandomChoice": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniASTU32"
+                      }
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "RandomChoice"
+              ]
+            },
+            {
+              "description": "Fast modifier: pattern * factor.",
+              "type": "object",
+              "properties": {
+                "Fast": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTU32"
+                    },
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Fast"
+              ]
+            },
+            {
+              "description": "Slow modifier: pattern / factor.",
+              "type": "object",
+              "properties": {
+                "Slow": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTU32"
+                    },
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Slow"
+              ]
+            },
+            {
+              "description": "Replicate: pattern ! n (repeat n times).\nCount is a plain u32 since Strudel doesn't support patterned replicate counts.",
+              "type": "object",
+              "properties": {
+                "Replicate": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTU32"
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint32",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Replicate"
+              ]
+            },
+            {
+              "description": "Degrade: pattern ? prob (randomly drop with probability).",
+              "type": "object",
+              "properties": {
+                "Degrade": {
+                  "type": "array",
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTU32"
+                    },
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "format": "double"
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Degrade"
+              ]
+            },
+            {
+              "description": "Euclidean rhythm: pattern(pulses, steps, rotation?).",
+              "type": "object",
+              "properties": {
+                "Euclidean": {
+                  "type": "object",
+                  "properties": {
+                    "pattern": {
+                      "$ref": "#/$defs/MiniASTU32"
+                    },
+                    "pulses": {
+                      "$ref": "#/$defs/MiniASTU32"
+                    },
+                    "rotation": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTI32"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "steps": {
+                      "$ref": "#/$defs/MiniASTU32"
+                    }
+                  },
+                  "required": [
+                    "pattern",
+                    "pulses",
+                    "steps"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Euclidean"
+              ]
+            },
+            {
+              "description": "Polymeter: `{...}` with optional `%n`. See `MiniAST::Polymeter`.",
+              "type": "object",
+              "properties": {
+                "Polymeter": {
+                  "type": "object",
+                  "properties": {
+                    "children": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniASTU32"
+                      }
+                    },
+                    "steps_per_cycle": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTF64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "children"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Polymeter"
+              ]
+            }
+          ]
+        },
         "MonoSignal": {
           "anyOf": [
             {
@@ -7348,9 +8980,45 @@
             }
           ]
         },
-        "SeqPatternParam": {
-          "description": "A pattern parameter that wraps a pattern string and its parsed components.\n\nThis struct is serialized as a simple string but contains the parsed pattern\nand collected signal pointers for connection.\n\n# Safety\n\nThe `signals` field contains raw pointers to Signal fields within the Pattern.\nThese pointers remain valid as long as the Pattern is not dropped or reallocated.\nSince SeqPatternParam owns both the pattern and signals, and patterns are\nimmutable after parsing, this is safe.",
-          "type": "string"
+        "ParsedPatternPayload": {
+          "description": "JSON payload shape delivered in the patch graph for\n`SeqPatternParam` / `IntervalPatternParam`. Produced client-side by\nthe TypeScript `$p(...)` helper in `src/main/dsl/miniNotation/`.",
+          "type": "object",
+          "properties": {
+            "all_spans": {
+              "description": "Pre-computed leaf spans, used for Monaco tracked decorations.",
+              "type": "array",
+              "items": {
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "integer",
+                    "format": "uint",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "integer",
+                    "format": "uint",
+                    "minimum": 0
+                  }
+                ]
+              }
+            },
+            "ast": {
+              "description": "The parsed AST.",
+              "$ref": "#/$defs/MiniAST"
+            },
+            "source": {
+              "description": "The original mini-notation source string.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "ast",
+            "source",
+            "all_spans"
+          ]
         },
         "Signal": {
           "anyOf": [
@@ -7394,6 +9062,28 @@
                 "port"
               ]
             }
+          ]
+        },
+        "SourceSpan": {
+          "description": "Source location in the original pattern string.\nUsed for editor highlighting.",
+          "type": "object",
+          "properties": {
+            "end": {
+              "description": "End offset in the source string (exclusive).",
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            },
+            "start": {
+              "description": "Start offset in the source string (0-indexed).",
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "start",
+            "end"
           ]
         }
       }
@@ -7614,7 +9304,7 @@
   },
   {
     "name": "$iCycle",
-    "documentation": "Scale-degree sequencer using a compact text syntax ported\nfrom TidalCycles/Strudel.\n\nWorks with **scale degree numbers** instead of note names. One or more\n**patterns** are combined by recursively folding the patterns into each other.\nThis is adapted from the default way that patterns are combined in Strudel:\n2 patterns are aligned in a cycle and the events of the second pattern are applied to the first.\nHere this happens recursively (where n pattern is applied to n-1), adding\nthe values of those patterns' events together. The result is a single combined\npattern of scale degrees that can be sampled at the current playhead position to produce output CV/gate/trig.\nScale degrees outside the configured **scale** are automatically wrapped into the appropriate octave.\n\n## Cycles\n\nA **cycle** is one full traversal of a pattern. The playhead position\ndetermines timing: its integer part selects the current cycle number and\nthe fractional part selects the position within that cycle.\nAll patterns share the same cycle clock.\n\n## Scale degrees\n\nValues are **0-indexed** degrees of the chosen scale. `0` is the root,\n`1` is the second scale tone, `2` the third, and so on. Negative values\nmove downward; values beyond the scale length wrap into higher/lower\noctaves automatically.\n\n## Mini-notation\n\n| Syntax | Meaning | Example |\n|--------|---------|---------|\n| Bare number | Scale degree (0-indexed) | `0`, `2`, `4` |\n| `~` | Rest (gate low, no change in pitch) | `'0 ~ 2 ~'` |\n| `[a b c]` | Fast subsequence — subdivides parent time slot | `'[0 2 4]'` |\n| `<a b c>` | Slow / alternating — one element per cycle | `'<0 4 7>'` |\n| `a\\|b\\|c` | Random choice each time the slot is reached | `'0\\|2\\|4'` |\n| `a, b` | Stack — comma-separated patterns play simultaneously | `'0 2, 4 7'` |\n\nGrouping, stacks, and random choice nest arbitrarily.\n\n## Per-element modifiers\n\nModifiers attach directly to an element (no spaces). Multiple modifiers\ncan be chained in any order.\n\n| Modifier | Syntax | Meaning |\n|----------|--------|---------|\n| Weight | `@n` | Relative duration within a sequence (default 1). `0@2 2` gives `0` twice the time. |\n| Speed up | `*n` | Repeat/subdivide `n` times within the slot. `0*3` plays degree 0 three times. |\n| Slow down | `/n` | Stretch over `n` cycles. `0/2` plays every other cycle. |\n| Replicate | `!n` | Duplicate the element `n` times (default 2). `0!3` is equivalent to `0 0 0`. |\n| Degrade | `?` or `?n` | Randomly drop the element. `0?` drops ~50 % of the time; `0?0.8` drops 80 %. |\n| Euclidean | `(k,n)` or `(k,n,offset)` | Distribute `k` pulses over `n` steps (Bjorklund algorithm). |\n\nModifier operands can also be subpatterns: `0*[2 3]` alternates between\ndoubling and tripling each slot.\n\n## Polyphony\n\nThe first pattern's structure is preserved. When subsequent patterns\ncontain stacks (simultaneous events), one combined\nevent is created per left×right pair, all sharing the first pattern's timing. This\ncan create polyphonic output.\n\n```js\n// first pattern: one note per slot\n// second pattern: two simultaneous offsets → two voices per slot\n$iCycle([\"0 2 4\", \"0,4\"], \"c4(major)\")\n```\n\n```js\n// slow alternation in second pattern shifts the chord each cycle\n$iCycle([\"0,2,4\", \"<0 3>\"], \"c4(major)\")\n```\n\n## Outputs\n\n- **cv** — V/Oct pitch quantized to the scale (C4 = 0 V).\n- **gate** — 5 V while a note is active, 0 V otherwise.\n- **trig** — single-sample 5 V pulse at each note onset.",
+    "documentation": "Scale-degree sequencer using a compact text syntax ported\nfrom TidalCycles/Strudel.\n\nWorks with **scale degree numbers** instead of note names. One or more\n**patterns** are combined by recursively folding the patterns into each other.\nThis is adapted from the default way that patterns are combined in Strudel:\n2 patterns are aligned in a cycle and the events of the second pattern are applied to the first.\nHere this happens recursively (where n pattern is applied to n-1), adding\nthe values of those patterns' events together. The result is a single combined\npattern of scale degrees that can be sampled at the current playhead position to produce output CV/gate/trig.\nScale degrees outside the configured **scale** are automatically wrapped into the appropriate octave.\n\n## Cycles\n\nA **cycle** is one full traversal of a pattern. The playhead position\ndetermines timing: its integer part selects the current cycle number and\nthe fractional part selects the position within that cycle.\nAll patterns share the same cycle clock.\n\n## Scale degrees\n\nValues are **0-indexed** degrees of the chosen scale. `0` is the root,\n`1` is the second scale tone, `2` the third, and so on. Negative values\nmove downward; values beyond the scale length wrap into higher/lower\noctaves automatically.\n\n## Mini-notation\n\n| Syntax | Meaning | Example |\n|--------|---------|---------|\n| Bare number | Scale degree (0-indexed) | `0`, `2`, `4` |\n| `~` | Rest (gate low, no change in pitch) | `'0 ~ 2 ~'` |\n| `[a b c]` | Fast subsequence — subdivides parent time slot | `'[0 2 4]'` |\n| `<a b c>` | Slow / alternating — one element per cycle | `'<0 4 7>'` |\n| `a\\|b\\|c` | Random choice each time the slot is reached | `'0\\|2\\|4'` |\n| `a, b` | Stack — comma-separated patterns play simultaneously | `'0 2, 4 7'` |\n\nGrouping, stacks, and random choice nest arbitrarily.\n\n## Per-element modifiers\n\nModifiers attach directly to an element (no spaces). Multiple modifiers\ncan be chained in any order.\n\n| Modifier | Syntax | Meaning |\n|----------|--------|---------|\n| Weight | `@n` | Relative duration within a sequence (default 1). `0@2 2` gives `0` twice the time. |\n| Speed up | `*n` | Repeat/subdivide `n` times within the slot. `0*3` plays degree 0 three times. |\n| Slow down | `/n` | Stretch over `n` cycles. `0/2` plays every other cycle. |\n| Replicate | `!n` | Duplicate the element `n` times (default 2). `0!3` is equivalent to `0 0 0`. |\n| Degrade | `?` or `?n` | Randomly drop the element. `0?` drops ~50 % of the time; `0?0.8` drops 80 %. |\n| Euclidean | `(k,n)` or `(k,n,offset)` | Distribute `k` pulses over `n` steps (Bjorklund algorithm). |\n\nModifier operands can also be subpatterns: `0*[2 3]` alternates between\ndoubling and tripling each slot.\n\n## Polyphony\n\nThe first pattern's structure is preserved. When subsequent patterns\ncontain stacks (simultaneous events), one combined\nevent is created per left×right pair, all sharing the first pattern's timing. This\ncan create polyphonic output.\n\n```js\n// first pattern: one note per slot\n// second pattern: two simultaneous offsets → two voices per slot\n$iCycle([$p(\"0 2 4\"), $p(\"0,4\")], \"c4(major)\")\n```\n\n```js\n// slow alternation in second pattern shifts the chord each cycle\n$iCycle([$p(\"0,2,4\"), $p(\"<0 3>\")], \"c4(major)\")\n```\n\n## Outputs\n\n- **cv** — V/Oct pitch quantized to the scale (C4 = 0 V).\n- **gate** — 5 V while a note is active, 0 V otherwise.\n- **trig** — single-sample 5 V pulse at each note onset.",
     "paramsSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "title": "IntervalSeqParams",
@@ -7652,22 +9342,1654 @@
         "scale"
       ],
       "$defs": {
+        "AtomValue": {
+          "description": "Atomic value types produced by the `$p()` DSL parser.\n\nThe reduced set from strudel's krill grammar: `Number` covers bare\nnumeric atoms, `Hz` covers frequency-tagged numbers (`440hz`), and\n`Note` covers pitched letter-octave atoms (`c4`, `d#3`, `eb5`).\nEvery other atom form (`m60` midi shorthand, sample-name identifiers,\n`2v` voltage, module references, quoted strings) has been removed from\nthe grammar and is not representable here.",
+          "oneOf": [
+            {
+              "description": "Numeric value. Module-level semantics decide the interpretation:\n`$cycle` maps a bare `Number` to volts (1V/oct); `$iCycle` maps it\nto an integer scale degree.",
+              "type": "object",
+              "properties": {
+                "Number": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Number"
+              ]
+            },
+            {
+              "description": "Frequency in Hz.",
+              "type": "object",
+              "properties": {
+                "Hz": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Hz"
+              ]
+            },
+            {
+              "description": "Musical note (e.g., c4, a#3, bb5).",
+              "type": "object",
+              "properties": {
+                "Note": {
+                  "type": "object",
+                  "properties": {
+                    "accidental": {
+                      "description": "Accidental: '#' for sharp, 'b' for flat.",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 1,
+                      "minLength": 1
+                    },
+                    "letter": {
+                      "type": "string",
+                      "maxLength": 1,
+                      "minLength": 1
+                    },
+                    "octave": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "format": "int32"
+                    }
+                  },
+                  "required": [
+                    "letter"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Note"
+              ]
+            }
+          ]
+        },
         "IntervalPatternSource": {
-          "description": "Source representation for interval patterns: either a single pattern\nstring or an array of strings that get combined via `app_left` addition.",
+          "description": "Source representation for interval patterns: either a single parsed\npattern payload or an array of payloads combined via `app_left`\naddition.",
           "anyOf": [
             {
-              "type": "string"
+              "$ref": "#/$defs/ParsedPatternPayload"
             },
             {
               "type": "array",
               "items": {
-                "type": "string"
+                "$ref": "#/$defs/ParsedPatternPayload"
               }
             }
           ]
         },
         "IntervalScaleParam": {
           "type": "string"
+        },
+        "Located": {
+          "description": "Source location in the original pattern string.\n\nSerialized as `{ \"node\": ..., \"span\": {...} }` to match the TS\n`Located<T>` shape.",
+          "type": "object",
+          "properties": {
+            "node": {
+              "$ref": "#/$defs/AtomValue"
+            },
+            "span": {
+              "$ref": "#/$defs/SourceSpan"
+            }
+          },
+          "required": [
+            "node",
+            "span"
+          ]
+        },
+        "Located2": {
+          "description": "Source location in the original pattern string.\n\nSerialized as `{ \"node\": ..., \"span\": {...} }` to match the TS\n`Located<T>` shape.",
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MiniAST"
+              }
+            },
+            "span": {
+              "$ref": "#/$defs/SourceSpan"
+            }
+          },
+          "required": [
+            "node",
+            "span"
+          ]
+        },
+        "Located3": {
+          "description": "Source location in the original pattern string.\n\nSerialized as `{ \"node\": ..., \"span\": {...} }` to match the TS\n`Located<T>` shape.",
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "number",
+              "format": "double"
+            },
+            "span": {
+              "$ref": "#/$defs/SourceSpan"
+            }
+          },
+          "required": [
+            "node",
+            "span"
+          ]
+        },
+        "Located4": {
+          "description": "Source location in the original pattern string.\n\nSerialized as `{ \"node\": ..., \"span\": {...} }` to match the TS\n`Located<T>` shape.",
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MiniASTF64"
+              }
+            },
+            "span": {
+              "$ref": "#/$defs/SourceSpan"
+            }
+          },
+          "required": [
+            "node",
+            "span"
+          ]
+        },
+        "Located5": {
+          "description": "Source location in the original pattern string.\n\nSerialized as `{ \"node\": ..., \"span\": {...} }` to match the TS\n`Located<T>` shape.",
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "span": {
+              "$ref": "#/$defs/SourceSpan"
+            }
+          },
+          "required": [
+            "node",
+            "span"
+          ]
+        },
+        "Located6": {
+          "description": "Source location in the original pattern string.\n\nSerialized as `{ \"node\": ..., \"span\": {...} }` to match the TS\n`Located<T>` shape.",
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MiniASTU32"
+              }
+            },
+            "span": {
+              "$ref": "#/$defs/SourceSpan"
+            }
+          },
+          "required": [
+            "node",
+            "span"
+          ]
+        },
+        "Located7": {
+          "description": "Source location in the original pattern string.\n\nSerialized as `{ \"node\": ..., \"span\": {...} }` to match the TS\n`Located<T>` shape.",
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "span": {
+              "$ref": "#/$defs/SourceSpan"
+            }
+          },
+          "required": [
+            "node",
+            "span"
+          ]
+        },
+        "Located8": {
+          "description": "Source location in the original pattern string.\n\nSerialized as `{ \"node\": ..., \"span\": {...} }` to match the TS\n`Located<T>` shape.",
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MiniASTI32"
+              }
+            },
+            "span": {
+              "$ref": "#/$defs/SourceSpan"
+            }
+          },
+          "required": [
+            "node",
+            "span"
+          ]
+        },
+        "MiniAST": {
+          "description": "The main AST node type.",
+          "oneOf": [
+            {
+              "description": "A single value atom.",
+              "type": "object",
+              "properties": {
+                "Pure": {
+                  "$ref": "#/$defs/Located"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Pure"
+              ]
+            },
+            {
+              "description": "Rest/silence.",
+              "type": "object",
+              "properties": {
+                "Rest": {
+                  "$ref": "#/$defs/SourceSpan"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Rest"
+              ]
+            },
+            {
+              "description": "A list of patterns (from tail syntax: c:e:g or c:[e f]).\nElements can be atoms or subpatterns.",
+              "type": "object",
+              "properties": {
+                "List": {
+                  "$ref": "#/$defs/Located2"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "List"
+              ]
+            },
+            {
+              "description": "Sequence of patterns (space-separated, played in order).",
+              "type": "object",
+              "properties": {
+                "Sequence": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniAST"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Sequence"
+              ]
+            },
+            {
+              "description": "Fast subsequence from [...] syntax (explicit fastcat).\nUnlike Sequence which is the implicit result of space-separated elements,\nFastCat preserves that this came from explicit [...] grouping.\nThis distinction matters for nesting: `<[c e]>` should be slowcat of one fastcat,\nnot slowcat of two elements.",
+              "type": "object",
+              "properties": {
+                "FastCat": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniAST"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "FastCat"
+              ]
+            },
+            {
+              "description": "Slow subsequence (one item per cycle, with optional @ weight).",
+              "type": "object",
+              "properties": {
+                "SlowCat": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniAST"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "SlowCat"
+              ]
+            },
+            {
+              "description": "Stack: comma-separated patterns play simultaneously.",
+              "type": "object",
+              "properties": {
+                "Stack": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/MiniAST"
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Stack"
+              ]
+            },
+            {
+              "description": "Random choice between values.",
+              "type": "object",
+              "properties": {
+                "RandomChoice": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniAST"
+                      }
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "RandomChoice"
+              ]
+            },
+            {
+              "description": "Fast modifier: pattern * factor.",
+              "type": "object",
+              "properties": {
+                "Fast": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniAST"
+                    },
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Fast"
+              ]
+            },
+            {
+              "description": "Slow modifier: pattern / factor.",
+              "type": "object",
+              "properties": {
+                "Slow": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniAST"
+                    },
+                    {
+                      "$ref": "#/$defs/MiniAST"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Slow"
+              ]
+            },
+            {
+              "description": "Replicate: pattern ! n (repeat n times).\nCount is a plain u32 since Strudel doesn't support patterned replicate counts.",
+              "type": "object",
+              "properties": {
+                "Replicate": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniAST"
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint32",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Replicate"
+              ]
+            },
+            {
+              "description": "Degrade: pattern ? prob (randomly drop with probability).",
+              "type": "object",
+              "properties": {
+                "Degrade": {
+                  "type": "array",
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniAST"
+                    },
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "format": "double"
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Degrade"
+              ]
+            },
+            {
+              "description": "Euclidean rhythm: pattern(pulses, steps, rotation?).",
+              "type": "object",
+              "properties": {
+                "Euclidean": {
+                  "type": "object",
+                  "properties": {
+                    "pattern": {
+                      "$ref": "#/$defs/MiniAST"
+                    },
+                    "pulses": {
+                      "$ref": "#/$defs/MiniASTU32"
+                    },
+                    "rotation": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTI32"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "steps": {
+                      "$ref": "#/$defs/MiniASTU32"
+                    }
+                  },
+                  "required": [
+                    "pattern",
+                    "pulses",
+                    "steps"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Euclidean"
+              ]
+            },
+            {
+              "description": "Polymeter: `{a b, c d e}` with optional `%n` steps-per-cycle override.\nEach child pattern is scaled so its step count maps to\n`steps_per_cycle`; all scaled children are stacked. Default\n`steps_per_cycle` is the step-count of the first child sequence.\nAdapted from strudel's `polymeter` alignment in `packages/mini/mini.mjs`.",
+              "type": "object",
+              "properties": {
+                "Polymeter": {
+                  "type": "object",
+                  "properties": {
+                    "children": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniAST"
+                      }
+                    },
+                    "steps_per_cycle": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTF64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "children"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Polymeter"
+              ]
+            }
+          ]
+        },
+        "MiniASTF64": {
+          "description": "AST for f64-valued patterns (used for fast/slow factors).",
+          "oneOf": [
+            {
+              "description": "A single value atom.",
+              "type": "object",
+              "properties": {
+                "Pure": {
+                  "$ref": "#/$defs/Located3"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Pure"
+              ]
+            },
+            {
+              "description": "Rest/silence.",
+              "type": "object",
+              "properties": {
+                "Rest": {
+                  "$ref": "#/$defs/SourceSpan"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Rest"
+              ]
+            },
+            {
+              "description": "A list of patterns (from tail syntax: c:e:g or c:[e f]).\nElements can be atoms or subpatterns.",
+              "type": "object",
+              "properties": {
+                "List": {
+                  "$ref": "#/$defs/Located4"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "List"
+              ]
+            },
+            {
+              "description": "Sequence of patterns (space-separated, played in order).",
+              "type": "object",
+              "properties": {
+                "Sequence": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniASTF64"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Sequence"
+              ]
+            },
+            {
+              "description": "Fast subsequence from [...] syntax (explicit fastcat).",
+              "type": "object",
+              "properties": {
+                "FastCat": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniASTF64"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "FastCat"
+              ]
+            },
+            {
+              "description": "Slow subsequence (one item per cycle, with optional @ weight).",
+              "type": "object",
+              "properties": {
+                "SlowCat": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniASTF64"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "SlowCat"
+              ]
+            },
+            {
+              "description": "Stack: comma-separated patterns play simultaneously.",
+              "type": "object",
+              "properties": {
+                "Stack": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/MiniASTF64"
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Stack"
+              ]
+            },
+            {
+              "description": "Random choice between values.",
+              "type": "object",
+              "properties": {
+                "RandomChoice": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniASTF64"
+                      }
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "RandomChoice"
+              ]
+            },
+            {
+              "description": "Fast modifier: pattern * factor.",
+              "type": "object",
+              "properties": {
+                "Fast": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    },
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Fast"
+              ]
+            },
+            {
+              "description": "Slow modifier: pattern / factor.",
+              "type": "object",
+              "properties": {
+                "Slow": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    },
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Slow"
+              ]
+            },
+            {
+              "description": "Replicate: pattern ! n (repeat n times).\nCount is a plain u32 since Strudel doesn't support patterned replicate counts.",
+              "type": "object",
+              "properties": {
+                "Replicate": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint32",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Replicate"
+              ]
+            },
+            {
+              "description": "Degrade: pattern ? prob (randomly drop with probability).",
+              "type": "object",
+              "properties": {
+                "Degrade": {
+                  "type": "array",
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    },
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "format": "double"
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Degrade"
+              ]
+            },
+            {
+              "description": "Euclidean rhythm: pattern(pulses, steps, rotation?).",
+              "type": "object",
+              "properties": {
+                "Euclidean": {
+                  "type": "object",
+                  "properties": {
+                    "pattern": {
+                      "$ref": "#/$defs/MiniASTF64"
+                    },
+                    "pulses": {
+                      "$ref": "#/$defs/MiniASTU32"
+                    },
+                    "rotation": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTI32"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "steps": {
+                      "$ref": "#/$defs/MiniASTU32"
+                    }
+                  },
+                  "required": [
+                    "pattern",
+                    "pulses",
+                    "steps"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Euclidean"
+              ]
+            },
+            {
+              "description": "Polymeter: `{...}` with optional `%n`. See `MiniAST::Polymeter`.",
+              "type": "object",
+              "properties": {
+                "Polymeter": {
+                  "type": "object",
+                  "properties": {
+                    "children": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniASTF64"
+                      }
+                    },
+                    "steps_per_cycle": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTF64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "children"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Polymeter"
+              ]
+            }
+          ]
+        },
+        "MiniASTI32": {
+          "description": "AST for signed integer patterns (used for euclidean rotation).",
+          "oneOf": [
+            {
+              "description": "A single value atom.",
+              "type": "object",
+              "properties": {
+                "Pure": {
+                  "$ref": "#/$defs/Located7"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Pure"
+              ]
+            },
+            {
+              "description": "Rest/silence.",
+              "type": "object",
+              "properties": {
+                "Rest": {
+                  "$ref": "#/$defs/SourceSpan"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Rest"
+              ]
+            },
+            {
+              "description": "A list of patterns (from tail syntax).",
+              "type": "object",
+              "properties": {
+                "List": {
+                  "$ref": "#/$defs/Located8"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "List"
+              ]
+            },
+            {
+              "description": "Sequence of patterns (space-separated, played in order).",
+              "type": "object",
+              "properties": {
+                "Sequence": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniASTI32"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Sequence"
+              ]
+            },
+            {
+              "description": "Fast subsequence from [...] syntax (explicit fastcat).",
+              "type": "object",
+              "properties": {
+                "FastCat": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniASTI32"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "FastCat"
+              ]
+            },
+            {
+              "description": "Slow subsequence (one item per cycle, with optional @ weight).",
+              "type": "object",
+              "properties": {
+                "SlowCat": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniASTI32"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "SlowCat"
+              ]
+            },
+            {
+              "description": "Stack: comma-separated patterns play simultaneously.",
+              "type": "object",
+              "properties": {
+                "Stack": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/MiniASTI32"
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Stack"
+              ]
+            },
+            {
+              "description": "Random choice between values.",
+              "type": "object",
+              "properties": {
+                "RandomChoice": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniASTI32"
+                      }
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "RandomChoice"
+              ]
+            },
+            {
+              "description": "Fast modifier: pattern * factor.",
+              "type": "object",
+              "properties": {
+                "Fast": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTI32"
+                    },
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Fast"
+              ]
+            },
+            {
+              "description": "Slow modifier: pattern / factor.",
+              "type": "object",
+              "properties": {
+                "Slow": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTI32"
+                    },
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Slow"
+              ]
+            },
+            {
+              "description": "Replicate: pattern ! n (repeat n times).",
+              "type": "object",
+              "properties": {
+                "Replicate": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTI32"
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint32",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Replicate"
+              ]
+            },
+            {
+              "description": "Degrade: pattern ? prob (randomly drop with probability).",
+              "type": "object",
+              "properties": {
+                "Degrade": {
+                  "type": "array",
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTI32"
+                    },
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "format": "double"
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Degrade"
+              ]
+            },
+            {
+              "description": "Euclidean rhythm: pattern(pulses, steps, rotation?).",
+              "type": "object",
+              "properties": {
+                "Euclidean": {
+                  "type": "object",
+                  "properties": {
+                    "pattern": {
+                      "$ref": "#/$defs/MiniASTI32"
+                    },
+                    "pulses": {
+                      "$ref": "#/$defs/MiniASTU32"
+                    },
+                    "rotation": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTI32"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "steps": {
+                      "$ref": "#/$defs/MiniASTU32"
+                    }
+                  },
+                  "required": [
+                    "pattern",
+                    "pulses",
+                    "steps"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Euclidean"
+              ]
+            },
+            {
+              "description": "Polymeter: `{a b, c d e}` or `{...}%n`. Each child sequence is scaled\nso that all children fit into `steps_per_cycle` steps per cycle, then\nstacked. Default `steps_per_cycle` is the step-count of the first\nchild.",
+              "type": "object",
+              "properties": {
+                "Polymeter": {
+                  "type": "object",
+                  "properties": {
+                    "children": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniASTI32"
+                      }
+                    },
+                    "steps_per_cycle": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTF64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "children"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Polymeter"
+              ]
+            }
+          ]
+        },
+        "MiniASTU32": {
+          "description": "AST for unsigned integer patterns (used for euclidean pulses/steps).",
+          "oneOf": [
+            {
+              "description": "A single value atom.",
+              "type": "object",
+              "properties": {
+                "Pure": {
+                  "$ref": "#/$defs/Located5"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Pure"
+              ]
+            },
+            {
+              "description": "Rest/silence.",
+              "type": "object",
+              "properties": {
+                "Rest": {
+                  "$ref": "#/$defs/SourceSpan"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Rest"
+              ]
+            },
+            {
+              "description": "A list of patterns (from tail syntax: c:e:g or c:[e f]).\nElements can be atoms or subpatterns.",
+              "type": "object",
+              "properties": {
+                "List": {
+                  "$ref": "#/$defs/Located6"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "List"
+              ]
+            },
+            {
+              "description": "Sequence of patterns (space-separated, played in order).",
+              "type": "object",
+              "properties": {
+                "Sequence": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniASTU32"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Sequence"
+              ]
+            },
+            {
+              "description": "Fast subsequence from [...] syntax (explicit fastcat).",
+              "type": "object",
+              "properties": {
+                "FastCat": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniASTU32"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "FastCat"
+              ]
+            },
+            {
+              "description": "Slow subsequence (one item per cycle, with optional @ weight).",
+              "type": "object",
+              "properties": {
+                "SlowCat": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "$ref": "#/$defs/MiniASTU32"
+                      },
+                      {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "format": "double"
+                      }
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "SlowCat"
+              ]
+            },
+            {
+              "description": "Stack: comma-separated patterns play simultaneously.",
+              "type": "object",
+              "properties": {
+                "Stack": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/MiniASTU32"
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Stack"
+              ]
+            },
+            {
+              "description": "Random choice between values.",
+              "type": "object",
+              "properties": {
+                "RandomChoice": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniASTU32"
+                      }
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "RandomChoice"
+              ]
+            },
+            {
+              "description": "Fast modifier: pattern * factor.",
+              "type": "object",
+              "properties": {
+                "Fast": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTU32"
+                    },
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Fast"
+              ]
+            },
+            {
+              "description": "Slow modifier: pattern / factor.",
+              "type": "object",
+              "properties": {
+                "Slow": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTU32"
+                    },
+                    {
+                      "$ref": "#/$defs/MiniASTF64"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Slow"
+              ]
+            },
+            {
+              "description": "Replicate: pattern ! n (repeat n times).\nCount is a plain u32 since Strudel doesn't support patterned replicate counts.",
+              "type": "object",
+              "properties": {
+                "Replicate": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTU32"
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint32",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Replicate"
+              ]
+            },
+            {
+              "description": "Degrade: pattern ? prob (randomly drop with probability).",
+              "type": "object",
+              "properties": {
+                "Degrade": {
+                  "type": "array",
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/MiniASTU32"
+                    },
+                    {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "format": "double"
+                    },
+                    {
+                      "type": "integer",
+                      "format": "uint64",
+                      "minimum": 0
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Degrade"
+              ]
+            },
+            {
+              "description": "Euclidean rhythm: pattern(pulses, steps, rotation?).",
+              "type": "object",
+              "properties": {
+                "Euclidean": {
+                  "type": "object",
+                  "properties": {
+                    "pattern": {
+                      "$ref": "#/$defs/MiniASTU32"
+                    },
+                    "pulses": {
+                      "$ref": "#/$defs/MiniASTU32"
+                    },
+                    "rotation": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTI32"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "steps": {
+                      "$ref": "#/$defs/MiniASTU32"
+                    }
+                  },
+                  "required": [
+                    "pattern",
+                    "pulses",
+                    "steps"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Euclidean"
+              ]
+            },
+            {
+              "description": "Polymeter: `{...}` with optional `%n`. See `MiniAST::Polymeter`.",
+              "type": "object",
+              "properties": {
+                "Polymeter": {
+                  "type": "object",
+                  "properties": {
+                    "children": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/MiniASTU32"
+                      }
+                    },
+                    "steps_per_cycle": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/MiniASTF64"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "children"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "Polymeter"
+              ]
+            }
+          ]
         },
         "MonoSignal": {
           "anyOf": [
@@ -7680,6 +11002,46 @@
                 "$ref": "#/$defs/Signal"
               }
             }
+          ]
+        },
+        "ParsedPatternPayload": {
+          "description": "JSON payload shape delivered in the patch graph for\n`SeqPatternParam` / `IntervalPatternParam`. Produced client-side by\nthe TypeScript `$p(...)` helper in `src/main/dsl/miniNotation/`.",
+          "type": "object",
+          "properties": {
+            "all_spans": {
+              "description": "Pre-computed leaf spans, used for Monaco tracked decorations.",
+              "type": "array",
+              "items": {
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "integer",
+                    "format": "uint",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "integer",
+                    "format": "uint",
+                    "minimum": 0
+                  }
+                ]
+              }
+            },
+            "ast": {
+              "description": "The parsed AST.",
+              "$ref": "#/$defs/MiniAST"
+            },
+            "source": {
+              "description": "The original mini-notation source string.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "ast",
+            "source",
+            "all_spans"
           ]
         },
         "Signal": {
@@ -7724,6 +11086,28 @@
                 "port"
               ]
             }
+          ]
+        },
+        "SourceSpan": {
+          "description": "Source location in the original pattern string.\nUsed for editor highlighting.",
+          "type": "object",
+          "properties": {
+            "end": {
+              "description": "End offset in the source string (exclusive).",
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            },
+            "start": {
+              "description": "Start offset in the source string (0-indexed).",
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "start",
+            "end"
           ]
         }
       }

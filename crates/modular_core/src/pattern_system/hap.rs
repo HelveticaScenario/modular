@@ -5,10 +5,12 @@
 //! (the portion visible in the current query window).
 
 use super::TimeSpan;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// Source location in the original pattern string.
 /// Used for editor highlighting.
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 pub struct SourceSpan {
     /// Start offset in the source string (0-indexed).
     pub start: usize,

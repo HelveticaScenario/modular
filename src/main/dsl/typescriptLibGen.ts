@@ -341,6 +341,48 @@ type BufferOutputRef = {
 };
 
 /**
+ * A parsed mini-notation pattern — returned by \`$p(source)\`, passed to
+ * \`$cycle\` / \`$iCycle\` as their pattern argument. Opaque to user code;
+ * the shape is \`{ __kind, ast, source, all_spans }\`. Construct with
+ * \`$p(...)\`; never build one by hand.
+ */
+type ParsedPattern = {
+  readonly __kind: 'ParsedPattern';
+  readonly ast: unknown;
+  readonly source: string;
+  readonly all_spans: ReadonlyArray<readonly [number, number]>;
+};
+
+/**
+ * Parse a mini-notation source string into a \`ParsedPattern\`.
+ *
+ * \`$p()\` is the entry point for mini-notation in the DSL. The pattern
+ * sequencers (\`$cycle\`, \`$iCycle\`) accept a \`ParsedPattern\` rather than
+ * a raw string, so every mini-notation literal flows through \`$p()\`.
+ *
+ * \`\`\`js
+ * $cycle($p("c4 e4 g4"))                       // single-pattern sequencer
+ * $iCycle([$p("0 2 4"), $p("0,4")], "c4(major)") // folded scale-degree sequencer
+ *
+ * const bass = $p("c2 [c2 g2] c2 e2");         // reuse a parsed pattern
+ * $cycle(bass)
+ * \`\`\`
+ *
+ * Returned object is opaque — pass it through, don't read its fields.
+ * It is JSON-serializable and embeds source + span info so the editor
+ * can highlight individual leaves of the pattern as the audio plays.
+ * Binding the result to a \`const\` (\`const p = $p(...)\`) preserves
+ * highlighting through the indirection.
+ *
+ * Throws if \`source\` is not a string or fails to parse. See \`$cycle\`
+ * for the full grammar (groupings, stacks, modifiers, Euclidean, etc.);
+ * see \`$iCycle\` for the scale-degree-specific value vocabulary.
+ *
+ * @param source - mini-notation source string
+ */
+declare function $p(source: string): ParsedPattern;
+
+/**
  * A loaded WAV sample handle — returned by \`$wavs()\`, passed to \`$sampler()\` as the \`wav\` param.
  */
 type WavHandle = {
@@ -1016,10 +1058,19 @@ function generateWavsTypeDeclaration(tree: WavsFolderNode | null): string {
     }
 
     function renderNode(node: WavsFolderNode, indent: string): string {
-        const lines: string[] = ['{'];
-        for (const [key, value] of Object.entries(node).sort(([a], [b]) =>
+        const sorted = Object.entries(node).sort(([a], [b]) =>
             a.localeCompare(b),
-        )) {
+        );
+        const hasFiles = sorted.some(([, v]) => v === 'file');
+        const lines: string[] = ['{'];
+        // Numeric index signature (wraps modulo file count) when this folder
+        // has at least one direct file. Out-of-range integers are valid at
+        // runtime since access wraps; folders with zero files omit the
+        // signature so `$wavs().emptyDir[0]` is a static type error.
+        if (hasFiles) {
+            lines.push(`${indent}  readonly [index: number]: WavHandle;`);
+        }
+        for (const [key, value] of sorted) {
             const safeName = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key)
                 ? key
                 : `'${key.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
@@ -1045,7 +1096,7 @@ export function buildLibSource(
 ): string {
     const schemaLib = generateDSL(schemas);
     const wavsDecl = generateWavsTypeDeclaration(wavsFolderTree ?? null);
-    return `declare global {\n${BASE_LIB_SOURCE}\n\n${schemaLib}\n\n${wavsDecl}\n}\n\nexport {};\n`;
+    return `/* oxlint-disable */\ndeclare global {\n${BASE_LIB_SOURCE}\n\n${schemaLib}\n\n${wavsDecl}\n}\n\nexport {};\n`;
 }
 
 interface NamespaceNode {
