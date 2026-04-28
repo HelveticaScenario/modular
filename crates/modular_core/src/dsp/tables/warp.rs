@@ -48,11 +48,7 @@ pub fn fold(x: f32, param: f32) -> f32 {
     let param = param.clamp(0.0, 1.0);
     let scaled = x * (1.0 + param * 3.0);
     let period = scaled % 2.0;
-    if period <= 1.0 {
-        period
-    } else {
-        2.0 - period
-    }
+    if period <= 1.0 { period } else { 2.0 - period }
 }
 
 /// PWM — pulse width modulation of phase.
@@ -109,7 +105,13 @@ mod tests {
         for i in 0..=20 {
             let x = i as f32 / 20.0;
             let y = mirror(x, 0.0);
-            assert!((y - x).abs() < 1e-6, "mirror(x={}, 0) = {}, expected {}", x, y, x);
+            assert!(
+                (y - x).abs() < 1e-6,
+                "mirror(x={}, 0) = {}, expected {}",
+                x,
+                y,
+                x
+            );
         }
     }
 
@@ -140,7 +142,13 @@ mod tests {
         for i in 0..=20 {
             let x = i as f32 / 20.0;
             let y = bend(x, 0.0);
-            assert!((y - x).abs() < 1e-6, "bend(x={}, 0) = {}, expected {}", x, y, x);
+            assert!(
+                (y - x).abs() < 1e-6,
+                "bend(x={}, 0) = {}, expected {}",
+                x,
+                y,
+                x
+            );
         }
     }
 
@@ -148,7 +156,11 @@ mod tests {
     fn bend_endpoints_preserved() {
         for p in [-1.0, -0.5, 0.0, 0.5, 1.0] {
             assert!(bend(0.0, p).abs() < 1e-6, "bend(0, {}) should be 0", p);
-            assert!((bend(1.0, p) - 1.0).abs() < 1e-6, "bend(1, {}) should be 1", p);
+            assert!(
+                (bend(1.0, p) - 1.0).abs() < 1e-6,
+                "bend(1, {}) should be 1",
+                p
+            );
         }
     }
 
@@ -202,7 +214,11 @@ mod tests {
     fn pwm_endpoints_preserved() {
         for p in [0.01, 0.25, 0.5, 0.75, 0.99] {
             assert!(pwm(0.0, p).abs() < 1e-6, "pwm(0, {}) should be 0", p);
-            assert!((pwm(1.0, p) - 1.0).abs() < 1e-6, "pwm(1, {}) should be 1", p);
+            assert!(
+                (pwm(1.0, p) - 1.0).abs() < 1e-6,
+                "pwm(1, {}) should be 1",
+                p
+            );
         }
     }
 

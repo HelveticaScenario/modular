@@ -2,9 +2,9 @@ use deserr::Deserr;
 use napi::Result;
 use schemars::JsonSchema;
 
-use crate::dsp::utils::{min_gate_samples, SchmittTrigger, TempGate, TempGateState};
-use crate::types::ClockMessages;
 use crate::PolyOutput;
+use crate::dsp::utils::{SchmittTrigger, TempGate, TempGateState, min_gate_samples};
+use crate::types::ClockMessages;
 
 #[derive(Clone, Deserr, JsonSchema, Connect, ChannelCount, SignalParams)]
 #[serde(rename_all = "camelCase")]
@@ -104,10 +104,7 @@ message_handlers!(impl Clock {
 
 impl Clock {
     pub fn sync_external_clock(&mut self, bar_phase: f64, bpm: f64) {
-        self.state.external_sync = Some(ExternalClockSync {
-            bar_phase,
-            bpm,
-        });
+        self.state.external_sync = Some(ExternalClockSync { bar_phase, bpm });
     }
 
     pub fn clear_external_sync(&mut self) {

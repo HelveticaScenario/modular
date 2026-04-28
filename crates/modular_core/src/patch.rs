@@ -6,12 +6,12 @@
 
 use parking_lot::Mutex;
 
+use crate::PolyOutput;
 use crate::dsp::core::audio_in::AudioIn;
 use crate::types::{
-    Message, MessageTag, Sampleable, SampleableMap, WavData, WellKnownModule, ROOT_ID,
-    ROOT_OUTPUT_PORT,
+    Message, MessageTag, ROOT_ID, ROOT_OUTPUT_PORT, Sampleable, SampleableMap, WavData,
+    WellKnownModule,
 };
-use crate::PolyOutput;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
@@ -152,7 +152,7 @@ impl Patch {
     /// on the calling thread, apply them, connect cables, and fire `on_patch_update`.
     pub fn from_graph(graph: &crate::types::PatchGraph, sample_rate: f32) -> Result<Self, String> {
         use crate::dsp::{get_constructors, get_params_deserializers};
-        use crate::params::{extract_argument_spans, DeserializedParams};
+        use crate::params::{DeserializedParams, extract_argument_spans};
 
         let constructors = get_constructors();
         let params_deserializers = get_params_deserializers();
@@ -214,9 +214,11 @@ mod tests {
     fn test_patch_new_has_hidden_audio_in() {
         let patch = Patch::new();
         // Patch::new() inserts HIDDEN_AUDIO_IN which is managed internally
-        assert!(patch
-            .sampleables
-            .contains_key(WellKnownModule::HiddenAudioIn.id()));
+        assert!(
+            patch
+                .sampleables
+                .contains_key(WellKnownModule::HiddenAudioIn.id())
+        );
         assert_eq!(patch.sampleables.len(), 1);
     }
 

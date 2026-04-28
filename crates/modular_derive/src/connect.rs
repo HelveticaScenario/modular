@@ -2,7 +2,7 @@ use proc_macro::TokenStream;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
-use syn::{punctuated::Punctuated, Attribute, Data, DeriveInput, Fields, LitStr, Token};
+use syn::{Attribute, Data, DeriveInput, Fields, LitStr, Token, punctuated::Punctuated};
 
 use crate::utils::{
     is_mono_signal_type, is_option_mono_signal_type, is_option_poly_signal_type,

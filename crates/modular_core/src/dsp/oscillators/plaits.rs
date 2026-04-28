@@ -14,9 +14,9 @@ use mi_plaits_dsp::voice::{Modulations, Patch, Voice};
 use schemars::JsonSchema;
 
 use crate::{
-    dsp::utils::{voct_to_midi, SchmittTrigger},
+    dsp::utils::{SchmittTrigger, voct_to_midi},
     patch::Patch as ModularPatch,
-    poly::{PolyOutput, PolySignal, PolySignalExt, PORT_MAX_CHANNELS},
+    poly::{PORT_MAX_CHANNELS, PolyOutput, PolySignal, PolySignalExt},
     types::{Clickless, Connect},
 };
 
