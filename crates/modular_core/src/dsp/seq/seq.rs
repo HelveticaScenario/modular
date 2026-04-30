@@ -2,8 +2,6 @@
 //!
 //! This module sequences pitch values using mini notation patterns with support for:
 //! - V/Oct voltage values (pre-converted from MIDI/notes at parse time)
-//! - Module signals via `module(id:port:channel)` syntax
-//! - Sample-and-hold signals via `module(id:port:channel)=` suffix
 //!
 //! The sequencer queries the pattern at the current playhead position and outputs:
 //! - CV: V/Oct pitch (A0 = 0V)
@@ -39,10 +37,6 @@ struct CachedHap {
     /// Index of this hap within the cycle_haps vector.
     hap_index: usize,
 
-    /// Pre-sampled voltage for sample-and-hold signals.
-    /// None for continuous signals (read each tick) or non-signal values.
-    sampled_voltage: Option<f64>,
-
     /// The cycle this hap was cached for.
     cached_cycle: i64,
 }
@@ -50,22 +44,9 @@ struct CachedHap {
 impl CachedHap {
     /// Create a new cached hap from a cycle's Arc hap vector.
     fn new(cycle_haps: Arc<Vec<DspHap<SeqValue>>>, hap_index: usize, cached_cycle: i64) -> Self {
-        // Sample S&H signals at creation time
-        let sampled_voltage = match &cycle_haps[hap_index].value {
-            SeqValue::Signal {
-                signal,
-                sample_and_hold: true,
-            } => {
-                // Sample the signal voltage directly
-                Some(signal.get_value() as f64)
-            }
-            _ => None,
-        };
-
         Self {
             cycle_haps,
             hap_index,
-            sampled_voltage,
             cached_cycle,
         }
     }
@@ -86,16 +67,6 @@ impl CachedHap {
     fn get_cv(&self) -> Option<f64> {
         match &self.hap().value {
             SeqValue::Voltage(v) => Some(*v),
-            SeqValue::Signal {
-                signal,
-                sample_and_hold,
-            } => {
-                if *sample_and_hold {
-                    self.sampled_voltage
-                } else {
-                    Some(signal.get_value() as f64)
-                }
-            }
             SeqValue::Rest => None,
         }
     }
@@ -547,22 +518,6 @@ impl Seq {
 
             self.outputs.gate.set(ch, voice.gate.process());
             self.outputs.trig.set(ch, voice.trigger.process());
-        }
-    }
-
-    /// Check for notes that have ended and mark voices as inactive.
-    fn release_ended_voices(&mut self, playhead: f64, num_channels: usize) {
-        for i in 0..num_channels {
-            if let Some(ref cached) = self.state.voices[i].cached_hap
-                && !cached.contains(playhead)
-            {
-                self.state.voices[i].active = false;
-                self.state.voices[i].cached_hap = None;
-                // Gate goes low
-                self.state.voices[i]
-                    .gate
-                    .set_state(TempGateState::Low, TempGateState::Low, 0);
-            }
         }
     }
 }
