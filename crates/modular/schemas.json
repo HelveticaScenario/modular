@@ -7349,7 +7349,7 @@
           ]
         },
         "SeqPatternParam": {
-          "description": "A pattern parameter that wraps a pattern string and its parsed components.\n\nThis struct is serialized as a simple string but contains the parsed pattern\nand collected signal pointers for connection.\n\n# Safety\n\nThe `signals` field contains raw pointers to Signal fields within the Pattern.\nThese pointers remain valid as long as the Pattern is not dropped or reallocated.\nSince SeqPatternParam owns both the pattern and signals, and patterns are\nimmutable after parsing, this is safe.",
+          "description": "A pattern parameter that wraps a pattern string and its parsed components.\n\nThis struct is serialized as a simple string but contains the parsed pattern\nand cached query results.",
           "type": "string"
         },
         "Signal": {
