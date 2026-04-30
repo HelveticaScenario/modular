@@ -48,7 +48,12 @@ fn step_derive_channel_count(params: &StepParams) -> usize {
 }
 
 /// Step sequencer
-#[module(name = "$step", channels_derive = step_derive_channel_count, args(steps, next))]
+#[module(
+    name = "$step",
+    channels_derive = step_derive_channel_count,
+    args(steps, next),
+    patch_update,
+)]
 pub struct Step {
     outputs: StepOutputs,
     params: StepParams,
@@ -115,6 +120,23 @@ impl Step {
             let val = self.state.current_step.get_value(i);
             self.outputs.sample.set(i, val);
         }
+    }
+}
+
+impl crate::types::PatchUpdateHandler for Step {
+    fn on_patch_update(&mut self) {
+        if self.state.current_step_idx >= self.params.steps.len() {
+            self.state.current_step_idx = 0;
+        }
+
+        self.state
+            .next_schmitt
+            .process(self.params.next.get_value());
+        if let Some(ref reset) = self.params.reset {
+            self.state.reset_schmitt.process(reset.get_value());
+        }
+
+        self.state.current_step = self.params.steps[self.state.current_step_idx].clone();
     }
 }
 
