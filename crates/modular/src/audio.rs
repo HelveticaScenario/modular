@@ -1208,27 +1208,10 @@ fn chrono_simple_timestamp() -> String {
 // ============================================================================
 // AudioProcessor - Audio thread side
 // ============================================================================
-
-/// Live Ableton Link resources. Constructed and dropped on the main thread
-/// (per official Link guidance: `enable()`, construction, and destruction are
-/// not realtime-safe). The audio thread only reads/writes via the RT-safe
-/// capture/commit/clock_micros API. Resources are handed in via `SetLink`
-/// and handed back via the garbage queue for main-thread drop.
-pub struct LinkResources {
-  pub link: rusty_link::AblLink,
-  pub host_time_filter: rusty_link::HostTimeFilter,
-  pub session_state: rusty_link::SessionState,
-}
-
-/// Per-buffer Link session state capture.
-/// Captured once per audio callback to avoid repeated FFI calls per frame.
-struct LinkBufferState {
-  host_time_micros: i64,
-  quantum: f64,
-  tempo: f64,
-  playing: bool,
-  micros_per_sample: f64,
-}
+//
+// Ableton Link integration lives in `crate::link`. The audio thread holds a
+// `LinkState` that owns the live `rusty_link` resources and exposes only
+// realtime-safe operations.
 
 /// Audio processor that runs on the audio thread.
 /// Owns the Patch directly and processes commands from the main thread.
@@ -1255,20 +1238,9 @@ struct AudioProcessor {
   transport_meter: Arc<TransportMeter>,
   /// Sample rate of the audio stream
   sample_rate: f32,
-  /// Ableton Link instance (None when not enabled)
-  link: Option<rusty_link::AblLink>,
-  /// Host time filter for accurate timestamps with cpal
-  host_time_filter: Option<rusty_link::HostTimeFilter>,
-  /// Pre-allocated SessionState for RT-safe capture (allocated when Link is enabled)
-  link_session_state: Option<rusty_link::SessionState>,
-  /// Running sample count for HostTimeFilter
-  link_sample_count: u64,
-  /// Per-buffer Link state capture
-  current_link_state: Option<LinkBufferState>,
-  /// Frame index within current buffer (for per-frame host time calculation)
-  frame_in_buffer: usize,
-  /// Pending quantized start — waiting for bar boundary before actually starting
-  link_pending_start: bool,
+  /// Ableton Link integration (audio-thread side). Owns the live
+  /// `rusty_link` resources when active and exposes only RT-safe operations.
+  link: crate::link::LinkState,
 }
 
 impl AudioProcessor {
@@ -1291,13 +1263,7 @@ impl AudioProcessor {
       queued_update: None,
       transport_meter: shared.transport_meter,
       sample_rate,
-      link: None,
-      host_time_filter: None,
-      link_session_state: None,
-      link_sample_count: 0,
-      current_link_state: None,
-      frame_in_buffer: 0,
-      link_pending_start: false,
+      link: crate::link::LinkState::new(),
     }
   }
 
@@ -1318,18 +1284,11 @@ impl AudioProcessor {
     while let Ok(cmd) = self.command_rx.pop() {
       match cmd {
         GraphCommand::QueuedPatchUpdate { update, trigger } => {
-          // Push tempo to Link if explicitly set via $setTempo. Capture +
-          // commit on the audio thread is the realtime-safe way to mutate
-          // session state per Ableton's docs.
+          // Push tempo to Link if explicitly set via $setTempo. The
+          // capture/commit call inside `set_tempo_now` is the realtime-safe
+          // way to mutate session state per Ableton's docs.
           if let Some(tempo) = update.tempo_override {
-            if let Some(ref link) = self.link {
-              if let Some(ref mut ss) = self.link_session_state {
-                link.capture_audio_session_state(ss);
-                let time = link.clock_micros();
-                ss.set_tempo(tempo, time);
-                link.commit_audio_session_state(ss);
-              }
-            }
+            self.link.set_tempo_now(tempo);
           }
 
           // If there's already a queued update, discard it and apply the new one
@@ -1384,20 +1343,14 @@ impl AudioProcessor {
           }
         }
         GraphCommand::Start => {
-          if let Some(ref link) = self.link {
+          if self.link.is_active() {
             // With Link: keep `stopped=true` and arm a pending start.
             // The buffer-level phase check releases `stopped` when the
             // shared Link timeline reaches a bar boundary.
-            if let Some(ref mut ss) = self.link_session_state {
-              link.capture_audio_session_state(ss);
-              let time = link.clock_micros();
-              self
-                .stopped
-                .store(true, std::sync::atomic::Ordering::SeqCst);
-              ss.set_is_playing_and_request_beat_at_time(true, time, 0.0, 4.0);
-              link.commit_audio_session_state(ss);
-              self.link_pending_start = true;
-            }
+            self
+              .stopped
+              .store(true, std::sync::atomic::Ordering::SeqCst);
+            self.link.request_quantized_start();
           } else {
             // Free-run: flip immediately and reset the clock.
             self
@@ -1411,17 +1364,9 @@ impl AudioProcessor {
         GraphCommand::Stop => {
           // Stop is handled via the stopped flag.
           // Also clear any pending start so a later peer-start does not
-          // resurrect a cancelled patch.
-          self.link_pending_start = false;
-          // Propagate stop to Link session
-          if let Some(ref link) = self.link {
-            if let Some(ref mut ss) = self.link_session_state {
-              link.capture_audio_session_state(ss);
-              let time = link.clock_micros();
-              ss.set_is_playing(false, time);
-              link.commit_audio_session_state(ss);
-            }
-          }
+          // resurrect a cancelled patch, and propagate stop to peers.
+          self.link.clear_pending_start();
+          self.link.signal_stop();
         }
         GraphCommand::ClearPatch => {
           // Discard any pending queued update
@@ -1449,48 +1394,21 @@ impl AudioProcessor {
           // main thread; the audio thread only swaps the prepared resources
           // in/out and ships any old set off to the garbage queue for
           // main-thread drop.
-          let had_link = self.link.is_some();
+          let was_active = self.link.is_active();
+          if let Some(old) = self.link.install(new_resources) {
+            // If the queue is full, the Box drops here on the audio thread
+            // as a fallback — not ideal RT-wise but bounded and strictly
+            // better than leaking the live networking resources.
+            let _ = self.garbage_tx.push(GarbageItem::Link(old));
+          }
 
-          // Take the current resources, if any, so they can be dropped on
-          // the main thread.
-          if had_link {
-            if let (Some(link), Some(htf), Some(ss)) = (
-              self.link.take(),
-              self.host_time_filter.take(),
-              self.link_session_state.take(),
-            ) {
-              let old = Box::new(LinkResources {
-                link,
-                host_time_filter: htf,
-                session_state: ss,
-              });
-              if self.garbage_tx.push(GarbageItem::Link(old)).is_err() {
-                // Garbage queue full — fall through and let the Box drop
-                // here. Not ideal RT-wise but bounded by queue size and
-                // strictly better than leaking the resources.
-              }
-            }
-            // Always clear ROOT_CLOCK external sync when releasing/replacing
-            // the Link instance.
+          // When the live instance changes, clear any external clock sync
+          // on ROOT_CLOCK so the patch's own clock takes over.
+          if was_active {
             use modular_core::types::ROOT_CLOCK_ID;
             if let Some(root_clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
               root_clock.clear_external_sync();
             }
-            self.current_link_state = None;
-            self.link_pending_start = false;
-          }
-
-          // Install incoming resources, if any.
-          if let Some(res) = new_resources {
-            let LinkResources {
-              link,
-              host_time_filter,
-              session_state,
-            } = *res;
-            self.link = Some(link);
-            self.host_time_filter = Some(host_time_filter);
-            self.link_session_state = Some(session_state);
-            self.link_sample_count = 0;
           }
         }
       }
@@ -1616,30 +1534,6 @@ impl AudioProcessor {
     }
   }
 
-  /// Capture Link session state once per audio buffer.
-  /// Returns None if Link is not active.
-  fn capture_link_state(&mut self) -> Option<LinkBufferState> {
-    let link = self.link.as_ref()?;
-    let htf = self.host_time_filter.as_mut()?;
-    let ss = self.link_session_state.as_mut()?;
-
-    let clock_micros = link.clock_micros();
-    let host_time_micros = htf.sample_time_to_host_time(clock_micros, self.link_sample_count);
-    link.capture_audio_session_state(ss);
-    let quantum = 4.0;
-    let tempo = ss.tempo();
-    let playing = ss.is_playing();
-    let micros_per_sample = 1_000_000.0 / self.sample_rate as f64;
-
-    Some(LinkBufferState {
-      host_time_micros,
-      quantum,
-      tempo,
-      playing,
-      micros_per_sample,
-    })
-  }
-
   /// Process a single frame, returning multi-channel output
   fn process_frame(&mut self, num_channels: usize) -> [f32; PORT_MAX_CHANNELS] {
     use modular_core::types::{ROOT_CLOCK_ID, ROOT_ID};
@@ -1652,21 +1546,12 @@ impl AudioProcessor {
     }
 
     // 1. Sync Link state to ROOT_CLOCK, then update ROOT_CLOCK
-    if let Some(ref link_state) = self.current_link_state {
-      if let Some(ref ss) = self.link_session_state {
-        if let Some(root_clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
-          // Compute per-frame host time by offsetting from buffer start
-          let frame_offset_micros =
-            (self.frame_in_buffer as f64 * link_state.micros_per_sample) as i64;
-          let frame_host_time = link_state.host_time_micros + frame_offset_micros;
-          let phase = ss.phase_at_time(frame_host_time, link_state.quantum);
-          // Convert phase to bar_phase (0..1) by dividing by quantum
-          let bar_phase = phase / link_state.quantum;
-          root_clock.sync_external_clock(bar_phase, link_state.tempo);
-        }
+    let root_clock = self.patch.sampleables.get(&*ROOT_CLOCK_ID).cloned();
+    self.link.sync_frame(|bar_phase, tempo| {
+      if let Some(ref clock) = root_clock {
+        clock.sync_external_clock(bar_phase, tempo);
       }
-      self.frame_in_buffer += 1;
-    }
+    });
 
     // 2. Update ROOT_CLOCK so its trigger outputs are available this frame
     if let Some(root_clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
@@ -1867,56 +1752,27 @@ where
           audio_processor.process_commands();
         }
 
-        // Capture Link session state once per buffer (before frame loop)
-        audio_processor.current_link_state = audio_processor.capture_link_state();
-        audio_processor.frame_in_buffer = 0;
+        // Capture Link session state once per buffer (before frame loop).
+        audio_processor
+          .link
+          .capture_buffer_state(audio_processor.sample_rate);
 
         // Operator transport is decoupled from Link peer transport:
         // peers never start or stop Operator. The only Link-driven transport
         // action is releasing a locally-initiated quantized start when the
         // shared timeline reaches a bar boundary.
-        if let Some(ref link_state) = audio_processor.current_link_state {
-          if audio_processor.link_pending_start {
-            if let Some(ref ss) = audio_processor.link_session_state {
-              let time = link_state.host_time_micros;
-              let phase = ss.phase_at_time(time, link_state.quantum);
-              if phase < 0.5 {
-                audio_processor.link_pending_start = false;
-                audio_processor
-                  .stopped
-                  .store(false, std::sync::atomic::Ordering::SeqCst);
-                let msg = modular_core::types::Message::Clock(ClockMessages::Start);
-                let _ = audio_processor.patch.dispatch_message(&msg);
-              }
-            }
-          }
+        if audio_processor.link.check_pending_start_release() {
+          audio_processor
+            .stopped
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+          let msg = modular_core::types::Message::Clock(ClockMessages::Start);
+          let _ = audio_processor.patch.dispatch_message(&msg);
         }
 
-        // Write Link state to transport meter for UI visibility.
-        // Write phase BEFORE the is_stopped() guard so the UI always shows
-        // the free-running Link phase, even when Operator is stopped.
-        if let Some(ref link) = audio_processor.link {
-          audio_processor
-            .transport_meter
-            .write_link_state(true, link.num_peers() as u32);
-          if let Some(ref link_state) = audio_processor.current_link_state {
-            // Update BPM from Link so the UI reflects external tempo changes
-            audio_processor.transport_meter.write_bpm(link_state.tempo);
-            // Write the free-running Link bar phase for the phase indicator
-            if let Some(ref ss) = audio_processor.link_session_state {
-              let phase = ss.phase_at_time(link_state.host_time_micros, link_state.quantum);
-              let bar_phase = phase / link_state.quantum;
-              audio_processor.transport_meter.write_link_phase(bar_phase);
-            }
-          }
-          audio_processor
-            .transport_meter
-            .write_link_pending_start(audio_processor.link_pending_start);
-        } else {
-          audio_processor
-            .transport_meter
-            .write_link_pending_start(false);
-        }
+        // Write Link state to transport meter for UI visibility. Done
+        // BEFORE the is_stopped() guard so the UI always shows the
+        // free-running Link phase, even when Operator is stopped.
+        audio_processor.link.write_meter(&audio_processor.transport_meter);
 
         let num_frames = output.len() / num_channels;
 
@@ -1959,7 +1815,7 @@ where
         }
 
         // Increment Link sample count for HostTimeFilter
-        audio_processor.link_sample_count += num_frames as u64;
+        audio_processor.link.add_samples(num_frames as u64);
 
         // Collect module states for UI (e.g., seq step highlighting)
         // Done once per buffer, not per frame, to minimize overhead

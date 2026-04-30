@@ -9,7 +9,8 @@ use std::sync::Arc;
 use modular_core::types::{Message, ModuleIdRemap, Sampleable, ScopeBufferKey, WavData};
 use napi_derive::napi;
 
-use crate::audio::{LinkResources, ScopeBuffer};
+use crate::audio::ScopeBuffer;
+use crate::link::LinkResources;
 
 /// When a queued patch update should be applied.
 #[napi(string_enum)]

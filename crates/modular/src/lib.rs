@@ -2,6 +2,7 @@
 
 mod audio;
 mod commands;
+mod link;
 mod midi;
 mod params_cache;
 mod validation;
@@ -1212,7 +1213,7 @@ impl Synthesizer {
       let link = rusty_link::AblLink::new(bpm);
       link.enable(true);
       link.enable_start_stop_sync(true);
-      Some(Box::new(crate::audio::LinkResources {
+      Some(Box::new(crate::link::LinkResources {
         link,
         host_time_filter: rusty_link::HostTimeFilter::new(),
         session_state: rusty_link::SessionState::new(),
