@@ -1,13 +1,14 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use napi::Result;
 use serde_json::json;
 
 use modular_core::patch::Patch;
 use modular_core::types::{
-    ClockMessages, Connect, Message, MessageHandler, MessageTag, MidiControlChange, MidiNoteOn,
-    Sampleable, Signal, SignalExt,
+    Buffer, BufferData, ClockMessages, Connect, Message, MessageHandler, MessageTag,
+    MidiControlChange, MidiNoteOn, Sampleable, Signal, SignalExt,
 };
 
 // The proc-macro expands to `crate::types::...`; provide that module in this integration test crate.
@@ -66,11 +67,66 @@ impl Sampleable for DummySampleable {
 
 impl MessageHandler for DummySampleable {}
 
+struct BufferSourceSampleable {
+    id: String,
+    module_type: String,
+    update_count: Arc<AtomicUsize>,
+    buffer: Arc<BufferData>,
+}
+
+impl BufferSourceSampleable {
+    fn new(
+        id: &str,
+        module_type: &str,
+        update_count: Arc<AtomicUsize>,
+        buffer: Arc<BufferData>,
+    ) -> Self {
+        Self {
+            id: id.to_string(),
+            module_type: module_type.to_string(),
+            update_count,
+            buffer,
+        }
+    }
+}
+
+impl Sampleable for BufferSourceSampleable {
+    fn get_id(&self) -> &str {
+        &self.id
+    }
+
+    fn tick(&self) {}
+
+    fn update(&self) {
+        self.update_count.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn get_poly_sample(&self, _port: &str) -> Result<modular_core::poly::PolyOutput> {
+        Ok(modular_core::poly::PolyOutput::mono(0.0))
+    }
+
+    fn get_module_type(&self) -> &str {
+        &self.module_type
+    }
+
+    fn connect(&self, _patch: &Patch) {}
+
+    fn get_buffer_output(&self, port: &str) -> Option<&Arc<BufferData>> {
+        (port == "buffer").then_some(&self.buffer)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+impl MessageHandler for BufferSourceSampleable {}
+
 fn make_empty_patch() -> Patch {
     Patch::new()
 }
 
-fn make_patch_with_sampleable(sampleable: Arc<Box<dyn Sampleable>>) -> Patch {
+fn make_patch_with_sampleable(sampleable: Box<dyn Sampleable>) -> Patch {
     let mut patch = Patch::new();
     patch
         .sampleables
@@ -129,13 +185,13 @@ fn signal_deserialize_tagged_variants_still_work() {
         Signal::Cable {
             module,
             port,
-            module_ptr,
+            resolved,
             channel,
         } => {
             assert_eq!(module, "m1");
             assert_eq!(port, "out");
             assert_eq!(channel, 0);
-            assert!(module_ptr.upgrade().is_none());
+            assert!(resolved.is_none());
         }
         other => panic!("expected Signal::Cable, got {other:?}"),
     }
@@ -143,25 +199,92 @@ fn signal_deserialize_tagged_variants_still_work() {
 
 #[test]
 fn signal_cable_connect_and_read() {
-    let sampleable: Arc<Box<dyn Sampleable>> = Arc::new(Box::new(DummySampleable::new(
-        "m1",
-        "dummy",
-        [("out", 3.5)],
-    )));
-    let patch = make_patch_with_sampleable(Arc::clone(&sampleable));
+    let sampleable: Box<dyn Sampleable> =
+        Box::new(DummySampleable::new("m1", "dummy", [("out", 3.5)]));
+    let patch = make_patch_with_sampleable(sampleable);
 
     let mut s = Signal::Cable {
         module: "m1".to_string(),
-        module_ptr: Weak::new(),
+        resolved: None,
         port: "out".to_string(),
         channel: 0,
     };
 
-    // Before connect, cable reads 0.0 (module_ptr doesn't resolve).
+    // Before connect, cable reads 0.0 because the cache is unresolved.
     approx_eq(s.get_value(), 0.0, 1e-6);
 
     s.connect(&patch);
+
+    match &s {
+        Signal::Cable { resolved, .. } => assert!(resolved.is_some()),
+        other => panic!("expected Signal::Cable, got {other:?}"),
+    }
+
     approx_eq(s.get_value(), 3.5, 1e-6);
+}
+
+#[test]
+fn signal_cable_reconnect_to_missing_source_clears_resolved_and_reads_zero() {
+    let sampleable: Box<dyn Sampleable> =
+        Box::new(DummySampleable::new("m1", "dummy", [("out", 3.5)]));
+    let patch = make_patch_with_sampleable(sampleable);
+    let empty_patch = make_empty_patch();
+
+    let mut s = Signal::Cable {
+        module: "m1".to_string(),
+        resolved: None,
+        port: "out".to_string(),
+        channel: 0,
+    };
+
+    s.connect(&patch);
+    approx_eq(s.get_value(), 3.5, 1e-6);
+
+    s.connect(&empty_patch);
+
+    match &s {
+        Signal::Cable { resolved, .. } => assert!(resolved.is_none()),
+        other => panic!("expected Signal::Cable, got {other:?}"),
+    }
+
+    approx_eq(s.get_value(), 0.0, 1e-6);
+}
+
+#[test]
+fn signal_cable_reconnect_to_replacement_source_rebinds_resolved_and_reads_new_value() {
+    let first: Box<dyn Sampleable> = Box::new(DummySampleable::new("m1", "dummy", [("out", 3.5)]));
+    let second: Box<dyn Sampleable> =
+        Box::new(DummySampleable::new("m1", "dummy", [("out", 7.25)]));
+    let first_patch = make_patch_with_sampleable(first);
+    let second_patch = make_patch_with_sampleable(second);
+
+    let mut s = Signal::Cable {
+        module: "m1".to_string(),
+        resolved: None,
+        port: "out".to_string(),
+        channel: 0,
+    };
+
+    s.connect(&first_patch);
+    let first_resolved = match &s {
+        Signal::Cable { resolved, .. } => {
+            approx_eq(s.get_value(), 3.5, 1e-6);
+            *resolved
+        }
+        other => panic!("expected Signal::Cable, got {other:?}"),
+    };
+
+    s.connect(&second_patch);
+
+    match &s {
+        Signal::Cable { resolved, .. } => {
+            assert!(resolved.is_some());
+            assert_ne!(*resolved, first_resolved);
+        }
+        other => panic!("expected Signal::Cable, got {other:?}"),
+    }
+
+    approx_eq(s.get_value(), 7.25, 1e-6);
 }
 
 #[test]
@@ -237,4 +360,75 @@ fn connect_noop_for_non_cable_and_non_track_signals() {
     let patch = make_empty_patch();
     s.connect(&patch);
     approx_eq(s.get_value(), 1.0, 1e-6);
+}
+
+#[test]
+fn raw_pointer_buffer_connect_populates_cached_buffer() {
+    let update_count = Arc::new(AtomicUsize::new(0));
+    let buffer_data = Arc::new(BufferData::from_samples(vec![vec![1.0, 2.0, 3.0]]));
+    let source: Box<dyn Sampleable> = Box::new(BufferSourceSampleable::new(
+        "buf",
+        "buffer_source",
+        Arc::clone(&update_count),
+        Arc::clone(&buffer_data),
+    ));
+    let patch = make_patch_with_sampleable(source);
+    let mut buffer = Buffer::new("buf".to_string(), "buffer".to_string(), 1);
+
+    assert!(!buffer.is_connected());
+    assert_eq!(buffer.frame_count(), 0);
+
+    buffer.connect(&patch);
+
+    assert!(buffer.is_connected());
+    assert_eq!(buffer.frame_count(), 3);
+    approx_eq(buffer.read(0, 1), 2.0, 1e-6);
+    assert_eq!(update_count.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn raw_pointer_buffer_ensure_source_updated_calls_source_update() {
+    let update_count = Arc::new(AtomicUsize::new(0));
+    let buffer_data = Arc::new(BufferData::from_samples(vec![vec![0.5]]));
+    let source: Box<dyn Sampleable> = Box::new(BufferSourceSampleable::new(
+        "buf",
+        "buffer_source",
+        Arc::clone(&update_count),
+        Arc::clone(&buffer_data),
+    ));
+    let patch = make_patch_with_sampleable(source);
+    let mut buffer = Buffer::new("buf".to_string(), "buffer".to_string(), 1);
+
+    buffer.connect(&patch);
+    buffer.ensure_source_updated();
+
+    assert_eq!(update_count.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn buffer_connect_missing_source_clears_cached_state_and_stops_updates() {
+    let update_count = Arc::new(AtomicUsize::new(0));
+    let buffer_data = Arc::new(BufferData::from_samples(vec![vec![4.0, 5.0]]));
+    let source: Box<dyn Sampleable> = Box::new(BufferSourceSampleable::new(
+        "buf",
+        "buffer_source",
+        Arc::clone(&update_count),
+        Arc::clone(&buffer_data),
+    ));
+    let patch = make_patch_with_sampleable(source);
+    let empty_patch = make_empty_patch();
+    let mut buffer = Buffer::new("buf".to_string(), "buffer".to_string(), 1);
+
+    buffer.connect(&patch);
+    buffer.ensure_source_updated();
+    assert_eq!(update_count.load(Ordering::SeqCst), 1);
+    assert!(buffer.is_connected());
+
+    buffer.connect(&empty_patch);
+    buffer.ensure_source_updated();
+
+    assert!(!buffer.is_connected());
+    assert_eq!(buffer.frame_count(), 0);
+    approx_eq(buffer.read(0, 0), 0.0, 1e-6);
+    assert_eq!(update_count.load(Ordering::SeqCst), 1);
 }
