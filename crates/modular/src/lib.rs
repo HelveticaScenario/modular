@@ -1193,7 +1193,40 @@ impl Synthesizer {
 
   #[napi]
   pub fn enable_link(&self, enabled: bool) -> Result<()> {
-    self.state.send_command(GraphCommand::EnableLink(enabled))?;
+    // Idempotency: if Link is already in the requested state, do nothing.
+    // This both avoids constructing a redundant `AblLink` (heap allocation,
+    // socket open, networking thread spawn — all expensive) and prevents
+    // tearing down an existing live session whose peers would then have to
+    // re-discover us.
+    if self.state.transport_meter.read_link_enabled() == enabled {
+      return Ok(());
+    }
+
+    let resources = if enabled {
+      // Construct + enable on the main thread. Per Ableton's documentation
+      // (`Link.hpp`: "Realtime-safe: no" on `enable()`), construction and
+      // enable cannot run on the audio thread without risking glitches.
+      // Initialise at the user's last known tempo so toggling Link doesn't
+      // reset the session BPM.
+      let bpm = self.state.transport_meter.read_bpm();
+      let link = rusty_link::AblLink::new(bpm);
+      link.enable(true);
+      link.enable_start_stop_sync(true);
+      Some(Box::new(crate::audio::LinkResources {
+        link,
+        host_time_filter: rusty_link::HostTimeFilter::new(),
+        session_state: rusty_link::SessionState::new(),
+      }))
+    } else {
+      None
+    };
+
+    self.state.send_command(GraphCommand::SetLink(resources))?;
+
+    // Update the meter immediately so the UI flips state without waiting
+    // for the next audio callback. Peer count starts at 0 in both cases:
+    // on disable there are no peers; on a fresh enable the live peer count
+    // is 0 until the audio thread overwrites it from `link.num_peers()`.
     self.state.transport_meter.write_link_state(enabled, 0);
     Ok(())
   }

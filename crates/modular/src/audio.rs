@@ -1209,6 +1209,17 @@ fn chrono_simple_timestamp() -> String {
 // AudioProcessor - Audio thread side
 // ============================================================================
 
+/// Live Ableton Link resources. Constructed and dropped on the main thread
+/// (per official Link guidance: `enable()`, construction, and destruction are
+/// not realtime-safe). The audio thread only reads/writes via the RT-safe
+/// capture/commit/clock_micros API. Resources are handed in via `SetLink`
+/// and handed back via the garbage queue for main-thread drop.
+pub struct LinkResources {
+  pub link: rusty_link::AblLink,
+  pub host_time_filter: rusty_link::HostTimeFilter,
+  pub session_state: rusty_link::SessionState,
+}
+
 /// Per-buffer Link session state capture.
 /// Captured once per audio callback to avoid repeated FFI calls per frame.
 struct LinkBufferState {
@@ -1252,8 +1263,6 @@ struct AudioProcessor {
   link_session_state: Option<rusty_link::SessionState>,
   /// Running sample count for HostTimeFilter
   link_sample_count: u64,
-  /// Last known tempo for Link (for detecting local tempo changes)
-  last_link_tempo: f64,
   /// Per-buffer Link state capture
   current_link_state: Option<LinkBufferState>,
   /// Frame index within current buffer (for per-frame host time calculation)
@@ -1286,7 +1295,6 @@ impl AudioProcessor {
       host_time_filter: None,
       link_session_state: None,
       link_sample_count: 0,
-      last_link_tempo: 120.0,
       current_link_state: None,
       frame_in_buffer: 0,
       link_pending_start: false,
@@ -1310,7 +1318,9 @@ impl AudioProcessor {
     while let Ok(cmd) = self.command_rx.pop() {
       match cmd {
         GraphCommand::QueuedPatchUpdate { update, trigger } => {
-          // Push tempo to Link if explicitly set via $setTempo
+          // Push tempo to Link if explicitly set via $setTempo. Capture +
+          // commit on the audio thread is the realtime-safe way to mutate
+          // session state per Ableton's docs.
           if let Some(tempo) = update.tempo_override {
             if let Some(ref link) = self.link {
               if let Some(ref mut ss) = self.link_session_state {
@@ -1318,7 +1328,6 @@ impl AudioProcessor {
                 let time = link.clock_micros();
                 ss.set_tempo(tempo, time);
                 link.commit_audio_session_state(ss);
-                self.last_link_tempo = tempo;
               }
             }
           }
@@ -1434,27 +1443,54 @@ impl AudioProcessor {
           self.patch.insert_audio_in();
           self.patch.rebuild_message_listeners();
         }
-        GraphCommand::EnableLink(enabled) => {
-          if enabled {
-            let bpm = self.last_link_tempo;
-            let link = rusty_link::AblLink::new(bpm);
-            link.enable(true);
-            link.enable_start_stop_sync(true);
-            self.host_time_filter = Some(rusty_link::HostTimeFilter::new());
-            self.link_session_state = Some(rusty_link::SessionState::new());
-            self.link_sample_count = 0;
-            self.link = Some(link);
-          } else {
-            // Clear external sync on ROOT_CLOCK before dropping Link
+        GraphCommand::SetLink(new_resources) => {
+          // Construction/destruction of `AblLink` (and `enable()`) are
+          // realtime-unsafe per Ableton's documentation. They run on the
+          // main thread; the audio thread only swaps the prepared resources
+          // in/out and ships any old set off to the garbage queue for
+          // main-thread drop.
+          let had_link = self.link.is_some();
+
+          // Take the current resources, if any, so they can be dropped on
+          // the main thread.
+          if had_link {
+            if let (Some(link), Some(htf), Some(ss)) = (
+              self.link.take(),
+              self.host_time_filter.take(),
+              self.link_session_state.take(),
+            ) {
+              let old = Box::new(LinkResources {
+                link,
+                host_time_filter: htf,
+                session_state: ss,
+              });
+              if self.garbage_tx.push(GarbageItem::Link(old)).is_err() {
+                // Garbage queue full — fall through and let the Box drop
+                // here. Not ideal RT-wise but bounded by queue size and
+                // strictly better than leaking the resources.
+              }
+            }
+            // Always clear ROOT_CLOCK external sync when releasing/replacing
+            // the Link instance.
             use modular_core::types::ROOT_CLOCK_ID;
             if let Some(root_clock) = self.patch.sampleables.get(&*ROOT_CLOCK_ID) {
               root_clock.clear_external_sync();
             }
-            self.link = None;
-            self.host_time_filter = None;
-            self.link_session_state = None;
             self.current_link_state = None;
             self.link_pending_start = false;
+          }
+
+          // Install incoming resources, if any.
+          if let Some(res) = new_resources {
+            let LinkResources {
+              link,
+              host_time_filter,
+              session_state,
+            } = *res;
+            self.link = Some(link);
+            self.host_time_filter = Some(host_time_filter);
+            self.link_session_state = Some(session_state);
+            self.link_sample_count = 0;
           }
         }
       }
@@ -2330,6 +2366,21 @@ impl TransportMeter {
   #[inline]
   pub fn write_link_pending_start(&self, armed: bool) {
     self.link_pending_start.store(armed, Ordering::Relaxed);
+  }
+
+  /// Read the current Link enabled flag (used by the main thread for
+  /// idempotency checks before constructing/destroying Link resources).
+  #[inline]
+  pub fn read_link_enabled(&self) -> bool {
+    self.link_enabled.load(Ordering::Relaxed)
+  }
+
+  /// Read the current BPM (used by the main thread when constructing a new
+  /// `AblLink` so we initialise the session at the user's last known tempo
+  /// rather than always 120).
+  #[inline]
+  pub fn read_bpm(&self) -> f64 {
+    f64::from_bits(self.bpm_bits.load(Ordering::Relaxed))
   }
 
   /// Read transport snapshot from the main thread.
