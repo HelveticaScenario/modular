@@ -251,6 +251,25 @@ export function executePatchScript(
         };
     };
 
+    const $mix = userNamespaceTree['$mix'];
+    if (typeof $mix !== 'function') {
+        throw new Error(
+            'DSL execution error: "$mix" module not found in schemas',
+        );
+    }
+
+    const $delay = (
+        input: Collection | ModuleOutput,
+        feedbackCb: (buffer: BufferOutputRef) => Collection | ModuleOutput,
+        length: number,
+    ): Collection & { buffer: BufferOutputRef } => {
+        const def = $deferred('length' in input ? input.length : 1);
+        const mixed = $mix([input, def]) as Collection;
+        const buf = $buffer(mixed, length);
+        def.set(feedbackCb(buf));
+        return Object.assign(mixed, { buffer: buf });
+    };
+
     // Slider collector — populated by $slider() calls during execution
     const sliders: SliderDefinition[] = [];
 
@@ -433,9 +452,10 @@ export function executePatchScript(
      * that feeds this table's output phase into `next`. The optional second
      * argument to each helper is a shorthand for `.pipe(next)`.
      */
-    function wrapTable(
-        descriptor: Record<string, unknown>,
-    ): Record<string, unknown> & {
+    function wrapTable(descriptor: Record<string, unknown>): Record<
+        string,
+        unknown
+    > & {
         pipe: <T>(fn: (self: Record<string, unknown>) => T) => T;
     } {
         const t = { ...descriptor } as Record<string, unknown> & {
@@ -516,6 +536,7 @@ export function executePatchScript(
         $setTimeSignature,
         $setEndOfChainCb,
         $buffer,
+        $delay,
         // WAV sample loading
         $wavs,
         // Built-in modules

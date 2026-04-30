@@ -954,6 +954,36 @@ function $bus(cb: (mixed: Collection) => unknown): Bus;
  */
 function $setEndOfChainCb(cb: (mixed: Collection) => ModuleOutput | Collection | CollectionWithRange): void;
 
+/** Create a buffer module that captures an input signal into a circular audio buffer. */
+function $buffer(input: ModuleOutput | Collection | number, lengthSeconds: number, config?: { id?: string }): BufferOutputRef;
+
+/**
+ * Delay with feedback. Mixes \`input\` with a deferred feedback signal,
+ * captures the mix into a buffer of \`length\` seconds, and routes the
+ * buffer through \`feedbackCb\` to produce the feedback signal.
+ *
+ * Returns the wet+dry \\$mix output (same shape as \\$mix) augmented with a
+ * \`buffer\` property referencing the captured buffer for further reads.
+ *
+ * @param input - Dry signal collection. Channel count of the feedback path
+ *                matches \`input.length\` or 1 if input is a ModuleOutput.
+ * @param feedbackCb - Receives the captured buffer ref and returns the
+ *                     feedback signal mixed back into the input.
+ * @param length - Buffer length in seconds.
+ *
+ * \`\`\`
+ *   // simple feedback delay
+ *   $delay($noise('white').amp($perc($pulse('1hz'))), (buf) => $delayRead(buf, 0.25).amp(4.5), 1).out()
+ * \`\`\`
+ *
+ * \`\`\`ts
+ *   // tap the buffer for an additional read
+ *   const d = $delay(src, (buf) => $delayRead(buf, 0.5).amp(2.0), 2)
+ *   $delayRead(d.buffer, 0.75).out()
+ * \`\`\`
+ */
+function $delay(input: Collection | ModuleOutput, feedbackCb: (buffer: BufferOutputRef) => Collection | ModuleOutput, length: number): ReturnType<typeof $mix> & { buffer: BufferOutputRef };
+
 /**
  * Compute the Cartesian product of the given arrays.
  *
@@ -1428,7 +1458,8 @@ function renderTree(node: NamespaceNode, indentLevel: number = 0): string[] {
 }
 
 export function generateDSL(schemas: Schemas): string {
-    // Filter out _clock (internal only) and $buffer (has a custom declaration below)
+    // Filter out _clock (internal only) and $buffer (declared in BASE_LIB_SOURCE
+    // with a custom BufferOutputRef return type)
     const userFacingSchemas = schemas.filter(
         (s) => s.name !== '_clock' && s.name !== '$buffer',
     );
@@ -1459,14 +1490,6 @@ export function generateDSL(schemas: Schemas): string {
         const signalReturnType = getFactoryReturnType(signalSchema);
         lines.push(`export const $input: Readonly<${signalReturnType}>;`);
     }
-
-    lines.push('');
-    lines.push(
-        '/** Create a buffer module that captures an input signal into a circular audio buffer. */',
-    );
-    lines.push(
-        'export function $buffer(input: ModuleOutput | Collection | number, lengthSeconds: number, config?: { id?: string }): BufferOutputRef;',
-    );
 
     return lines.join('\n') + '\n';
 }
