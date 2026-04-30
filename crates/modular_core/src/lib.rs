@@ -16,6 +16,7 @@ extern crate serde;
 extern crate serde_json;
 extern crate simple_easing;
 
+pub mod codegen;
 pub mod dsp;
 pub mod param_errors;
 pub mod params;
