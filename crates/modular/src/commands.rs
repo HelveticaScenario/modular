@@ -10,6 +10,7 @@ use modular_core::types::{Message, ModuleIdRemap, Sampleable, ScopeBufferKey, Wa
 use napi_derive::napi;
 
 use crate::audio::ScopeBuffer;
+use crate::link::LinkResources;
 
 /// When a queued patch update should be applied.
 #[napi(string_enum)]
@@ -113,8 +114,18 @@ pub enum GraphCommand {
   /// Clear the entire patch (used when stopped to reset state)
   ClearPatch,
 
-  /// Enable or disable Ableton Link synchronization
-  EnableLink(bool),
+  /// Install or remove the live Ableton Link session.
+  ///
+  /// `Some(resources)` hands a fully constructed and enabled `AblLink`
+  /// (alongside its `HostTimeFilter` and `SessionState`) to the audio thread.
+  /// `None` tells the audio thread to relinquish its current resources.
+  ///
+  /// Construction, `enable()`, and drop of `AblLink` are documented as
+  /// realtime-unsafe by Ableton and must run on the main thread. The audio
+  /// thread only ever uses the RT-safe capture/commit/clock_micros API on
+  /// the resources it holds. Old resources removed by this command are
+  /// pushed to the garbage queue so the main thread can drop them safely.
+  SetLink(Option<Box<LinkResources>>),
 }
 
 /// Error types that can be reported from the audio thread back to the main thread.
@@ -171,6 +182,9 @@ pub enum GarbageItem {
   Scope(ScopeBuffer),
   /// A queued patch update that was superseded by a newer update before it fired
   PatchUpdate(PatchUpdate),
+  /// Live Link resources removed from the audio thread. Drop tears down
+  /// internal networking threads and sockets — must happen on the main thread.
+  Link(Box<LinkResources>),
 }
 
 /// Capacity for the garbage queue (audio → main).

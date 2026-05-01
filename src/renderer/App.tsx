@@ -883,6 +883,28 @@ function App() {
         createUntitledFile,
     ]);
 
+    // Ctrl+Enter (and Ctrl+Shift+Enter) are reserved for patch updates.
+    // Browsers activate a focused <button> on Enter regardless of modifier
+    // state, which would spuriously toggle e.g. the Link button after it had
+    // been clicked. Suppress the default activation when a button is focused.
+    useEffect(() => {
+        const onKeyDownCapture = (e: KeyboardEvent) => {
+            if (
+                e.ctrlKey &&
+                e.key === 'Enter' &&
+                e.target instanceof HTMLButtonElement
+            ) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        };
+        window.addEventListener('keydown', onKeyDownCapture, { capture: true });
+        return () =>
+            window.removeEventListener('keydown', onKeyDownCapture, {
+                capture: true,
+            });
+    }, []);
+
     return (
         <div className="app">
             <header className="app-header">
